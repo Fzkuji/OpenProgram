@@ -369,14 +369,17 @@
 </details>
 
 <h2 id="transcript-consistency">转录更新归属</h2>
-<ul>
-<li>每一行都归服务端所有。读取画出一个窗口，编号的 <code translate="no">transcript_update</code> 变化让它保持最新，文字帧按偏移把文字加到块上。三者都由一个 reducer <code translate="no">apply-transcript-update.ts</code> 应用，所以实时画出的行就是重新加载画出的行。</li>
-<li>浏览器只添加服务端还没给出的东西。待处理的发送、函数占位或提示是有类型的本地行，读取或更新带上它的 <code translate="no">clientRequestId</code> 时离开。</li>
-<li>先于服务端显示的字段（停止、版本切换、章节固定、文件撤销、目标结果）是覆盖层，在约定事件发生时结束，从不改动下面的行。</li>
-<li>执行树补充所属回复：模型发起的函数的树是回复 <code translate="no">callRoots</code> 里的一项，函数运行的树是它那一行的字段。视图里没有的行，对应的树或帧不生成任何东西。</li>
-<li>漏掉一次更新或丢了一帧文字，视图在锚点读一次。流式过程中的读取不会循环，也不会缩短回复，因为服务端会暂存该视图的帧，直到读取的回复发出。分支移动或结构变化会重新读取。</li>
-<li>每个执行根保留持久化路径。重复调用保持独立；一个根在被文字隔开的各组中只消费一次。已完成函数留在摘要内；直接运行保持独立。</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">归属与规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">行</th><td>每一行都归服务端所有。读取画出一个窗口，编号的 <code translate="no">transcript_update</code> 变化让它保持最新，文字帧按偏移把文字加到块上。三者都由一个 reducer <code translate="no">apply-transcript-update.ts</code> 应用，所以实时画出的行就是重新加载画出的行。</td></tr>
+<tr><th scope="row">本地行</th><td>浏览器只添加服务端还没给出的东西。待处理的发送、函数占位或提示是有类型的本地行，读取或更新带上它的 <code translate="no">clientRequestId</code> 时离开。</td></tr>
+<tr><th scope="row">先于服务端的字段</th><td>先于服务端显示的字段（停止、版本切换、章节固定、文件撤销、目标结果）是覆盖层，在约定事件发生时结束，从不改动下面的行。</td></tr>
+<tr><th scope="row">执行树</th><td>执行树补充所属回复：模型发起的函数的树是回复 <code translate="no">callRoots</code> 里的一项，函数运行的树是它那一行的字段。视图里没有的行，对应的树或帧不生成任何东西。</td></tr>
+<tr><th scope="row">漏掉的更新</th><td>漏掉一次更新或丢了一帧文字，视图在锚点读一次。流式过程中的读取不会循环，也不会缩短回复，因为服务端会暂存该视图的帧，直到读取的回复发出。分支移动或结构变化会重新读取。</td></tr>
+<tr><th scope="row">执行根</th><td>每个执行根保留持久化路径。重复调用保持独立；一个根在被文字隔开的各组中只消费一次。已完成函数留在摘要内；直接运行保持独立。</td></tr>
+</tbody>
+</table>
 <p class="note">验收用生产 reducer 和组件回放录制的聊天，要求每个检查点实时与冷读取一致：流式、部分历史、完成、迟到的树、插话、错误、取消、重连和重载。</p>
 
 <h2 id="queue-steer">排队和当前回合输入</h2>
@@ -407,7 +410,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">层</th><th scope="col">上限</th></tr></thead>
 <tbody>
-<tr><th scope="row">服务器</th><td>每个会话一个分支视图，所有连接共用，进程内最多 16 个，存储表明分支移动后重建。视图只保存按轮次分组的行 ID，不保存正文。一页只从存储投影选中的完整轮次，所以打开后变化的行读到的是最新内容：一条提示和它拥有的全部内容，工具后代和压缩行留在原位。不在分支上的游标回复 <code translate="no">cursor_not_on_branch</code>，客户端重新读取对话。读取版本 2 保留各连接的快照用于回退。</td></tr>
+<tr><th scope="row">服务器</th><td>每个会话一个分支视图，所有连接共用，进程内最多 16 个，存储表明分支移动后重建。视图只保存按轮次分组的行 ID，不保存正文。一页只从存储投影选中的完整轮次，所以打开后变化的行读到的是最新内容：一条提示和它拥有的全部内容，工具后代和压缩行留在原位。</td></tr>
+<tr><th scope="row">不在分支上的游标</th><td>回复 <code translate="no">cursor_not_on_branch</code>，客户端重新读取对话</td></tr>
+<tr><th scope="row">回退</th><td>读取版本 2 保留各连接的快照</td></tr>
 <tr><th scope="row">浏览器缓存</th><td>四个对话；显示中的窗格和进行中的请求可短暂超出</td></tr>
 <tr><th scope="row">单个转录</th><td>六个普通页、8 MiB，单个大回合允许一个不可分割的页</td></tr>
 <tr><th scope="row">淘汰</th><td>从阅读位置的另一侧开始，不删持久记录；活动更新保留；回滚时重新获取</td></tr>

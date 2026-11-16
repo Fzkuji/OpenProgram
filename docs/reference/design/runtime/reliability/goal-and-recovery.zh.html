@@ -68,17 +68,20 @@
 
 <details>
 <summary>运行意图与关闭</summary>
-<ul>
-<li>持久的 <code translate="no">run_intent</code> 建立在现有的准入、命令和重启意图之上。请求保存后才向客户端确认。</li>
-<li><code translate="no">run_intent</code> 记录 <code translate="no">work_id</code>、原始输入和未消费消息、<code translate="no">desired_state</code>（run、paused、cancelled、done）、最新控制版本、权限范围、目标修订、执行宿主、父子链接、最后提交的进度和恢复策略。</li>
-<li>默认情况下，仍处于 <code translate="no">run</code> 的已授权工作无需重新打开会话即可继续。普通请求只继续到完成为止。后台工作保留原授权和并发配额；重启不授权新的子任务。</li>
-<li>关闭窗口或重新加载只是断开连接。“退出并停止所有任务”会持久化停止意图。</li>
-<li>App 退出、升级、worker 崩溃和机器重启都不是暂停。优雅关闭停止准入并保存控制和检查点；强制关闭从最后一次提交恢复。</li>
-<li>客户端未确认的草稿不算已提交的请求。</li>
-<li><code translate="no">execution.auto_resume_window_seconds</code>：默认 <code translate="no">-1</code>（不过期），<code translate="no">0</code> 表示退出；现有的有限期限不延长。</li>
-<li>续跑时重新检查目录、宿主、模型和工具可用性、凭据、权限和预算。缺资源时显示明确的等待原因，绝不切换项目、账号或模型，也不扩大权限。</li>
-<li>原因未知的旧暂停记录保持暂停并附说明。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">持久的 <code translate="no">run_intent</code></th><td>建立在现有的准入、命令和重启意图之上。请求保存后才向客户端确认。</td></tr>
+<tr><th scope="row">记录内容</th><td><code translate="no">work_id</code>、原始输入和未消费消息、<code translate="no">desired_state</code>（run、paused、cancelled、done）、最新控制版本、权限范围、目标修订、执行宿主、父子链接、最后提交的进度、恢复策略</td></tr>
+<tr><th scope="row">默认</th><td>仍处于 <code translate="no">run</code> 的已授权工作无需重新打开会话即可继续。普通请求只继续到完成为止。后台工作保留原授权和并发配额；重启不授权新的子任务。</td></tr>
+<tr><th scope="row">关闭窗口、重新加载</th><td>只是断开连接。“退出并停止所有任务”会持久化停止意图。</td></tr>
+<tr><th scope="row">App 退出、升级、worker 崩溃、机器重启</th><td>都不是暂停。优雅关闭停止准入并保存控制和检查点；强制关闭从最后一次提交恢复。</td></tr>
+<tr><th scope="row">客户端未确认的草稿</th><td>不算已提交的请求</td></tr>
+<tr><th scope="row"><code translate="no">execution.auto_resume_window_seconds</code></th><td>默认 <code translate="no">-1</code>（不过期），<code translate="no">0</code> 表示退出；现有的有限期限不延长</td></tr>
+<tr><th scope="row">续跑检查</th><td>重新检查目录、宿主、模型和工具可用性、凭据、权限和预算。缺资源时显示明确的等待原因，绝不切换项目、账号或模型，也不扩大权限。</td></tr>
+<tr><th scope="row">原因未知的旧暂停记录</th><td>保持暂停并附说明</td></tr>
+</tbody>
+</table>
 </details>
 
 <details>
@@ -167,15 +170,18 @@
 
 <details>
 <summary>不确定副作用的权限范围</summary>
-<ul>
-<li>会话来源界定旧执行和被调用的 Job，不扩大到被调用会话的所有执行。</li>
-<li>只有实际的内置 read、grep、glob 和 list 函数算只读调查；名称、<code translate="no">acceptEdits</code> 和插件声明都不算。</li>
-<li>范围内其他操作都需要一次性批准，bypass、自动分类和允许规则都不能免除。批准绑定新调用和未知副作用集合；集合变化需重新批准，且不抹除任何记录。恢复状态不可读或损坏时拒绝执行。</li>
-<li>Auto 或 bypass 下新的交互式所有者轮次，只在自己的执行子树内评估不确定副作用。</li>
-<li>嵌套 Runtime 仅在不可变准入证明这是所有者对话时才使用该边界：存储的 actor 是交互式所有者，经完整性校验的负载来源相同，且执行、会话和主体一致。</li>
-<li>提交到执行线程时携带 ContextVars，范围捕获检查的是同一次执行。Runtime 保持非交互，不能授予审批。</li>
-<li>证据不匹配时保留限制。此过滤器绝不解决或重放旧回执。显式 ask 或 deny、来源约束、计划模式和精确 Page 绑定仍然适用。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>会话来源界定旧执行和被调用的 Job，不扩大到被调用会话的所有执行</td></tr>
+<tr><th scope="row">只读调查</th><td>只有实际的内置 read、grep、glob 和 list 函数；名称、<code translate="no">acceptEdits</code> 和插件声明都不算</td></tr>
+<tr><th scope="row">范围内其他操作</th><td>都需要一次性批准，bypass、自动分类和允许规则都不能免除。批准绑定新调用和未知副作用集合；集合变化需重新批准，且不抹除任何记录。恢复状态不可读或损坏时拒绝执行。</td></tr>
+<tr><th scope="row">Auto 或 bypass 下新的交互式所有者轮次</th><td>只在自己的执行子树内评估不确定副作用</td></tr>
+<tr><th scope="row">嵌套 Runtime</th><td>仅在不可变准入证明这是所有者对话时才使用该边界：存储的 actor 是交互式所有者，经完整性校验的负载来源相同，且执行、会话和主体一致</td></tr>
+<tr><th scope="row">提交到执行线程</th><td>携带 ContextVars，范围捕获检查的是同一次执行。Runtime 保持非交互，不能授予审批。</td></tr>
+<tr><th scope="row">证据不匹配</th><td>保留限制。此过滤器绝不解决或重放旧回执。显式 ask 或 deny、来源约束、计划模式和精确 Page 绑定仍然适用。</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="ownership-design">状态归属</h2>

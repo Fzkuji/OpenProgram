@@ -50,7 +50,7 @@ from openprogram.host._platform import filesystem
 
 
 HTTP_TIMEOUT = 5.0
-DEFAULT_OWNER = "FuzzyKuji"
+DEFAULT_OWNER = "Fzkuji"
 DEFAULT_REPO = "OpenProgram"
 API_ROOT = "https://api.github.com"
 WEB_ROOT = "https://github.com"

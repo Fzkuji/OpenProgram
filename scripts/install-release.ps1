@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $Version = $env:OPENPROGRAM_VERSION
-$Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "FuzzyKuji/OpenProgram" }
+$Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "Fzkuji/OpenProgram" }
 if ($Version -and $Version -notmatch "^\d+\.\d+\.\d+$") {
     throw "invalid OpenProgram version: $Version"
 }

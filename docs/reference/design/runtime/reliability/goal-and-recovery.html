@@ -69,17 +69,20 @@
 
 <details>
 <summary>Run intent and shutdown</summary>
-<ul>
-<li>Durable <code translate="no">run_intent</code> builds on existing admission, command and restart intent. Clients are acknowledged only after the request is saved.</li>
-<li><code translate="no">run_intent</code> records <code translate="no">work_id</code>, original input and unconsumed messages, <code translate="no">desired_state</code> (run, paused, cancelled, done), latest control version, permission scope, objective revision, execution host, parent and child links, last committed progress and recovery policy.</li>
-<li>By default, authorized work still in <code translate="no">run</code> resumes without reopening the session. Ordinary requests continue only until they finish. Background work keeps its authorization and concurrency quota; restart authorizes no new subtasks.</li>
-<li>Closing a window or reloading only disconnects. "Quit and stop all tasks" persists a stop intent.</li>
-<li>App exit, upgrades, worker crashes and machine restarts are not Pause. Graceful shutdown stops admission and saves controls and checkpoints; forced shutdown recovers from the last commit.</li>
-<li>Unacknowledged client drafts are not submitted requests.</li>
-<li><code translate="no">execution.auto_resume_window_seconds</code>: <code translate="no">-1</code> by default (no expiry), <code translate="no">0</code> opts out; existing finite deadlines are not extended.</li>
-<li>Continuation rechecks directory, host, model and tool availability, credentials, permissions and budget. Missing resources show a precise waiting reason and never switch project, account or model or widen permissions.</li>
-<li>Old paused records with unknown reasons stay paused with an explanation.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Durable <code translate="no">run_intent</code></th><td>Builds on existing admission, command and restart intent. Clients are acknowledged only after the request is saved.</td></tr>
+<tr><th scope="row">What it records</th><td><code translate="no">work_id</code>, original input and unconsumed messages, <code translate="no">desired_state</code> (run, paused, cancelled, done), latest control version, permission scope, objective revision, execution host, parent and child links, last committed progress, recovery policy</td></tr>
+<tr><th scope="row">Default</th><td>Authorized work still in <code translate="no">run</code> resumes without reopening the session. Ordinary requests continue only until they finish. Background work keeps its authorization and concurrency quota; restart authorizes no new subtasks.</td></tr>
+<tr><th scope="row">Window close, reload</th><td>Only disconnects. "Quit and stop all tasks" persists a stop intent.</td></tr>
+<tr><th scope="row">App exit, upgrades, worker crashes, machine restarts</th><td>Not Pause. Graceful shutdown stops admission and saves controls and checkpoints; forced shutdown recovers from the last commit.</td></tr>
+<tr><th scope="row">Unacknowledged client drafts</th><td>Not submitted requests</td></tr>
+<tr><th scope="row"><code translate="no">execution.auto_resume_window_seconds</code></th><td><code translate="no">-1</code> by default (no expiry), <code translate="no">0</code> opts out; existing finite deadlines are not extended</td></tr>
+<tr><th scope="row">Continuation checks</th><td>Rechecks directory, host, model and tool availability, credentials, permissions and budget. Missing resources show a precise waiting reason and never switch project, account or model or widen permissions.</td></tr>
+<tr><th scope="row">Old paused records, unknown reasons</th><td>Stay paused with an explanation</td></tr>
+</tbody>
+</table>
 </details>
 
 <details>
@@ -168,15 +171,18 @@
 
 <details>
 <summary>Permission scope for uncertain effects</summary>
-<ul>
-<li>Conversation provenance scopes old executions and invoked Jobs, not every execution in an invoked session.</li>
-<li>Only the actual built-in read, grep, glob and list functions count as read-only investigation; names, <code translate="no">acceptEdits</code> and plugin declarations do not.</li>
-<li>Within scope, everything else needs one-time approval, which bypass, automatic classification and allow rules cannot waive. Approval binds to the new call and the unknown-effect set; a changed set needs fresh approval and erases nothing. Unreadable or corrupt recovery state fails closed.</li>
-<li>A new interactive owner turn in Auto or bypass evaluates uncertain effects only in its own execution subtree.</li>
-<li>A nested Runtime uses that boundary only when immutable admission proves an owner chat: stored actor is the interactive owner, the integrity-checked payload has the same source, and execution, session and principal match.</li>
-<li>Executor-thread submission carries the ContextVars so scope capture checks the same execution. Runtime stays non-interactive and cannot grant approval.</li>
-<li>Mismatched evidence keeps the restriction. Old receipts are never resolved or replayed by this filter. Explicit ask or deny, source constraints, plan mode and exact Page binding still apply.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>Conversation provenance scopes old executions and invoked Jobs, not every execution in an invoked session</td></tr>
+<tr><th scope="row">Read-only investigation</th><td>Only the actual built-in read, grep, glob and list functions; names, <code translate="no">acceptEdits</code> and plugin declarations do not count</td></tr>
+<tr><th scope="row">Everything else in scope</th><td>Needs one-time approval, which bypass, automatic classification and allow rules cannot waive. Approval binds to the new call and the unknown-effect set; a changed set needs fresh approval and erases nothing. Unreadable or corrupt recovery state fails closed.</td></tr>
+<tr><th scope="row">New interactive owner turn in Auto or bypass</th><td>Evaluates uncertain effects only in its own execution subtree</td></tr>
+<tr><th scope="row">Nested Runtime</th><td>Uses that boundary only when immutable admission proves an owner chat: stored actor is the interactive owner, the integrity-checked payload has the same source, and execution, session and principal match</td></tr>
+<tr><th scope="row">Executor-thread submission</th><td>Carries the ContextVars so scope capture checks the same execution. Runtime stays non-interactive and cannot grant approval.</td></tr>
+<tr><th scope="row">Mismatched evidence</th><td>Keeps the restriction. Old receipts are never resolved or replayed by this filter. Explicit ask or deny, source constraints, plan mode and exact Page binding still apply.</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="ownership-design">State ownership</h2>

@@ -31,7 +31,12 @@ if TYPE_CHECKING:
     from ..session_store.service import SessionStore
 
 _MARKERS = (STATE_FILE_MARKER, RUN_ROWS_MARKER)
-_CACHED_DIRECTORIES = 512
+# The Job runner reads every conversation's jobs every few seconds. Once a
+# store has more conversations than this, each of those passes drops the
+# oldest entries and reads their logs again from the checkpoint, so the
+# limit sits well above a store's size; a conversation's documents are a
+# few kilobytes.
+_CACHED_DIRECTORIES = 4096
 
 
 class _Folded:

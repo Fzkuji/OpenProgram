@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **エージェントは Python クラス。** 制御フロー、チェック、リトライは普通のコードで、`self(...)` がモデル呼び出しです。
-- **セルフプログラミング。** エージェントが自分のクラスに新しいメソッドを書き込み、次のターンからツールとして使えます。
-- **グラフ型コンテキスト。** すべての呼び出しは 1 つの DAG のノードです。サブエージェントは自分のブランチで動き、結果だけを返します。
-- **ひとつのワークスペース。** チャット、ファイル、ターミナル、エージェントが操作できる内蔵ブラウザを並べて使えます。
-- **どのモデルでも。** Anthropic、OpenAI、Gemini、ローカルサーバーに対応し、プロバイダーごとに複数アカウントを設定できます。
+## ニュース
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — プロバイダーごとに複数のキーとサインインを持ち、上限に達すると自動で次に切り替え。返信はタスクブロックにまとまり、スケジュールタスクに実行履歴が付きました。このバージョンからリリースはこのリポジトリで公開します。
+- **2026-11-15 · v1.3.0** — 状態・クォータ・利用額を示すプロバイダーページ、会話で動くエージェントの一覧、エージェントが作ったファイルの自動表示。
+- **2026-11-14 · v1.2.0** — 1 つの会話のブランチを並行実行、停止は即時に反映、Windows App を提供。
+- **2026-11-10 · v1.1.0** — 送信済みの任意のメッセージから巻き戻し。App が Linux に対応。
+- **2026-11-06 · v1.0.0** — 1.x 系の最初のリリース：分割ビューのデスクトップ App、バックグラウンドのコンピューター操作、会議、常駐スケジューラー。
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows（v1.2.0 から）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/FuzzyKuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。Web サイトに接続できない場合：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英語）を参照してください。
+Windows（v1.2.0 から）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/Fzkuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。Web サイトに接続できない場合：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英語）を参照してください。
 
 ## クイックスタート
 

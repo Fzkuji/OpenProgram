@@ -24,7 +24,7 @@ from .assets import (
     prepared_office_cache, validate_prepared_office_pack,
 )
 
-OFFICE_RELEASES = "https://github.com/FuzzyKuji/OpenProgram/releases"
+OFFICE_RELEASES = "https://github.com/Fzkuji/OpenProgram/releases"
 OFFICE_ARCHIVE_NAME = "OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip"
 OFFICE_ARCHIVE_SHA256 = "30b98a46d2f21f8050174f28922f671d91c7dccb25e2718eacaf8bf23ba1aabd"
 OFFICE_DOWNLOAD_BYTES = 732695641

@@ -116,7 +116,12 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="publishing-identity">Publishing identity</h2>
 <p>The repository is <code translate="no">Fzkuji/OpenProgram</code>, the project's first repository: <code translate="no">main</code> carries its history up to 0.9.8 and then one commit per version from 1.0.0.</p>
 <p>Each version commit is signed <code translate="no">FzKuji</code>, <code translate="no">fzkuji@gmail.com</code>, the signature of the earlier history; the script sets it whatever identity the checkout commits with and refuses to upload a version holding any other. Only the part of <code translate="no">main</code> GitHub does not have yet is checked, since the earlier history has many authors.</p>
-<p>Versions 1.0.0 to 1.3.0 were built in <code translate="no">FuzzyKuji/OpenProgram</code>, where their installers stay. Download links, the installer scripts and the App's update check read releases from there until a version is released from <code translate="no">Fzkuji/OpenProgram</code>; source links already point at <code translate="no">Fzkuji/OpenProgram</code>. Author lines in <code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code> and the README licence line keep the name the 1.x versions shipped with.</p>
+<p>Versions 1.0.0 to 1.3.0 were built in <code translate="no">FuzzyKuji/OpenProgram</code>, where their installers stay, and their release notes link there. From 1.4.0 on, releases are built in <code translate="no">Fzkuji/OpenProgram</code>:</p>
+<ul>
+<li>Download links, the installer scripts and the App's update check read releases from it, as source links do.</li>
+<li>An App of 1.3.0 or earlier checks the repository it was built in, so 1.4.0 or later is installed over it by hand once.</li>
+<li>Author lines in <code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code> and the README licence line keep the name the 1.x versions shipped with.</li>
+</ul>
 
 <h2 id="retired-accounts">Retired accounts</h2>
 <p>The project once published under a GitHub account it no longer has. Nothing published names it: no author, link, example, fixture or note.</p>

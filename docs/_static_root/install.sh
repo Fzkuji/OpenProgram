@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-repository="${OPENPROGRAM_REPOSITORY:-FuzzyKuji/OpenProgram}"
+repository="${OPENPROGRAM_REPOSITORY:-Fzkuji/OpenProgram}"
 version="${OPENPROGRAM_VERSION:-}"
 releases_page="https://github.com/$repository/releases"
 

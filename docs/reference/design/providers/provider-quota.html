@@ -46,13 +46,16 @@
 <p>Values stay in memory and reach disk at most every 30 s per account. The old Codex parser's only caller looked for headers Codex does not send; it is replaced by one that follows codex-rs.</p>
 
 <h2 id="fetch">Reading an endpoint</h2>
-<p>An endpoint is read only when:</p>
-<ul>
-<li>the status page opens and the last read of that account is older than 10 minutes, whatever it answered (after answering, in the background). A refused read (401, 5xx, a body that does not parse) counts: otherwise an endpoint that rejects the key would be asked again on every open;</li>
-<li>the user asks for a refresh;</li>
-<li>a reply failed with 402, 429 or a quota message (at most once per account per 10 minutes);</li>
-<li>a key was just added.</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">An endpoint is read when</th><th scope="col">Condition</th></tr></thead>
+<tbody>
+<tr><th scope="row">The status page opens</th><td>The last read of that account is older than 10 minutes, whatever it answered; read after answering, in the background</td></tr>
+<tr><th scope="row">The user asks for a refresh</th><td>&mdash;</td></tr>
+<tr><th scope="row">A reply failed</th><td>With 402, 429 or a quota message; at most once per account per 10 minutes</td></tr>
+<tr><th scope="row">A key was just added</th><td>&mdash;</td></tr>
+</tbody>
+</table>
+<p class="note">A refused read (401, 5xx, a body that does not parse) counts as a read: otherwise an endpoint that rejects the key would be asked again on every open.</p>
 <p>One read per account at a time; a 429 from the quota endpoint holds that account for its Retry-After, or 5 minutes. Reads use the configured safe HTTP client, pinned to the endpoint's origin, and are logged as probe kind <code translate="no">quota</code>.</p>
 <p>Each read is recorded per provider and account in <code translate="no">usage.db</code> (<code translate="no">quota_reads</code>), and the Worker and every CLI run decide from that record:</p>
 <ul>
@@ -73,17 +76,35 @@
 <h2 id="spend">Spend</h2>
 <p>From the usage ledger, per provider over 30 days: calls, cost, list price, tokens by part, cache share (cache reads over prompt tokens) and a daily series of 30 points. A subscription provider reports its spend as Included, with the list price kept beside it. The default model is the last one used, else the most used.</p>
 <p>A DeepSeek reply could show more cached tokens than total tokens. The cause: the recorder's fallback wrote <code translate="no">total_tokens = input + output</code>, leaving cached tokens out. The recorder now keeps the larger of the reported total and the parts summed, and every aggregate sums the parts, so rows written before the fix read correctly.</p>
-<p><code translate="no">usage.db</code> gains <code translate="no">quota_snapshots</code> (the latest value per provider, account and limit), <code translate="no">quota_samples</code> (one sample per 15 minutes, kept 90 days) and <code translate="no">quota_reads</code> (the last endpoint read per provider and account).</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Table in <code translate="no">usage.db</code></th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">quota_snapshots</code></th><td>The latest value per provider, account and limit</td></tr>
+<tr><th scope="row"><code translate="no">quota_samples</code></th><td>One sample per 15 minutes, kept 90 days</td></tr>
+<tr><th scope="row"><code translate="no">quota_reads</code></th><td>The last endpoint read per provider and account</td></tr>
+</tbody>
+</table>
 
 <h2 id="health">Health and failure causes</h2>
 <p>Two records speak about a key: its credential status, written when a call failed (<code translate="no">status_at</code>, the credential's <code translate="no">updated_at</code>), and the last read of its quota endpoint (<code translate="no">read_at</code>). The newer one decides; at the same time a 401 outranks a stored billing stop or throttle.</p>
-<ul>
-<li>A 401 read newer than the status: <code translate="no">invalid_key</code> ("quota endpoint answered 401"), until a read answers or a call with the key succeeds. For a key (not a sign-in) the same status is written on its row, so the provider's list says what its card does.</li>
-<li>Only a verified endpoint marks the row, never on a <code translate="no">CreditsError</code> body.</li>
-<li>A read that answered after a <code translate="no">quota</code> stop overrules the stop; that read's balance decides.</li>
-<li>A sign-in whose refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used) is <code translate="no">needs_login</code>, read as <code translate="no">signed_out</code> with the Sign in again fix. That holds for a stored sign-in and for one delegated to the Codex CLI's file; the delegated one is not asked again until the file holds another login.</li>
-</ul>
-<p>Health is the best key's state, overridden by a spent limit: <code translate="no">ready</code>, <code translate="no">rate_limited</code> (with the reset time), <code translate="no">no_credit</code>, <code translate="no">invalid_key</code>, <code translate="no">signed_out</code> or <code translate="no">unknown</code>. A provider with no key reads <code translate="no">not_configured</code>; a local server that does not answer reads <code translate="no">not_running</code>. Each state that needs action carries its fix; see <a href="provider-management.html">Provider management</a>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Reads as</th></tr></thead>
+<tbody>
+<tr><th scope="row">A 401 read newer than the status</th><td><code translate="no">invalid_key</code> ("quota endpoint answered 401"), until a read answers or a call with the key succeeds. For a key (not a sign-in) the same status is written on its row, so the provider's list says what its card does</td></tr>
+<tr><th scope="row">Marking the row</th><td>Only a verified endpoint, never on a <code translate="no">CreditsError</code> body</td></tr>
+<tr><th scope="row">A read that answered after a <code translate="no">quota</code> stop</th><td>Overrules the stop; that read's balance decides</td></tr>
+<tr><th scope="row">A refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used)</th><td><code translate="no">needs_login</code>, read as <code translate="no">signed_out</code> with the Sign in again fix; for a stored sign-in and for one delegated to the Codex CLI's file. The delegated one is not asked again until the file holds another login</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Health</th><th scope="col">States</th></tr></thead>
+<tbody>
+<tr><th scope="row">The best key's state, overridden by a spent limit</th><td><code translate="no">ready</code>, <code translate="no">rate_limited</code> (with the reset time), <code translate="no">no_credit</code>, <code translate="no">invalid_key</code>, <code translate="no">signed_out</code>, <code translate="no">unknown</code></td></tr>
+<tr><th scope="row">A provider with no key</th><td><code translate="no">not_configured</code></td></tr>
+<tr><th scope="row">A local server that does not answer</th><td><code translate="no">not_running</code></td></tr>
+</tbody>
+</table>
+<p class="note">Each state that needs action carries its fix; see <a href="provider-management.html">Provider management</a>.</p>
 <p>A throttle lasts as long as its cooldown. A key keeps its <code translate="no">cooling</code> status until its next success but is chosen again once the cooldown has passed, so health reads such a key as <code translate="no">ready</code>, not as rate limited until a time already gone.</p>
 <p>The CLI table prints only coming times (<code translate="no">until 14:05</code>, <code translate="no">resets Nov 19 02:22</code>); a time already passed is left out. It fits the terminal width: a bar gives up cells, down to 5, and then its reset time moves to a line of its own. Output to a pipe without <code translate="no">COLUMNS</code> is not wrapped.</p>
 <p>A failed reply carries a cause beside its error reason, from the provider error to the turn result, the event (<code translate="no">cause</code>) and the stored placeholder (<code translate="no">error_cause</code>):</p>

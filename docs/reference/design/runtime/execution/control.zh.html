@@ -136,22 +136,28 @@
 </table>
 <p>一轮在运行中途压缩自己的上下文时仍是 <code translate="no">reply</code>；网页在 <code translate="no">compaction_started</code> 持续期间显示这一步。</p>
 
-<p>只有改动文件的回退作用于整个会话：</p>
-<ul>
-<li>只要其他分支在运行，或有一轮在等待批准或回答问题，它就被拒绝，返回 <code translate="no">code: branch_running</code> 和 <code translate="no">blocking</code>：那条分支的名字、它的执行 id 和版本，或它的 <code translate="no">op_id</code>。</li>
-<li>这时回退对话框提供“停止它再回退”：停掉那次运行，等它结束后再执行同一个回退。</li>
-<li>它运行期间，一条持久化记录占住会话的文件。任何分支都不准入，新的执行（定时运行、排队的 Job、另一个进程准入的轮次）在准入时等它结束。</li>
-</ul>
+<table class="stack fixed">
+<caption>只有改动文件的回退作用于整个会话</caption>
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">其他分支在运行，或有一轮在等待批准或回答问题</th><td>被拒绝，返回 <code translate="no">code: branch_running</code> 和 <code translate="no">blocking</code>：那条分支的名字、它的执行 id 和版本，或它的 <code translate="no">op_id</code></td></tr>
+<tr><th scope="row">回退对话框</th><td>这时提供“停止它再回退”：停掉那次运行，等它结束后再执行同一个回退</td></tr>
+<tr><th scope="row">它运行期间</th><td>一条持久化记录占住会话的文件。任何分支都不准入；新的执行（定时运行、排队的 Job、另一个进程准入的轮次）在准入时等它结束</td></tr>
+</tbody>
+</table>
 
 <p>每个运行中的操作也记在磁盘上（<code translate="no">state/store/session/operations.py</code>）。重启后，第一个读取方把进程已经不在的操作标为已取消，<code translate="no">reason_code: restart</code>；不会恢复任何一个。</p>
 
-<p>其他操作只占用它们碰到的分支（<code translate="no">reserve_branches_operation</code>，按排序依次占用），拒绝时点名忙的分支：</p>
-<ul>
-<li>删除消息和轮次文件历史操作：线上含有该节点的每个分支；公共祖先碰到它下面的每个分支。</li>
-<li>切换 Agent：自己的分支。</li>
-<li>定时运行：开始前读自己分支的持久记录，分支忙就跳过这次。</li>
-<li>命令、技能和 Agent 调用：消息指定的分支。只有 <code translate="no">/clear</code>、<code translate="no">/rename</code> 和开始 Goal 改变整个会话，留在选中分支。</li>
-</ul>
+<table class="stack">
+<caption>其他操作只占用它们碰到的分支（<code translate="no">reserve_branches_operation</code>，按排序依次占用），拒绝时点名忙的分支</caption>
+<thead><tr><th scope="col">操作</th><th scope="col">占用的分支</th></tr></thead>
+<tbody>
+<tr><th scope="row">删除消息、轮次文件历史操作</th><td>线上含有该节点的每个分支；公共祖先碰到它下面的每个分支</td></tr>
+<tr><th scope="row">切换 Agent</th><td>自己的分支</td></tr>
+<tr><th scope="row">定时运行</th><td>开始前读自己分支的持久记录，分支忙就跳过这次</td></tr>
+<tr><th scope="row">命令、技能、Agent 调用</th><td>消息指定的分支。只有 <code translate="no">/clear</code>、<code translate="no">/rename</code> 和开始 Goal 改变整个会话，留在选中分支</td></tr>
+</tbody>
+</table>
 
 <h3 id="branch-rewind">旁边有另一个分支时的回退</h3>
 
@@ -272,13 +278,16 @@
 
 <details>
 <summary>重启机制</summary>
-<ul>
-<li>provider 决定和完成的工具动作在普通执行中原子地发布检查点和效果回执。原执行 id、不可变输入、权限、预算和续接命令保持权威；排队的 Job 使用资源队列。</li>
-<li>重启意图是规范执行事件，与转换一起存储；固定的命令身份使重复启动幂等。没有第二个数据库、调度器、进程 owner 或权限路径。</li>
-<li>恢复归属记录确切继承的检查点；新效果之前的第二次中断保留它。</li>
-<li>新 Job 在准入时拥有稳定的用户和助手消息 id。暂停完成时按 Job 等待方保留的尝试和租约身份释放资源。</li>
-<li>启动时先分类被放弃的归属，再由 runner 应用此策略。仅 provider 或从未激活的聊天准入可在原活动期限内从不可变输入继续。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">检查点和回执</th><td>provider 决定和完成的工具动作在普通执行中原子地发布它们。原执行 id、不可变输入、权限、预算和续接命令保持权威；排队的 Job 使用资源队列。</td></tr>
+<tr><th scope="row">重启意图</th><td>规范执行事件，与转换一起存储；固定的命令身份使重复启动幂等。没有第二个数据库、调度器、进程 owner 或权限路径。</td></tr>
+<tr><th scope="row">恢复归属</th><td>记录确切继承的检查点；新效果之前的第二次中断保留它</td></tr>
+<tr><th scope="row">新 Job</th><td>在准入时拥有稳定的用户和助手消息 id。暂停完成时按 Job 等待方保留的尝试和租约身份释放资源。</td></tr>
+<tr><th scope="row">被放弃的归属</th><td>启动时先分类，再由 runner 应用此策略。仅 provider 或从未激活的聊天准入可在原活动期限内从不可变输入继续。</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="resumed-turn-identity">恢复同一轮次</h2>
@@ -324,9 +333,12 @@
 <tr><th scope="row">从未调度的计划意图</th><td>在暂停前记录未开始回执</td></tr>
 <tr><th scope="row">已调度的操作</th><td>绝不归为未开始</td></tr>
 <tr><th scope="row">取消</th><td>优先</td></tr>
+<tr><th scope="row">Continue</th><td>保留调用游标并复用已提交步骤</td></tr>
+<tr><th scope="row">崩溃恢复</th><td>使用最后的持久边界并隔离前 owner</td></tr>
+<tr><th scope="row">函数子进程启动</th><td>不持有全历史写事务；序列回填只属于添加该列的迁移</td></tr>
+<tr><th scope="row">独立函数的进度帧</th><td>指向现有 code 节点；完成时在可选的会话命名之前释放前台占用</td></tr>
 </tbody>
 </table>
-<p>Continue 保留调用游标并复用已提交步骤。崩溃恢复使用最后的持久边界并隔离前 owner。函数子进程启动不持有全历史写事务，序列回填只属于添加该列的迁移。独立函数的进度帧指向现有 code 节点，完成时在可选的会话命名之前释放前台占用。</p>
 </details>
 
 <h2 id="store-schema-ownership">谁拥有运行状态</h2>
@@ -393,12 +405,16 @@
 
 <h2 id="workflow-questions">Workflow 问题</h2>
 
-<ul>
-<li>运行中的 Python Workflow 提出的问题在当前进程内等待，绑定确切的执行、尝试和代次。它使用规范等待存储和问题界面，不做 Workflow 检查点，也不重启调用栈。</li>
-<li>答案回到原调用。浏览器刷新时重新加载待处理请求。</li>
-<li>只有活动的当前 owner 能创建或回答。取消、执行结束或失去进程 owner 会使其失效。Worker 重启不回放 Workflow。</li>
-<li>子进程通过现有队列桥接发布。意外错误上抛，不会变成未答结果。声明了等待前检查点的 Agent 工具问题保持持久续接。</li>
-</ul>
+<table class="stack fixed">
+<caption>运行中的 Python Workflow 提出的问题</caption>
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">在哪等待</th><td>在当前进程内，绑定确切的执行、尝试和代次。使用规范等待存储和问题界面；不做 Workflow 检查点，也不重启调用栈</td></tr>
+<tr><th scope="row">答案</th><td>回到原调用。浏览器刷新时重新加载待处理请求</td></tr>
+<tr><th scope="row">谁</th><td>只有活动的当前 owner 能创建或回答。取消、执行结束或失去进程 owner 会使其失效。Worker 重启不回放 Workflow</td></tr>
+<tr><th scope="row">传递</th><td>子进程通过现有队列桥接发布。意外错误上抛，不会变成未答结果。声明了等待前检查点的 Agent 工具问题保持持久续接</td></tr>
+</tbody>
+</table>
 
 <h2 id="decision-output">用户决定面板和回执</h2>
 
@@ -474,28 +490,34 @@
 </tbody>
 </table>
 
-<p>其他分支上的轮次尚未支持：</p>
-<ul>
-<li>网页面板：只显示并发送到选中分支。</li>
-<li>Steer 和网页排队的消息：送到选中分支的轮次。</li>
-<li>暂停或 Worker 重启后继续：恢复的轮次是否读自己分支的上下文尚未验证。</li>
-<li>选中分支自己的轮次在跑时的编辑和重试：等待，因为新分支会占用选中分支的槽。</li>
-<li>定时运行：它的进程不占服务端的分支槽；该分支有运行未结束时拒绝消息，反过来不拒绝。</li>
-</ul>
+<table class="stack fixed">
+<caption>其他分支上的轮次尚未支持</caption>
+<thead class="sr"><tr><th scope="col">缺口</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">网页面板</th><td>只显示并发送到选中分支</td></tr>
+<tr><th scope="row">Steer 和网页排队的消息</th><td>送到选中分支的轮次</td></tr>
+<tr><th scope="row">暂停或 Worker 重启后继续</th><td>恢复的轮次是否读自己分支的上下文尚未验证</td></tr>
+<tr><th scope="row">选中分支自己的轮次在跑时的编辑和重试</th><td>等待：新分支会占用选中分支的槽</td></tr>
+<tr><th scope="row">定时运行</th><td>它的进程不占服务端的分支槽；该分支有运行未结束时拒绝消息，反过来不拒绝</td></tr>
+</tbody>
+</table>
 
-<p>分支设置和分支状态方面还没做到：</p>
-<ul>
-<li>合并占用选中分支的槽，而不是来源和目标分支。</li>
-<li>菜单首项"Agent 默认（当前：…）"和输入框旁其他分支运行的徽标：数据已发送（<code translate="no">inherited</code>、<code translate="no">wait_state</code>），控件等设计批准。</li>
-<li>不指定分支的入口（渠道）在选中分支上继续；最后写入的分支已记录（<code translate="no">last_branch_id</code>），尚未使用。</li>
-<li>在真实会话上运行跟随 Agent 的迁移。</li>
-<li>运行状态只从执行存储读取：槽表仍是预留和无执行操作的实时记录，暂停和定时的轮次才查执行存储。</li>
-<li>一种分支记录：名字、轮数和归档状态仍按末端存在 <code translate="no">meta.branches</code> 里，和 <code translate="no">branch_refs</code> 并存。迁过去需要给客户端按消息 id 指认的每个末端都建记录（派生分支、分支记录出现之前的末端），并迁移所有按末端读取的地方。</li>
-<li>在终端界面停止回退：它的停止键作用于轮次和 <code translate="no">/compact</code>。</li>
-</ul>
+<table class="stack fixed">
+<caption>分支设置和分支状态方面还没做到</caption>
+<thead class="sr"><tr><th scope="col">缺口</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">合并</th><td>占用选中分支的槽，而不是来源和目标分支</td></tr>
+<tr><th scope="row">菜单首项"Agent 默认（当前：…）"、输入框旁其他分支运行的徽标</th><td>数据已发送（<code translate="no">inherited</code>、<code translate="no">wait_state</code>），控件等设计批准</td></tr>
+<tr><th scope="row">不指定分支的入口（渠道）</th><td>在选中分支上继续；最后写入的分支已记录（<code translate="no">last_branch_id</code>），尚未使用</td></tr>
+<tr><th scope="row">跟随 Agent 的迁移</th><td>尚未在真实会话上运行</td></tr>
+<tr><th scope="row">运行状态只从执行存储读取</th><td>槽表仍是预留和无执行操作的实时记录，暂停和定时的轮次才查执行存储</td></tr>
+<tr><th scope="row">一种分支记录</th><td>名字、轮数和归档状态仍按末端存在 <code translate="no">meta.branches</code> 里，和 <code translate="no">branch_refs</code> 并存。迁过去需要给客户端按消息 id 指认的每个末端都建记录（派生分支、分支记录出现之前的末端），并迁移所有按末端读取的地方</td></tr>
+<tr><th scope="row">在终端界面停止回退</th><td>它的停止键作用于轮次和 <code translate="no">/compact</code></td></tr>
+</tbody>
+</table>
 
-<p>停止方面还没做到：</p>
 <table class="stack">
+<caption>停止方面还没做到</caption>
 <thead class="sr"><tr><th scope="col">缺口</th><th scope="col">现状</th></tr></thead>
 <tbody>
 <tr><th scope="row">重发版本过期的停止</th><td>终端界面和 <code translate="no">--print</code> 只对没有声明 <code translate="no">cancel_ignores_version</code> 的 Worker 补发被以版本过期拒绝的停止。两个本地 Worker 都声明之后删掉这个分支；远程服务器的分支保留到下一次发版。</td></tr>

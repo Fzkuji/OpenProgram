@@ -71,3 +71,53 @@ def test_reentrant_same_profile_does_not_deadlock(tmp_path, monkeypatch):
     with session_interprocess_lock("sid-nested", reentrant=True):
         with session_interprocess_lock("sid-nested", reentrant=True):
             assert session_lock_available("sid-nested") is False
+
+
+def test_a_long_hold_is_logged_with_where_it_ended(tmp_path, monkeypatch, caplog):
+    """A conversation held for seconds makes every request on it wait; the
+    log names the conversation, the thread and the code that held it."""
+    import logging
+
+    from openprogram.state.store.session.files import session_lock
+
+    clock = [100.0]
+    monkeypatch.setattr(session_lock.time, "monotonic", lambda: clock[0])
+    lock = session_lock.ConversationLock("held-long", str(tmp_path / "held-long.lock"))
+    with caplog.at_level(logging.WARNING, logger=session_lock.__name__):
+        with lock:
+            pass
+        assert not caplog.records, "a short hold is not logged"
+        with lock:
+            clock[0] += 4.2
+    (record,) = caplog.records
+    message = record.getMessage()
+    assert "held-long" in message and "was locked for 4.2s" in message
+    assert "test_a_long_hold_is_logged_with_where_it_ended" in message
+
+
+def test_a_hold_spent_waiting_for_another_process_says_so(tmp_path, monkeypatch, caplog):
+    """A thread keeps this process's half of the lock while another process
+    holds the file, so the log separates that wait from its own work."""
+    import logging
+
+    from openprogram.state.store.session.files import session_lock
+
+    clock = [100.0]
+    monkeypatch.setattr(session_lock.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(session_lock.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + 3.5))
+    real_flock, refused = session_lock.locking.flock, []
+
+    def flock(descriptor, operation):
+        if operation & session_lock.locking.LOCK_NB and not refused:
+            refused.append(True)
+            raise BlockingIOError
+        return real_flock(descriptor, operation)
+
+    monkeypatch.setattr(session_lock.locking, "flock", flock)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    with caplog.at_level(logging.WARNING, logger=session_lock.__name__):
+        with session_interprocess_lock("held-elsewhere"):
+            clock[0] += 0.5
+    (record,) = caplog.records
+    assert ("was locked for 4.0s by thread 'MainThread', "
+            "3.5s of it waiting for another process to release it") in record.getMessage()

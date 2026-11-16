@@ -46,13 +46,16 @@
 <p>值保存在内存里，每个账户最多每 30 秒写一次盘。旧的 Codex 解析器唯一的调用方查的是 Codex 不发的响应头；换成按 codex-rs 规则解析的新解析器。</p>
 
 <h2 id="fetch">读取端点</h2>
-<p>只在以下情况读取端点：</p>
-<ul>
-<li>打开状态页，且这个账户上次读取超过 10 分钟，不管当时回了什么（先应答，再在后台读）。被拒的读取（401、5xx、解析不了的响应体）也算：否则拒绝这个密钥的端点每次打开都会被再问一遍；</li>
-<li>用户要求刷新；</li>
-<li>回复因 402、429 或额度消息失败（每个账户每 10 分钟最多一次）；</li>
-<li>刚添加了密钥。</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">读取端点的时机</th><th scope="col">条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开状态页</th><td>这个账户上次读取超过 10 分钟，不管当时回了什么；先应答，再在后台读</td></tr>
+<tr><th scope="row">用户要求刷新</th><td>&mdash;</td></tr>
+<tr><th scope="row">回复失败</th><td>因 402、429 或额度消息失败；每个账户每 10 分钟最多一次</td></tr>
+<tr><th scope="row">刚添加了密钥</th><td>&mdash;</td></tr>
+</tbody>
+</table>
+<p class="note">被拒的读取（401、5xx、解析不了的响应体）也算一次读取：否则拒绝这个密钥的端点每次打开都会被再问一遍。</p>
 <p>每个账户同时只有一个读取；额度端点返回 429 时，该账户按 Retry-After 暂停，没有就暂停 5 分钟。读取用已配置的安全 HTTP 客户端，固定在端点的源上，以探测类型 <code translate="no">quota</code> 记录。</p>
 <p>每次读取按供应商和账户记在 <code translate="no">usage.db</code>（<code translate="no">quota_reads</code>），Worker 和每次 CLI 运行都按这条记录判断：</p>
 <ul>
@@ -73,17 +76,35 @@
 <h2 id="spend">花费</h2>
 <p>来自用量账本，每个供应商 30 天：调用数、费用、标价、各部分 token、缓存占比（缓存读取除以提示 token）以及 30 个点的每日序列。订阅供应商的花费显示为 Included，旁边保留标价。默认模型是最后用过的，否则是用得最多的。</p>
 <p>DeepSeek 的回复曾显示缓存 token 多于总 token。原因：记录器的兜底路径写了 <code translate="no">total_tokens = input + output</code>，漏掉了缓存 token。现在记录器取上报总数和各部分之和中较大的一个，所有汇总都按各部分相加，修复前写入的行也读得正确。</p>
-<p><code translate="no">usage.db</code> 新增 <code translate="no">quota_snapshots</code>（每个供应商、账户、限制的最新值）、<code translate="no">quota_samples</code>（每 15 分钟一个样本，保留 90 天）和 <code translate="no">quota_reads</code>（每个供应商、账户最近一次端点读取）。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">usage.db</code> 中的表</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">quota_snapshots</code></th><td>每个供应商、账户、限制的最新值</td></tr>
+<tr><th scope="row"><code translate="no">quota_samples</code></th><td>每 15 分钟一个样本，保留 90 天</td></tr>
+<tr><th scope="row"><code translate="no">quota_reads</code></th><td>每个供应商、账户最近一次端点读取</td></tr>
+</tbody>
+</table>
 
 <h2 id="health">健康和失败原因</h2>
 <p>关于一个密钥有两份记录：调用失败时写下的凭据状态（<code translate="no">status_at</code>，即凭据的 <code translate="no">updated_at</code>），和它额度端点的最近一次读取（<code translate="no">read_at</code>）。较新的那份说了算；时间相同时，401 优先于已存的欠费停用或限流。</p>
-<ul>
-<li>比状态新的 401 读取：<code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。密钥（不是登录）的这个状态也写到它那一行，服务商的列表和卡片说法一致。</li>
-<li>只有已验证的端点才写到那一行，<code translate="no">CreditsError</code> 响应体不算。</li>
-<li>在 <code translate="no">quota</code> 停用之后成功的读取推翻这个停用，由这次读取的余额决定。</li>
-<li>refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）的登录是 <code translate="no">needs_login</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮。已存的登录和委托给 Codex CLI 文件的登录都一样；委托的那个在文件换成另一个登录之前不再请求。</li>
-</ul>
-<p>健康取最好那个密钥的状态，被用尽的限制覆盖：<code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code> 或 <code translate="no">unknown</code>。没有密钥的供应商是 <code translate="no">not_configured</code>；不应答的本地服务是 <code translate="no">not_running</code>。每个需要处理的状态都带着它的修复动作，见<a href="provider-management.zh.html">供应商管理</a>。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">读作</th></tr></thead>
+<tbody>
+<tr><th scope="row">比状态新的 401 读取</th><td><code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。密钥（不是登录）的这个状态也写到它那一行，服务商的列表和卡片说法一致</td></tr>
+<tr><th scope="row">写到那一行</th><td>只有已验证的端点，<code translate="no">CreditsError</code> 响应体不算</td></tr>
+<tr><th scope="row">在 <code translate="no">quota</code> 停用之后成功的读取</th><td>推翻这个停用，由这次读取的余额决定</td></tr>
+<tr><th scope="row">refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）</th><td><code translate="no">needs_login</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮；已存的登录和委托给 Codex CLI 文件的登录都一样。委托的那个在文件换成另一个登录之前不再请求</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">健康</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">最好那个密钥的状态，被用尽的限制覆盖</th><td><code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code>、<code translate="no">unknown</code></td></tr>
+<tr><th scope="row">没有密钥的供应商</th><td><code translate="no">not_configured</code></td></tr>
+<tr><th scope="row">不应答的本地服务</th><td><code translate="no">not_running</code></td></tr>
+</tbody>
+</table>
+<p class="note">每个需要处理的状态都带着它的修复动作，见<a href="provider-management.zh.html">供应商管理</a>。</p>
 <p>限流只持续到冷却结束。密钥在下次成功前保留 <code translate="no">cooling</code> 状态，但冷却一过就会再被选中，所以健康把这样的密钥读成 <code translate="no">ready</code>，不会显示“限流到一个已经过去的时间”。</p>
 <p>CLI 表格只打印将来的时间（<code translate="no">until 14:05</code>、<code translate="no">resets Nov 19 02:22</code>），已经过去的时间不打印。表格适应终端宽度：进度条先减少格数，最少 5 格，再把重置时间移到下一行。输出到管道且没有 <code translate="no">COLUMNS</code> 时不折行。</p>
 <p>失败的回复在错误原因旁带一个 cause，从供应商错误一路传到轮次结果、事件（<code translate="no">cause</code>）和保存的占位消息（<code translate="no">error_cause</code>）：</p>

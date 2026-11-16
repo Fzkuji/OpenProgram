@@ -45,15 +45,17 @@
 <tr><th scope="row">点击空白日期或时间</th><td>在那时新建一次性任务</td></tr>
 </tbody></table>
 <h2 id="limits">限制</h2>
-<ul>
-<li>提醒运行在本机 worker 里。它没运行时，一次性提醒在重启后立即触发。用 <code translate="no">openprogram worker install</code> 保持运行。</li>
-<li>重复任务错过的时间在 12 小时内，worker 重启后补跑一次；更早的显示为一次错过的运行。那个时间之后才开启或改过的任务不会补跑。</li>
-<li>会话已归档，或上一次运行还没结束（worker 重启后也算）时，任务的 Agent 运行会跳过，Activity 里能看到。已归档会话里的唤醒提醒只发通知。</li>
-<li>已触发过的一次性任务改了时间，会在新时间再触发一次。</li>
-<li>专注模式和勿扰把系统通知留在通知中心。App 的 <strong>Notifications</strong> 设置也会关掉它自己的通知。</li>
-<li>只有所有者或替所有者工作的 Agent 能设置提醒，定时或后台轮次和聊天一样。</li>
-<li>定时运行的 Agent 或命令超过 2 小时会被停止，重启前的时间也算在内，并显示为一次失败的运行。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">worker 没运行</th><td>提醒运行在本机 worker 里。它没运行时，一次性提醒在重启后立即触发。用 <code translate="no">openprogram worker install</code> 保持运行。</td></tr>
+<tr><th scope="row">重复任务错过时间</th><td>12 小时内：worker 重启后补跑一次。更早：显示为一次错过的运行。那个时间之后才开启或改过的任务不会补跑。</td></tr>
+<tr><th scope="row">已归档或仍在运行</th><td>会话已归档，或上一次运行还没结束（worker 重启后也算）时，任务的 Agent 运行会跳过，Activity 里能看到。已归档会话里的唤醒提醒只发通知。</td></tr>
+<tr><th scope="row">一次性任务触发后改时间</th><td>在新时间再触发一次。</td></tr>
+<tr><th scope="row">专注模式、勿扰</th><td>把系统通知留在通知中心。App 的 <strong>Notifications</strong> 设置也会关掉它自己的通知。</td></tr>
+<tr><th scope="row">谁能设置</th><td>只有所有者或替所有者工作的 Agent，定时或后台轮次和聊天一样。</td></tr>
+<tr><th scope="row">时间上限</th><td>定时运行的 Agent 或命令超过 2 小时会被停止，重启前的时间也算在内，并显示为一次失败的运行。</td></tr>
+</tbody></table>
 <h2 id="run-your-own-command">运行你自己的命令</h2>
 <p>每次触发是一个 <code translate="no">reminder.fired</code> 事件。<code translate="no">config.json</code> 的 <code translate="no">hooks</code> 条目通过标准输入收到 JSON；hooks 在 worker 启动时读取。</p>
 <pre translate="no" tabindex="0"><code>{"hooks": {"reminder.fired": [{"command": "python ~/bin/on_reminder.py", "timeout": 30}]}}</code></pre>

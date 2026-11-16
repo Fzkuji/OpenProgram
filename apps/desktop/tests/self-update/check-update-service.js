@@ -36,7 +36,7 @@ const release = {
   prerelease: false,
   published_at: "2026-08-15T00:00:00Z",
   body: "Release notes",
-  html_url: "https://github.com/FuzzyKuji/OpenProgram/releases/tag/v0.6.7",
+  html_url: "https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.7",
   assets: [
     { name: "release-manifest.json", size: 100 },
     { name: "OpenProgram-0.6.7-mac-arm64-unsigned.dmg", size: 123 },
@@ -102,7 +102,7 @@ assert.equal(available.status, "available");
 assert.equal(available.latestVersion, "0.6.7");
 assert.equal(available.asset.bytes, 123);
 assert.equal(available.asset.sha256, "a".repeat(64));
-assert.match(available.asset.url, /github\.com\/FuzzyKuji\/OpenProgram\/releases\/download\/v0\.6\.7/);
+assert.match(available.asset.url, /github\.com\/Fzkuji\/OpenProgram\/releases\/download\/v0\.6\.7/);
 
 assert.equal(
   resolveDesktopRelease(release, manifest, "0.6.7", "arm64").status,
@@ -131,8 +131,8 @@ assert.throws(
 );
 
 for (const url of [
-  "https://api.github.com/repos/FuzzyKuji/OpenProgram/releases/latest",
-  "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/release-manifest.json",
+  "https://api.github.com/repos/Fzkuji/OpenProgram/releases/latest",
+  "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/release-manifest.json",
   "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
 ]) validateUpdateUrl(url);
 assert.throws(() => validateUpdateUrl("http://github.com/file"), /HTTPS/);
@@ -330,7 +330,7 @@ async function checkNetworkBoundaries() {
   };
   const response = await requestWithRedirects(
     allowedFetch,
-    "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/file",
+    "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
   );
   assert.equal(await response.text(), "ok");
   assert.equal(allowedCalls.length, 2);
@@ -357,7 +357,7 @@ async function checkNetworkBoundaries() {
         }
         return new Response("ok", { status: 200 });
       },
-      "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.7.1/release-manifest.json",
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.7.1/release-manifest.json",
     );
     assert.equal(await hop.text(), "ok");
     const manual = await desktopUpdateFetch(`http://127.0.0.1:${address.port}/start`, {
@@ -376,21 +376,21 @@ async function checkNetworkBoundaries() {
   await assert.rejects(
     requestWithRedirects(
       async () => new Response(null, { status: 302, headers: { location: "https://example.com/file" } }),
-      "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/file",
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
     ),
     /host/,
   );
   await assert.rejects(
     requestWithRedirects(
       async () => new Response(null, { status: 302, headers: { location: "http://github.com/file" } }),
-      "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/file",
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
     ),
     /HTTPS/,
   );
   await assert.rejects(
     requestWithRedirects(
       async () => new Response(null, { status: 302, headers: { location: "/next" } }),
-      "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/file",
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
     ),
     /limit/,
   );
@@ -401,7 +401,7 @@ async function checkNetworkBoundaries() {
         options.signal.addEventListener("abort", () => { httpErrorAborted = true; });
         return new Response("error", { status: 500 });
       },
-      "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/file",
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
     ),
     /HTTP 500/,
   );
@@ -466,7 +466,7 @@ async function checkNetworkBoundaries() {
     const bytes = Buffer.from("verified update");
     const target = path.join(root, "update.dmg");
     const asset = {
-      url: "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/update.dmg",
+      url: "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/update.dmg",
       bytes: bytes.length,
       sha256: require("node:crypto").createHash("sha256").update(bytes).digest("hex"),
     };
@@ -658,7 +658,7 @@ function releaseWith(version, names) {
       prerelease: false,
       published_at: "2026-11-09T00:00:00Z",
       body: "Notes from the API",
-      html_url: `https://github.com/FuzzyKuji/OpenProgram/releases/tag/v${version}`,
+      html_url: `https://github.com/Fzkuji/OpenProgram/releases/tag/v${version}`,
       assets: [{ name: "release-manifest.json", size: 10 }, ...names.map((name) => ({ name, size: 7 }))],
     },
     manifest: {
@@ -759,10 +759,10 @@ async function checkPlatformsAndFallbacks() {
       const statePath = path.join(directory, `cached-${name}.json`);
       const cached = {
         status: "available", currentVersion: "1.0.0", latestVersion: "1.1.0", publishedAt: "", releaseName: "x",
-        releaseNotes: "", releaseUrl: "https://github.com/FuzzyKuji/OpenProgram/releases/tag/v1.1.0", artifactKind: kind,
+        releaseNotes: "", releaseUrl: "https://github.com/Fzkuji/OpenProgram/releases/tag/v1.1.0", artifactKind: kind,
         asset: {
           name, bytes: 7, sha256: "c".repeat(64),
-          url: `https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.1.0/${name}`,
+          url: `https://github.com/Fzkuji/OpenProgram/releases/download/v1.1.0/${name}`,
         },
       };
       saveStateFileAtomic(statePath, { schema: 1, automaticChecks: true, lastAttemptAt: 1, lastSuccessAt: 1, release: cached });
@@ -857,7 +857,7 @@ async function checkUpdateSource(directory, files) {
       calls.push(requestUrl);
       if (requestUrl.endsWith("/update-source.json")) return new Response(body);
       if (requestUrl.endsWith("/update-source.json.sig")) return new Response(signature);
-      if (requestUrl.includes("FuzzyKuji/OpenProgram")) return new Response("gone", { status: 404 });
+      if (requestUrl.includes("Fzkuji/OpenProgram")) return new Response("gone", { status: 404 });
       if (requestUrl === `${movedPage}/latest`) {
         return new Response(null, { status: 302, headers: { location: `${movedPage}/tag/v1.1.0` } });
       }
@@ -950,7 +950,7 @@ async function checkResume(directory) {
   const crypto = require("node:crypto");
   const bytes = Buffer.from("0123456789abcdefghij");
   const asset = {
-    url: "https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.1.0/app.dmg",
+    url: "https://github.com/Fzkuji/OpenProgram/releases/download/v1.1.0/app.dmg",
     bytes: bytes.length,
     sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
   };

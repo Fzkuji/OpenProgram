@@ -217,12 +217,14 @@ openprogram channels accounts set telegram group_sessions per-user  # 或 shared
 </ul>
 </details>
 <p>一个对话同一时间只跑一轮，App 的轮次也算。另一轮在运行或等待回答时：</p>
-<ul>
-<li>聊天消息最多等 30 秒，之后机器人回复正忙，稍后再发一次即可。</li>
-<li><code translate="no">ambient</code> 模式下没提及机器人的群消息不回复，并入这个群的下一轮。</li>
-<li>App 里发消息会被拒绝，和其他轮次运行时一样。</li>
-<li><code translate="no">/new</code> 和 <code translate="no">/reset</code> 遇到聊天软件发起的轮次时最多等 30 秒，之后机器人回复正忙。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">到来的内容</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">聊天消息</th><td>最多等 30 秒，之后机器人回复正忙，稍后再发一次即可。</td></tr>
+<tr><th scope="row"><code translate="no">ambient</code> 模式下没提及机器人的群消息</th><td>不回复，并入这个群的下一轮。</td></tr>
+<tr><th scope="row">App 里发消息</th><td>被拒绝，和其他轮次运行时一样。</td></tr>
+<tr><th scope="row"><code translate="no">/new</code>、<code translate="no">/reset</code></th><td>遇到聊天软件发起的轮次时最多等 30 秒，之后机器人回复正忙。</td></tr>
+</tbody></table>
 <p>同一个聊天的消息按到达顺序开启轮次，前一条的附件下载慢也一样。命令不排队。</p>
 <h2 id="attachments">附件</h2>
 <table class="stack fixed">

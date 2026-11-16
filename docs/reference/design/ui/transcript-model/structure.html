@@ -36,26 +36,32 @@
 <p><code translate="no">{ id, rows }</code>. <code translate="no">id</code> is the opener row's id. A compaction row placed before the first opener joins that turn but never becomes its id, so the id is stable.</p>
 <h3>Row</h3>
 <p>The existing <code translate="no">ChatMsg</code>, same camelCase fields, built on the server. Additions:</p>
-<ul>
-<li><code translate="no">rowKind</code>: <code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>. One value per branch of <code translate="no">dispatch()</code>, which has no default. <code translate="no">silent</code> covers <code translate="no">display=runtime</code> prompts and internal goal turns.</li>
-<li><code translate="no">kind</code> and <code translate="no">slot</code> keep their existing meaning and are not additions: <code translate="no">kind</code> is <code translate="no">compaction | snip | event</code>, <code translate="no">slot</code> is <code translate="no">card | event</code>. A <code translate="no">system_event</code> row carries its sub-kind there; a finished compaction produces none. A <code translate="no">compaction_card</code> row is always <code translate="no">kind: compaction</code>, <code translate="no">slot: card</code>. Only <code translate="no">SystemEventRow</code> reads them; covering reads <code translate="no">coveredBy</code>.</li>
-<li><code translate="no">status</code>: <code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>, from one mapping in <code translate="no">status.py</code>.</li>
-<li><code translate="no">steeringReplyId</code>, <code translate="no">continuedBy</code>: stamped by the server, because the bot view still draws those rows.</li>
-<li><code translate="no">continues</code>: ids of the cut replies a continuation joins, oldest first.</li>
-<li><code translate="no">attachCards</code>, <code translate="no">runtimeChildren</code>, <code translate="no">callRoots</code>: names unchanged. Each child gains <code translate="no">blockId</code>, the resolved owning block, or null when unpaired. An unpaired child is drawn, never lost.</li>
-<li><code translate="no">coveredBy</code>: compaction id.</li>
-<li><code translate="no">origin</code> on user rows: <code translate="no">person | agent_delivery</code>.</li>
-<li><code translate="no">clientRequestId</code>: <code translate="no">metadata.client_request_id</code>, or <code translate="no">metadata.command_id</code> on a steer row.</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rowKind</code></th><td><code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>. One value per branch of <code translate="no">dispatch()</code>, which has no default. <code translate="no">silent</code> covers <code translate="no">display=runtime</code> prompts and internal goal turns.</td></tr>
+<tr><th scope="row"><code translate="no">kind</code>, <code translate="no">slot</code></th><td>Not additions; they keep their existing meaning: <code translate="no">kind</code> is <code translate="no">compaction | snip | event</code>, <code translate="no">slot</code> is <code translate="no">card | event</code>. A <code translate="no">system_event</code> row carries its sub-kind there; a finished compaction produces none. A <code translate="no">compaction_card</code> row is always <code translate="no">kind: compaction</code>, <code translate="no">slot: card</code>. Only <code translate="no">SystemEventRow</code> reads them; covering reads <code translate="no">coveredBy</code>.</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td><code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>, from one mapping in <code translate="no">status.py</code>.</td></tr>
+<tr><th scope="row"><code translate="no">steeringReplyId</code>, <code translate="no">continuedBy</code></th><td>Stamped by the server, because the bot view still draws those rows.</td></tr>
+<tr><th scope="row"><code translate="no">continues</code></th><td>Ids of the cut replies a continuation joins, oldest first.</td></tr>
+<tr><th scope="row"><code translate="no">attachCards</code>, <code translate="no">runtimeChildren</code>, <code translate="no">callRoots</code></th><td>Names unchanged. Each child gains <code translate="no">blockId</code>, the resolved owning block, or null when unpaired. An unpaired child is drawn, never lost.</td></tr>
+<tr><th scope="row"><code translate="no">coveredBy</code></th><td>Compaction id.</td></tr>
+<tr><th scope="row"><code translate="no">origin</code></th><td>On user rows: <code translate="no">person | agent_delivery</code>.</td></tr>
+<tr><th scope="row"><code translate="no">clientRequestId</code></th><td><code translate="no">metadata.client_request_id</code>, or <code translate="no">metadata.command_id</code> on a steer row.</td></tr>
+</tbody>
+</table>
 <h3>Block</h3>
 <p>As stored, plus <code translate="no">id</code> and <code translate="no">index</code>.</p>
-<ul>
-<li>Tool block: <code translate="no">id = tool_call_id</code>; a legacy tool block with no id uses <code translate="no">tool:N</code>.</li>
-<li>Text and thinking: <code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>, where <code translate="no">n</code> counts runs of that type, a run being consecutive stored blocks of one type. The first block of a run keeps <code translate="no">&lt;type&gt;:&lt;n&gt;</code>. A later block in the same run is <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>. The stream tap merges consecutive deltas into one block, so its block and the first block of the final segmentation share an id, and an open step keeps its place when the final write re-segments.</li>
-<li><code translate="no">index</code> is the stored position in <code translate="no">blocks</code>. Blocks are always held sorted by <code translate="no">index</code>, so block order never depends on arrival order.</li>
-<li><code translate="no">fullOutput</code> names the real row: <code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>.</li>
-<li><code translate="no">task</code> and <code translate="no">step</code> on a text, thinking or tool block name the task and step it belongs to, from its position in the reply; absent when it belongs to none (<a href="../chat/task-blocks.html">Task blocks</a>).</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool block id</th><td><code translate="no">id = tool_call_id</code>; a legacy tool block with no id uses <code translate="no">tool:N</code>.</td></tr>
+<tr><th scope="row">Text and thinking id</th><td><code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>, where <code translate="no">n</code> counts runs of that type, a run being consecutive stored blocks of one type. The first block of a run keeps <code translate="no">&lt;type&gt;:&lt;n&gt;</code>. A later block in the same run is <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>. The stream tap merges consecutive deltas into one block, so its block and the first block of the final segmentation share an id, and an open step keeps its place when the final write re-segments.</td></tr>
+<tr><th scope="row"><code translate="no">index</code></th><td>Stored position in <code translate="no">blocks</code>. Blocks are always held sorted by <code translate="no">index</code>, so block order never depends on arrival order.</td></tr>
+<tr><th scope="row"><code translate="no">fullOutput</code></th><td>Names the real row: <code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>.</td></tr>
+<tr><th scope="row"><code translate="no">task</code>, <code translate="no">step</code></th><td>On a text, thinking or tool block: names the task and step it belongs to, from its position in the reply; absent when it belongs to none (<a href="../chat/task-blocks.html">Task blocks</a>).</td></tr>
+</tbody>
+</table>
 <h3>Local rows and overlays (browser only)</h3>
 <p><strong>Local rows</strong> are rows with no server copy: pending send, failed send, optimistic function placeholder, <code translate="no">local_command</code> and no-op notices, compaction notices. They belong to no Turn and carry an anchor:</p>
 <ul>

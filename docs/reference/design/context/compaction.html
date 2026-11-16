@@ -94,27 +94,41 @@
 <p class="note">The DAG capsule folds by the same rule over the same <code translate="no">covers_ids</code>.</p>
 
 <h2 id="pipeline">Pipeline</h2>
-<p><code translate="no">/compact</code> (<code translate="no">trigger_compaction</code>), auto-compact (budget at <code translate="no">context.auto_compact_percent</code>, default 80%, before a turn and between a turn's steps) and overflow recovery all run <code translate="no">engine.compact</code> on a chain the caller names by its tip: <code translate="no">/compact</code> the session head as it reads it, the others the turn's own branch. All but <code translate="no">/compact</code> pass the turn's stop signal.</p>
-<ol>
-<li><strong>Freeze the rendered input</strong> of that chain. <code translate="no">compaction.view.load_compaction_view</code> uses <code translate="no">render_context</code> and <code translate="no">render_dag_messages</code>, with tool results, expose and spill references. Top-level turns define coverage; visible child calls count toward input and budgets.</li>
-<li><strong>Select whole turns.</strong> Retain 10% of the window, bounded to 8,000–40,000 tokens (an explicit override wins). Prefer at least four conversational messages at a user boundary; a posted report is a boundary too. Below target: no-op. If the last two turns exceed the target, the cut can advance to the latest user boundary. That latest turn stays intact unless only reports follow it.</li>
-<li><strong>Summarize the whole covered prefix</strong> with the summary prompt (<a href="#summary-prompt">Summary prompt and role</a>): every replaced turn, the initial request, the chain's previous summary, rendered child calls. Non-text media becomes a reference notice.</li>
-<li><strong>Validate before writing.</strong> Reject empty, failed, cancelled, incomplete, capped or non-reducing summaries; a candidate, rendered in memory the same way, must be strictly smaller. After the model call, recheck the chain's rendered nodes; a change is a retryable no-op, other branches and a head moved elsewhere do not count. Provider failure keeps the history, with no lossy structural fallback.</li>
-<li><strong>Persist and report.</strong> One write, with the restored state; <code translate="no">covers_ids</code> expands any previous summary to real turn ids. The before figure is the context panel's reading of the chain; the after figure is that reading less what the candidate saves. No-ops write nothing and do not count.</li>
-</ol>
+<p>Three callers run <code translate="no">engine.compact</code> on a chain they name by its tip:</p>
+<table class="stack even">
+<thead><tr><th scope="col">Caller</th><th scope="col">Chain</th><th scope="col">Stop signal</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/compact</code> (<code translate="no">trigger_compaction</code>)</th><td>The session head as it reads it</td><td>Not passed</td></tr>
+<tr><th scope="row">Auto-compact (budget at <code translate="no">context.auto_compact_percent</code>, default 80%, before a turn and between a turn's steps)</th><td>The turn's own branch</td><td>The turn's</td></tr>
+<tr><th scope="row">Overflow recovery</th><td>The turn's own branch</td><td>The turn's</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Freeze the chain's rendered input</th><td><code translate="no">compaction.view.load_compaction_view</code> uses <code translate="no">render_context</code> and <code translate="no">render_dag_messages</code>, with tool results, expose and spill references. Top-level turns define coverage; visible child calls count toward input and budgets</td></tr>
+<tr><th scope="row">2. Select whole turns</th><td>Retain 10% of the window, bounded to 8,000–40,000 tokens (an explicit override wins). Prefer at least four conversational messages at a user boundary; a posted report is a boundary too. Below target: no-op. If the last two turns exceed the target, the cut can advance to the latest user boundary. That latest turn stays intact unless only reports follow it</td></tr>
+<tr><th scope="row">3. Summarize the whole covered prefix</th><td>With the summary prompt (<a href="#summary-prompt">Summary prompt and role</a>): every replaced turn, the initial request, the chain's previous summary, rendered child calls. Non-text media becomes a reference notice</td></tr>
+<tr><th scope="row">4. Validate before writing</th><td>Reject empty, failed, cancelled, incomplete, capped or non-reducing summaries; a candidate, rendered in memory the same way, must be strictly smaller. After the model call, recheck the chain's rendered nodes; a change is a retryable no-op, other branches and a head moved elsewhere do not count. Provider failure keeps the history, with no lossy structural fallback</td></tr>
+<tr><th scope="row">5. Persist and report</th><td>One write, with the restored state; <code translate="no">covers_ids</code> expands any previous summary to real turn ids. Before: the context panel's reading of the chain; after: that reading less what the candidate saves. No-ops write nothing and do not count</td></tr>
+</tbody>
+</table>
 <p class="note">The context display uses provider input usage. Each request also records a local estimate of the same messages, so a later graph edit scales its estimate by the measured ratio, labelled as an estimate until the next report. Legacy usage with no matched estimate does not calibrate.</p>
 <p><code translate="no">/compact</code> is the branch's foreground operation (<code translate="no">op_kind: compact</code>, an <code translate="no">op_id</code> on <code translate="no">compaction_started</code>). The page's Stop and the terminal's Ctrl-C both send <code translate="no">operation.cancel</code> with that id; the summary request ends with nothing written and the row reads "stopped". An automatic compaction that fails says nothing; the next request tries again.</p>
 <p class="note">Why: Claude Code, Codex and Kimi Code all cancel a manual compaction with the key that stops a turn; follows Claude Code, whose terminal is also Ink.</p>
 
 <details id="repeated-failures">
 <summary>Automatic compaction that keeps failing</summary>
-<p>Each failed try still pays for the whole conversation. After <code translate="no">FAILS_MOST</code> (3) failures in a row of one branch on one model, each within <code translate="no">HELD_FOR_S</code> (5 minutes) of the last, automatic compaction on that branch waits five minutes from the last failure, then tries once (<code translate="no">runtime/context/compaction/hold.py</code>, keyed by conversation, model and branch, consulted by <code translate="no">DefaultContextEngine.compact</code>). Another branch keeps compacting.</p>
-<ul>
-<li>Failures: summarizer error (a 429, for example), a summary missing sections after the reminder, one that reaches its output cap, empty with an error, no reduction.</li>
-<li>Not failures: cancellation, changed source.</li>
-<li>A summary that installs clears the count. <code translate="no">/compact</code> always goes.</li>
-<li>Follows magpie's compaction guard (yetone/magpie, MIT).</li>
-</ul>
+<p>Each failed try still pays for the whole conversation. After <code translate="no">FAILS_MOST</code> (3) failures in a row of one branch on one model, each within <code translate="no">HELD_FOR_S</code> (5 minutes) of the last, automatic compaction on that branch waits five minutes from the last failure, then tries once (<code translate="no">runtime/context/compaction/hold.py</code>, keyed by conversation, model and branch, consulted by <code translate="no">DefaultContextEngine.compact</code>).</p>
+<p>Another branch keeps compacting. Follows magpie's compaction guard (yetone/magpie, MIT).</p>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">Cases</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failures</th><td>Summarizer error (a 429, for example), a summary missing sections after the reminder, one that reaches its output cap, empty with an error, no reduction</td></tr>
+<tr><th scope="row">Not failures</th><td>Cancellation, changed source</td></tr>
+<tr><th scope="row">Clears the count</th><td>A summary that installs. <code translate="no">/compact</code> always goes</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="overflow-recovery">Overflow recovery</h2>
@@ -237,13 +251,16 @@
 <details id="tuning">
 <summary>Choosing the share from the user's own calls</summary>
 <p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → System → Models → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
-<ul>
-<li>Calls replay in order, each prompt growing as it really grew, with recorded compactions (a drop to under 60% of a prompt of at least 20K) removed.</li>
-<li>Past the threshold (the share of the window less the reply reserve), a compaction reads the whole prompt and writes a summary as long as those seen (or 10K over the start when none were). The next call writes it to cache; later ones read back what recorded compactions were followed by (at least 10K until five were seen).</li>
-<li>Tokens are weighed against plain input with catalog prices or the vendor's usual ratios.</li>
-<li>Shares leaving less than half a summary, or twenty calls' growth, of room are not tried. Of those within 1% of the cheapest, the largest is advised, only if it saves at least 3% over the current one. Fewer than 50 calls: no advice.</li>
-<li>The same endpoint advises <code translate="no">models.prompt_cache_ttl</code> (<code translate="no">5m</code> or <code translate="no">1h</code>) for Anthropic API and Bedrock calls: hour-long writes cost twice input, and a call after expiry writes its whole prompt again. The setting lengthens only a plain cache (<code translate="no">with_lifetime_setting</code> in <code translate="no">providers/settings/cache_spec.py</code>).</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Replay</th><td>Calls replay in order, each prompt growing as it really grew, with recorded compactions (a drop to under 60% of a prompt of at least 20K) removed</td></tr>
+<tr><th scope="row">Past the threshold</th><td>The threshold is the share of the window less the reply reserve. A compaction reads the whole prompt and writes a summary as long as those seen (or 10K over the start when none were). The next call writes it to cache; later ones read back what recorded compactions were followed by (at least 10K until five were seen)</td></tr>
+<tr><th scope="row">Prices</th><td>Tokens are weighed against plain input with catalog prices or the vendor's usual ratios</td></tr>
+<tr><th scope="row">Advice</th><td>Shares leaving less than half a summary, or twenty calls' growth, of room are not tried. Of those within 1% of the cheapest, the largest is advised, only if it saves at least 3% over the current one. Fewer than 50 calls: no advice</td></tr>
+<tr><th scope="row">Cache lifetime</th><td>The same endpoint advises <code translate="no">models.prompt_cache_ttl</code> (<code translate="no">5m</code> or <code translate="no">1h</code>) for Anthropic API and Bedrock calls: hour-long writes cost twice input, and a call after expiry writes its whole prompt again. The setting lengthens only a plain cache (<code translate="no">with_lifetime_setting</code> in <code translate="no">providers/settings/cache_spec.py</code>)</td></tr>
+</tbody>
+</table>
 </details>
 
 <details id="extension-points">

@@ -261,7 +261,7 @@ def test_the_archive_is_asked_from_the_installed_versions_release_then_the_newes
     from openprogram.programs.applications.office_editor.install import (
         OFFICE_ARCHIVE_NAME, OFFICE_RELEASES, office_download_urls)
     latest = f"{OFFICE_RELEASES}/latest/download/{OFFICE_ARCHIVE_NAME}"
-    assert OFFICE_RELEASES == "https://github.com/FuzzyKuji/OpenProgram/releases"
+    assert OFFICE_RELEASES == "https://github.com/Fzkuji/OpenProgram/releases"
     assert office_download_urls("1.3.0") == [f"{OFFICE_RELEASES}/download/v1.3.0/{OFFICE_ARCHIVE_NAME}", latest]
     # A build without a release of its own, or a bare checkout, asks only the newest release.
     assert office_download_urls("1.3.0.dev1") == [latest]

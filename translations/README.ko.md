@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **에이전트는 Python 클래스입니다.** 제어 흐름, 검사, 재시도는 일반 코드이고 `self(...)`가 모델 호출입니다.
-- **셀프 프로그래밍.** 에이전트가 자기 클래스에 새 메서드를 작성하면 다음 턴부터 도구로 쓸 수 있습니다.
-- **그래프 컨텍스트.** 모든 호출은 하나의 DAG 안의 노드입니다. 하위 에이전트는 자기 브랜치에서 실행되고 결과만 돌려줍니다.
-- **하나의 작업 공간.** 채팅, 파일, 터미널, 에이전트가 조작하는 내장 브라우저를 나란히 씁니다.
-- **어떤 모델이든.** Anthropic, OpenAI, Gemini, 로컬 서버를 지원하며 제공자마다 여러 계정을 쓸 수 있습니다.
+## 소식
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 프로바이더마다 여러 키와 로그인을 두고 한도에 닿으면 자동으로 다음 것으로 전환합니다. 답변은 작업 블록으로 묶이고, 예약 작업에 실행 기록이 생겼습니다. 이 버전부터 릴리스는 이 저장소에서 배포합니다.
+- **2026-11-15 · v1.3.0** — 상태, 할당량, 지출을 보여 주는 프로바이더 페이지, 대화에서 일하는 에이전트 목록, 에이전트가 만든 파일 자동 열기.
+- **2026-11-14 · v1.2.0** — 한 대화의 브랜치를 나란히 실행하고, 중지가 즉시 적용되며, Windows App이 나왔습니다.
+- **2026-11-10 · v1.1.0** — 보낸 메시지 어디서든 되감기. App이 Linux를 지원합니다.
+- **2026-11-06 · v1.0.0** — 1.x의 첫 릴리스: 분할 보기 데스크톱 App, 백그라운드 컴퓨터 사용, 회의, 상시 스케줄러.
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows(v1.2.0부터): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. macOS 데스크톱 App은 DMG로 [릴리스 페이지](https://github.com/FuzzyKuji/OpenProgram/releases)에서 받을 수 있습니다. Linux App은 같은 페이지에 deb와 AppImage로 있고, Windows App은 v1.2.0부터 제공됩니다. 웹사이트에 연결되지 않으면: `curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`. 다른 방법은 [설치 안내](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)(영어)를 보세요.
+Windows(v1.2.0부터): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. macOS 데스크톱 App은 DMG로 [릴리스 페이지](https://github.com/Fzkuji/OpenProgram/releases)에서 받을 수 있습니다. Linux App은 같은 페이지에 deb와 AppImage로 있고, Windows App은 v1.2.0부터 제공됩니다. 웹사이트에 연결되지 않으면: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. 다른 방법은 [설치 안내](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)(영어)를 보세요.
 
 ## 빠른 시작
 

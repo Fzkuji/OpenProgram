@@ -250,19 +250,22 @@ writer=controller</pre>
 <tr><th scope="row">Windows</th><td>没有系统沙箱：隔离只有临时数据、单独端口和净化副本。试运行期间的进度行和结果都说明这次测试可以碰到电脑上的其他文件。<code translate="no">PATH</code> 是 base 的 Python 加 Windows 系统目录。“launcher 跟随移动后的指针”这项检查跳过。</td></tr>
 </tbody>
 </table>
-<ol>
-<li>基线：旧版本在副本上记录 doctor 行。</li>
-<li>冷启动 120 秒内到 <code translate="no">/healthz</code>，<code translate="no">boot/&lt;id&gt;.migrating</code> 推进时最多延长到 30 分钟。</li>
-<li><code translate="no">system_probe</code>：候选身份、<code translate="no">/healthz</code>、<code translate="no">/chat</code>、WebSocket ping、按回归规则的 doctor 行。</li>
-<li>Playwright 浏览器探测。</li>
-<li>对 <code translate="no">trial/fake_model.py</code> 跑完整一轮：一次工具调用，然后最终回答。</li>
-<li>计划点名的测试，用版本的 venv 在 <code translate="no">work/&lt;task&gt;</code> 运行。不用 <code translate="no">pytest-timeout</code>、<code translate="no">pytest-xdist</code>；控制器执行时限。</li>
-<li>桌面主进程冒烟：shell 的 Electron 无头运行候选 <code translate="no">desktop/main.js</code> 到 main-ready 握手。代码抛错算失败。App 在沙盒下打不开窗口时不作判断，交给切换后的重启握手。</li>
-<li>结构守卫：<code translate="no">sqlite_master</code>、<code translate="no">user_version</code>、<code translate="no">min_reader_schema</code> 和行摘要。删表删列、改类型、抬高下限或改写行，没有 <code translate="no">Destructive-Migration: &lt;name&gt;</code> trailer 就失败。会话日志、函数日志、<code translate="no">revisions.jsonl</code>、<code translate="no">run_index.jsonl</code> 只能增长。</li>
-<li>更新器自测：候选的控制器在假版本间切换并回退，签名 launcher 读它写的指针，它的巡检处理合成更新，旧代码再读它写的内容。</li>
-<li>回退演练：旧版本在迁移后的数据上启动，读取迁移过的执行和对话。只在有 trailer 时跳过，此时结果必须说明回退需要备份。</li>
-<li>独立验收：实时 worker 中 source 为 <code translate="no">self_update_verify</code> 的 Job，只读工具，冻结计划，签名回执，15 分钟。只拿到 diff 和计划，没有作者的推理。</li>
-</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">试运行检查（按顺序）</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">1 基线</th><td>旧版本在副本上记录 doctor 行</td></tr>
+<tr><th scope="row">2 冷启动</th><td>120 秒内到 <code translate="no">/healthz</code>，<code translate="no">boot/&lt;id&gt;.migrating</code> 推进时最多延长到 30 分钟</td></tr>
+<tr><th scope="row">3 <code translate="no">system_probe</code></th><td>候选身份、<code translate="no">/healthz</code>、<code translate="no">/chat</code>、WebSocket ping、按回归规则的 doctor 行</td></tr>
+<tr><th scope="row">4 浏览器探测</th><td>用 Playwright</td></tr>
+<tr><th scope="row">5 完整一轮</th><td>对 <code translate="no">trial/fake_model.py</code>：一次工具调用，然后最终回答</td></tr>
+<tr><th scope="row">6 计划点名的测试</th><td>用版本的 venv 在 <code translate="no">work/&lt;task&gt;</code> 运行。不用 <code translate="no">pytest-timeout</code>、<code translate="no">pytest-xdist</code>；控制器执行时限</td></tr>
+<tr><th scope="row">7 桌面主进程冒烟</th><td>shell 的 Electron 无头运行候选 <code translate="no">desktop/main.js</code> 到 main-ready 握手。代码抛错算失败。App 在沙盒下打不开窗口时不作判断，交给切换后的重启握手</td></tr>
+<tr><th scope="row">8 结构守卫</th><td><code translate="no">sqlite_master</code>、<code translate="no">user_version</code>、<code translate="no">min_reader_schema</code> 和行摘要。删表删列、改类型、抬高下限或改写行，没有 <code translate="no">Destructive-Migration: &lt;name&gt;</code> trailer 就失败。会话日志、函数日志、<code translate="no">revisions.jsonl</code>、<code translate="no">run_index.jsonl</code> 只能增长</td></tr>
+<tr><th scope="row">9 更新器自测</th><td>候选的控制器在假版本间切换并回退，签名 launcher 读它写的指针，它的巡检处理合成更新，旧代码再读它写的内容</td></tr>
+<tr><th scope="row">10 回退演练</th><td>旧版本在迁移后的数据上启动，读取迁移过的执行和对话。只在有 trailer 时跳过，此时结果必须说明回退需要备份</td></tr>
+<tr><th scope="row">11 独立验收</th><td>实时 worker 中 source 为 <code translate="no">self_update_verify</code> 的 Job，只读工具，冻结计划，签名回执，15 分钟。只拿到 diff 和计划，没有作者的推理</td></tr>
+</tbody>
+</table>
 <dl class="pairs">
 <dt>回归规则</dt><dd>和旧版本在同一副本上比较。只有原本 OK 后来不 OK 的行才阻止。</dd>
 <dt>清理</dt><dd>通过后删除试运行目录。失败时日志和证据保留 7 天；数据副本立即删除。</dd>

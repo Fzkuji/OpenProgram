@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-1.3.0}"
-OPENPROGRAM_REPOSITORY="${OPENPROGRAM_REPOSITORY:-FuzzyKuji/OpenProgram}"
+OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-1.4.0}"
+OPENPROGRAM_REPOSITORY="${OPENPROGRAM_REPOSITORY:-Fzkuji/OpenProgram}"
 state_root="${OPENPROGRAM_STATE_DIR:-$HOME/.openprogram}"
 runtime_root="$state_root/runtime/cli"
 release_dir="$runtime_root/releases/$OPENPROGRAM_VERSION"

@@ -8,7 +8,7 @@
     $ErrorActionPreference = "Stop"
     Set-StrictMode -Version Latest
 
-    $Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "FuzzyKuji/OpenProgram" }
+    $Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "Fzkuji/OpenProgram" }
     $Version = $env:OPENPROGRAM_VERSION
     if ($Repository -notmatch "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$") {
         throw "invalid OpenProgram repository: $Repository"

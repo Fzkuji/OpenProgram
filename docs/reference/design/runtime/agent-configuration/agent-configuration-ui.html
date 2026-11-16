@@ -170,13 +170,16 @@ classify = _example_agent.classify</pre>
 </dl>
 <details>
 <summary>Write eligibility</summary>
-<ul>
-<li>Every execution node carries a write-eligibility label, space reference and policy epoch. Session-end writers, compaction extraction, source export and scheduled reorganizers filter out off and read-only nodes.</li>
-<li>Disabling writes blocks unsettled queued writes and prevents retroactive ingestion on re-enable. Committed memory stays.</li>
-<li>Derived outputs and summaries carry the most restrictive eligibility of the context included. Splitting or switching Agents cannot relabel restricted data. Off propagates a no-write restriction but does not forbid an independently authorized read later.</li>
-<li>A background write validates the original grant and current space policy at commit; revocation wins over the pin. Never retry with a broader space. External backends that cannot cancel are documented.</li>
-<li>User-authored instructions and uploads stay inputs, even with personal facts; text outside recorded provenance is not claimed classifiable.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Label</th><td>Every execution node carries a write-eligibility label, space reference and policy epoch. Session-end writers, compaction extraction, source export and scheduled reorganizers filter out off and read-only nodes</td></tr>
+<tr><th scope="row">Disabling writes</th><td>Disabling writes blocks unsettled queued writes and prevents retroactive ingestion on re-enable. Committed memory stays</td></tr>
+<tr><th scope="row">Derived outputs</th><td>Derived outputs and summaries carry the most restrictive eligibility of the context included. Splitting or switching Agents cannot relabel restricted data. Off propagates a no-write restriction but does not forbid an independently authorized read later</td></tr>
+<tr><th scope="row">Background write</th><td>A background write validates the original grant and current space policy at commit; revocation wins over the pin. Never retry with a broader space. External backends that cannot cancel are documented</td></tr>
+<tr><th scope="row">User inputs</th><td>User-authored instructions and uploads stay inputs, even with personal facts; text outside recorded provenance is not claimed classifiable</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="context">Context, instructions and environment</h2>
@@ -286,14 +289,17 @@ classify = _example_agent.classify</pre>
 </table>
 <details>
 <summary>Page layout</summary>
-<ul>
-<li>Saved-Agent list and full-width editor. Secondary navigation uses the shared ManagePage split layout and sidebar width token.</li>
-<li>Header: name, ID, conversation actions. Eight tabs stay horizontal at every width and scroll when needed.</li>
-<li>General has name, purpose, the switch that offers the Agent to other agents, avatar, model and reasoning. Manual instructions stay in Advanced, with the channel identity and where the Agent works when another agent starts it (<a href="../collaboration/agent-collaboration.html">agent collaboration</a>). No inner navigation column, duplicate introduction or settings summary.</li>
-<li>Inputs normal weight, labels medium; application font, neutral surfaces, control dimensions, blue selection.</li>
-<li>Panels fill the editor inside standard padding, no fixed maximum width. The editor scrolls independently; the save footer stays visible and reports draft state.</li>
-<li>Narrow screens replace the list with a select and stack identity fields. Saved invalid reasoning choices stay visible; inherited incompatible settings raise no pre-edit error.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Layout</th></tr></thead>
+<tbody>
+<tr><th scope="row">Page</th><td>Saved-Agent list and full-width editor. Secondary navigation uses the shared ManagePage split layout and sidebar width token</td></tr>
+<tr><th scope="row">Header</th><td>Header: name, ID, conversation actions. Eight tabs stay horizontal at every width and scroll when needed</td></tr>
+<tr><th scope="row">General</th><td>General has name, purpose, the switch that offers the Agent to other agents, avatar, model and reasoning. Manual instructions stay in Advanced, with the channel identity and where the Agent works when another agent starts it (<a href="../collaboration/agent-collaboration.html">agent collaboration</a>). No inner navigation column, duplicate introduction or settings summary</td></tr>
+<tr><th scope="row">Type</th><td>Inputs normal weight, labels medium; application font, neutral surfaces, control dimensions, blue selection</td></tr>
+<tr><th scope="row">Panels</th><td>Panels fill the editor inside standard padding, no fixed maximum width. The editor scrolls independently; the save footer stays visible and reports draft state</td></tr>
+<tr><th scope="row">Narrow screens</th><td>Narrow screens replace the list with a select and stack identity fields. Saved invalid reasoning choices stay visible; inherited incompatible settings raise no pre-edit error</td></tr>
+</tbody>
+</table>
 <p class="note">Acceptance: built-ins visible and editable; New Agent starts blank; repeat installation keeps edits; <code translate="no">Agent.from_spec</code> runs a saved record; draft, conflict, duplication and conversation flows work; desktop and narrow layouts checked on the real page and the App.</p>
 </details>
 

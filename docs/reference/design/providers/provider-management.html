@@ -155,21 +155,24 @@
 <tr><th scope="row">No credit</th><td>"No credit" in the danger tone</td><td>Top up (the billing page, when the provider documents one) and Open provider</td></tr>
 </tbody>
 </table>
-<ul>
-<li>The ring and the bars use the context meter's tokens: warning from 80 % used, danger from 95 % or when spent; a ring older than 15 minutes is drawn at half opacity; in the submenu a stale value is muted and its bar fill drawn at half opacity.</li>
-<li>A submenu starts with the provider's quota rows, worst first: a window or key limit is a line <code translate="no">label reset ···· NN%</code> over a full-width bar, a balance or credits is the line <code translate="no">label ···· amount</code> alone. A provider that reports nothing has no header.</li>
-<li>Each line is at <code translate="no">text-fs-sm</code>: the label in the primary text colour, the reset muted at <code translate="no">text-fs-xs</code> beside it, the value on the right edge of the model rows' check column (Settings decides whether digits are equal width). The text starts where the model names start.</li>
-<li>Tone colours the percent and the bar fill; a spent bar keeps a danger-tinted track so it does not vanish.</li>
-<li>The header lists every limit the status read carries, and always the limit the provider row's ring is drawn from and the balance of the picker state. The picker state arrives with the models, seconds before the status read (which also sums 30 days of spend), so until then the header shows those two rather than less than the row.</li>
-<li>At most four window or key limits, worst first; amounts follow and are never cut. A long label or reset time truncates at the line's end (logical sides, so RTL mirrors) and never widens the submenu or pushes the value off its edge.</li>
-<li>With two or more credentials, the provider's submenu ends with "This conversation uses Personal", Automatic and each credential; the check shows whether it is pinned. A choice pins this conversation (<code translate="no">POST /api/sessions/{sid}/credentials</code>, <code translate="no">null</code> for Automatic); Manage keys… opens the provider's page in place, or in a new tab with Cmd, Ctrl or Shift.</li>
-<li>A pin to a key that is gone says to go back to Auto; a pinned key turned off ends the request as a setting to change, not a failed sign-in.</li>
-<li>Every usage bar is the kit's Progress.</li>
-<li>When a reply moves to another credential, a muted line sits above it: "Switched to Work: Personal hit a rate limit". The line is stored with the reply and is still there after a reload; <code translate="no">--print</code> says it as a <code translate="no">credential_switch</code> event. While every credential waits, the retry line names the one it waits for and when it is back.</li>
-<li>The menu ends with Manage providers, which opens Settings → LLM Providers. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state.</li>
-<li>The trigger is plain while the selected model's provider can answer, whatever its usage. A quota that only warns shows in the ring and the bars, not on the trigger.</li>
-<li>A red dot on the provider logo appears only when the provider needs action (signed out, no credit, invalid key, not set up, not running) or its quota is 95 % used or spent: the Worker's <code translate="no">attention</code>. Its tooltip names the provider and the state or the window left.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tones</th><td>The ring and the bars use the context meter's tokens: warning from 80 % used, danger from 95 % or when spent; a ring older than 15 minutes is drawn at half opacity; in the submenu a stale value is muted and its bar fill drawn at half opacity</td></tr>
+<tr><th scope="row">Quota rows</th><td>A submenu starts with the provider's quota rows, worst first: a window or key limit is a line <code translate="no">label reset ···· NN%</code> over a full-width bar, a balance or credits is the line <code translate="no">label ···· amount</code> alone. A provider that reports nothing has no header</td></tr>
+<tr><th scope="row">Line type</th><td>Each line is at <code translate="no">text-fs-sm</code>: the label in the primary text colour, the reset muted at <code translate="no">text-fs-xs</code> beside it, the value on the right edge of the model rows' check column (Settings decides whether digits are equal width). The text starts where the model names start</td></tr>
+<tr><th scope="row">Tone colour</th><td>Tone colours the percent and the bar fill; a spent bar keeps a danger-tinted track so it does not vanish</td></tr>
+<tr><th scope="row">Header contents</th><td>The header lists every limit the status read carries, and always the limit the provider row's ring is drawn from and the balance of the picker state. The picker state arrives with the models, seconds before the status read (which also sums 30 days of spend), so until then the header shows those two rather than less than the row</td></tr>
+<tr><th scope="row">Limits shown</th><td>At most four window or key limits, worst first; amounts follow and are never cut. A long label or reset time truncates at the line's end (logical sides, so RTL mirrors) and never widens the submenu or pushes the value off its edge</td></tr>
+<tr><th scope="row">Credential pin</th><td>With two or more credentials, the provider's submenu ends with "This conversation uses Personal", Automatic and each credential; the check shows whether it is pinned. A choice pins this conversation (<code translate="no">POST /api/sessions/{sid}/credentials</code>, <code translate="no">null</code> for Automatic); Manage keys… opens the provider's page in place, or in a new tab with Cmd, Ctrl or Shift</td></tr>
+<tr><th scope="row">Gone or off pin</th><td>A pin to a key that is gone says to go back to Auto; a pinned key turned off ends the request as a setting to change, not a failed sign-in</td></tr>
+<tr><th scope="row">Bars</th><td>Every usage bar is the kit's Progress</td></tr>
+<tr><th scope="row">Switch line</th><td>When a reply moves to another credential, a muted line sits above it: "Switched to Work: Personal hit a rate limit". The line is stored with the reply and is still there after a reload; <code translate="no">--print</code> says it as a <code translate="no">credential_switch</code> event. While every credential waits, the retry line names the one it waits for and when it is back</td></tr>
+<tr><th scope="row">Menu end</th><td>The menu ends with Manage providers, which opens Settings → LLM Providers. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state</td></tr>
+<tr><th scope="row">Trigger</th><td>The trigger is plain while the selected model's provider can answer, whatever its usage. A quota that only warns shows in the ring and the bars, not on the trigger</td></tr>
+<tr><th scope="row">Red dot</th><td>A red dot on the provider logo appears only when the provider needs action (signed out, no credit, invalid key, not set up, not running) or its quota is 95 % used or spent: the Worker's <code translate="no">attention</code>. Its tooltip names the provider and the state or the window left</td></tr>
+</tbody>
+</table>
 <p>The state comes with the models (<code translate="no">GET /api/models/enabled</code>); opening the menu reads the status route for the quota rows, which reads endpoints older than ten minutes in the background. Each <code translate="no">provider_quota</code> frame updates both reads and is passed on as the window event <code translate="no">op:provider-quota</code>.</p>
 <p>When a reply fails because a quota is spent (<code translate="no">errorCause.cause</code> is <code translate="no">quota_exhausted</code>), the reply card reads "OpenAI Codex 5h limit reached" over "Resets 14:30 · Week 71% left". A spent balance (402, or the provider's state is no credit) reads "Kimi has no credit" over the balance. The raw error stays under the collapsed details.</p>
 <table class="stack fixed">
@@ -183,12 +186,15 @@
 <p>A choice pins the model on the branch the pane shows and sends the failed turn again there; other branches and conversations keep their model. Nothing switches by itself; the failover chain still treats a spent quota as final.</p>
 
 <h2 id="usage">Token Usage</h2>
-<ul>
-<li>Cost is split by how it is billed: billed (pay-per-token providers, priced calls), included (a subscription's calls at list price, shown only in a tooltip) and the number of pay-per-token calls without a price. One unpriced call no longer hides the total.</li>
-<li>The cost card shows the billed sum, "N calls unpriced" beside its label and, on hover, what subscriptions cover at API prices. A subscription's row in By model reads Included with the list price on hover; a By source or By function row splits its cost the same way, reading Included when a subscription covers all of its calls.</li>
-<li>A provider is a subscription when it is a plan provider (OpenAI Codex, SuperGrok, OpenCode Go, Kimi Coding, GitHub Copilot, Gemini subscription) or its id names a coding or token plan.</li>
-<li>Every token total counts cached tokens: an older row whose stored total left them out reads as the sum of its parts.</li>
-</ul>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Split</th><td>Cost is split by how it is billed: billed (pay-per-token providers, priced calls), included (a subscription's calls at list price, shown only in a tooltip) and the number of pay-per-token calls without a price. One unpriced call no longer hides the total</td></tr>
+<tr><th scope="row">Cost card</th><td>The cost card shows the billed sum, "N calls unpriced" beside its label and, on hover, what subscriptions cover at API prices. A subscription's row in By model reads Included with the list price on hover; a By source or By function row splits its cost the same way, reading Included when a subscription covers all of its calls</td></tr>
+<tr><th scope="row">Subscription</th><td>A provider is a subscription when it is a plan provider (OpenAI Codex, SuperGrok, OpenCode Go, Kimi Coding, GitHub Copilot, Gemini subscription) or its id names a coding or token plan</td></tr>
+<tr><th scope="row">Token totals</th><td>Every token total counts cached tokens: an older row whose stored total left them out reads as the sum of its parts</td></tr>
+</tbody>
+</table>
 
 <h2 id="routes">Routes</h2>
 <table class="stack fixed">

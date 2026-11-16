@@ -220,10 +220,13 @@
 <tr><th scope="row">用户停止，或任务已删除</th><td>不记录</td></tr>
 <tr><th scope="row">Worker 找到运行的轮次</th><td>运行的进程把轮次加进对话的运行日志，这个对话常常是 Worker 早已载入的：任务创建时所在的对话，或上一次运行之后任务自己的对话。按 id 查找没找到时，以及进程退出时的转发线程，都会读入其他进程加进来的内容（<code translate="no">RunTables.take_up_other_process_turns</code>）</td></tr>
 <tr><th scope="row">停止在自己进程里的运行</th><td>Worker 够不到那个轮次的 driver，控制服务就把停止写进执行的函数日志（<code translate="no">execution/control/stop_requests.py</code>）。运行的进程在轮次进行时每半秒读一次，自己停下轮次，包括正在跑的工具，之后照常以 cancelled 结束</td></tr>
-<tr><th scope="row">进程没收尾就退出</th><td>被杀或崩溃：启动它的进程的转发线程看到它没了时，以及其他情况下的每个 tick，Worker 把轮次结束为 <code translate="no">interrupted</code>（<code translate="no">time_limits.end_runs_of_exited_processes</code>，恢复时 <code translate="no">continuable=False</code>），记一次失败，关闭它的页面，并停止轮次正在等的命令；已转到后台的命令继续跑。正在停止的 Worker 不动它，留给下一个 Worker 接着跑</td></tr>
+<tr><th scope="row">进程没收尾就退出</th><td>被杀或崩溃：启动它的进程的转发线程看到它没了时，以及其他情况下的每个 tick，Worker 把轮次结束为 <code translate="no">interrupted</code>（<code translate="no">time_limits.end_runs_of_exited_processes</code>，恢复时 <code translate="no">continuable=False</code>），并记一次失败</td></tr>
+<tr><th scope="row">它的页面和命令</th><td>页面关闭，轮次正在等的命令被停止；已转到后台的命令继续跑</td></tr>
+<tr><th scope="row">Worker 正在停止</th><td>正在停止的 Worker 不动这一轮，留给下一个 Worker 接着跑</td></tr>
 <tr><th scope="row">先告知</th><td>先告知用户，再写记录行；汇报抛错时，结束信息连同失败次数留在 <code translate="no">run-endings/</code>，每个 tick 重试，共五次，之后只保存记录行。</td></tr>
 <tr><th scope="row">失败</th><td><code translate="no">task_runs.py</code> 保留 20 次运行和连续失败数。连续第三次发一条消息，恢复不发。</td></tr>
-<tr><th scope="row">补跑</th><td>Worker 启动后，第一次 tick 之后的每次 tick 都查找循环任务在下界之后最近的计划时间；下界取上次标记、<code translate="no">created_at</code>、<code translate="no">updated_at</code> 中最晚的。不到 12 小时：运行一次。更早：写一行 <code translate="no">missed</code>，时间记为那个计划时间，不影响失败计数，与紧邻的错过合并成一行，并推进标记。按钟面分钟计算，所以夏令时跳过的时间也算。不适用于 <code translate="no">@reboot</code>、watch、监控和已停用的任务。没有 <code translate="no">updated_at</code> 的条目不补跑，在下一次触发时写入。没能启动的一次触发保留标记，不重试。</td></tr>
+<tr><th scope="row">补跑</th><td>Worker 启动后，第一次 tick 之后的每次 tick 都查找循环任务在下界之后最近的计划时间；下界取上次标记、<code translate="no">created_at</code>、<code translate="no">updated_at</code> 中最晚的。不到 12 小时：运行一次。更早：写一行 <code translate="no">missed</code>，时间记为那个计划时间，不影响失败计数，与紧邻的错过合并成一行，并推进标记。</td></tr>
+<tr><th scope="row">补跑的边界</th><td>按钟面分钟计算，所以夏令时跳过的时间也算。不适用于 <code translate="no">@reboot</code>、watch、监控和已停用的任务。没有 <code translate="no">updated_at</code> 的条目不补跑，在下一次触发时写入。没能启动的一次触发保留标记，不重试。</td></tr>
 </tbody>
 </table>
 </details>
@@ -279,7 +282,8 @@
 <thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">branch_from</code> head、<code translate="no">advance_head=False</code></th><td>从对话的 head 开始；转录、head 和下一轮上下文不变</td></tr>
-<tr><th scope="row">上下文</th><td><code translate="no">prepare(tail_tokens=16000)</code>：当前摘要（不计入）加上放得下的最新步骤，按模型实际收到的内容计量，在步骤边界处截断（<code translate="no">context/session_dag/tail.py</code>）。一个步骤是一条用户消息、一条回复，或一次调用连同结果；保留的调用会连带保留它的回复。超出预算的最新步骤同样不放入。有内容被略去时，尾部前有一条说明，指向 <code translate="no">read_conversation</code>。自动压缩和溢出恢复都跳过；溢出使该轮失败，记为 <code translate="no">interrupted</code>。</td></tr>
+<tr><th scope="row">上下文</th><td><code translate="no">prepare(tail_tokens=16000)</code>：当前摘要（不计入）加上放得下的最新步骤，按模型实际收到的内容计量，在步骤边界处截断（<code translate="no">context/session_dag/tail.py</code>）。一个步骤是一条用户消息、一条回复，或一次调用连同结果；保留的调用会连带保留它的回复。超出预算的最新步骤同样不放入。有内容被略去时，尾部前有一条说明，指向 <code translate="no">read_conversation</code>。</td></tr>
+<tr><th scope="row">溢出</th><td>自动压缩和溢出恢复都跳过；溢出使该轮失败，记为 <code translate="no">interrupted</code>。</td></tr>
 <tr><th scope="row"><code translate="no">background=True</code></th><td>不设状态、未读圆点、模型、上下文大小、标题，不清收件箱，不命名分支。<code translate="no">bound_reply</code> 不投递。</td></tr>
 <tr><th scope="row">不占运行槽</th><td>所有者可以同时输入。<code translate="no">foreground.active_foreground_task</code> 跳过它：权限 <code translate="no">runtime_authority(local_owner_authority(), "always_on")</code>，非交互。</td></tr>
 <tr><th scope="row">权限</th><td>对话的模式和规则，不增加。需要审批的调用被拒绝；提示词要求用 <code translate="no">approval</code> 类汇报询问。</td></tr>
@@ -338,7 +342,9 @@
 <tr><th scope="row">回退</th><td>App 用汇报 id 回答 <code translate="no">reminder_shown</code>。6 秒内没有回答且对话不在屏幕上：Worker 发一条系统通知。<code translate="no">notify_desktop</code> 为假：不发。</td></tr>
 <tr><th scope="row">未读圆点</th><td><code translate="no">turn_writer.mark_session_unread()</code>，立即，除非有客户端在未隐藏的窗口中显示该对话。隐藏窗口保留焦点，在其中打开对话不会清除任何内容</td></tr>
 <tr><th scope="row">来源</th><td><code translate="no">report_source</code> 在定时结果上是 <code translate="no">task</code>；只有报告的执行正是运行中的巡检时才是 <code translate="no">check_in</code>（报告时读取并存在记录上）；其余情况没有。聊天视图的时间行由它得出短语；没有 <code translate="no">report_title</code> 的消息是旧报告，只显示时间。</td></tr>
-<tr><th scope="row">消息</th><td><code translate="no">post_report_message()</code>：head 后的助手消息，带 Agent id、元数据 <code translate="no">always_on_report</code>、<code translate="no">kind</code>、<code translate="no">report_title</code> 和 <code translate="no">report_source</code>，文本来自 <code translate="no">delivery.report_message()</code>（正文加带标签的链接；只有标题的报告仍用 <code translate="no">report_markdown()</code>；渠道保持原样）。打开的对话以 <code translate="no">transcript_update</code> 收到它。<code translate="no">append_after_head()</code> 在同一把锁内读取 head 并追加。<code translate="no">_post_when_free()</code> 在守护线程上等运行中的轮次，最多一小时。Worker 启动后，<code translate="no">recover_reports()</code> 发布一小时内未发布的汇报，先旧后新，每条只等它这一小时剩下的时间。</td></tr>
+<tr><th scope="row">消息</th><td><code translate="no">post_report_message()</code>：head 后的助手消息，带 Agent id、元数据 <code translate="no">always_on_report</code>、<code translate="no">kind</code>、<code translate="no">report_title</code> 和 <code translate="no">report_source</code>，文本来自 <code translate="no">delivery.report_message()</code>（正文加带标签的链接；只有标题的报告仍用 <code translate="no">report_markdown()</code>；渠道保持原样）。</td></tr>
+<tr><th scope="row">发布</th><td>打开的对话以 <code translate="no">transcript_update</code> 收到它。<code translate="no">append_after_head()</code> 在同一把锁内读取 head 并追加。<code translate="no">_post_when_free()</code> 在守护线程上等运行中的轮次，最多一小时。</td></tr>
+<tr><th scope="row">Worker 启动后</th><td><code translate="no">recover_reports()</code> 发布一小时内未发布的汇报，先旧后新，每条只等它这一小时剩下的时间。</td></tr>
 <tr><th scope="row"><code translate="no">notify[kind]</code></th><td><code translate="no">desktop</code> 设置 <code translate="no">notify_desktop</code>；<code translate="no">channels</code> 控制渠道目标。消息、圆点和活动行总会发生。</td></tr>
 </tbody>
 </table>
@@ -411,7 +417,8 @@
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">create_builtin_agents()</code></th><td>创建既未保存也不在注册表 <code translate="no">builtins</code> 列表（<code translate="no">manager.installed_builtins()</code>、<code translate="no">record_builtins()</code>）中的内置 Agent，然后记录全部 id。删除的不重建。</td></tr>
-<tr><th scope="row">更新</th><td>对定义设置的已保存字段（含它写入的四项 always-on 设置）算 SHA-256，到 <code translate="no">_KNOWN_FINGERPRINTS</code> 里查；该表列出每种语言每个已发布版本，包括安装时的状态和后续版本就地改写 always-on 设置后的状态。查到且不是当前版本的，按原语言更新，所有参与哈希的字段都落到当前定义；查不到算改过，保持不变。名称、模型和用户的其他 always-on 设置不参与哈希，也会保留。</td></tr>
+<tr><th scope="row">更新</th><td>对定义设置的已保存字段（含它写入的四项 always-on 设置）算 SHA-256，到 <code translate="no">_KNOWN_FINGERPRINTS</code> 里查；该表列出每种语言每个已发布版本，包括安装时的状态和后续版本就地改写 always-on 设置后的状态。</td></tr>
+<tr><th scope="row">匹配</th><td>查到且不是当前版本的，按原语言更新，所有参与哈希的字段都落到当前定义；查不到算改过，保持不变。名称、模型和用户的其他 always-on 设置不参与哈希，也会保留。</td></tr>
 <tr><th scope="row">助手</th><td><code translate="no">BUILTINS</code> 第一项，没有默认时作为默认创建；保留新记录默认值，只获得描述</td></tr>
 <tr><th scope="row">运行时机</th><td>服务器启动。安装程序和 <code translate="no">openprogram chat</code> 调用 <code translate="no">ensure_default_agent()</code>，所有 Agent 都被删除时还会建一个空助手。读注册表不安装。</td></tr>
 <tr><th scope="row">创建</th><td>不创建对话和标题：由用户创建；内置 Agent 通过交接协作</td></tr>
@@ -456,7 +463,8 @@
 
 <h2 id="learning-from-feedback">学习和规则</h2>
 <dl class="pairs">
-<dt>学习</dt><dd>记忆设为“这个 Agent”的读写时，会话结束写入器把偏好和纠正提取到 Agent 的空间。已发布的汇报不会让所在对话停止写入，它本身也不是来源；最后一条用户行来自定时器的分支会被跳过，无论跑完还是被中断。一个对话欠用户的事留在未完成事项。常驻标签页提示其他记忆设置，但绝不修改。</dd>
+<dt>学习</dt><dd>记忆设为“这个 Agent”的读写时，会话结束写入器把偏好和纠正提取到 Agent 的空间。</dd>
+<dd>已发布的汇报不会让所在对话停止写入，它本身也不是来源；最后一条用户行来自定时器的分支会被跳过，无论跑完还是被中断。一个对话欠用户的事留在未完成事项。常驻标签页提示其他记忆设置，但绝不修改。</dd>
 <dt id="rules">规则</dt><dd>审批以卡片等待，并发出需要输入的通知</dd>
 </dl>
 
@@ -713,7 +721,8 @@
 <thead class="sr"><tr><th scope="col">主题</th><th scope="col">状态</th></tr></thead>
 <tbody>
 <tr><th scope="row">已构建</th><td>批次 1 和 2 已实现，待演练；批次 3 到 5 已实现，批次 5 待一次 <code translate="no">autonomy: "act"</code> 的真实检查；批次 6 已实现，待在一段很长的真实对话上做一次检查；批次 7 已实现，待一次定时运行</td></tr>
-<tr><th scope="row">对话和渠道批次</th><td>批次 8 已实现，待一次汇报后的主人轮次；批次 9 已实现；批次 10 已实现，待用测试 Goal 验证归档和关闭；批次 25 已实现；批次 26 已实现，待一条 App 轮次期间发来的真实 Telegram 消息；批次 27 到 29 已实现；批次 30 已实现，待一条真实的 Telegram 语音；批次 31 已实现，待在真实的 Slack 帖子或 Telegram 论坛话题里发一条消息</td></tr>
+<tr><th scope="row">对话和渠道批次 8 到 10</th><td>批次 8 已实现，待一次汇报后的主人轮次；批次 9 已实现；批次 10 已实现，待用测试 Goal 验证归档和关闭</td></tr>
+<tr><th scope="row">对话和渠道批次 25 到 31</th><td>批次 25 已实现；批次 26 已实现，待一条 App 轮次期间发来的真实 Telegram 消息；批次 27 到 29 已实现；批次 30 已实现，待一条真实的 Telegram 语音；批次 31 已实现，待在真实的 Slack 帖子或 Telegram 论坛话题里发一条消息</td></tr>
 <tr><th scope="row">可见产品批次</th><td>批次 48 到 51、53、54、56 和 63 已实现；批次 57 已实现，待第一份周一报告；批次 60 已实现，待查看常驻 Agent 的空会话；批次 61 已实现，待看一眼频道设置页</td></tr>
 <tr><th scope="row">投递和时限批次</th><td>批次 39 和 42 已实现，待演练；批次 40 已实现，待真实聊天软件的检查；批次 41 已实现，待一次真实超时；批次 43 已实现，待真实 Telegram 的检查；批次 44 和 45 已实现</td></tr>
 <tr><th scope="row">调度批次</th><td>批次 16 已实现，待一次真实运行期间 Webhook 返回 409 的检查；批次 18 已实现；批次 19 已实现；批次 55 已实现；批次表的状态列是各批次的记录，路线图一节描述的是尚未实现批次的目标</td></tr>

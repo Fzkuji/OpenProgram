@@ -2,8 +2,16 @@
 <meta name="description" content="What the browser toolbar and floating preview control, and how the preview renders and maps input.">
 <meta name="covers" content="apps/web/lib/browser/ apps/desktop/main/web-views/">
 <h1>Browser actions and task controls</h1>
-<p>The pinned Playwright response renderer is guarded against an empty tab-header list after snapshot capture. Detach or close during that asynchronous read must not dereference a missing header. When a response has no attached page, only snapshot reads are retried, at most three times; navigation, form input and submission are never replayed. Reconnection to a different URL is not accepted as recovery. The Agent receives an observation-required result and the remaining batch stops.</p>
-<p>When an extension action loses its reference, or its connection closes, read a fresh snapshot of the same URL before returning control to the Agent. A recovered observation stops the remaining batch. Completed steps are retained; no input or submission is replayed. Missing references mean no dispatch; a closed connection leaves the action outcome unknown and requires inspection. A failed snapshot or a different page remains an error.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Failure</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Empty tab-header list after snapshot capture</th><td>The pinned Playwright response renderer guards against it: detach or close during that asynchronous read must not dereference a missing header</td></tr>
+<tr><th scope="row">Playwright response with no attached page</th><td>Only snapshot reads are retried, at most three times; navigation, form input and submission are never replayed. Reconnection to a different URL is not accepted as recovery: the Agent receives an observation-required result and the remaining batch stops</td></tr>
+<tr><th scope="row">Extension action loses its reference</th><td>Nothing was dispatched</td></tr>
+<tr><th scope="row">Extension connection closes</th><td>The action outcome is unknown and requires inspection</td></tr>
+<tr><th scope="row">Either extension case</th><td>A fresh snapshot of the same URL is read before control returns to the Agent. A recovered observation stops the remaining batch; completed steps are retained; no input or submission is replayed. A failed snapshot or a different page remains an error</td></tr>
+</tbody>
+</table>
 <p>Opening a URL in the user's Chrome or Edge creates a normal working tab. Opening a new working tab is the product's policy; the extension connection page itself can also navigate and is not inherently unusable.</p>
 
 <table class="stack fixed">

@@ -166,3 +166,10 @@ def test_ws_frame_subscriber_only_gets_ws_frames(monkeypatch):
     bus.emit(make_event("tool.before", "agent", {"tool": "bash"}))
     emit_ws_frame({"type": "x"})
     assert len(got) == 1 and got[0].type == WS_FRAME_EVENT
+
+
+def test_every_event_the_credential_bridge_sends_is_registered():
+    from openprogram.runtime.events import EVENTS
+    from openprogram.runtime.events.bridges import _AUTH_TYPE_MAP
+
+    assert set(_AUTH_TYPE_MAP.values()) <= set(EVENTS)

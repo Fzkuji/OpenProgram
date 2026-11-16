@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **Les agents sont des classes Python.** Flux de contrôle, vérifications et nouvelles tentatives sont du code ordinaire ; `self(...)` est un appel au modèle.
-- **Auto-programmation.** Les agents écrivent de nouvelles méthodes dans leur propre classe, qui deviennent des outils dès le tour suivant.
-- **Contexte en graphe.** Chaque appel est un nœud d’un même DAG ; les sous-agents travaillent sur leur propre branche et ne renvoient que leur résultat.
-- **Un seul espace de travail.** Chat, fichiers, terminal et un navigateur intégré que l’agent peut piloter, côte à côte.
-- **N’importe quel modèle.** Anthropic, OpenAI, Gemini et serveurs locaux, avec plusieurs comptes par fournisseur.
+## Actualités
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Plusieurs clés et connexions par fournisseur, avec bascule automatique quand une limite est atteinte ; blocs de tâches dans les réponses et historique d’exécution pour les tâches planifiées. À partir de cette version, les versions sont publiées depuis ce dépôt.
+- **2026-11-15 · v1.3.0** — Page des fournisseurs avec état, quota et dépenses ; les agents à l’œuvre dans une conversation listés dans Activity ; les fichiers créés par un agent s’ouvrent d’eux-mêmes.
+- **2026-11-14 · v1.2.0** — Les branches d’une conversation s’exécutent côte à côte, Arrêter agit immédiatement et l’App Windows arrive.
+- **2026-11-10 · v1.1.0** — Retour en arrière depuis n’importe quel message envoyé ; l’App arrive sur Linux.
+- **2026-11-06 · v1.0.0** — Première version de la ligne 1.x : App de bureau avec vues partagées, utilisation de l’ordinateur en arrière-plan, réunions et planificateur permanent.
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Sous Windows (à partir de v1.2.0) : `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. L’App de bureau macOS est un DMG disponible sur la [page des versions](https://github.com/FuzzyKuji/OpenProgram/releases) ; l’App Linux s’y trouve en deb et AppImage, et l’App Windows arrive avec v1.1.1. Si le site web ne répond pas : `curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Plus d’options dans le [guide d’installation](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (en anglais).
+Sous Windows (à partir de v1.2.0) : `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. L’App de bureau macOS est un DMG disponible sur la [page des versions](https://github.com/Fzkuji/OpenProgram/releases) ; l’App Linux s’y trouve en deb et AppImage, et l’App Windows arrive avec v1.1.1. Si le site web ne répond pas : `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Plus d’options dans le [guide d’installation](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (en anglais).
 
 ## Démarrage rapide
 

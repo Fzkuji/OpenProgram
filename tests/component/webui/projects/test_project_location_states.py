@@ -97,7 +97,9 @@ def test_a_listing_touches_no_project_folder(tmp_path, monkeypatch):
             patch.setattr(builtins, "open", recording(builtins.open))
             snapshot = ws_project._projects_snapshot(None)
         assert snapshot["status"] == "ready"
-        return snapshot, list(calls)
+        # Other threads of the test process read files of their own meanwhile;
+        # only what is read under this test's folder counts.
+        return snapshot, [path for path in calls if str(path).startswith(str(tmp_path))]
 
     register(4)
     ws_project._projects_snapshot(None)  # the registry file is read once
@@ -108,6 +110,7 @@ def test_a_listing_touches_no_project_folder(tmp_path, monkeypatch):
 
     assert len(many["projects"]) == len(few["projects"]) + 20
     assert not [path for path in many_calls if str(path).startswith(str(work))]
+    assert few_calls, "the registry file itself is read"
     assert len(many_calls) == len(few_calls)
     states = {row["path"]: row for row in many["projects"] if row["path"].startswith(str(work))}
     assert sorted({row["location_state"] for row in states.values()}) == ["available", "missing"]

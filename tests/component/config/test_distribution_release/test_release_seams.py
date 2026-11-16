@@ -74,7 +74,7 @@ def _latest_link(fixed: str, release_files: list[str]) -> str:
     """Where docs/_static_root/latest.js sends ``latest.html?<fixed>``."""
     release = {"assets": [
         {"name": name, "browser_download_url":
-            f"https://github.com/FuzzyKuji/OpenProgram/releases/download/v{VERSION}/{name}"}
+            f"https://github.com/Fzkuji/OpenProgram/releases/download/v{VERSION}/{name}"}
         for name in release_files
     ]}
     script = (
@@ -110,12 +110,12 @@ def test_app_updater_looks_for_the_files_the_release_builds(platform, arch, opti
     assert json.dumps(fixed) in _read("docs/_static_root/latest.js")
     for name in expected:
         assert _latest_link(fixed, [f"OpenProgram-{VERSION}-runtime-linux-x86_64.tar.gz", name]) == (
-            f"https://github.com/FuzzyKuji/OpenProgram/releases/download/v{VERSION}/{name}"
+            f"https://github.com/Fzkuji/OpenProgram/releases/download/v{VERSION}/{name}"
         )
 
 
 def test_newest_download_link_opens_the_release_page_when_it_cannot_find_the_file():
-    page = "https://github.com/FuzzyKuji/OpenProgram/releases/latest"
+    page = "https://github.com/Fzkuji/OpenProgram/releases/latest"
     dmg = f"OpenProgram-{VERSION}-mac-arm64.dmg"
     # A name that is not ours, and a release without that file.
     assert _latest_link("OpenProgram-mac-arm64.zip", [f"OpenProgram-{VERSION}-mac-arm64.zip"]) == page

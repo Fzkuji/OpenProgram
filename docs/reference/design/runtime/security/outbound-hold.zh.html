@@ -37,7 +37,12 @@
 </table>
 
 <h2 id="configuration">配置</h2>
-<p><code translate="no">agent.json</code> 顶层布尔值 <code translate="no">hold_outbound</code>，由 Agent 常驻标签页的最后一个复选框设置，<code translate="no">PATCH /api/agents/{id}</code> 也接受。只有显式 <code translate="no">true</code> 才打开；<code translate="no">AgentSpec.hold_outbound</code> 默认 <code translate="no">false</code>。关闭时调用和其他工具一样遵循对话的模式和规则。Worker 的一次性迁移把存量 <code translate="no">true</code>（来自早期默认值）改写为 <code translate="no">false</code>。</p>
+<dl class="pairs">
+<dt><code translate="no">hold_outbound</code></dt><dd><code translate="no">agent.json</code> 顶层布尔值，由 Agent 常驻标签页的最后一个复选框设置，<code translate="no">PATCH /api/agents/{id}</code> 也接受</dd>
+<dt>打开</dt><dd>只有显式 <code translate="no">true</code>；<code translate="no">AgentSpec.hold_outbound</code> 默认 <code translate="no">false</code></dd>
+<dt>关闭</dt><dd>调用和其他工具一样遵循对话的模式和规则</dd>
+<dt>存量值</dt><dd>Worker 的一次性迁移把存量 <code translate="no">true</code>（来自早期默认值）改写为 <code translate="no">false</code></dd>
+</dl>
 
 <h2 id="implementation-status">实现状态</h2>
 <table class="stack fixed">

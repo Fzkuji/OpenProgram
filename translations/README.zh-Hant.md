@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **Agent 就是 Python 類別。** 控制流程、檢查和重試都是一般程式碼，`self(...)` 就是一次模型呼叫。
-- **自我程式設計。** Agent 把新方法寫進自己的類別，下一輪起就能當作工具使用。
-- **圖狀上下文。** 每次呼叫都是同一張 DAG 裡的節點；子 Agent 在自己的分支上執行，只交回結果。
-- **一個工作區。** 聊天、檔案、終端機和 Agent 能操作的內建瀏覽器並排呈現。
-- **任意模型。** Anthropic、OpenAI、Gemini 和本機推論服務，每個服務商可設定多個帳號。
+## 動態
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每個服務商可放多組金鑰與登入，到達限額時自動換下一組；回覆依任務分塊；排程任務有執行紀錄。從這一版起在本儲存庫發布。
+- **2026-11-15 · v1.3.0** — 服務商頁面顯示健康狀態、額度與花費；Activity 列出對話中工作的 Agent；Agent 產生的檔案自動開啟。
+- **2026-11-14 · v1.2.0** — 同一對話的分支可以並行執行，停止立即生效，Windows App 上線。
+- **2026-11-10 · v1.1.0** — 可以從任一則已傳送的訊息回退；App 支援 Linux。
+- **2026-11-06 · v1.0.0** — 1.x 的第一個版本：具分割畫面的桌面 App、背景執行的電腦操作、會議與常駐排程器。
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，可在[發行頁](https://github.com/FuzzyKuji/OpenProgram/releases)下載；Linux App 是同一頁上的 deb 和 AppImage，Windows App 從 v1.2.0 起提供。網站無法連線時：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式見[安裝說明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英文）。
+Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，可在[發行頁](https://github.com/Fzkuji/OpenProgram/releases)下載；Linux App 是同一頁上的 deb 和 AppImage，Windows App 從 v1.2.0 起提供。網站無法連線時：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式見[安裝說明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英文）。
 
 ## 快速開始
 

@@ -19,7 +19,7 @@ from openprogram.state.update_channels import CHANNELS, CONFIG_KEY, DEFAULT_CHAN
 
 _log = logging.getLogger(__name__)
 
-PRODUCT_REPOSITORY = "FuzzyKuji/OpenProgram"
+PRODUCT_REPOSITORY = "Fzkuji/OpenProgram"
 _VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 

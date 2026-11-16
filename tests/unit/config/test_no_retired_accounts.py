@@ -51,7 +51,7 @@ def test_a_mention_is_found_however_it_is_written(stand_in: str, text: str) -> N
     assert retired_accounts.names_retired_account(text)
 
 
-@pytest.mark.parametrize("text", ["retired-examples", "FuzzyKuji/OpenProgram", "9911223", "a991122b"])
+@pytest.mark.parametrize("text", ["retired-examples", "Fzkuji/OpenProgram", "9911223", "a991122b"])
 def test_a_longer_word_that_contains_one_is_not_a_mention(stand_in: str, text: str) -> None:
     assert not retired_accounts.names_retired_account(text)
 

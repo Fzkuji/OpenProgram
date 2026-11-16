@@ -24,7 +24,7 @@
  Re-runnable: every step is idempotent.
 
  Run it straight off the web - no clone needed:
-   iwr -useb https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/scripts/install.ps1 | iex
+   iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
  It clones OpenProgram to $HOME\OpenProgram (override with -Target DIR), then
  hands off to the cloned copy.
 

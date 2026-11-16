@@ -242,15 +242,18 @@
 
 <details id="document-history">
 <summary>发布文档：<code translate="no">write(file_path, source_path=...)</code></summary>
-<ul>
-<li><code translate="no">content</code> 和 <code translate="no">source_path</code> 二选一。来源是有读权限的本地普通文件，上限 64 MiB。路径相同、目录、链接、过大或不可读的来源在修改前失败。</li>
-<li>目标保留写授权、读取基线和审批指纹。来源和目标指纹都参与审批等待，发布前再次校验。</li>
-<li>字节先写入目标目录的完整临时文件，再替换。失败时清理并保留目标。写原始字节，绝不做文本转换。</li>
-<li>建议锁只串行化配合的写入者。Windows 替换前关闭缺少删除共享的句柄并再次校验；没有操作系统级条件替换。</li>
-<li>先读：模型读原文件，再生成暂存版本。二进制读取返回类型和字节数。新文件无需先读。</li>
-<li>生成器都走这条路径；文本工具保留 write、edit、apply_patch，共用 prepare、commit、abort。<code translate="no">CheckpointStore</code> 持有状态；Review 和摘要是投影。</li>
-<li>不提供：Word 修订、PPT 可视差异、Office 语义差异、远程存储（声称可恢复前需要条件写入和可校验的版本 ID）、全盘扫描、轮询、插件注册表。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">参数</th><td><code translate="no">content</code> 和 <code translate="no">source_path</code> 二选一。来源是有读权限的本地普通文件，上限 64 MiB。路径相同、目录、链接、过大或不可读的来源在修改前失败。</td></tr>
+<tr><th scope="row">目标校验</th><td>目标保留写授权、读取基线和审批指纹。来源和目标指纹都参与审批等待，发布前再次校验。</td></tr>
+<tr><th scope="row">写入</th><td>字节先写入目标目录的完整临时文件，再替换。失败时清理并保留目标。写原始字节，绝不做文本转换。</td></tr>
+<tr><th scope="row">锁</th><td>建议锁只串行化配合的写入者。Windows 替换前关闭缺少删除共享的句柄并再次校验；没有操作系统级条件替换。</td></tr>
+<tr><th scope="row">先读</th><td>模型读原文件，再生成暂存版本。二进制读取返回类型和字节数。新文件无需先读。</td></tr>
+<tr><th scope="row">调用方</th><td>生成器都走这条路径；文本工具保留 write、edit、apply_patch，共用 prepare、commit、abort。<code translate="no">CheckpointStore</code> 持有状态；Review 和摘要是投影。</td></tr>
+<tr><th scope="row">不提供</th><td>Word 修订、PPT 可视差异、Office 语义差异、远程存储（声称可恢复前需要条件写入和可校验的版本 ID）、全盘扫描、轮询、插件注册表</td></tr>
+</tbody>
+</table>
 </details>
 
 <details id="human-edits">
@@ -280,15 +283,18 @@
 </dl>
 <details>
 <summary>不变量</summary>
-<ul>
-<li>prepared 在写入前持久化；确认 after 状态后才 committed。准备失败时修改工具在碰磁盘前停止。</li>
-<li><code translate="no">absent</code> 表示已确认不存在。读取基线失败记为 <code translate="no">recoverability=unavailable</code>，绝不记 absent。</li>
-<li><code translate="no">unavailable</code> 只用于已记录、因大小或类型策略省略内容的修改，不用于掩盖日志失败。</li>
-<li>同一轮同文件的修改折叠为最初 before 到最后 after 的净变更；重命名保留谱系。普通文件的前后都保留内容引用。</li>
-<li>路径在捕获、规划和应用时重新规范化；用已校验的句柄或 no-follow 原语检查父链、叶子 lstat、设备、inode 和链接数。</li>
-<li>Revert、Restore、Reapply 也是事务；原记录不可变。当前分支只折叠活动谱系。</li>
-<li>每个提示定义 <code translate="no">before_turn</code>，assistant 完成定义 <code translate="no">after_turn</code>；界面明确显示恢复的边界。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">不变量</th></tr></thead>
+<tbody>
+<tr><th scope="row">prepared、committed</th><td>prepared 在写入前持久化；确认 after 状态后才 committed。准备失败时修改工具在碰磁盘前停止。</td></tr>
+<tr><th scope="row"><code translate="no">absent</code></th><td>已确认不存在。读取基线失败记为 <code translate="no">recoverability=unavailable</code>，绝不记 absent。</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td>只用于已记录、因大小或类型策略省略内容的修改，不用于掩盖日志失败</td></tr>
+<tr><th scope="row">折叠</th><td>同一轮同文件的修改折叠为最初 before 到最后 after 的净变更；重命名保留谱系。普通文件的前后都保留内容引用。</td></tr>
+<tr><th scope="row">路径</th><td>在捕获、规划和应用时重新规范化；用已校验的句柄或 no-follow 原语检查父链、叶子 lstat、设备、inode 和链接数</td></tr>
+<tr><th scope="row">Revert、Restore、Reapply</th><td>也是事务；原记录不可变。当前分支只折叠活动谱系。</td></tr>
+<tr><th scope="row">边界</th><td>每个提示定义 <code translate="no">before_turn</code>，assistant 完成定义 <code translate="no">after_turn</code>；界面明确显示恢复的边界</td></tr>
+</tbody>
+</table>
 </details>
 
 <h3 id="review-scopes">三种 Review 范围</h3>

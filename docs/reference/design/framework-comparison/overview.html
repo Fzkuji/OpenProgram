@@ -47,7 +47,7 @@
 <dt>Session storage</dt><dd>One append-only log per session is the source of truth, three roles (user, llm, code), caller and predecessor edges, branch heads. <code translate="no">context/commits/</code> holds per-turn context records</dd>
 <dt>Other storage</dt><dd><code translate="no">usage.db</code>: SQLite usage ledger. Memory: Markdown with rebuildable in-memory BM25 and embedding indexes, background writes, three <code translate="no">memory_*</code> tools</dd>
 <dt>Tools</dt><dd>Dynamic registry in four domains (todo, task, agent, message); deferred catalog plus <code translate="no">tool_search</code></dd>
-<dt>Extensions</dt><dd>MCP client and server, ACP, skills, plugins, 34 events, <code translate="no">agent.json</code>; bundled, dynamic and custom providers</dd>
+<dt>Extensions</dt><dd>MCP client and server, ACP, skills, plugins, 37 events, <code translate="no">agent.json</code>; bundled, dynamic and custom providers</dd>
 <dt>Authentication</dt><dd>Web and WebSocket: <code translate="no">owner_auth</code> with a per-start token and profile-specific cookie. Channels: pairing and allowlists (<code translate="no">interfaces/channels/inbound/_access.py</code>), a separate source-identity boundary. Not multitenant</dd>
 </dl>
 
@@ -91,7 +91,7 @@
 <tr><th scope="row">Project instructions</th><td>AGENTS.md in agent workspace</td><td>Comparable</td></tr>
 <tr><th scope="row">Tool surface</th><td>Dynamic registry; persistent presets + deferred tool_search catalog</td><td>Comparable</td></tr>
 <tr><th scope="row">Permission approval</th><td>Five modes + rules + tool.before gate</td><td>Comparable</td></tr>
-<tr><th scope="row">Extensions</th><td>Plugins + skills + MCP client + 34 events</td><td>Comparable</td></tr>
+<tr><th scope="row">Extensions</th><td>Plugins + skills + MCP client + 37 events</td><td>Comparable</td></tr>
 <tr><th scope="row">Channels</th><td>Four</td><td>Behind</td></tr>
 <tr><th scope="row">Interfaces</th><td>TUI + Web + Electron</td><td>Comparable</td></tr>
 <tr><th scope="row">External interfaces</th><td>Authenticated stdio MCP server + ACP; no stable remote SDK</td><td>Comparable</td></tr>

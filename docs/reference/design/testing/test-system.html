@@ -27,17 +27,20 @@
 <p class="note">At most level and product-domain depth; no tracked test directly at a level root. Markers describe capabilities only: <code translate="no">slow</code>, <code translate="no">browser</code>, <code translate="no">sandbox</code>, <code translate="no">live</code>, <code translate="no">macos</code>. Strict markers, strict config, strict xfail; <code translate="no">-m 'not live and not browser'</code> by default; one test over 120 s fails.</p>
 
 <h2>Isolation</h2>
-<ul>
-<li>Repository contracts read only Git-tracked files, so clean checkouts and ones with ignored or nested repositories give identical results. Callers supply roots to generic scanners.</li>
-<li>Top-level <code translate="no">conftest.py</code> keeps only what prevents access to real user state; domain fixtures stay local. Temporary HOME has deterministic cleanup.</li>
-<li>Every test process, each xdist worker included, clears inherited <code translate="no">GIT_DIR</code>-style variables and installs an audit hook (<code translate="no">tests/support/host_guard.py</code>). It refuses a git command that would change the checkout the suite runs from, any write inside its <code translate="no">.git</code> or the real <code translate="no">~/.openprogram*</code>, and a Python child started with HOME unset or set to the real home.</li>
-<li>A test file copied to a scratch folder, or run with <code translate="no">--noconftest</code>, keeps the real HOME. For those the path layer refuses by itself: while <code translate="no">PYTEST_CURRENT_TEST</code> is set, <code translate="no">get_state_dir()</code> raises when its folder sits in the account's own home, read from the account record and not from <code translate="no">HOME</code>.</li>
-<li>Every state path and the Worker's endpoint files come through that function, so such a test can neither register a project or conversation in <code translate="no">~/.openprogram*</code> nor find the stable or development instance. Child processes inherit the variable; <code translate="no">OPENPROGRAM_TEST_REAL_HOME=1</code> allows the real folder.</li>
-<li>A refused test fails by name; a session-end check of <code translate="no">.git/config</code> and of worktrees registered from the run's HOME covers child processes.</li>
-<li>Product code never falls back to the process's working directory for a repository: a worktree is made only from a path the call passes, the turn's worktree, the conversation's project folder or the configured default folder.</li>
-<li>Concurrent results use Event, Condition or deadline-based waits.</li>
-<li>Tests do not replace global thread classes or create real threads or pools. Background resources in production modules are joined or closed at teardown.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Scope</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Repository contracts</th><td>Read only Git-tracked files, so clean checkouts and ones with ignored or nested repositories give identical results. Callers supply roots to generic scanners</td></tr>
+<tr><th scope="row">Top-level <code translate="no">conftest.py</code></th><td>Keeps only what prevents access to real user state; domain fixtures stay local. Temporary HOME has deterministic cleanup</td></tr>
+<tr><th scope="row">Every test process</th><td>Each xdist worker included, clears inherited <code translate="no">GIT_DIR</code>-style variables and installs an audit hook (<code translate="no">tests/support/host_guard.py</code>). It refuses a git command that would change the checkout the suite runs from, any write inside its <code translate="no">.git</code> or the real <code translate="no">~/.openprogram*</code>, and a Python child started with HOME unset or set to the real home</td></tr>
+<tr><th scope="row">A test file copied to a scratch folder, or run with <code translate="no">--noconftest</code></th><td>Keeps the real HOME, so the path layer refuses by itself: while <code translate="no">PYTEST_CURRENT_TEST</code> is set, <code translate="no">get_state_dir()</code> raises when its folder sits in the account's own home, read from the account record and not from <code translate="no">HOME</code></td></tr>
+<tr><th scope="row">State paths and the Worker's endpoint files</th><td>Come through that function, so such a test can neither register a project or conversation in <code translate="no">~/.openprogram*</code> nor find the stable or development instance. Child processes inherit the variable; <code translate="no">OPENPROGRAM_TEST_REAL_HOME=1</code> allows the real folder</td></tr>
+<tr><th scope="row">A refused test</th><td>Fails by name; a session-end check of <code translate="no">.git/config</code> and of worktrees registered from the run's HOME covers child processes</td></tr>
+<tr><th scope="row">Product code</th><td>Never falls back to the process's working directory for a repository: a worktree is made only from a path the call passes, the turn's worktree, the conversation's project folder or the configured default folder</td></tr>
+<tr><th scope="row">Concurrent results</th><td>Event, Condition or deadline-based waits</td></tr>
+<tr><th scope="row">Threads</th><td>Tests do not replace global thread classes or create real threads or pools. Background resources in production modules are joined or closed at teardown</td></tr>
+</tbody>
+</table>
 <details>
 <summary>Unit guards</summary>
 <ul>

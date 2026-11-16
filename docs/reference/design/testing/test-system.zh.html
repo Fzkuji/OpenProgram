@@ -27,17 +27,20 @@
 <p class="note">深度最多到层级和产品领域；层级根下没有受跟踪的测试。Marker 只描述能力：<code translate="no">slow</code>、<code translate="no">browser</code>、<code translate="no">sandbox</code>、<code translate="no">live</code>、<code translate="no">macos</code>。严格 marker、严格配置、严格 xfail；默认 <code translate="no">-m 'not live and not browser'</code>；单个测试超过 120 秒失败。</p>
 
 <h2>隔离</h2>
-<ul>
-<li>仓库契约只读 Git 受跟踪文件，所以干净检出和含忽略文件或嵌套仓库的检出结果相同。通用扫描器的根由调用方提供。</li>
-<li>顶层 <code translate="no">conftest.py</code> 只保留防止访问真实用户状态的隔离；领域 fixture 留在本地。临时 HOME 确定性清理。</li>
-<li>每个测试进程（包括每个 xdist worker）都清掉继承来的 <code translate="no">GIT_DIR</code> 一类变量，并装上审计钩子（<code translate="no">tests/support/host_guard.py</code>）。它拒绝会改动套件所在检出的 git 命令、对其 <code translate="no">.git</code> 或真实 <code translate="no">~/.openprogram*</code> 的任何写入，以及 HOME 未设或指向真实 home 的 Python 子进程。</li>
-<li>把测试文件拷到临时文件夹运行，或带 <code translate="no">--noconftest</code> 运行，HOME 仍是真实的。这时路径层自己拒绝：只要设置了 <code translate="no">PYTEST_CURRENT_TEST</code>，<code translate="no">get_state_dir()</code> 的文件夹位于账户自己的 home 下时就抛错；账户 home 取自账户记录，不取 <code translate="no">HOME</code>。</li>
-<li>所有状态路径和 Worker 的端点文件都经过这个函数，所以这样的测试既不能在 <code translate="no">~/.openprogram*</code> 里登记项目或对话，也找不到稳定版或开发版实例。子进程继承这个变量；<code translate="no">OPENPROGRAM_TEST_REAL_HOME=1</code> 放行真实文件夹。</li>
-<li>被拒绝的测试按名字失败；会话结束时检查 <code translate="no">.git/config</code> 和从本次 HOME 登记进来的 worktree，覆盖子进程。</li>
-<li>产品代码找仓库时从不退回进程的工作目录：worktree 只从调用传入的路径、本轮的 worktree、对话的项目文件夹或配置的默认文件夹创建。</li>
-<li>并发结果用 Event、Condition 或带截止时间的等待。</li>
-<li>测试不替换全局线程类，也不创建真实线程或线程池。生产模块内的后台资源在 teardown 时 join 或关闭。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">仓库契约</th><td>只读 Git 受跟踪文件，所以干净检出和含忽略文件或嵌套仓库的检出结果相同。通用扫描器的根由调用方提供</td></tr>
+<tr><th scope="row">顶层 <code translate="no">conftest.py</code></th><td>只保留防止访问真实用户状态的隔离；领域 fixture 留在本地。临时 HOME 确定性清理</td></tr>
+<tr><th scope="row">每个测试进程</th><td>包括每个 xdist worker，都清掉继承来的 <code translate="no">GIT_DIR</code> 一类变量，并装上审计钩子（<code translate="no">tests/support/host_guard.py</code>）。它拒绝会改动套件所在检出的 git 命令、对其 <code translate="no">.git</code> 或真实 <code translate="no">~/.openprogram*</code> 的任何写入，以及 HOME 未设或指向真实 home 的 Python 子进程</td></tr>
+<tr><th scope="row">拷到临时文件夹运行，或带 <code translate="no">--noconftest</code> 运行的测试文件</th><td>HOME 仍是真实的，所以路径层自己拒绝：只要设置了 <code translate="no">PYTEST_CURRENT_TEST</code>，<code translate="no">get_state_dir()</code> 的文件夹位于账户自己的 home 下时就抛错；账户 home 取自账户记录，不取 <code translate="no">HOME</code></td></tr>
+<tr><th scope="row">状态路径和 Worker 的端点文件</th><td>都经过这个函数，所以这样的测试既不能在 <code translate="no">~/.openprogram*</code> 里登记项目或对话，也找不到稳定版或开发版实例。子进程继承这个变量；<code translate="no">OPENPROGRAM_TEST_REAL_HOME=1</code> 放行真实文件夹</td></tr>
+<tr><th scope="row">被拒绝的测试</th><td>按名字失败；会话结束时检查 <code translate="no">.git/config</code> 和从本次 HOME 登记进来的 worktree，覆盖子进程</td></tr>
+<tr><th scope="row">产品代码</th><td>找仓库时从不退回进程的工作目录：worktree 只从调用传入的路径、本轮的 worktree、对话的项目文件夹或配置的默认文件夹创建</td></tr>
+<tr><th scope="row">并发结果</th><td>用 Event、Condition 或带截止时间的等待</td></tr>
+<tr><th scope="row">线程</th><td>测试不替换全局线程类，也不创建真实线程或线程池。生产模块内的后台资源在 teardown 时 join 或关闭</td></tr>
+</tbody>
+</table>
 <details>
 <summary>Unit 守卫</summary>
 <ul>

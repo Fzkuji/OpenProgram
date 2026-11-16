@@ -116,7 +116,12 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="publishing-identity">发布身份</h2>
 <p>仓库是 <code translate="no">Fzkuji/OpenProgram</code>，项目最初的仓库：<code translate="no">main</code> 上先是到 0.9.8 为止的历史，之后从 1.0.0 起一个版本一个提交。</p>
 <p>每个版本提交署名 <code translate="no">FzKuji</code>，<code translate="no">fzkuji@gmail.com</code>，和之前的历史一致；不论检出用什么身份提交，脚本都写这个署名，并拒绝上传含有其他署名的版本。只检查 GitHub 还没有的那一段 <code translate="no">main</code>，因为更早的历史有很多作者。</p>
-<p>1.0.0 到 1.3.0 是在 <code translate="no">FuzzyKuji/OpenProgram</code> 构建的，安装包留在那里。下载链接、安装脚本和 App 的更新检查在 <code translate="no">Fzkuji/OpenProgram</code> 发出一个版本之前仍从那里读取；源码链接已经指向 <code translate="no">Fzkuji/OpenProgram</code>。<code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code> 的作者和 README 的许可证一行保留 1.x 版本发布时的名字。</p>
+<p>1.0.0 到 1.3.0 是在 <code translate="no">FuzzyKuji/OpenProgram</code> 构建的，安装包留在那里，它们的发布说明也链接到那里。从 1.4.0 起，版本在 <code translate="no">Fzkuji/OpenProgram</code> 构建：</p>
+<ul>
+<li>下载链接、安装脚本和 App 的更新检查都从它读取，和源码链接一致。</li>
+<li>1.3.0 及更早的 App 检查的是构建它的那个仓库，所以要手动覆盖安装一次 1.4.0 或更新的版本。</li>
+<li><code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code> 的作者和 README 的许可证一行保留 1.x 版本发布时的名字。</li>
+</ul>
 
 <h2 id="retired-accounts">停用账号</h2>
 <p>项目曾在一个现已不再拥有的 GitHub 账号下发布。发布的内容里不出现它：作者、链接、示例、测试数据、说明都不行。</p>

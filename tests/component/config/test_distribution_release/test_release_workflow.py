@@ -87,8 +87,8 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
         "## 🔄 Upgrade guide",
     ):
         assert section in notes
-    download_urls = re.findall(r"\]\((https://github\.com/FuzzyKuji/OpenProgram/releases/download/[^)]+)\)", notes)
-    release_prefix = f"https://github.com/FuzzyKuji/OpenProgram/releases/download/v{version}/"
+    download_urls = re.findall(r"\]\((https://github\.com/Fzkuji/OpenProgram/releases/download/[^)]+)\)", notes)
+    release_prefix = f"https://github.com/Fzkuji/OpenProgram/releases/download/v{version}/"
     assert download_urls
     assert all(url.startswith(release_prefix) for url in download_urls)
     for arch in ("arm64", "x64"):
@@ -435,7 +435,7 @@ def test_each_file_is_uploaded_once_under_its_versioned_name() -> None:
 
 def test_notes_list_only_what_exists() -> None:
     write = _select()["write_notes"]
-    base = "https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.0.1/"
+    base = "https://github.com/Fzkuji/OpenProgram/releases/download/v1.0.1/"
     text = "\n".join((
         "# OpenProgram 1.0.1 Release Notes", "",
         "| macOS | arm64 | "

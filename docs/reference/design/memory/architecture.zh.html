@@ -229,7 +229,12 @@
 <tr><th scope="row">无</th><td>传输、限流、服务错误、超时、embedding 不可用、<code translate="no">CONCURRENT_UPDATE</code></td><td>5 分钟起翻倍到 6 小时，不停止</td><td>自然恢复</td></tr>
 </tbody>
 </table>
-<p class="note">停下时，那份记忆的写入器状态记为不可重试，同一原因只通知一次。状态字段不变：<code translate="no">retries.max_identical_failures</code> 就是那三次。登录失效、二十个空闲对话时，一小时的轮询只调用一次模型；以前是二十次，而且二十个对话全部放弃。从旧文件读入的记录都不带停止状态：登录或记忆库原因的记录丢掉，对话会再被提供一次；其他原因的保留一次机会。</p>
+<dl class="pairs">
+<dt>停下</dt><dd>那份记忆的写入器状态记为不可重试，同一原因只通知一次</dd>
+<dt>写入器状态</dt><dd>字段不变：<code translate="no">retries.max_identical_failures</code> 就是那三次</dd>
+<dt>登录失效、二十个空闲对话</dt><dd>一小时的轮询只调用一次模型；以前是二十次，而且二十个对话全部放弃</dd>
+<dt>从旧文件读入的记录</dt><dd>都不带停止状态：登录或记忆库原因的记录丢掉，对话会再被提供一次；其他原因的保留一次机会</dd>
+</dl>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
 <tbody>

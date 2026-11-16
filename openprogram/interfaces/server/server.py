@@ -711,6 +711,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
 
     @asynccontextmanager
     async def _lifespan(_app):
+        from openprogram.interfaces.server.server_runtime.loop_stall import watch_running_loop
+        stall_watch = watch_running_loop()
         for hook in _STARTUP:
             await hook()
         from openprogram.state.memory.checkpoints import run_checkpoints
@@ -729,6 +731,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
         try:
             yield
         finally:
+            stall_watch.stop()
             checkpoint_stop.set()
             await checkpoint_task
             await discovery_task

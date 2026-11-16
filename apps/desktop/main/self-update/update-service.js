@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 
-const REPOSITORY = "FuzzyKuji/OpenProgram";
+const REPOSITORY = "Fzkuji/OpenProgram";
 const LATEST_URL = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
 const ALLOWED_HOSTS = new Set([
   "api.github.com",

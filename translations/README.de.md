@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **Agenten sind Python-Klassen.** Kontrollfluss, Prüfungen und Wiederholungen sind normaler Code; `self(...)` ist ein Modellaufruf.
-- **Selbstprogrammierung.** Agenten schreiben neue Methoden in ihre eigene Klasse, die ab dem nächsten Zug als Werkzeuge verfügbar sind.
-- **Graph-Kontext.** Jeder Aufruf ist ein Knoten in einem DAG; Sub-Agenten laufen auf eigenen Zweigen und liefern nur ihr Ergebnis zurück.
-- **Ein Arbeitsbereich.** Chat, Dateien, Terminal und ein integrierter Browser, den der Agent bedienen kann, nebeneinander.
-- **Jedes Modell.** Anthropic, OpenAI, Gemini und lokale Server, mit mehreren Konten pro Anbieter.
+## Neuigkeiten
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Mehrere Schlüssel und Anmeldungen je Anbieter mit automatischem Wechsel bei einem Limit, Aufgabenblöcke in Antworten und ein Ausführungsverlauf für geplante Aufgaben. Ab dieser Version werden Releases aus diesem Repository veröffentlicht.
+- **2026-11-15 · v1.3.0** — Anbieterseite mit Zustand, Kontingent und Kosten; die Agenten einer Unterhaltung in Activity aufgelistet; Dateien, die ein Agent erstellt, öffnen sich von selbst.
+- **2026-11-14 · v1.2.0** — Zweige einer Unterhaltung laufen nebeneinander, Stopp wirkt sofort, und die Windows-App ist da.
+- **2026-11-10 · v1.1.0** — Zurückspulen von jeder gesendeten Nachricht aus; die App kommt auf Linux.
+- **2026-11-06 · v1.0.0** — Erste Version der 1.x-Reihe: Desktop-App mit geteilten Ansichten, Computernutzung im Hintergrund, Meetings und ein dauerhaft laufender Planer.
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Unter Windows (ab v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. Die macOS-Desktop-App ist ein DMG auf der [Release-Seite](https://github.com/FuzzyKuji/OpenProgram/releases); die Linux-App liegt dort als deb und AppImage, die Windows-App kommt mit v1.1.1. Falls die Website nicht antwortet: `curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Weitere Optionen in der [Installationsanleitung](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (Englisch).
+Unter Windows (ab v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. Die macOS-Desktop-App ist ein DMG auf der [Release-Seite](https://github.com/Fzkuji/OpenProgram/releases); die Linux-App liegt dort als deb und AppImage, die Windows-App kommt mit v1.1.1. Falls die Website nicht antwortet: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Weitere Optionen in der [Installationsanleitung](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (Englisch).
 
 ## Schnellstart
 

@@ -594,7 +594,7 @@ done
 printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
 case "$url" in
   */releases/latest)
-    printf 'https://github.com/FuzzyKuji/OpenProgram/releases/tag/v0.6.1'
+    printf 'https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.1'
     ;;
   */release-manifest.json)
     exit 22
@@ -624,11 +624,11 @@ esac
         "FAKE_CURL_LOG": str(curl_log),
     }
     subprocess.run(["sh", str(bootstrap)], check=True, env=env)
-    assert result.read_text(encoding="utf-8") == "0.6.1|FuzzyKuji/OpenProgram\n"
+    assert result.read_text(encoding="utf-8") == "0.6.1|Fzkuji/OpenProgram\n"
     assert curl_log.read_text(encoding="utf-8").splitlines() == [
-        "https://github.com/FuzzyKuji/OpenProgram/releases/latest",
-        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.1/release-manifest.json",
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.1/scripts/install-release.sh",
+        "https://github.com/Fzkuji/OpenProgram/releases/latest",
+        "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.1/release-manifest.json",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh",
     ]
 
     result.unlink()
@@ -638,10 +638,10 @@ esac
         check=True,
         env=env | {"OPENPROGRAM_VERSION": "1.2.3"},
     )
-    assert result.read_text(encoding="utf-8") == "1.2.3|FuzzyKuji/OpenProgram\n"
+    assert result.read_text(encoding="utf-8") == "1.2.3|Fzkuji/OpenProgram\n"
     assert curl_log.read_text(encoding="utf-8").splitlines() == [
-        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.2.3/release-manifest.json",
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v1.2.3/scripts/install-release.sh",
+        "https://github.com/Fzkuji/OpenProgram/releases/download/v1.2.3/release-manifest.json",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v1.2.3/scripts/install-release.sh",
     ]
 
 

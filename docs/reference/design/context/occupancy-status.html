@@ -84,7 +84,7 @@
 <li>Re-compacting does not call the summary model and reports nothing to compact, never "covered 0 messages, X → X".</li>
 <li>No suggestion border at any occupancy.</li>
 <li>The ring's limit equals <code translate="no">real_context_window</code> of the Model compaction uses, for a chat with its own model and for one that follows its Agent, during a turn and after reload.</li>
-<li>A branch with its own model shows that model's window when it is selected and when its tip is read while another branch is selected.</li>
+<li>Two branches pinned to different models each report their own limit, whether open or read from the other.</li>
 <li>After the model changes to one with no known window, the terminal bar shows no limit.</li>
 <li>During compaction the ring is busy and the button disabled; completion restores both.</li>
 </ul>

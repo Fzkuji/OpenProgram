@@ -5,7 +5,7 @@
 // else, or no answer, opens the newest release's page instead.
 // Kept external so it runs under a script-src 'self' policy.
 (() => {
-  const repository = "FuzzyKuji/OpenProgram";
+  const repository = "Fzkuji/OpenProgram";
   const releasePage = `https://github.com/${repository}/releases/latest`;
   const names = [
     "OpenProgram-mac-arm64.dmg",

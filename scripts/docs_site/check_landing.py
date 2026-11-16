@@ -39,7 +39,7 @@ SITE_DESCRIPTION = (
     "context, and multi-agent collaboration."
 )
 SOCIAL_IMAGE = DOCS_URL + "images/openprogram-social-card.png"
-RELEASE_FEED = "https://github.com/FuzzyKuji/OpenProgram/releases.atom"
+RELEASE_FEED = "https://github.com/Fzkuji/OpenProgram/releases.atom"
 HERO_ALT = "OpenProgram workspace showing an agent session that ran two sub-agents"
 HERO_AVIFS = ("chat_hero-home.avif", "chat_hero-home-light.avif")
 HERO_AVIF_SIZE = (1600, 1000)
@@ -373,7 +373,7 @@ def main() -> int:
             "docs hero differs from the product title", failures)
     require("<b>OpenProgram：自编程 AI Agent 框架</b>" in docs_readme_zh,
             "Chinese docs hero differs from the product positioning", failures)
-    release_url = "https://github.com/FuzzyKuji/OpenProgram/releases"
+    release_url = "https://github.com/Fzkuji/OpenProgram/releases"
     for name, document in (("README", readme), ("docs README", docs_readme),
                            ("Chinese docs README", docs_readme_zh)):
         require(release_url in document,

@@ -217,12 +217,14 @@ openprogram channels accounts set telegram group_sessions per-user  # or: shared
 </ul>
 </details>
 <p>A conversation runs one turn at a time, App turns included. While another turn runs or waits for an answer:</p>
-<ul>
-<li>A chat message waits up to 30 seconds, then the bot says it is busy. Send it again later.</li>
-<li>An unaddressed group message in <code translate="no">ambient</code> mode gets no reply and joins the group's next turn.</li>
-<li>Typing in the App is refused, as during any other turn.</li>
-<li><code translate="no">/new</code> and <code translate="no">/reset</code> wait up to 30 seconds for a chat app turn, then the bot says it is busy.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Arrives</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">A chat message</th><td>Waits up to 30 seconds, then the bot says it is busy. Send it again later.</td></tr>
+<tr><th scope="row">An unaddressed group message, <code translate="no">ambient</code> mode</th><td>No reply; it joins the group's next turn.</td></tr>
+<tr><th scope="row">Typing in the App</th><td>Refused, as during any other turn.</td></tr>
+<tr><th scope="row"><code translate="no">/new</code>, <code translate="no">/reset</code></th><td>Wait up to 30 seconds for a chat app turn, then the bot says it is busy.</td></tr>
+</tbody></table>
 <p>Messages from one chat start turns in the order they arrived, even when an earlier one has a slow attachment. Commands do not queue.</p>
 <h2 id="attachments">Attachments</h2>
 <table class="stack fixed">

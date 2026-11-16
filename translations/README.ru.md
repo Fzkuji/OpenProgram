@@ -36,11 +36,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **Агенты — это классы Python.** Управление потоком, проверки и повторы — обычный код; `self(...)` — вызов модели.
-- **Самопрограммирование.** Агенты дописывают новые методы в собственный класс, и со следующего хода они становятся инструментами.
-- **Контекст-граф.** Каждый вызов — узел одного DAG; субагенты работают в своей ветке и возвращают только результат.
-- **Одно рабочее пространство.** Чат, файлы, терминал и встроенный браузер, которым может управлять агент, рядом друг с другом.
-- **Любая модель.** Anthropic, OpenAI, Gemini и локальные серверы, по несколько аккаунтов на провайдера.
+## Новости
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Несколько ключей и входов на одного провайдера с автоматическим переключением при достижении лимита, блоки задач в ответах и история запусков у задач по расписанию. Начиная с этой версии релизы публикуются в этом репозитории.
+- **2026-11-15 · v1.3.0** — Страница провайдеров с состоянием, квотой и расходами; агенты, работающие в разговоре, перечислены в Activity; файлы, созданные агентом, открываются сами.
+- **2026-11-14 · v1.2.0** — Ветки одного разговора выполняются параллельно, «Стоп» срабатывает сразу, вышло приложение для Windows.
+- **2026-11-10 · v1.1.0** — Откат от любого отправленного сообщения; приложение появилось для Linux.
+- **2026-11-06 · v1.0.0** — Первый релиз линейки 1.x: настольное приложение с разделёнными окнами, работа с компьютером в фоне, встречи и постоянно работающий планировщик.
 
 <a id="install"></a>
 
@@ -50,7 +52,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-В Windows (начиная с v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. Настольное приложение для macOS — DMG на [странице релизов](https://github.com/FuzzyKuji/OpenProgram/releases); приложение для Linux доступно там же в виде deb и AppImage, а приложение для Windows появится в v1.1.1. Если сайт не отвечает: `curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Другие варианты — в [руководстве по установке](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (на английском).
+В Windows (начиная с v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. Настольное приложение для macOS — DMG на [странице релизов](https://github.com/Fzkuji/OpenProgram/releases); приложение для Linux доступно там же в виде deb и AppImage, а приложение для Windows появится в v1.1.1. Если сайт не отвечает: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Другие варианты — в [руководстве по установке](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (на английском).
 
 ## Быстрый старт
 

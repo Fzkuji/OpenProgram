@@ -36,26 +36,32 @@
 <p><code translate="no">{ id, rows }</code>。<code translate="no">id</code> 是起始行的 id。放在第一个起始行之前的压缩行加入该轮次，但绝不成为它的 id，因此 id 稳定。</p>
 <h3>行</h3>
 <p>现有的 <code translate="no">ChatMsg</code>，相同的 camelCase 字段，在服务端构建。新增：</p>
-<ul>
-<li><code translate="no">rowKind</code>：<code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>。<code translate="no">dispatch()</code> 的每个分支一个值，它没有默认分支。<code translate="no">silent</code> 覆盖 <code translate="no">display=runtime</code> 提示和内部目标轮次。</li>
-<li><code translate="no">kind</code> 和 <code translate="no">slot</code> 保持现有含义，不算新增：<code translate="no">kind</code> 是 <code translate="no">compaction | snip | event</code>，<code translate="no">slot</code> 是 <code translate="no">card | event</code>。<code translate="no">system_event</code> 行在那里携带子类型；压缩完成不产生这种行。<code translate="no">compaction_card</code> 行总是 <code translate="no">kind: compaction</code>、<code translate="no">slot: card</code>。只有 <code translate="no">SystemEventRow</code> 读取它们；覆盖读取 <code translate="no">coveredBy</code>。</li>
-<li><code translate="no">status</code>：<code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>，来自 <code translate="no">status.py</code> 中的一个映射。</li>
-<li><code translate="no">steeringReplyId</code>、<code translate="no">continuedBy</code>：由服务端盖上，因为机器人视图仍然绘制这些行。</li>
-<li><code translate="no">continues</code>：续接所合并的被截断回复的 id，最旧的在前。</li>
-<li><code translate="no">attachCards</code>、<code translate="no">runtimeChildren</code>、<code translate="no">callRoots</code>：名字不变。每个子项新增 <code translate="no">blockId</code>，即解析出的所属块，未配对时为 null。未配对的子项照样绘制，绝不丢失。</li>
-<li><code translate="no">coveredBy</code>：压缩 id。</li>
-<li>user 行上的 <code translate="no">origin</code>：<code translate="no">person | agent_delivery</code>。</li>
-<li><code translate="no">clientRequestId</code>：<code translate="no">metadata.client_request_id</code>，在插话行上是 <code translate="no">metadata.command_id</code>。</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rowKind</code></th><td><code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>。<code translate="no">dispatch()</code> 的每个分支一个值，它没有默认分支。<code translate="no">silent</code> 覆盖 <code translate="no">display=runtime</code> 提示和内部目标轮次。</td></tr>
+<tr><th scope="row"><code translate="no">kind</code>、<code translate="no">slot</code></th><td>不算新增；保持现有含义：<code translate="no">kind</code> 是 <code translate="no">compaction | snip | event</code>，<code translate="no">slot</code> 是 <code translate="no">card | event</code>。<code translate="no">system_event</code> 行在那里携带子类型；压缩完成不产生这种行。<code translate="no">compaction_card</code> 行总是 <code translate="no">kind: compaction</code>、<code translate="no">slot: card</code>。只有 <code translate="no">SystemEventRow</code> 读取它们；覆盖读取 <code translate="no">coveredBy</code>。</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td><code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>，来自 <code translate="no">status.py</code> 中的一个映射。</td></tr>
+<tr><th scope="row"><code translate="no">steeringReplyId</code>、<code translate="no">continuedBy</code></th><td>由服务端盖上，因为机器人视图仍然绘制这些行。</td></tr>
+<tr><th scope="row"><code translate="no">continues</code></th><td>续接所合并的被截断回复的 id，最旧的在前。</td></tr>
+<tr><th scope="row"><code translate="no">attachCards</code>、<code translate="no">runtimeChildren</code>、<code translate="no">callRoots</code></th><td>名字不变。每个子项新增 <code translate="no">blockId</code>，即解析出的所属块，未配对时为 null。未配对的子项照样绘制，绝不丢失。</td></tr>
+<tr><th scope="row"><code translate="no">coveredBy</code></th><td>压缩 id。</td></tr>
+<tr><th scope="row"><code translate="no">origin</code></th><td>user 行上：<code translate="no">person | agent_delivery</code>。</td></tr>
+<tr><th scope="row"><code translate="no">clientRequestId</code></th><td><code translate="no">metadata.client_request_id</code>，在插话行上是 <code translate="no">metadata.command_id</code>。</td></tr>
+</tbody>
+</table>
 <h3>块</h3>
 <p>按存储形状，加上 <code translate="no">id</code> 和 <code translate="no">index</code>。</p>
-<ul>
-<li>工具块：<code translate="no">id = tool_call_id</code>；没有 id 的旧工具块用 <code translate="no">tool:N</code>。</li>
-<li>文本和思考：<code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>，其中 <code translate="no">n</code> 统计该类型的段数，一段是连续的同类型已存块。段的第一个块保持 <code translate="no">&lt;type&gt;:&lt;n&gt;</code>，同段后面的块是 <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>。流式 tap 把连续增量合并成一个块，所以它的块与最终分段的第一个块共用 id，未结束的步骤在最终写入重新分段时保持原位。</li>
-<li><code translate="no">index</code> 是在 <code translate="no">blocks</code> 中的存储位置。块总按 <code translate="no">index</code> 排序保存，所以块顺序绝不取决于到达顺序。</li>
-<li><code translate="no">fullOutput</code> 指向真实的行：<code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>。</li>
-<li>文本、思考或工具块上的 <code translate="no">task</code> 和 <code translate="no">step</code> 说明它属于哪个任务和步骤，由它在回复里的位置得出；不属于任何任务时没有（<a href="../chat/task-blocks.zh.html">任务块</a>）。</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具块 id</th><td><code translate="no">id = tool_call_id</code>；没有 id 的旧工具块用 <code translate="no">tool:N</code>。</td></tr>
+<tr><th scope="row">文本和思考 id</th><td><code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>，其中 <code translate="no">n</code> 统计该类型的段数，一段是连续的同类型已存块。段的第一个块保持 <code translate="no">&lt;type&gt;:&lt;n&gt;</code>，同段后面的块是 <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>。流式 tap 把连续增量合并成一个块，所以它的块与最终分段的第一个块共用 id，未结束的步骤在最终写入重新分段时保持原位。</td></tr>
+<tr><th scope="row"><code translate="no">index</code></th><td>在 <code translate="no">blocks</code> 中的存储位置。块总按 <code translate="no">index</code> 排序保存，所以块顺序绝不取决于到达顺序。</td></tr>
+<tr><th scope="row"><code translate="no">fullOutput</code></th><td>指向真实的行：<code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>。</td></tr>
+<tr><th scope="row"><code translate="no">task</code>、<code translate="no">step</code></th><td>在文本、思考或工具块上，说明它属于哪个任务和步骤，由它在回复里的位置得出；不属于任何任务时没有（<a href="../chat/task-blocks.zh.html">任务块</a>）。</td></tr>
+</tbody>
+</table>
 <h3>本地行与覆盖层（仅浏览器）</h3>
 <p><strong>本地行</strong>是没有服务端副本的行：待发送、发送失败、乐观的函数占位、<code translate="no">local_command</code> 和无操作提示、压缩提示。它们不属于任何 Turn，并携带一个锚：</p>
 <ul>

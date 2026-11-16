@@ -382,7 +382,7 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
     assert len(calls) == 1
     command, kwargs = calls[0]
     assert command[0] == "sh"
-    assert kwargs["env"]["OPENPROGRAM_REPOSITORY"] == "FuzzyKuji/OpenProgram"
+    assert kwargs["env"]["OPENPROGRAM_REPOSITORY"] == "Fzkuji/OpenProgram"
     assert kwargs["env"]["OPENPROGRAM_VERSION"] == "0.6.7"
     assert "OPENPROGRAM_RUNTIME_ARCHIVE" not in kwargs["env"]
     assert "OPENPROGRAM_RUNTIME_SHA256" not in kwargs["env"]
@@ -559,7 +559,7 @@ def test_release_installer_reads_only_the_immutable_tag(monkeypatch):
 
     assert github.release_installer("0.6.7") == installer
     assert seen == [
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.7/scripts/install-release.sh"
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.7/scripts/install-release.sh"
     ]
 
 
@@ -582,7 +582,7 @@ def test_release_download_validates_each_redirect_before_request(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert github._curl_release_bytes(
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.7/scripts/install-release.sh"
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.7/scripts/install-release.sh"
     ) is None
     assert len(calls) == 1
     assert calls[0][1] == "--disable"
@@ -611,6 +611,6 @@ def test_release_download_accepts_only_allowed_redirect_chain(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert github._curl_release_bytes(
-        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/release-manifest.json"
+        "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/release-manifest.json"
     ) == b'{"schema": 1}'
     assert len(calls) == 2

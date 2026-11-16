@@ -144,13 +144,16 @@
 <summary>Why, and acceptance</summary>
 <p>The branch-record merge put more writes under the flock, and two paths took the halves in opposite orders: a branch switch held the store's lock and waited for the flock, while the page load held the flock and waited for the store's lock to read the conversation. A run's admission did the same.</p>
 <p>Every later request on that conversation queued behind the pair and the Worker stopped answering.</p>
-<ul>
-<li>Sixteen threads on one conversation with five branches, turns on two branches, renames, a model change, a branch deleted, concurrent switches, a rewind plan, page loads, run admissions and cache misses all finish, 200 runs in a row; a watchdog fails the test with the stuck stacks instead of hanging it.</li>
-<li>A conversation held by a stuck thread gives the next writer an error naming it within its wait; other conversations are not held up.</li>
-<li>An error between acquire and release (a refused switch, a stale plan) releases the lock.</li>
-<li>Two processes and two threads append to one conversation and every message lands; a process killed while it holds the flock frees it for a writer already waiting; a revert whose conversation leaves the cache mid-apply commits.</li>
-<li>Two rewinds, or two reverts, with one key: while the first is paused before or after writing its intent, the second waits and then returns the first's committed outcome; after the first committed or failed, the second returns that outcome; files and head change once.</li>
-</ul>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">Must hold</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sixteen threads on one conversation with five branches: turns on two branches, renames, a model change, a branch deleted, concurrent switches, a rewind plan, page loads, run admissions, cache misses</th><td>All finish, 200 runs in a row; a watchdog fails the test with the stuck stacks instead of hanging it</td></tr>
+<tr><th scope="row">A conversation held by a stuck thread</th><td>The next writer gets an error naming it within its wait; other conversations are not held up</td></tr>
+<tr><th scope="row">An error between acquire and release (a refused switch, a stale plan)</th><td>Releases the lock</td></tr>
+<tr><th scope="row">Two processes and two threads append to one conversation</th><td>Every message lands; a process killed while it holds the flock frees it for a writer already waiting; a revert whose conversation leaves the cache mid-apply commits</td></tr>
+<tr><th scope="row">Two rewinds, or two reverts, with one key</th><td>While the first is paused before or after writing its intent, the second waits and then returns the first's committed outcome; after the first committed or failed, the second returns that outcome; files and head change once</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="off-the-event-loop">Not on the event loop</h2>
@@ -183,16 +186,21 @@
 <p>Page loads, run-state probes, branch switches, renames and settings read a conversation inside <code translate="no">async def</code> handlers. A turn holding the conversation, or another process writing it, froze every connection for up to the lock's 60 s wait.</p>
 <p>Slot admission waited only 0.25 s and read a timeout as a running turn, so a send to a cold, large conversation was refused <code translate="no">run_active</code> and re-queued behind a turn that did not exist.</p>
 <p>Codex keeps one writer lock file per thread (<code translate="no">~/.codex/thread-writer-locks</code>) and serves its clients from an async runtime; a request waiting for a thread's writer waits in its own task. The same rule here: the loop never waits for a conversation.</p>
-<ul>
-<li>With the conversation's lock held on another thread, each of load, run state, branch switch, rename, full tool output, Sandbox and mark read waits for it while a 10 ms heartbeat on the loop never stalls past a quarter of a second; the same read made on the loop stalls it for the whole hold.</li>
-<li>So do the routes a page calls on opening a conversation: context coverage, context breakdown, branch tokens and session tokens.</li>
-<li>So do attach branch, the stream resubscribe, project binding and move, extra folders, flags, context commits, node deletion, channel binding, compact, the in-place fork, export and rewind points; noting a queued message (<code translate="no">goal_queue</code>) never waits at all.</li>
-<li>A Stop of a turn that never started writes its cancelled reply while the conversation is held, with the loop's heartbeat under a quarter of a second; five copies of one Stop to a running owner give one command, delivered once, in under a second, also when the owner takes 50 ms to answer.</li>
-<li>Forty requests waiting on one held conversation leave another conversation's run state answered in under half a second; with the loop's default pool it times out.</li>
-<li>A room event takes no wait on a locked conversation or a busy channel turn; a channel message whose conversation stays locked is answered as not delivered.</li>
-<li>A slot request made while the lock is held for 0.6 s is admitted once it is free.</li>
-<li>Past the wait, a send, a branch send, an operation and a multi-branch operation each answer <code translate="no">conversation_locked</code> and take nothing; a held slot is still <code translate="no">run_active</code>.</li>
-</ul>
+<table class="stack fixed">
+<caption>With the conversation's lock held on another thread</caption>
+<thead><tr><th scope="col">Requests</th><th scope="col">Must hold</th></tr></thead>
+<tbody>
+<tr><th scope="row">Load, run state, branch switch, rename, full tool output, Sandbox, mark read</th><td>Each waits for it while a 10 ms heartbeat on the loop never stalls past a quarter of a second; the same read made on the loop stalls it for the whole hold</td></tr>
+<tr><th scope="row">Routes a page calls on opening a conversation: context coverage, context breakdown, branch tokens, session tokens</th><td>The same</td></tr>
+<tr><th scope="row">Attach branch, the stream resubscribe, project binding and move, extra folders, flags, context commits, node deletion, channel binding, compact, the in-place fork, export, rewind points</th><td>The same; noting a queued message (<code translate="no">goal_queue</code>) never waits at all</td></tr>
+<tr><th scope="row">A Stop of a turn that never started</th><td>Writes its cancelled reply while the conversation is held, with the loop's heartbeat under a quarter of a second</td></tr>
+<tr><th scope="row">Five copies of one Stop to a running owner</th><td>One command, delivered once, in under a second, also when the owner takes 50 ms to answer</td></tr>
+<tr><th scope="row">Forty requests waiting on one held conversation</th><td>Another conversation's run state answered in under half a second; with the loop's default pool it times out</td></tr>
+<tr><th scope="row">A room event; a channel message</th><td>The room event takes no wait on a locked conversation or a busy channel turn; a channel message whose conversation stays locked is answered as not delivered</td></tr>
+<tr><th scope="row">A slot request while the lock is held for 0.6 s</th><td>Admitted once it is free</td></tr>
+<tr><th scope="row">Past the wait: a send, a branch send, an operation, a multi-branch operation</th><td>Each answers <code translate="no">conversation_locked</code> and takes nothing; a held slot is still <code translate="no">run_active</code></td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="cache-snapshot">Cache snapshot freshness</h2>

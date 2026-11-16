@@ -22,7 +22,7 @@ try:
 except ModuleNotFoundError:  # run as a file, as the contributors workflow does
     from retired_accounts import is_retired_login
 
-REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "FuzzyKuji/OpenProgram")
+REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "Fzkuji/OpenProgram")
 CONTRIBUTORS_URL = f"https://api.github.com/repos/{REPO}/contributors?per_page=100"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 START = "<!-- contributors-avatars -->"

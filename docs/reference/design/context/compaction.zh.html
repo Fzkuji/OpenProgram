@@ -94,27 +94,41 @@
 <p class="note">DAG 胶囊按同一规则、同一 <code translate="no">covers_ids</code> 折叠。</p>
 
 <h2 id="pipeline">流水线</h2>
-<p><code translate="no">/compact</code>（<code translate="no">trigger_compaction</code>）、自动压缩（预算达到 <code translate="no">context.auto_compact_percent</code>，默认 80%，在轮次开始前和轮次的步骤之间）和超长恢复都在调用方用链尾指定的链上运行 <code translate="no">engine.compact</code>：<code translate="no">/compact</code> 用它读到的会话 head，其余用该轮自己的分支。除 <code translate="no">/compact</code> 外都传入该轮的停止信号。</p>
-<ol>
-<li><strong>冻结这条链的渲染输入。</strong><code translate="no">compaction.view.load_compaction_view</code> 使用 <code translate="no">render_context</code> 和 <code translate="no">render_dag_messages</code>，包含工具结果、expose 和 spill 引用。顶层轮次决定覆盖范围；可见的子调用计入输入和预算。</li>
-<li><strong>选整轮。</strong>保留窗口的 10%，限定在 8,000–40,000 token（显式覆盖优先）。优先在用户边界处保留至少四条对话消息；已发布的报告也算边界。低于目标：不操作。若最后两轮超过目标，切点可前移到最近的用户边界。除非其后只有报告，最近一轮保持完整。</li>
-<li><strong>用摘要提示词总结整个被覆盖前缀</strong>（<a href="#summary-prompt">摘要提示词与角色</a>）：每个被替换的轮次、最初的请求、这条链之前的摘要、渲染出的子调用。非文本媒体变为引用说明。</li>
-<li><strong>写入前校验。</strong>拒绝空的、失败的、被取消的、缺段的、碰到上限的或没有缩小的摘要；按同样方式在内存中渲染的候选必须严格更小。模型调用后重新检查这条链的渲染节点；有变化就作为可重试的空操作，其他分支和移到别处的 head 不算。provider 失败时保留历史，没有有损的结构化兜底。</li>
-<li><strong>持久化并报告。</strong>连同恢复的状态一次写入；<code translate="no">covers_ids</code> 把之前的摘要展开成真实轮次 id。之前的数字是上下文面板对这条链的读数；之后的数字是该读数减去候选节省的部分。空操作不写入、不计数。</li>
-</ol>
+<p>三个调用方在用链尾指定的链上运行 <code translate="no">engine.compact</code>：</p>
+<table class="stack even">
+<thead><tr><th scope="col">调用方</th><th scope="col">链</th><th scope="col">停止信号</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/compact</code>（<code translate="no">trigger_compaction</code>）</th><td>它读到的会话 head</td><td>不传入</td></tr>
+<tr><th scope="row">自动压缩（预算达到 <code translate="no">context.auto_compact_percent</code>，默认 80%，在轮次开始前和轮次的步骤之间）</th><td>该轮自己的分支</td><td>该轮的</td></tr>
+<tr><th scope="row">超长恢复</th><td>该轮自己的分支</td><td>该轮的</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 冻结这条链的渲染输入</th><td><code translate="no">compaction.view.load_compaction_view</code> 使用 <code translate="no">render_context</code> 和 <code translate="no">render_dag_messages</code>，包含工具结果、expose 和 spill 引用。顶层轮次决定覆盖范围；可见的子调用计入输入和预算</td></tr>
+<tr><th scope="row">2. 选整轮</th><td>保留窗口的 10%，限定在 8,000–40,000 token（显式覆盖优先）。优先在用户边界处保留至少四条对话消息；已发布的报告也算边界。低于目标：不操作。若最后两轮超过目标，切点可前移到最近的用户边界。除非其后只有报告，最近一轮保持完整</td></tr>
+<tr><th scope="row">3. 总结整个被覆盖前缀</th><td>用摘要提示词（<a href="#summary-prompt">摘要提示词与角色</a>）：每个被替换的轮次、最初的请求、这条链之前的摘要、渲染出的子调用。非文本媒体变为引用说明</td></tr>
+<tr><th scope="row">4. 写入前校验</th><td>拒绝空的、失败的、被取消的、缺段的、碰到上限的或没有缩小的摘要；按同样方式在内存中渲染的候选必须严格更小。模型调用后重新检查这条链的渲染节点；有变化就作为可重试的空操作，其他分支和移到别处的 head 不算。provider 失败时保留历史，没有有损的结构化兜底</td></tr>
+<tr><th scope="row">5. 持久化并报告</th><td>连同恢复的状态一次写入；<code translate="no">covers_ids</code> 把之前的摘要展开成真实轮次 id。之前：上下文面板对这条链的读数；之后：该读数减去候选节省的部分。空操作不写入、不计数</td></tr>
+</tbody>
+</table>
 <p class="note">上下文显示使用 provider 的输入用量。每个请求还记录同样消息的本地估算，所以之后编辑图时按实测比例缩放估算，在下次报告前标为估算。没有匹配估算的旧用量不参与校准。</p>
 <p><code translate="no">/compact</code> 是这个分支的前台操作（<code translate="no">op_kind: compact</code>，<code translate="no">compaction_started</code> 上带 <code translate="no">op_id</code>）。页面的停止按钮和终端的 Ctrl-C 都用这个 id 发送 <code translate="no">operation.cancel</code>；摘要请求结束，不写任何东西，那一行显示"已停止"。自动压缩失败时不提示，下一个请求会再试。</p>
 <p class="note">原因：Claude Code、Codex 和 Kimi Code 都用停止一轮的那个键取消手动压缩；照 Claude Code 做，它的终端同样基于 Ink。</p>
 
 <details id="repeated-failures">
 <summary>自动压缩反复失败</summary>
-<p>每次失败的尝试仍要为整个对话付费。同一分支在同一模型上连续失败 <code translate="no">FAILS_MOST</code>（3）次、每次距上一次在 <code translate="no">HELD_FOR_S</code>（5 分钟）内后，这个分支的自动压缩从最后一次失败起等待五分钟，再尝试一次（<code translate="no">runtime/context/compaction/hold.py</code>，按会话、模型和分支计，由 <code translate="no">DefaultContextEngine.compact</code> 查询）。其他分支照常压缩。</p>
-<ul>
-<li>算失败：摘要器出错（例如 429）、提醒后仍缺段、碰到输出上限、带错误的空摘要、没有缩小。</li>
-<li>不算失败：取消、源已变化。</li>
-<li>摘要成功写入后清零计数。<code translate="no">/compact</code> 总会执行。</li>
-<li>沿用 magpie 的压缩保护（yetone/magpie，MIT）。</li>
-</ul>
+<p>每次失败的尝试仍要为整个对话付费。同一分支在同一模型上连续失败 <code translate="no">FAILS_MOST</code>（3）次、每次距上一次在 <code translate="no">HELD_FOR_S</code>（5 分钟）内后，这个分支的自动压缩从最后一次失败起等待五分钟，再尝试一次（<code translate="no">runtime/context/compaction/hold.py</code>，按会话、模型和分支计，由 <code translate="no">DefaultContextEngine.compact</code> 查询）。</p>
+<p>其他分支照常压缩。沿用 magpie 的压缩保护（yetone/magpie，MIT）。</p>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">情形</th></tr></thead>
+<tbody>
+<tr><th scope="row">算失败</th><td>摘要器出错（例如 429）、提醒后仍缺段、碰到输出上限、带错误的空摘要、没有缩小</td></tr>
+<tr><th scope="row">不算失败</th><td>取消、源已变化</td></tr>
+<tr><th scope="row">清零计数</th><td>摘要成功写入。<code translate="no">/compact</code> 总会执行</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="overflow-recovery">超长恢复</h2>
@@ -237,13 +251,16 @@
 <details id="tuning">
 <summary>按用户自己的调用选择比例</summary>
 <p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 系统 → 模型 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/token_accounting/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
-<ul>
-<li>按顺序回放，每个 prompt 按实际增长，去掉记录到的压缩（降到至少 20K prompt 的 60% 以下）。</li>
-<li>超过阈值（窗口比例减回复预留）时，压缩读完整 prompt，写一份和所见摘要一样长的摘要（没有时比对话开头多 10K）。下一次调用把它写入缓存，之后读回记录的压缩后的内容（见到五次前至少 10K）。</li>
-<li>token 按目录价格或厂商常见比例换算成普通输入。</li>
-<li>余量不足半份摘要或二十次调用增长的比例不尝试。与最便宜相差 1% 内的取最大，且比当前至少省 3% 才建议。少于 50 次调用：不建议。</li>
-<li>同一端点为 Anthropic API 和 Bedrock 调用建议 <code translate="no">models.prompt_cache_ttl</code>（<code translate="no">5m</code> 或 <code translate="no">1h</code>）：一小时写入价格是输入的两倍，过期后的调用重写整个 prompt。该设置只延长普通缓存（<code translate="no">providers/settings/cache_spec.py</code> 的 <code translate="no">with_lifetime_setting</code>）。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">回放</th><td>按顺序回放，每个 prompt 按实际增长，去掉记录到的压缩（降到至少 20K prompt 的 60% 以下）</td></tr>
+<tr><th scope="row">超过阈值</th><td>阈值是窗口比例减回复预留。压缩读完整 prompt，写一份和所见摘要一样长的摘要（没有时比对话开头多 10K）。下一次调用把它写入缓存，之后读回记录的压缩后的内容（见到五次前至少 10K）</td></tr>
+<tr><th scope="row">价格</th><td>token 按目录价格或厂商常见比例换算成普通输入</td></tr>
+<tr><th scope="row">建议</th><td>余量不足半份摘要或二十次调用增长的比例不尝试。与最便宜相差 1% 内的取最大，且比当前至少省 3% 才建议。少于 50 次调用：不建议</td></tr>
+<tr><th scope="row">缓存时长</th><td>同一端点为 Anthropic API 和 Bedrock 调用建议 <code translate="no">models.prompt_cache_ttl</code>（<code translate="no">5m</code> 或 <code translate="no">1h</code>）：一小时写入价格是输入的两倍，过期后的调用重写整个 prompt。该设置只延长普通缓存（<code translate="no">providers/settings/cache_spec.py</code> 的 <code translate="no">with_lifetime_setting</code>）</td></tr>
+</tbody>
+</table>
 </details>
 
 <details id="extension-points">

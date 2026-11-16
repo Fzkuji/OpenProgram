@@ -642,7 +642,7 @@ def test_bootstrap_names_the_platform_a_release_does_not_cover(tmp_path: Path) -
 
     assert result.returncode == 1
     assert "OpenProgram 1.2.3 has no command-line package for Linux on x86_64." in result.stderr
-    assert "https://github.com/FuzzyKuji/OpenProgram/releases/tag/v1.2.3" in result.stderr
+    assert "https://github.com/Fzkuji/OpenProgram/releases/tag/v1.2.3" in result.stderr
     assert "install-release.sh" not in log.read_text(encoding="utf-8")
 
 

@@ -1,7 +1,7 @@
 <title>Installation, packaging, release and upgrade</title>
 <meta name="description" content="Who installs OpenProgram how, what every release contains, and how installs are verified, upgraded and removed.">
 <h1>Installation, packaging, release and upgrade</h1>
-<p><strong>Official releases</strong>: v1.3.0 is the version this tree builds; v1.2.0 is the latest tagged. One complete product runtime per platform and architecture. The macOS App adds only the Electron shell to it and the CLI only launchers; Windows and Linux Apps are a <a href="#thin-shell">thin shell</a> plus a seed. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
+<p><strong>Official releases</strong>: v1.4.0 is the version this tree builds; v1.3.0 is the latest tagged. One complete product runtime per platform and architecture. The macOS App adds only the Electron shell to it and the CLI only launchers; Windows and Linux Apps are a <a href="#thin-shell">thin shell</a> plus a seed. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
 
 <h2>Who gets what</h2>
 <table class="stack">
@@ -226,16 +226,19 @@
 <p>The only stable local App is <code translate="no">/Applications/OpenProgram.app</code>, with a sibling development App (see <a href="dev-instance.html">dev instance</a>). No App name carries a version, commit or task. Build Apps are never launched or kept.</p>
 <details>
 <summary>Full install: <code translate="no">npm --prefix apps/desktop run dist</code></summary>
-<ul>
-<li>Builds in a random temporary directory; validates bundle ID, version, main executable, embedded runtime.</li>
-<li>Rejects a candidate older than the current App before touching App, worker or Launch Services. Version segments compare as arbitrary-precision integers; an unverifiable existing App fails, it is kept.</li>
-<li>A user-level lock plus an atomic lock in Applications: concurrent runs fail before any change, and cleanup removes only locks held by this PID.</li>
-<li>Unloads a launchd KeepAlive service, stops the lock-holding worker, staging on the Applications volume, then moves the old App into the transaction directory and activates the new one.</li>
-<li>Reinstalls the service with the new embedded Python and <code translate="no">-I -B</code>; waits for <code translate="no">/healthz</code>; opens the App. Service arguments must not retain conda, checkout or deleted-App paths.</li>
-<li>Failure restores old App, launchd service and run state. Success removes old App, wheel cache, staging, build and transaction directories.</li>
-<li>Registers only the fixed path with Launch Services; on restore, best-effort re-registers and keeps the original failure status.</li>
-<li>electron-builder ad-hoc signs components; a fixed local certificate signs the App and helpers; strict recursive verification follows.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Build</th><td>In a random temporary directory; validates bundle ID, version, main executable, embedded runtime</td></tr>
+<tr><th scope="row">Older candidate</th><td>Rejected before touching App, worker or Launch Services. Version segments compare as arbitrary-precision integers; an unverifiable existing App fails, it is kept</td></tr>
+<tr><th scope="row">Locks</th><td>A user-level lock plus an atomic lock in Applications: concurrent runs fail before any change, and cleanup removes only locks held by this PID</td></tr>
+<tr><th scope="row">Activate</th><td>Unloads a launchd KeepAlive service, stops the lock-holding worker, stages on the Applications volume, then moves the old App into the transaction directory and activates the new one</td></tr>
+<tr><th scope="row">Service</th><td>Reinstalled with the new embedded Python and <code translate="no">-I -B</code>; waits for <code translate="no">/healthz</code>; opens the App. Service arguments must not retain conda, checkout or deleted-App paths</td></tr>
+<tr><th scope="row">Failure, success</th><td>Failure restores old App, launchd service and run state. Success removes old App, wheel cache, staging, build and transaction directories</td></tr>
+<tr><th scope="row">Launch Services</th><td>Registers only the fixed path; on restore, best-effort re-registers and keeps the original failure status</td></tr>
+<tr><th scope="row">Signing</th><td>electron-builder ad-hoc signs components; a fixed local certificate signs the App and helpers; strict recursive verification follows</td></tr>
+</tbody>
+</table>
 </details>
 <details>
 <summary>Local App refresh: <code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
@@ -296,13 +299,16 @@
 </details>
 <details>
 <summary>Windows, CLI, release</summary>
-<ul>
-<li>Windows: same ZIP as the CLI; manifest, Python, worker health and Web chat from the unpacked App; ConPTY presets; browser paths. Updater takes only the exact EXE. Before packaging, the tests in <code translate="no">scripts/release/windows-contracts.txt</code>; after it, <code translate="no">smoke-windows-desktop.ps1</code> installs, launches to a healthy worker, makes one tool call and uninstalls keeping the data. The installed CLI also makes one tool call (<code translate="no">smoke-tool-call.py</code>).</li>
-<li>CLI: both bootstraps with latest and pinned versions; no PyPI or clone; hashes match; old version starts after a failed upgrade.</li>
-<li>Release: one version everywhere; every published asset passed its own leg; a build with no publisher signature carries <code translate="no">-unsigned</code> in its name.</li>
-<li>Linux Desktop: <code translate="no">scripts/release/smoke-linux-desktop.sh</code> under Xvfb on clean Ubuntu 22.04 and 24.04 with Git removed: deb install, desktop entry, <code translate="no">node-pty</code>, first-run seed, restart after unpacking, worker health, <code translate="no">/chat</code>, the launcher, and the AppImage with <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code>.</li>
-<li>Docs, indexes and runtime errors contain no <code translate="no">pip install openprogram</code> or component-install steps.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Target</th><th scope="col">Accepted when</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td>Same ZIP as the CLI; manifest, Python, worker health and Web chat from the unpacked App; ConPTY presets; browser paths. Updater takes only the exact EXE. Before packaging, the tests in <code translate="no">scripts/release/windows-contracts.txt</code>; after it, <code translate="no">smoke-windows-desktop.ps1</code> installs, launches to a healthy worker, makes one tool call and uninstalls keeping the data. The installed CLI also makes one tool call (<code translate="no">smoke-tool-call.py</code>)</td></tr>
+<tr><th scope="row">CLI</th><td>Both bootstraps with latest and pinned versions; no PyPI or clone; hashes match; old version starts after a failed upgrade</td></tr>
+<tr><th scope="row">Release</th><td>One version everywhere; every published asset passed its own leg; a build with no publisher signature carries <code translate="no">-unsigned</code> in its name</td></tr>
+<tr><th scope="row">Linux Desktop</th><td><code translate="no">scripts/release/smoke-linux-desktop.sh</code> under Xvfb on clean Ubuntu 22.04 and 24.04 with Git removed: deb install, desktop entry, <code translate="no">node-pty</code>, first-run seed, restart after unpacking, worker health, <code translate="no">/chat</code>, the launcher, and the AppImage with <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code></td></tr>
+<tr><th scope="row">Docs</th><td>Docs, indexes and runtime errors contain no <code translate="no">pip install openprogram</code> or component-install steps</td></tr>
+</tbody>
+</table>
 </details>
 <details>
 <summary>References</summary>

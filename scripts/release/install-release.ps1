@@ -624,8 +624,8 @@ function Invoke-WorkerProbe {
     }
 }
 
-$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.3.0" }
-$Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "FuzzyKuji/OpenProgram" }
+$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.4.0" }
+$Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "Fzkuji/OpenProgram" }
 if ($Version -notmatch "^\d+\.\d+\.\d+$") {
     throw "invalid OpenProgram version: $Version"
 }

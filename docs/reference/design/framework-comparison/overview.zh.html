@@ -47,7 +47,7 @@
 <dt>会话存储</dt><dd>每会话一份追加日志为事实来源，三种角色（user、llm、code），caller、predecessor 边，分支 head。<code translate="no">context/commits/</code> 存每轮上下文记录</dd>
 <dt>其他存储</dt><dd><code translate="no">usage.db</code>：SQLite 用量账本。记忆：Markdown 加可重建的内存 BM25、embedding 索引，后台写入，三个 <code translate="no">memory_*</code> 工具</dd>
 <dt>工具</dt><dd>四个域的动态注册表（todo、task、agent、message）；延迟目录加 <code translate="no">tool_search</code></dd>
-<dt>扩展</dt><dd>MCP client 与 server、ACP、skills、plugins、34 个事件、<code translate="no">agent.json</code>；内置、动态与自定义 provider</dd>
+<dt>扩展</dt><dd>MCP client 与 server、ACP、skills、plugins、37 个事件、<code translate="no">agent.json</code>；内置、动态与自定义 provider</dd>
 <dt>认证</dt><dd>Web、WebSocket：<code translate="no">owner_auth</code>，每次启动一个 token，按 profile 区分 cookie。渠道：配对与 allowlist（<code translate="no">interfaces/channels/inbound/_access.py</code>），是独立的来源身份边界。不是多租户服务</dd>
 </dl>
 
@@ -91,7 +91,7 @@
 <tr><th scope="row">项目说明文件</th><td>agent工作区AGENTS.md</td><td>相当</td></tr>
 <tr><th scope="row">工具面</th><td>动态 registry，常驻 preset 加 tool_search 延迟目录</td><td>相当</td></tr>
 <tr><th scope="row">权限审批</th><td>5种模式加规则加tool.before门</td><td>相当</td></tr>
-<tr><th scope="row">扩展口</th><td>插件加skills加MCP客户端加34事件</td><td>相当</td></tr>
+<tr><th scope="row">扩展口</th><td>插件加skills加MCP客户端加37事件</td><td>相当</td></tr>
 <tr><th scope="row">多渠道</th><td>4个</td><td>落后</td></tr>
 <tr><th scope="row">界面</th><td>TUI加网页加Electron</td><td>相当</td></tr>
 <tr><th scope="row">对外接口</th><td>认证stdio MCP server加ACP；无稳定远程SDK</td><td>相当</td></tr>

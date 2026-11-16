@@ -141,6 +141,9 @@ class CanonicalAgentActivation:
     attempt_id: str
     generation: int
     status_version: int
+    #: The owner the driver started. Kept here because a turn that ends at
+    #: once has already left the driver's table when the caller looks.
+    handle: Any = None
 
 
 InputResolver = Callable[[Any], Mapping[str, Any]]
@@ -465,8 +468,15 @@ class CanonicalAgentEntry:
             if self._yields_to_control_intent(admission.execution_id, attempt):
                 return None
             raise
+        started: list[Any] = []
+
+        async def _start(attempt: Any, activation: Any) -> Any:
+            binding = await self.driver.activate(attempt, activation)
+            started.append(getattr(binding, "handle", None))
+            return binding
+
         delivered, issue = await self.control._activate(
-            active, None, (), activator=self.driver.activate
+            active, None, (), activator=_start
         )
         if not delivered:
             if self._yields_to_control_intent(active.execution_id, active):
@@ -491,6 +501,7 @@ class CanonicalAgentEntry:
             attempt_id=active.attempt_id,
             generation=active.generation,
             status_version=running.status_version,
+            handle=started[0] if started else None,
         )
 
     async def _stopped_by_mark(self, execution_id: str) -> bool:
@@ -703,10 +714,7 @@ class CanonicalAgentAdapter:
             return None
         if on_activated is not None:
             on_activated(active)
-        handle = self.driver._handles[
-            (active.admission.execution_id, active.attempt_id, active.generation)
-        ]
-        result = await handle.done
+        result = await active.handle.done
         return active, result
 
     def fail_admission(

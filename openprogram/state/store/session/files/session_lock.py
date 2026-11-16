@@ -29,6 +29,10 @@ that work in a worker thread, and a held conversation delays that request
 only. The server names its loop (:func:`watch_event_loop`); an
 acquisition on it is logged once per call site
 (:func:`_note_event_loop_acquisition`) so a new one is found and moved.
+
+A hold of :data:`LONG_HOLD` seconds or more is logged when it ends, with
+the conversation, the thread and where it was released: while it lasts,
+every read and write of that conversation waits.
 """
 from __future__ import annotations
 
@@ -56,6 +60,25 @@ _POLL = 0.02
 
 _log = logging.getLogger(__name__)
 _loop_sites: set[tuple] = set()
+
+# A holder does file work only, so a hold this long is what makes every
+# other request on the conversation wait. Each one is logged with where it
+# was released, the evidence for which work to shorten or move.
+LONG_HOLD = 1.0
+
+
+def _note_long_hold(session_id: str, held: float, thread_name: str,
+                    waited_elsewhere: float = 0.0) -> None:
+    stack = [frame for frame in traceback.extract_stack()[:-2]
+             if not frame.filename.endswith(("session_lock.py", "contextlib.py"))]
+    where = " < ".join(f"{os.path.basename(frame.filename)}:{frame.lineno} {frame.name}"
+                       for frame in reversed(stack[-5:]))
+    # The thread keeps this process's half while it waits for the other
+    # half, so a wait on another process holds up every thread here too.
+    other = (f", {waited_elsewhere:.1f}s of it waiting for another process to release it"
+             if waited_elsewhere >= 0.1 else "")
+    _log.warning("conversation %s was locked for %.1fs by thread %r%s: %s",
+                 session_id, held, thread_name, other, where)
 _worker_loop: Optional[Callable[[], Optional[asyncio.AbstractEventLoop]]] = None
 
 
@@ -148,6 +171,8 @@ class ConversationLock:
         self._depth = 0
         self._handle = None
         self._flock_depth = 0
+        self._held_since = 0.0
+        self._waited_elsewhere = 0.0
 
     def _holder(self) -> str:
         if self._owner is not None:
@@ -166,13 +191,21 @@ class ConversationLock:
         if self._depth == 0:
             current = threading.current_thread()
             self._owner, self._owner_name = current.ident, current.name
+            self._held_since = time.monotonic()
+            self._waited_elsewhere = 0.0
         self._depth += 1
 
     def release(self) -> None:
         self._depth -= 1
+        long_hold = None
         if self._depth == 0:
+            held = time.monotonic() - self._held_since
+            if held >= LONG_HOLD:
+                long_hold = (held, self._owner_name, self._waited_elsewhere)
             self._owner, self._owner_name = None, ""
         self._mutex.release()
+        if long_hold is not None:
+            _note_long_hold(self.session_id, *long_hold)
 
     def held_by_current_thread(self) -> bool:
         return self._owner == threading.get_ident()
@@ -193,6 +226,7 @@ class ConversationLock:
             self._flock_depth += 1
             return
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        asked = time.monotonic()
         while True:
             handle = open(self.path, "a+", encoding="utf-8")
             try:
@@ -218,6 +252,7 @@ class ConversationLock:
             # deleted, or a sweep took an idle file): the lock just taken is
             # on a file nobody else can open. Take the one at the path.
             handle.close()
+        self._waited_elsewhere += time.monotonic() - asked
         self._handle = handle
         self._flock_depth = 1
 

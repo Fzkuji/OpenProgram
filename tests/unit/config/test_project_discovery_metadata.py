@@ -10,7 +10,7 @@ def test_package_metadata_exposes_discovery_links_and_keywords() -> None:
 
     assert {
         "Issues": "https://github.com/Fzkuji/OpenProgram/issues",
-        "Changelog": "https://github.com/FuzzyKuji/OpenProgram/releases",
+        "Changelog": "https://github.com/Fzkuji/OpenProgram/releases",
         "Discussions": "https://github.com/Fzkuji/OpenProgram/discussions",
         "Paper": "https://arxiv.org/abs/2606.15874",
     }.items() <= project["urls"].items()

@@ -370,14 +370,17 @@
 </details>
 
 <h2 id="transcript-consistency">Transcript update ownership</h2>
-<ul>
-<li>The server owns every row. A read draws a window, numbered <code translate="no">transcript_update</code> changes keep it current, and text frames add text to a block by offset. One reducer, <code translate="no">apply-transcript-update.ts</code>, applies all three, so a row drawn live is the row a reload draws.</li>
-<li>The browser adds only what the server has not named yet. A pending send, a function placeholder or a notice is a typed local row, and goes when a read or update names its <code translate="no">clientRequestId</code>.</li>
-<li>A field shown ahead of the server (Stop, a version switch, a chapter pin, a file undo, a goal result) is an overlay that ends on a stated event and never changes the row under it.</li>
-<li>Execution trees supplement the owning reply: a model-issued function's tree is an item of the reply's <code translate="no">callRoots</code>, a function run's tree a field of its row. A tree or frame for a row the view does not hold creates nothing.</li>
-<li>A missed update or a lost text frame makes the view read once at its anchor. A read during a stream neither loops nor shortens the reply, because the server parks that view's frames until the read's reply has gone. A branch move or structural change reads again.</li>
-<li>Each execution root keeps its persisted path. Repeated calls stay distinct; a root is consumed once across text-separated groups. A completed function stays in its summary; direct runs stay standalone.</li>
-</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Owner and rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rows</th><td>The server owns every row. A read draws a window, numbered <code translate="no">transcript_update</code> changes keep it current, and text frames add text to a block by offset. One reducer, <code translate="no">apply-transcript-update.ts</code>, applies all three, so a row drawn live is the row a reload draws.</td></tr>
+<tr><th scope="row">Local rows</th><td>The browser adds only what the server has not named yet. A pending send, a function placeholder or a notice is a typed local row, and goes when a read or update names its <code translate="no">clientRequestId</code>.</td></tr>
+<tr><th scope="row">Fields ahead of the server</th><td>A field shown ahead of the server (Stop, a version switch, a chapter pin, a file undo, a goal result) is an overlay that ends on a stated event and never changes the row under it.</td></tr>
+<tr><th scope="row">Execution trees</th><td>Execution trees supplement the owning reply: a model-issued function's tree is an item of the reply's <code translate="no">callRoots</code>, a function run's tree a field of its row. A tree or frame for a row the view does not hold creates nothing.</td></tr>
+<tr><th scope="row">Missed update</th><td>A missed update or a lost text frame makes the view read once at its anchor. A read during a stream neither loops nor shortens the reply, because the server parks that view's frames until the read's reply has gone. A branch move or structural change reads again.</td></tr>
+<tr><th scope="row">Execution roots</th><td>Each execution root keeps its persisted path. Repeated calls stay distinct; a root is consumed once across text-separated groups. A completed function stays in its summary; direct runs stay standalone.</td></tr>
+</tbody>
+</table>
 <p class="note">Acceptance replays recorded chats through production reducers and components and requires live to equal cold at every checkpoint: stream, partial history, completion, late trees, steers, errors, cancellation, reconnect and reload.</p>
 
 <h2 id="queue-steer">Queue and current-turn input</h2>
@@ -408,7 +411,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Bound</th></tr></thead>
 <tbody>
-<tr><th scope="row">Server</th><td>One branch view per session, shared by every connection, at most 16 in the process, rebuilt when the store says the branch moved. A view holds row ids grouped by turn, not bodies. A page projects only its selected whole turns from the store, so a row that changed after open reads fresh: a prompt and everything it owns, with tool descendants and compaction rows in place. A cursor off the branch answers <code translate="no">cursor_not_on_branch</code> and the client reads the chat again. Read version 2 keeps its per-connection snapshots as the rollback.</td></tr>
+<tr><th scope="row">Server</th><td>One branch view per session, shared by every connection, at most 16 in the process, rebuilt when the store says the branch moved. A view holds row ids grouped by turn, not bodies. A page projects only its selected whole turns from the store, so a row that changed after open reads fresh: a prompt and everything it owns, with tool descendants and compaction rows in place.</td></tr>
+<tr><th scope="row">Cursor off the branch</th><td>Answers <code translate="no">cursor_not_on_branch</code>; the client reads the chat again</td></tr>
+<tr><th scope="row">Rollback</th><td>Read version 2 keeps its per-connection snapshots</td></tr>
 <tr><th scope="row">Browser cache</th><td>Four conversations; displayed panes and in-flight requests may exceed it briefly</td></tr>
 <tr><th scope="row">One transcript</th><td>Six ordinary pages, 8 MiB, with one indivisible page allowed for a large turn</td></tr>
 <tr><th scope="row">Eviction</th><td>Opposite the reading position, never persisted records; active updates stay; scrolling back refetches</td></tr>

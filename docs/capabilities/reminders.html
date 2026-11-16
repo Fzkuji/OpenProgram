@@ -45,15 +45,17 @@
 <tr><th scope="row">Click an empty day or time</th><td>New one-time task then</td></tr>
 </tbody></table>
 <h2 id="limits">Limits</h2>
-<ul>
-<li>Reminders run in this computer's worker. If it is down, a one-time reminder fires when it restarts. Keep it running with <code translate="no">openprogram worker install</code>.</li>
-<li>A repeating task whose time passed less than 12 hours ago runs once when the worker restarts; an older time shows as a missed run. A task turned on or edited after that time does not run for it.</li>
-<li>A task's agent run is skipped while its conversation is archived or its previous run is unfinished, including across a worker restart. Activity shows the skip. A waking reminder in an archived conversation only notifies.</li>
-<li>Changing the time of a one-time task that already fired makes it fire again at the new time.</li>
-<li>Focus and Do Not Disturb hold system notifications in Notification Center. The App's <strong>Notifications</strong> setting turns off its own too.</li>
-<li>Only the owner, or an agent working for the owner, can set reminders, in scheduled and background turns as well as chat.</li>
-<li>A scheduled agent run or command stops after 2 hours, counting time before a restart, and shows as a failed run.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Worker down</th><td>Reminders run in this computer's worker. If it is down, a one-time reminder fires when it restarts. Keep it running with <code translate="no">openprogram worker install</code>.</td></tr>
+<tr><th scope="row">Missed repeating time</th><td>Less than 12 hours ago: runs once when the worker restarts. Older: shows as a missed run. A task turned on or edited after that time does not run for it.</td></tr>
+<tr><th scope="row">Archived or still running</th><td>A task's agent run is skipped while its conversation is archived or its previous run is unfinished, including across a worker restart. Activity shows the skip. A waking reminder in an archived conversation only notifies.</td></tr>
+<tr><th scope="row">One-time task moved after it fired</th><td>Fires again at the new time.</td></tr>
+<tr><th scope="row">Focus, Do Not Disturb</th><td>Hold system notifications in Notification Center. The App's <strong>Notifications</strong> setting turns off its own too.</td></tr>
+<tr><th scope="row">Who can set them</th><td>Only the owner, or an agent working for the owner, in scheduled and background turns as well as chat.</td></tr>
+<tr><th scope="row">Time limit</th><td>A scheduled agent run or command stops after 2 hours, counting time before a restart, and shows as a failed run.</td></tr>
+</tbody></table>
 <h2 id="run-your-own-command">Run your own command</h2>
 <p>Each firing is a <code translate="no">reminder.fired</code> event. A <code translate="no">hooks</code> entry in <code translate="no">config.json</code> gets it as JSON on standard input; hooks are read when the worker starts.</p>
 <pre translate="no" tabindex="0"><code>{"hooks": {"reminder.fired": [{"command": "python ~/bin/on_reminder.py", "timeout": 30}]}}</code></pre>

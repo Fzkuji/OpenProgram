@@ -37,7 +37,12 @@
 </table>
 
 <h2 id="configuration">Configuration</h2>
-<p><code translate="no">hold_outbound</code>, a top-level boolean in <code translate="no">agent.json</code>, set by the last checkbox on the Agent's Always-on tab and accepted by <code translate="no">PATCH /api/agents/{id}</code>. Only an explicit <code translate="no">true</code> turns it on; <code translate="no">AgentSpec.hold_outbound</code> defaults to <code translate="no">false</code>. Off, the call follows the conversation's mode and rules like any other tool. A one-time worker migration rewrites stored <code translate="no">true</code> values, which came from an earlier default, to <code translate="no">false</code>.</p>
+<dl class="pairs">
+<dt><code translate="no">hold_outbound</code></dt><dd>A top-level boolean in <code translate="no">agent.json</code>, set by the last checkbox on the Agent's Always-on tab and accepted by <code translate="no">PATCH /api/agents/{id}</code></dd>
+<dt>On</dt><dd>Only an explicit <code translate="no">true</code>; <code translate="no">AgentSpec.hold_outbound</code> defaults to <code translate="no">false</code></dd>
+<dt>Off</dt><dd>The call follows the conversation's mode and rules like any other tool</dd>
+<dt>Stored values</dt><dd>A one-time worker migration rewrites stored <code translate="no">true</code> values, which came from an earlier default, to <code translate="no">false</code></dd>
+</dl>
 
 <h2 id="implementation-status">Implementation status</h2>
 <table class="stack fixed">

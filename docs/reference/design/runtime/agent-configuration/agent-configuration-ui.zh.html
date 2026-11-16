@@ -170,13 +170,16 @@ classify = _example_agent.classify</pre>
 </dl>
 <details>
 <summary>写入资格</summary>
-<ul>
-<li>每个执行节点带写入资格标签、空间引用和策略 epoch。会话结束写入、压缩抽取、来源导出和计划整理都过滤 off 和只读节点。</li>
-<li>禁用写入会阻止未结算的排队写入，重新启用时也不追溯摄取。已提交的记忆保留。</li>
-<li>派生输出和摘要带所含上下文中最严格的资格。拆分或切换 Agent 不能重新标记受限数据。off 传播禁写限制，但不禁止之后独立授权的读取。</li>
-<li>后台写入在提交时验证原授权和当前空间策略；撤销优先于固定配置。绝不用更宽的空间重试。无法取消的外部后端要写明。</li>
-<li>用户编写的指令和上传文档仍是输入，即使含个人信息；不声称能自动分类来源记录之外的文本。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签</th><td>每个执行节点带写入资格标签、空间引用和策略 epoch。会话结束写入、压缩抽取、来源导出和计划整理都过滤 off 和只读节点</td></tr>
+<tr><th scope="row">禁用写入</th><td>禁用写入会阻止未结算的排队写入，重新启用时也不追溯摄取。已提交的记忆保留</td></tr>
+<tr><th scope="row">派生输出</th><td>派生输出和摘要带所含上下文中最严格的资格。拆分或切换 Agent 不能重新标记受限数据。off 传播禁写限制，但不禁止之后独立授权的读取</td></tr>
+<tr><th scope="row">后台写入</th><td>后台写入在提交时验证原授权和当前空间策略；撤销优先于固定配置。绝不用更宽的空间重试。无法取消的外部后端要写明</td></tr>
+<tr><th scope="row">用户输入</th><td>用户编写的指令和上传文档仍是输入，即使含个人信息；不声称能自动分类来源记录之外的文本</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="context">上下文、指令与环境</h2>
@@ -286,14 +289,17 @@ classify = _example_agent.classify</pre>
 </table>
 <details>
 <summary>页面布局</summary>
-<ul>
-<li>保存 Agent 列表和全宽编辑器。二级导航用共享的 ManagePage 分栏布局和侧栏宽度 token。</li>
-<li>头部：名称、ID、对话操作。八个标签在任何宽度都保持横向，必要时滚动。</li>
-<li>常规有名称、用途、把 Agent 提供给其他 Agent 的开关、头像、模型和推理。手动指令留在高级，同在高级的还有频道身份，以及其他 Agent 启动它时它在哪里工作（<a href="../collaboration/agent-collaboration.zh.html">Agent 协作</a>）。没有内层导航列、重复介绍或设置摘要。</li>
-<li>输入正常字重，标签中等字重；应用字体、中性表面、控件尺寸、蓝色选中。</li>
-<li>面板在标准内边距内填满编辑器，无固定最大宽度。编辑器独立滚动；保存页脚常驻并报告草稿状态。</li>
-<li>窄屏用选择框替代列表，身份字段堆叠。保存的无效推理选项保持可见；继承的不兼容设置不产生编辑前错误。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">区域</th><th scope="col">布局</th></tr></thead>
+<tbody>
+<tr><th scope="row">页面</th><td>保存 Agent 列表和全宽编辑器。二级导航用共享的 ManagePage 分栏布局和侧栏宽度 token</td></tr>
+<tr><th scope="row">头部</th><td>头部：名称、ID、对话操作。八个标签在任何宽度都保持横向，必要时滚动</td></tr>
+<tr><th scope="row">常规</th><td>常规有名称、用途、把 Agent 提供给其他 Agent 的开关、头像、模型和推理。手动指令留在高级，同在高级的还有频道身份，以及其他 Agent 启动它时它在哪里工作（<a href="../collaboration/agent-collaboration.zh.html">Agent 协作</a>）。没有内层导航列、重复介绍或设置摘要</td></tr>
+<tr><th scope="row">文字</th><td>输入正常字重，标签中等字重；应用字体、中性表面、控件尺寸、蓝色选中</td></tr>
+<tr><th scope="row">面板</th><td>面板在标准内边距内填满编辑器，无固定最大宽度。编辑器独立滚动；保存页脚常驻并报告草稿状态</td></tr>
+<tr><th scope="row">窄屏</th><td>窄屏用选择框替代列表，身份字段堆叠。保存的无效推理选项保持可见；继承的不兼容设置不产生编辑前错误</td></tr>
+</tbody>
+</table>
 <p class="note">验收：内置项可见可编辑；新建 Agent 从空白开始；重复安装保留编辑；<code translate="no">Agent.from_spec</code> 能运行保存记录；草稿、冲突、复制和对话流程正常；桌面和窄屏布局在真实页面和 App 上检查。</p>
 </details>
 

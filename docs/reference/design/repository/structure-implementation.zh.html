@@ -75,7 +75,14 @@
 python -m scripts.docs_site.checklinks</pre>
 
 <h2 id="module-organization">模块组织与文件操作安全</h2>
-<p>功能模块自带类型、状态和私有工具。一个文件夹只放一件事：含义相同的模块放进以用途命名的子包。不为一两个文件建文件夹，也不建工具杂物夹。大文件在可独立测试的职责处拆分；公开入口不变；不为行数引入通配转发、重复实现或动态执行源码。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">单位</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">功能模块</th><td>自带类型、状态和私有工具</td></tr>
+<tr><th scope="row">文件夹</th><td>只放一件事：含义相同的模块放进以用途命名的子包。不为一两个文件建文件夹，也不建工具杂物夹</td></tr>
+<tr><th scope="row">大文件</th><td>在可独立测试的职责处拆分；公开入口不变；不为行数引入通配转发、重复实现或动态执行源码</td></tr>
+</tbody>
+</table>
 
 <h3 id="file-operation-contract">文件操作契约</h3>
 <table class="stack fixed">
@@ -113,7 +120,10 @@ python -m scripts.docs_site.checklinks</pre>
 <tr><th scope="row">认证、自更新</th><td>认证归集账号和登录编排；自更新归集验证、修复和交付</td></tr>
 <tr><th scope="row">测试</th><td>保留执行层，增加功能目录；发现包含嵌套测试。大型检查文件保留全部场景、公共夹具和确定性发现。子进程验收属集成层。移动保持已收集的测试身份和已安装导入</td></tr>
 <tr><th scope="row">测试功能文件夹</th><td>以所测的源码包或关注点命名。Unit：<code translate="no">context/</code>（compaction、system_prompt、render、tool_results、statistics）、<code translate="no">store/</code>（session、file_history、project）、<code translate="no">webui/</code>（transcript、branches、chat、settings）、<code translate="no">providers/adapters/</code>（anthropic、openai、openai_codex）、<code translate="no">programs/tools/computer_use/</code>。Component：<code translate="no">store/</code>（session、file_history）、<code translate="no">execution/</code>（store、control）、<code translate="no">webui/</code>（transcript、owner_auth）、<code translate="no">providers/adapters/</code>（openai_codex、openai_completions、structured_output）、<code translate="no">config/</code>（windows、docs_site、office_editor）。<code translate="no">tests/e2e/web/</code>：chat、files、browser_tabs、applications。新文件夹是否为包，与上级文件夹一致</td></tr>
-<tr><th scope="row">应用测试</th><td>测试放在它所测内容对应的文件夹。<code translate="no">apps/web/tests</code> 在源码有第二层的功能里也有第二层：<code translate="no">chat/messages/</code>（bubbles、cards、execution、list），<code translate="no">chat/composer/</code>（attach、input、controls、submit），<code translate="no">chat/transcript/</code>（rows、streaming，契约和回放测试在旁边），<code translate="no">browser/</code>（pip、control、bookmarks、web-tab），<code translate="no">files/</code>（explorer、documents、paths），<code translate="no">settings/</code>（providers、memory、scheduler、appearance），<code translate="no">execution/</code>（activity、recovery、debugger），<code translate="no">tabs/</code>（canvas、strip），<code translate="no">ui/</code>（popups、rails）。<code translate="no">apps/desktop/tests</code> 跟随 <code translate="no">apps/desktop/main</code>：windows、web-views、self-update、terminal、worker。<code translate="no">apps/cli/tests</code>：startup、input、rendering、repl、commands。跨多组的测试和公共辅助文件直接留在功能文件夹里</td></tr>
+<tr><th scope="row">应用测试</th><td>测试放在它所测内容对应的文件夹。跨多组的测试和公共辅助文件直接留在功能文件夹里</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/tests</code></th><td>在源码有第二层的功能里也有第二层：<code translate="no">chat/messages/</code>（bubbles、cards、execution、list），<code translate="no">chat/composer/</code>（attach、input、controls、submit），<code translate="no">chat/transcript/</code>（rows、streaming，契约和回放测试在旁边），<code translate="no">browser/</code>（pip、control、bookmarks、web-tab），<code translate="no">files/</code>（explorer、documents、paths），<code translate="no">settings/</code>（providers、memory、scheduler、appearance），<code translate="no">execution/</code>（activity、recovery、debugger），<code translate="no">tabs/</code>（canvas、strip），<code translate="no">ui/</code>（popups、rails）</td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/tests</code></th><td>跟随 <code translate="no">apps/desktop/main</code>：windows、web-views、self-update、terminal、worker</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/tests</code></th><td>startup、input、rendering、repl、commands</td></tr>
 <tr><th scope="row">Activity 面板</th><td><code translate="no">apps/web/components/right-sidebar/running/</code> 放总览面板；<code translate="no">pages/</code> 放二级页面（页框、行、几何、措辞、每种一页）；<code translate="no">runs/</code> 放运行列表和就地展开的一次运行；<code translate="no">agent-chart/</code> 放 Agent 的时间图</td></tr>
 <tr><th scope="row">保持完整</th><td>生成的 Yoga 绑定、vendored Ink 渲染器、并列的 Provider 适配器、Desktop main 组合、原生终端渲染、内聚的路由集合、检查点事务、安全 HTTP 策略</td></tr>
 </tbody>

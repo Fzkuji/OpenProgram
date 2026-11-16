@@ -211,8 +211,8 @@ def test_install_docs_always_offer_the_newest_release() -> None:
 
 def test_install_docs_cover_what_stops_a_new_user() -> None:
     fallbacks = (
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh",
-        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.ps1 | iex",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.ps1 | iex",
     )
     required = (
         "macOS 13",
@@ -233,7 +233,7 @@ def test_install_docs_cover_what_stops_a_new_user() -> None:
 
 
 def test_every_readme_gives_the_working_install_fallback() -> None:
-    fallback = "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh"
+    fallback = "https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh"
     readmes = sorted([ROOT / "README.md", *(ROOT / "translations").glob("README.*.md")])
     assert len(readmes) == 10
     for path in readmes:

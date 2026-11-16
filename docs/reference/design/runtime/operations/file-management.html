@@ -242,15 +242,18 @@
 
 <details id="document-history">
 <summary>Publishing documents: <code translate="no">write(file_path, source_path=...)</code></summary>
-<ul>
-<li>Exactly one of <code translate="no">content</code> or <code translate="no">source_path</code>. The source is a local regular file under read permission, up to 64 MiB. Identical paths, directories, links and oversized or unreadable sources fail before any change.</li>
-<li>Targets keep write authorization, read baseline and approval fingerprint. Source and target fingerprints join approval waits and are rechecked before publication.</li>
-<li>Bytes go to a complete temporary file in the target directory, then replace. Failure cleans up and keeps the target. Raw bytes, never text-converted.</li>
-<li>Advisory locks serialize cooperating writers only. Windows closes handles lacking delete sharing before replacement and revalidates; no OS conditional replace.</li>
-<li>Read first: models read originals, then generate staged versions. Binary reads return type and byte count. New files need no prior read.</li>
-<li>Generators call this path; text tools keep write, edit and apply_patch and share prepare, commit and abort. <code translate="no">CheckpointStore</code> owns state; Review and summaries are projections.</li>
-<li>Not provided: Word tracked changes, PPT visual diffs, Office semantic diffs, remote stores (these need conditional writes and verifiable version IDs before claiming recovery), full-disk scans, polling, plugin registry.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Arguments</th><td>Exactly one of <code translate="no">content</code> or <code translate="no">source_path</code>. The source is a local regular file under read permission, up to 64 MiB. Identical paths, directories, links and oversized or unreadable sources fail before any change.</td></tr>
+<tr><th scope="row">Target checks</th><td>Targets keep write authorization, read baseline and approval fingerprint. Source and target fingerprints join approval waits and are rechecked before publication.</td></tr>
+<tr><th scope="row">Write</th><td>Bytes go to a complete temporary file in the target directory, then replace. Failure cleans up and keeps the target. Raw bytes, never text-converted.</td></tr>
+<tr><th scope="row">Locks</th><td>Advisory locks serialize cooperating writers only. Windows closes handles lacking delete sharing before replacement and revalidates; no OS conditional replace.</td></tr>
+<tr><th scope="row">Read first</th><td>Models read originals, then generate staged versions. Binary reads return type and byte count. New files need no prior read.</td></tr>
+<tr><th scope="row">Callers</th><td>Generators call this path; text tools keep write, edit and apply_patch and share prepare, commit and abort. <code translate="no">CheckpointStore</code> owns state; Review and summaries are projections.</td></tr>
+<tr><th scope="row">Not provided</th><td>Word tracked changes, PPT visual diffs, Office semantic diffs, remote stores (these need conditional writes and verifiable version IDs before claiming recovery), full-disk scans, polling, plugin registry</td></tr>
+</tbody>
+</table>
 </details>
 
 <details id="human-edits">
@@ -280,15 +283,18 @@
 </dl>
 <details>
 <summary>Invariants</summary>
-<ul>
-<li>Prepared persists before the write; committed only after confirming the after state. If preparing fails, the mutator stops before touching disk.</li>
-<li><code translate="no">absent</code> means absence was confirmed. A baseline read failure is <code translate="no">recoverability=unavailable</code>, never absent.</li>
-<li><code translate="no">unavailable</code> applies only to journaled mutations whose size or type policy omits blobs, never to hide journal failures.</li>
-<li>Same-file edits in a turn fold to net first-before to last-after; rename keeps lineage. Regular before and after both keep blob refs.</li>
-<li>Paths are recanonicalized at capture, plan and apply; parent chain, leaf lstat, device, inode and link count are checked with validated handles or no-follow primitives.</li>
-<li>Revert, Restore and Reapply are also transactions; originals are immutable. Current branch folds the active lineage only.</li>
-<li>Each prompt defines <code translate="no">before_turn</code>, assistant completion <code translate="no">after_turn</code>; the UI names the restored boundary.</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Invariant</th></tr></thead>
+<tbody>
+<tr><th scope="row">Prepared, committed</th><td>Prepared persists before the write; committed only after confirming the after state. If preparing fails, the mutator stops before touching disk.</td></tr>
+<tr><th scope="row"><code translate="no">absent</code></th><td>Absence was confirmed. A baseline read failure is <code translate="no">recoverability=unavailable</code>, never absent.</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td>Only for journaled mutations whose size or type policy omits blobs, never to hide journal failures</td></tr>
+<tr><th scope="row">Folding</th><td>Same-file edits in a turn fold to net first-before to last-after; rename keeps lineage. Regular before and after both keep blob refs.</td></tr>
+<tr><th scope="row">Paths</th><td>Recanonicalized at capture, plan and apply; parent chain, leaf lstat, device, inode and link count are checked with validated handles or no-follow primitives</td></tr>
+<tr><th scope="row">Revert, Restore, Reapply</th><td>Also transactions; originals are immutable. Current branch folds the active lineage only.</td></tr>
+<tr><th scope="row">Boundaries</th><td>Each prompt defines <code translate="no">before_turn</code>, assistant completion <code translate="no">after_turn</code>; the UI names the restored boundary</td></tr>
+</tbody>
+</table>
 </details>
 
 <h3 id="review-scopes">Three Review scopes</h3>

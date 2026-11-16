@@ -250,19 +250,22 @@ writer=controller</pre>
 <tr><th scope="row">Windows</th><td>No OS sandbox: temporary data, a separate port and the sanitized copy are the only isolation. The progress line during the trial and the result both say the test could reach other files on the computer. <code translate="no">PATH</code> is the base's Python plus the Windows system directories. The check that the launcher follows a moved pointer is skipped.</td></tr>
 </tbody>
 </table>
-<ol>
-<li>Baseline: the old version on the copy records doctor rows.</li>
-<li>Cold start reaches <code translate="no">/healthz</code> within 120 s, extended by <code translate="no">boot/&lt;id&gt;.migrating</code> up to 30 minutes.</li>
-<li><code translate="no">system_probe</code>: candidate identity, <code translate="no">/healthz</code>, <code translate="no">/chat</code>, WebSocket ping, doctor rows under the regression rule.</li>
-<li>Browser probe with Playwright.</li>
-<li>Full Agent turn against <code translate="no">trial/fake_model.py</code>: one tool call, then a final answer.</li>
-<li>Tests named in the plan, with the version's venv in <code translate="no">work/&lt;task&gt;</code>. No <code translate="no">pytest-timeout</code> or <code translate="no">pytest-xdist</code>; the controller enforces limits.</li>
-<li>Desktop main smoke: the shell's Electron runs candidate <code translate="no">desktop/main.js</code> headless to the main-ready handshake. Code that throws fails. An App that cannot open a window under the sandbox judges nothing and leaves desktop code to the relaunch handshake.</li>
-<li>Schema guard: <code translate="no">sqlite_master</code>, <code translate="no">user_version</code>, <code translate="no">min_reader_schema</code> and row digests. Dropped tables or columns, changed types, a raised floor or rewritten rows fail without a <code translate="no">Destructive-Migration: &lt;name&gt;</code> trailer. Conversation logs, function logs, <code translate="no">revisions.jsonl</code>, <code translate="no">run_index.jsonl</code> may only grow.</li>
-<li>Updater self-test: the candidate's controller switches and rolls back between dummy versions, the signed launcher reads its pointer, its sweep runs on a synthetic update, and old code reads what it wrote.</li>
-<li>Rollback rehearsal: the old version starts on migrated data and reads a migrated execution and conversation. Skipped only under the trailer, and then the result must say rollback needs the backup.</li>
-<li>Independent verifier: Job source <code translate="no">self_update_verify</code> in the live worker, read-only tools, frozen plan, signed receipt, 15 minutes. Gets the diff and plan, not the author's reasoning.</li>
-</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">Trial check, in order</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">1 Baseline</th><td>The old version on the copy records doctor rows</td></tr>
+<tr><th scope="row">2 Cold start</th><td>Reaches <code translate="no">/healthz</code> within 120 s, extended by <code translate="no">boot/&lt;id&gt;.migrating</code> up to 30 minutes</td></tr>
+<tr><th scope="row">3 <code translate="no">system_probe</code></th><td>Candidate identity, <code translate="no">/healthz</code>, <code translate="no">/chat</code>, WebSocket ping, doctor rows under the regression rule</td></tr>
+<tr><th scope="row">4 Browser probe</th><td>With Playwright</td></tr>
+<tr><th scope="row">5 Full Agent turn</th><td>Against <code translate="no">trial/fake_model.py</code>: one tool call, then a final answer</td></tr>
+<tr><th scope="row">6 Tests named in the plan</th><td>With the version's venv in <code translate="no">work/&lt;task&gt;</code>. No <code translate="no">pytest-timeout</code> or <code translate="no">pytest-xdist</code>; the controller enforces limits</td></tr>
+<tr><th scope="row">7 Desktop main smoke</th><td>The shell's Electron runs candidate <code translate="no">desktop/main.js</code> headless to the main-ready handshake. Code that throws fails. An App that cannot open a window under the sandbox judges nothing and leaves desktop code to the relaunch handshake</td></tr>
+<tr><th scope="row">8 Schema guard</th><td><code translate="no">sqlite_master</code>, <code translate="no">user_version</code>, <code translate="no">min_reader_schema</code> and row digests. Dropped tables or columns, changed types, a raised floor or rewritten rows fail without a <code translate="no">Destructive-Migration: &lt;name&gt;</code> trailer. Conversation logs, function logs, <code translate="no">revisions.jsonl</code>, <code translate="no">run_index.jsonl</code> may only grow</td></tr>
+<tr><th scope="row">9 Updater self-test</th><td>The candidate's controller switches and rolls back between dummy versions, the signed launcher reads its pointer, its sweep runs on a synthetic update, and old code reads what it wrote</td></tr>
+<tr><th scope="row">10 Rollback rehearsal</th><td>The old version starts on migrated data and reads a migrated execution and conversation. Skipped only under the trailer, and then the result must say rollback needs the backup</td></tr>
+<tr><th scope="row">11 Independent verifier</th><td>Job source <code translate="no">self_update_verify</code> in the live worker, read-only tools, frozen plan, signed receipt, 15 minutes. Gets the diff and plan, not the author's reasoning</td></tr>
+</tbody>
+</table>
 <dl class="pairs">
 <dt>Regression rule</dt><dd>Compared with the old version on the same copy. Only a row that was OK and stopped being OK blocks.</dd>
 <dt>Cleanup</dt><dd>Trial directory deleted on pass. On failure logs and evidence stay 7 days; the data copy goes at once.</dd>

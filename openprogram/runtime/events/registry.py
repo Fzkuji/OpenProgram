@@ -211,4 +211,20 @@ EVENTS: dict[str, EventSpec] = {
         payload_doc="{plugin, current, latest} — the plugin update checker "
                     "found a newer version",
     ),
+    "credential.cooldown": EventSpec(
+        kind="notify",
+        payload_doc="{provider, credential, detail: dict} — a provider's "
+                    "key or sign-in was set aside for a while (rate limit, "
+                    "spent quota)",
+    ),
+    "credential.rotated": EventSpec(
+        kind="notify",
+        payload_doc="{provider, credential, detail: dict} — a provider "
+                    "moved on to its next key or sign-in",
+    ),
+    "credential.exhausted": EventSpec(
+        kind="notify",
+        payload_doc="{provider, credential, detail: dict} — none of a "
+                    "provider's keys or sign-ins can take a request now",
+    ),
 }

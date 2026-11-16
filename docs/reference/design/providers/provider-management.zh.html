@@ -155,21 +155,24 @@
 <tr><th scope="row">没有余额</th><td>危险色的“没有余额”</td><td>充值（供应商公开了账单页时）和打开服务商</td></tr>
 </tbody>
 </table>
-<ul>
-<li>环和进度条用上下文用量表的颜色：用到 80% 起是警告色，95% 或用尽是危险色；超过 15 分钟的圆环画成半透明，子菜单里过时的数值改用弱化颜色，进度条填充画成半透明。</li>
-<li>子菜单开头是这个供应商的额度行，最紧的在前：窗口或密钥限额是一行 <code translate="no">label reset ···· NN%</code>，下面一条通栏进度条；余额或点数只有一行 <code translate="no">label ···· amount</code>。什么都不报告的供应商没有这一段。</li>
-<li>每行是 <code translate="no">text-fs-sm</code>：标签用主文字颜色，重置时间用 <code translate="no">text-fs-xs</code> 弱化颜色跟在旁边，数值落在模型行勾选列的右边缘（数字是否等宽由设置决定）。文字和模型名从同一处开始。</li>
-<li>语气颜色只给百分比和进度条填充；用完的进度条底色带危险色，不会消失。</li>
-<li>这一段列出状态路由带来的每个限额，并且总包含供应商行圆环所用的那个限额和选择器状态里的余额。选择器状态随模型送达，比状态路由（它还要汇总 30 天花费）早几秒，所以在那之前这一段显示这两项，不会比那一行显示得少。</li>
-<li>窗口或密钥限额最多四个，最紧的在前；金额跟在后面，从不截掉。过长的标签或重置时间在行尾截断（用逻辑方向，RTL 会镜像），不撑宽子菜单，也不把数值挤出边缘。</li>
-<li>有两个以上凭据时，供应商的子菜单最后写“这个对话使用 Personal”，再列出自动和每个凭据；勾在哪里说明是否固定。选择会固定这个对话（<code translate="no">POST /api/sessions/{sid}/credentials</code>，自动为 <code translate="no">null</code>）；管理密钥…在当前页打开供应商页面，按住 Cmd、Ctrl 或 Shift 则在新标签页打开。</li>
-<li>固定到已不存在的密钥时，提示改回自动；固定的密钥被设为暂不使用时，请求按“要改设置”结束，而不是登录失败。</li>
-<li>所有用量条都是组件库的 Progress。</li>
-<li>回复换到另一个凭据时，回复上方有一行淡色提示：“已换到 Work：Personal 触发了速率限制”。这行提示随回复保存，刷新后还在；<code translate="no">--print</code> 把它写成 <code translate="no">credential_switch</code> 事件。所有凭据都在等待时，重试行写明在等哪一个、何时恢复。</li>
-<li>菜单最后是 Manage providers，打开设置 → LLM Providers。一个供应商都没接入时，菜单写明这一点并提供 Add provider，打开同一个页面的空状态。</li>
-<li>所选模型的供应商还能回复时，不管用了多少，触发按钮都不加标记。只是预警的额度显示在圆环和进度条里，不上触发按钮。</li>
-<li>只有供应商需要处理（需登录、没有余额、Key 无效、未配置、未运行）或额度快用完（用到 95%）、已用完时，供应商图标上才有一个红点，这就是 Worker 的 <code translate="no">attention</code>。它的提示写明供应商和状态或窗口剩余。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">语气</th><td>环和进度条用上下文用量表的颜色：用到 80% 起是警告色，95% 或用尽是危险色；超过 15 分钟的圆环画成半透明，子菜单里过时的数值改用弱化颜色，进度条填充画成半透明</td></tr>
+<tr><th scope="row">额度行</th><td>子菜单开头是这个供应商的额度行，最紧的在前：窗口或密钥限额是一行 <code translate="no">label reset ···· NN%</code>，下面一条通栏进度条；余额或点数只有一行 <code translate="no">label ···· amount</code>。什么都不报告的供应商没有这一段</td></tr>
+<tr><th scope="row">行的字号</th><td>每行是 <code translate="no">text-fs-sm</code>：标签用主文字颜色，重置时间用 <code translate="no">text-fs-xs</code> 弱化颜色跟在旁边，数值落在模型行勾选列的右边缘（数字是否等宽由设置决定）。文字和模型名从同一处开始</td></tr>
+<tr><th scope="row">语气颜色</th><td>语气颜色只给百分比和进度条填充；用完的进度条底色带危险色，不会消失</td></tr>
+<tr><th scope="row">这一段的内容</th><td>这一段列出状态路由带来的每个限额，并且总包含供应商行圆环所用的那个限额和选择器状态里的余额。选择器状态随模型送达，比状态路由（它还要汇总 30 天花费）早几秒，所以在那之前这一段显示这两项，不会比那一行显示得少</td></tr>
+<tr><th scope="row">显示的限额</th><td>窗口或密钥限额最多四个，最紧的在前；金额跟在后面，从不截掉。过长的标签或重置时间在行尾截断（用逻辑方向，RTL 会镜像），不撑宽子菜单，也不把数值挤出边缘</td></tr>
+<tr><th scope="row">固定凭据</th><td>有两个以上凭据时，供应商的子菜单最后写“这个对话使用 Personal”，再列出自动和每个凭据；勾在哪里说明是否固定。选择会固定这个对话（<code translate="no">POST /api/sessions/{sid}/credentials</code>，自动为 <code translate="no">null</code>）；管理密钥…在当前页打开供应商页面，按住 Cmd、Ctrl 或 Shift 则在新标签页打开</td></tr>
+<tr><th scope="row">失效的固定</th><td>固定到已不存在的密钥时，提示改回自动；固定的密钥被设为暂不使用时，请求按“要改设置”结束，而不是登录失败</td></tr>
+<tr><th scope="row">用量条</th><td>所有用量条都是组件库的 Progress</td></tr>
+<tr><th scope="row">切换提示</th><td>回复换到另一个凭据时，回复上方有一行淡色提示：“已换到 Work：Personal 触发了速率限制”。这行提示随回复保存，刷新后还在；<code translate="no">--print</code> 把它写成 <code translate="no">credential_switch</code> 事件。所有凭据都在等待时，重试行写明在等哪一个、何时恢复</td></tr>
+<tr><th scope="row">菜单末尾</th><td>菜单最后是 Manage providers，打开设置 → LLM Providers。一个供应商都没接入时，菜单写明这一点并提供 Add provider，打开同一个页面的空状态</td></tr>
+<tr><th scope="row">触发按钮</th><td>所选模型的供应商还能回复时，不管用了多少，触发按钮都不加标记。只是预警的额度显示在圆环和进度条里，不上触发按钮</td></tr>
+<tr><th scope="row">红点</th><td>只有供应商需要处理（需登录、没有余额、Key 无效、未配置、未运行）或额度快用完（用到 95%）、已用完时，供应商图标上才有一个红点，这就是 Worker 的 <code translate="no">attention</code>。它的提示写明供应商和状态或窗口剩余</td></tr>
+</tbody>
+</table>
 <p>状态随模型一起送达（<code translate="no">GET /api/models/enabled</code>）；打开菜单时读状态路由取额度行，状态路由会在后台读取超过十分钟的接口。每个 <code translate="no">provider_quota</code> 帧更新这两份数据，并作为窗口事件 <code translate="no">op:provider-quota</code> 转发。</p>
 <p>回复因额度用尽而失败时（<code translate="no">errorCause.cause</code> 是 <code translate="no">quota_exhausted</code>），回复卡片写“OpenAI Codex 5h 额度已用完”，下面是“14:30 重置 · Week 剩 71%”。余额用尽（402，或供应商状态是没有余额）写“Kimi 没有余额了”，下面是余额。原始错误留在折叠的详情里。</p>
 <table class="stack fixed">
@@ -183,12 +186,15 @@
 <p>选中的模型只固定在当前窗格显示的分支上，并在那里重新发送失败的这一轮；其他分支和对话保持原来的模型。不会自动切换；故障转移链仍把额度用尽当作终止。</p>
 
 <h2 id="usage">Token 用量</h2>
-<ul>
-<li>花费按计费方式拆开：已计费（按 token 计费的供应商、有价格的调用）、已包含（订阅调用按标价计，只在提示里显示），以及按 token 计费却没有价格的调用数。一个没有价格的调用不再让总数消失。</li>
-<li>花费卡片显示已计费的总数，标签旁写"N calls unpriced"，悬停显示订阅按 API 价覆盖了多少。By model 里订阅的行写 Included，悬停显示标价；By source 和 By function 的行也这样拆分花费，调用全由订阅覆盖时写 Included。</li>
-<li>套餐供应商（OpenAI Codex、SuperGrok、OpenCode Go、Kimi Coding、GitHub Copilot、Gemini 订阅）或 id 写明编程套餐、token 套餐的供应商算作订阅。</li>
-<li>所有 token 总数都含缓存 token：存下的总数漏掉缓存的旧行按各部分之和读取。</li>
-</ul>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">拆分</th><td>花费按计费方式拆开：已计费（按 token 计费的供应商、有价格的调用）、已包含（订阅调用按标价计，只在提示里显示），以及按 token 计费却没有价格的调用数。一个没有价格的调用不再让总数消失</td></tr>
+<tr><th scope="row">花费卡片</th><td>花费卡片显示已计费的总数，标签旁写"N calls unpriced"，悬停显示订阅按 API 价覆盖了多少。By model 里订阅的行写 Included，悬停显示标价；By source 和 By function 的行也这样拆分花费，调用全由订阅覆盖时写 Included</td></tr>
+<tr><th scope="row">订阅</th><td>套餐供应商（OpenAI Codex、SuperGrok、OpenCode Go、Kimi Coding、GitHub Copilot、Gemini 订阅）或 id 写明编程套餐、token 套餐的供应商算作订阅</td></tr>
+<tr><th scope="row">Token 总数</th><td>所有 token 总数都含缓存 token：存下的总数漏掉缓存的旧行按各部分之和读取</td></tr>
+</tbody>
+</table>
 
 <h2 id="routes">路由</h2>
 <table class="stack fixed">

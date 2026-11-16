@@ -229,7 +229,12 @@
 <tr><th scope="row">None</th><td>Transport, rate limit, provider error, timeout, embedding unavailable, <code translate="no">CONCURRENT_UPDATE</code></td><td>5 min, doubling to 6 h, never stopped</td><td>Ending by itself</td></tr>
 </tbody>
 </table>
-<p class="note">A stop is written to that memory's writer status as not retryable, announced once per cause. The status keeps its fields: <code translate="no">retries.max_identical_failures</code> is the three tries. With a bad sign-in and twenty idle conversations, an hour of polls makes one model call, where it made twenty and gave up on all twenty. Entries read from the replaced files come over unstopped: a sign-in or memory cause is dropped so the conversation is offered once more, any other keeps one try.</p>
+<dl class="pairs">
+<dt>A stop</dt><dd>Written to that memory's writer status as not retryable, announced once per cause</dd>
+<dt>Writer status</dt><dd>Keeps its fields: <code translate="no">retries.max_identical_failures</code> is the three tries</dd>
+<dt>Bad sign-in, twenty idle conversations</dt><dd>An hour of polls makes one model call, where it made twenty and gave up on all twenty</dd>
+<dt>Entries from the replaced files</dt><dd>Come over unstopped: a sign-in or memory cause is dropped so the conversation is offered once more, any other keeps one try</dd>
+</dl>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
 <tbody>

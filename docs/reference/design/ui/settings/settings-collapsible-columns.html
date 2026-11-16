@@ -15,12 +15,15 @@
 
 <h2>Categories</h2>
 <p>General, Appearance, LLM Providers, Memory, Web Search, Browser, Voice, Environments, Channels, Import, Token Usage, System. Links, icons, active state and keyboard order follow this one array.</p>
-<dl class="pairs">
-<dt>Toggle</dt><dd>Native button with <code translate="no">aria-expanded</code>, <code translate="no">aria-controls</code> and an explicit name, its icon on the axis of the category icons</dd>
-<dt>Narrow window</dt><dd>Below 760px the rail starts collapsed with no saved choice, and shrinking collapses it without saving. Widening never expands it: the stored choice stands.</dd>
-<dt>Rows</dt><dd>Same y positions, 32px height and 1px gap as the main sidebar's rows</dd>
-<dt>Titles</dt><dd>Settings and the content title use <code translate="no">--fs-title</code> (18px), line height 1.2 so descenders are not clipped</dd>
-</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Toggle</th><td>Native button with <code translate="no">aria-expanded</code>, <code translate="no">aria-controls</code> and an explicit name, its icon on the axis of the category icons</td></tr>
+<tr><th scope="row">Narrow window</th><td>Below 760px the rail starts collapsed with no saved choice, and shrinking collapses it without saving. Widening never expands it: the stored choice stands.</td></tr>
+<tr><th scope="row">Rows</th><td>Same y positions, 32px height and 1px gap as the main sidebar's rows</td></tr>
+<tr><th scope="row">Titles</th><td>Settings and the content title use <code translate="no">--fs-title</code> (18px), line height 1.2 so descenders are not clipped</td></tr>
+</tbody>
+</table>
 
 <p>LLM Providers is one column with no list column of its own: its list, Add provider and each provider's page are described in <a href="../../providers/provider-management.html">Provider management</a>.</p>
 

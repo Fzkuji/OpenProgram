@@ -14,12 +14,15 @@
 
 <h2>分类</h2>
 <p>通用、外观、LLM Provider、记忆、网络搜索、浏览器、语音、运行环境、频道、导入对话、Token 用量、系统。链接、图标、选中状态和键盘顺序都来自这一个数组。</p>
-<dl class="pairs">
-<dt>切换按钮</dt><dd>原生按钮，带 <code translate="no">aria-expanded</code>、<code translate="no">aria-controls</code> 和明确名称，图标与下方分类图标同轴</dd>
-<dt>窄窗口</dt><dd>低于 760px 且没有保存选择时默认收起，缩窄时收起但不保存。变宽绝不展开：以保存的选择为准。</dd>
-<dt>行</dt><dd>y 位置、32px 行高和 1px 间距与主侧栏的行相同</dd>
-<dt>标题</dt><dd>“设置”和内容标题使用 <code translate="no">--fs-title</code>（18px），行高 1.2，避免下伸部被裁切</dd>
-</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">切换按钮</th><td>原生按钮，带 <code translate="no">aria-expanded</code>、<code translate="no">aria-controls</code> 和明确名称，图标与下方分类图标同轴</td></tr>
+<tr><th scope="row">窄窗口</th><td>低于 760px 且没有保存选择时默认收起，缩窄时收起但不保存。变宽绝不展开：以保存的选择为准。</td></tr>
+<tr><th scope="row">行</th><td>y 位置、32px 行高和 1px 间距与主侧栏的行相同</td></tr>
+<tr><th scope="row">标题</th><td>“设置”和内容标题使用 <code translate="no">--fs-title</code>（18px），行高 1.2，避免下伸部被裁切</td></tr>
+</tbody>
+</table>
 
 <p>LLM Provider 是单列页面，没有自己的列表列：它的列表、添加供应商和每个供应商的页面见<a href="../../providers/provider-management.zh.html">供应商管理</a>。</p>
 

@@ -1,7 +1,7 @@
 <title>安装、打包、发布与升级</title>
 <meta name="description" content="谁用什么方式安装 OpenProgram，每个发行版包含什么，以及如何校验、升级和卸载。">
 <h1>安装、打包、发布与升级</h1>
-<p><strong>正式版本</strong>：v1.3.0 是这棵代码树构建的版本；v1.2.0 是最新打了标签的版本。每个平台和架构一份完整产品运行时。macOS App 只多 Electron 外壳，CLI 只多启动器；Windows 和 Linux App 是<a href="#thin-shell">薄壳</a>加 seed。检查、下载和平台交接见<a href="automatic-updates.zh.html">自动更新</a>。</p>
+<p><strong>正式版本</strong>：v1.4.0 是这棵代码树构建的版本；v1.3.0 是最新打了标签的版本。每个平台和架构一份完整产品运行时。macOS App 只多 Electron 外壳，CLI 只多启动器；Windows 和 Linux App 是<a href="#thin-shell">薄壳</a>加 seed。检查、下载和平台交接见<a href="automatic-updates.zh.html">自动更新</a>。</p>
 
 <h2>谁拿到什么</h2>
 <table class="stack">
@@ -226,16 +226,19 @@
 <p>稳定版本地 App 只有 <code translate="no">/Applications/OpenProgram.app</code>，旁边是开发版 App（见<a href="dev-instance.zh.html">开发实例</a>）。App 名不含版本、提交或任务。构建中的 App 既不启动也不保留。</p>
 <details>
 <summary>完整安装：<code translate="no">npm --prefix apps/desktop run dist</code></summary>
-<ul>
-<li>在随机临时目录构建；校验 bundle ID、版本、主程序、内嵌运行时。</li>
-<li>候选版本低于当前 App 时，在动 App、worker 或 Launch Services 之前拒绝。版本段按任意精度整数比较；现有 App 无法校验时失败并保留。</li>
-<li>用户级锁加 Applications 里的原子锁：并发运行在任何变更前失败，清理只删当前 PID 持有的锁。</li>
-<li>卸载 launchd KeepAlive 服务，停掉持锁 worker，先在 Applications 卷上暂存，再把旧 App 移入事务目录并激活新 App。</li>
-<li>用新的内嵌 Python 和 <code translate="no">-I -B</code> 重装服务，等待 <code translate="no">/healthz</code>，打开 App。服务参数不得残留 conda、检出或已删 App 的路径。</li>
-<li>失败恢复旧 App、launchd 服务和运行状态。成功后删除旧 App、wheel 缓存、暂存、构建和事务目录。</li>
-<li>只向 Launch Services 注册固定路径；恢复时尽力重新注册，并保留原失败状态。</li>
-<li>electron-builder ad-hoc 签组件；固定本地证书签 App 和 helper；随后严格递归校验。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">构建</th><td>在随机临时目录构建；校验 bundle ID、版本、主程序、内嵌运行时</td></tr>
+<tr><th scope="row">较旧的候选</th><td>在动 App、worker 或 Launch Services 之前拒绝。版本段按任意精度整数比较；现有 App 无法校验时失败并保留</td></tr>
+<tr><th scope="row">锁</th><td>用户级锁加 Applications 里的原子锁：并发运行在任何变更前失败，清理只删当前 PID 持有的锁</td></tr>
+<tr><th scope="row">激活</th><td>卸载 launchd KeepAlive 服务，停掉持锁 worker，先在 Applications 卷上暂存，再把旧 App 移入事务目录并激活新 App</td></tr>
+<tr><th scope="row">服务</th><td>用新的内嵌 Python 和 <code translate="no">-I -B</code> 重装，等待 <code translate="no">/healthz</code>，打开 App。服务参数不得残留 conda、检出或已删 App 的路径</td></tr>
+<tr><th scope="row">失败、成功</th><td>失败恢复旧 App、launchd 服务和运行状态。成功后删除旧 App、wheel 缓存、暂存、构建和事务目录</td></tr>
+<tr><th scope="row">Launch Services</th><td>只注册固定路径；恢复时尽力重新注册，并保留原失败状态</td></tr>
+<tr><th scope="row">签名</th><td>electron-builder ad-hoc 签组件；固定本地证书签 App 和 helper；随后严格递归校验</td></tr>
+</tbody>
+</table>
 </details>
 <details>
 <summary>本地 App 刷新：<code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
@@ -296,13 +299,16 @@
 </details>
 <details>
 <summary>Windows、CLI、发布</summary>
-<ul>
-<li>Windows：与 CLI 相同的 ZIP；从解包的 App 校验清单、Python、worker 健康和 Web chat；ConPTY 预设；浏览器路径。更新器只选确切的 EXE。打包前运行 <code translate="no">scripts/release/windows-contracts.txt</code> 列出的测试；打包后 <code translate="no">smoke-windows-desktop.ps1</code> 安装、启动到 worker 健康、做一次工具调用，再卸载并保留数据。安装好的 CLI 也做一次工具调用（<code translate="no">smoke-tool-call.py</code>）。</li>
-<li>CLI：两种引导脚本的最新版和固定版；不访问 PyPI 或克隆；哈希一致；升级失败后旧版本仍能启动。</li>
-<li>Release：所有位置同一版本；每个发布资产都通过了各自的任务；没有发布者签名的构建在文件名中带 <code translate="no">-unsigned</code>。</li>
-<li>Linux 桌面：在干净的 Ubuntu 22.04 和 24.04 上、移除 Git 后，用 Xvfb 运行 <code translate="no">scripts/release/smoke-linux-desktop.sh</code>：deb 安装、桌面项、<code translate="no">node-pty</code>、首次运行 seed、解包后重启、worker 健康、<code translate="no">/chat</code>、启动器，以及 <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code> 的 AppImage。</li>
-<li>文档、索引和运行时错误里没有 <code translate="no">pip install openprogram</code> 或组件安装步骤。</li>
-</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">验收条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td>与 CLI 相同的 ZIP；从解包的 App 校验清单、Python、worker 健康和 Web chat；ConPTY 预设；浏览器路径。更新器只选确切的 EXE。打包前运行 <code translate="no">scripts/release/windows-contracts.txt</code> 列出的测试；打包后 <code translate="no">smoke-windows-desktop.ps1</code> 安装、启动到 worker 健康、做一次工具调用，再卸载并保留数据。安装好的 CLI 也做一次工具调用（<code translate="no">smoke-tool-call.py</code>）</td></tr>
+<tr><th scope="row">CLI</th><td>两种引导脚本的最新版和固定版；不访问 PyPI 或克隆；哈希一致；升级失败后旧版本仍能启动</td></tr>
+<tr><th scope="row">Release</th><td>所有位置同一版本；每个发布资产都通过了各自的任务；没有发布者签名的构建在文件名中带 <code translate="no">-unsigned</code></td></tr>
+<tr><th scope="row">Linux 桌面</th><td>在干净的 Ubuntu 22.04 和 24.04 上、移除 Git 后，用 Xvfb 运行 <code translate="no">scripts/release/smoke-linux-desktop.sh</code>：deb 安装、桌面项、<code translate="no">node-pty</code>、首次运行 seed、解包后重启、worker 健康、<code translate="no">/chat</code>、启动器，以及 <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code> 的 AppImage</td></tr>
+<tr><th scope="row">文档</th><td>文档、索引和运行时错误里没有 <code translate="no">pip install openprogram</code> 或组件安装步骤</td></tr>
+</tbody>
+</table>
 </details>
 <details>
 <summary>参考</summary>

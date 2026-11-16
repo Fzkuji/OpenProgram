@@ -23,11 +23,13 @@
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-- **Agent 就是 Python 类。** 控制流程、检查和重试都是普通代码，`self(...)` 就是一次模型调用。
-- **自我编程。** Agent 往自己的类里写新方法，下一轮起就能当工具用。
-- **图上下文。** 每次调用都是同一张 DAG 里的节点；子 Agent 在自己的分支上运行，只交回结果。
-- **一个工作区。** 聊天、文件、终端和 Agent 能操作的内置浏览器并排摆开。
-- **模型随意换。** Anthropic、OpenAI、Gemini 和本地推理服务，每个服务商可配多个账号。
+## 动态
+
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每个服务商可放多个密钥和登录，到限额时自动换下一个；回复按任务分块；定时任务有运行记录。从这一版起在本仓库发布。
+- **2026-11-15 · v1.3.0** — 服务商页面显示健康状态、额度和花费；Activity 列出对话里在工作的 Agent；Agent 生成的文件自动打开。
+- **2026-11-14 · v1.2.0** — 同一对话的分支可以并行运行，停止立即生效，Windows App 上线。
+- **2026-11-10 · v1.1.0** — 可以从任意一条已发送的消息回退；App 支持 Linux。
+- **2026-11-06 · v1.0.0** — 1.x 的第一个版本：带分屏的桌面 App、后台运行的电脑操作、会议和常驻调度器。
 
 <a id="install"></a>
 
@@ -37,7 +39,7 @@
 curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，在[发行页](https://github.com/FuzzyKuji/OpenProgram/releases)下载；Linux App 是同一页上的 deb 和 AppImage，Windows App 从 v1.2.0 起提供。网站打不开时：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式见[安装说明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.zh.html)。
+Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，在[发行页](https://github.com/Fzkuji/OpenProgram/releases)下载；Linux App 是同一页上的 deb 和 AppImage，Windows App 从 v1.2.0 起提供。网站打不开时：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式见[安装说明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.zh.html)。
 
 ## 快速开始
 

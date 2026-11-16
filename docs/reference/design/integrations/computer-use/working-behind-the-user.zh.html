@@ -37,7 +37,14 @@
 <li class="via">之后 0.5 s 内每 4 ms 读一次窗口顺序。应用仍然自己把窗口移到前面时，原先排在它上面的窗口从最深的开始重新抬起。</li>
 <li class="flow-end">步骤立即返回；监视再持续 0.8 s，因为应用可能稍后才激活自己。</li>
 </ol>
-<p class="note">在 macOS 15 上对三种情况实测：计算器在前台启动、运行中的计算器被激活、Chrome 在前台打开标签页。每次读到的窗口顺序里最上面都是用户的窗口，标题栏一个像素都没变，事件到达后 1.4 到 2.8 ms 前台就已还回。同样的事件放行时，计算器的窗口到了最上面，标题栏变灰。</p>
+<p class="note">在 macOS 15 上对三种情况实测：计算器在前台启动、运行中的计算器被激活、Chrome 在前台打开标签页。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">丢弃</th><td>每次读到的窗口顺序里最上面都是用户的窗口；标题栏一个像素都没变；事件到达后 1.4 到 2.8 ms 前台就已还回</td></tr>
+<tr><th scope="row">放行</th><td>计算器的窗口到了最上面；标题栏变灰</td></tr>
+</tbody>
+</table>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col"></th></tr></thead>
