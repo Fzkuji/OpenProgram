@@ -177,6 +177,22 @@
   width: 20px;
   height: 20px;
 }
+/* A variant of .emptyState, so it outranks the base rule it narrows. */
+.emptyState.emptyStateDense {
+  flex: none;
+  justify-content: flex-start;
+  padding: 28px 24px 26px;
+}
+.emptyStateDense .emptyIcon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-full);
+}
+.emptyStateDense .emptyIcon svg {
+  width: 14px;
+  height: 14px;
+}
 .emptyTitle {
   margin: 0;
   color: var(--text-bright);

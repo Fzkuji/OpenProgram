@@ -8,7 +8,7 @@ import pytest
 from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.broker import GuiBroker
 from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.runner import GuiPythonRunner, GuiRunnerError
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.effects import EffectStatus, EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectStatus, EffectStore
 from openprogram.runtime.execution.model import CapabilitySet
 from openprogram.runtime.execution.store import ExecutionStore
 
@@ -385,7 +385,7 @@ def test_images_are_limited_per_script_and_child_cannot_forge_them(environment):
 
 def test_error_tool_return_keeps_image_evidence_without_committing_success(environment):
     from openprogram.programs import ToolReturn
-    from openprogram.runtime.execution.state_blobs import ExecutionStateBlobStore
+    from openprogram.runtime.execution.recovery.state_blobs import ExecutionStateBlobStore
     broker, effects, executions = environment
     image = b"\x89PNG\r\n\x1a\nowned error fixture"
     handle = broker.register(target="owned", methods={"capture": lambda *args:

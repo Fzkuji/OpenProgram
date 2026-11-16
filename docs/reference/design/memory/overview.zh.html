@@ -16,7 +16,7 @@
   <text class="t-soft" x="200" y="86">或会话空闲</text>
   <line class="ln" x1="270" y1="33" x2="342" y2="33" marker-end="url(#mem-a)"/>
   <text class="t-big" x="352" y="40">Topic</text>
-  <text class="t-soft" x="352" y="66">一个主题一个文件，</text>
+  <text class="t-soft" x="352" y="66">文件夹跟着含义走，</text>
   <text class="t-soft" x="352" y="86">每条都带引用</text>
   <line class="ln" x1="422" y1="33" x2="498" y2="33" marker-end="url(#mem-a)"/>
   <text class="t-big" x="508" y="40">派生视图</text>
@@ -36,7 +36,7 @@
 <ol class="flow fig-narrow">
   <li><strong>会话存储</strong><small>每个回合，稳定 ID；记忆不留副本</small></li>
   <li><strong>写入器</strong><small>约 16K Token，或会话空闲</small></li>
-  <li><strong>Topic</strong><small>一个主题一个文件，每条都带引用；03:00 拆分、合并、修复链接</small></li>
+  <li><strong>Topic</strong><small>文件夹跟着含义走，每条都带引用；03:00 归档、拆分、合并、修复链接</small></li>
   <li><strong>派生视图</strong><small>核心段、时间线、事件、关系</small></li>
   <li class="flow-end"><strong>模型</strong><small>MEMORY.md 每个会话，检索每个回合，工具按需</small></li>
 </ol>
@@ -71,10 +71,61 @@
 <tbody>
 <tr><th scope="row"><code translate="no">^block-id</code></th><td>视图和链接定位段落的地址；编辑和移动后不变</td></tr>
 <tr><th scope="row">脚注链接</th><td>聊天页的地址。Memory 页：该消息及前后回合。<code translate="no">memory_get</code> 替模型读同样内容。</td></tr>
-<tr><th scope="row">有子部分的主题</th><td>目录，可任意嵌套：<code translate="no">topics/projects/openprogram/</code> 含 <code translate="no">overview.md</code> 和每部分一个文件</td></tr>
+<tr><th scope="row">有多篇笔记的东西</th><td>文件夹，可任意嵌套：<code translate="no">topics/projects/openprogram/</code> 含 <code translate="no">overview.md</code> 和每个方面一个文件。见<a href="#filing">归档</a>。</td></tr>
 <tr><th scope="row">超过 <code translate="no">TOPIC_SPLIT_BYTES</code>（16,000）</th><td>标记目标目录；新事实写进子文件，夜间任务拆分。<code translate="no">topics/core.md</code> 除外：由渲染预算管理。</td></tr>
 </tbody>
 </table>
+
+<h2 id="filing">归档</h2>
+<p>文件夹跟着含义走：现实里的一个东西，一个文件夹。</p>
+<pre translate="no" tabindex="0">topics/career/                          topics/career/
+    acme-application.md                     resume.md
+    acme-interview.md                       companies/
+    globex-applications.md        →             acme/      overview.md  interview.md
+    globex-applications/assessment.md           globex/    overview.md  assessment.md
+    initech-application.md                      quant/     overview.md
+    quant-applications.md                           initech/   overview.md
+    resume.md</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">一个东西一个文件夹</th><td>一个人、一家公司、一篇论文、一次行程或一个项目，有了第二篇笔记或很可能会有：<code translate="no">overview.md</code> 加每个方面一个文件，文件名只写方面。只有一篇短笔记时可以是单个文件。</td></tr>
+<tr><th scope="row">一类东西一个文件夹</th><td>同类的东西放在以类别命名的文件夹下（<code translate="no">companies/</code>、<code translate="no">people/</code>），位于所属的领域里。笔记自己把它们分了组，就在类别文件夹里再建分组文件夹，带自己的 <code translate="no">overview.md</code>。</td></tr>
+<tr><th scope="row">不平铺</th><td>一个目录直接放的笔记超过 <code translate="no">FLAT_RUN_LIMIT</code>（8）篇（<code translate="no">overview.md</code> 不算）：里面每个东西都建文件夹，只有一篇的也建。</td></tr>
+<tr><th scope="row">笔记不与同名文件夹并存</th><td><code translate="no">x.md</code> 旁边有 <code translate="no">x/</code>，它就是 <code translate="no">x/overview.md</code>。</td></tr>
+<tr><th scope="row">命名</th><td>文件名不重复文件夹已经说过的内容，不带日期。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">谁</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">代码（<code translate="no">management/filing.py</code>）</th><td>找出平铺目录和与文件夹并存的笔记；在每个记忆 agent 都会读的工作区结构末尾列为“Filing problems”；移动文件；把与文件夹并存的笔记变成它的 overview。不用模型。</td></tr>
+<tr><th scope="row">写入器</th><td>新笔记按规则归档。存进平铺目录或文件夹旁边时，Write 工具会回答它该放在哪。</td></tr>
+<tr><th scope="row">夜间整理</th><td>先做机械移动，再对每个平铺目录各跑一次 agent，各自一个提交：agent 判断每篇笔记讲的是哪个东西、属于哪一类，然后调用 Move。</td></tr>
+<tr><th scope="row"><code translate="no">Move</code> 工具</th><td><code translate="no">topics/</code> 下的 <code translate="no">{from, to}</code> 列表，要么全做要么不做：不覆盖，不在同名笔记旁边建文件夹，两篇笔记可以互换位置。空出来的文件夹删掉。</td></tr>
+<tr><th scope="row">提交</th><td>改写每一条跨越移动的相对链接；改写 <code translate="no">MEMORY.md</code> 里被移动的路径（完整路径、整个文件夹，以及像 <code translate="no">visa/materials.md</code> 这样只有一个文件以它结尾的短名）；重建按 block ID 记录的 Timeline、Recent 和 Relations；搜索按文件现在的位置读取。</td></tr>
+<tr><th scope="row">被移动的文件</th><td>字节不变，所以不算被写过：不重新检查，不规范化，<code translate="no">installed.json</code> 里的来源不变。外部文件也可以这样归档，它每一段首次被读到的日期跟着走。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram memory regroup</code></th><td>按需执行，全部工作区或 <code translate="no">--root</code> 指定的一个。<code translate="no">--plan moves.json</code> 不用模型，应用一份审过的移动清单，源文件已不在或目标已被占用的跳过；<code translate="no">--dry-run</code> 只报告。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么是这条规则</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">同类项目</th><th scope="col">文件夹</th><th scope="col">采用</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw <code translate="no">memory-wiki</code></th><td>页面按类别归档：<code translate="no">entities/</code>、<code translate="no">concepts/</code>、<code translate="no">syntheses/</code>、<code translate="no">sources/</code></td><td>类别文件夹。我们按笔记自己的类别命名，不用固定四类，因为一个工作区放公司，另一个放论文。</td></tr>
+<tr><th scope="row">codex-cli</th><td>有多个文件的东西是一个目录：<code translate="no">skills/&lt;name&gt;/SKILL.md</code> 加它的脚本；相关工作在 <code translate="no">MEMORY.md</code> 里归成 Task Group</td><td>一个东西一个文件夹，入口文件固定（<code translate="no">overview.md</code>）。</td></tr>
+<tr><th scope="row">claude-code</th><td>平铺的主题文件，递归读取；“按主题语义组织”；索引是唯一的结构</td><td>索引跟着文件走。不采用平铺：这条规则替换的就是它。</td></tr>
+<tr><th scope="row">hermes-agent、openclaw 核心</th><td>两个文件；每天一个文件</td><td>无：没有主题树。</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>之前错在哪</dt><dd>提示词要求“每个人、关系或反复出现的主题一个文件”，只有“有明确子部分的主题”才建文件夹；代码给的唯一信号是文件超过 16,000 字节时“拆到 <code translate="no">&lt;name&gt;/</code>”。没有任何东西去数同级文件，所以 28 篇公司笔记并排放着，文件夹只在笔记被拆分时出现，还留在原笔记旁边。</dd>
+<dt>为什么用数量</dt><dd>“很可能会有第二篇”是判断，目录树已经是平的时模型会跳过它；代码能检查的数字每次运行都展示给它，和大小上限一样。</dd>
+<dt>为什么由代码移动</dt><dd>让模型重写 30 个文件来移动它们，要把脚注全部输出一遍，每一个都有风险；移动不改任何字节，所以不会丢段落，而且不用模型就能测试。</dd>
+<dt>为什么外部文件也移动</dt><dd>那 28 篇里有 17 篇是聊天 agent 用文件工具写的。移动保留每一个字节，只读规则保护的正是这个。</dd>
+</dl>
+</details>
 
 <h2 id="citing-chats">引用聊天</h2>
 <dl class="pairs">
@@ -159,6 +210,7 @@
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">覆盖</th><td>个人工作区、可写的 Agent 空间、本机有记忆的所有已注册项目。<code translate="no">openprogram memory sleep</code>：手动运行，不含 Agent 空间。</td></tr>
+<tr><th scope="row">归档</th><td>最先做：按<a href="#filing">归档规则</a>把笔记放进文件夹，每个平铺目录跑一次</td></tr>
 <tr><th scope="row">拆分</th><td>每个标记超限的文件拆成子文件，段落保留 block ID</td></tr>
 <tr><th scope="row">合并</th><td>重复段落；只有一两段的子文件并回父文件；修复链接</td></tr>
 <tr><th scope="row">顺序</th><td>每个超限文件从大到小单独运行，再跑全工作区；一次跑完全部会在靠后的大文件之前停下</td></tr>
@@ -182,7 +234,7 @@
 <thead class="sr"><tr><th scope="col">谁</th><th scope="col">做什么</th></tr></thead>
 <tbody>
 <tr><th scope="row">发现没有它的提交</th><td>从暂存树生成一次（<code translate="no">runtime/memory_guide.py</code>）：布局、三层 Topic 及标题（front matter <code translate="no">name</code> 或第一个标题，不引用原句）、最新 <code translate="no">recent_events</code> 涉及的文件</td></tr>
-<tr><th scope="row">每次提交</th><td>删掉 <code translate="no">topics/</code> 路径已不在目录树里的行（<code translate="no">drop_removed</code>）：<code translate="no">memory_update</code> 的删除不经过 agent，而地图每个会话都会读</td></tr>
+<tr><th scope="row">每次提交</th><td>删掉 <code translate="no">topics/</code> 路径已不在目录树里的行（<code translate="no">drop_removed</code>）：<code translate="no">memory_update</code> 的删除不经过 agent，而地图每个会话都会读。改写本次写入移动过的 Topic 的路径（<code translate="no">follow_moves</code>）。</td></tr>
 <tr><th scope="row">写入器</th><td>新建 Topic 文件或目录时加一行</td></tr>
 <tr><th scope="row">整理器</th><td>与目录树对齐；简短说明替换只有标题的条目</td></tr>
 <tr><th scope="row">二者</th><td>不动 <code translate="no">&lt;!-- core: … --&gt;</code> 到 <code translate="no">&lt;!-- /core --&gt;</code></td></tr>
@@ -307,7 +359,7 @@
 <tr><th scope="row"><code translate="no">memory_search</code></th><td>按语义找段落及其聊天链接（<code translate="no">top_k</code> 至多 10，<code translate="no">path_prefix</code>）。<code translate="no">exact</code>：逐行查字面字符串，Agent 检索下的唯一模式。</td></tr>
 <tr><th scope="row"><code translate="no">memory_get</code></th><td>无路径：内容、分层、写入器健康。有路径：文件、章节或带脚注的块。<code translate="no">/s/&lt;session&gt;#&lt;message&gt;</code>：该消息及前后回合。</td></tr>
 <tr><th scope="row"><code translate="no">memory_update</code></th><td>创建、更新、删除或移动记录，<code translate="no">layer</code> 选项目或个人；用于用户要求立刻记住的内容或可见的错误。引用 <code translate="no">sources</code>，否则引用当前用户消息。</td></tr>
-<tr><th scope="row">仅写入器</th><td>Read、Write、Edit、Grep、Glob，以及暂存副本上的沙箱 shell。没有“保存”工具：记录是写入器的事。</td></tr>
+<tr><th scope="row">仅写入器</th><td>Read、Write、Edit、Move、Grep、Glob，以及暂存副本上的沙箱 shell。没有“保存”工具：记录是写入器的事。</td></tr>
 </tbody>
 </table>
 
@@ -495,7 +547,7 @@
 <tr><th scope="row"><code translate="no">scheduler.py</code></th><td>夜间任务的守护线程</td></tr>
 <tr><th scope="row"><code translate="no">session_watcher.py</code></th><td>空闲会话的写入</td></tr>
 <tr><th scope="row"><code translate="no">writing.py</code></th><td>累积、写入、校验、整理</td></tr>
-<tr><th scope="row"><code translate="no">management/</code></th><td>事务、暂存、校验、<code translate="no">verification.py</code>；<code translate="no">block_views.py</code> 检查新引用</td></tr>
+<tr><th scope="row"><code translate="no">management/</code></th><td>事务、暂存、校验、<code translate="no">verification.py</code>；<code translate="no">filing.py</code> 找出放错位置的笔记并移动；<code translate="no">block_views.py</code> 检查新引用</td></tr>
 <tr><th scope="row"><code translate="no">retrieval/</code></th><td>BM25、embedding、<code translate="no">fusion.py</code>、<code translate="no">layers.py</code></td></tr>
 <tr><th scope="row"><code translate="no">markdown/</code></th><td>Topic 格式</td></tr>
 <tr><th scope="row"><code translate="no">prompts/</code></th><td>给写入器的提示</td></tr>
@@ -540,6 +592,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">未实现</th><th scope="col">影响</th></tr></thead>
 <tbody>
+<tr><th scope="row">正文里提到被移动的文件</th><td>笔记里“见 acme-applications.md”这样的句子不是链接，保留旧名；只有链接和地图跟着移动</td></tr>
+<tr><th scope="row">用模型验证分组</th><td>决定分组的 agent 运行由脚本化 agent 的测试覆盖；代码判断不了分组对不对，只能判断没有违反规则</td></tr>
 <tr><th scope="row">重排 <code translate="no">topics/core.md</code></th><td>超预算后到达的段落可检索但不渲染；夜间任务不了解预算</td></tr>
 <tr><th scope="row">渲染报告</th><td>无人读取，超预算只能靠读文件发现</td></tr>
 <tr><th scope="row">分词器</th><td>预算是近似值：<code translate="no">o200k_base</code> 不是每个模型的分词器</td></tr>

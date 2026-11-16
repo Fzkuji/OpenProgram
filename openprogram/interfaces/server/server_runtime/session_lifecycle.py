@@ -105,7 +105,7 @@ def _stop_session_work(session_id: str, *, reason: str) -> list[str]:
             cleared_execution_id=branch_task.get("execution_id"),
         )
     try:
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         inbox.clear(session_id, reason=reason)
     except Exception as exc:
         state._log(f"[stop_session_work] inbox {session_id}: {exc}")
@@ -215,7 +215,7 @@ def _get_or_create_session(session_id: str = None,
             }, {"session": session_id})
             if _is_new and _inherit_prov and _inherit_model:
                 try:
-                    from openprogram.runtime.conversation.session_model import write_session_chat_model
+                    from openprogram.runtime.conversation.session_settings.session_model import write_session_chat_model
                     write_session_chat_model(
                         session_id, _inherit_prov, _inherit_model, agent_id=resolved_agent)
                 except Exception:
@@ -239,10 +239,41 @@ def _selected_branch(session_id: str) -> str | None:
 def _canonical_foreground_task(session_id: str) -> dict | None:
     """The durable running turn on the branch selected now."""
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.foreground import active_foreground_task
+    from openprogram.runtime.execution.projections.foreground import active_foreground_task
 
     return active_foreground_task(default_store(), session_id,
                                   selected_branch=_selected_branch(session_id))
+
+
+def _reported_run_task(session_id: str, slot: dict | None) -> dict | None:
+    """The selected branch's turn as clients are told of it: what its
+    ``running_task`` names and what its Stop cancels.
+
+    The durable record first, keeping the kind and id of the slot's
+    operation when the two are the same turn. A durable turn that is still
+    queued for the slot, with no attempt started, has not run yet: while
+    another turn holds the slot and runs (a background-command notice
+    ahead of a Goal's next turn), the one running is reported. ``slot`` is
+    a copy of the selected branch's slot."""
+    task = state._canonical_foreground_task(session_id)
+    if task is None:
+        return slot
+    if slot and slot.get("msg_id") == task.get("msg_id"):
+        # The durable turn is the slot's operation (a retry, an edit, a
+        # function run): it keeps the slot's kind and id.
+        return {**task, **{key: slot[key] for key in ("op_id", "op_kind", "op_version") if key in slot}}
+    if slot and not slot.get("_reserved") and _waits_for_slot(task):
+        return slot
+    return task
+
+
+def _waits_for_slot(task: dict) -> bool:
+    """Whether a durable turn is queued and has not started an attempt."""
+    if task.get("status") != "queued" or not task.get("execution_id"):
+        return False
+    from openprogram.runtime.execution import default_store
+    execution = default_store().get_execution(task["execution_id"])
+    return execution is not None and execution.current_attempt_id is None
 
 
 def _is_run_active(session_id: str) -> bool:
@@ -328,16 +359,10 @@ def _run_identity(session_id: str) -> dict | None:
     ``running_branches``) goes through here. A reservation's release always
     sends the clear that names it, so one handed out here is closed too.
     """
-    task = state._canonical_foreground_task(session_id)
     with state._running_tasks_lock:
         current = state._running_tasks.get(session_id)
         slot = dict(current) if current else None
-    if task is None:
-        task = slot
-    elif slot and slot.get("msg_id") == task.get("msg_id"):
-        # The durable turn is the slot's operation (a retry, an edit, a
-        # function run): it keeps the slot's kind and id.
-        task = {**task, **{key: slot[key] for key in ("op_id", "op_kind", "op_version") if key in slot}}
+    task = _reported_run_task(session_id, slot)
     if not task:
         return None
     return operation_identity(task)
@@ -388,7 +413,7 @@ def _try_reserve_run(session_id: str, msg_id: str, *, key: str | None = None,
 
 def _try_reserve_run_once(session_id: str, msg_id: str, *, key: str | None = None,
                           lock_wait: float | None = None) -> bool:
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     wait = admission_lock_wait() if lock_wait is None else max(0.0, lock_wait)
     with session_interprocess_lock(session_id, timeout=wait):
         return state._try_reserve_run_locked(session_id, msg_id, key=key)
@@ -402,7 +427,7 @@ def admission_lock_wait() -> float:
     a request waits it out the way a store write does instead of reading
     a held lock as a running turn. Past it, the lock is reported as what
     it is (``locked_refusal``)."""
-    from openprogram.state.store.session import session_lock
+    from openprogram.state.store.session.files import session_lock
     return session_lock.DEFAULT_WAIT
 
 
@@ -552,7 +577,7 @@ def _reserve_operation_once(session_id: str, kind: str, owner: str, *,
     while it runs no branch is admitted. Every check runs under the
     session's process lock, the lock a branch's admission takes.
     """
-    from openprogram.state.store.session.session_lock import (
+    from openprogram.state.store.session.files.session_lock import (
         SessionLockTimeout,
         session_interprocess_lock,
     )
@@ -764,7 +789,7 @@ def _running_branch_at(session_id: str, *, target_head: str | None,
 def _operation_refusal(session_id: str) -> dict | None:
     """Refused on every branch: a session move, or a conversation-wide operation."""
     try:
-        from openprogram.state.store.session.migration import session_hold_active
+        from openprogram.state.store.session.files.migration import session_hold_active
         from openprogram.state.paths import get_state_dir
         if session_hold_active(Path(get_state_dir()) / "projects", session_id):
             return {"code": "session_migration", "kind": "branch",
@@ -831,7 +856,7 @@ def _operation_blockers(session_id: str, branch_id: str | None) -> list[dict]:
     """What runs or waits on the conversation's other branches, each with
     the ids a Stop needs and its branch's name."""
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.foreground import open_root_turns
+    from openprogram.runtime.execution.projections.foreground import open_root_turns
 
     blockers: dict[str, dict] = {}
     for task in state._side_branch_tasks(session_id):
@@ -922,7 +947,7 @@ def _try_reserve_run_locked(session_id: str, msg_id: str, *, kind: str = "reply"
     operation stays on that branch if the person switches away before it
     writes (``switch_branch`` moves the slot with it)."""
     try:
-        from openprogram.state.store.session.migration import session_hold_active
+        from openprogram.state.store.session.files.migration import session_hold_active
         from openprogram.state.paths import get_state_dir
         if session_hold_active(Path(get_state_dir()) / "projects", session_id):
             return False
@@ -1127,7 +1152,7 @@ def _side_branch_tasks(session_id: str) -> list[dict]:
     of its slot while it waits on a question or approval.
     """
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.foreground import side_branch_tasks
+    from openprogram.runtime.execution.projections.foreground import side_branch_tasks
     stale: list[tuple[str, dict]] = []
     found: dict[str, dict] = {}
     with state._running_tasks_lock:
@@ -1162,7 +1187,7 @@ def _branch_run_active(session_id: str, branch_id: str) -> bool:
     """Whether ``branch_id`` has a turn: its slot, or any unfinished
     execution on it (a paused turn, a scheduled run, a Job)."""
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.foreground import branch_has_open_execution
+    from openprogram.runtime.execution.projections.foreground import branch_has_open_execution
     if any(task.get("branch_id") == branch_id for task in state._side_branch_tasks(session_id)):
         return True
     return branch_has_open_execution(default_store(), session_id, branch_id)
@@ -1232,10 +1257,12 @@ def _try_reserve_branch_run(session_id: str, branch_id: str, msg_id: str, *,
 
 
 def _try_reserve_branch_run_once(session_id: str, branch_id: str, msg_id: str, *,
-                                 key: str | None = None) -> bool:
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
-    # A lock not had in time raises SessionLockTimeout (``_try_reserve_run``).
-    with session_interprocess_lock(session_id, timeout=admission_lock_wait()):
+                                 key: str | None = None, lock_wait: float | None = None) -> bool:
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
+    # A lock not had in time raises SessionLockTimeout (``_try_reserve_run``);
+    # ``lock_wait`` bounds that wait as it does there (``0``: none).
+    wait = admission_lock_wait() if lock_wait is None else max(0.0, lock_wait)
+    with session_interprocess_lock(session_id, timeout=wait):
         if _operation_refusal(session_id) is not None:
             return False
         return _reserve_branch_slot_locked(session_id, branch_id, msg_id, key=key)
@@ -1329,7 +1356,7 @@ def switch_branch(session_id: str, head_id: str, *, branch_id: str | None = None
     write takes that lock itself, so it runs before.
     """
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     from openprogram.state.store.session.branch_config import branch_identity
     db = default_db()
     before = db.get_session(session_id) or {}
@@ -1407,37 +1434,147 @@ def _registered_runtime(session_id: str):
         return active_runtimes._active_exec_runtimes.get((session_id, None))
 
 
+def _slot_of_branch(session_id: str, branch_id: str | None) -> str:
+    """The slot a turn on ``branch_id`` holds: that branch's own when it is
+    a recorded branch other than the selected one, else ``SELECTED``."""
+    if not branch_id:
+        return SELECTED
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        row = default_db().get_session(session_id) or {}
+    except Exception:
+        _log.debug("branch records not read for %s", session_id, exc_info=True)
+        return SELECTED
+    selected = row.get("active_branch_id")
+    if not selected or branch_id == selected:
+        return SELECTED
+    ref = (row.get("branch_refs") or {}).get(branch_id)
+    if not isinstance(ref, dict) or ref.get("status") == "aborted" or not ref.get("head_id"):
+        return SELECTED
+    return branch_id
+
+
+def _adopt_admitted_turn(session_id: str, owner: str, *, execution_id: str,
+                         status_version: int, branch_id: str | None) -> bool:
+    """Put an already admitted turn in its branch's free slot, reserved.
+
+    The turn's own durable record is what ``_is_selected_run_active`` reads
+    as "running", so the ordinary reservation would refuse the turn for
+    itself, and never gets to drop a slot nothing holds any more; here only
+    another live holder of the slot refuses it, and a dead one is dropped
+    first (``_slot_is_stale``), as the run guard drops it."""
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
+    stale: dict | None = None
+    try:
+        with session_interprocess_lock(session_id, timeout=admission_lock_wait()):
+            if _operation_refusal(session_id) is not None:
+                return False
+            where = _slot_of_branch(session_id, branch_id)
+            selected = _selected_branch(session_id) if where == SELECTED else None
+            with state._running_tasks_lock:
+                if conversation_wide_operation(session_id) is not None:
+                    return False
+                slots = state._running_tasks if where == SELECTED else state._branch_running_tasks
+                key = session_id if where == SELECTED else (session_id, where)
+                held = slots.get(key)
+                if held is not None and _slot_is_stale(session_id, held, selected=where == SELECTED):
+                    stale = slots.pop(key)
+                    held = None
+                if held is not None or (where == SELECTED and state._has_active_runtime(session_id)):
+                    return False
+                _place_adopted_slot(session_id, owner, where, selected, execution_id, status_version)
+        return True
+    finally:
+        if stale is not None:
+            if where == SELECTED:
+                state._emit_running_task_event(session_id, cleared_msg_id=stale.get("msg_id"),
+                                               cleared_execution_id=stale.get("execution_id"))
+            else:
+                state._emit_branch_running_task_event(session_id, where, cleared_msg_id=stale.get("msg_id"),
+                                                      cleared_execution_id=stale.get("execution_id"))
+
+
+def _slot_is_stale(session_id: str, task: dict, *, selected: bool) -> bool:
+    """A slot no turn holds any more: a reservation never activated within
+    300 seconds (an executionless operation's excepted), or an activated one
+    whose thread has ended with no runtime of the turn left."""
+    if task.get("_reserved"):
+        return not holds_its_slot(task) and state.time.time() - task.get("started_at", 0) > 300
+    if selected and state._has_active_runtime(session_id):
+        return False
+    thread = task.get("thread")
+    is_alive = getattr(thread, "is_alive", None)
+    return getattr(thread, "ident", None) is not None and callable(is_alive) and not is_alive()
+
+
+def _place_adopted_slot(session_id: str, owner: str, where: str, selected: str | None,
+                        execution_id: str, status_version: int) -> None:
+    """Record an adopted turn in its free slot; the caller holds both locks."""
+    slot = new_slot(owner, "reply")
+    slot["execution_id"] = execution_id
+    slot["status_version"] = status_version
+    if where == SELECTED:
+        if selected:
+            slot["branch_id"] = selected
+        state._running_tasks[session_id] = slot
+    else:
+        state._branch_running_tasks[(session_id, where)] = slot
+
+
 class ServerRunSlot:
     """The server's run reservation as the runtime's run-slot port.
 
     A turn the runtime starts on its own (a reminder wake, a handed-over
-    message) reserves the same slot a typed message does, shows as the
-    conversation's running task while it runs and frees the slot when it
-    ends, so neither kind of turn can start on top of the other.
+    message, a Goal's next turn, a background-command notice) reserves the
+    same slot a typed message does, shows as the conversation's running
+    task while it runs and frees the slot when it ends, so neither kind of
+    turn can start on top of the other. A turn on a recorded branch that is
+    not selected holds that branch's slot and is announced as that
+    branch's run.
     """
 
     def reserve(self, session_id: str, owner: str, *,
-                lock_wait: float | None = None) -> bool:
+                lock_wait: float | None = None, branch_id: str | None = None) -> bool:
+        where = _slot_of_branch(session_id, branch_id)
+        if where != SELECTED:
+            if lock_wait is not None and lock_wait <= 0:
+                return _try_reserve_branch_run_once(session_id, where, owner, lock_wait=0.0)
+            return state._try_reserve_branch_run(session_id, where, owner)
         if lock_wait is None:
             return state._try_reserve_run(session_id, owner)
         return state._try_reserve_run(session_id, owner, lock_wait=lock_wait)
 
+    def adopt(self, session_id: str, owner: str, *, execution_id: str,
+              status_version: int, branch_id: str | None, runner) -> bool:
+        if not _adopt_admitted_turn(session_id, owner, execution_id=execution_id,
+                                    status_version=status_version, branch_id=branch_id):
+            return False
+        if not state._activate_run_reservation(session_id, owner, runner):
+            state._release_run_reservation(session_id, owner)
+            return False
+        state._emit_slot_state(session_id, owner)
+        return True
+
     def activate(self, session_id: str, owner: str, *, execution_id: str,
                  status_version: int, runner) -> bool:
-        with state._running_tasks_lock:
-            task = state._running_tasks.get(session_id)
-            if task and task.get("msg_id") == owner:
-                task["execution_id"] = execution_id
-                task["status_version"] = status_version
+        state._set_branch_run_execution(session_id, owner, execution_id=execution_id,
+                                        status_version=status_version)
         if not state._activate_run_reservation(session_id, owner, runner):
             return False
-        state._emit_running_task_event(session_id)
+        state._emit_slot_state(session_id, owner)
         return True
 
     def finish(self, session_id: str, owner: str, *, execution_id: str) -> None:
-        if state._finish_owned_run(session_id, owner):
+        where = state._take_owned_run(session_id, owner)
+        if where is None:
+            return
+        if where == SELECTED:
             state._emit_running_task_event(
                 session_id, cleared_msg_id=owner, cleared_execution_id=execution_id,
+            )
+        else:
+            state._emit_branch_running_task_event(
+                session_id, where, cleared_msg_id=owner, cleared_execution_id=execution_id,
             )
 
     def finishing(self, session_id: str, owner: str) -> None:
@@ -1449,7 +1586,7 @@ class ServerRunSlot:
 
 def _watch_worker_loop() -> None:
     """Have the conversation lock log a wait taken on the Worker's loop."""
-    from openprogram.state.store.session import session_lock
+    from openprogram.state.store.session.files import session_lock
     session_lock.watch_event_loop(lambda: getattr(state, "_loop", None))
 
 

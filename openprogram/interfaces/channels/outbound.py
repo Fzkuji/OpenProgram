@@ -24,8 +24,8 @@
 """
 from __future__ import annotations
 
-from openprogram.interfaces.channels import _transport
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.delivery import _transport
+from openprogram.interfaces.channels.delivery._transport import SendResult
 
 
 def send(channel: str, account_id: str, user_id: str, text: str) -> bool:

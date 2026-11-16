@@ -37,7 +37,7 @@ store/
 │                           from the log on cache miss
 │    nodes.py               the persisted DAG node schema: Call, Graph, the
 │                           role constants (render_context and other context
-│                           computations stay in runtime/context/nodes.py)
+│                           computations stay in runtime/context/session_dag/nodes.py)
 │    session_node_writer.py   SessionNodeWriter: by-node DAG writes (append /
 │                           update / load) onto one session log
 │    _msg_adapter.py        message-dict ⇄ Call-node translation
@@ -182,8 +182,6 @@ git -C ~/.openprogram/sessions/<id> log --oneline
 # What did the agent change in a bound project?
 git -C <project> log --author="OpenProgram Agent" --oneline
 
-# Smoke-test the storage layers (throwaway profile, never touches real state)
-python scripts/smoke_entity_layer.py        # session + project + commit + GC
-python scripts/smoke_read_before_edit.py    # the read-before-edit gate
-python scripts/smoke_revert_ux.py           # reset/revert + revert_turn
+# Smoke-test the read-before-edit gate (throwaway directory, never touches real state)
+python scripts/checks/smoke_read_before_edit.py    # the read-before-edit gate
 ```

@@ -91,8 +91,8 @@ class AttemptStore:
     @contextmanager
     def _admission_transaction(self, session_id: str) -> Iterator[TableHandle]:
         from openprogram.state.paths import get_state_dir
-        from openprogram.state.store.session.migration import session_hold_active
-        from openprogram.state.store.session.session_lock import session_interprocess_lock
+        from openprogram.state.store.session.files.migration import session_hold_active
+        from openprogram.state.store.session.files.session_lock import session_interprocess_lock
 
         with session_interprocess_lock(session_id, timeout=5.0):
             if session_hold_active(Path(get_state_dir()) / "projects", session_id):

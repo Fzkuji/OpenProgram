@@ -76,7 +76,7 @@ def _merge_result(**overrides):
 def test_run_merge_syncs_mirror_head_on_success(monkeypatch, server_events):
     from openprogram.interfaces.server import server as _s
     from openprogram.runtime.conversation.turn_runtime.slash_actions import run_merge as _run_merge
-    import openprogram.runtime.conversation.merge as merge_mod
+    import openprogram.runtime.conversation.peer_agents.merge as merge_mod
 
     responses: list[dict] = []
     monkeypatch.setattr(
@@ -100,7 +100,7 @@ def test_run_merge_syncs_mirror_head_on_success(monkeypatch, server_events):
 def test_run_merge_does_not_touch_head_on_failure(monkeypatch, server_events):
     from openprogram.interfaces.server import server as _s
     from openprogram.runtime.conversation.turn_runtime.slash_actions import run_merge as _run_merge
-    import openprogram.runtime.conversation.merge as merge_mod
+    import openprogram.runtime.conversation.peer_agents.merge as merge_mod
 
     monkeypatch.setattr(_s, "_broadcast_chat_response",
                         lambda sid, mid, resp: None)
@@ -169,7 +169,7 @@ def _rewind_payload(**overrides):
 
 def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
     from openprogram.interfaces.server import server as _s
-    import openprogram.runtime.conversation.rewind as rewind_mod
+    import openprogram.runtime.conversation.rewinds.rewind as rewind_mod
     from openprogram.interfaces.server.ws_actions.chat import handle_rewind
 
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
@@ -195,7 +195,7 @@ def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
 
 def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
     from openprogram.interfaces.server import server as _s
-    import openprogram.runtime.conversation.rewind as rewind_mod
+    import openprogram.runtime.conversation.rewinds.rewind as rewind_mod
     from openprogram.interfaces.server.ws_actions.chat import handle_rewind
 
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
@@ -335,6 +335,31 @@ def test_get_run_state_does_not_change_socket_focus(monkeypatch):
     }]
 
 
+def test_a_client_that_connects_mid_turn_is_told_which_conversations_run(monkeypatch):
+    """One answer lists every conversation with a turn running, on the
+    selected branch or another one, and leaves out the idle ones."""
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions.session import ACTIONS, run_state
+
+    ws = _FakeWS()
+    monkeypatch.setattr(run_state, "running_session_ids", lambda _server: ["ended", "goal", "typed"])
+    monkeypatch.setattr(_s, "_is_selected_run_active", lambda sid: sid == "typed")
+    monkeypatch.setattr(_s, "_run_identity", lambda sid: {"msg_id": "m", "execution_id": "e", "op_kind": "reply"})
+    monkeypatch.setattr(_s, "_running_branches", lambda sid: (
+        [{"branch_id": "branch_goal", "execution_id": "e-goal", "selected": False}] if sid == "goal" else []))
+
+    asyncio.run(ACTIONS["get_running_sessions"](ws, {}))
+
+    (frame,) = ws.sent
+    assert frame["type"] == "running_sessions"
+    sessions = {state["session_id"]: state for state in frame["data"]["sessions"]}
+    assert sorted(sessions) == ["goal", "typed"]
+    assert sessions["typed"]["run_active"] is True and sessions["typed"]["run_task"]["execution_id"] == "e"
+    assert sessions["goal"]["run_active"] is False
+    assert sessions["goal"]["running_branches"][0]["branch_id"] == "branch_goal"
+    assert all(isinstance(state["run_seq"], int) for state in sessions.values())
+
+
 def test_handle_chat_rejects_when_atomic_reservation_is_lost(
     monkeypatch, server_events,
 ):
@@ -361,7 +386,7 @@ def test_handle_chat_rejects_when_atomic_reservation_is_lost(
 def test_handle_chat_releases_reservation_when_setup_fails(monkeypatch):
     from openprogram.interfaces.server import server as _s
     from openprogram.interfaces.server.ws_actions.chat import handle_chat
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
 
     session_id = "setup-fails"
     with _s._running_tasks_lock:
@@ -391,7 +416,7 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
     from openprogram.interfaces.server import server as _s
     from openprogram.interfaces.server.ws_actions import chat as chat_actions
     from openprogram.interfaces.server.ws_actions.chat import handle_chat
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
     import openprogram.runtime.conversation.surface_context as surface_context
     import openprogram.interfaces.server.ws_actions.session as session_actions
@@ -477,9 +502,9 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
     from openprogram.interfaces.server import server as _s
     from openprogram.interfaces.server.ws_actions import chat as chat_actions
     from openprogram.interfaces.server.ws_actions.chat import handle_chat
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
-    import openprogram.runtime.conversation.turn_lifecycle as turn_lifecycle
+    import openprogram.runtime.conversation.turn_admission.turn_lifecycle as turn_lifecycle
     import openprogram.interfaces.server.ws_actions.session as session_actions
 
     session_id = "ack-disconnected"
@@ -557,7 +582,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     from openprogram.interfaces.server import server as _s
     from openprogram.interfaces.server.ws_actions import chat as chat_actions
     from openprogram.interfaces.server.ws_actions.chat import handle_chat
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
     import openprogram.state.store.session.session_store as store_module
     import openprogram.interfaces.server.ws_actions.session as session_actions

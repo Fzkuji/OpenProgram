@@ -29,7 +29,8 @@
 <tr><th scope="row">Sub-agent <code translate="no">agent task send_message mixture_of_agents</code></th><td>Ran sub-agent Reviewer</td><td>Ran 2 sub-agents</td><td>Running sub-agent Reviewer…</td></tr>
 <tr><th scope="row">Peer <code translate="no">send_message</code> to another conversation</th><td>Messaged another conversation</td><td>Counted once per conversation</td><td>Messaging another conversation…</td></tr>
 <tr><th scope="row">Image <code translate="no">image_generate</code>, <code translate="no">image_analyze</code></th><td>Generated an image; Analyzed an image</td><td>Generated 2 images; Analyzed 2 images</td><td>Generating an image…; Analyzing an image…</td></tr>
-<tr><th scope="row">Todos <code translate="no">todo_*</code></th><td>Updated todos</td><td>Updated todos</td><td>Updating todos…</td></tr>
+<tr><th scope="row">Task <code translate="no">task_start</code>, <code translate="no">task_step</code>, <code translate="no">task_list</code></th><td>No phrase</td><td>No phrase; a line holding only task calls is not drawn</td><td>None. The <a href="task-blocks.html">task block</a> shows the task.</td></tr>
+<tr><th scope="row">Stored todo calls <code translate="no">todo_*</code></th><td>Updated todos, when the list is not drawn as a block</td><td>Updated todos</td><td>None</td></tr>
 <tr><th scope="row">Question <code translate="no">ask_user_question</code></th><td>Asked a question</td><td>Asked 2 questions</td><td>Asking a question…</td></tr>
 <tr><th scope="row">Memory <code translate="no">memory_*</code></th><td>Accessed memory</td><td>Accessed memory</td><td>Accessing memory…</td></tr>
 <tr><th scope="row">Program, skill</th><td>Ran program deploy; Used skill pdf</td><td>Ran 2 programs</td><td>Running program deploy…</td></tr>
@@ -99,7 +100,7 @@
 <tr><th scope="row"><code translate="no">execution-strip.tsx</code></th><td><code translate="no">label: string | ToolGroupSummary</code>. A plain string (workflow card, debugger) renders with no note or badge.</td></tr>
 <tr><th scope="row"><code translate="no">LegacyRuntimeTrace</code></th><td>Records without ordered blocks: each call becomes a block named after its function. Legacy sub-agent strips pass spawn labels.</td></tr>
 <tr><th scope="row"><code translate="no">execution-strip.css</code></th><td><code translate="no">.tl-label</code>, <code translate="no">.tl-fail</code>, <code translate="no">.tl-diff</code>, <code translate="no">.tl-chev</code></td></tr>
-<tr><th scope="row"><code translate="no">tool-group-summary.test.mjs</code></th><td><code translate="no">apps/web/tests/chat/messages/</code>: grammar, plurals, order, tense, failures, badge sources, patch parsing, capped diff</td></tr>
+<tr><th scope="row"><code translate="no">tool-group-summary.test.mjs</code></th><td><code translate="no">apps/web/tests/chat/messages/execution/</code>: grammar, plurals, order, tense, failures, badge sources, patch parsing, capped diff</td></tr>
 </tbody>
 </table>
 </details>

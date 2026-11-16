@@ -62,7 +62,7 @@ class DiscordChannel(Channel):
                     text = text.replace(token, "").strip()
 
         # Parse discord.Message → ChannelMessage.
-        from openprogram.interfaces.channels._message import Attachment, ChannelMessage
+        from openprogram.interfaces.channels.inbound._message import Attachment, ChannelMessage
         attachments = tuple(
             Attachment(
                 name=str(a.filename or "file"),

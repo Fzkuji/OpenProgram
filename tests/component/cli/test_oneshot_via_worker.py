@@ -20,8 +20,8 @@ from contextlib import contextmanager
 import pytest
 
 from openprogram.host.security.backend_endpoint import BackendEndpoint
-from openprogram.interfaces.cli import worker_turn
-from openprogram.interfaces.cli.worker_turn import (
+from openprogram.interfaces.cli.print_mode import worker_turn
+from openprogram.interfaces.cli.print_mode.worker_turn import (
     WorkerTurnCancelled,
     WorkerTurnError,
     resolve_worker,
@@ -135,6 +135,40 @@ def test_turn_streams_text_and_ends_with_the_result():
     headers = seen["headers"][0]
     assert headers["Authorization"] == f"Bearer {TOKEN}"
     assert headers["Origin"] == endpoint.origin
+
+
+def test_a_credential_switch_reaches_the_terminal_as_a_notice():
+    """Another of the provider's keys took over: the CLI hears it once, and
+    other retries are not notices."""
+    def script(connection, command):
+        _ack(connection, command)
+        _response(connection, SESSION, type="stream_event",
+                  event={"type": "retry", "reason": "credential",
+                         "credential": {"to": "Work", "from": "Personal", "cause": "rate_limit"}})
+        _response(connection, SESSION, type="stream_event",
+                  event={"type": "retry", "reason": "transport", "attempt": 1})
+        _response(connection, SESSION, type="result", content="ok", msg_id="u1", assistant_msg_id="a1")
+
+    notices: list[dict] = []
+    with fake_worker(script) as (endpoint, _seen):
+        turn = run_turn_via_worker(endpoint, SESSION, "hi", on_notice=notices.append)
+
+    assert turn.reply == "ok"
+    assert notices == [{"to": "Work", "from": "Personal", "cause": "rate_limit"}]
+
+
+def test_a_stored_switch_is_an_event_and_reads_as_the_chat_says_it():
+    from openprogram.interfaces.cli.print_mode.print_events import (
+        _credential_switches,
+        credential_switch_line,
+    )
+
+    stored = {"credential_notices": json.dumps([{"to": "Work", "from": "Personal", "cause": "quota"}, {"from": "x"}])}
+    assert _credential_switches(stored) == [{"to": "Work", "from": "Personal", "cause": "quota"}]
+    assert credential_switch_line({"to": "Work", "from": "Personal", "cause": "quota"}) == \
+        "Switched to Work: Personal used up its quota"
+    assert credential_switch_line({"to": "Work", "from": "Personal"}) == "Switched to Work: Personal failed"
+    assert credential_switch_line({"to": "Work"}) == "Switched to Work"
 
 
 def test_frames_of_a_sub_agent_branch_do_not_end_the_turn():
@@ -465,8 +499,8 @@ def test_the_new_turn_of_a_restart_follows_the_settled_intent(tmp_path, monkeypa
     """Read from the store the Worker writes: a new-turn intent is pending
     until it settles; settled as admitted, the continuation is the turn
     admitted under the intent's key; settled otherwise, there is none."""
-    from openprogram.runtime.execution import restart
-    from openprogram.runtime.execution.execution_tree import (
+    from openprogram.runtime.execution.recovery import restart
+    from openprogram.runtime.execution.projections.execution_tree import (
         RESTART_REQUESTED,
         RESTART_SETTLED,
         continuation_key,
@@ -610,7 +644,7 @@ def _no_runtime():
 
 def _resumable(monkeypatch):
     """``--resume`` names a conversation that exists (``print_session``)."""
-    from openprogram.interfaces.cli import print_session
+    from openprogram.interfaces.cli.print_mode import print_session
 
     monkeypatch.setattr(print_session, "_exists", lambda session_id: True)
 
@@ -709,7 +743,7 @@ def test_print_turn_structured_failure_raises_the_cli_error(monkeypatch, tmp_pat
 
 def test_print_turn_falls_back_in_process_without_a_worker(monkeypatch, capsys):
     from openprogram.interfaces.cli import chat as chat_module
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
     from openprogram.runtime.agent_registry import builtin_agents
 
     monkeypatch.setattr(worker_turn, "resolve_worker", lambda: None)
@@ -736,7 +770,7 @@ def test_print_turn_falls_back_in_process_without_a_worker(monkeypatch, capsys):
 
 def test_print_turn_sends_model_and_working_directory_to_the_worker(monkeypatch, tmp_path):
     from openprogram.interfaces.cli import chat as chat_module
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
     from openprogram.runtime.agent_registry import manager
 
     endpoint = BackendEndpoint(origin="http://127.0.0.1:1", token=TOKEN)
@@ -875,7 +909,7 @@ def _stop_command(command):
 @pytest.fixture
 def quick_stop(monkeypatch):
     # The relay waits as the in-process run does: on the shared clock.
-    from openprogram.interfaces.cli import print_stop
+    from openprogram.interfaces.cli.print_mode import print_stop
 
     monkeypatch.setattr(print_stop, "CANCEL_GRACE_S", 0.4)
     monkeypatch.setattr(print_stop, "SECOND_SIGNAL_GRACE_S", 0.1)
@@ -990,7 +1024,7 @@ def test_a_turn_stopped_elsewhere_is_cancelled_not_an_empty_reply():
 ])
 def test_print_says_whether_the_worker_stopped_the_turn(monkeypatch, capsys, stop, said):
     from openprogram.interfaces.cli import chat as chat_module
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
 
     monkeypatch.setattr(print_turn, "hold_signals", lambda: threading.Event())
     given: dict = {}
@@ -1058,7 +1092,7 @@ def test_a_stop_before_a_turn_the_worker_refuses_ends_at_the_refusal(
         interrupt_first_recv, monkeypatch):
     """The worker refuses most turns with an error chat_response before any
     ack; nothing runs, so the stop is confirmed at once."""
-    from openprogram.interfaces.cli import print_stop
+    from openprogram.interfaces.cli.print_mode import print_stop
 
     monkeypatch.setattr(print_stop, "CANCEL_GRACE_S", 5.0)
 
@@ -1153,7 +1187,7 @@ def test_the_execution_the_ack_names_reaches_the_caller_however_the_turn_ends():
 
 def test_print_turn_usage_names_the_worker_execution(monkeypatch, tmp_path, capsys):
     from openprogram.interfaces.cli import chat as chat_module
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
 
     endpoint = BackendEndpoint(origin="http://127.0.0.1:1", token=TOKEN)
 
@@ -1281,7 +1315,7 @@ def test_a_worker_that_has_the_field_and_sends_no_structured_output_fails(monkey
     """A Worker that names ``structured_output`` puts the value in its field:
     a reply without it is a failure, not JSON to fish out of the text."""
     from openprogram.interfaces.cli import chat as chat_module
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
     from openprogram.models.providers.structured_output import (
         StructuredOutputError,
         normalize_response_format,

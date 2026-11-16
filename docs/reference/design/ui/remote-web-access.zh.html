@@ -311,13 +311,14 @@ server {
 <h2 id="secrets">已存密钥</h2>
 <p>所有者认证授权的是替换和使用密钥，不是读取。</p>
 <table class="stack">
-<thead><tr><th scope="col"></th><th scope="col">配置或环境变量密钥</th><th scope="col">API-key 账号</th></tr></thead>
+<thead><tr><th scope="col"></th><th scope="col">配置或环境变量密钥</th><th scope="col">供应商凭据</th></tr></thead>
 <tbody>
-<tr><th scope="row">读取</th><td><code translate="no">GET /api/config/key/{env_var}</code>：<code translate="no">{"has_value":false,"masked":""}</code> 或 <code translate="no">{"has_value":true,"masked":"sk-…abc4"}</code>；未声明的名称 <code translate="no">404</code></td><td><code translate="no">GET /api/providers/{provider}/accounts</code>：元数据加 <code translate="no">has_value</code> 和 <code translate="no">masked_key</code>；没有 <code translate="no">identity</code>、<code translate="no">can_reveal</code>、<code translate="no">value</code> 或完整密钥</td></tr>
-<tr><th scope="row">保留</th><td>在 <code translate="no">api_keys</code> 中省略该名称</td><td>使用、改名、排序、轮换都不接收也不改变 <code translate="no">api_key</code></td></tr>
-<tr><th scope="row">替换</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>，一个或多个键；<code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/accounts/{name}/update</code> <code translate="no">{"api_key":"new","validate":true}</code>；<code translate="no">validate</code> 可选，默认 true；<code translate="no">200 {"ok":true}</code>；不存在或不是 API-key 账号 <code translate="no">404</code></td></tr>
-<tr><th scope="row">删除</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>，无请求体，幂等；删除保存项和当前进程环境值；<code translate="no">204</code>。父环境再次提供的值只有重启后才会回来。</td><td><code translate="no">POST /api/providers/{provider}/accounts/remove</code> <code translate="no">{"id":"name"}</code> 删除整个凭据池；<code translate="no">200 {"removed":true,"name":"name","cleared_active":&lt;bool&gt;}</code>；id 缺失或未知 <code translate="no">404</code></td></tr>
-<tr><th scope="row">明文查看</th><td>带 <code translate="no">reveal</code> 查询：<code translate="no">404</code></td><td><code translate="no">…/accounts/{name}/reveal</code>：<code translate="no">410</code></td></tr>
+<tr><th scope="row">读取</th><td><code translate="no">GET /api/config/key/{env_var}</code>：<code translate="no">{"has_value":false,"masked":""}</code> 或 <code translate="no">{"has_value":true,"masked":"sk-…abc4"}</code>；未声明的名称 <code translate="no">404</code></td><td><code translate="no">GET /api/providers/{provider}/credentials</code>：每行元数据加 <code translate="no">key_tail</code>（最后四个字符）；没有值或完整密钥</td></tr>
+<tr><th scope="row">保留</th><td>在 <code translate="no">api_keys</code> 中省略该名称</td><td>改名、停用、排序和策略都不接收也不改变密钥</td></tr>
+<tr><th scope="row">替换</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>，一个或多个键；<code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/credentials/{cid}/replace</code> <code translate="no">{"api_key":"new"}</code>，先检查；<code translate="no">200 {"ok":true,"credential":…,"check":…}</code>；被拒的密钥或登录凭据 <code translate="no">400</code>；不存在 <code translate="no">404</code></td></tr>
+<tr><th scope="row">检查</th><td>不提供</td><td><code translate="no">POST /api/providers/{provider}/credentials/check-key</code> <code translate="no">{"api_key":"new","replace"?:cid}</code> 不保存任何东西，返回 <code translate="no">{"ok":true,"check":…}</code>；随后的添加或更换沿用这次检查</td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>，无请求体，幂等；删除保存项和当前进程环境值；<code translate="no">204</code>。父环境再次提供的值只有重启后才会回来。</td><td><code translate="no">DELETE /api/providers/{provider}/credentials/{cid}</code> 删除这一个凭据；<code translate="no">200 {"ok":true}</code>；不存在 <code translate="no">404</code>；环境变量里的密钥 <code translate="no">409</code> 并给出变量名</td></tr>
+<tr><th scope="row">明文查看</th><td>带 <code translate="no">reveal</code> 查询：<code translate="no">404</code></td><td>没有路由读取已存的密钥</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
@@ -365,11 +366,11 @@ server {
 <tr><th scope="row">origin</th><td><code translate="no">openprogram/host/security/backend_endpoint.py</code> 的 <code translate="no">canonicalize_origin()</code>、<code translate="no">resolve_effective_origins()</code>；参数化 owner-auth 测试</td></tr>
 <tr><th scope="row">中间件</th><td><code translate="no">OwnerAuthMiddleware</code>；HTTP 变更和 accept 前 WebSocket 的 owner-auth 测试</td></tr>
 <tr><th scope="row">引导</th><td><code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code>、<code translate="no">OwnerAuthBoundary</code>；<code translate="no">apps/web/scripts/settings/check-owner-auth-bootstrap.mjs</code>、TypeScript 检查、生产构建</td></tr>
-<tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/web.py</code>、<code translate="no">build_owner_auth_url()</code>；<code translate="no">tests/unit/providers/adapters/test_web_auth_url.py</code></td></tr>
+<tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/services/web.py</code>、<code translate="no">build_owner_auth_url()</code>；<code translate="no">tests/unit/webui/test_web_auth_url.py</code></td></tr>
 <tr><th scope="row">密钥</th><td><code translate="no">openprogram/host/security/credential_mask.py</code>、<code translate="no">credential_secrets</code>；<code translate="no">tests/component/programs/mcp/test_mcp_secret_non_retrievability.py</code>、<code translate="no">apps/web/scripts/settings/check-secret-non-retrieval.mjs</code></td></tr>
-<tr><th scope="row">内部客户端</th><td><code translate="no">resolve_backend_endpoint()</code> 返回通过 challenge 校验的 <code translate="no">BackendEndpoint</code>，令牌在证明之后才读取；用于 <code translate="no">openprogram/interfaces/cli/ink.py</code> 和 <code translate="no">openprogram/interfaces/cli/commands/mcp.py</code>。Node 客户端只向后端 URL 发 Bearer：<code translate="no">apps/cli/src/utils/backend.ts</code>、<code translate="no">apps/cli/tests/backendAuth.test.ts</code></td></tr>
+<tr><th scope="row">内部客户端</th><td><code translate="no">resolve_backend_endpoint()</code> 返回通过 challenge 校验的 <code translate="no">BackendEndpoint</code>，令牌在证明之后才读取；用于 <code translate="no">openprogram/interfaces/cli/ink.py</code> 和 <code translate="no">openprogram/interfaces/cli/commands/capabilities/mcp.py</code>。Node 客户端只向后端 URL 发 Bearer：<code translate="no">apps/cli/src/utils/backend.ts</code>、<code translate="no">apps/cli/tests/startup/backendAuth.test.ts</code></td></tr>
 <tr><th scope="row">启动报告</th><td><code translate="no">start_server()</code>；<code translate="no">test_startup_logs_warn_about_plaintext_http_for_remote_origins</code></td></tr>
-<tr><th scope="row">真实监听</th><td><code translate="no">tests/component/providers/adapters/test_web_owner_auth_listener.py</code>：真实 Uvicorn 套接字、HTTP、SSE、accept 前拒绝 WebSocket、绑定失败清理、线上令牌轮换、双 profile cookie、反向代理 origin、对响应体、响应头、日志和渲染页的令牌泄漏扫描</td></tr>
+<tr><th scope="row">真实监听</th><td><code translate="no">tests/component/webui/owner_auth/test_web_owner_auth_listener.py</code>：真实 Uvicorn 套接字、HTTP、SSE、accept 前拒绝 WebSocket、绑定失败清理、线上令牌轮换、双 profile cookie、反向代理 origin、对响应体、响应头、日志和渲染页的令牌泄漏扫描</td></tr>
 </tbody>
 </table>
 </details>
@@ -435,4 +436,4 @@ server {
 </table>
 </details>
 
-<p class="next"><a href="../runtime/security/sandbox-architecture.html">权限模型</a> · <a href="../memory/speaker-identity.html">发言者身份</a> · <a href="../integrations/mcp-server.html">MCP 服务器</a></p>
+<p class="next"><a href="../runtime/security/sandbox-architecture.html">权限模型</a> · <a href="../memory/speaker-identity.html">发言者身份</a> · <a href="../integrations/extensions/mcp-server.html">MCP 服务器</a></p>

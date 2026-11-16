@@ -189,10 +189,10 @@ def test_unsupported_provider_fetch_does_not_contact_api(monkeypatch):
 def _stub_codex_endpoint(monkeypatch, payload):
     """Point the codex fetcher at a fake account/models endpoint response."""
     from openprogram.models.providers.adapters.openai_codex import oauth as _oauth
-    from openprogram.models.providers.adapters.openai_codex import openai_codex as _oc
+    from openprogram.models.auth import resolver as _resolver
     from openprogram.models.providers.adapters.openai_codex import list_models as C
 
-    monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "tok")
+    monkeypatch.setattr(_resolver, "resolve_api_key_sync", lambda *_: "tok")
     monkeypatch.setattr(_oauth, "_get_account_id_from_jwt", lambda *_: "acct")
 
     class _Resp:
@@ -265,8 +265,8 @@ def test_codex_fetch_drops_ultra_and_needs_token(monkeypatch):
     out = C.fetch("openai-codex", timeout=5.0)
     assert out[0]["thinking_levels"] == ["high", "max"]  # ultra dropped
 
-    from openprogram.models.providers.adapters.openai_codex import openai_codex as _oc
-    monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "")
+    from openprogram.models.auth import resolver as _resolver
+    monkeypatch.setattr(_resolver, "resolve_api_key_sync", lambda *_: None)
     err = C.fetch("openai-codex", timeout=5.0)
     assert isinstance(err, dict) and "error" in err
 

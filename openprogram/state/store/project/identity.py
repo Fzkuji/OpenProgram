@@ -45,7 +45,7 @@ def read_marker(path: str | Path) -> str:
 def capture_directory_identity(path: str | Path, *, replace: bool = False) -> dict[str, str]:
     """Publish a marker on registration or explicit Locate, never on reads."""
     from openprogram.state.paths import get_state_dir
-    from openprogram.state.store.session.session_lock import registry_file_lock
+    from openprogram.state.store.session.files.session_lock import registry_file_lock
 
     folder = Path(path).expanduser().resolve()
     if not folder.is_dir():

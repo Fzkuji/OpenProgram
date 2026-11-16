@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.runtime.conversation import rewind_marks
-from openprogram.runtime.conversation.rewind import list_rewind_points, plan_rewind, rewind_to
+from openprogram.runtime.conversation.rewinds import rewind_marks
+from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points, plan_rewind, rewind_to
 from openprogram.state.store.session.rewind_recovery import recover_session_rewinds
 from openprogram.state.store.session.session_store import SessionStore
 from openprogram.state.store.snapshot.checkpoint import (
@@ -609,7 +609,7 @@ def test_rewind_blocks_a_change_no_journal_saw_before_cas(seeded, store, monkeyp
 
 
 def test_branch_session_carries_checkpoints(seeded, store):
-    from openprogram.runtime.context.branch_session import branch_session
+    from openprogram.runtime.context.session_dag.branch_session import branch_session
 
     session, a = seeded
     new_id = branch_session("s", "a2", store=store)
@@ -624,7 +624,7 @@ def test_branch_session_carries_checkpoints(seeded, store):
 
 
 def test_branch_of_a_legacy_session_says_code_cannot_be_restored(store, tmp_path):
-    from openprogram.runtime.context.branch_session import branch_session
+    from openprogram.runtime.context.session_dag.branch_session import branch_session
 
     a = tmp_path / "a.py"
     a.write_text("one\n")

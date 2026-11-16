@@ -82,7 +82,7 @@ def test_a_paired_peer_stays_limited_under_the_default():
 
 
 def test_conversation_permission_uses_the_conversations_mode_and_rules(monkeypatch):
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.permissions.modes import PermissionRules
 
     rules = PermissionRules(deny=["bash"])

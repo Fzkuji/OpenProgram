@@ -1,24 +1,24 @@
 # The Windows platform contracts: run by the Windows legs of
 # .github/workflows/release.yml before a Windows package is built, one path or
 # pytest node id per line. Every contract the windows-core job of ci.yml lists
-# is here too (tests/component/config/test_windows_release_smoke.py checks it).
-tests/component/config/test_windows_install_contract.py
+# is here too (tests/component/config/windows/test_windows_release_smoke.py checks it).
+tests/component/config/windows/test_windows_install_contract.py
 tests/component/config/test_conversational_update_capability.py
-tests/component/config/test_windows_cli_launchers.py
+tests/component/config/windows/test_windows_cli_launchers.py
 tests/component/self_update/versions/test_launcher_windows.py
-tests/component/config/test_windows_release_transaction.py
+tests/component/config/windows/test_windows_release_transaction.py
 tests/component/runtime/test_windows_process.py
-tests/component/config/test_windows_release.py
-tests/component/config/test_windows_runtime_preparation.py
-tests/component/config/test_windows_refresh_publication.py
-tests/component/config/test_windows_build_environment.py
-tests/component/config/test_windows_release_version.py
+tests/component/config/windows/test_windows_release.py
+tests/component/config/windows/test_windows_runtime_preparation.py
+tests/component/config/windows/test_windows_refresh_publication.py
+tests/component/config/windows/test_windows_build_environment.py
+tests/component/config/windows/test_windows_release_version.py
 tests/component/config/test_distribution_release/test_build_base_packages.py
 tests/component/runtime/test_process_liveness.py
 tests/component/runtime/test_local_backend_process_tree.py
 tests/component/runtime/test_git_bash_source_transport.py
 tests/component/agent/jobs/test_job_cancel_projection_race.py
-tests/component/store/test_session_store_close.py
+tests/component/store/session/test_session_store_close.py
 tests/unit/core/test_windows_worker_service.py
 tests/component/security/test_sandbox.py
 tests/component/config/test_formal_release_updates.py

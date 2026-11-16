@@ -43,4 +43,4 @@ existing ``ssh``/``docker`` setup keeps behaving the same.
 - **`check.py`** — Reachability check for an environment
 - **`remote.py`** — Remote filesystem access for SSH environments
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

@@ -24,4 +24,4 @@ that releases a prepared request only after its origin turn is durable.
 - **`verification/`** — Verification implementation
 - **`versions/`** — Sealed versions: the on-disk store a managed install runs from
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

@@ -5,19 +5,19 @@
 <table class="stack">
 <thead><tr><th scope="col">Target</th><th scope="col">Drawn</th><th scope="col">Code</th></tr></thead>
 <tbody>
-<tr><th scope="row">Native macOS window (<code translate="no">computer_use</code> window actions)</th><td>Inner glow, accent title-bar lights, cursor. One transparent, click-through, unfocusable window per conversation, 32pt margin.</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use_agent/desktop/window_watch.py">window_watch.py</a> reports; <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> places; <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> renders</td></tr>
-<tr><th scope="row">Webpage in the App: tab or floating preview</th><td>Inner glow, cursor. One such window per page, 24pt margin, shown only while the view is. Glow follows the corners: preview 10pt, tab rounded bottom.</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> places; <code translate="no">subscribeAgentPageGlow</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> reports</td></tr>
-<tr><th scope="row">Chat preview (PiP), web build</th><td>Cursor in a <code translate="no">pointer-events: none</code> layer over the preview image</td><td><code translate="no">ActionCueTravel</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser/toolbar/browser-control-bar.tsx">browser-control-bar.tsx</a></td></tr>
+<tr><th scope="row">Native macOS window (<code translate="no">computer_use</code> window actions)</th><td>Inner glow, accent title-bar lights, cursor. One transparent, click-through, unfocusable window per conversation, 32pt margin.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use_agent/desktop/window_watch.py">window_watch.py</a> reports; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> places; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> renders</td></tr>
+<tr><th scope="row">Webpage in the App: tab or floating preview</th><td>Inner glow, cursor. One such window per page, 24pt margin, shown only while the view is. Glow follows the corners: preview 10pt, tab rounded bottom.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> places; <code translate="no">subscribeAgentPageGlow</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> reports</td></tr>
+<tr><th scope="row">Chat preview (PiP), web build</th><td>Cursor in a <code translate="no">pointer-events: none</code> layer over the preview image</td><td><code translate="no">ActionCueTravel</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser/toolbar/browser-control-bar.tsx">browser-control-bar.tsx</a></td></tr>
 </tbody>
 </table>
-<p class="note">Every surface draws <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/agent-cursor/agent-cursor.tsx">AgentCursor</a>.</p>
+<p class="note">Every surface draws <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/agent-cursor/agent-cursor.tsx">AgentCursor</a>.</p>
 
 <h2>When a webpage glows</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">Glows while</th><td>Control state is Agent operating, stopping, or not confirmed stopped, and its conversation's run is still going</td></tr>
-<tr><th scope="row">After the run ends</th><td>Idle whatever the state says, since the backend keeps it active until it reconciles (<code translate="no">presentedControlState</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/browser/control/browser-control.ts">browser-control.ts</a>)</td></tr>
+<tr><th scope="row">After the run ends</th><td>Idle whatever the state says, since the backend keeps it active until it reconciles (<code translate="no">presentedControlState</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/browser/control/browser-control.ts">browser-control.ts</a>)</td></tr>
 <tr><th scope="row">Not drawn</th><td>A pausing state, a frame around the page</td></tr>
 <tr><th scope="row">Header and toolbar</th><td>Speak only for Needs your confirmation or an unknown state</td></tr>
 </tbody>
@@ -54,7 +54,7 @@
 </table>
 
 <h2 id="accent">Accent colour</h2>
-<p><code translate="no">--agent-accent</code> is <code translate="no">--theme-accent</code> (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/styles/themes/fallback.css">themes/fallback.css</a>), used by glow, lights, cursor and click dot; keyline, dot ring and light pulse are white. The overlay shares the App's origin and theme settings, so a change reaches it at once.</p>
+<p><code translate="no">--agent-accent</code> is <code translate="no">--theme-accent</code> (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/styles/themes/fallback.css">themes/fallback.css</a>), used by glow, lights, cursor and click dot; keyline, dot ring and light pulse are white. The overlay shares the App's origin and theme settings, so a change reaches it at once.</p>
 
 <h2>Safety</h2>
 <table class="stack fixed">

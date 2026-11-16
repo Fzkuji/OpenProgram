@@ -16,12 +16,12 @@ Modules:
 Importable straight from this sub-package, e.g.
 ``from openprogram.state.store.session import SessionStore``.
 """
-from .session_log import SessionLog
+from .files.session_log import SessionLog
 from .memory_index import SessionMemoryIndex
 from .session_node_writer import SessionNodeWriter
 # Provenance read-layer — the LLM-free seam memory maps from (cheap to
 # import: only pulls in the node schema, already loaded by memory_index).
-from .provenance import (
+from .reading.provenance import (
     Provenance,
     iter_nodes_since,
     node_provenance,

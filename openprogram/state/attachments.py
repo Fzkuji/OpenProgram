@@ -300,7 +300,7 @@ def _conversation_workdir(session_id: str | None) -> list[Path]:
     Only for a conversation that exists and is not bound to a real
     project: a bound one already has its project as a root. Its folder is
     the default project's path, where the turn's tools run
-    (``openprogram.runtime.conversation.workdir.apply_default_workdir``),
+    (``openprogram.runtime.conversation.session_settings.workdir.apply_default_workdir``),
     so a deck the agent built there can be opened and attached.
     """
     if not session_id or not _session_repo_candidates(session_id):
@@ -374,7 +374,7 @@ def _chats_roots(state: Path | None) -> list[Path]:
 def _session_meta(session_id: str) -> dict:
     """The session log's meta, read from disk without opening a
     SessionStore (see :func:`_session_repo_candidates`)."""
-    from openprogram.state.store.session.session_log import SessionLog
+    from openprogram.state.store.session.files.session_log import SessionLog
     for repo in _session_repo_candidates(session_id):
         meta = SessionLog(repo).read_meta()
         if isinstance(meta, dict):
@@ -405,7 +405,7 @@ def _session_repo_candidates(session_id: str) -> list[Path]:
     state = _state_dir()
     if state is None:
         return []
-    from openprogram.state.store.session.placement import LOCATIONS_FILE
+    from openprogram.state.store.session.files.placement import LOCATIONS_FILE
 
     root = state / "projects"
     if (root / ".deleted" / session_id).is_file():

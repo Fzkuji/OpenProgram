@@ -14,15 +14,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col"><code translate="no">openprogram providers</code></th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td>Picks OAuth or API key. Scripts: <code translate="no">--api-key-stdin</code></td></tr>
-<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>Deletes its credentials</td></tr>
+<tr><th scope="row"><code translate="no">keys &lt;provider&gt; add</code> (or <code translate="no">login &lt;provider&gt;</code>)</th><td>Adds a key or sign-in to the end of the provider's list. Scripts: <code translate="no">--api-key-stdin</code></td></tr>
+<tr><th scope="row"><code translate="no">keys &lt;provider&gt;</code> <code translate="no">list</code> <code translate="no">rename</code> <code translate="no">move</code> <code translate="no">disable</code> <code translate="no">replace</code> <code translate="no">remove</code> <code translate="no">strategy</code></th><td>The same list the Providers page shows</td></tr>
+<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>Removes every stored key and sign-in</td></tr>
 <tr><th scope="row"><code translate="no">status &lt;provider&gt;</code></th><td>Are the credentials usable?</td></tr>
-<tr><th scope="row"><code translate="no">list</code></th><td>Credential pools by account</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>Every provider's list</td></tr>
 <tr><th scope="row"><code translate="no">available [QUERY]</code></th><td>The full configurable catalogue, including community entries</td></tr>
 <tr><th scope="row"><code translate="no">discover</code> <code translate="no">adopt</code></th><td>Scan and import credentials on this machine: <a href="auth.html">Authentication</a></td></tr>
-<tr><th scope="row"><code translate="no">use &lt;provider&gt; [account]</code></th><td>Which account the provider runs on</td></tr>
 <tr><th scope="row"><code translate="no">doctor</code></th><td>Expiry, refresh, cooldown, conflicts</td></tr>
-<tr><th scope="row"><code translate="no">aliases</code> <code translate="no">accounts</code> <code translate="no">migrate</code></th><td>Short names, accounts, credential format migration</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>Short names</td></tr>
 </tbody>
 </table>
 <h2>Enabled models</h2>
@@ -47,4 +47,4 @@
 <tr><th scope="row">Brand icons</th><td>Bundled locally; custom or unrecognized providers show an initial</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="local-models.html">Local models</a> · <a href="providers.html">Providers</a> · <a href="auth.html">Authentication</a> · <a href="fast-tier.html">Fast mode</a> · <a href="thinking-effort.html">Thinking effort</a> · <a href="token-tracking.html">Token tracking</a></p>
+<p class="next"><a href="local-models.html">Local models</a> · <a href="providers.html">Providers</a> · <a href="auth.html">Authentication</a> · <a href="several-keys.html">Use several keys</a> · <a href="fast-tier.html">Fast mode</a> · <a href="thinking-effort.html">Thinking effort</a> · <a href="token-tracking.html">Token tracking</a></p>

@@ -26,7 +26,7 @@ import json
 import time
 
 from openprogram.runtime.conversation.model_tools import is_anthropic_family as _is_anthropic_family
-from openprogram.runtime.conversation.turn_lifecycle import mark_terminal_status as _mark_terminal_status
+from openprogram.runtime.conversation.turn_admission.turn_lifecycle import mark_terminal_status as _mark_terminal_status
 
 _log = logging.getLogger(__name__)
 
@@ -122,8 +122,12 @@ def persist_assistant_message(
     }
     from openprogram.state.memory.policy import stamp
     assistant_msg.update(stamp(req))
+    if usage.get("credential_notices"):
+        # "Switched to Work: Personal hit its rate limit": the chat's line
+        # over this reply, still there after a reload.
+        assistant_msg["credential_notices"] = list(usage["credential_notices"])
     if usage.get("service_tiers"):
-        assistant_msg["usage"] = dict(usage)
+        assistant_msg["usage"] = {k: v for k, v in usage.items() if k != "credential_notices"}
     if req.structured_output_mode is not None:
         assistant_msg.update({
             "structured_output": req.structured_output,
@@ -215,11 +219,15 @@ def persist_assistant_message(
                         # The card's line saying how long the whole output is.
                         tool_block["full_output"] = full_output
                     if blk.get("round_start"):
-                        # Where a provider response began (context/render.py).
+                        # Where a provider response began (context/session_dag/render.py).
                         tool_block["round_start"] = True
                     if _tc.get("outcome") == "cancelled":
                         # Running when the turn was stopped.
                         tool_block["outcome"] = "cancelled"
+                    for _key in ("task", "step", "task_effect"):
+                        # The task and step the call belongs to (state/task_blocks.py).
+                        if _key in blk:
+                            tool_block[_key] = blk[_key]
                     blocks.append(tool_block)
                 elif blk.get("type") == "text" and isinstance(blk.get("text"), str):
                     # The model wrote this text; a marker in it is not a
@@ -363,5 +371,5 @@ def _close_stopped_calls(db, req, assistant_msg_id: str, blocks: list[dict], age
             ))
         except Exception:
             # Without the node the call is left out of later requests
-            # (``context.render``), as before; the card still says it.
+            # (``context.session_dag.render``), as before; the card still says it.
             _log.warning("result of a call that never ran not stored", exc_info=True)

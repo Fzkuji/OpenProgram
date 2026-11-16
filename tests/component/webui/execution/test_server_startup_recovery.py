@@ -155,7 +155,7 @@ def test_legacy_dag_recovery_waits_on_real_session_lock_after_health(
     """A real session lock cannot prevent the public lifespan from yielding."""
     from openprogram.runtime.execution import ExecutionStore
     from openprogram.state.store.session.session_store import SessionStore
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
     from openprogram.interfaces.server import server
 
     sessions = SessionStore(tmp_path / "sessions")
@@ -211,7 +211,7 @@ def test_dag_recovery_preserves_canonical_paused_execution_after_wait_resolution
     from openprogram.runtime.execution.attempts import AttemptStore
     from openprogram.state.store import SessionNodeWriter
     from openprogram.state.store.session.session_store import SessionStore
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
     from openprogram.runtime.execution.model import ExecutionStatus
 
     sessions = SessionStore(tmp_path / "sessions")
@@ -306,7 +306,7 @@ def test_projection_cleans_only_synthetic_marker_and_preserves_cancel_output():
 
     from openprogram.state.store.session.nodes import Call, ROLE_CODE
     from openprogram.runtime.execution.model import ExecutionStatus
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     node = Call(
         id="cancelled-system-recovery",
@@ -353,7 +353,7 @@ def test_projection_leaves_real_canonical_interruption_unchanged():
 
     from openprogram.state.store.session.nodes import Call, ROLE_CODE
     from openprogram.runtime.execution.model import ExecutionStatus
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     node = Call(
         id="real-interruption",
@@ -387,7 +387,7 @@ def test_hydration_projects_cancelled_wait_without_erasing_output(
     from openprogram.runtime.execution.model import ExecutionStatus
     from openprogram.state.store import SessionNodeWriter
     from openprogram.state.store.session.session_store import SessionStore
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     sessions = SessionStore(tmp_path / "sessions")
     sessions.create_session("cancel-wait", "main")
@@ -502,7 +502,7 @@ def test_shutdown_rejects_new_websocket_work(monkeypatch):
 
 def test_worker_shutdown_blocks_new_invocations_without_user_cancel(monkeypatch):
     from openprogram.runtime.conversation import run_control
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     signal = threading.Event()
     monkeypatch.setattr(run_control, "_worker_stopping", signal)

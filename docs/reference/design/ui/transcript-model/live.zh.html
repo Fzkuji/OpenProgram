@@ -1,0 +1,160 @@
+<title>会话记录实时更新</title>
+<meta name="description" content="文本帧、观察者与发布器、停止、函数运行树、外部写入、发送和子代理如何到达浏览器。">
+<h1 id="title">会话记录实时更新</h1>
+<p class="note">属于<a href="overview.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="overview.zh.html#status">实现状态</a>。</p>
+<h2 id="live-text">实时文本</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序</th><td><code translate="no">stream_tap</code> 更新自己的块，经安静路径持久化，然后发出同样的 <code translate="no">stream_event</code> 帧，附加 <code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>。工具调用之后开启一段文字的文字帧还带 <code translate="no">separator</code>，页面把它放在这段增量之前写进行的 <code translate="no">content</code>，不写进任何块。</td></tr>
+<tr><th scope="row">任务戳</th><td>文本或思考帧在它的块属于某个任务时带 <code translate="no">task</code> 和 <code translate="no">step</code>；页面在建块时写上。工具块的戳随它的 <code translate="no">item_upsert</code> 到达，任务调用返回改变归属时再发一次。</td></tr>
+<tr><th scope="row">重试帧</th><td><code translate="no">retry</code> 和 <code translate="no">structured_output_retry</code> 留在这个帧上，设置仅客户端的 <code translate="no">retryStatus</code>。</td></tr>
+<tr><th scope="row">引用</th><td><code translate="no">text_end</code> 保留，增加 <code translate="no">row_id</code> 和 <code translate="no">item_id</code>，给那个块设置引用而不碰其文本。</td></tr>
+<tr><th scope="row">安静路径</th><td>安静路径（<code translate="no">update_stream_progress</code>、<code translate="no">stream_node(quiet=True)</code>）是 <code translate="no">durable=False</code>，不触发观察者。回复第一次写入之后，每次写入都是一行 <code translate="no">node.stream</code>，只含自上次以来新增的部分。进程崩溃不丢失已写入的内容；断电可能丢失进行中回复的末尾。</td></tr>
+<tr><th scope="row">持久写入</th><td>工具、插话和引用的写入保持持久并触发观察者。</td></tr>
+<tr><th scope="row">延迟</th><td>回调是同步的，所以每个增量本来就在等待前一个增量的持久化；重新排序最多给一串增量的第一帧增加一次持久化的延迟。</td></tr>
+<tr><th scope="row">持久化失败</th><td>持久化失败不阻塞发送。偏移规则会修复。</td></tr>
+</tbody>
+</table>
+<h2 id="observer-publisher">其余一切：从观察者到发布器</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">观察者</th><td><code translate="no">SessionLog._append</code> 在末尾调用一个观察者，由 <code translate="no">is_main_writer()</code> 把关，所以 fork 出的子进程绝不触发，覆盖 <code translate="no">node.put</code>、<code translate="no">node.patch</code>、<code translate="no">node.delete</code> 和 <code translate="no">meta.patch</code>。观察者只入队（会话、记录类型、id、变更的键）。</td></tr>
+<tr><th scope="row">分层</th><td><code translate="no">state</code> 暴露注册钩子；Server 在加载时注册。运行时和状态层不从 interfaces 导入任何东西。</td></tr>
+<tr><th scope="row">排空</th><td>一个发布器线程在解析一个节拍前排空<strong>全部</strong>排队记录，所以插话和它的重挂被一起看到。</td></tr>
+<tr><th scope="row">节拍</th><td>它按视图以 50 ms 前沿节拍合并。状态变化立刻发送。</td></tr>
+<tr><th scope="row">编号</th><td>编号和入队在视图锁下进行。发布器在发布过程中重建的视图（主视图或子代理视图）保留原修订号，所以插话的改挂不会跳号，也不会引发修复读取。</td></tr>
+<tr><th scope="row">新 id</th><td>对新 id，读取节点并按以下顺序解析：caller 在归属表中（调用行，受 spawn 根排除约束），然后 predecessor 在归属表中（attach、占位、插话、重启提示、续接），然后子代理 tip 规则。</td></tr>
+<tr><th scope="row">等待 head 补丁</th><td>只有将收到 head 补丁的无 caller 链上行才等待：它没有归属，随后的 <code translate="no">meta.patch</code> 会把新 head 标脏。这覆盖了 <code translate="no">write_history</code> 先于 <code translate="no">set_head</code> 运行的情况。</td></tr>
+<tr><th scope="row">插话</th><td>带 <code translate="no">metadata.steering</code> 的行等待一个节拍，等它的回复重挂。重挂始终不来就按原样发送。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">变脏的节点</th><th scope="col">发送的变更</th></tr></thead>
+<tbody>
+<tr><th scope="row">新的起始行</th><td><code translate="no">turn_upsert</code></td></tr>
+<tr><th scope="row">已持有轮次中新的顶层行</th><td>带 <code translate="no">afterRowId</code> 的 <code translate="no">row_upsert</code>，然后重算派生字段</td></tr>
+<tr><th scope="row">attach、工具或代码节点</th><td>向 <code translate="no">attachCards</code>、<code translate="no">callRoots</code> 或 <code translate="no">runtimeChildren</code> 发 <code translate="no">item_upsert</code></td></tr>
+<tr><th scope="row">未结束回复的非文本块，包括插话</th><td>crc 变化时向 <code translate="no">blocks</code> 发带 <code translate="no">index</code> 的 <code translate="no">item_upsert</code></td></tr>
+<tr><th scope="row">未结束回复的其他字段</th><td>不含 content 和文本块的 <code translate="no">row_patch</code></td></tr>
+<tr><th scope="row">终态回复</th><td>一个 <code translate="no">row_upsert</code>，含重新加载给出的每个字段</td></tr>
+<tr><th scope="row">非未结束行的任何其他变化（章节固定、<code translate="no">reverted</code>、执行效果重写、迟到的工具行）</th><td>来自投影的一个 <code translate="no">row_upsert</code>，位置保持</td></tr>
+<tr><th scope="row">对非未结束行的写入没有改变该行显示的任何内容（一轮开始时会把 <code translate="no">memory_policy</code>、<code translate="no">turn_settings</code> 和 <code translate="no">turn_context</code> 补到已发送的消息上）</th><td>不发。发布器记下每个已结束行上次整行发出时的 crc（<code translate="no">_Sent.whole</code>），投影的 crc 相同就跳过，所以一条发出的消息只到持有者一次，而不是在头半秒内到三次。</td></tr>
+<tr><th scope="row">带 <code translate="no">covers_ids</code> 的摘要（写入或补丁）、<code translate="no">node.delete</code>、rewound 或 structural 补丁、最后一轮之外的重挂</th><td><code translate="no">window_stale { reason: structure }</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">派生字段</th><td>当顶层行加入已持有轮次或成员的 predecessor 变化时，发布器对照已存表重算整个轮次的顺序、<code translate="no">steeringReplyId</code>、<code translate="no">continuedBy</code> 和 <code translate="no">continues</code>，并为每个变化的行发 <code translate="no">row_patch</code>。成员顺序的变化超出单次插入时发 <code translate="no">turn_upsert</code>。</td></tr>
+<tr><th scope="row">版本箭头</th><td>视图没有显示的分支上有一轮结束时，已画出的分叉行的箭头指向会变，版本数也可能变。发布器发 <code translate="no">row_patch</code>，带上变化的 <code translate="no">siblingIndex</code>、<code translate="no">siblingTotal</code>、<code translate="no">prevSiblingId</code> 和 <code translate="no">nextSiblingId</code>。变化从还没有被更新回应的最早一次读取算起，所以后来的读取即使已经带着新箭头，先读的持有者也照样收到补丁。</td></tr>
+<tr><th scope="row">大小</th><td>超过 512 KiB 的单个 <code translate="no">transcript_update</code> 被替换为 <code translate="no">transcript_gap</code>，因为读取会分片而更新不会。</td></tr>
+<tr><th scope="row">目标标注</th><td>只在读取、新轮次和终态行上运行。</td></tr>
+</tbody>
+</table>
+<h2 id="run-end">运行结束状态</h2>
+<p><code translate="no">event_effects</code> 增加一条规则：当执行到达终态而它的锚定行仍未结束时，把该终态写到行上。写入经过存储，所以实时和冷读都会落定。在 <code translate="no">finalize</code> 中失败的终态存储写入因此在执行结束时得到修复，不需要任何显示侧兜底。</p>
+<p><code translate="no">event_effects</code> 还在快照仍是该执行当前版本的生命周期事件上写入暂停及其恢复：</p>
+<ul>
+<li>执行 <code translate="no">paused</code>，行状态为 <code translate="no">None</code>、<code translate="no">pending</code>、<code translate="no">running</code> 或 <code translate="no">streaming</code>：写入 <code translate="no">status: paused</code> 和 <code translate="no">pause_reason</code>。<code translate="no">continuation_contract_mismatch</code> 被排除，因为 <code translate="no">_project_failed_assistant</code> 已把它写成错误。</li>
+<li>执行 <code translate="no">running</code>，行状态 <code translate="no">paused</code>：写入 <code translate="no">status: running</code> 并清除 <code translate="no">pause_reason</code>。</li>
+</ul>
+<p>目标是锚定行 <code translate="no">assistant_message_id</code>，函数运行时就是它预先创建的节点。每次写入都经过存储，发布器立刻以 <code translate="no">row_patch</code> 发送。<code translate="no">reconcile_session_projection</code> 在水合时应用同样的映射，所以实时和冷读一致。暂停行上的新文本被追加，状态交给这条规则。</p>
+<h2 id="stop">停止</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">发布器</th><td>文本帧仍由 <code translate="no">_broadcast_chat_response</code> 把关，它保持停止后的静默。在发布器中，当 <code translate="no">is_cancelled(session, execution_id=&lt;row's execution&gt;)</code> 成立时，该执行的行上的非终态变化被丢弃，因为终态行会覆盖它们。终态 <code translate="no">row_upsert</code> 绝不被扣留。同一会话的后台作业行继续更新。</td></tr>
+<tr><th scope="row">覆盖层与证明</th><td>浏览器设置带 <code translate="no">until_terminal</code> 的 Stop 覆盖层，加上指明取消命令 id 的 <code translate="no">until_command_rejected</code>。如果一次拒绝的 <code translate="no">latest_snapshot</code> 证明执行仍在运行，并通过 <code translate="no">handleExecutionCommandUpdated</code> 里的检查（同一会话、没有被更新的执行替换），就发出 <code translate="no">overlay_command_rejected</code> 清除覆盖层，并恢复运行槽，除非运行槽已以更新的版本持有这一轮。</td></tr>
+<tr><th scope="row">只发一次</th><td>停止只发一次（<code translate="no">lib/execution/cancel-execution.ts</code>）。Worker 按当前版本受理，旧版本不算拒绝。已结束的一轮返回 <code translate="no">already_terminal</code>。"Stopped." 跟随执行的已取消帧。</td></tr>
+<tr><th scope="row">确认之前</th><td>确认之前按下的 Stop 设置同样的覆盖层，确认一给出执行就发出取消，不论有没有版本。</td></tr>
+<tr><th scope="row">行状态</th><td>然后该行显示其服务端状态，因为覆盖层从未改变行。</td></tr>
+<tr><th scope="row">其他情况</th><td>没有该证明的拒绝让覆盖层留到终态行。覆盖层下丢弃的文本帧留下空缺，下一帧的 <code translate="no">offset &gt; length</code> 在视图锚点读取一次来修复。</td></tr>
+</tbody>
+</table>
+<h2 id="function-trees">函数运行树</h2>
+<p><code translate="no">live_progress</code> 继续构建树并把 <code translate="no">context_tree</code> 持久化到行上。它的 <code translate="no">tree_update</code> 是实时交付的输入，因为在 Agent 方法子进程中，存储写入对父进程是外部的。在 Server 的扇出处，<code translate="no">tree_update</code> 调用 <code translate="no">publisher.notice_tree(session_id, msg_id, tree, function)</code>。发布器由 <code translate="no">msg_id</code> 再由 <code translate="no">&lt;msg_id&gt;_reply</code> 找到行，并由该行确定目标：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">msg_id</code> 指向</th><th scope="col">变更</th></tr></thead>
+<tbody>
+<tr><th scope="row">非 <code translate="no">display=runtime</code> 的 assistant 回复（模型发起的函数）</th><td>向该回复的 <code translate="no">callRoots</code> 发 <code translate="no">item_upsert</code>，和读取一样去掉默认的 <code translate="no">expose: "full"</code>。条目身份是 <code translate="no">tree.path</code>。没有路径的树替换同函数名的运行中根，否则新增。没有子节点的扁平树不发送：回复的工具步骤已经显示了这次调用，读取也不为它画树。</td></tr>
+<tr><th scope="row"><code translate="no">function_run</code> 行</th><td><code translate="no">row_patch { contextTree, function, status }</code></td></tr>
+<tr><th scope="row">回复 <code translate="no">runtimeChildren</code> 中的子项</th><td>把该子项连同 <code translate="no">contextTree</code>、<code translate="no">function</code>、<code translate="no">status</code> 以 <code translate="no">item_upsert</code> 发入 <code translate="no">runtimeChildren</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">状态</th><td><code translate="no">status</code> 经 <code translate="no">status.py</code> 取自树根：<code translate="no">running</code>、<code translate="no">completed</code> 映射为 <code translate="no">done</code>、<code translate="no">error</code>。其他根状态不发送。</td></tr>
+<tr><th scope="row">未结束行与节拍</th><td><code translate="no">running</code> 树绝不改变视图已不再记录为未结束的行。节拍会合并。</td></tr>
+<tr><th scope="row">终态树</th><td>终态树立刻发送并带上状态，所以卡片即使在存储写入仍是外部且尚未重建时也能落定。终态 <code translate="no">row_upsert</code> 随下一次外部重建跟上。</td></tr>
+<tr><th scope="row">冷读与无归属</th><td>冷读从 <code translate="no">context_tree</code> 或 <code translate="no">build_exec_dag_by_id</code> 得到同样的 <code translate="no">_exec_tnode</code> 形状。行尚无归属的树把该会话标记一次外部脏。</td></tr>
+</tbody>
+</table>
+<h2 id="foreign-writes">外部写入</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">吸收</th><td>在现有两处吸收：<code translate="no">_open</code> 中的过期重建和 <code translate="no">invalidate_cache</code>。它们报告外部变化并把该视图的未结束行标脏，<code translate="no">seq</code> 高于视图最大值的节点按新 id 解析。</td></tr>
+<tr><th scope="row">重建频率</th><td>发布器不做过期检查地读取缓存索引，并对每个会话每 2 秒最多接受一次外部重建，所以运行中的子进程不会造成每节拍一次 O(N) 重建。窗口内的标记把重建推迟到窗口结束，绝不跳过，所以一次运行的最后一次外部写入总能得到重建。</td></tr>
+<tr><th scope="row">一致性</th><td><code translate="no">memory_index.rebuild</code> 填充新容器并在锁下交换，所以无锁读者绝不会看到填到一半的索引。cron 子进程没有轮询者，它们的写入在下一次读取时出现。</td></tr>
+</tbody>
+</table>
+<h2 id="head-moves">HEAD 移动</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">后代</th><td>比较 <code translate="no">meta.patch</code> 中的 <code translate="no">head_id</code> 与旧 head。后代只扩展索引，不额外发送。attach 和提示的写入方使用 <code translate="no">advance_head=False</code>，不再翻转 head，所以 spawn 走不到这条路径。</td></tr>
+<tr><th scope="row">分支与结构</th><td>不是后代的 head 发送 <code translate="no">window_stale { head_id, reason: branch }</code>，每个持有者在最新处读取一次。<code translate="no">window_stale { reason: structure }</code> 在锚点读取，就地替换并按消息 id 恢复。这些读取会运行水合，所以会话元数据也会刷新。</td></tr>
+</tbody>
+</table>
+<h2 id="dag-panel">DAG 面板</h2>
+<p><code translate="no">branches_changed { session_id }</code>（replace 类）在 attach 写入、head 移动和节点删除时发出。客户端运行现有的 <code translate="no">list_branches</code> 发送。重新加载去掉后，这是图刷新的唯一触发。</p>
+<h2 id="send">发送</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td>一个带 <code translate="no">clientRequestId</code> 标记的本地行。聊天动作把同一个 id 作为 <code translate="no">metadata.client_request_id</code> 存到 user 节点上，函数分发把它存到预创建的函数运行节点上，所以读取或更新能指明它属于哪次发送。</td></tr>
+<tr><th scope="row">替换</th><td><code translate="no">chat_ack</code> 把本地行改为服务端 id，服务端的行已经到达时则移除它。携带该 <code translate="no">clientRequestId</code> 的 <code translate="no">turn_upsert</code> 或读取即使抢在确认之前也会替换它，确认丢失后的重连会替换被 <code translate="no">settleSendsOnDisconnect</code> 标为 Not sent 的行。函数运行同理；占位在确认或 upsert 时移除。</td></tr>
+<tr><th scope="row">同一个气泡</th><td>行列表在行带 <code translate="no">clientRequestId</code> 时用它作 key（<code translate="no">row-render-key.ts</code> 的 <code translate="no">rowRenderKeys</code>），所以改 id 只是一个保持挂载的行换了字段：气泡从回车起就是同一个 DOM 节点，出现动画只播一次。气泡下的操作行从第一帧就画出，确认前隐藏（<code translate="no">.is-pending</code>），所以确认不会让行变高；气泡从 0.6 到完全不透明是一次过渡。独立的“思考中…”指示也带着空回复的操作行（不可见），所以回复行替换它时什么都不动。</td></tr>
+<tr><th scope="row">确认重画什么</th><td>只重画它改变的部分。<code translate="no">markSessionReady</code> 只有在草稿标签变成对话时才改动标签状态，否则原样返回。输入框把运行任务读成两个标志（运行中、取消中），不读每个状态帧都会替换的任务对象。消息操作栏只在回退按钮里、以及通过一个分叉选择器读取运行状态，所以一轮开始或结束只重画最后一条提问的操作，而不是屏幕上的每个操作栏。侧栏的行（<code translate="no">ConvRow</code>）只在它显示的字段变化时渲染，并通过共享的来源调用列表最新的处理函数。同一时刻读取对话项目列表的各处共用一次 <code translate="no">list_projects</code> 请求（<code translate="no">listSessionProjects</code>）；<code translate="no">project-changed</code> 事件结束共用。</td></tr>
+<tr><th scope="row">运行帧重画什么</th><td>消息列表只读它从运行任务里画出来的东西：是否运行、开始时间、操作的文字。回复通过 <code translate="no">useMessageIds</code> 读取行顺序，并且只在对话有任务时才读（<code translate="no">useRowTasks</code>）；store 自己的顺序数组每次写入都会被替换，直接读它会让每条回复在每个流出的 token 上重画。<code translate="no">setStatusBadge</code> 在字段都没变时保留原来的徽标。背景偏好只在值不同时通知读取方。</td></tr>
+<tr><th scope="row">外壳变化重画什么</th><td><code translate="no">AppShell</code> 在标签或路由变化时重画。它不带属性的子组件都做了记忆：标签栏、视图控件、右侧面板、欢迎页、页面外壳、聚焦对话的输入框。输入框的环境行和控件组也做了记忆，输入框保持它们的属性稳定（回调、思考档位、联网搜索的来源），所以敲一个键只重画输入区，不重画那些标签。右侧面板下的文件树同样做了记忆。</td></tr>
+<tr><th scope="row">新对话的第一条消息</th><td>草稿发出后沿用同一个对话 id，它的项目会按对话重新解析一次。这期间右侧面板保留这个对话的项目树，所以树不会重新加载，展开的文件夹保持展开。不会显示别的对话的项目。</td></tr>
+<tr><th scope="row">确认前错误</th><td>确认前的错误只标记那个本地行，把服务端文本作为 <code translate="no">errorDetail</code> 记录在上面，不造 <code translate="no">_reply</code>。失败气泡下的 <code translate="no">NotSent</code> 行在 "Not sent" 之后绘制该文本。</td></tr>
+<tr><th scope="row">没有本地行</th><td>没有本地行的拒绝保留 toast，<code translate="no">run_active</code> 保留其重排路径。</td></tr>
+<tr><th scope="row">插话</th><td>插话行把命令 id 作为 <code translate="no">clientRequestId</code>。当读取或更新交付带这个 id 的行时，reducer 返回 <code translate="no">settleSteers</code> 效果，调用方运行 <code translate="no">settleDeliveredSteer</code>。这也覆盖读取，帧做不到这一点。</td></tr>
+</tbody>
+</table>
+<h2 id="optimistic-writes">乐观写入</h2>
+<p>浏览器先于服务端做的每一次写入，以及结束它的事件。除此之外没有别的写入：服务端的行只来自读取、编号更新和文字帧。</p>
+<table class="stack">
+<thead><tr><th scope="col">调用位置</th><th scope="col">类别</th><th scope="col">清除</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">use-chat-submit.ts</code> <code translate="no">stopSession</code>；<code translate="no">chat-handlers.ts</code> <code translate="no">wsHandleChatAck</code>（确认之前按下的 Stop）</th><td>覆盖层 <code translate="no">status</code>（<code translate="no">stopOverlay</code>）</td><td><code translate="no">until_terminal</code>，以及来自 <code translate="no">handleExecutionCommandUpdated</code> 的 <code translate="no">until_command_rejected</code></td></tr>
+<tr><th scope="row"><code translate="no">message-actions.tsx</code>（版本切换）</th><td>覆盖层 <code translate="no">siblingIndex</code>；失败时 <code translate="no">overlay_clear</code></td><td><code translate="no">until_read</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime-block.tsx</code>（重试、版本切换）</th><td>覆盖层 <code translate="no">status</code>、<code translate="no">contextTree</code>、<code translate="no">siblingIndex</code>、<code translate="no">siblingTotal</code>；失败时 <code translate="no">overlay_clear</code></td><td><code translate="no">until_row_gone</code></td></tr>
+<tr><th scope="row"><code translate="no">chapter-pin.ts</code> <code translate="no">setTurnChapter</code></th><td>覆盖层 <code translate="no">chapterPinnedAt</code></td><td><code translate="no">until_field_matches</code>，以及服务端回复时 <code translate="no">overlay_clear</code>，因为存下的固定时间永远不等于浏览器的</td></tr>
+<tr><th scope="row"><code translate="no">turn-files-chips.tsx</code></th><td>覆盖层 <code translate="no">turnFiles</code>、<code translate="no">reverted</code></td><td><code translate="no">until_field_matches</code>、<code translate="no">until_row_gone</code></td></tr>
+<tr><th scope="row"><code translate="no">goal-state.ts</code></th><td>覆盖层 <code translate="no">goalVerification</code></td><td><code translate="no">until_field_matches</code></td></tr>
+<tr><th scope="row"><code translate="no">send-chat-message.ts</code> 和 <code translate="no">chat-stream.ts</code>（<code translate="no">appendLocalUserTurn</code>、确认），<code translate="no">chat-handlers.ts</code>（确认前错误、本地命令），<code translate="no">unacked-sends.ts</code>，<code translate="no">user-bubble.tsx</code></th><td>本地用户行</td><td>有类型的本地变化；带其 <code translate="no">clientRequestId</code> 的读取或 <code translate="no">turn_upsert</code> 替换它</td></tr>
+<tr><th scope="row"><code translate="no">use-function-dispatch.ts</code></th><td>本地 <code translate="no">function_run</code> 行</td><td>带其请求 id 的读取替换它；没有后续读取时在 HTTP 响应时移除，失败时也移除</td></tr>
+<tr><th scope="row"><code translate="no">use-slash-menu.ts</code>、<code translate="no">chat-handlers.ts</code> <code translate="no">handleChatResponse</code>（<code translate="no">appendLocalNotice</code>）</th><td>跟在当时最后一行之后的本地提示</td><td>读取后保留；压缩带着真实结果完成时，压缩提示离开</td></tr>
+<tr><th scope="row"><code translate="no">chat-stream.ts</code>（<code translate="no">patchHeldRow</code>）、<code translate="no">assistant-file-cards.tsx</code></th><td>只在帧里的字段 <code translate="no">retryStatus</code>、<code translate="no">autoPreviewFiles</code></td><td>有类型的本地变化；读取后保留（<code translate="no">withFrameOnlyFields</code>）</td></tr>
+<tr><th scope="row"><code translate="no">session-history-loader.ts</code>、<code translate="no">conversations.ts</code>、<code translate="no">sub-agent-transcripts.ts</code>、<code translate="no">transcript-updates.ts</code> <code translate="no">applyFirstRead</code></th><td>读取的应用</td><td><code translate="no">applyReadToView</code></td></tr>
+</tbody>
+</table>
+<h2 id="sub-agent">子代理</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">占位</th><td>每次 spawn 都从 <code translate="no">on_accepted</code> 写一个占位 attach 行，所以它从第一次写入起就带有 <code translate="no">job.id</code>、<code translate="no">tool_call_id</code> 和 <code translate="no">delivery=tool_result</code>。作业携带 <code translate="no">attach_pointer_id</code>，所以结束作业的每条路径都会更新卡片。</td></tr>
+<tr><th scope="row">结束写入</th><td>同步 spawn 的结束写入是补丁该行，因为 <code translate="no">append_message</code> 对 id 幂等；失败路径和没有 head 的结果补丁为 errored。占位写入失败时，结束写入追加完整的行。</td></tr>
+<tr><th scope="row">交付与读取</th><td><code translate="no">notices.queue</code> 对 <code translate="no">wait=True</code> 作业本来就是空操作。卡片是观察者以 <code translate="no">item_upsert</code> 交付的普通存储写入。运行期间 <code translate="no">head_id</code> 为 null；打开该行时通过 <code translate="no">get_execution_input</code> 按 <code translate="no">job_id</code> 读取。</td></tr>
+<tr><th scope="row">启动</th><td>启动对账关闭作业不活跃的 attach 行。折叠的行不加载任何内容。</td></tr>
+<tr><th scope="row">展开视图</th><td>展开视图以自己的视图键经同一读取器读取，按分支顺序，不移动 HEAD。</td></tr>
+<tr><th scope="row">tip 规则与文本</th><td>它有自己的 tip 规则：predecessor 是视图 tip、且通过 <code translate="no">_branch_tip</code> 过滤（<code translate="no">user</code> 或 <code translate="no">assistant</code>，非 <code translate="no">display=runtime</code>，非 <code translate="no">function=attach</code>）的 <code translate="no">node.put</code> 扩展视图并发出 <code translate="no">turn_upsert</code>。文本帧应用到持有 <code translate="no">row_id</code> 的已加载视图，所以作业文本不会进入父级。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="wire.zh.html">通信协议与模块</a></p>

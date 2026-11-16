@@ -1102,7 +1102,7 @@ def _current_attribution():
                 assistant_message_id = record.assistant_message_id
             display = None
             try:
-                from openprogram.runtime.execution.public import _display_metadata
+                from openprogram.runtime.execution.projections.public import _display_metadata
                 execution = store.get_execution(execution_id)
                 display = _display_metadata(store, execution, None) if execution else None
             except Exception:

@@ -44,6 +44,8 @@ export type RunningExecutionList = {
     kind?: string;
     started_at?: number;
     task_label?: string | null;
+    /** The scheduled task whose schedule started this top-level run. */
+    scheduled_task_id?: string | null;
     parent_execution_id?: string | null;
     execution_id?: string | null;
     snapshot?: ExecutionSnapshot;

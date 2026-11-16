@@ -32,4 +32,4 @@ repositories. See ``docs/design/runtime/agent-worktree.md`` Part 1 D4.
 - **`store.py`** — Worktree persistence
 - **`types.py`** — Worktree entity + state machine
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

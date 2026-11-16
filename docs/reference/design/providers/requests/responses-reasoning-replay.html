@@ -1,0 +1,22 @@
+<title>Responses reasoning replay</title>
+<meta name="description" content="How stored reasoning signatures are cleaned before same-model history is sent again.">
+<meta name="covers" content="openprogram/models/providers/shared/openai_responses.py openprogram/models/providers/adapters/openai_responses/">
+<h1>Responses reasoning replay</h1>
+
+<p>SDK output objects can serialize absent optional fields as null, and a compatible endpoint answers HTTP 422 to <code translate="no">content: null</code> on reuse. <code translate="no">convert_responses_messages</code>, shared by all Responses adapters, handles it at the outgoing boundary.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">At conversion</th></tr></thead>
+<tbody>
+<tr><th scope="row">Null <code translate="no">content</code>, <code translate="no">encrypted_content</code>, <code translate="no">status</code></th><td>Omitted from reasoning items</td></tr>
+<tr><th scope="row">Non-null values, summary arrays, opaque encrypted content</th><td>Preserved</td></tr>
+<tr><th scope="row">Server-assigned IDs, cross-model signatures</th><td>Existing handling unchanged</td></tr>
+<tr><th scope="row">Stored history</th><td>Never rewritten; byte-for-byte unchanged</td></tr>
+<tr><th scope="row">Later turns</th><td>The reply stores each reasoning item whole, summary or not, as its thinking block's signature, and text under the message id the provider gave it; the next turn, a retry and a turn resumed from its journal send them again to the same model, so the next request starts with the bytes of the last one; another model gets no earlier reasoning (<a href="../../context/overview.html#rendering-aging-and-compaction">Rendering</a>)</td></tr>
+<tr><th scope="row">Asking for it</th><td>Every request of a reasoning model sends <code translate="no">include: ["reasoning.encrypted_content"]</code>, whatever the effort (not on <code translate="no">xai-subscription</code>; on Azure, whose requests are stored, only with a reasoning field). With <code translate="no">store: false</code> nothing else brings the reasoning back to the next round; Codex asks the same way</td></tr>
+<tr><th scope="row">Payloads</th><td>Never decrypted</td></tr>
+<tr><th scope="row">Permissions, failed external actions</th><td>Not changed, not retried</td></tr>
+</tbody>
+</table>
+
+<p class="note">No new queue, provider fallback or retry policy. The installed OpenAI SDK <code translate="no">ResponseReasoningItem</code> declares these fields optional; its output serialization differs from input requirements.</p>

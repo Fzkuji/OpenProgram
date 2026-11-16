@@ -1,0 +1,88 @@
+<title>会话记录读取与客户端规则</title>
+<meta name="description" content="浏览器如何应用带编号的变更和文本帧，读取如何暂存实时帧，以及每种读取触发返回什么。">
+<h1 id="title">会话记录读取与客户端规则</h1>
+<p class="note">属于<a href="overview.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="overview.zh.html#status">实现状态</a>。</p>
+<h2 id="client-rules">客户端规则</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">游标</th><td>每个视图有一个游标。<code translate="no">revision &lt;= cursor</code> 的 <code translate="no">transcript_update</code> 被忽略。<code translate="no">previous == cursor</code> 的被应用。其他情况在读者的锚点触发一次合并后的读取。没有窗口的视图收到的帧直接丢弃，不读取。完整窗口替换无条件把游标设为其修订号。页或单轮回复绝不移动游标。</td></tr>
+<tr><th scope="row">修订号</th><td>修订号来自一个进程级计数器，所以只增不减。从存储重建的视图从一个新编号开始，它下一帧的 <code translate="no">previous</code> 匹配不上任何游标，持有者读取一次。发布器在发布过程中重建的视图保留原修订号。worker 重启会杀掉 socket，新 socket 会读取。</td></tr>
+<tr><th scope="row">条目或补丁未命中</th><td><code translate="no">item_upsert</code> 和 <code translate="no">row_patch</code> 携带 <code translate="no">turnId</code>。未持有该行且轮次不在窗口内：静默丢弃。未持有该行且轮次在窗口内：每轮最多一个在途读取，若返回后仍无该行则停止。绝不因未命中而创建行。</td></tr>
+<tr><th scope="row">未结束行上的 upsert</th><td><code translate="no">turn_upsert</code> 和 <code translate="no">row_upsert</code> 绝不用更短的块替换未结束行上已持有的文本或思考块。终态行替换整行。</td></tr>
+<tr><th scope="row">非最新窗口</th><td>只有 <code translate="no">after</code> 为 null 时才追加 <code translate="no">turn_upsert</code>。否则只前进 <code translate="no">total</code>。</td></tr>
+<tr><th scope="row">立即刷新</th><td>reducer 在对某行应用任何条目或状态变化前先刷新该行的待写文本。</td></tr>
+<tr><th scope="row">读取归属</th><td><code translate="no">createSessionLoads</code> 是唯一的读取归属，按视图为键，一个在途一个待发。完成的回复先应用，再发送待发读取，所以连串的失效无法饿死它。修复读取和翻页读取经过 <code translate="no">exclusive</code>：更新的读取替换正在等待的那个，被替换的以跳过结束；修复读取发现已有读取在途时并入其中。</td></tr>
+</tbody>
+</table>
+<p><strong>文本帧。</strong> 给定 <code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>：</p>
+<ul>
+<li>未持有该行：丢弃，不读取。行的创建是带编号的变更，所以缺失的行由游标发现。</li>
+<li>行状态已落定，或该行上有 Stop 覆盖层：丢弃。</li>
+<li>条目不存在且 <code translate="no">offset == 0</code>：在 <code translate="no">item_index</code> 处创建。索引超过行最后一个块的帧在行旁等待，直到发布器的下一个变化带来它之前的块。</li>
+<li><code translate="no">offset == length</code>：应用。<code translate="no">offset &lt; length</code>：裁掉重叠部分，应用其余。</li>
+<li><code translate="no">offset &gt; length</code>：在视图锚点读取一次，该视图已有读取在途时不再读取。期间到达的帧被丢弃，因为它们处于读取结果之中或之前。</li>
+</ul>
+<p>长度以 UTF-16 单位计，并包含该行待写的 rAF 文本。</p>
+<h2 id="parking">暂存</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>每次返回行的读取（首次打开、页、单轮、重连、携带窗口的聊天确认）都会在该 socket 上暂存该会话的写行帧，从捕获之前直到回复的最后一个分片入队。写行帧是 <code translate="no">transcript_update</code>、<code translate="no">transcript_gap</code> 和 <code translate="no">stream_event</code>。</td></tr>
+<tr><th scope="row">终态帧</th><td>终态 <code translate="no">chat_response</code> 帧（<code translate="no">result</code>、<code translate="no">error</code>、<code translate="no">cancelled</code>）只带运行级效果，不写行，所以不暂存。</td></tr>
+<tr><th scope="row">开始与合并</th><td>暂存在事件循环上同步开始，早于读取的第一次线程切换。暂存的连续文本会合并，所以普通流不会填满缓冲。</td></tr>
+<tr><th scope="row">上限</th><td>超过 256 个暂存帧时丢弃缓冲，并在回复后发送一个 <code translate="no">transcript_gap</code>。同一会话的嵌套读取计深度，降到零时刷新。断开连接时清空。</td></tr>
+<tr><th scope="row">为什么足够</th><td>先持久化后发送意味着捕获之前发出的每一帧都反映在读取结果里。暂存意味着捕获之后编号或发出的每一帧都在回复之后到达。因此文本总是处于读取结果之中或之后，偏移规则会把它裁齐。</td></tr>
+</tbody>
+</table>
+<h2 id="first-open">首次打开</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">请求与捕获</th><td>带 <code translate="no">history_version: 3</code> 的 <code translate="no">load_session</code>。<code translate="no">handle_load_session</code> 照旧运行 <code translate="no">reconcile_session_projection</code>，把视图加入 socket 并开始暂存，在任何发布锁之外获取或构建 <code translate="no">TranscriptView</code>，然后在视图锁下捕获修订号 R 并投影最新的 6 轮，到实际字节达 128 KiB 为止。</td></tr>
+<tr><th scope="row">顺序</th><td>投影和捕获共用这把锁，所以编号 <code translate="no">&lt;= R</code> 的帧在读取之前构建，<code translate="no">&gt; R</code> 的在读取之后。</td></tr>
+<tr><th scope="row">回复</th><td><code translate="no">session_loaded</code> 携带 <code translate="no">turns</code>、<code translate="no">window</code> 和现有元数据，<code translate="no">graph: []</code>。暂存帧跟在最后一个分片之后。</td></tr>
+</tbody>
+</table>
+<h2 id="brand-new-chat">全新对话</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">加入与确认</th><td>不发送 <code translate="no">load_session</code>，因为会话 id 要到确认时才知道。聊天动作在发送的 socket 上加入视图并暂存。对未持有该视图的协议 3 socket，<code translate="no">chat_ack</code> 携带 <code translate="no">first_read: { turns, window }</code>，捕获方式与首次打开相同，然后暂存帧跟上。</td></tr>
+<tr><th scope="row">内容</th><td>轮次在确认前已持久化，所以 <code translate="no">first_read</code> 含有 user 行。回复占位和之后的一切都作为带编号的更新到达。</td></tr>
+<tr><th scope="row">调用点</th><td>适用于 <code translate="no">_send_chat_ack</code>、<code translate="no">retry.py</code> 和 <code translate="no">turn_local_command.py</code>。待发送的本地行按 <code translate="no">clientRequestId</code> 替换。</td></tr>
+</tbody>
+</table>
+<h2 id="paging">向前或向后翻页</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">请求与回复</th><td>同样的 <code translate="no">load_session</code>，带 <code translate="no">history_before</code>、<code translate="no">history_after</code>、<code translate="no">history_around</code> 或 <code translate="no">history_latest</code>，值可以是任意行 id。25 轮或 512 KiB。正文从存储新鲜读取。回复 <code translate="no">session_history_page { id, turns, window, request_id, action }</code>。</td></tr>
+<tr><th scope="row">游标</th><td>不再位于分支上的游标返回 <code translate="no">cursor_not_on_branch</code>，客户端做一次首次读取。读者在历史里所在的那一行同时作废，首次读取不会再请求它。只是前进的 head 不算不匹配。</td></tr>
+<tr><th scope="row">放置</th><td>客户端按 <code translate="no">window.start</code> 放置页，绝不放到末尾：既不相邻也不与已持有跨度重叠的页被丢弃。绘制前按消息 id 恢复。按整页淘汰。</td></tr>
+<tr><th scope="row">锚点</th><td>锚点只从服务端行保存，绝不从本地行保存。</td></tr>
+</tbody>
+</table>
+<h2 id="reconnect">重连</h2>
+<p>在锚点读取会话记录，然后恢复执行，只用快照。本地行和覆盖层保留。</p>
+<h2 id="split-pane">分屏</h2>
+<p>帧交付给持有该视图的每个 socket，并不管焦点地应用。窗格在其视图没有窗口时读取。两个窗格通过同一个 <code translate="no">TranscriptRows</code> 绘制，会话范围取自行列表，而不是聚焦的会话。</p>
+<h2 id="view-lifecycle">视图生命周期</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">关闭</th><td>浏览器在淘汰对话或关闭窗格、展开的子代理时发送 <code translate="no">close_view { session_id, view }</code>。</td></tr>
+<tr><th scope="row">上限</th><td>一个 socket 最多持有 16 个视图。超过上限时，服务端丢弃该 socket 最近最少读取的视图并发送 <code translate="no">view_closed</code>；客户端移除该窗口，仍在显示它的窗格重新读取。</td></tr>
+<tr><th scope="row">释放</th><td>socket 停止时释放它的全部视图。四个对话的浏览器上限由 <code translate="no">trimHistoryWindows</code> 执行，正是它让 socket 保持在上限以内。</td></tr>
+</tbody>
+</table>
+<h2 id="non-web">非 Web 消费方</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">消费方</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件路径</th><td>CLI、ACP、频道、<code translate="no">worker_turn</code> 和 <code translate="no">bound_reply</code> 的 <code translate="no">on_event</code> 和 <code translate="no">stream_event</code> 不变。</td></tr>
+<tr><th scope="row">CLI 和 rehearsal</th><td>CLI（<code translate="no">history_version</code> 缺失）和 <code translate="no">rehearsal</code> 读取由 <code translate="no">flat_rows.py</code> 构建的 <code translate="no">session_loaded.messages</code>：<code translate="no">id</code>、<code translate="no">role</code>、<code translate="no">content</code>，整条分支，不分页。</td></tr>
+<tr><th scope="row">HTTP 路由</th><td>HTTP 命令路由（<code translate="no">CommandReply</code>，协议 1）得到相同字段，上限为最新 6 轮或 128 KiB，仍接受 <code translate="no">history_before</code> 和 <code translate="no">history_after</code>，因为 <code translate="no">CommandReply</code> 拒绝超过 4 MiB 的回复。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="live.zh.html">实时更新</a></p>

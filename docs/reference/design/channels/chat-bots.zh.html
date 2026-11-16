@@ -78,8 +78,8 @@
 </table>
 <ul>
 <li>未点名的 ambient 消息以 <code translate="no">[room event]</code> 开头，不运行 ack 和输入状态，最终文本留在记录中，网页标为“overheard”。房间事件计入洪泛限制。</li>
-<li>账号的 <code translate="no">require_mention</code> 提供默认值；<code translate="no">/activation</code> 把按群覆盖写入 <code translate="no">rooms.json</code>。适配器只设置 <code translate="no">ChannelMessage.mentioned</code> 并去掉提及；决定在 <code translate="no">channels/_room.py</code>，各平台一致。私聊从不门控。</li>
-<li><code translate="no">chat_send(text)</code> 发到回合所在聊天，按会话 key 在 <code translate="no">channels/_active_turns.py</code> 中查找（<code translate="no">session_scope: main</code> 的会话含多个聊天）。只需 <code translate="no">reply</code> 能力，在安全自动允许列表中，对非渠道来源隐藏，每回合最多五条。点名回合中用于长任务前的简短说明；最终回复仍会发送。</li>
+<li>账号的 <code translate="no">require_mention</code> 提供默认值；<code translate="no">/activation</code> 把按群覆盖写入 <code translate="no">rooms.json</code>。适配器只设置 <code translate="no">ChannelMessage.mentioned</code> 并去掉提及；决定在 <code translate="no">channels/inbound/_room.py</code>，各平台一致。私聊从不门控。</li>
+<li><code translate="no">chat_send(text)</code> 发到回合所在聊天，按会话 key 在 <code translate="no">channels/inbound/_active_turns.py</code> 中查找（<code translate="no">session_scope: main</code> 的会话含多个聊天）。只需 <code translate="no">reply</code> 能力，在安全自动允许列表中，对非渠道来源隐藏，每回合最多五条。点名回合中用于长任务前的简短说明；最终回复仍会发送。</li>
 </ul>
 <h2 id="pending-history">待处理历史</h2>
 <pre translate="no"><code>[earlier messages in this chat]

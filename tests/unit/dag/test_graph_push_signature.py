@@ -8,7 +8,7 @@ change when the canvas would actually redraw.
 
 from __future__ import annotations
 
-from openprogram.runtime.execution.dag import _graph_push_signature
+from openprogram.runtime.execution.projections.dag import _graph_push_signature
 
 
 def _node(**kw):

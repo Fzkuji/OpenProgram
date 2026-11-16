@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping
 from openprogram.state.paths import get_active_profile
 
 from ..attempts import AttemptRecord, AttemptStore
-from ..checkpoints import (
+from ..recovery.checkpoints import (
     CheckpointManifest,
 )
 from ..driver import (
@@ -18,7 +18,7 @@ from ..driver import (
     DriverAck,
     DriverRegistry,
 )
-from ..effects import EffectRecord
+from ..recovery.effects import EffectRecord
 from ..model import (
     CommandKind,
     CommandStatus,
@@ -261,7 +261,7 @@ async def submit_wait_command(
     execution and its project/session binding before the wait command runs.
     """
     from ..authorization import authorize_execution_action
-    from ..public import project_id_for_session
+    from ..projections.public import project_id_for_session
 
     action_to_method = {
         "execution.wait.answer": service.request_wait_answer,

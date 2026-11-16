@@ -35,5 +35,5 @@
 <p>把固定规则放进第一个文本块并标记。OpenAI、codex 只需把稳定前缀放在最前。</p>
 
 <h2 id="implementation-status">实现状态</h2>
-<p>已实现。<code translate="no">tests/unit/programs/tools/test_cache_control_passthrough.py</code> 覆盖运行时到请求体的透传、图片、无标记时请求体相同、无标记时自动断点、不覆盖已标记的最后一块、前面有标记时抑制自动断点。<code translate="no">tests/unit/providers/adapters/test_anthropic_cache_breakpoints.py</code> 覆盖后续轮次的工具结果断点、四个断点上限、非 api.anthropic.com 时统一有效期，以及调用方的 5m 标记让之后的断点变成 5m。</p>
+<p>已实现。<code translate="no">tests/unit/programs/tools/test_cache_control_passthrough.py</code> 覆盖运行时到请求体的透传、图片、无标记时请求体相同、无标记时自动断点、不覆盖已标记的最后一块、前面有标记时抑制自动断点。<code translate="no">tests/unit/providers/adapters/anthropic/test_anthropic_cache_breakpoints.py</code> 覆盖后续轮次的工具结果断点、四个断点上限、非 api.anthropic.com 时统一有效期，以及调用方的 5m 标记让之后的断点变成 5m。</p>
 <p>非 Anthropic 不泄漏靠读代码核实。经真实代理的透传未验证。</p>

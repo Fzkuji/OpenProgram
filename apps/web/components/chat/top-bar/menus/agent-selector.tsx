@@ -19,7 +19,9 @@
  * provider that needs action shows its state word and its row leads to the
  * fix; a window or key limit half used shows a ring of % left; the submenu
  * header carries the provider's quota rows; the menu ends with Manage
- * providers. With no provider connected the menu says so and opens Add
+ * providers. A provider with two or more credentials ends its models with
+ * "Key: <name> · Auto ›", whose submenu pins this conversation to one
+ * (provider-keys.tsx). With no provider connected the menu says so and opens Add
  * provider. The state comes with the models (`providers`) and follows each
  * `provider_quota` frame; opening the menu reads the status route, which
  * also reads quota endpoints older than ten minutes in the background.
@@ -51,6 +53,7 @@ import { SolarIcon } from "@/components/solar-icons";
 import { ModelMark } from "../chips/model-mark";
 import {
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -63,15 +66,16 @@ import {
   PICKER_QUERY_KEY,
   PROVIDERS_PAGE,
   addProviderPage,
-  balanceLabel,
   fixLink,
+  headerRows,
   needsAction,
   providerPage,
-  quotaRows,
   quotaSummary,
   stateWord,
   type Text,
 } from "@/lib/models/provider-state";
+import { MenuRow } from "@/components/ui/menu/menu-parts";
+import { ProviderKeys } from "./provider-keys";
 import { QuotaRing, QuotaRows, StateWord } from "./provider-quota";
 
 type EnabledModel = Awaited<ReturnType<typeof api.listEnabledModels>>[number];
@@ -108,9 +112,14 @@ export function AgentSelector({
   });
   const limitsOf = (id: string) => status?.providers.find((p) => p.id === id)?.quota?.limits ?? [];
   // Group headings name the provider as Settings does: the enabled list
-  // carries the label, so the rows never show an id that a later fetch renames.
-  const providerName = (id: string) => models?.find((m) => m.provider === id)?.providerLabel
-    || status?.providers.find((p) => p.id === id)?.label || id;
+  // carries the label, so the rows never show an id that a later fetch
+  // renames; one way of a company reached several ways reads "OpenAI · ChatGPT".
+  const providerName = (id: string) => {
+    const named = states[id];
+    if (named?.name) return text(named.name, named.name_zh || named.name);
+    return models?.find((m) => m.provider === id)?.providerLabel
+      || status?.providers.find((p) => p.id === id)?.label || id;
+  };
 
   async function pick(provider: string, model: string) {
     onClose();
@@ -163,6 +172,8 @@ export function AgentSelector({
   const header = (id: string, withName: boolean) => (
     <ProviderHeader name={withName ? providerName(id) : null} id={id} state={states[id]} limits={limitsOf(id)} text={text} />
   );
+  // The provider's key row, for a saved conversation (a draft has nothing to pin).
+  const keys = (id: string) => <ProviderKeys provider={id} sessionId={currentSessionId || null} onClose={onClose} />;
 
   const noProvider = !!status && status.providers.length === 0;
   const body = !models ? (
@@ -176,8 +187,7 @@ export function AgentSelector({
         <div className={MENU_NOTE}>{text("No model provider connected.", "还没有接入模型服务商。")}</div>
         <DropdownMenuItem asChild className={cn(itemCls(false), MENU_ITEM_STATES, "no-underline")}>
           <a href={addProviderPage()} onClick={onClose} data-picker-add-provider>
-            <SolarIcon name="add-circle" size={16} fit="fill" aria-hidden="true" />
-            <span className="flex-1 truncate">{text("Add provider", "添加服务商")}</span>
+            <MenuRow glyph="add-circle" label={text("Add provider", "添加服务商")} />
           </a>
         </DropdownMenuItem>
       </>
@@ -200,6 +210,7 @@ export function AgentSelector({
       onClose={onClose}
     >
       {modelRows(byProvider[0].models)}
+      {keys(byProvider[0].provider)}
     </SingleProvider>
   ) : (
     // One grid for every provider row: the model names start after the
@@ -218,6 +229,7 @@ export function AgentSelector({
           onClose={onClose}
         >
           {modelRows(group.models)}
+          {keys(group.provider)}
         </ProviderRow>
       ))}
     </div>
@@ -231,12 +243,11 @@ export function AgentSelector({
       {body}
       {models && !noProvider ? (
         <>
-          <div className={MENU_SEPARATOR} />
+          <DropdownMenuSeparator className={MENU_SEPARATOR} />
           <DropdownMenuItem asChild className={cn(itemCls(false), MENU_ITEM_STATES, "no-underline")}>
             <a href={PROVIDERS_PAGE} onClick={onClose} data-picker-manage>
-              <SolarIcon name="settings-minimalistic" size={16} fit="fill" aria-hidden="true" />
               {/* A plain link to Settings, not a submenu: no chevron. */}
-              <span className="flex-1 truncate">{text("Manage providers", "管理服务商")}</span>
+              <MenuRow glyph="settings-minimalistic" label={text("Manage providers", "管理服务商")} />
             </a>
           </DropdownMenuItem>
         </>
@@ -400,25 +411,28 @@ function SingleProvider({ id, name, state, header, text, onClose, children }: {
           </DropdownMenuItem>
         )
       ) : null}
-      {fix ? <div className={MENU_SEPARATOR} /> : null}
+      {fix ? <DropdownMenuSeparator className={MENU_SEPARATOR} /> : null}
       {children}
     </>
   );
 }
 
-/** The submenu header: name, then the quota rows (Codex's `label [bar]
- *  NN% · reset`) or the balance; nothing when the provider reports none. */
+/** The submenu header: name, then the quota rows (each limit's label,
+ *  reset and % left over a full-width bar) and amounts; nothing when the
+ *  provider reports none. */
 function ProviderHeader({ name, id, state, limits, text }: {
   name: string | null;
   id: string;
   state?: PickerProvider;
-  limits: Parameters<typeof quotaRows>[0];
+  limits: Parameters<typeof headerRows>[0];
   text: Text;
 }) {
-  const rows = quotaRows(limits, text);
+  // Every limit of the status read, plus the ring's limit and the balance
+  // the picker state already carries (it arrives seconds before the
+  // status read), so the header never lists less than the row shows.
+  const rows = headerRows(limits, state, text);
   const word = stateWord(state, text);
-  const balance = !rows.some((r) => r.left == null) && state?.balance ? state.balance : null;
-  if (!rows.length && !word && !balance) return null;
+  if (!rows.length && !word) return null;
   return (
     <>
       {name ? (
@@ -429,13 +443,7 @@ function ProviderHeader({ name, id, state, limits, text }: {
         </div>
       ) : null}
       <QuotaRows rows={rows} />
-      {balance ? (
-        <div className={cn(MENU_NOTE, "flex gap-2")} data-picker-balance>
-          <span>{balance.label || text("Balance", "余额")}</span>
-          <span className="tabular-nums text-text-secondary">{balanceLabel(balance)}</span>
-        </div>
-      ) : null}
-      <div className={MENU_SEPARATOR} />
+      <DropdownMenuSeparator className={MENU_SEPARATOR} />
     </>
   );
 }

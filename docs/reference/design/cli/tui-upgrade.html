@@ -20,8 +20,9 @@
     … +38 lines (ctrl+o to expand)
 ● agent(Survey the parser)
   ⎿ Done (2m 10s)
-● todo_update(#2)
-  ⎿ ☒ Read code
+● task_step(next)
+  ⎿ Ship the parser 1/3
+    ☒ Read code
     ◼ Write tests
     ☐ Ship</pre>
 <table class="stack fixed">
@@ -32,7 +33,7 @@
 <tr><th scope="row">read, grep, glob, list</th><td>One line: <code translate="no">Read 52 lines</code>, <code translate="no">Found 8 files</code>, <code translate="no">Found 3 matches</code>, <code translate="no">No matches</code>; the content only when expanded</td></tr>
 <tr><th scope="row">edit, apply_patch, write</th><td><code translate="no">Added X lines, removed Y lines</code> and a diff: green additions, red removals, three lines of context, folded runs as <code translate="no">⋮</code>, up to 12 rows before folding. Line numbers come from reading the edited file once when the result arrives; a file not on this machine shows no numbers rather than wrong ones</td></tr>
 <tr><th scope="row">agent</th><td><code translate="no">Running…</code>, then <code translate="no">Done (2m 10s)</code> and the head of its reply; a background agent reads <code translate="no">Started in the background</code></td></tr>
-<tr><th scope="row">todo_*</th><td>The saved board from the <code translate="no">todos_update</code> frame on the newest todo call: <code translate="no">☒</code> done and struck through, <code translate="no">◼</code> in progress and bold, <code translate="no">☐</code> pending</td></tr>
+<tr><th scope="row">task_start, task_step</th><td>The task from the <code translate="no">todos_update</code> frame on the newest task call: its title with the steps done out of those counted, then <code translate="no">☒</code> done or dropped and struck through, <code translate="no">◼</code> in progress and bold, <code translate="no">☐</code> pending. No nesting: text and other calls stay flat.</td></tr>
 <tr><th scope="row">Expand</th><td>Ctrl+O expands or folds tool output for the whole transcript; the fold note names the active key</td></tr>
 <tr><th scope="row">Matching</th><td>A result finds its call by <code translate="no">tool_call_id</code>, so two concurrent calls of one tool finish in the right row; frames without an id fall back to the newest running call of that name</td></tr>
 </tbody>
@@ -47,7 +48,7 @@
 <tr><th scope="row">Fold at three, count the rest</th><td>Claude Code folds at 3 with <code translate="no">+N lines</code>; Codex keeps head and tail; Pi shows the tail of bash. A head with an accurate total says how much is hidden; the total comes from the server's preview metadata, because a preview counted on its own understates long output</td></tr>
 <tr><th scope="row">One global expand</th><td>Claude Code opens Ctrl+O as a separate frozen screen; Pi toggles <code translate="no">app.tools.expand</code> in place. The toggle keeps the transcript scrollable and needs no second screen or exit key, and the cell-grid renderer redraws the whole frame anyway</td></tr>
 <tr><th scope="row">Diff from the edit's own arguments</th><td>Claude Code builds its patch from <code translate="no">old_string</code> / <code translate="no">new_string</code>; Codex from the patch it applied. The TUI has both from the call, so no server change is needed; line numbers come from the file because the arguments lack them, and are left out when the file is elsewhere (an SSH conversation)</td></tr>
-<tr><th scope="row">Board from the saved todos</th><td>Claude Code draws TodoWrite's checklist from its arguments; ours change one item per call, so the board comes from the <code translate="no">todos_update</code> frame the tools already broadcast, and a TodoWrite-style call is drawn from its arguments</td></tr>
+<tr><th scope="row">Steps from the saved task</th><td>Claude Code draws TodoWrite's checklist from its arguments; a <code translate="no">task_step</code> call carries no list, so the steps come from the <code translate="no">todos_update</code> frame the tools already broadcast, and a TodoWrite-style call is drawn from its arguments</td></tr>
 </tbody>
 </table>
 </details>

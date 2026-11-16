@@ -6,7 +6,7 @@
 
 - [Website]({{SITE_URL}}): Product overview and quick start
 - [Documentation]({{SITE_URL}}docs/index.html.md): Complete documentation index
-- [Repository](https://github.com/FuzzyKuji/OpenProgram): Source code, issues, and discussions
+- [Repository](https://github.com/Fzkuji/OpenProgram): Source code, issues, and discussions
 - [Installation]({{SITE_URL}}#quick-start): Install and run OpenProgram
 
 ## Core concepts
@@ -14,7 +14,7 @@
 - [Self-Programming AI Agents]({{SITE_URL}}docs/capabilities/agentic-programming/self-programming-ai-agents.html.md): How agents create and refine workflows
 - [Agentic Programming]({{SITE_URL}}docs/capabilities/agentic-programming/philosophy.html.md): Program-governed agent execution
 - [Framework Comparison]({{SITE_URL}}docs/reference/comparisons/ai-agent-frameworks.html.md): OpenProgram, LangGraph, AutoGen, and CrewAI
-- [Feature Matrix]({{SITE_URL}}docs/reference/design/feature-matrix.html): Capability-level comparison
+- [Feature Matrix]({{SITE_URL}}docs/reference/design/framework-comparison/feature-matrix.html): Capability-level comparison
 - [Runtime API]({{SITE_URL}}docs/reference/api/runtime.html.md): Runtime reference
 
 ## Research
@@ -24,4 +24,4 @@
 
 ## Optional
 
-- [GitHub Discussions](https://github.com/FuzzyKuji/OpenProgram/discussions): Announcements and community questions
+- [GitHub Discussions](https://github.com/Fzkuji/OpenProgram/discussions): Announcements and community questions

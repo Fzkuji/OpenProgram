@@ -20,7 +20,11 @@
   /* A faded thumb is not there: only a shown one can be grabbed, or the
      pointer crossing a box's edge would light it up. */
   pointer-events: none;
-  z-index: 9999;
+  /* A box in the page: above its sticky rows, under anything floating
+     (menus, popovers, drawers, dialogs). A box inside one of those gets
+     that layer's z-index from scrollbar.ts, so it never shows through a
+     menu opened above it. */
+  z-index: var(--z-sticky);
   opacity: 0;
   transition: opacity var(--motion-slow), background var(--motion-medium), width var(--motion-fast);
   cursor: default;

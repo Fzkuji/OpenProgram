@@ -21,7 +21,7 @@
 </table>
 
 <figure>
-<img src="execution/agent-code-structure.svg" alt="按概念划分的运行时包">
+<img src="agent-code-structure.svg" alt="按概念划分的运行时包">
 </figure>
 
 <h3 id="dependency-direction">依赖方向</h3>
@@ -40,16 +40,16 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">注册</th><th scope="col">提供</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">conversation/context_registration.py</code></th><td><code translate="no">open_work</code> 系统提示段落和上下文分解用的 Agent 配置加载器</td></tr>
-<tr><th scope="row"><code translate="no">conversation/permission_registration.py</code></th><td><code translate="no">permissions/session_facts.py</code> 读取的会话和轮次事实</td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/context_registration.py</code></th><td><code translate="no">open_work</code> 系统提示段落和上下文分解用的 Agent 配置加载器</td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/permission_registration.py</code></th><td><code translate="no">permissions/session_facts.py</code> 读取的会话和轮次事实</td></tr>
 <tr><th scope="row"><code translate="no">context/scope.py</code></th><td><code translate="no">Context</code> 读取的任务级调用状态（<code translate="no">_call_id</code>、工作流调用点）；调用核心从这里导入</td></tr>
 <tr><th scope="row"><code translate="no">runtime/agent/engine_link.py</code></th><td>调用核心需要引擎提供内容的唯一端口：运行持久轮次或保存的续跑（<code translate="no">Agent.run_turn</code> / <code translate="no">resume_turn</code>）及其 Agent 配置、保存 Agent 的工具、绑定恢复的工具调用的预批准问题等待、Worker 是否正在停止、运行中作业的活动和操作超时、可恢复工具循环写检查点的运行时契约</td></tr>
-<tr><th scope="row"><code translate="no">conversation/engine_registration.py</code></th><td>导入 <code translate="no">openprogram.runtime.conversation</code> 时实现该端口；Worker 和 Server 在启动时导入。同一导入带入 <code translate="no">conversation/run_control</code>，由它接管核心的取消检查。</td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/engine_registration.py</code></th><td>导入 <code translate="no">openprogram.runtime.conversation</code> 时实现该端口；Worker 和 Server 在启动时导入。同一导入带入 <code translate="no">conversation/run_control</code>，由它接管核心的取消检查。</td></tr>
 </tbody>
 </table>
 <ul>
 <li>什么都未注册时核心就是普通库：Worker 不在停止，没有后台作业，<code translate="no">Agent.run_turn</code> 抛出 <code translate="no">EngineUnavailable</code>。</li>
-<li>有无引擎都直接导入：绑定的会话和执行、嵌套调用准入和终态标记（<code translate="no">execution/run_control/</code>）、审批门（<code translate="no">permissions.approval.wrap_with_approval</code>）、预批准等待 id（<code translate="no">permissions.session_facts</code>）。</li>
+<li>有无引擎都直接导入：绑定的会话和执行、嵌套调用准入和终态标记（<code translate="no">execution/run_control/</code>）、审批门（<code translate="no">permissions.approvals.approval.wrap_with_approval</code>）、预批准等待 id（<code translate="no">permissions.session_facts</code>）。</li>
 <li><code translate="no">TurnRequest</code> 和生效中的请求（<code translate="no">agent/turn_request.py</code>）是引擎构建并绑定的调用核心类型。</li>
 <li>模块只导出自己拥有的名字：执行绑定来自 <code translate="no">openprogram.runtime.execution.run_control</code>，权限词汇来自 <code translate="no">permissions/modes.py</code>，工具契约（<code translate="no">AgentTool</code>、<code translate="no">AgentToolResult</code>）来自 <code translate="no">openprogram.models.providers.types</code>，调用作用域 ContextVar 来自 <code translate="no">context/scope.py</code>。<code translate="no">tests/contracts/repository/test_no_transitional_reexports.py</code> 防止移走的名字回来。</li>
 <li>在子进程中运行轮次 Agent 方法工具的 <code translate="no">process_runner.py</code> 是引擎代码，位于 <code translate="no">conversation/</code>。</li>
@@ -144,8 +144,8 @@
 <tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/registry.py</code></th><td><code translate="no">detect_provider</code>、内置 <code translate="no">PROVIDERS</code> 表</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/factory.py</code></th><td>根据该检测构建 Runtime 的 <code translate="no">create_runtime</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/provider_runtimes/</code></th><td>订阅和 CLI 凭据 Provider 的 Runtime 子类（<code translate="no">openai_codex.py</code>、<code translate="no">google_gemini_cli.py</code>）和 <code translate="no">PROVIDER_RUNTIMES</code>。其余用基类 Runtime；<code translate="no">openprogram/models/providers/adapters/&lt;vendor&gt;/</code> 只有模型、认证和线上协议代码。</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>：DAG 到 reads（<code translate="no">render_range</code> 的实际语义）</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code>：reads 到 Provider 消息</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/nodes.py</code></th><td><code translate="no">render_context</code>：DAG 到 reads（<code translate="no">render_range</code> 的实际语义）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/render.py</code></th><td><code translate="no">render_dag_messages</code>：reads 到 Provider 消息</td></tr>
 </tbody>
 </table>
 </details>
@@ -158,12 +158,12 @@
 <tr><th scope="row"><a href="dag/rendering.zh.html">DAG 渲染</a></th><td>权威：布局、边、图例、默认可见性，12 个场景</td></tr>
 <tr><th scope="row"><a href="dag/branch-collaboration.zh.html">分支协作</a></th><td>通信、派发、合并</td></tr>
 <tr><th scope="row"><a href="dag/nested-llm-node-content.zh.html">嵌套 LLM 节点内容</a></th><td>有序对话块</td></tr>
-<tr><th scope="row"><a href="execution/agent-call-flow.zh.html">调用流程</a></th><td>轮次和循环骨架，与节点模型正交</td></tr>
+<tr><th scope="row"><a href="agent/agent-call-flow.zh.html">调用流程</a></th><td>轮次和循环骨架，与节点模型正交</td></tr>
 <tr><th scope="row"><a href="execution/agent-worktree.zh.html">Agent worktree</a></th><td>Worktree</td></tr>
 <tr><th scope="row"><a href="execution/async-job-lifecycle.zh.html">异步作业生命周期</a></th><td>后台作业</td></tr>
 <tr><th scope="row"><a href="execution/control.zh.html">执行控制</a></th><td>权威：暂停、继续、单步、引导、取消、检查点、修订、恢复</td></tr>
 <tr><th scope="row"><a href="execution/dispatcher-split.zh.html">调度器拆分</a></th><td><code translate="no">conversation/turn_runtime/</code> 一职责一模块</td></tr>
-<tr><th scope="row"><a href="execution/agentic-llm-streaming.zh.html">嵌套 <code translate="no">llm()</code> 流式</a></th><td>按节点的 token：协议、缓冲、持久化、取消和重连，进程内和子进程</td></tr>
+<tr><th scope="row"><a href="agent/agentic-llm-streaming.zh.html">嵌套 <code translate="no">llm()</code> 流式</a></th><td>按节点的 token：协议、缓冲、持久化、取消和重连，进程内和子进程</td></tr>
 <tr><th scope="row"><a href="operations/file-management.zh.html">文件管理</a></th><td>权威：归属、Review、Undo、Restore、分支对齐、多 Agent 所有权</td></tr>
 <tr><th scope="row"><a href="operations/streaming-resume.zh.html">流式恢复</a></th><td>重连运行中的流</td></tr>
 <tr><th scope="row"><a href="operations/user-input-requests.zh.html">用户输入请求</a></th><td><code translate="no">runtime.ask</code> / <code translate="no">confirm</code>、问题注册表、WS/REST 协议、子进程桥</td></tr>

@@ -19,7 +19,7 @@ from openprogram.state.memory.policy import MemoryPolicyError
 @contextmanager
 def execution(req, on_event=None, *, resume_rows=()):
     from openprogram.runtime.agent_registry import manager
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     loader = getattr(session_config, 'load_agent_session_binding', None)
     try:
         binding = loader(req.session_id) if loader else {}

@@ -8,7 +8,7 @@ from openprogram.runtime.agent.loop import _execute_tool_calls, agent_loop
 from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.models.providers.types import AssistantMessage, EventDone, EventStart, Model, TextContent, ToolCall, UserMessage
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 
 def _call(name, args, tools):

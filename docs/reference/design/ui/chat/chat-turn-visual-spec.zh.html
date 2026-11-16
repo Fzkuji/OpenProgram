@@ -131,6 +131,7 @@
 <li>流式、完成和恢复的消息使用同一套 <code translate="no">ExecutionStrip</code>、<code translate="no">ThinkingStep</code>、<code translate="no">FunctionStep</code>；完成后不切换为带框表格。</li>
 <li>没有有序块时，按存储顺序显示已存的思考和工具记录。不重建缺失的穿插，也不虚构工具记录。结果、错误、标识和完整输出引用保留。</li>
 <li>Agent 回复发起的函数只属于该回复的时间线。只有用户发起的函数才是独立运行消息。</li>
+<li>agent 用任务命名的工作画成<a href="task-blocks.zh.html">任务块</a>：它的步骤缩进一层，读者点开的步骤下面是同样的步骤行，再缩进一层。没有声明任务的回复不变。</li>
 </ul>
 
 <h2 id="manual-function-runs">手动函数运行</h2>
@@ -319,7 +320,7 @@
 <table class="stack">
 <thead><tr><th scope="col">范围</th><th scope="col">位置</th><th scope="col">排除</th></tr></thead>
 <tbody>
-<tr><th scope="row">修改与恢复</th><td><code translate="no">programs/tools/files/</code>、<code translate="no">state/store/snapshot/checkpoint/</code>、回合收尾、<code translate="no">runtime/conversation/revert.py</code></td><td>Bash 目录监视、修改用户 Git、从磁盘推断回合</td></tr>
+<tr><th scope="row">修改与恢复</th><td><code translate="no">programs/tools/files/</code>、<code translate="no">state/store/snapshot/checkpoint/</code>、回合收尾、<code translate="no">runtime/conversation/rewinds/revert.py</code></td><td>Bash 目录监视、修改用户 Git、从磁盘推断回合</td></tr>
 <tr><th scope="row">审阅协议</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>、消息元数据、Git 辅助函数</td><td>无界字符串、近似回退</td></tr>
 <tr><th scope="row">审阅标签页</th><td><code translate="no">center-tab-ids.ts</code>、<code translate="no">center-tabs-store.ts</code>、<code translate="no">center-tab-groups.ts</code>、<code translate="no">components/center-tabs/review/</code></td><td>新窗口、弹窗、第三栏</td></tr>
 <tr><th scope="row">聊天卡片</th><td><code translate="no">turn-files-chips.tsx</code>、<code translate="no">turn-files-card.css</code></td><td>内联差异、文件行箭头、悬停动作组</td></tr>

@@ -33,4 +33,4 @@ picks packages), ``front`` (giving the front back to the application the user is
 - **`screen_capture_audio.py`** — Audio-only ScreenCaptureKit streams on macOS, and the WAV their samples become
 - **`terminal.py`** — Platform terminal
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

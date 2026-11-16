@@ -8,7 +8,7 @@
 <tbody>
 <tr><th scope="row">Serves</th><td>Tools that speak OpenAI Chat Completions and use an OpenProgram Agent as their model</td></tr>
 <tr><th scope="row">Routes</th><td><code translate="no">GET /v1/models</code>, <code translate="no">POST /v1/chat/completions</code> on the Worker's port</td></tr>
-<tr><th scope="row">Code</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>; the turn starts through <code translate="no">runtime/conversation/owner_turn.py</code>; <code translate="no">/v1</code> refusals in <code translate="no">owner_auth.py</code></td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>; the turn starts through <code translate="no">runtime/conversation/turn_admission/owner_turn.py</code>; <code translate="no">/v1</code> refusals in <code translate="no">owner_auth.py</code></td></tr>
 <tr><th scope="row">User docs</th><td><a href="../../../interfaces/openai-api.html">OpenAI-compatible API</a></td></tr>
 <tr><th scope="row">Tests</th><td><code translate="no">tests/component/webui/runtime/test_openai_compatible.py</code>: the real turn path with a scripted model, streaming, client leaving, auth refusal</td></tr>
 </tbody>

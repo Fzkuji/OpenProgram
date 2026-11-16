@@ -296,13 +296,6 @@ def test_this_process_descends_from_its_ancestors_only():
     assert not instances._inside_worker(2 ** 22 - 1)
 
 
-def _cred(kind, cid):
-    from openprogram.models.auth.types import CREDENTIAL_SCHEMA_VERSION
-    return {"v": CREDENTIAL_SCHEMA_VERSION, "provider_id": "acme", "account_id": "default", "credential_id": cid, "kind": kind,
-            "source": "test", "payload": {"kind": kind, "auth_value": f"value-{cid}"},
-            "metadata": {}, "read_only": False}
-
-
 def test_credentials_belong_to_the_active_profile(tmp_path, monkeypatch):
     from openprogram.state import paths
     from openprogram.models.auth.store import AuthStore
@@ -319,13 +312,14 @@ def test_credentials_belong_to_the_active_profile(tmp_path, monkeypatch):
 def test_copy_models_shares_keys_but_not_oauth(tmp_path, monkeypatch):
     import json
     from openprogram.models.auth.store import AuthStore
-    from openprogram.models.auth.types import CredentialPool
+    from openprogram.models.auth.types import Credential, CredentialData
 
     monkeypatch.setattr(instances.Path, "home", lambda: tmp_path)
     stable = instances.stable_state_dir()
-    AuthStore(root=stable).put_pool(CredentialPool.from_dict({
-        "provider_id": "acme", "account_id": "default", "active_credential_id": "o",
-        "credentials": [_cred("oauth", "o"), _cred("api_key", "k")]}))
+    source = AuthStore(root=stable, carry_over=False)
+    for kind, value in (("oauth", "value-o"), ("api_key", "value-k")):
+        source.add_credential(Credential(provider_id="acme", kind=kind,
+                                         payload=CredentialData(kind=kind, auth_value=value)))
     (stable / "config.json").write_text(json.dumps(
         {"providers": {"acme": {"enabled": True}}, "last_used_model": {"provider": "acme"}, "ui": {"x": 1}}))
     (instances.dev_state_dir()).mkdir(parents=True)
@@ -333,9 +327,10 @@ def test_copy_models_shares_keys_but_not_oauth(tmp_path, monkeypatch):
 
     result = instances.copy_models()
 
-    assert result == {"copied": ["acme/default"], "oauth_not_copied": ["acme/default"]}
-    pool = AuthStore(root=instances.dev_state_dir()).get_pool("acme", "default")
-    assert [c.kind for c in pool.credentials] == ["api_key"] and pool.active_credential_id == ""
+    assert result == {"copied": ["acme"], "oauth_not_copied": ["acme"]}
+    copied = AuthStore(root=instances.dev_state_dir()).stored("acme").credentials
+    assert [(c.kind, c.payload.auth_value) for c in copied] == [("api_key", "value-k")]
+    assert instances.copy_models()["copied"] == []  # a second copy adds nothing
     config = json.loads((instances.dev_state_dir() / "config.json").read_text())
     assert config == {"ui": {"y": 2}, "providers": {"acme": {"enabled": True}},
                       "last_used_model": {"provider": "acme"}}

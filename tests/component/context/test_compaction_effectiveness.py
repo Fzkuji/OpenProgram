@@ -7,9 +7,9 @@ import pytest
 
 from openprogram.runtime.context.engine import DefaultContextEngine
 from openprogram.state.store.session.nodes import Call, ROLE_CODE
-from openprogram.runtime.context.nodes import render_context
-from openprogram.runtime.context.render import render_dag_messages
-from openprogram.runtime.context.tokens import estimate_history_tokens
+from openprogram.runtime.context.session_dag.nodes import render_context
+from openprogram.runtime.context.session_dag.render import render_dag_messages
+from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
 from openprogram.runtime.context.compaction.summarize import Summarizer
 from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 from openprogram.state.store.session.session_store import SessionStore
@@ -27,7 +27,7 @@ def conversation(tmp_path, monkeypatch):
         store.append_message('compact', {'id': f'a{i}', 'role': 'assistant',
             'content': f'Answer {i}', 'predecessor': f'u{i}'})
         SessionNodeWriter(store, 'compact', advance_head=False).append(Call(
-            id=f't{i}', role=ROLE_CODE, name='todo_list', caller=f'a{i}',
+            id=f't{i}', role=ROLE_CODE, name='task_list', caller=f'a{i}',
             output=f'Important tool evidence {i}\n' + ('evidence payload ' * 1800),
         ))
         prev = f'a{i}'
@@ -147,7 +147,7 @@ def test_small_conversation_does_not_call_provider(conversation, monkeypatch):
 
 
 def test_statistics_count_the_same_rendered_messages(conversation):
-    from openprogram.runtime.context.session_stats import compute_breakdown
+    from openprogram.runtime.context.token_accounting.session_stats import compute_breakdown
     _, _, messages = rendered(conversation)
     assert compute_breakdown('compact')['messages'] == estimate_history_tokens(messages)
 
@@ -170,7 +170,7 @@ def test_recompaction_absorbs_summary_and_counts_real_coverage(conversation, mon
         conversation.append_message('compact', {'id': f'a{i}', 'role': 'assistant',
             'content': 'New answer', 'predecessor': f'u{i}'})
         SessionNodeWriter(conversation, 'compact', advance_head=False).append(Call(
-            id=f't{i}', role=ROLE_CODE, name='todo_list', caller=f'a{i}',
+            id=f't{i}', role=ROLE_CODE, name='task_list', caller=f'a{i}',
             output='new tool evidence ' * 1800))
         prev = f'a{i}'
     second = asyncio.run(eng.compact(agent=None, session_id='compact', model=None))
@@ -246,7 +246,7 @@ def test_a_change_to_a_covered_node_refuses_the_summary(conversation, monkeypatc
 
 def test_a_concurrent_summary_refuses_the_second(conversation, monkeypatch):
     def other_compaction():
-        from openprogram.runtime.context.persistence import default_persister, rendered_history
+        from openprogram.runtime.context.compaction.persistence import default_persister, rendered_history
         history = rendered_history(conversation, 'compact')
         assert default_persister.insert_summary_node(
             'compact', summary_text='first', cut_idx=4, history=history)
@@ -332,7 +332,7 @@ def test_an_over_budget_turn_sends_no_snip_event(monkeypatch):
             return SimpleNamespace(summary_id=None)
 
     monkeypatch.setattr('openprogram.runtime.context.resolve_engine_for', lambda _agent: Engine())
-    monkeypatch.setattr('openprogram.runtime.context.system_prompt_node.record_system_prompt', lambda *_a: None)
+    monkeypatch.setattr('openprogram.runtime.context.prompt_assembly.system_prompt_node.record_system_prompt', lambda *_a: None)
     db = SimpleNamespace(get_session=lambda _sid: {}, get_branch=lambda *_a: [],
                          merge_node_metadata=lambda *_a, **_k: None)
     req = SimpleNamespace(session_id='s', history_override=None, background=False, run_note=None, user_msg_id='u',

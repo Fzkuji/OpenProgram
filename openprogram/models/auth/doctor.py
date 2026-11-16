@@ -9,19 +9,17 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .account.accounts import DEFAULT_ACCOUNT_NAME, get_account_manager
 from .store import get_store
 from .summary import format_duration
 
 
 def run_doctor() -> dict[str, Any]:
     """Pure analysis — no printing, no process exit. Returns a dict with
-    ``pools_checked``, ``accounts_checked``, ``findings``.
+    ``pools_checked`` (providers with credentials) and ``findings``.
 
-    Checks (a superset of OpenClaw's ``doctor-auth`` list adapted for
-    our store layout): expired OAuth, refresh availability, cooldown
-    state, pool exhaustion, orphaned account references, empty accounts,
-    duplicate credential ids, imported creds whose source file is gone.
+    Checks: expired sign-ins, refresh availability, cooling and spent
+    credentials, providers with nothing usable, duplicate credential ids,
+    imports whose source file is gone.
 
     Used by ``openprogram providers doctor`` and the
     ``POST /api/providers/doctor`` REST route, so both share one source of truth.
@@ -29,8 +27,6 @@ def run_doctor() -> dict[str, Any]:
     from .credential_provider import get_provider_config
 
     store = get_store()
-    pm = get_account_manager()
-    accounts = {p.name: p for p in pm.list_accounts()}
     pools = store.list_pools()
 
     findings: list[dict[str, Any]] = []
@@ -40,24 +36,7 @@ def run_doctor() -> dict[str, Any]:
 
     if not pools:
         add("WARN", "no_pools",
-            "No credential pools configured. Run `openprogram providers setup`.")
-
-    # Accounts referenced by pools but not registered with AccountManager.
-    pool_account_ids = {p.account_id for p in pools}
-    orphaned_account_refs = pool_account_ids - set(accounts.keys())
-    for pid in sorted(orphaned_account_refs):
-        add("ERROR", "orphan_profile_ref",
-            f"Pool references account {pid!r} which no longer exists.",
-            account=pid)
-
-    # Accounts that exist but nobody's logged into.
-    empty_accounts = sorted(set(accounts.keys()) - pool_account_ids)
-    for pid in empty_accounts:
-        if pid == DEFAULT_ACCOUNT_NAME:
-            continue  # default is expected to start empty
-        add("INFO", "empty_profile",
-            f"Account {pid!r} has no credentials yet.",
-            account=pid)
+            "No credentials configured. Run `openprogram providers setup`.")
 
     now_ms = int(time.time() * 1000)
 
@@ -68,13 +47,13 @@ def run_doctor() -> dict[str, Any]:
         # Dup credential_id detection (flags storage corruption).
         seen: dict[str, int] = {}
         for c in pool.credentials:
-            seen[c.credential_id] = seen.get(c.credential_id, 0) + 1
+            seen[c.id] = seen.get(c.id, 0) + 1
         for cid, n in seen.items():
             if n > 1:
                 add("ERROR", "duplicate_credential_id",
-                    f"Pool {pool.provider_id}/{pool.account_id} has "
+                    f"{pool.provider_id} has "
                     f"{n} credentials with id {cid!r}.",
-                    provider=pool.provider_id, account=pool.account_id)
+                    provider=pool.provider_id)
 
         usable = 0
         for c in pool.credentials:
@@ -87,22 +66,30 @@ def run_doctor() -> dict[str, Any]:
                 from pathlib import Path as _P
                 if not _P(src_path).exists():
                     add("WARN", "missing_source_file",
-                        f"{pool.provider_id}/{pool.account_id} was imported "
+                        f"{pool.provider_id} was imported "
                         f"from {src_path} which no longer exists. "
                         "Consider re-running login if the external CLI logged out.",
-                        provider=pool.provider_id, account=pool.account_id,
-                        credential_id=c.credential_id,
+                        provider=pool.provider_id,
+                        credential_id=c.id,
                         source_path=src_path)
 
+            if not c.enabled:
+                continue
+            if c.status in ("invalid_key", "needs_login"):
+                add("ERROR", c.status,
+                    f"{pool.provider_id} credential {c.display_label()} is {c.status}"
+                    + (f": {(c.last_error or {}).get('message')}" if c.last_error else "."),
+                    provider=pool.provider_id, credential_id=c.id)
+                continue
             # Cooldown check.
             cooldown_until = getattr(c, "cooldown_until_ms", 0) or 0
             if cooldown_until and cooldown_until > now_ms:
-                add("WARN", "cooling_down",
-                    f"{pool.provider_id}/{pool.account_id} credential "
-                    f"{c.credential_id} cooling down for "
+                add("WARN", "cooling_down" if c.status != "quota" else "quota",
+                    f"{pool.provider_id} credential "
+                    f"{c.id} cooling down for "
                     f"{format_duration(cooldown_until - now_ms)}.",
-                    provider=pool.provider_id, account=pool.account_id,
-                    credential_id=c.credential_id)
+                    provider=pool.provider_id,
+                    credential_id=c.id)
                 continue
 
             # Expiry on oauth/device_code.
@@ -114,21 +101,19 @@ def run_doctor() -> dict[str, Any]:
                         # as WARN because next call will either refresh
                         # or raise AuthReadOnlyError clearly.
                         add("WARN", "expired_token",
-                            f"{pool.provider_id}/{pool.account_id} access "
+                            f"{pool.provider_id} access "
                             "token expired; will refresh on next use."
                             + (" (read-only — external CLI)" if c.read_only else ""),
                             provider=pool.provider_id,
-                            account=pool.account_id,
-                            credential_id=c.credential_id)
+                                    credential_id=c.id)
                         usable += 1  # refresh path makes it usable
                     else:
                         add("ERROR", "expired_no_refresh",
-                            f"{pool.provider_id}/{pool.account_id} access "
+                            f"{pool.provider_id} access "
                             "token expired and no refresh configured. "
-                            f"Run `openprogram providers login {pool.provider_id}`.",
+                            f"Run `openprogram providers keys {pool.provider_id} add`.",
                             provider=pool.provider_id,
-                            account=pool.account_id,
-                            credential_id=c.credential_id)
+                                    credential_id=c.id)
                         continue
                 else:
                     usable += 1
@@ -148,19 +133,15 @@ def run_doctor() -> dict[str, Any]:
                     "refresh callback registered — will need manual re-login "
                     "after expiry.",
                     provider=pool.provider_id,
-                    account=pool.account_id)
+                    )
 
         if usable == 0 and pool.credentials:
             add("ERROR", "pool_exhausted",
-                f"{pool.provider_id}/{pool.account_id} has "
+                f"{pool.provider_id} has "
                 f"{len(pool.credentials)} credential(s) but none are usable.",
-                provider=pool.provider_id, account=pool.account_id)
+                provider=pool.provider_id)
 
-    return {
-        "pools_checked": len(pools),
-        "accounts_checked": len(accounts),
-        "findings": findings,
-    }
+    return {"pools_checked": len(pools), "findings": findings}
 
 
 __all__ = ["run_doctor"]

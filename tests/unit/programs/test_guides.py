@@ -93,7 +93,7 @@ def test_included_and_error_guides_follow_the_call():
 def test_a_required_guide_is_refused_then_carried_by_the_refusal(monkeypatch):
     from openprogram.runtime.permissions.authority import owner_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _sid: None)
     ran = []
 

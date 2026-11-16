@@ -47,4 +47,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in names:
         raise SystemExit("usage: python -m openprogram.operations.project_site "
                          + "|".join(names))
-    print(names[sys.argv[1]])
+    sys.stdout.write(names[sys.argv[1]] + "\n")

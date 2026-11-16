@@ -401,7 +401,7 @@ def _parse_arguments():
             getattr(args, "resume", None) or getattr(args, "print_continue", False)):
         parser.error("--at requires --resume or --continue")
     if getattr(args, "print_model", None):
-        from openprogram.interfaces.cli.print_turn import parse_model
+        from openprogram.interfaces.cli.print_mode.print_turn import parse_model
         try:
             provider, model_id = parse_model(args.print_model)
         except ValueError as exc:
@@ -431,21 +431,21 @@ def _prepare_environment(args) -> None:
 def _dispatch_maintenance_command(args) -> None:
     """Run rescue, dev, self-update, logs, completion, doctor, diagnostics, trash and backup."""
     if args.command == "rescue":
-        from openprogram.interfaces.cli.commands.rescue import _cmd_rescue
+        from openprogram.interfaces.cli.commands.maintenance.rescue import _cmd_rescue
         sys.exit(_cmd_rescue())
 
     if args.command == "dev":
-        from openprogram.interfaces.cli.commands.dev import _cmd_dev
+        from openprogram.interfaces.cli.commands.updates.dev import _cmd_dev
         sys.exit(_cmd_dev(args))
     if args.command == "versions":
-        from openprogram.interfaces.cli.commands.versions import _cmd_versions
+        from openprogram.interfaces.cli.commands.updates.versions import _cmd_versions
         sys.exit(_cmd_versions(args))
     if args.command == "self-update":
-        from openprogram.interfaces.cli.commands.self_update import _cmd_self_update
+        from openprogram.interfaces.cli.commands.updates.self_update import _cmd_self_update
         sys.exit(_cmd_self_update(args))
 
     if args.command == "logs":
-        from openprogram.interfaces.cli.commands.logs import (
+        from openprogram.interfaces.cli.commands.maintenance.logs import (
             _cmd_logs_list, _cmd_logs_path, _cmd_logs_tail,
         )
         verb = getattr(args, "logs_verb", None)
@@ -464,19 +464,19 @@ def _dispatch_maintenance_command(args) -> None:
     if args.command == "doctor":
         as_json = getattr(args, "json", False)
         if getattr(args, "topic", None) == "credentials":
-            from openprogram.interfaces.cli.commands.doctor import _cmd_doctor_credentials
+            from openprogram.interfaces.cli.commands.maintenance.doctor import _cmd_doctor_credentials
             sys.exit(_cmd_doctor_credentials(
                 repair=getattr(args, "repair", False), as_json=as_json
             ))
-        from openprogram.interfaces.cli.commands.doctor import _cmd_doctor
+        from openprogram.interfaces.cli.commands.maintenance.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(as_json))
 
     if args.command == "diagnostics":
-        from openprogram.interfaces.cli.commands.diagnostics import _cmd_diagnostics
+        from openprogram.interfaces.cli.commands.maintenance.diagnostics import _cmd_diagnostics
         sys.exit(_cmd_diagnostics(getattr(args, "output", None)))
 
     if args.command == "trash":
-        from openprogram.interfaces.cli.commands.trash import _cmd_trash_list, _cmd_trash_restore
+        from openprogram.interfaces.cli.commands.maintenance.trash import _cmd_trash_list, _cmd_trash_restore
 
         verb = getattr(args, "trash_verb", None)
         if verb == "list":
@@ -486,7 +486,7 @@ def _dispatch_maintenance_command(args) -> None:
         _need_subcommand(args._cmd_parser)
 
     if args.command == "backup":
-        from openprogram.interfaces.cli.commands.backup import (
+        from openprogram.interfaces.cli.commands.maintenance.backup import (
             _cmd_backup_create, _cmd_backup_list, _cmd_backup_prune,
             _cmd_backup_restore,
         )
@@ -520,7 +520,7 @@ def _run_print_prompt(args, parser, tui_enabled) -> None:
 
     The prompt is the argument, standard input, or both
     (``print_input.resolve_prompt``); a usage error exits 2."""
-    from openprogram.interfaces.cli.print_input import PromptInputError, resolve_prompt
+    from openprogram.interfaces.cli.print_mode.print_input import PromptInputError, resolve_prompt
 
     response_format = None
     schema_path = getattr(args, "json_schema", None)
@@ -707,11 +707,11 @@ def _dispatch_catalog_command(args) -> None:
         return
 
     if args.command == "permissions":
-        from openprogram.interfaces.cli.commands.permissions import run
+        from openprogram.interfaces.cli.commands.conversations.permissions import run
         sys.exit(run(args))
 
     if args.command == "plugins":
-        from openprogram.interfaces.cli.commands.plugins import (
+        from openprogram.interfaces.cli.commands.capabilities.plugins import (
             _cmd_plugins_list, _cmd_plugins_search, _cmd_plugins_install,
             _cmd_plugins_uninstall, _cmd_plugins_update,
             _cmd_plugins_enable, _cmd_plugins_disable,
@@ -824,7 +824,7 @@ def _dispatch_sessions_command(args) -> None:
 def _dispatch_execution_command(args) -> None:
     """Run the execution and jobs commands."""
     if args.command == "execution":
-        from openprogram.interfaces.cli.commands.execution import _cmd_execution_control, _cmd_execution_wait
+        from openprogram.interfaces.cli.commands.conversations.execution import _cmd_execution_control, _cmd_execution_wait
 
         verb = getattr(args, "execution_verb", None)
         if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
@@ -856,7 +856,7 @@ def _dispatch_execution_command(args) -> None:
         _need_subcommand(args._cmd_parser)
 
     if args.command == "jobs":
-        from openprogram.interfaces.cli.commands.jobs import _cmd_jobs_get, _cmd_jobs_list
+        from openprogram.interfaces.cli.commands.conversations.jobs import _cmd_jobs_get, _cmd_jobs_list
 
         verb = getattr(args, "jobs_verb", None)
         if verb == "list":
@@ -870,7 +870,7 @@ def _dispatch_settings_command(args) -> None:
     """Run the web, ports and config commands."""
     if args.command == "web":
         if getattr(args, "web_verb", None) == "auth-url":
-            from openprogram.interfaces.cli.commands.web import _cmd_web_auth_url
+            from openprogram.interfaces.cli.commands.services.web import _cmd_web_auth_url
 
             sys.exit(_cmd_web_auth_url(args.base_url))
         _cmd_web(getattr(args, "web_port", None),
@@ -1003,6 +1003,26 @@ def _dispatch_memory_command(args) -> None:
                 report = {**report, "projects": projects}
             print(_json.dumps(report, indent=2, ensure_ascii=False))
             sys.exit(0)
+        if verb == "regroup":
+            import json as _json
+            from openprogram.state.memory.management import filing as _filing
+            from openprogram.state.memory.writing import regroup as _regroup
+            plan_file = getattr(args, "plan", None)
+            dry_run = bool(getattr(args, "dry_run", False))
+            if not plan_file and not dry_run:
+                import openprogram.runtime  # noqa: F401 - registers the memory writer agent
+            try:
+                report = _regroup(
+                    root=getattr(args, "root", None),
+                    plan=_filing.load_plan(plan_file) if plan_file else None,
+                    dry_run=dry_run,
+                    model=getattr(args, "model", None),
+                )
+            except (OSError, ValueError) as exc:
+                print(f"Cannot regroup: {exc}")
+                sys.exit(1)
+            print(_json.dumps(report, indent=2, ensure_ascii=False))
+            sys.exit(0)
         if verb == "export":
             import datetime as _dt
             import tarfile as _tar
@@ -1054,7 +1074,7 @@ def _dispatch_worker_command(args) -> None:
         from openprogram.operations import worker as _worker
         sys.exit(_worker.restart_worker())
     if args.command == "upgrade":
-        from openprogram.interfaces.cli.commands.upgrade import _cmd_upgrade
+        from openprogram.interfaces.cli.commands.updates.upgrade import _cmd_upgrade
         sys.exit(_cmd_upgrade(args))
     if args.command == "status":
         from openprogram.interfaces.channels import list_status
@@ -1099,7 +1119,7 @@ def _dispatch_worker_command(args) -> None:
 def _dispatch_integration_command(args) -> None:
     """Run the environments, channels and mcp commands."""
     if args.command == "environments":
-        from openprogram.interfaces.cli.commands.environments import dispatch
+        from openprogram.interfaces.cli.commands.conversations.environments import dispatch
         sys.exit(dispatch(args))
 
     if args.command == "channels":
@@ -1119,7 +1139,7 @@ def _dispatch_integration_command(args) -> None:
                       f"{str(r['implemented']):6}")
             return
         if verb == "setup":
-            from openprogram.interfaces.cli.commands import channels_setup as _ch_setup
+            from openprogram.interfaces.cli.commands.services import channels_setup as _ch_setup
             sys.exit(_ch_setup.run())
         if verb == "accounts":
             _dispatch_accounts_verb(args, args._cmd_parser)
@@ -1170,7 +1190,7 @@ def _dispatch_integration_command(args) -> None:
 def _dispatch_agent_command(args) -> None:
     """Run the acp, agents, subagent and scheduler-worker commands."""
     if args.command == "acp":
-        from openprogram.interfaces.cli.commands.acp import _cmd_acp
+        from openprogram.interfaces.cli.commands.services.acp import _cmd_acp
         sys.exit(_cmd_acp(getattr(args, "agent", "main"),
                           getattr(args, "permission", "ask")))
 
@@ -1271,7 +1291,7 @@ def _dispatch_transcript_command(args) -> None:
     """``openprogram transcript``: rebuild a ``--print`` run's transcript
     from its state (``print_turn.transcript_from_state``); exit 1 when the
     state names no single run."""
-    from openprogram.interfaces.cli import print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn
 
     try:
         with print_turn.state_directory(args.state):
@@ -1365,7 +1385,7 @@ def main():
 # openprogram.interfaces.cli.ink import directly off this module.
 # ---------------------------------------------------------------------------
 
-from openprogram.interfaces.cli.commands.programs import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.capabilities.programs import (  # noqa: E402,F401
     _get_runtime,
     _cmd_check,
     _cmd_configure,
@@ -1377,7 +1397,7 @@ from openprogram.interfaces.cli.commands.programs import (  # noqa: E402,F401
     _cmd_run_status,
     _cmd_uninstall,
 )
-from openprogram.interfaces.cli.commands.skills import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.capabilities.skills import (  # noqa: E402,F401
     _cmd_skills_list,
     _cmd_skills_doctor,
     _cmd_install_skills,
@@ -1386,14 +1406,14 @@ from openprogram.interfaces.cli.commands.skills import (  # noqa: E402,F401
     _cmd_skills_update,
     _cmd_skills_remove,
 )
-from openprogram.interfaces.cli.commands.subagent import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.conversations.subagent import (  # noqa: E402,F401
     _cmd_subagent_spawn,
     _cmd_subagent_merge,
     _cmd_subagent_list,
     _cmd_subagent_show,
 )
 
-from openprogram.interfaces.cli.commands.sessions import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.conversations.sessions import (  # noqa: E402,F401
     _cmd_chat_sessions,
     _cmd_resume,
     _cmd_session_archive,
@@ -1401,21 +1421,21 @@ from openprogram.interfaces.cli.commands.sessions import (  # noqa: E402,F401
     _cmd_sessions_export,
     _cmd_sessions_import,
 )
-from openprogram.interfaces.cli.commands.agents import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.conversations.agents import (  # noqa: E402,F401
     _dispatch_agents_verb,
 )
-from openprogram.interfaces.cli.commands.channels import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.services.channels import (  # noqa: E402,F401
     _dispatch_access_verb,
     _dispatch_accounts_verb,
     _dispatch_bindings_verb,
     _login_account,
 )
-from openprogram.interfaces.cli.commands.web import _cmd_web  # noqa: E402,F401
-from openprogram.interfaces.cli.commands.chat import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.services.web import _cmd_web  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.conversations.chat import (  # noqa: E402,F401
     _cmd_cli_chat,
 )
-from openprogram.interfaces.cli.commands.cron import _cmd_cron_worker  # noqa: E402,F401
-from openprogram.interfaces.cli.commands.mcp import (  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.services.cron import _cmd_cron_worker  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.capabilities.mcp import (  # noqa: E402,F401
     _cmd_mcp_serve,
     _cmd_mcp_token_create,
     _cmd_mcp_list,

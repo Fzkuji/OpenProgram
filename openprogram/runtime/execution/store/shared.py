@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
-from ..agent_input_budget import (
+from ..admission_input.agent_input_budget import (
     AGENT_TURN_INPUT_MAX_BYTES,
     AgentInputBudgetError,
     budget_payload,
@@ -95,7 +95,7 @@ def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
 
 def _validate_job_agent_payload(payload: Mapping[str, Any]) -> None:
     try:
-        from ..job_input import normalize_job_agent_input
+        from ..admission_input.job_input import normalize_job_agent_input
         normalize_job_agent_input(payload)
     except ValueError as exc:
         raise ExecutionConflict("invalid_job_agent_input", str(exc)) from exc

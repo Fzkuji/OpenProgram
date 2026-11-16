@@ -67,7 +67,7 @@ class ContextComponent:
 <table class="stack">
 <thead><tr><th scope="col">顺序</th><th scope="col">成分</th><th scope="col">出现条件</th></tr></thead>
 <tbody>
-<tr><th scope="row">10</th><td><code translate="no">base</code>：智能体是谁、怎么工作、何时停下、项目归谁、怎么汇报、信任什么（<code translate="no">context/guides/base.md</code>）</td><td>恒</td></tr>
+<tr><th scope="row">10</th><td><code translate="no">base</code>：智能体是谁、怎么工作、何时停下、项目归谁、怎么汇报、信任什么（<code translate="no">context/prompt_assembly/guides/base.md</code>）</td><td>恒</td></tr>
 <tr><th scope="row">20</th><td><code translate="no">output_style</code></td><td>选了非默认风格</td></tr>
 <tr><th scope="row">30</th><td><code translate="no">inline_prompt</code>：智能体自身指令，冲突时优先</td><td>设置了 <code translate="no">system_prompt</code></td></tr>
 <tr><th scope="row">—</th><td>工具和 MCP schema，在请求的工具列表中</td><td>恒</td></tr>
@@ -104,7 +104,7 @@ class ContextComponent:
 <h3 id="l2">L2</h3>
 <p><code translate="no">build_system_prompt</code> 只组装 L0 和 L1。Program 用 <code translate="no">ctx.context(name, build, layer="L2")</code> 添加 L2，注册为 <code translate="no">&lt;owner&gt;:&lt;name&gt;</code>。<code translate="no">build_turn_sections(agent, turn, channel=, tools=)</code> 构建它们，构建函数读 <code translate="no">turn_inputs()</code>；对话自己的一轮把文本作为 <code translate="no">pages</code> 节放在消息旁；其他轮次（验证、check-in）把它追加到本次系统提示的目标指令之后。</p>
 <p>恢复的检查点沿用已存提示。</p>
-<p>下表各项按顺序放在本轮用户消息前面，存在用户节点的 <code translate="no">turn_context</code> 列表里（<code translate="no">context.turn_context</code>），之后每个请求渲染出同样的字节。每次渲染由组装请求的代码告诉它 <code translate="no">audience</code>。</p>
+<p>下表各项按顺序放在本轮用户消息前面，存在用户节点的 <code translate="no">turn_context</code> 列表里（<code translate="no">context.prompt_assembly.turn_context</code>），之后每个请求渲染出同样的字节。每次渲染由组装请求的代码告诉它 <code translate="no">audience</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">内容</th><th scope="col">送达方式</th></tr></thead>
 <tbody>
@@ -256,7 +256,7 @@ causes infinite recursion). Use lower-level tools to do the work directly.
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td><code translate="no">context/components.py</code> 的 <code translate="no">ContextComponent</code> 和三个注册表：九个核心成分、对话包的 <code translate="no">open_work</code>、Program 片段。对话和函数调用都用 <code translate="no">render_context</code>（<code translate="no">context/nodes.py</code>）和 <code translate="no">render_dag_messages</code>：顶层 <code translate="no">frame_entry_seq=-1</code>，否则由 <code translate="no">render_range</code> 和 <code translate="no">expose</code> 决定可见范围</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">context/prompt_assembly/components.py</code> 的 <code translate="no">ContextComponent</code> 和三个注册表：九个核心成分、对话包的 <code translate="no">open_work</code>、Program 片段。对话和函数调用都用 <code translate="no">render_context</code>（<code translate="no">context/session_dag/nodes.py</code>）和 <code translate="no">render_dag_messages</code>：顶层 <code translate="no">frame_entry_seq=-1</code>，否则由 <code translate="no">render_range</code> 和 <code translate="no">expose</code> 决定可见范围</td></tr>
 <tr><th scope="row">尚未</th><td>YAML 调用树：历史渲染为模型服务消息。处境块和输出契约，目前只有深度上限防止自递归。<code translate="no">cacheable</code> 字段。计算机使用引导和令牌预算提示。<code translate="no">fence_core</code>、空和失败提示行、<code translate="no">&lt;environment&gt;</code> 框架行</td></tr>
 </tbody>
 </table>

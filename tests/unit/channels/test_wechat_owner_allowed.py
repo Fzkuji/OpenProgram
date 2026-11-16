@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.interfaces.channels import _access
+from openprogram.interfaces.channels.inbound import _access
 from openprogram.interfaces.channels import accounts as _accounts
 from openprogram.interfaces.channels.implementations import wechat
 

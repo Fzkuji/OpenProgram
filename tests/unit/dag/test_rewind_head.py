@@ -69,7 +69,7 @@ def _head_is_rewound(store: SessionStore, sid: str) -> bool:
 
 
 def test_root_not_offered_as_rewind_point(store):
-    from openprogram.runtime.conversation.rewind import list_rewind_points
+    from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points
     _build_two_turns(store, "s1")
     ids = {p["msg_id"] for p in list_rewind_points("s1")}
     assert "ROOT" not in ids
@@ -77,7 +77,7 @@ def test_root_not_offered_as_rewind_point(store):
 
 
 def test_rewind_to_second_turn_moves_head_before_it(store):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
     _build_two_turns(store, "s1")
     rewind_to("s1", "u2")
     _git, idx = store._open("s1")
@@ -86,7 +86,7 @@ def test_rewind_to_second_turn_moves_head_before_it(store):
 
 
 def test_rewind_to_first_turn_lands_on_root(store):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
     _build_two_turns(store, "s1")
     rewind_to("s1", "u1")
     _git, idx = store._open("s1")
@@ -98,7 +98,7 @@ def test_rewind_to_first_turn_lands_on_root(store):
 
 def test_rewind_to_root_is_rejected_and_keeps_head(store):
     """Synthetic ROOT is a boundary, not a public rewind target."""
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
     _build_two_turns(store, "s1")
     result = rewind_to("s1", "ROOT")
     assert result["status"] == "error"

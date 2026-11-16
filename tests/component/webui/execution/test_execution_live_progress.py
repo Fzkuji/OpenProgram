@@ -7,7 +7,7 @@ import pytest
 
 @pytest.mark.parametrize("caller", ["", "assistant-reply"])
 def test_live_progress_addresses_top_level_function_card(monkeypatch, caller):
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
     from openprogram.state.store.session.graph import branches as branch
 
     tree = {"path": "function-node", "name": "gui_agent", "status": "running",

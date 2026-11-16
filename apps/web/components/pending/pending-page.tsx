@@ -52,7 +52,7 @@ export function PendingPage() {
           <ManageLoadingState>{text("Loading…", "正在加载…")}</ManageLoadingState>
         ) : items.length === 0 ? (
           <ManageEmptyState
-            icon={<InboxIcon size={22} />}
+            icon={<InboxIcon size={20} />}
             title={text("Nothing waiting", "没有待处理的事")}
             description={text(
               "Decisions and findings from always-on Agents show up here until you deal with them.",

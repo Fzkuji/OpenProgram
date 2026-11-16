@@ -299,9 +299,9 @@ class TurnRun:
 
 
 def _start(run: TurnRun, agent_id: str, text: str, authority: dict[str, Any]) -> str:
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn
     from openprogram.runtime.conversation.run_control.run_slot import RunSlotBusy
-    from openprogram.state.store.session.session_lock import SessionLockTimeout
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
 
     try:
         return start_owner_turn(
@@ -454,7 +454,7 @@ def register(app) -> None:
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
-        from openprogram.state.store.session.session_lock import SessionLockTimeout
+        from openprogram.state.store.session.files.session_lock import SessionLockTimeout
 
         try:
             body = await request.json()
@@ -479,7 +479,7 @@ def register(app) -> None:
                 conversation_id if isinstance(conversation_id, str) else None,
                 resolve_target, body.get("model"), conversation_id)
             text = turn_text(body.get("messages"), continuing=conversation_id is not None)
-            from openprogram.runtime.conversation.turn_input import input_too_large
+            from openprogram.runtime.conversation.turn_admission.turn_input import input_too_large
 
             too_large = input_too_large(text)
             if too_large:

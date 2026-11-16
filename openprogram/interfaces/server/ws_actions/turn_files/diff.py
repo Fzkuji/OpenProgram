@@ -592,7 +592,7 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
         node for node in reversed(_active_nodes(index))
         if node.role == "llm" and not (node.metadata or {}).get("reverted")
     ]
-    from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
+    from openprogram.runtime.conversation.rewinds.history_ownership import owned_change_set_closure
 
     ownership = owned_change_set_closure(
         session_id, [node.id for node in active_llm],

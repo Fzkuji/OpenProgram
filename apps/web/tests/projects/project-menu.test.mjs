@@ -31,6 +31,7 @@ installDom();
 
 const { createElement: h } = await import("react");
 const { ProjectMenu } = await import("../../components/chat/top-bar/menus/project-menu.tsx");
+const { forgetProjectLists } = await import("../../lib/projects/list-projects.ts");
 
 const PROJECTS = [
   { id: "home", name: "Home", path: "/home/me", is_default: true, session_count: 0 },
@@ -40,6 +41,8 @@ const PROJECTS = [
 
 function setup({ sessionId = null, current = null, replies = {} } = {}) {
   const pending = [];
+  // Each test answers with its own list; drop the one the last test kept.
+  forgetProjectLists();
   globalThis.menuStore = {
     currentSessionId: sessionId,
     pendingProjectsByChat: {},

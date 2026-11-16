@@ -22,17 +22,21 @@ def task_belongs_to_session(task: dict[str, Any], session_id: str) -> bool:
 
 
 def routines(session_id: str) -> list[dict[str, Any]]:
-    """Scheduler tasks set from this conversation, without their signed spec."""
-    from openprogram.runtime.scheduler import hooks, service, task_runs
+    """Scheduler tasks set from this conversation, without their signed spec.
+    A task that runs a prompt carries a summary of its runs and what they
+    cost (``task_activity``)."""
+    from openprogram.runtime.scheduler import hooks, service, task_activity, task_runs
 
     rows = []
-    for task in service.list_tasks():
-        if not task_belongs_to_session(task, session_id):
-            continue
+    tasks = [task for task in service.list_tasks() if task_belongs_to_session(task, session_id)]
+    runs = task_activity.read_runs(session_id) if tasks else {}
+    costs = task_activity.read_costs(session_id) if runs else {}
+    for task in tasks:
         row = {key: value for key, value in task.items() if key != "execution"}
         if task.get("type") == "webhook":
             row["hook_url"] = hooks.url(str(task["id"]))
         row["runs"] = task_runs.recent(str(task.get("id")))
+        row["summary"] = task_activity.summary(runs.get(str(task.get("id")), []), costs)
         rows.append(row)
     rows.sort(key=lambda row: row.get("created_at") or 0, reverse=True)
     return rows

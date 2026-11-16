@@ -21,7 +21,7 @@ from typing import Any, Mapping
 from urllib.parse import quote
 
 from openprogram.host._platform.filesystem import filesystem_path
-from openprogram.state.store.session.session_log import (
+from openprogram.state.store.session.files.session_log import (
     _next_timestamp,
     encode_record,
     read_appended,

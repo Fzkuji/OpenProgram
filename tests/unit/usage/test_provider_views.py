@@ -58,7 +58,7 @@ def store(tmp_path, monkeypatch):
     ledger.close()
 
 
-def _key(status: str = "valid", cred: str = "cred-1") -> dict:
+def _key(status: str = "ready", cred: str = "cred-1") -> dict:
     return {"account": "default", "credential_id": cred, "kind": "api_key", "status": status, "active": True,
             "cooldown_until": None, "last_error": None, "last_used_at": NOW - 60, "use_count": 1,
             "status_at": NOW - 60}
@@ -69,10 +69,18 @@ def test_a_provider_without_a_key_says_so_and_leads_to_connect(store, monkeypatc
     state = provider_views.picker_state("deepseek", configured=False, now=NOW)
     assert state["state"] == "not_configured" and state["attention"] is True
     assert state["fix"] == {"action": "connect", "url": "https://platform.deepseek.com/api_keys"}
+    assert state["name"] is None and state["name_zh"] is None
+
+
+def test_one_way_of_a_company_carries_its_menu_name(store, monkeypatch):
+    monkeypatch.setattr(provider_views, "keys_of", lambda provider: [])
+    state = provider_views.picker_state("openai-codex", configured=False, now=NOW)
+    assert state["name"] == "OpenAI · ChatGPT"
+    assert provider_views.picker_state("opencode-go", configured=False, now=NOW)["name"] == "OpenCode · Go"
 
 
 def test_a_provider_out_of_credit_shows_its_balance_and_the_top_up_page(store, monkeypatch):
-    monkeypatch.setattr(provider_views, "keys_of", lambda provider: [_key("billing_blocked")])
+    monkeypatch.setattr(provider_views, "keys_of", lambda provider: [_key("quota")])
     store.observe("openrouter", "cred-1", [QuotaLimit(
         limit_key="key_limit", label="Key limit", unit="usd", source="endpoint", fetched_at=NOW - 30,
         limit=20, remaining=0)], force_write=True)
@@ -89,6 +97,18 @@ def test_a_quiet_provider_draws_nothing(store, monkeypatch):
     state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
     assert state["state"] == "ready" and state["fix"] is None and state["attention"] is False
     assert state["quota"]["ring"] is False and state["balance"] is None
+
+
+def test_a_warning_quota_leaves_the_trigger_plain_until_nearly_spent(store, monkeypatch):
+    monkeypatch.setattr(provider_views, "keys_of", lambda provider: [_key()])
+    # 84 % used and ahead of the window's time: the bars warn, the trigger stays plain.
+    store.observe("openai-codex", "cred-1", [_window(84, resets_in=270 * 60)], force_write=True)
+    state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
+    assert state["quota"]["tone"] == "warning" and state["quota"]["warn"] is True
+    assert state["attention"] is False
+    store.observe("openai-codex", "cred-1", [_window(96)], force_write=True)
+    state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
+    assert state["quota"]["tone"] == "danger" and state["attention"] is True
 
 
 def _event(provider: str, model: str, day: int, cost: float, *, source: str = "model_catalog") -> UsageEvent:

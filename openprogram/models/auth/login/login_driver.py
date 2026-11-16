@@ -1,7 +1,8 @@
 """Surface-agnostic login driver.
 
-Given ``(provider, account, method, LoginUi)`` it runs the login and returns a
-``Credential``. Every surface — the CLI terminal, the web UI, the TUI — supplies
+Given ``(provider, method, LoginUi)`` it runs the login and returns a
+``Credential``; :func:`persist` adds it to the provider's list (a sign-in of
+an account already listed renews that row). Every surface — the CLI terminal, the web UI, the TUI — supplies
 its OWN ``LoginUi`` (forwarding ``open_url`` / ``prompt`` / ``show_progress`` /
 ``show_code`` to its frontend), so the flow logic lives here exactly once.
 
@@ -13,8 +14,11 @@ has, instead of punting to "use the other surface". The method ids come from
   import_from_cli  copy/link an existing vendor-CLI credential (no interaction)
   pkce_oauth       browser PKCE OAuth via PkceLoginMethod (already LoginUi-based)
   device_code      browser device-code OAuth (bridged onto the ui below)
+  paste_token      paste an access token (Grok; a GitHub token for Copilot)
 """
 from __future__ import annotations
+
+import contextlib
 
 import asyncio
 from typing import Optional
@@ -26,12 +30,12 @@ from ..types import LoginUi
 
 async def run_login(
     provider: str,
-    account: str,
     method: str,
     ui: LoginUi,
     *,
     api_key: Optional[str] = None,
     label: str = "",
+    source: str = "web",
 ) -> Credential:
     """Run ``method`` for ``provider`` through ``ui`` and return the credential."""
     from openprogram.models.auth.provider_policy import (
@@ -43,39 +47,51 @@ async def run_login(
 
     if method == "api_key":
         key = (api_key or "").strip() or (await ui.prompt("Paste the API key", secret=True)).strip()
-        cred = api_key_credential(provider, account, key)
+        cred = api_key_credential(provider, key)
 
     elif method == "import_from_cli":
         await ui.show_progress(f"Importing your existing {provider} login…")
-        cred = import_from_cli(provider, account)
+        cred = import_from_cli(provider)
 
     elif method == "pkce_oauth":
         from ..methods.pkce_oauth import PkceLoginMethod
         cfg = _pkce_config(provider)
         store_provider = _credential_provider_id(provider)
-        cred = await PkceLoginMethod(
-            provider_id=store_provider, config=cfg, account_id=account
-        ).run(ui)
+        cred = await PkceLoginMethod(provider_id=store_provider, config=cfg).run(ui)
 
     elif method == "paste_token":
-        if provider != "xai-subscription":
+        if provider == "xai-subscription":
+            from openprogram.models.providers.adapters.xai_subscription.auth_adapter import (
+                import_pasted_token,
+            )
+            prompt = "Paste the Grok access token"
+        elif provider == "github-copilot":
+            from openprogram.models.providers.adapters.github_copilot.auth_adapter import (
+                import_pasted_token,
+            )
+            prompt = "Paste a GitHub token"
+        else:
             raise AuthConfigError(f"no paste-token login for {provider!r}")
-        token = (api_key or "").strip() or (
-            await ui.prompt("Paste the Grok access token", secret=True)
-        ).strip()
-        from openprogram.models.providers.adapters.xai_subscription.auth_adapter import (
-            import_pasted_token,
-        )
-        cred = import_pasted_token(token, account_id=account)
+        token = (api_key or "").strip() or (await ui.prompt(prompt, secret=True)).strip()
+        cred = import_pasted_token(token)
 
     elif method == "device_code":
-        cred = await _run_device_code(provider, account, ui)
+        cred = await _run_device_code(provider, ui)
 
     else:
         raise AuthConfigError(f"unsupported login method: {method!r}")
 
     from ..account.account_labels import apply_account_label
 
+    if cred.source != "import":
+        cred.source = source
+    if provider == "openai-codex" and cred.kind == "oauth":
+        from openprogram.models.providers.adapters.openai_codex import auth_adapter
+        with contextlib.suppress(Exception):
+            cred.identity.setdefault("account_id", auth_adapter.extract_account_id(cred.payload.auth_value))
+        plan = auth_adapter.plan_of(str(cred.payload.data.get("id_token") or ""), cred.payload.auth_value)
+        if plan:
+            cred.identity.setdefault("plan", plan)
     return apply_account_label(cred, label)
 
 
@@ -95,7 +111,7 @@ def _pkce_config(provider: str):
     raise AuthConfigError(f"no PKCE config registered for {provider!r}")
 
 
-async def _run_device_code(provider: str, account: str, ui: LoginUi) -> Credential:
+async def _run_device_code(provider: str, ui: LoginUi) -> Credential:
     """Device-code OAuth (GitHub Copilot today). Bridges the sync
     OAuthLoginCallbacks onto the async LoginUi: the user_code + verification URL
     are surfaced through the ui, then we poll for the token."""
@@ -132,20 +148,13 @@ async def _run_device_code(provider: str, account: str, ui: LoginUi) -> Credenti
     return import_oauth_credential(
         creds.access,
         getattr(creds, "refresh", "") or "",
-        account_id=account,
         expires_at_ms=getattr(creds, "expires", 0) or 0,
     )
 
 
-def persist(cred: Credential) -> list[str]:
-    """Save a freshly-obtained credential to the store and retire superseded
-    OAuth siblings — exactly what the CLI does after a login. Returns the pruned
-    credential_ids. Shared so web and TUI store logins identically to the CLI."""
+def persist(cred: Credential) -> Credential:
+    """Add a freshly obtained credential to the provider's list and return
+    the row as stored: a sign-in of an account already listed (same email
+    or account id) renews that row in place instead of adding another."""
     from ..store import get_store
-    from .credential_login import prune_superseded_oauth
-    store = get_store()
-    store.add_credential(cred)
-    try:
-        return prune_superseded_oauth(store, cred)
-    except Exception:
-        return []
+    return get_store().add_credential(cred)

@@ -22,7 +22,7 @@ def _digest(*parts: str) -> str:
 
 def _interrupt_cancelled() -> None:
     """Interrupt the Agent loop because the execution is cancelling."""
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
     raise ExecInterrupt("cancelled")
 
 
@@ -120,8 +120,8 @@ class _AgentSafePointHook:
 
     def _fragment(self, service, *, waiting_on: str | None = None, managed_action=None):
         """The small checkpoint manifest naming this journal position."""
-        from openprogram.runtime.execution.checkpoints import CheckpointFragment
-        from openprogram.runtime.execution.restart import window_seconds
+        from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
+        from openprogram.runtime.execution.recovery.restart import window_seconds
 
         kind, frontier, refs = manifest_fields(
             self.journal.state, self.journal.pointer(), waiting_on=waiting_on,
@@ -259,7 +259,7 @@ class _AgentSafePointHook:
 
     def _open_wait(self, service, payload, pre_wait, wait_kind: str, wait_id: str) -> None:
         """Checkpoint at the wait, open it durably and announce it."""
-        from openprogram.runtime.execution.checkpoints import CheckpointFragment
+        from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 
         attempt = self.attempt
         current = service.executions.get_execution(attempt.execution_id)

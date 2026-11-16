@@ -4,7 +4,8 @@
 // use), copied verbatim from the official registry
 // (/r/styles/radix-nova/alert-dialog.json). Adaptations match
 // components/ui/dialog.tsx: package imports, forwarded refs (React 18),
-// overlay z-(--z-overlay) marked data-native-view-occluder, content z-(--z-dialog).
+// overlay z-(--z-overlay) marked data-native-view-occluder and without
+// Nova's backdrop blur, content z-(--z-dialog).
 // Radix keeps an alert open on an outside click; AlertDialogContent's
 // onOverlayClick lets a caller treat a click on the overlay as Cancel,
 // the way every Dialog closes.
@@ -40,7 +41,7 @@ const AlertDialogOverlay = React.forwardRef<
     data-slot="alert-dialog-overlay"
     data-native-view-occluder="true"
     className={cn(
-      "fixed inset-0 z-(--z-overlay) bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+      "fixed inset-0 z-(--z-overlay) bg-black/10 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
       className
     )}
     {...props}

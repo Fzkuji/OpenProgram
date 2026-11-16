@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from openprogram.models.providers.utils.event_stream import (
+from openprogram.models.providers.utils.streams.event_stream import (
     AssistantMessageEventStream,
     close_stream,
     settle_unwinding,

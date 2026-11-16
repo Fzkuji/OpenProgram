@@ -87,7 +87,7 @@
 <thead><tr><th scope="col">场景</th><th scope="col">要求</th><th scope="col">证据</th></tr></thead>
 <tbody>
 <tr><th scope="row">打开或重连（<code translate="no">useWS</code>）</th><td>可见历史先于保存的执行恢复请求。没有回放引发的转录风暴。最多一个恢复在途，重复需求合并</td><td>受控传输测试；原生冷热刷新计时</td></tr>
-<tr><th scope="row">切换 A → B → A</th><td>草稿和阅读位置保留。迟到的 A 响应不能替换 B。刷新时缓存内容保持</td><td>快速切换和延迟响应</td></tr>
+<tr><th scope="row">切换 A → B → A</th><td>草稿保留，A 打开在最新处。迟到的 A 响应不能替换 B。刷新时缓存内容保持</td><td>快速切换和延迟响应</td></tr>
 <tr><th scope="row">长历史、翻页、跳转</th><td>有界读取和 DOM、稳定的前插锚点、过期游标恢复、最早消息可达、显式重试</td><td>大转录、最早最新和搜索目标、中断翻页</td></tr>
 <tr><th scope="row">流式文本和工具</th><td>按帧批处理；读历史不被自动跟随打断。展开输出按需加载；完成时刷新最后增量</td><td>突发和延迟增量、输出展开、长内容渲染预算</td></tr>
 <tr><th scope="row">发送、排队、插话、停止</th><td>确认前保留输入；重连不重复；显式的排队、发送中或失败状态；取消不能复活旧轮次</td><td>确认前后断线、活动队列、重试、取消</td></tr>

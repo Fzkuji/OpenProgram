@@ -244,7 +244,7 @@
 <li><code translate="no">layout/geometry.ts</code>: lattice positions from the backend's lane, tier and depth, which the front end only consumes (<code translate="no">openprogram/state/store/session/graph/layout/</code>, tier in <code translate="no">tier.py</code>).</li>
 <li><code translate="no">render/edges.ts</code>, <code translate="no">render/nodes.ts</code>, <code translate="no">render/labels/badges.ts</code>, then the canvas (<code translate="no">interaction/view/canvas.ts</code>, <code translate="no">gestures.ts</code>). <code translate="no">render/seat.ts</code> reads a drawn group's position back.</li>
 </ol>
-<p class="note">Orchestration: <code translate="no">pipeline.ts</code>. Payload: <code translate="no">openprogram/state/store/session/graph/builder.py</code>. Debug: <code translate="no">python scripts/dag_dump.py &lt;session_id&gt;</code> prints lane, tier, depth and an ASCII grid. A capture caches icons, tool presentation and text widths; attaching defers pane-size work a frame; <code translate="no">applyView</code> paints once a frame; a pan rewrites only translations. A repaint of 150 nodes takes about 5ms.</p>
+<p class="note">Orchestration: <code translate="no">pipeline.ts</code>. Payload: <code translate="no">openprogram/state/store/session/graph/builder.py</code>. Debug: <code translate="no">python scripts/maintenance/dag_dump.py &lt;session_id&gt;</code> prints lane, tier, depth and an ASCII grid. A capture caches icons, tool presentation and text widths; attaching defers pane-size work a frame; <code translate="no">applyView</code> paints once a frame; a pan rewrites only translations. A repaint of 150 nodes takes about 5ms.</p>
 
 <h2 id="s8">8. Fill means context coverage</h2>
 <p>A covered tile (<code translate="no">is-covered</code>, <code translate="no">render/visibility.ts</code>) is part of the next LLM call. The graph never derives context semantics: <code translate="no">GET /api/sessions/{id}/context-range</code> returns them, built from the functions the real render uses. <code translate="no">enterExclusiveCoverageMode</code> (<code translate="no">dag/index.ts</code>) fetches it.</p>
@@ -263,7 +263,7 @@
 <p class="note">Re-fetched on <code translate="no">context_stats</code> and <code translate="no">compaction_finished</code> (<code translate="no">chat-handlers.ts</code>). <code translate="no">spilled</code> is outside the render signature, so new coverage clears it (<code translate="no">setLastSignature(null)</code>). The summary is an ordinary chain member, so branch ids are drawn ids and need no translation; only synthetic bridges are filtered (<code translate="no">filter.py</code>).</p>
 
 <h2 id="s9">9. Compaction as one capsule</h2>
-<p>A summary stands for its range, so it draws as one chip with the archive icon, its covered count <code translate="no">+N</code> on the shoulder. <code translate="no">metadata.covers_ids</code> (<code translate="no">context/persistence.py</code>), passed through <code translate="no">builder.py</code> with covered turns' caller subtrees and missing ids dropped, drives shape, fold, count, ghosts and inspector. The front end does no seq arithmetic, which would catch dead forks.</p>
+<p>A summary stands for its range, so it draws as one chip with the archive icon, its covered count <code translate="no">+N</code> on the shoulder. <code translate="no">metadata.covers_ids</code> (<code translate="no">context/compaction/persistence.py</code>), passed through <code translate="no">builder.py</code> with covered turns' caller subtrees and missing ids dropped, drives shape, fold, count, ghosts and inspector. The front end does no seq arithmetic, which would catch dead forks.</p>
 <table class="stack">
 <thead><tr><th scope="col">Viewing</th><th scope="col">Covered turns</th><th scope="col">Capsule</th></tr></thead>
 <tbody>
@@ -350,9 +350,9 @@
 <tr><th scope="row">Compaction fold</th><td><code translate="no">apps/web/tests/dag/fold-summaries.test.mjs</code></td></tr>
 <tr><th scope="row">Selection</th><td><code translate="no">apps/web/tests/dag/dag-selection.test.mjs</code></td></tr>
 <tr><th scope="row">Shared composer</th><td><code translate="no">apps/web/tests/tabs/center-perspective.test.mjs</code></td></tr>
-<tr><th scope="row">Coverage query</th><td><code translate="no">tests/unit/context/test_context_range_coverage.py</code></td></tr>
+<tr><th scope="row">Coverage query</th><td><code translate="no">tests/unit/context/statistics/test_context_range_coverage.py</code></td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code></th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
-<tr><th scope="row">Deletion</th><td><code translate="no">tests/component/store/test_node_deletion.py</code></td></tr>
+<tr><th scope="row">Deletion</th><td><code translate="no">tests/component/store/session/test_node_deletion.py</code></td></tr>
 </tbody>
 </table>
 </details>

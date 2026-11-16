@@ -12,7 +12,26 @@
 <tr><th scope="row">4</th><td>Pinned, idle</td><td>Pinned or idle marker</td><td>None</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">ConvItem</code> resolves the state; <code translate="no">StatusMarker</code> draws it. Selection is <code translate="no">aria-current="true"</code>. CSS suppresses running and finishing pseudo-elements on unselected rows. Backend status, task execution, navigation and conversation persistence are not involved.</p>
+<p class="note"><code translate="no">ConvItem</code> resolves the state; <code translate="no">StatusMarker</code> draws it. Selection is <code translate="no">aria-current="true"</code>. CSS suppresses running and finishing pseudo-elements on unselected rows.</p>
+
+<h2 id="what-counts-as-running">What counts as running</h2>
+<p>A row is running while any turn of its conversation holds a run slot, on whichever branch: the selected branch's turn (<code translate="no">runningTasks</code>) or a turn on another branch (<code translate="no">sessionsWithBranchRun</code> over <code translate="no">lib/chat/run/other-branch-runs.ts</code>). The composer's Stop stays the selected branch's alone (<a href="../turn-lifecycle/turn-occupancy.html">turn occupancy</a>).</p>
+<table class="stack">
+<thead><tr><th scope="col">Turn</th><th scope="col">Row</th></tr></thead>
+<tbody>
+<tr><th scope="row">A typed message, a retry, an edit</th><td>Running from its admission to its end</td></tr>
+<tr><th scope="row">A Goal's next turn, its verification, a Goal started from the controls</th><td>Running for the whole turn, on the branch the Goal follows; between two turns nothing runs and the row is idle</td></tr>
+<tr><th scope="row">The notice of a background command that ended</th><td>Running while the agent answers it</td></tr>
+<tr><th scope="row">A turn on a branch that is not selected</th><td>Running; a turn there that waits on the person or has failed is not</td></tr>
+<tr><th scope="row">A helper agent, a Job, an always-on check-in</th><td>Not the row's state: they show in the Activity panel</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Why any branch</strong>: the row stands for the conversation, not for the branch a pane shows. A Goal keeps working on its branch after the person selects another one, and an idle row would say nothing is running.</li>
+<li><strong>A client that connects mid-turn</strong> asks <code translate="no">get_running_sessions</code> once per connection and applies the answer (<code translate="no">lib/chat/run/running-sessions.ts</code>); a row it still showed running that the answer does not list is asked about with <code translate="no">get_run_state</code> and cleared.</li>
+<li><strong>The stored <code translate="no">status</code></strong> of a conversation stays <code translate="no">running</code> when one turn ends while another still runs (<code translate="no">mark_session_finished</code>); the row's marker does not read it for running.</li>
+<li><strong>Tests</strong>: <code translate="no">apps/web/tests/chat/run/running-sessions.test.mjs</code>, <code translate="no">tests/component/runtime/test_owner_turn_run_slot.py</code>.</li>
+</ul>
 
 <details>
 <summary>Installation and acceptance</summary>

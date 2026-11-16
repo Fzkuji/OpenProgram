@@ -1,0 +1,198 @@
+<title>框架对比</title>
+<meta name="description" content="OpenProgram 与十二个参考框架的对比：产品形态、强项、缺口与候选项。">
+<h1>框架对比</h1>
+<p class="note">只比完整框架。子系统细节见<a href="#status">相关对比页</a>。</p>
+
+<h2 id="three">结论</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">发现</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">最强</th><td>会话是图，代码执行记录成节点。</td></tr>
+<tr><th scope="row">最弱</th><td>有标准本地入口，没有稳定的远程控制契约。</td></tr>
+<tr><th scope="row">意外</th><td>Codex code mode：模型写代码调用工具。</td></tr>
+</tbody>
+</table>
+<details><summary>最强：证据</summary>
+<ul>
+<li>十二家中，没有确认第二家把函数调用树记入对话历史。</li>
+<li>模型工具结果，以及持久化成功的 Agent method 调用（会话 DAG 记录开启且 <code translate="no">expose</code> 不是 <code translate="no">hidden</code>），都是 code 节点。它们和 user、llm 节点共用 caller、predecessor 边，写在该会话的追加日志里。多个 head 指向不同历史分支。</li>
+<li>OpenClaw Control UI 有 fork、rewind、branch；pi-mono 的 JSONL 带 parentId，<code translate="no">/tree</code> 切换分支。OpenProgram 多出的是横跨 user、llm、code 节点的一张 DAG，code 节点同时承载工具结果与嵌套调用。</li>
+<li>对话分支与 worktree 相互独立。Agent 分支共用工作目录；只有绑定 <code translate="no">worktree_id</code> 的 job 才隔离文件改动。</li>
+</ul>
+<p><code translate="no">runtime/context/git/dag.py</code> · <code translate="no">state/store/session/session_store/</code> · <code translate="no">runtime/agent/call_state.py</code></p>
+</details>
+<details><summary>最弱：证据</summary>
+<ul>
+<li>已有：内置、动态社区与自定义 provider，MCP client，skills，plugins，供外部调用工具的认证 stdio MCP server，驱动会话的 ACP server，Worker 上 OpenAI 兼容的 <code translate="no">/v1/chat/completions</code>。</li>
+<li>未确认：稳定的版本化远程控制 SDK、完整公开的 headless 事件协议、自维护 IDE 扩展。Owner 认证的 WebSocket 与 Python 库入口属内部或内嵌接口，不承诺外部兼容。</li>
+<li>OpenProgram 和 OpenClaw 都把 agent 指引放在 agent workspace。OpenClaw 有 <code translate="no">migrate-claude</code>、<code translate="no">migrate-hermes</code>；Codex 桌面版与 CLI 能导入 Claude Code、Cursor 的配置和近期工作。OpenProgram 没有外部会话、配置或 skills 的导入器。</li>
+</ul>
+<p><code translate="no">extensions/mcp/server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
+</details>
+<details><summary>意外：证据</summary>
+<ul>
+<li>模型写 JavaScript，在当前轮调用工具。<code translate="no">CodeModeOnly</code> 下可见工具只有 <code translate="no">exec</code> 和 <code translate="no">wait</code>。由四个 crate 和一个 V8 运行时实现，功能台账默认关闭，只看默认行为会漏掉。</li>
+<li>OpenProgram 让模型生成工作流包，经静态校验和原子发布后运行版本化 Python 工作流。它没有逐轮 code mode，也没有收缩成 <code translate="no">exec</code>、<code translate="no">wait</code> 的工具面。</li>
+</ul>
+<p><code translate="no">codex-rs/features/src/lib.rs</code> · <code translate="no">code-mode</code>、<code translate="no">code-mode-host</code>、<code translate="no">code-mode-protocol</code>、<code translate="no">code-mode-runtime</code>、<code translate="no">v8-poc</code></p>
+</details>
+<p class="note">按场景分。编程：三个 core Python、TypeScript LSP 工具（diagnostics、references、definition）；没有自维护 IDE 扩展、格式化器集合、tree-sitter 索引或 GitHub Action。通用 harness：OpenClaw、Hermes 的接入远多于 OpenProgram 的四个渠道。</p>
+
+<h2 id="now">OpenProgram</h2>
+<p>面向单个本地用户的通用 Python agent harness：<code translate="no">openprogram</code> 命令加端口 <code translate="no">18100</code> 上的常驻 worker。</p>
+<dl class="pairs">
+<dt>入口</dt><dd>TUI（Ink、React）、Web（Next.js）、Electron 桌面、四个渠道：Telegram、Discord、Slack、微信</dd>
+<dt>轮次处理</dt><dd>各入口共用 <code translate="no">ChatAgent().run_turn</code>；Python 库经 <code translate="no">Agent</code> 或 Runtime 直接进 <code translate="no">agent_loop</code>。上下文组装 L0、L1、L2；超预算先压缩；<code translate="no">tool.before</code> gate 可拒绝；finalize 回填 ContextCommit 并做 Git 提交</dd>
+<dt>线程</dt><dd>Web、TUI：每轮一个 daemon 线程。JobRunner：有界线程池。Dispatcher：每轮一个 asyncio loop。Scheduler：线程与进程</dd>
+<dt>会话存储</dt><dd>每会话一份追加日志为事实来源，三种角色（user、llm、code），caller、predecessor 边，分支 head。<code translate="no">context/commits/</code> 存每轮上下文记录</dd>
+<dt>其他存储</dt><dd><code translate="no">usage.db</code>：SQLite 用量账本。记忆：Markdown 加可重建的内存 BM25、embedding 索引，后台写入，三个 <code translate="no">memory_*</code> 工具</dd>
+<dt>工具</dt><dd>四个域的动态注册表（todo、task、agent、message）；延迟目录加 <code translate="no">tool_search</code></dd>
+<dt>扩展</dt><dd>MCP client 与 server、ACP、skills、plugins、34 个事件、<code translate="no">agent.json</code>；内置、动态与自定义 provider</dd>
+<dt>认证</dt><dd>Web、WebSocket：<code translate="no">owner_auth</code>，每次启动一个 token，按 profile 区分 cookie。渠道：配对与 allowlist（<code translate="no">interfaces/channels/inbound/_access.py</code>），是独立的来源身份边界。不是多租户服务</dd>
+</dl>
+
+<h3 id="scale">代码规模</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">项目</th><th scope="col">一方源码行数</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>1,987,813</td></tr>
+<tr><th scope="row">codex-cli</th><td>1,070,595</td></tr>
+<tr><th scope="row">hermes-agent</th><td>544,917</td></tr>
+<tr><th scope="row">opencode</th><td>366,499</td></tr>
+<tr><th scope="row">OpenProgram</th><td>254,320：Web 7.3 万，TUI 3.5 万，<code translate="no">openprogram/</code> 13.4 万</td></tr>
+<tr><th scope="row">pi-mono</th><td>116,599</td></tr>
+<tr><th scope="row">weclaw</th><td>5,723：微信转发和 ACP 调用</td></tr>
+<tr><th scope="row">pi-ai</th><td>4,021：pi-mono <code translate="no">packages/ai</code> 的只读切片，Python Codex provider 的协议参考，不参与能力对比</td></tr>
+</tbody>
+</table>
+<p class="note">只数 .py、.ts、.tsx、.js、.rs、.go；不含测试、node_modules、dist、target、vendor。固定版本的静态计数。规模说明复杂度，不说明质量。OpenClaw、Codex 多出的主要是渠道、TUI 和 IDE 集成。</p>
+
+<h2 id="others">十二个参考</h2>
+<p class="note">Claude Code、Codex、OpenClaw、OpenCode 的能力取自<a href="#method">证据表</a>里的官方稳定版。代码计数、内部实现和其余参考用固定版本。两类证据不是同一次审计。</p>
+
+<h3 id="exec">四种执行模型</h3>
+<table class="stack">
+<thead><tr><th scope="col">模型</th><th scope="col">形态</th><th scope="col">例子与状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">单进程</th><td>终端、agent loop、模型。结束即退出</td><td>pi-mono：JSONL 会话树，parentId 相连，leaf 是当前位置。weclaw：转发给外部 ACP agent</td></tr>
+<tr><th scope="row">本地客户端与服务端</th><td>TUI 客户端经 RPC 连 worker 内的 HTTP 服务</td><td>仅 opencode：SQLite 加 Drizzle，消息进 seq 日志，系统上下文快照放 epoch 表</td></tr>
+<tr><th scope="row">常驻 daemon</th><td>渠道、Web、TUI 共用一个带会话路由和注册表的进程</td><td>OpenProgram：每会话一份追加日志。hermes-agent、codex：SQLite。openclaw。claude-code：按项目的 JSONL</td></tr>
+<tr><th scope="row">远程执行</th><td>本地会话，远程或云端执行命令</td><td>codex：远程与云任务。claude-code：cloud teleport。openclaw：可选 cloud workers、managed worktrees。hermes：七种后端。OpenProgram：<code translate="no">docker.py</code>、<code translate="no">ssh.py</code> 后端，未接沙箱，没有托管服务</td></tr>
+</tbody>
+</table>
+
+<h3 id="matrix">按维度</h3>
+<table class="stack"><thead><tr><th scope="col">维度</th><th scope="col">OpenProgram</th><th scope="col">位置</th></tr></thead><tbody>
+<tr><th scope="row">定位形态</th><td>通用harness</td><td>—</td></tr>
+<tr><th scope="row">目标用户</th><td>单人本机</td><td>—</td></tr>
+<tr><th scope="row">执行模型</th><td>常驻worker</td><td>相当</td></tr>
+<tr><th scope="row">状态存哪</th><td>每会话一份追加日志</td><td>领先</td></tr>
+<tr><th scope="row">上下文装配</th><td>L0/L1/L2组件注册表</td><td>领先</td></tr>
+<tr><th scope="row">项目说明文件</th><td>agent工作区AGENTS.md</td><td>相当</td></tr>
+<tr><th scope="row">工具面</th><td>动态 registry，常驻 preset 加 tool_search 延迟目录</td><td>相当</td></tr>
+<tr><th scope="row">权限审批</th><td>5种模式加规则加tool.before门</td><td>相当</td></tr>
+<tr><th scope="row">扩展口</th><td>插件加skills加MCP客户端加34事件</td><td>相当</td></tr>
+<tr><th scope="row">多渠道</th><td>4个</td><td>落后</td></tr>
+<tr><th scope="row">界面</th><td>TUI加网页加Electron</td><td>相当</td></tr>
+<tr><th scope="row">对外接口</th><td>认证stdio MCP server加ACP；无稳定远程SDK</td><td>相当</td></tr>
+<tr><th scope="row">观测与计费</th><td>追加账本含缓存读写与分项成本</td><td>相当</td></tr>
+</tbody></table>
+<details><summary>其余七家，按维度</summary>
+<table class="stack"><thead><tr><th scope="col">维度</th><th scope="col">claude-code</th><th scope="col">codex</th><th scope="col">opencode</th><th scope="col">pi-mono</th></tr></thead><tbody>
+<tr><th scope="row">定位形态</th><td>编码CLI加云端</td><td>编码CLI加云端</td><td>编码CLI加SaaS周边</td><td>编码TUI加库</td></tr>
+<tr><th scope="row">目标用户</th><td>单人，订阅或企业</td><td>单人，配置分七层</td><td>单个开发者</td><td>单人本机</td></tr>
+<tr><th scope="row">执行模型</th><td>进程内加后台supervisor加云端VM</td><td>进程内加App Server加云端</td><td>本机也拆服务端客户端</td><td>单进程</td></tr>
+<tr><th scope="row">状态存哪</th><td>每项目一组JSONL</td><td>rollout JSONL加5个SQLite</td><td>SQLite加drizzle</td><td>JSONL会话树</td></tr>
+<tr><th scope="row">上下文装配</th><td>稳定内容放前面以利提示词缓存</td><td>每模型提示词编进二进制</td><td>13套按模型提示词</td><td>按已启用工具裁提示词</td></tr>
+<tr><th scope="row">项目说明文件</th><td>CLAUDE.md四层含系统级</td><td>AGENTS.md从git根往下拼</td><td>全局加项目，首个命中</td><td>祖先目录全走一遍</td></tr>
+<tr><th scope="row">工具面</th><td>官方参考列约45个，多数有条件，ToolSearch</td><td>约28个，code mode可压到2个</td><td>16个，按模型换apply_patch</td><td>7个，3个默认关</td></tr>
+<tr><th scope="row">权限审批</th><td>6种模式：default/acceptEdits/plan/auto/dontAsk/bypassPermissions</td><td>4种含Granular，execpolicy DSL</td><td>默认ask，bash命令分词</td><td>没有，靠工具白名单</td></tr>
+<tr><th scope="row">扩展口</th><td>插件市场加33个钩子事件，命令数未公开</td><td>插件市场加11钩子，模型可自装</td><td>插件19钩子，可往TUI里渲染</td><td>约40事件加包管理器，无MCP</td></tr>
+<tr><th scope="row">多渠道</th><td>Remote Control，Slack；Telegram、Discord、iMessage 频道处于研究预览</td><td>Slack 集成，依赖 cloud 账户与工作区配置</td><td>GitHub加Slack加ACP加两个IDE</td><td>没有</td></tr>
+<tr><th scope="row">界面</th><td>终端界面加Vim加语音听写</td><td>ratatui，IDE经socket提供上下文</td><td>OpenTUI加网页加Electron</td><td>自研TUI框架，能跑DOOM</td></tr>
+<tr><th scope="row">对外接口</th><td>Agent SDK加Remote Control</td><td>App Server加Python/TypeScript SDK；<code translate="no">codex mcp-server</code> 已 deprecated</td><td>HTTP服务加JS SDK加ACP</td><td>RPC模式加JSON模式加SDK</td></tr>
+<tr><th scope="row">观测与计费</th><td>OTel，print模式预算上限与团队花费上限</td><td>OTel加分析上报，只有token没有金额</td><td>OTel加数据湖，stats命令</td><td>安装计数可关，脚本聚合成本</td></tr>
+</tbody></table>
+<table class="stack"><thead><tr><th scope="col">维度</th><th scope="col">openclaw</th><th scope="col">hermes-agent</th><th scope="col">weclaw</th></tr></thead><tbody>
+<tr><th scope="row">定位形态</th><td>多渠道网关平台</td><td>私人助理加研究harness</td><td>微信转接器</td></tr>
+<tr><th scope="row">目标用户</th><td>单人运营，多人经渠道进</td><td>单人，陌生人靠配对码</td><td>单人，零鉴权</td></tr>
+<tr><th scope="row">执行模型</th><td>网关加 paired devices、opt-in cloud workers 与 managed worktrees</td><td>进程内加网关守护</td><td>守护进程转发</td></tr>
+<tr><th scope="row">状态存哪</th><td>每agent SQLite保存运行态与transcript；JSONL仅归档或旧格式迁移</td><td>SQLite加FTS5</td><td>内存，重启即失</td></tr>
+<tr><th scope="row">上下文装配</th><td>工作区文件加引导预算</td><td>stable/context/volatile三层</td><td>没有</td></tr>
+<tr><th scope="row">项目说明文件</th><td>工作区AGENTS/SOUL/TOOLS</td><td>四种格式加子目录提示</td><td>没有</td></tr>
+<tr><th scope="row">工具面</th><td>约35个分11组，tool_search</td><td>约82个，32个toolset</td><td>0个</td></tr>
+<tr><th scope="row">权限审批</th><td>分层裁剪，审批卡进聊天</td><td>55条危险模式，辅助LLM自动批</td><td>自动全批</td></tr>
+<tr><th scope="row">扩展口</th><td>126插件加59skills加ClawHub</td><td>20钩子加shell脚本钩子加178skills</td><td>只有配置文件</td></tr>
+<tr><th scope="row">多渠道</th><td>原生10个，插件渠道20多个</td><td>约26个，另加webhook与cron</td><td>1个</td></tr>
+<tr><th scope="row">界面</th><td>TUI加控制台加macOS / iOS / watchOS / Android节点</td><td>Ink TUI加React网页</td><td>只有终端</td></tr>
+<tr><th scope="row">对外接口</th><td>MCP server三种加OpenAI兼容加74个RPC</td><td>MCP server加OpenAI兼容加ACP</td><td>本机HTTP推送</td></tr>
+<tr><th scope="row">观测与计费</th><td>轨迹导出加OTel加Prometheus</td><td>日志脱敏加Langfuse，拉供应商配额</td><td>一个日志文件</td></tr>
+</tbody></table>
+</details>
+<p class="note">OpenProgram、OpenClaw、Hermes 都用常驻服务承载多入口。剩余差距：渠道广度、稳定远程 SDK、跨 worker 会话放置、完整版本化 headless 事件契约。未固定的 star、fork、skill 数量不算证据。</p>
+
+<h2 id="more">独立页面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr id="blind"><th scope="row"><a href="capability-differences.zh.html#blind">缺失能力</a></th><td>十二家有、子系统对比漏掉的机制</td></tr>
+<tr id="ours"><th scope="row"><a href="capability-differences.zh.html#ours">独特机制</a></th><td>OpenProgram 有什么，最接近的对应物是谁</td></tr>
+<tr id="cn"><th scope="row"><a href="capability-differences.zh.html#cn">国产四家 CLI</a></th><td>每个腾讯 CLI 相对上游改了什么</td></tr>
+</tbody>
+</table>
+
+<h2 id="plan">候选项</h2>
+<table class="stack">
+<thead><tr><th scope="col">条目</th><th scope="col">状态</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">脚本化 provider</th><td>部分：仅测试用</td><td><code translate="no">tests/component/providers/scripted_provider.py</code></td></tr>
+<tr><th scope="row">MCP server</th><td>已完成：认证 stdio，只暴露允许的工具，复用现有注册、权限模式和 allow 模式。不含远程 SDK、OpenAI 兼容端点和入站 webhook</td><td><code translate="no">extensions/mcp/server/server.py</code>、<code translate="no">interfaces/cli/commands/capabilities/mcp.py</code></td></tr>
+<tr><th scope="row">轨迹导出</th><td>部分：Markdown 或 HTML，默认脱敏</td><td><code translate="no">state/store/session/reading/export.py</code></td></tr>
+<tr><th scope="row">可恢复删除</th><td>部分：<code translate="no">trash list</code>、<code translate="no">trash restore</code>、清单</td><td><code translate="no">host/sandbox/recoverable_delete.py</code>、<code translate="no">interfaces/cli/commands/maintenance/trash.py</code></td></tr>
+<tr><th scope="row">功能台账与默认阶段</th><td>未实现</td><td>无</td></tr>
+<tr><th scope="row">外部会话与配置导入</th><td>未实现。外部 CLI 凭据发现不迁移这些内容</td><td>无</td></tr>
+</tbody>
+</table>
+<p class="note">剩余工作需单独设计、估算和批准。排除：训练数据管线、原生移动 App、完整格式化器集合、新的 execpolicy 式参数 DSL。保留 ToolName 前缀、glob、精确规则和 Python、TypeScript LSP 工具；更多语言按实际需求。</p>
+
+<h2 id="ideal">目标</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目标</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话可迁移、可分享、可复现</th><td>会话日志已含完整的图。交给另一台机器接着跑、脱敏发布、从任意节点分叉：同一种表示，不是三种导出格式。</td></tr>
+<tr><th scope="row">外部程序通过稳定契约操作 OpenProgram</th><td>MCP server 和 ACP 已有。仍需且未批准：稳定的版本化远程控制契约，外部会话与配置导入。</td></tr>
+<tr><th scope="row">一份能力台账，一份可复现记录</th><td>每项能力有阶段和默认开关；每次运行可导出脱敏的完整轨迹。</td></tr>
+</tbody>
+</table>
+
+<h2 id="method">证据</h2>
+
+<table class="stack"><thead><tr><th scope="col">对象</th><th scope="col">证据</th><th scope="col">注意</th></tr></thead><tbody>
+<tr><th scope="row">OpenProgram</th><td>当前代码、CLI、Web、TUI 入口及对应测试</td><td>MCP server、ACP、LSP、mid-turn steer、Scheduler、跨会话 agent provenance、会话导出、跨供应商历史兼容与可恢复删除按当前实现边界复核；未实现候选不按设计文档记为完成</td></tr>
+<tr><th scope="row">claude-code</th><td><a href="https://github.com/anthropics/claude-code/releases/tag/v2.1.252">官方稳定版 <code translate="no">v2.1.252</code></a>及<a href="https://code.claude.com/docs/en/overview">官方文档</a></td><td>只用公开文档和发布记录；其中没写的一律按未公开处理</td></tr>
+<tr><th scope="row">codex</th><td><a href="https://github.com/openai/codex/releases/tag/rust-v0.152.0">官方稳定版 <code translate="no">rust-v0.152.0</code></a>及<a href="https://learn.chatgpt.com/docs">官方文档</a></td><td>worktree、cloud、Web、GitHub、Slack、Automations、import 与 App Server/SDK 按正式公开能力计；旧本地源码只用于内部结构补充</td></tr>
+<tr><th scope="row">openclaw</th><td><a href="https://github.com/openclaw/openclaw/releases/tag/v2026.8.1">官方稳定版 <code translate="no">v2026.8.1</code></a>及<a href="https://docs.openclaw.ai/">官方文档</a></td><td>session SQLite/search/archive、paired devices、<a href="https://docs.openclaw.ai/gateway/cloud-workers">需显式配置 profiles 的 cloud workers</a>、managed worktrees、Control UI 与 Workboard 按版本对应文档复核</td></tr>
+<tr><th scope="row">opencode</th><td><a href="https://github.com/anomalyco/opencode/releases/tag/v1.18.25">官方稳定版 <code translate="no">v1.18.25</code></a>、tag-pinned 源码及<a href="https://opencode.ai/docs/">官方文档</a></td><td>Scout 存在 docs/source 冲突，按稳定源码记为未确认；worktree core 存在但路由仍属 experimental</td></tr>
+<tr><th scope="row">其余四家</th><td><code translate="no">references/</code> 下固定源码：Hermes、pi-mono、weclaw 与协议参考 pi-ai</td><td>不声明为项目最新发布版；功能结论只限列明证据</td></tr>
+<tr><th scope="row">国产四家</th><td>本机<code translate="no">~/.npm-global/lib/node_modules/</code>下的npm包，读<code translate="no">dist/</code>打包产物</td><td>前三个是包装器，改动集中在环境变量与配置层；gemini那个是真源码分支</td></tr>
+<tr><th scope="row">Trae</th><td>未获取到实现</td><td>本机没装，<code translate="no">/Applications</code>、应用支持目录、VS Code与Cursor扩展目录里都没有。不写猜测</td></tr>
+</tbody></table>
+<p class="note">支撑改动判断的官方页面见<a href="feature-matrix.zh.html#current-evidence">功能矩阵证据</a>。</p>
+<h3 id="disagree">来源差异</h3>
+<table class="stack"><thead><tr><th scope="col">条目</th><th scope="col">源码</th><th scope="col">判断</th></tr></thead><tbody>
+<tr><th scope="row">codex的长期记忆</th><td>源码里是完整子系统（读写两阶段管线加独立数据库），功能台账里标Stable但<code translate="no">default_enabled: false</code>。只看默认行为会判成"没有"，今天已经误判过一次。</td><td>按存在计。默认关闭的子系统仍然存在；早先的判断漏掉过它。</td></tr>
+</tbody></table>
+
+<h3 id="status">状态与相关页面</h3>
+<p class="note">候选项不等于批准，目标尚未完全实现。代码规模和内部结构描述固定的本地版本。</p>
+<dl class="pairs">
+<dt><a href="../framework-overview.zh.html">框架总览</a></dt><dd>一次对话在 OpenProgram 内部怎么跑</dd>
+<dt><a href="feature-matrix.zh.html">功能矩阵</a></dt><dd>同样十二家，按功能清单比：160 条规范条目，56 个候选差异。数字不能和本页合并</dd>
+<dt><a href="../runtime/security/sandbox-architecture.zh.html">沙箱</a></dt><dd><a href="../runtime/security/sandbox-architecture.zh.html">架构图</a></dd>
+<dt><a href="../runtime/collaboration/agent-collab-comparison.zh.html">Agent 协作</a></dt><dd>只有 OpenProgram 按剩余消息预算限制子 agent 工具</dd>
+<dt><a href="../memory/comparison.zh.html">长期记忆</a></dt><dd><a href="../memory/adoption.zh.html">采纳</a></dd>
+<dt><a href="../memory/speaker-identity.zh.html">说话人身份</a></dt><dd>多人对话</dd>
+<dt><a href="../ui/chat/chat-attachments.zh.html">聊天附件</a></dt><dd></dd>
+<dt><a href="../context/comparison.zh.html">上下文组成</a></dt><dd></dd>
+<dt><a href="../extension-gating/reference-comparison.zh.html">扩展准入</a></dt><dd></dd>
+</dl>

@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Domain</th><th scope="col">What it is</th><th scope="col">Tools</th></tr></thead>
 <tbody>
-<tr><th scope="row">Planning: todo</th><td>A hand-kept plan. Editing runs nothing.</td><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>, <code translate="no">todo_list</code></td></tr>
+<tr><th scope="row">Planning: task</th><td>A hand-kept plan: a named task and its steps. Editing runs nothing.</td><td><code translate="no">task_start</code>, <code translate="no">task_step</code>, <code translate="no">task_list</code></td></tr>
 <tr><th scope="row">Execution: job</th><td>An admitted record with <code translate="no">execution_id</code>, state and result</td><td><code translate="no">read_conversation(execution_id)</code>, <code translate="no">list_agents</code>, <code translate="no">close_agent</code>; <code translate="no">execution.cancel</code> is a command for the UI and API</td></tr>
 <tr><th scope="row">Entities: agent</th><td>A running conversation branch. A saved <code translate="no">AgentSpec</code> is separate configuration chosen by <code translate="no">agent</code>.</td><td><code translate="no">agent</code>, <code translate="no">list_agents</code>, <code translate="no">close_agent</code></td></tr>
 <tr><th scope="row">Communication: message</th><td>Continues a branch or reads its history</td><td><code translate="no">send_message</code>, <code translate="no">read_conversation</code></td></tr>
@@ -23,7 +23,7 @@
 <tr><th scope="row">Create</th><td><code translate="no">agent(prompt, description, …)</code></td><td>New branch named by <code translate="no">description</code>; runs <code translate="no">prompt</code>; admits a Job</td><td>Foreground: waits, final result. <code translate="no">run_in_background=true</code>: <code translate="no">execution_id</code>.</td></tr>
 <tr><th scope="row">Assign</th><td><code translate="no">send_message(to="name", message=…)</code></td><td>Existing branch, conversation or Agent; admits a Job; queues if busy</td><td><code translate="no">execution_id</code></td></tr>
 <tr><th scope="row">Wait</th><td><code translate="no">send_message(to="name", notify_when_idle=true)</code></td><td>Delivers nothing; one notice when the target is idle</td><td>The latest reply now, or a watch</td></tr>
-<tr><th scope="row">Query</th><td><code translate="no">list_agents</code>, <code translate="no">read_conversation</code>, <code translate="no">todo_list</code></td><td>Read-only, starts nothing</td><td>Text</td></tr>
+<tr><th scope="row">Query</th><td><code translate="no">list_agents</code>, <code translate="no">read_conversation</code>, <code translate="no">task_list</code></td><td>Read-only, starts nothing</td><td>Text</td></tr>
 </tbody>
 </table>
 <p class="note">Foreground creation goes through <code translate="no">run_agent_turn</code> and <code translate="no">runner.spawn_job(wait=True)</code>: waiting neither exempts it from admission and resource limits nor removes its execution identity.</p>
@@ -89,11 +89,11 @@ openprogram config set agent.max_spawn_fanout 8</code></pre>
 <details open>
 <summary>Dispatch a batch of tasks</summary>
 <ol>
-<li><code translate="no">todo_create(subject=…)</code>, with <code translate="no">blocked_by</code> for dependencies.</li>
+<li><code translate="no">task_start(title=…, steps=[…])</code>, one step per piece of work, in the order they depend on each other.</li>
 <li>One background <code translate="no">agent(prompt, description, run_in_background=true)</code> call per task; each hands back its <code translate="no">execution_id</code> immediately.</li>
 <li><code translate="no">list_agents()</code> for running work; <code translate="no">read_conversation(execution_id)</code> for output; <code translate="no">close_agent</code> or the UI to stop.</li>
 <li>Completion notices arrive in the caller.</li>
-<li><code translate="no">todo_update(todo_id, status="completed")</code>.</li>
+<li><code translate="no">task_step(next=true)</code> as each returns; a sub-agent can tick its own step with <code translate="no">task_step(step=N)</code>.</li>
 </ol>
 </details>
 <details>
@@ -151,9 +151,9 @@ openprogram config set agent.max_spawn_fanout 8</code></pre>
 <details>
 <summary>Code</summary>
 <ul>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/__init__.py">Registered model tools</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/job_output/job_output.py">job_output</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/conversation/sub_agent_run.py">Attach nodes</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/messages/cards/attach-card.tsx">AttachCard</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/interfaces/server/transcript/rows.py">row projection</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/progress.py">Job completion</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/notices.py">notices</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/dispatch.py">dispatch</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/borrowed.py">borrowed claims</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/send_message/send_message/send_message.py">Message delivery</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/knowledge/read_conversation.py">history reading</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/__init__.py">Registered model tools</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/job_output/job_output.py">job_output</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/conversation/peer_agents/sub_agent_run.py">Attach nodes</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/cards/attach-card.tsx">AttachCard</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/server/transcript/rows.py">row projection</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/progress.py">Job completion</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/notices.py">notices</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/dispatch.py">dispatch</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/borrowed.py">borrowed claims</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/send_message/send_message/send_message.py">Message delivery</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/knowledge/read_conversation.py">history reading</a></li>
 </ul>
 </details>

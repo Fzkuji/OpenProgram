@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copy the versioned hooks into the .git/hooks every worktree shares. Hooks
-# live outside the repository, so scripts/refresh-dev-instance.sh and
-# scripts/publish-github.sh run this each time; the docs check warns if they lag.
+# live outside the repository, so scripts/local-instances/refresh-dev-instance.sh and
+# scripts/publishing/publish-github.sh run this each time; the docs check warns if they lag.
 set -eu
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
 hooks_dir="$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)/hooks"

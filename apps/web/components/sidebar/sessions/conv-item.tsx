@@ -2,7 +2,7 @@
 /** One conversation row in the Recents list: title, status marker, inline
  *  rename, drag handles and its context / ⋯ menu. */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
@@ -365,3 +365,73 @@ function menuAnchorStyle(point: { x: number; y: number }, row: HTMLElement | nul
   const rect = row?.getBoundingClientRect();
   return rect ? { left: point.x - rect.left, top: point.y - rect.top } : { left: 0, top: 0 };
 }
+
+type ConvItemProps = React.ComponentProps<typeof ConvItem>;
+
+/** What the list passed each row on its latest render, by conversation id.
+ *  A row that did not render again still runs the list's latest handlers. */
+export type ConvRowSource = { current: Map<string, ConvItemProps> };
+
+/** The conversation fields a row and its menu draw. */
+const DRAWN_FIELDS = ["id", "title", "pinned", "archived", "group", "status", "unread", "channel"] as const;
+
+const sameList = <T,>(a: readonly T[] | undefined, b: readonly T[] | undefined, same: (x: T, y: T) => boolean) =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((item, index) => same(item, b[index])));
+const sameProject = (a: { id: string; name: string }, b: { id: string; name: string }) => a.id === b.id && a.name === b.name;
+
+function sameDragProps(a: ChatRowProps | undefined, b: ChatRowProps | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length || !keys.every((key) => key in b)) return false;
+  if (a["data-dragging"] !== b["data-dragging"] || a["data-chat-row"] !== b["data-chat-row"]) return false;
+  const x = (a.style ?? {}) as Record<string, unknown>;
+  const y = (b.style ?? {}) as Record<string, unknown>;
+  const styleKeys = Object.keys(x);
+  return styleKeys.length === Object.keys(y).length && styleKeys.every((key) => x[key] === y[key]);
+}
+
+/** Whether two renders of the list draw this row the same. Handlers are
+ *  left out: the row calls the list's latest ones through its source. */
+export function sameConvRow(a: ConvItemProps, b: ConvItemProps): boolean {
+  return DRAWN_FIELDS.every((field) => a.conv[field] === b.conv[field])
+    && a.label === b.label && a.active === b.active && !!a.selected === !!b.selected && a.running === b.running
+    && sameList(a.groups, b.groups, Object.is)
+    && sameList(a.projects, b.projects, sameProject)
+    && !a.onOpenInNewTab === !b.onOpenInNewTab && !a.onMoveToProject === !b.onMoveToProject
+    && !a.bulk === !b.bulk
+    && (!a.bulk || !b.bulk || (a.bulk.count === b.bulk.count && sameList(a.bulk.projects, b.bulk.projects, sameProject)))
+    && sameDragProps(a.dragProps, b.dragProps);
+}
+
+/** Every function in `shown` replaced by one that calls its latest version. */
+function latestHandlers<T extends object>(shown: T, latest: () => T | undefined): T {
+  const out = { ...shown } as Record<string, unknown>;
+  for (const [name, value] of Object.entries(shown)) {
+    if (typeof value !== "function") continue;
+    out[name] = (...args: unknown[]) => {
+      const now = (latest() as Record<string, unknown> | undefined)?.[name];
+      return typeof now === "function" ? now(...args) : undefined;
+    };
+  }
+  return out as T;
+}
+
+/**
+ * A conversation row that renders only when what it draws changes. One chat
+ * starting to run or moving to the top re-renders the list, and every other
+ * row keeps what it has. The list's handlers close over its current state,
+ * so the row reads them from `source` when one runs.
+ */
+export const ConvRow = memo(function ConvRow({ source, ...shown }: ConvItemProps & { source: ConvRowSource }) {
+  const id = shown.conv.id;
+  const latest = () => source.current.get(id);
+  const props = latestHandlers(shown, latest);
+  return (
+    <ConvItem
+      {...props}
+      bulk={shown.bulk ? latestHandlers(shown.bulk, () => latest()?.bulk) : undefined}
+      dragProps={shown.dragProps ? latestHandlers(shown.dragProps, () => latest()?.dragProps) : undefined}
+    />
+  );
+}, (a, b) => a.source === b.source && sameConvRow(a, b));

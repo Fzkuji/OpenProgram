@@ -10,7 +10,7 @@ import { SolarIcon } from "@/components/solar-icons";
 import { Button } from "@/components/ui/button";
 import { useFolderPicker } from "@/components/ui/folder-picker";
 import { useTranslation } from "@/lib/i18n";
-import { wsRequest } from "@/lib/net/ws/ws-request";
+import { listSessionProjects } from "@/lib/projects/list-projects";
 import { useSessionStore } from "@/lib/session-store";
 import {
   canConfirmInPlace, confirmProjectFolder, locationMessage, locationProblem,
@@ -28,10 +28,7 @@ export function ProjectLocationNotice({ projectId, onRepaired }: { projectId: st
   const [busy, setBusy] = useState(false);
 
   const read = useCallback(async () => {
-    const data = await wsRequest<{ projects?: ProjectLocation[]; session_id?: string | null }>(
-      "list_projects", { session_id: sessionId ?? "" }, "projects_list",
-      d => (d.session_id ?? null) === (sessionId || null),
-    );
+    const data = await listSessionProjects<{ projects?: ProjectLocation[]; session_id?: string | null }>(sessionId);
     // No answer (or an unreadable registry): keep the notice and its
     // repair buttons as shown rather than blanking them.
     if (!data || !Array.isArray(data.projects)) return;

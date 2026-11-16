@@ -31,6 +31,7 @@
 @import "./chat/execution/runtime-program.css";
 @import "./tool-tones.css";
 @import "./chat/execution/execution-strip.css";
+@import "./chat/execution/task-block.css";
 @import "./chat/pane/jump-latest.css";
 @import "./chat/messages/message-rail.css";
 @import "./chat/cards/attach-card.css";

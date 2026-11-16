@@ -38,7 +38,7 @@ def test_every_name_the_guide_teaches_exists_in_the_view():
     import re
     from pathlib import Path
     root = Path(visual_frame.__file__).parents[4]
-    guide = (root / "openprogram/runtime/context/guides/visuals.md").read_text(encoding="utf-8")
+    guide = (root / "openprogram/runtime/context/prompt_assembly/guides/visuals.md").read_text(encoding="utf-8")
     page = (root / "openprogram/interfaces/server/routes/visual-frame.html").read_text(encoding="utf-8")
     mounter = (root / "apps/web/lib/chat/markdown/visual-frames.ts").read_text(encoding="utf-8")
     for token in set(re.findall(r"--[a-z]+(?:-[a-z]+)*", guide)):

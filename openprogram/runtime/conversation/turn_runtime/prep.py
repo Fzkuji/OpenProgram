@@ -85,7 +85,7 @@ def prepare_turn(
     elif isinstance(req.branch_from, _InheritParent):
         # Normal append — walk the turn's own branch: the selected one
         # unless the person selected another since it was admitted.
-        from openprogram.runtime.context.persistence import rendered_history
+        from openprogram.runtime.context.compaction.persistence import rendered_history
         own_tip = _own_branch_tip(session, req)
         history = (rendered_history(db, req.session_id, head_id=own_tip) if own_tip
                    else rendered_history(db, req.session_id)) \
@@ -213,11 +213,11 @@ def prepare_turn(
     # The date the turn is sent on goes beside its message, not in the system
     # prompt, so a conversation that crosses midnight keeps its cached prefix.
     # What goes beside the message is stored on its node as it happens
-    # (``context.turn_context``): the date, a rewind made before this turn,
+    # (``context.prompt_assembly.turn_context``): the date, a rewind made before this turn,
     # the memory it recalled (replay reproduces the exact wire message from
     # the node) and a scheduled run's note, sent after the recalled memory.
-    from openprogram.runtime.context import turn_context as _turn_context
-    from openprogram.runtime.context.components import current_date_note
+    from openprogram.runtime.context.prompt_assembly import turn_context as _turn_context
+    from openprogram.runtime.context.prompt_assembly.components import current_date_note
     current_date = current_date_note()
     beside = _turn_context.put([], _turn_context.ATTACHMENT, "date", current_date)
     beside = _turn_context.put(beside, _turn_context.ATTACHMENT, "memory_prefetch", memory_prefetch or "")
@@ -232,7 +232,7 @@ def prepare_turn(
         # A rewind is told to the conversation's own next turn. It is taken
         # now, onto this message, so a turn that fails and is sent again
         # still carries it.
-        from openprogram.runtime.conversation.rewind_marks import take_rewind_note
+        from openprogram.runtime.conversation.rewinds.rewind_marks import take_rewind_note
         if req.user_already_persisted:
             stored = (db.get_messages_by_id(req.session_id, [user_msg_id]) or [{}])[0] \
                 if hasattr(db, "get_messages_by_id") else {}
@@ -272,7 +272,7 @@ def prepare_turn(
         # The images themselves, kept so later requests send them again
         # after the text, where the turn put them (``store.session.media``).
         try:
-            from openprogram.state.store.session.media import records_for_attachments
+            from openprogram.state.store.session.files.media import records_for_attachments
             # The text block comes first when the turn has text (loop_runner).
             media = records_for_attachments(db._session_dir(req.session_id), req.attachments,  # noqa: SLF001
                                             1 if req.user_text else 0)
@@ -345,7 +345,7 @@ def prepare_turn(
         # path). Make sure history reflects that — load from DB if
         # the caller didn't pass a history_override.
         if req.history_override is None:
-            from openprogram.runtime.context.persistence import rendered_history
+            from openprogram.runtime.context.compaction.persistence import rendered_history
             history = rendered_history(
                 db, req.session_id, head_id=user_msg_id,
             ) or history
@@ -424,7 +424,7 @@ def _interrupted_note(db, req: "TurnRequest", user_msg_id: str, parent_id: Optio
     branch from a stopped reply carries it and a retry of the message
     before it does not (``turn_context.interruption_note``).
     """
-    from openprogram.runtime.context import turn_context as _turn_context
+    from openprogram.runtime.context.prompt_assembly import turn_context as _turn_context
 
     if not hasattr(db, "get_messages_by_id"):
         return ""

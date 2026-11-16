@@ -217,7 +217,8 @@ def test_tier2_rows_carry_setup_hint_and_login_methods(mem_cfg, monkeypatch):
     rows = {p["id"]: p for p in listing.list_providers()}
     row = rows["anthropic"]
     assert row.get("setup_hint")
-    assert not row.get("login_methods")  # API-key entry, no subscription login
+    # An API key is its one way to connect; no subscription sign-in.
+    assert [m["id"] for m in row["login_methods"]] == ["api_key"]
 
 
 # ---------------------------------------------------------------------------

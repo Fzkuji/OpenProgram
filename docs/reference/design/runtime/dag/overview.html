@@ -218,7 +218,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">head_id</code></th><td>Active branch tip. Conversation writes advance it to a real node, never a placeholder or summary; a dangling head renders empty. Caller-tagged nodes leave it</td></tr>
 <tr><th scope="row"><code translate="no">get_branch(session_id, head_id)</code></th><td>Predecessor chain from head to terminus</td></tr>
-<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>Visible conversation tips plus retained branch references. Rewind hides withdrawn suffixes while preserving sibling references, including references at a shared ancestor or ROOT. Branch identity distinguishes references at the same head. Internal execution rows do not create conversation tips</td></tr>
+<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>Visible conversation tips plus retained branch references. Rewind hides withdrawn suffixes while preserving sibling references, including references at a shared ancestor or ROOT. Branch identity distinguishes references at the same head. Internal execution rows do not create conversation tips, and neither does a turn's message written under a recorded branch's head in the moment before the head and the record move onto it</td></tr>
 <tr><th scope="row">Branch names</th><td>Session metadata: branch-reference labels own each branch name; <code translate="no">branches</code> keeps the selected-head compatibility projection</td></tr>
 </tbody>
 </table>
@@ -249,7 +249,7 @@
 <tr><th scope="row">One assembler</th><td><code translate="no">build_system_prompt(agent, *, channel, tools, additional_working_dirs, plan_mode)</code>, for every model call: identity, project memory, unified tool list, skills</td></tr>
 <tr><th scope="row">Budget</th><td>Counts the string that ships</td></tr>
 <tr><th scope="row">Variation</th><td>Constant by default, for KV-cache hits and one background across chat and functions. A slim prompt is an explicit call-site choice that accepts the miss</td></tr>
-<tr><th scope="row">Wrong tool use in a function</th><td>User-turn guidance plus a depth cap, never another tool list (<a href="../execution/agentic-self-recursion.html">self-recursion</a>)</td></tr>
+<tr><th scope="row">Wrong tool use in a function</th><td>User-turn guidance plus a depth cap, never another tool list (<a href="../agent/agentic-self-recursion.html">self-recursion</a>)</td></tr>
 <tr><th scope="row">Recording</th><td>On a hash change (start, toolset change, plan-mode toggle): a <code translate="no">role=code</code> node <code translate="no">name="context/system_prompt"</code>, <code translate="no">caller=ROOT</code>, output = full text. Rendering pins the latest on the spine</td></tr>
 <tr><th scope="row"><code translate="no">context/*</code> names</th><td>Reserved and hidden from chat, except <code translate="no">context/summary</code>, which is real conversation content</td></tr>
 <tr><th scope="row">Memory prefetch</th><td>Prefix block in the user node's wire message, stored as the <code translate="no">memory_prefetch</code> entry of its <code translate="no">turn_context</code> metadata (<a href="../../context/composition.html#l2">Composition</a>). System and tools stay byte-stable</td></tr>
@@ -332,12 +332,12 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/nodes.py</code></th><td><code translate="no">Call</code>, <code translate="no">Graph</code>, role constants</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>Append invariant, <code translate="no">get_branch</code>, <code translate="no">spawn_branch</code>, <code translate="no">list_branches</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram/state/store/session/spill.py</code></th><td>Write-path spill</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>, segment substitution</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/components.py</code></th><td>The system-prompt assembler</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> recording, <code translate="no">context/*</code> hiding</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/persistence.py</code></th><td>Summary nodes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/files/spill.py</code></th><td>Write-path spill</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/nodes.py</code></th><td><code translate="no">render_context</code>, segment substitution</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/prompt_assembly/components.py</code></th><td>The system-prompt assembler</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/prompt_assembly/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> recording, <code translate="no">context/*</code> hiding</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/compaction/persistence.py</code></th><td>Summary nodes</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></th><td>Chat entry</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>Function-body model calls</td></tr>
 </tbody>

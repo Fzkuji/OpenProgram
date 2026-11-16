@@ -11,7 +11,7 @@ class _Console:
 
 
 def test_cli_rewind_previews_before_confirming(monkeypatch):
-    from openprogram.runtime.conversation import rewind as _rewind
+    from openprogram.runtime.conversation.rewinds import rewind as _rewind
     from openprogram.interfaces.cli.repl.handlers import _handle_rewind
 
     point = {
@@ -53,7 +53,7 @@ def test_cli_rewind_previews_before_confirming(monkeypatch):
 
 
 def test_cli_confirm_rejects_changed_plan(monkeypatch):
-    from openprogram.runtime.conversation import rewind as _rewind
+    from openprogram.runtime.conversation.rewinds import rewind as _rewind
     from openprogram.interfaces.cli.repl.handlers import _handle_rewind
 
     monkeypatch.setattr(_rewind, "list_rewind_points", lambda _sid: [{

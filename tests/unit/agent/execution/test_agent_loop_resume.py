@@ -250,7 +250,7 @@ def test_terminal_after_provider_resume_never_replays_the_provider():
 def test_resumed_tool_interrupt_closes_stream_without_provider_replay():
     import pytest
     from openprogram.host.cancellation import CancelledError
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     async def run(error_type, cancelled):
         event = asyncio.Event()

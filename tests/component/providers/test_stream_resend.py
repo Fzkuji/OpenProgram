@@ -38,11 +38,11 @@ from openprogram.models.providers.types import (
     Usage,
     UserMessage,
 )
-from openprogram.models.providers.utils import stream_retry
-from openprogram.models.providers.utils.errors import ExecInterrupt
-from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
-from openprogram.models.providers.utils.stream_idle import StreamIdleTimeout
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.streams import stream_retry
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
+from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
 IDLE_S = 0.2
 _API = "resend-test-api"

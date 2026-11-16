@@ -70,7 +70,7 @@ def read_conversation(
         if result is not None:
             return result
 
-    from openprogram.state.store.session.transcript import render_session_transcript, session_read_violation
+    from openprogram.state.store.session.reading.transcript import render_session_transcript, session_read_violation
 
     from openprogram.state.memory.policy import consume_sources
     try:

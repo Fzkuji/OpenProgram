@@ -129,11 +129,11 @@ def build_session_graph(
 
     # Compaction summaries carry ``metadata.covers_ids`` — the exact
     # chain nodes the summary replaces, written by the persister
-    # (context/persistence.py). Seq intervals span sibling branches in
+    # (context/compaction/persistence.py). Seq intervals span sibling branches in
     # a DAG, so ids are the only faithful record; the graph adds the
     # caller subtrees hanging off those turns (a covered turn folds
     # with its calls) and does no seq arithmetic at all.
-    # Each branch reads its own summary (context/nodes.py
+    # Each branch reads its own summary (context/session_dag/nodes.py
     # ``active_summary_for_chain``): a summary folds its range when it is
     # the one in effect on some branch's chain; one no branch reads any more
     # (absorbed by a later summary of the same chain, or retracted by a
@@ -336,7 +336,7 @@ def build_session_graph(
 def _summaries_in_effect(db, session_id: str, nodes: list) -> set[str]:
     """The summaries some branch of the conversation reads: for each branch
     tip, the one ``active_summary_for_chain`` picks for its chain."""
-    from openprogram.state.store.session.summaries import active_summary_for_chain, summary_covers_ids
+    from openprogram.state.store.session.reading.summaries import active_summary_for_chain, summary_covers_ids
 
     try:
         retracted = (db.get_session(session_id) or {}).get("rewind_hidden_nodes") or ()

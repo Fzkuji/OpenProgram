@@ -87,7 +87,7 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
         "openprogram.interfaces.server.ws_actions.chat.turn._db_agent_id", lambda _sid: "main"
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_config.save_session_run_config",
+        "openprogram.runtime.conversation.session_settings.session_config.save_session_run_config",
         lambda *args, **kwargs: type(
             "Cfg",
             (),

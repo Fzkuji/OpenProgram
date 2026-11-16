@@ -154,7 +154,7 @@ def test_background_spawn_has_one_canonical_execution_and_no_inner_exec_identity
 
 
 def test_abandoned_job_with_no_model_answer_requeues_same_authorized_resource_admission(durable_job, monkeypatch):
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     runner, _ledger, execution_store, _db = durable_job
     # Exercise startup's consumer synchronously, without the fixture's live
     # dispatcher racing our simulated abandoned owner.
@@ -164,7 +164,7 @@ def test_abandoned_job_with_no_model_answer_requeues_same_authorized_resource_ad
         thread.join(timeout=30)
         assert not thread.is_alive()
     runner._shutdown_event.clear()
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: -1)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: -1)
     monkeypatch.setattr("openprogram.runtime.execution.process_owner.process_owner_may_be_alive", lambda *a, **kw: False)
     job_id, execution = _execution(runner, execution_store)
     store = execution_store()
@@ -663,7 +663,8 @@ def test_child_deferred_and_borrowed_relations_preserve_caller_dag_identity(
 
 def test_a_waited_on_child_ended_by_a_restart_updates_its_card_and_says_why(durable_job, monkeypatch):
     from openprogram.operations.self_update.control import maintenance
-    from openprogram.runtime.execution import ExecutionStatus, restart
+    from openprogram.runtime.execution import ExecutionStatus
+    from openprogram.runtime.execution.recovery import restart
 
     runner, _ledger, execution_store, _db = durable_job
     monkeypatch.setattr(restart, "window_seconds", lambda: -1)

@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from openprogram.models.providers.utils.errors import (
+from openprogram.models.providers.utils.failures.errors import (
     CAUSE_INVALID_KEY,
     CAUSE_NOT_AVAILABLE,
     CAUSE_QUOTA,
@@ -14,7 +14,7 @@ from openprogram.models.providers.utils.errors import (
     LLMError,
     failure_cause,
 )
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
 NOW = 1_800_000_000.0
 
@@ -117,8 +117,8 @@ def test_a_spent_window_names_its_key_and_the_other_windows(monkeypatch):
 
 def test_a_401_credits_error_is_a_spent_quota_not_a_rejected_key():
     """OpenCode Zen answers a zero balance with 401 CreditsError: the reply card is QUOTA."""
-    from openprogram.models.providers.utils.errors import classify_error
-    from openprogram.models.providers.utils.failover import should_failover
+    from openprogram.models.providers.utils.failures.errors import classify_error
+    from openprogram.models.providers.utils.failures.failover import should_failover
 
     body = ('{"type": "error", "error": {"type": "CreditsError", '
             '"message": "Insufficient balance. Manage your billing here: https://opencode.ai/billing"}}')

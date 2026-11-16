@@ -233,7 +233,7 @@ export function SidebarPrimaryNav() {
   );
 
   const pendingCount = pending.length > 0 ? (
-    <Badge className="ml-auto h-[18px] min-w-[18px] px-[6px] text-fs-2xs tabular-nums" aria-label={text(`${pending.length} waiting`, `${pending.length} 项待处理`)}>
+    <Badge className="ml-auto h-[18px] min-w-[18px] px-[6px] text-fs-2xs" aria-label={text(`${pending.length} waiting`, `${pending.length} 项待处理`)}>
       {pending.length > 99 ? "99+" : pending.length}
     </Badge>
   ) : undefined;

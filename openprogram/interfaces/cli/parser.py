@@ -724,8 +724,8 @@ def _add_execution_and_jobs_commands(sub):
 def _add_subagent_command(sub):
     """Add the ``subagent`` group."""
     # ---- subagent ----------------------------------------------------------
-    # Subagent spawn / merge ops. See ``openprogram/runtime/conversation/sub_agent_run.py``
-    # and ``openprogram/runtime/conversation/merge.py`` for the model. These commands run
+    # Subagent spawn / merge ops. See ``openprogram/runtime/conversation/peer_agents/sub_agent_run.py``
+    # and ``openprogram/runtime/conversation/peer_agents/merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
     p_subagent = sub.add_parser("subagent",
         help="Spawn, inspect, or merge subagent sessions.")
@@ -876,6 +876,16 @@ def _add_memory_command(sub):
         help="Reorganise topic files now, project memory included, instead of waiting for tonight.")
     p_msleep.add_argument("--model", default=None,
         help="Model to reorganise with (default: whatever your own CLI uses)")
+    p_mregroup = memory_sub.add_parser("regroup",
+        help="File memory notes into folders that follow meaning: one folder per company, person, paper or project.")
+    p_mregroup.add_argument("--root", default=None,
+        help="One memory workspace to regroup (default: personal memory and every project's)")
+    p_mregroup.add_argument("--plan", default=None,
+        help="JSON file of moves ({\"topics/a.md\": \"topics/kind/a/overview.md\"}) to apply to --root, without a model")
+    p_mregroup.add_argument("--dry-run", action="store_true",
+        help="Report what would move and what breaks the filing rule; change nothing")
+    p_mregroup.add_argument("--model", default=None,
+        help="Model that decides the grouping (default: whatever your own CLI uses)")
     p_mexp = memory_sub.add_parser("export",
         help="Tar+gzip the entire memory dir to a path.")
     p_mexp.add_argument("--out", default=None,

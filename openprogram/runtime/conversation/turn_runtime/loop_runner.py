@@ -28,9 +28,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping, Optional, TYPE_CHECKING
 
-from openprogram.runtime.conversation import plan_mode as _plan_mode
-from openprogram.runtime.conversation.session_config import fallback_value, reasoning_from_config, SessionRunConfig
-from openprogram.runtime.permissions.approval import (
+from openprogram.runtime.conversation.session_settings import plan_mode as _plan_mode
+from openprogram.runtime.conversation.session_settings.session_config import fallback_value, reasoning_from_config, SessionRunConfig
+from openprogram.runtime.permissions.approvals.approval import (
     wrap_with_approval as _wrap_with_approval,
 )
 from openprogram.runtime.conversation.event_parsing import (
@@ -47,8 +47,8 @@ from openprogram.runtime.conversation.model_tools import (
 )
 from openprogram.runtime.conversation.turn_runtime.runtime_attach import _wrap_agentic_runtime_block
 from openprogram.runtime.conversation.checkpoint import runtime_contract_snapshot
-from openprogram.models.providers.utils.http_client import shutdown_loop_clients as _shutdown_loop_clients
-from openprogram.runtime.execution.runtime_contract import validate_runtime_contract
+from openprogram.models.providers.utils.http_transport.http_client import shutdown_loop_clients as _shutdown_loop_clients
+from openprogram.runtime.execution.admission_input.runtime_contract import validate_runtime_contract
 
 if TYPE_CHECKING:
     from openprogram.runtime.conversation.turn_runtime.types import EventCallback
@@ -94,7 +94,7 @@ def _ordered_block_from_content(block: object) -> dict | None:
         # The signature is what the provider takes back (a Responses
         # reasoning item with its encrypted content): every later request
         # sends it again, so the next turn's prefix is the bytes this turn
-        # sent (context/render.py). The transcript shows only the text.
+        # sent (context/session_dag/render.py). The transcript shows only the text.
         ordered = {"type": "thinking", "text": text}
         _keep_signature(ordered, signature)
         if getattr(block, "redacted", None):
@@ -346,8 +346,8 @@ def owns_conversation_contract(req) -> bool:
     """Whether this turn is its conversation's own turn.
 
     Only such a turn reads and writes the branch's runtime contract (the
-    recorded system prompt, ``context.system_prompt_node``) and the section
-    notes beside its messages (``context.turn_context``). A goal
+    recorded system prompt, ``context.prompt_assembly.system_prompt_node``) and the section
+    notes beside its messages (``context.prompt_assembly.turn_context``). A goal
     verification and a background check-in run on the conversation with a
     system prompt and tools of their own: recording theirs would make the
     conversation's next turn rebuild its prompt, and a note kept against
@@ -474,7 +474,7 @@ def forked_prompt(req) -> Optional[str]:
         return None
     try:
         from openprogram.runtime.context import Context
-        from openprogram.runtime.context.system_prompt_node import latest_recorded_prompt
+        from openprogram.runtime.context.prompt_assembly.system_prompt_node import latest_recorded_prompt
         return latest_recorded_prompt(Context.turn_store(req.session_id), req.session_id, anchor)
     except Exception:  # noqa: BLE001 - built afresh; the cache is not shared
         _log.debug("caller prompt not read for fork in %s", req.session_id, exc_info=True)
@@ -593,7 +593,7 @@ def resolve_agent_runtime(
         tools = [_undeferred(tool) for tool in tools or []]
     override = getattr(req, "model_override", None)
     if not override and getattr(req, "session_id", None):
-        from openprogram.runtime.conversation.session_model import (
+        from openprogram.runtime.conversation.session_settings.session_model import (
             ensure_session_chat_model,
             read_session_chat_model,
             override_string,
@@ -671,7 +671,7 @@ def resolve_agent_runtime(
                 else:
                     wrapped.append(tool)
             tools = wrapped
-    from openprogram.runtime.context.components import build_system_prompt
+    from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
     owner = owns_conversation_contract(req)
     saved_system_prompt = None if saved_runtime_contract is None else saved_prompt(saved_runtime_contract, req)
     # A continuation uses the prompt that produced its saved decision.
@@ -712,7 +712,7 @@ def resolve_agent_runtime(
         # work, capabilities); the turn then carries each changed section
         # beside its message (_new_turn_agent_context).
         from openprogram.runtime.context import Context
-        from openprogram.runtime.context.turn_context import kept_sections
+        from openprogram.runtime.context.prompt_assembly.turn_context import kept_sections
         recordable_prompt, sections = kept_sections(
             Context.turn_store(req.session_id), req.session_id, recordable_prompt,
         )
@@ -733,14 +733,14 @@ def resolve_agent_runtime(
     # application is loaded. The conversation's own turn sends them beside
     # its message, as a section that is never in its prompt; another turn
     # (a verification, a check-in) has them at the end of its own prompt.
-    from openprogram.runtime.context.components import build_turn_sections, remember_composed
+    from openprogram.runtime.context.prompt_assembly.components import build_turn_sections, remember_composed
     surface_prompt = build_turn_sections(
         agent_profile,
         {"surface_context": req.surface_context, "browser_enabled": browser_enabled},
         channel=_prompt_channel(req), tools=tools,
     )
     if saved_system_prompt is None and getattr(req, "session_id", None) and owner:
-        from openprogram.runtime.context.turn_context import TOOL_AVAILABILITY, Section, availability_text
+        from openprogram.runtime.context.prompt_assembly.turn_context import TOOL_AVAILABILITY, Section, availability_text
         sections["pages"] = Section(current=surface_prompt or "", in_prompt="")
         sections[TOOL_AVAILABILITY] = Section(current=availability_text(unavailable), in_prompt="")
     elif surface_prompt and saved_system_prompt is None:
@@ -767,7 +767,7 @@ def with_current_location(snapshot: dict, session_id: str) -> dict:
     semantics = snapshot.get("request_semantics")
     if not isinstance(semantics, dict):
         return snapshot
-    from openprogram.runtime.conversation.workdir import runtime_location_for
+    from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
     location = runtime_location_for(session_id, use_context=False)
     return {**snapshot, "request_semantics": {**semantics, "execution_location": location}}
 
@@ -788,8 +788,8 @@ def _continuation_agent_context(req, continuation, *, db, model, tools, runtime_
         raise ValueError("Agent checkpoint resolved snapshot is invalid")
     if durable_model.get("id") != getattr(model, "id", None):
         raise ValueError("Agent checkpoint model no longer resolves")
-    from openprogram.runtime.context.nodes import render_context
-    from openprogram.runtime.context.render import render_dag_messages
+    from openprogram.runtime.context.session_dag.nodes import render_context
+    from openprogram.runtime.context.session_dag.render import render_dag_messages
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     graph = SessionNodeWriter(db, req.session_id).load()
@@ -806,7 +806,7 @@ def _continuation_agent_context(req, continuation, *, db, model, tools, runtime_
     # The notes render as the turn's first request rendered them: the turn's
     # message records whether it showed the memory section's
     # (_new_turn_agent_context).
-    from openprogram.runtime.context.turn_context import OWN_PROMPT, conversation_audience
+    from openprogram.runtime.context.prompt_assembly.turn_context import OWN_PROMPT, conversation_audience
     audience = (conversation_audience(bool((graph.nodes[anchor].metadata or {}).get("memory_map_notes")))
                 if owns_conversation_contract(req) else OWN_PROMPT)
     rendered = render_dag_messages(graph, read_ids, reasoning_for=model, audience=audience)
@@ -853,7 +853,7 @@ def _auto_compact_new_turn(
             # with summarises it (Codex's ModelDownshift).
             summarizer, trigger = _downshift_model(req, agent_profile), None
             if summarizer is not None:
-                from openprogram.runtime.context.tokens import real_context_window
+                from openprogram.runtime.context.token_accounting.tokens import real_context_window
                 if real_context_window(summarizer) <= real_context_window(model):
                     # Not a smaller window: the turn's model reads it as well.
                     summarizer = None
@@ -898,7 +898,7 @@ def _auto_compact_new_turn(
             if compact_res.summary_id:
                 # Re-load the post-compact view (summary + kept
                 # tail) so the LLM call sees the shorter context.
-                from openprogram.runtime.context.persistence import rendered_history
+                from openprogram.runtime.context.compaction.persistence import rendered_history
                 history = rendered_history(db, req.session_id, head_id) or history
                 prep = context_engine.prepare(
                     agent=agent_profile,
@@ -974,7 +974,7 @@ def _view_notes(req, beside: list, view, *, owner: bool) -> list:
     (``goal.chat.todo_reminder``). A message sent again decides them again
     from the same view, so it sends the same notes.
     """
-    from openprogram.runtime.context import turn_context
+    from openprogram.runtime.context.prompt_assembly import turn_context
 
     date = turn_context.entry_text(beside, "date")
     if date:
@@ -1024,15 +1024,15 @@ def _new_turn_agent_context(
     _ctx_engine.on_session_start(req.session_id)
     # The prompt is recorded for new turns only.  A continuation reuses
     # the checkpointed resolved prompt instead.
-    from openprogram.runtime.context.system_prompt_node import record_system_prompt
-    from openprogram.runtime.context import turn_context
+    from openprogram.runtime.context.prompt_assembly.system_prompt_node import record_system_prompt
+    from openprogram.runtime.context.prompt_assembly import turn_context
     owner = owns_conversation_contract(req)
     if owner:
         # Only the conversation's own turn writes the branch's contract.
         record_system_prompt(db, req.session_id, recordable_system_prompt)
     session = db.get_session(req.session_id) or {}
     from openprogram.runtime.context import Context
-    from openprogram.runtime.context.tail import BACKGROUND_TAIL_TOKENS
+    from openprogram.runtime.context.session_dag.tail import BACKGROUND_TAIL_TOKENS
     request_context = Context.current()
     if request_context is not None:
         history = request_context.filter_history(history)
@@ -1243,7 +1243,7 @@ def _steering_source(req, *, model, db, assistant_msg_id, execution_context):
             if len(message.content) > 1:
                 # The pictures go back after the text in later requests
                 # too (``store.session.media``).
-                from openprogram.state.store.session.media import records_for_blocks
+                from openprogram.state.store.session.files.media import records_for_blocks
                 try:
                     steer_media = records_for_blocks(db._session_dir(req.session_id), message.content)  # noqa: SLF001
                 except Exception:  # noqa: BLE001 - the steer is delivered without the copy
@@ -1319,7 +1319,7 @@ def _recorded_prompt(req) -> Optional[str]:
         return None
     try:
         from openprogram.runtime.context import Context
-        from openprogram.runtime.context.system_prompt_node import latest_recorded_prompt
+        from openprogram.runtime.context.prompt_assembly.system_prompt_node import latest_recorded_prompt
         return latest_recorded_prompt(Context.turn_store(req.session_id), req.session_id,
                                       getattr(req, "user_msg_id", None) or None)
     except Exception:  # noqa: BLE001 - no record: the checkpoint keeps the text
@@ -1343,7 +1343,7 @@ def prompt_by_reference(snapshot: dict, req, recorded: dict) -> dict:
         recorded["text"] = _recorded_prompt(req)
     if recorded["text"] != text:
         return snapshot
-    from openprogram.runtime.execution.runtime_contract import system_prompt_sha256
+    from openprogram.runtime.execution.admission_input.runtime_contract import system_prompt_sha256
     kept = {key: value for key, value in snapshot.items() if key != "system_prompt"}
     kept["system_prompt_sha256"] = system_prompt_sha256(text)
     return kept
@@ -1357,7 +1357,7 @@ def saved_prompt(saved: Mapping, req) -> str:
     if isinstance(text, str):
         return text
     digest = saved.get("system_prompt_sha256")
-    from openprogram.runtime.execution.runtime_contract import system_prompt_sha256
+    from openprogram.runtime.execution.admission_input.runtime_contract import system_prompt_sha256
     recorded = _recorded_prompt(req)
     if not isinstance(digest, str) or recorded is None or system_prompt_sha256(recorded) != digest:
         raise ValueError("Agent checkpoint system prompt no longer matches the conversation's record")
@@ -1652,7 +1652,7 @@ def _raise_provider_error(msg) -> None:
     # LLMError so the dispatcher's exception path
     # renders the red error bubble with taxonomy,
     # same as a synchronously-raised failure.
-    from openprogram.models.providers.utils.errors import (
+    from openprogram.models.providers.utils.failures.errors import (
         ErrorReason, LLMError,
     )
     _reason_val = getattr(msg, "error_reason", None)
@@ -1722,7 +1722,7 @@ def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out
             "usage": usage,
         }
         if model is not None and getattr(model, "provider", None) and getattr(model, "id", None):
-            from openprogram.runtime.context.tokens import known_context_window
+            from openprogram.runtime.context.token_accounting.tokens import known_context_window
             report["model"] = f"{model.provider}/{model.id}"
             report["context_window"] = known_context_window(model)
         on_event({"type": "chat_response", "data": report})
@@ -1754,7 +1754,7 @@ def _append_response_blocks(msg, tally: _TurnTally, ordered_blocks_out: list[dic
     try:
         # The first card of each provider response says so: a later
         # render sends this response back as the one message it was
-        # (context/render.py), its calls together and its text before them.
+        # (context/session_dag/render.py), its calls together and its text before them.
         round_start = True
         for blk in getattr(msg, "content", None) or []:
             ordered = _ordered_block_from_content(blk)
@@ -1791,7 +1791,7 @@ def _keep_stopped_response(tally: _TurnTally, ordered_blocks_out: list[dict] | N
     while streaming keeps the text that was sent on (``tally.forwarded``)
     as one last unsigned response (``partial``); its reasoning is shown but
     never sent (an unsigned thinking block is left out of a request,
-    ``context.render``) and a call whose arguments had not all arrived is
+    ``context.session_dag.render``) and a call whose arguments had not all arrived is
     dropped. The kept text joins the turn's text, so the reply's content,
     its result frame and its blocks say the same.
     """
@@ -1881,6 +1881,16 @@ def _record_agent_event(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_
             if (getattr(_inner, "type", None) == "retry"
                     and getattr(_inner, "reason", None) in ("transport", "network_wait")):
                 tally.usage_total["provider_request_count"] += 1
+            # Another of the provider's credentials took over: the line the
+            # chat shows over the reply is kept with it
+            # (``persistence.persist_assistant`` stores ``credential_notices``).
+            _switch = getattr(_inner, "credential", None)
+            if (getattr(_inner, "type", None) == "retry" and getattr(_inner, "reason", None) == "credential"
+                    and isinstance(_switch, dict) and _switch.get("to")):
+                tally.usage_total.setdefault("credential_notices", []).append({
+                    "to": str(_switch["to"]), "from": str(_switch.get("from") or ""),
+                    **({"cause": str(_switch["cause"])} if _switch.get("cause") else {}),
+                })
         if ev.type in ("message_start", "message_update", "message_end"):
             _msg = getattr(ev, "message", None)
             if getattr(_msg, "role", None) == "assistant":
@@ -1998,7 +2008,7 @@ def run_loop_blocking(
     # function is invoked without those bindings (tests and older callers).
     _worktree_token = None
     if continuation is not None:
-        from openprogram.runtime.conversation.workdir import runtime_location_for
+        from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
         from openprogram.state.worktree.context import reset_worktree, set_worktree
         _worktree_token = set_worktree(
             runtime_location_for(
@@ -2113,8 +2123,8 @@ async def _finish_turn_loop(left_by_turn: "set[asyncio.Task] | frozenset" = froz
     two rounds in a row find nothing. All of it shares one bound; what is
     still running when it is spent is cancelled and named in a warning.
     """
-    from openprogram.models.providers.utils.event_stream import settle_unwinding
-    from openprogram.models.providers.utils.http_client import aclose_current_loop_clients
+    from openprogram.models.providers.utils.streams.event_stream import settle_unwinding
+    from openprogram.models.providers.utils.http_transport.http_client import aclose_current_loop_clients
 
     loop = asyncio.get_running_loop()
     for step in (settle_unwinding, aclose_current_loop_clients):

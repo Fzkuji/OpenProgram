@@ -34,6 +34,10 @@ VERSION_CONTROL_DIRS = (".git",)
 
 TEMPORARY_PREFIX = "scriptorium-"  # historical value; see RUNTIME_DIR above
 
+#: More notes than this directly in one directory of ``topics/`` is a flat
+#: run: each thing in it gets a folder of its own (``management.filing``).
+FLAT_RUN_LIMIT = 8
+
 
 def is_runtime_name(name: str) -> bool:
     """True for the runtime directory and anything it stages beside itself."""

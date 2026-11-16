@@ -595,7 +595,7 @@ def _conversation_settings(session_id: str, branch_id: str | None = None) -> tup
     the person selected), else the selected one. Resolved through the one
     resolver, so an unset value falls back to the project, then the
     product default, as on every other entry."""
-    from openprogram.runtime.conversation.session_config import resolve_branch_settings
+    from openprogram.runtime.conversation.session_settings.session_config import resolve_branch_settings
     from openprogram.state.store.session.branch_config import BranchConfigConflict
     try:
         values = resolve_branch_settings(session_id, branch_id).values
@@ -961,7 +961,7 @@ def _spawn(entry: dict[str, Any], log_dir: str, event: dict[str, Any] | None = N
                 _record_run(entry, spec, task_runs.SKIPPED, "the previous run had not finished")
                 return PREVIOUS_RUN_ACTIVE
             from openprogram.runtime.conversation.process_runner import _link_registration_modules
-            from openprogram.state.store.session.session_log import is_main_writer
+            from openprogram.state.store.session.files.session_log import is_main_writer
             notices = multiprocessing.Queue()
             answers = multiprocessing.Queue()
             window_id = _browser_window() if spec["job_authority"].get("authority_tier") == "owner" else ""

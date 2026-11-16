@@ -29,12 +29,12 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 <table class="stack">
 <thead><tr><th scope="col">Button</th><th scope="col">Click</th><th scope="col">Extra</th></tr></thead>
 <tbody>
-<tr><th scope="row">Red</th><td>Closes the tab through the strip's close, saving open files first</td><td>No menu</td></tr>
-<tr><th scope="row">Yellow</th><td>Folds the pane back into the strip; the session stays</td><td>No menu</td></tr>
+<tr><th scope="row">Red</th><td>Closes the tab through the strip's close</td><td>No menu</td></tr>
+<tr><th scope="row">Yellow</th><td>Puts the pane back in the strip as its own tab; the session stays</td><td>No menu</td></tr>
 <tr><th scope="row">Green</th><td>Opens the tab on its own</td><td>Rest 250ms: attached tiling menu, folds when the pointer leaves. <kbd>↓</kbd> on green or right-click on the grip: pinned menu.</td></tr>
 </tbody>
 </table>
-<p class="note">A press on a button that moves 6px becomes a drag and never clicks; pointer capture starts only with the drag. A closed pane's space goes to its neighbour.</p>
+<p class="note">A press on a button that moves 6px becomes a drag and never clicks; pointer capture starts only with the drag. A closed pane is gone in the click's frame and its neighbour takes the space at once (<a href="#closing">Closing</a>).</p>
 <details>
 <summary>Grip motion</summary>
 <table class="stack fixed">
@@ -92,7 +92,7 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 
 <h2 id="split-tab">The split in the strip</h2>
 <p>A split window is one tab, as wide as any other, like Chrome's and Arc's split views: the focused pane's icon and title, a miniature of the split with that pane filled, and the pane count. Its close acts on the whole window.</p>
-<p>A pane closed from a split that stays is removed in the same tick as the click and the canvas plays the close. When focus changes or a merge just formed the split, icon and name rise in over 200ms.</p>
+<p>A pane closed from a split that stays is removed in the same tick as the click. When focus changes or a merge just formed the split, icon and name rise in over 200ms.</p>
 
 <h2 id="overview">Window overview</h2>
 <p>Modelled on Mission Control and the iPad app switcher. The center area recedes to the page colour and every window in the strip becomes a card on a grid, as large as fits, never wider than half the area.</p>
@@ -208,16 +208,13 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 </details>
 
 <h2 id="layout-animation">Layout animation</h2>
-<p>Changes from window buttons, tiling menu, Fill and Return to previous layout animate as macOS moves windows (<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>). Reduce Motion skips it; divider drags do not animate.</p>
+<p>Rearranging animates as macOS moves windows: green, the tiling menu, Fill, Return to previous layout and a drop (<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>). Reduce Motion skips it; divider drags and closing do not animate.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Pane</th><th scope="col">Animation</th></tr></thead>
 <tbody>
 <tr><th scope="row">Stays</th><td>Real geometry (<code translate="no">left</code>, <code translate="no">top</code>, <code translate="no">width</code>, <code translate="no">height</code>) through Web Animations, 300ms, so text re-wraps; inline <code translate="no">calc()</code> untouched</td></tr>
 <tr><th scope="row">Arrives</th><td>Fades in</td></tr>
-<tr><th scope="row">Red</th><td>Copy fades and sinks, 180ms, over the panes taking its space. A close held by a save prompt plays when the tab is really gone.</td></tr>
-<tr><th scope="row">Yellow</th><td>Genie into its tab, 600ms</td></tr>
-<tr><th scope="row">Yellow, no tab above</th><td>Copy shrinks toward the tab, 340ms</td></tr>
-<tr><th scope="row">Green, Fill</th><td>A hidden pane fades under the one growing over it</td></tr>
+<tr><th scope="row">Hidden</th><td>A pane that green, Fill or an arrangement with fewer panes hides fades under the one growing over it</td></tr>
 </tbody>
 </table>
 <details>
@@ -229,13 +226,32 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 <tr><th scope="row">Matching</th><td>By tab id, so a session moving from peer pane to lone chat shell still animates. The hidden shell switches to the remaining session in the layout's tick, not renders later.</td></tr>
 <tr><th scope="row">Transcripts</th><td>Fade in only when rows arrive after a switch; a message row's appear animation runs only within a second of arrival, so remounts show as they are</td></tr>
 <tr><th scope="row">During the move</th><td>Counts as dragging: web panes show snapshots, chats re-wrap rows in view only; frames and dividers fade out and back</td></tr>
-<tr><th scope="row">Genie</th><td>The shell takes a full-resolution still (<code translate="no">captureRegion</code> with <code translate="no">full</code>; waits at most 160ms). Each frame draws it on one canvas in 2px rows, stretched between the funnel's edges, neck at the tab's bottom edge. The edge nearest the tab pinches first, then the pane pours through and clips at the neck. The tab button lights once; panes taking the space start 90ms later.</td></tr>
-<tr><th scope="row">Genie, plain browser</th><td>Copies cut into 6 to 20 bands (fewer when heavy), each mapped to a quad with <code translate="no">matrix3d</code></td></tr>
-<tr><th scope="row">Leaving a split</th><td>The new tab button slides out of the tab it left while later tabs slide over (260ms, transform and opacity only); the fold, aimed at the button's end position, starts 80ms later</td></tr>
-<tr><th scope="row">Fold clock</th><td>At most 34ms a frame: a busy main thread pauses it instead of skipping</td></tr>
 </tbody>
 </table>
 </details>
+
+<h2 id="closing">Closing</h2>
+<p>Red, yellow and <kbd>⌘W</kbd> close like a window: the pane leaves the layout in the click's frame and its neighbours take the room at once, with nothing animated, captured or frozen. Teardown runs after the frame that shows the result.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Layout</th><td>One store commit removes the pane; the neighbour is laid out once at its new size</td></tr>
+<tr><th scope="row">Web panes</th><td>Keep their live views: no snapshot and no hide-and-show of the native view. The closed tab's view is destroyed after the commit (<code translate="no">destroyStaleWebViews</code>).</td></tr>
+<tr><th scope="row">Files</th><td>A document with unsaved edits, a native editor that may still hold input, or a document whose state is not loaded yet, is saved before its tab goes, and a failed save keeps the tab. Any other document is released (drafts flushed, editor closed) after the tab has gone; a failure there shows a toast. The same file opened again while that release runs gets a fresh document, which the release never closes.</td></tr>
+<tr><th scope="row">Programs</th><td>The application's close request is sent without waiting for it</td></tr>
+<tr><th scope="row">Chat beside it</th><td>Moves from its peer pane to the chat shell, which draws its rows once</td></tr>
+</tbody>
+</table>
+<p class="note">Why no close animation: an animated close re-lays out the growing pane every frame for 300ms and freezes web panes to snapshots; yellow first waits up to 160ms for a full-resolution still, then folds for 600ms.</p>
+<table class="stack">
+<thead><tr><th scope="col">Measured, beside a chat</th><th scope="col">Animated close</th><th scope="col">Instant close</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pane gone, normal CPU</th><td>17 to 43ms</td><td>16ms</td></tr>
+<tr><th scope="row">Finished, normal CPU</th><td>0.33s; yellow 0.7s</td><td>16ms</td></tr>
+<tr><th scope="row">Finished, CPU 4× slower</th><td>0.5 to 0.6s; yellow 1.2 to 1.5s</td><td>about 70ms</td></tr>
+<tr><th scope="row">Long tasks, CPU 4× slower</th><td>0.6 to 1.1s</td><td>0.25s</td></tr>
+</tbody>
+</table>
 
 <h2 id="drag-lifecycle">Drag lifecycle</h2>
 <p>The canvas will host many small app windows, so every drag ends cleanly and leaves other panes alone.</p>

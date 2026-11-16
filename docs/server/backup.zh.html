@@ -28,7 +28,7 @@
 <tr><th scope="row"><code translate="no">channels/</code>、<code translate="no">bindings.json</code></th><td>Channel 账户和会话绑定</td></tr>
 <tr><th scope="row"><code translate="no">skills/</code>、<code translate="no">skills.json</code>、<code translate="no">plugins/</code>、<code translate="no">marketplaces.json</code></th><td>Skill 和插件</td></tr>
 <tr><th scope="row"><code translate="no">mcp_servers.json</code>、<code translate="no">models/</code>、<code translate="no">commands/</code></th><td>MCP 服务器、模型覆盖、自定义命令</td></tr>
-<tr><th scope="row"><code translate="no">owner.json</code>、<code translate="no">profiles/</code>、<code translate="no">worktrees.json</code>、<code translate="no">usage.db</code></th><td>所有权、账户元数据、worktree、用量历史</td></tr>
+<tr><th scope="row"><code translate="no">owner.json</code>、<code translate="no">worktrees.json</code>、<code translate="no">usage.db</code></th><td>所有权、worktree、用量历史</td></tr>
 <tr><th scope="row"><code translate="no">programs/</code>、<code translate="no">workflow_archives/</code>、<code translate="no">recordings/</code></th><td>已安装和你自己的程序、归档的 Workflow、录制的演示</td></tr>
 <tr><th scope="row"><code translate="no">scheduler/</code>、<code translate="no">always_on/</code>、<code translate="no">memory-spaces/</code></th><td>定时任务、常驻 Agent、按 Agent 保存的记忆</td></tr>
 <tr><th scope="row"><code translate="no">meetings/</code>、<code translate="no">project-file-history/</code>、<code translate="no">imports/</code></th><td>会议、文档的历史版本、已导入的外部会话</td></tr>
@@ -42,7 +42,7 @@
 <li><code translate="no">cache/</code>、<code translate="no">tool_results/</code>、<code translate="no">browser-states/</code>、<code translate="no">chrome-profile/</code>、<code translate="no">trash/</code>、<code translate="no">shadow-git/</code>、<code translate="no">logs/</code></li>
 <li><code translate="no">*.log</code>、<code translate="no">*.lock</code>、<code translate="no">*.pid</code>、<code translate="no">*.port</code>、<code translate="no">*.sock</code>、状态文件的恢复副本、Web token</li>
 <li>凭据写入的临时文件，如 <code translate="no">.env.tmp</code> 和 <code translate="no">*.json.tmp</code></li>
-<li>凭据账户的 <code translate="no">profiles/*/home/</code> 目录树；只有 <code translate="no">metadata.json</code> 和已登记的 <code translate="no">.env</code>、AuthStore 路径可以进入</li>
+<li><code translate="no">profiles/</code>：旧的按账户登录用过的文件夹，现在没有地方读它</li>
 <li>任何位置的 <code translate="no">node_modules/</code>；符号链接被跳过，不跟随</li>
 </ul>
 </details>

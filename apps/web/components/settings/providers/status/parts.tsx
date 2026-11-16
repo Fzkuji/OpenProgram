@@ -8,10 +8,12 @@
 import type { ReactNode } from "react";
 import { CircleDashed, ExternalLink } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
-import type { FixWire, HealthWire, ProviderStatus } from "@/lib/settings/provider-status.generated";
+import type { FixAction, FixWire, HealthWire, ProviderStatus } from "@/lib/settings/provider-status.generated";
 
 import {
   chipTone,
@@ -26,24 +28,24 @@ import styles from "./status.module.css";
 
 const cx = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(" ");
 
+const BADGE_OF = { ok: "success", warn: "warning", bad: "destructive", muted: "secondary" } as const;
+
+/** A provider's or a key's health as a status Badge: a dot for a state
+ *  that answers (ready, limited, refused), none for one not set up. */
 export function HealthChip({ health, label }: { health: Pick<HealthWire, "state" | "until" | "detail">; label?: string }) {
   const { text } = useTranslation();
   const tone = chipTone(health.state);
   const chip = (
-    <span className={cx(styles.chip, styles[tone])} data-state={health.state}>
-      <span className={styles.chipDot} aria-hidden="true" />
-      <span>{label ?? healthLabel(health, text)}</span>
-    </span>
+    <Badge variant={BADGE_OF[tone]} dot={tone !== "muted"} data-state={health.state} className="max-w-full">
+      <span className="min-w-0 truncate">{label ?? healthLabel(health, text)}</span>
+    </Badge>
   );
   return health.detail ? <HoverTip label={health.detail}>{chip}</HoverTip> : chip;
 }
 
-export function Bar({ left, tone }: { left: number; tone: Tone }) {
-  return (
-    <span className={cx(styles.bar, tone !== "normal" && styles[tone])} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(left * 100)}>
-      <span className={styles.barFill} style={{ width: `${Math.round(left * 100)}%` }} />
-    </span>
-  );
+/** A quota bar: the kit's Progress on what is left. */
+export function Bar({ left, tone, className }: { left: number; tone: Tone; className?: string }) {
+  return <Progress value={left * 100} tone={tone} className={className ?? "min-w-10 flex-1"} />;
 }
 
 /** "5h [bar] 62% left · 14:30" — Codex's row, counting what is left. */
@@ -69,15 +71,17 @@ export function NoData({ children }: { children: ReactNode }) {
   );
 }
 
-/** The inline fix of a state that needs action (design §2): sign in again,
- *  top up on the provider's billing page, replace the key, connect, or the
- *  local server's start instructions on the detail page. */
+/** The inline fix of a state that needs action (design §2): top up on the
+ *  provider's billing page, connect, or the provider's page opened on the
+ *  credential that needs it (sign in again, replace the key, top up without
+ *  a billing page, the local server's start instructions). Signing in again
+ *  renews that account's row; it never adds another. */
 export function FixButton({
   fix, onConnect, onOpen, size = "xs",
 }: {
   fix: FixWire;
   onConnect: () => void;
-  onOpen: () => void;
+  onOpen: (fix?: FixAction) => void;
   size?: "xs" | "sm";
 }) {
   const { text } = useTranslation();
@@ -92,7 +96,7 @@ export function FixButton({
         </Button>
       );
     }
-    return <Button variant="elevated" size={size} onClick={stop(onOpen)}>{text("Top up", "充值")}</Button>;
+    return <Button variant="elevated" size={size} onClick={stop(() => onOpen(fix.action))}>{text("Top up", "充值")}</Button>;
   }
   const label = {
     sign_in: text("Sign in again", "重新登录"),
@@ -100,19 +104,15 @@ export function FixButton({
     connect: text("Connect", "接入"),
     start_server: text("How to start", "如何启动"),
   }[fix.action];
-  // A rejected key is replaced in place on the provider's page (the keys
-  // panel opens on it); Add provider would store a second key beside it and
-  // leave the rejected one in use.
-  const toPage = fix.action === "start_server" || fix.action === "replace_key";
   return (
-    <Button variant="elevated" size={size} onClick={stop(toPage ? onOpen : onConnect)}>
+    <Button variant="elevated" size={size} onClick={stop(() => (fix.action === "connect" ? onConnect() : onOpen(fix.action)))}>
       {label}
     </Button>
   );
 }
 
-/** The quota block of a card (design §2): windows, a balance, rate-limit
- *  headroom or "No quota data", the fix of a state that needs one, and the
+/** The quota block of a card (design §2): windows, a balance or rate-limit
+ *  headroom (nothing when nothing was reported), the fix of a state that needs one, and the
  *  age of a snapshot older than 15 minutes. */
 export function QuotaBlock({
   p, now, onConnect, onOpen,
@@ -120,13 +120,14 @@ export function QuotaBlock({
   p: ProviderStatus;
   now: number;
   onConnect: () => void;
-  onOpen: () => void;
+  onOpen: (fix?: FixAction) => void;
 }) {
   const { text } = useTranslation();
   const q = quotaForm(p, now, text);
   const stale = !!p.quota?.stale;
   const fixAge = p.keys.map((k) => k.status_at ?? 0).reduce((a, b) => Math.max(a, b), 0);
-  const fix = p.fix ? (
+  // A provider with no credential yet: the card's own add button connects it.
+  const fix = p.fix && !(p.fix.action === "connect" && p.keys.length === 0) ? (
     <div className={`${styles.fixRow} flex items-center gap-[8px] min-w-0`}>
       <FixButton fix={p.fix} onConnect={onConnect} onOpen={onOpen} size={p.fix.action === "sign_in" ? "sm" : "xs"} />
       {fixAge ? <span className={cx(styles.xs, styles.muted)}>{fmtAgo(fixAge, now, text)}</span> : null}
@@ -148,13 +149,13 @@ export function QuotaBlock({
           <b>{q.amount}</b>
           <span className={cx(styles.xs, styles.muted)}>{text("balance", "余额")}</span>
         </div>
-        {q.runway && !p.fix ? <div className={cx(styles.xs, styles.secondary, styles.num)}>{q.runway}</div> : null}
+        {q.runway && !fix ? <div className={cx(styles.xs, styles.secondary, styles.num)}>{q.runway}</div> : null}
         {q.rows.map((row) => <QuotaRowView key={row.key} row={row} />)}
       </>
     );
-  } else if (!p.fix && p.billing !== "local") {
-    body = <NoData>{text("No quota data", "没有额度数据")}</NoData>;
   }
+  // Nothing reported yet: no block, so the card holds no empty band.
+  if (!body && !fix && !(stale && p.quota?.fetched_at) && !(p.quota?.read_error && !fix)) return null;
   return (
     <div className={cx(`${styles.quota} flex flex-col justify-center gap-[6px] min-h-[50px]`, stale && styles.stale, dimmed(p.health.state) && styles.dim)} data-form={q.form}>
       {body ? <div className={`${styles.quotaBody} flex flex-col gap-[6px]`}>{body}</div> : null}
@@ -162,7 +163,7 @@ export function QuotaBlock({
       {stale && p.quota?.fetched_at ? (
         <div className={cx(styles.xs, styles.muted)}>{text("Updated", "更新于")} {fmtAgo(p.quota.fetched_at, now, text)}</div>
       ) : null}
-      {p.quota?.read_error && !p.fix ? (
+      {p.quota?.read_error && !fix ? (
         <HoverTip label={p.quota.read_error}>
           <span className={cx(styles.xs, styles.muted)} tabIndex={0}>{text("Couldn't read the quota", "额度读取失败")}</span>
         </HoverTip>

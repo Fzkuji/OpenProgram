@@ -87,7 +87,7 @@ def _check_providers() -> tuple[bool, str, str]:
     if not pools:
         return False, "providers", (
             "0 configured — run `openprogram providers setup` or "
-            "`openprogram providers login <name>`"
+            "`openprogram providers keys <name> add`"
         )
 
     names_seen: list[str] = []
@@ -95,7 +95,7 @@ def _check_providers() -> tuple[bool, str, str]:
         # Pools with at least one credential count as "have something".
         if not p.credentials:
             continue
-        label = p.provider_id if p.account_id == "default" else f"{p.provider_id}/{p.account_id}"
+        label = p.provider_id
         if label not in names_seen:
             names_seen.append(label)
 

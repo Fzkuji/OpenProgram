@@ -2,12 +2,19 @@
 
 /**
  * Activity: what the conversation runs and keeps doing. Agents holds the
- * main agent, one per branch the reader made, with a red count for what
- * waits on the reader, and under it the roster of the helpers it started:
- * the ones still going, waiting on the reader or failed, then one fold for
- * the ones that finished (agent-roster.tsx). Programs and commands holds
- * the shell calls and background programs. Then what the conversation does
- * on its own: its open work and the Scheduler tasks set from it. Always-on
+ * main agent, one per branch the reader made (the checked-out one and the
+ * ones with something going, waiting or failed as rows, the ones at rest
+ * in one fold; branches the runtime or a schedule opened are none), with a
+ * red count for what waits on the reader, and under it the roster of the
+ * helpers it started: the ones still going, waiting on the reader or failed,
+ * then one fold for the ones that finished (agent-roster.tsx). A helper of a
+ * scheduled run that waits on the reader is listed there too. Then each
+ * scheduled task that runs a prompt, one row with its runs in short
+ * (task-row.tsx); its runs and their helpers are on its page, never rows of
+ * their own. Programs and commands holds
+ * the shell calls and background programs that are running now and the
+ * programs that failed; one that finished leaves the list. Then what the conversation does
+ * on its own: its open work and the reminders and commands scheduled from it. Always-on
  * is a setting of the conversation's Agent, not an agent of its own: the
  * main agent's row says when it wakes next. Above all of them, when there
  * are any, the reports from every always-on conversation still waiting for
@@ -20,10 +27,10 @@ import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { useExecutionDebugger } from "@/lib/execution/use-execution-debugger";
 import { useManagedProcesses } from "@/lib/execution/use-managed-processes";
-import { processIsActive, type ActiveToolCall, type AgentCall, type ManagedProcess } from "@/lib/net/execution/process-client";
+import { type ActiveToolCall, type AgentCall, type ManagedProcess } from "@/lib/net/execution/process-client";
 import { type ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { activityModel, agentBranches, pruneBranches, spawnedBy, startedAt, type ActivityIssue, type BranchRow } from "@/lib/execution/activity-model";
-import { toggleActivitySection, toggleAgentHelpers, useActivityView } from "@/lib/prefs/activity-view";
+import { toggleActivitySection, useActivityView } from "@/lib/prefs/activity-view";
 import { rosterCost, rosterListed, rosterLive, rosterStatus, rosterTotal, splitRoster, type RosterLook, type RosterStatus } from "@/lib/execution/agent-roster";
 import { canExecuteAction, newCommandId, buildExecutionCommand } from "@/lib/execution/execution-debugger";
 import { postExecutionCommand } from "@/lib/net/execution/execution-client";
@@ -41,24 +48,27 @@ import { SidebarNotice } from "../sidebar-notice";
 import { useConversationBranches } from "../use-conversation-branches";
 import { useSessionWorktrees } from "@/lib/worktrees/session-worktrees";
 import { branchWorktree, changedFiles, isOpen } from "@/lib/worktrees/worktree-model";
-import { useConversationWork, type OpenWorkItem, type Routine } from "@/lib/chat/conversation-work";
+import { isAgentTask, useConversationWork, type OpenWorkItem, type Routine } from "@/lib/chat/conversation-work";
 import { AgentAvatarById, useConversationAgentShape } from "@/components/agents/agent-avatar";
 import { goalStatusLabel, outcomeLabel, reportKindTag } from "@/components/agents/always-on-labels";
 import { copyText } from "@/lib/clipboard";
 import { openPendingItem, pendingInOrder, usePendingInbox, type PendingItem } from "@/lib/agents/pending-inbox";
 import { clock, ProgressBar, progressLook } from "./program-progress";
 import styles from "./running-panel.module.css";
-import { ActivityPage } from "./activity-page";
+import { ActivityPage } from "./pages/activity-page";
 import { usePageSlide } from "./use-page-slide";
-import type { ActivityPageTarget, ActivityPanelContext } from "./activity-page-types";
+import type { ActivityPageTarget, ActivityPanelContext } from "./pages/activity-page-types";
 import { Glyph, AgentGlyph, Status, Row, type Tone } from "./running-rows";
 import { FinishedRow, RosterRow, usageTip } from "./agent-roster";
 import { useAgentRoster } from "./use-agent-roster";
-import { LIVE, duration, when, callKind, executionTone, executionState, programTone, programTitle, commandLine, programStatus, programBarTone, routineSchedule, routineRunLabel } from "./running-format";
+import { TaskRow } from "./task-row";
+import { LIVE, duration, when, callKind, executionTone, executionState, programTone, programLive, programListed, programTitle, commandLine, programStatus, programBarTone, routineSchedule, routineRunLabel } from "./running-format";
 
-type View = { kind: "main" | "call" | "program" | "work" | "routine"; id: string };
+type View = { kind: "main" | "call" | "program" | "work" | "routine" | "task"; id: string };
 
 const PAGE = 20;
+/** How long the runs have to stay unreadable before Agents says so. */
+const FAILURE_AFTER_MS = 5000;
 /** Finished helpers listed when their fold opens, and with each "earlier". */
 const FINISHED_PAGE = 50;
 
@@ -69,6 +79,7 @@ function pageFor(view: View): ActivityPageTarget {
     case "program": return { kind: "program", processId: view.id };
     case "call": return { kind: "command", callId: view.id };
     case "routine": return { kind: "routine", taskId: view.id };
+    case "task": return { kind: "task", taskId: view.id };
     case "work": return { kind: "work", workId: view.id };
   }
 }
@@ -134,19 +145,18 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     leaveSlide();
   }, [resetSignal, leaveSlide]);
   useEffect(() => { setActionError(null); }, [page]);
-  const readFailed = processes.stale || (
-    state.connection.errorSessionId === sessionId && Boolean(state.connection.message)
-    && ["stale", "conflict"].includes(state.connection.state)
-  );
-  const hasRead = Boolean(state.fetchedAt) || processes.loaded;
-  const [readNotice, setReadNotice] = useState<{ sessionId: string | null; persistent: boolean } | null>(null);
+  // What was read draws, and a new read replaces it in place without a word.
+  // Only runs that could never be read, with nothing to show for them, say
+  // so: under Agents, with a retry, once the reads have kept failing a while.
+  const runsFailed = !state.fetchedAt && state.connection.state === "stale"
+    && state.connection.errorSessionId === sessionId && Boolean(state.connection.message);
+  const [runsFailure, setRunsFailure] = useState<string | null>(null);
   useEffect(() => {
-    setReadNotice(null);
-    if (!active || !readFailed) return;
-    const retry = setTimeout(() => setReadNotice({ sessionId, persistent: false }), 5000);
-    const persistent = setTimeout(() => setReadNotice({ sessionId, persistent: true }), 30000);
-    return () => { clearTimeout(retry); clearTimeout(persistent); };
-  }, [active, sessionId, readFailed]);
+    setRunsFailure(null);
+    if (!active || !runsFailed) return;
+    const shown = setTimeout(() => setRunsFailure(sessionId), FAILURE_AFTER_MS);
+    return () => clearTimeout(shown);
+  }, [active, sessionId, runsFailed]);
 
   if (!sessionId) return <SidebarNotice>{text("Select or start a conversation to view what it runs.", "选择或开始一个会话，查看它运行的内容。")}</SidebarNotice>;
 
@@ -168,7 +178,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const mainName = text("Main agent", "主代理");
   /** Executions a branch runs itself: the agent (null: the main
    *  conversation) and the executions under it that no deeper agent owns. */
-  const ownedBy = (owner: string | null) => new Set(executions.filter(item => branches.ownerOf(item) === owner).map(item => item.execution_id));
+  const ownedBy = (owner: string | null) => new Set(executions.filter(item => branches.ownerOf(item) === owner && !taskOf(item)).map(item => item.execution_id));
   /** The sub-agent an `agent` call started, when it is listed: the one its
    *  transcript row was paired with, else the job that began right after it. */
   const agentOf = (entry: ActiveToolCall) => {
@@ -198,7 +208,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   };
   const activeIn = (ids: Set<string>) => executions.some(entry => ids.has(entry.execution_id) && LIVE.includes(entry.status))
     || calls.some(entry => ids.has(entry.execution_id) && entry.status === "running")
-    || processes.items.some(entry => entry.execution_id && ids.has(entry.execution_id) && processIsActive(entry));
+    || processes.items.some(entry => entry.execution_id && ids.has(entry.execution_id) && programLive(entry));
   /** Calls that started no sub-agent, made by this branch (null: the main agent). */
   const failedSpawns = (owner: string | null) => spawns.filter(item => !item.job_id && (item.owner_job_id ?? null) === owner
     && (owner === null || executions.some(entry => entry.execution_id === owner)));
@@ -208,6 +218,8 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   // each branch the reader made is a main agent of its own, holding the
   // runs on that branch; calls and programs whose execution is not listed,
   // and calls that started no sub-agent, count as the checked-out branch's.
+  // A branch the runtime opened is not the reader's: it gets no row, and
+  // its runs count as the checked-out branch's.
   const memberships = new Map((state.branches || []).filter(entry => entry.session_id === sessionId)
     .map(entry => [entry.head_msg_id, new Set(entry.execution_ids)]));
   const rootOf = (item: ExecutionSnapshot): ExecutionSnapshot => {
@@ -221,20 +233,27 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
       top = next;
     }
   };
+  /** The scheduled task a run belongs to: its top-level run's. Its runs are
+   *  the task's, listed on its page, not the main agent's. */
+  const taskOf = (item: ExecutionSnapshot): string | null => rootOf(item).scheduled_task_id ?? null;
   type Scope = { key: string; branchId?: string; head: string | null; name: string; active: boolean; color: string | null; updatedAt: number | null; members: Set<string> | null };
-  const scopes: Scope[] = conversationBranches.length > 1
-    ? conversationBranches.map(branch => ({ key: branch.branchId || branch.head, branchId: branch.branchId, head: branch.head, active: branch.active, color: branch.color, updatedAt: branch.updatedAt,
-      name: branch.name || text("Unnamed branch", "未命名分支"), members: memberships.get(branch.head) ?? new Set<string>() }))
+  const readerBranches = conversationBranches.filter(branch => !branch.runtimeStarted);
+  const runtimeRuns = conversationBranches.filter(branch => branch.runtimeStarted).flatMap(branch => [...(memberships.get(branch.head) ?? [])]);
+  const scopes: Scope[] = readerBranches.length > 1
+    ? readerBranches.map(branch => ({ key: branch.branchId || branch.head, branchId: branch.branchId, head: branch.head, active: branch.active, color: branch.color, updatedAt: branch.updatedAt,
+      name: branch.name || text("Unnamed branch", "未命名分支"), members: new Set([...(memberships.get(branch.head) ?? []), ...(branch.active ? runtimeRuns : [])]) }))
     : [{ key: "main", head: null, name: mainName, active: true, color: null, updatedAt: conversationUpdatedAt, members: null }];
   const inScope = (scope: Scope, item: ExecutionSnapshot) => !scope.members || scope.members.has(rootOf(item).execution_id);
-  const fullTree = branches.tree<AgentCall>(owner => failedSpawns(owner).map(leaf => ({ at: leaf.at, leaf })));
+  // A scheduled run's helper is the task's, unless it waits on the reader.
+  const fullTree = pruneBranches(branches.tree<AgentCall>(owner => failedSpawns(owner).map(leaf => ({ at: leaf.at, leaf }))),
+    row => row.kind === "leaf" || !taskOf(row.item) || issuesOf(row.item).length > 0);
   /** What one main agent holds: its runs, what it is doing, what waits on the reader, its sub-agents. */
   function scopeFacts(scope: Scope) {
     const ids = new Set([...ownedBy(null)].filter(id => inScope(scope, execution(id)!)));
     const runs = executions.filter(item => ids.has(item.execution_id) && !branches.parentOf(item)).sort((a, b) => startedAt(b) - startedAt(a));
     const unlisted = (id: string | null | undefined) => scope.active && (!id || !execution(id));
     const running = calls.filter(entry => entry.status === "running" && (ids.has(entry.execution_id) || unlisted(entry.execution_id)));
-    const programs = processes.items.filter(entry => processIsActive(entry) && entry.execution_id && ids.has(entry.execution_id));
+    const programs = processes.items.filter(entry => programLive(entry) && entry.execution_id && ids.has(entry.execution_id));
     const live = executions.some(entry => ids.has(entry.execution_id) && LIVE.includes(entry.status)) || running.length > 0 || programs.length > 0;
     const issues = waits.filter(issue => ids.has(issue.execution.execution_id));
     const tree = scope.members ? pruneBranches(fullTree, row => row.kind === "agent" ? inScope(scope, row.item) : scope.active) : fullTree;
@@ -325,8 +344,9 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     return {
       shown, finished, outgoing, stoppable,
       live: entries.filter(entry => rosterLive(entry.status)).length,
-      // A helper's cost already holds the helpers under it.
-      cost: rosterTotal(entries.filter(entry => entry.depth === 1).map(entry => rosterCost(factsOf(entry.row)))),
+      // A helper's cost already holds the helpers under it; a scheduled
+      // run's helper is in its task's cost.
+      cost: rosterTotal(entries.filter(entry => entry.depth === 1 && !(entry.row.kind === "agent" && taskOf(entry.row.item))).map(entry => rosterCost(factsOf(entry.row)))),
     };
   }
   /** Stop every helper that is still going. */
@@ -341,7 +361,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
 
   // ---- rows ----------------------------------------------------------------
   /** A main agent's row: its branch's colour and a tag on the checked-out
-   *  one, then its roster. Left and Right fold and unfold the roster. */
+   *  one, one chevron that opens its page, then its roster. */
   function scopeRow(scope: Scope, facts: ScopeFacts, list: ReturnType<typeof rosterOf>): ReactNode {
     // What waits for the reader is the red count on the glyph, its own
     // and its sub-agents'; the line keeps what it is doing or its time.
@@ -349,11 +369,6 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     const look = facts.issues.length ? scopeStatus({ ...facts, issues: [] }, scope) : scopeStatus(facts, scope);
     const foldKey = `${sessionId}:${scope.key}`;
     const hasRoster = facts.tree.length > 0 || list.outgoing.length > 0;
-    const folded = hasRoster && listView.foldedAgents.includes(foldKey);
-    // Folded, the row says how many helpers are still going under it.
-    const subs = !folded || !facts.tree.length ? ""
-      : list.live ? text(`${list.live} active sub-agent${list.live === 1 ? "" : "s"}`, `${list.live} 个子代理进行中`)
-        : text(`${facts.tree.length} sub-agent${facts.tree.length === 1 ? "" : "s"}`, `${facts.tree.length} 个子代理`);
     const currentTag = scope.head && scope.active ? <span className={styles.current}>{text("Current", "当前")}</span> : null;
     const tree = branchWorktree(worktrees.rows, scope.branchId ?? (scope.active ? selectedBranchId : null));
     const isolated = tree && isOpen(tree) ? tree : null;
@@ -361,11 +376,13 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     const isolatedFiles = isolated ? changedFiles(isolated) : 0;
     const worktreeNote = isolated ? text(`${isolatedFiles} ${isolatedFiles === 1 ? "file" : "files"} in worktree`, `worktree 中 ${isolatedFiles} 个文件`) : "";
     // Always-on belongs to the checked-out branch: check-ins start from it.
+    // At rest its next wake is the row's line; busy, it goes under it.
     const always = alwaysOn && scope.active ? alwaysStatus() : null;
-    /** Fold from a row inside the roster: the focus goes to the agent's row. */
+    const alwaysLine = always ? `${text("Always-on", "常驻")} · ${always.label.charAt(0).toLowerCase()}${always.label.slice(1)}` : "";
+    const resting = look.tone === "muted";
+    /** Left on a row inside the roster: the focus goes to the agent's row. */
     const foldFromInside = () => {
       (document.activeElement as HTMLElement | null)?.closest("[data-agent-group]")?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
-      toggleAgentHelpers(foldKey);
     };
     const helperRow = (entry: RosterEntry, indent: number) => {
       const { row } = entry;
@@ -377,12 +394,11 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     const finishedCount = finishedShown[foldKey] ?? 0;
     return <div key={scope.key} data-agent-group="">
       <Row glyph={<AgentGlyph shape={mainShape} color={scope.color} />} title={scope.name} badge={current} count={waiting}
-        status={[look.label, subs, worktreeNote].filter(Boolean).join(" · ")} tone={look.tone === "warn" ? "muted" : look.tone}
-        extra={always && <Status tone={always.tone} dot={false}>{`${text("Always-on", "常驻")} · ${always.label}`}</Status>}
-        disclosure={hasRoster ? { open: !folded, onToggle: () => toggleAgentHelpers(foldKey),
-          label: folded ? text("Show its sub-agents", "展开它的子代理") : text("Hide its sub-agents", "收起它的子代理") } : undefined}
+        status={[resting && alwaysLine ? alwaysLine : look.label, worktreeNote].filter(Boolean).join(" · ")}
+        tone={resting && always ? always.tone : look.tone === "warn" ? "muted" : look.tone}
+        extra={always && !(resting && alwaysLine) && <Status tone={always.tone} dot={false}>{alwaysLine}</Status>}
         onOpen={() => open({ kind: "main", id: scope.key })} />
-      {hasRoster && !folded ? <div className="-mx-[8px] -my-[4px] max-h-[360px] overflow-y-auto px-[8px] py-[4px]" role="group" aria-label={text(`Sub-agents of ${scope.name}`, `${scope.name} 的子代理`)}>
+      {hasRoster ? <div className="-mx-[8px] -my-[4px] max-h-[360px] overflow-y-auto px-[8px] py-[4px]" role="group" aria-label={text(`Sub-agents of ${scope.name}`, `${scope.name} 的子代理`)}>
         {list.shown.map(entry => helperRow(entry, 16 * entry.depth))}
         {list.outgoing.map(send => <RosterRow key={`out:${send.job_id}`} outgoing name={send.to} indent={16} text={text} onFold={foldFromInside}
           status={send.status === "waiting" ? "waiting" : rosterStatus("run", { agent_status: send.status, queued: false, usage: null })}
@@ -422,16 +438,14 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   }
   function callRow(item: ActiveToolCall, withKind = true): ReactNode {
     const look = presentTool(item.name, undefined, text);
-    const phase = item.status === "running"
-      ? `${text("Running", "正在运行")} · ${duration(now - item.started_at, text)}`
-      : `${text("Interrupted", "已中断")} · ${when(item.started_at, text)}`;
+    const phase = `${text("Running", "正在运行")} · ${duration(now - item.started_at, text)}`;
     return <Row key={`call:${item.id}`} glyph={<Glyph name={look.icon} tone={look.tone} large />} title={item.description || item.name}
-      status={withKind ? `${callKind(item, text)} · ${phase}` : phase} tone={item.status === "running" ? "run" : "muted"}
+      status={withKind ? `${callKind(item, text)} · ${phase}` : phase} tone="run"
       onOpen={() => open({ kind: "call", id: item.id })} />;
   }
   function programRow(item: ManagedProcess): ReactNode {
     const look = progressLook(item.progress);
-    const active = processIsActive(item) && item.status !== "unknown";
+    const active = programLive(item);
     // A running program always shows a bar (sweeping when the amount is
     // unknown); a finished one keeps its bar only if it reported progress.
     const bar = active || look?.fraction != null
@@ -445,7 +459,10 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   // ---- what the conversation does on its own ---------------------------------
   const alwaysOn = ongoing?.always_on.enabled ? ongoing.always_on : null;
   const openItems = (ongoing?.open_work ?? []).filter(item => item.status === "open");
-  const routines = ongoing?.routines ?? [];
+  // A task that runs a prompt is an agent with a row in Agents; reminders
+  // and commands stay under Scheduled tasks.
+  const agentTasks = (ongoing?.routines ?? []).filter(isAgentTask);
+  const routines = (ongoing?.routines ?? []).filter(task => !isAgentTask(task));
   /** The always-on row: what it is doing, else when it wakes next. */
   function alwaysStatus(): { label: string; tone: Tone } {
     if (!alwaysOn) return { label: "", tone: "muted" };
@@ -471,6 +488,10 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     return <Row key={`work:${item.id}`} glyph={<Glyph name="checklist" tone="plan" large />} title={item.text}
       status={[item.status === "done" ? text("Done", "已完成") : text("Open", "未完成"), when(item.updated_at, text)].join(" · ")}
       tone={item.status === "done" ? "ok" : "muted"} onOpen={() => open({ kind: "work", id: item.id })} />;
+  }
+  /** A scheduled task that runs a prompt: one row in Agents, its runs in short. */
+  function taskRow(task: Routine): ReactNode {
+    return <TaskRow key={`task:${task.id}`} task={task} text={text} onOpen={() => open({ kind: "task", id: task.id })} />;
   }
   function routineRow(task: Routine): ReactNode {
     return <Row key={`routine:${task.id}`} glyph={<Glyph name={task.type === "webhook" ? "link" : "calendar"} tone="plan" large />}
@@ -541,14 +562,16 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   // Every conversation has its main agent, so its row is always there; its
   // page reads the runs from the transcript, with or without execution
   // records. Programs and commands lists what they run in a shell.
-  // Shell work: running and interrupted calls that are not sub-agents, and
-  // background programs, live first, then the rest, newest first.
-  const shellCalls = calls.filter(entry => presentTool(entry.name, undefined, text).tone !== "agent" && !agentOf(entry)
-    && (entry.status === "running" || model.issues.some(issue => issue.kind === "call" && issue.call.id === entry.id)));
+  // Shell work, as the roster lists helpers: the running calls that are
+  // not sub-agents and the background programs that are going, then the
+  // programs that failed, newest first. What finished is not listed; the
+  // chat keeps every command.
+  const shellCalls = calls.filter(entry => entry.status === "running"
+    && presentTool(entry.name, undefined, text).tone !== "agent" && !agentOf(entry));
   const rank = (tone: Tone) => tone === "run" ? 0 : tone === "warn" ? 1 : 2;
   const work = [
-    ...shellCalls.map(entry => ({ tone: (entry.status === "running" ? "run" : "muted") as Tone, at: entry.started_at, node: callRow(entry) })),
-    ...processes.items.map(entry => ({ tone: programTone(entry), at: entry.started_at, node: programRow(entry) })),
+    ...shellCalls.map(entry => ({ tone: "run" as Tone, at: entry.started_at, node: callRow(entry) })),
+    ...processes.items.filter(programListed).map(entry => ({ tone: programTone(entry), at: entry.started_at, node: programRow(entry) })),
   ].sort((a, b) => rank(a.tone) - rank(b.tone) || b.at - a.at);
   /** One overview group: its header folds the rows under it. Until its
    *  data is read it stays folded and does not open. */
@@ -562,24 +585,45 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   };
   // Agents is always listed; every other group, header included, appears
   // only when it has something in it.
-  const agentsReady = Boolean(state.fetchedAt);
-  const programsReady = agentsReady && processes.loaded;
+  // Before the first read the checked-out branch's main agent is listed on
+  // its own, resting at the conversation's last activity; the read adds
+  // the rest in place.
+  const agentsRead = Boolean(state.fetchedAt);
+  const programsReady = agentsRead && processes.loaded;
   const scheduledReady = ongoing != null;
   // Each agent with its roster; the group's header adds the rosters up.
-  const agentRows = scopes.map(scope => { const facts = scopeFacts(scope); return { scope, facts, list: rosterOf(scope, facts) }; });
-  const agentsCost = rosterTotal(agentRows.map(entry => entry.list.cost));
+  const agentRows = scopes.filter(scope => agentsRead || scope.active)
+    .map(scope => { const facts = scopeFacts(scope); return { scope, facts, list: rosterOf(scope, facts) }; });
+  // A branch has its own row while it is the checked-out one or has
+  // something going, waiting on the reader or failed, itself or a helper;
+  // the branches at rest share one fold, opened in place.
+  const ownRow = (entry: typeof agentRows[number]) => entry.scope.active || entry.facts.live || entry.facts.issues.length > 0
+    || entry.list.shown.length > 0 || entry.list.outgoing.length > 0 || entry.facts.latestRun?.status === "failed";
+  const restingBranches = agentRows.filter(entry => !ownRow(entry));
+  const restKey = `${sessionId}:branches`;
+  const restOpen = (finishedShown[restKey] ?? 0) > 0;
+  // What the helpers listed and the scheduled tasks' runs cost.
+  const agentsCost = rosterTotal([...agentRows.map(entry => entry.list.cost), ...agentTasks.map(task => task.summary?.cost ?? null)]);
   const stoppable = [...new Map(agentRows.flatMap(entry => entry.list.stoppable).map(item => [item.execution_id, item])).values()];
   return <>{overviewShown ? <section ref={slide.under} className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")} inert={Boolean(page)}>
-    {readFailed && readNotice?.sessionId === sessionId && (hasRead || readNotice.persistent) && <p role="status" className={`${styles.notice} ${readNotice.persistent && !hasRead ? styles.error : ""}`}>{hasRead
-      ? text("Updating status… Showing saved records.", "正在更新状态，当前显示上次记录。")
-      : text("Activity is still unavailable. Retrying automatically.", "运行记录暂时无法读取，正在自动重试。")}</p>}
     <div ref={levelOneScroll} className={`${styles.scroll} min-h-0 overflow-y-auto p-[0_8px_16px]`}>
       {pendingInbox.items.length > 0 && section("pending",
         text(`Waiting for you · ${pendingInbox.items.length}`, `等你处理 · ${pendingInbox.items.length}`),
         pendingInOrder(pendingInbox.items).map(pendingRow))}
       {section("agents",
         agentsCost !== null ? <>{text("Agents", "Agents")}<span className={styles.sum}>{` · ${fmtUsd(agentsCost)}`}</span></> : text("Agents", "Agents"),
-        agentRows.map(entry => scopeRow(entry.scope, entry.facts, entry.list)), agentsReady,
+        <>
+          {agentRows.filter(ownRow).map(entry => scopeRow(entry.scope, entry.facts, entry.list))}
+          {agentTasks.map(taskRow)}
+          {restingBranches.length > 0 ? <FinishedRow count={restingBranches.length} open={restOpen} indent={0} text={text}
+            label={text(`${restingBranches.length} other branch${restingBranches.length === 1 ? "" : "es"}`, `${restingBranches.length} 个其他分支`)}
+            onToggle={() => setFinishedShown(current => ({ ...current, [restKey]: current[restKey] ? 0 : FINISHED_PAGE }))} /> : null}
+          {restOpen ? restingBranches.map(entry => scopeRow(entry.scope, entry.facts, entry.list)) : null}
+          {runsFailed && runsFailure === sessionId ? <p role="alert" className={styles.error}>
+            {text("Could not read this conversation's runs.", "读不到这个会话的运行记录。")}{" "}
+            <Button type="button" variant="link" size="xs" onClick={() => void state.refresh()}>{text("Retry", "重试")}</Button>
+          </p> : null}
+        </>, true,
         stoppable.length > 0 ? <HoverTip label={text("Stops every running sub-agent", "停止所有正在运行的子代理")}>
           <Button type="button" variant="ghost" size="xs" disabled={stopping || state.connection.state !== "connected"} onClick={() => void stopAll(stoppable)}>{text("Stop all", "全部停止")}</Button>
         </HoverTip> : null)}

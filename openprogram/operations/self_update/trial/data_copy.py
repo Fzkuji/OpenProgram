@@ -257,7 +257,7 @@ def _last_change(chat: Path) -> float:
 
 
 def _has_session_log(chat: Path) -> bool:
-    from openprogram.state.store.session.placement import session_looks_present
+    from openprogram.state.store.session.files.placement import session_looks_present
 
     return session_looks_present(chat)
 
@@ -312,7 +312,7 @@ def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
 def _open_row_endings(now: float) -> tuple:
     """Every logged run row that can be unfinished: (table, count, column, finished values, what ends it)."""
     from openprogram.runtime.execution.attempts import AttemptStatus
-    from openprogram.runtime.execution.effects import TERMINAL_EFFECT_STATUSES
+    from openprogram.runtime.execution.recovery.effects import TERMINAL_EFFECT_STATUSES
     from openprogram.runtime.execution.model import TERMINAL_COMMAND_STATUSES, TERMINAL_EXECUTION_STATUSES
     from openprogram.runtime.execution.waits import _TERMINAL_WAIT_STATUSES
     from openprogram.runtime.jobs.resource_governance.limits import _NO_TERMINAL_BLOCK
@@ -382,7 +382,7 @@ def _unsettled_restarts(rows) -> list[dict]:
 
 def _copied_sessions(target: Path) -> dict[str, Path]:
     """The conversations in the copy. One without a log means the run store is not where this code expects it."""
-    from openprogram.state.store.session.placement import iter_session_dirs
+    from openprogram.state.store.session.files.placement import iter_session_dirs
 
     projects = target / "projects"
     missing = sorted(chat.name for chat in _chat_directories(projects) if not _has_session_log(chat))

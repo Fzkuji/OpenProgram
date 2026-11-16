@@ -98,9 +98,9 @@ from .settings.env_api_keys import resolve_provider_key
 from .streaming.stream import complete, complete_simple, stream, stream_simple
 
 # Utilities
-from .utils.event_stream import AssistantMessageEventStream as AssistantMessageEventStreamClass, EventStream, create_assistant_message_event_stream
-from .utils.json_parse import parse_partial_json, parse_streaming_json
-from .utils.overflow import is_context_overflow, get_overflow_patterns
+from .utils.streams.event_stream import AssistantMessageEventStream as AssistantMessageEventStreamClass, EventStream, create_assistant_message_event_stream
+from .utils.streams.json_parse import parse_partial_json, parse_streaming_json
+from .utils.failures.overflow import is_context_overflow, get_overflow_patterns
 from .utils.validation import validate_tool_arguments, validate_tool_call
 from .utils.sanitize_unicode import sanitize_surrogates
 

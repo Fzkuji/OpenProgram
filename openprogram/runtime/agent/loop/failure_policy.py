@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openprogram.runtime.execution.runtime_contract import MAX_AGENT_REPEAT_FAILURES
+from openprogram.runtime.execution.admission_input.runtime_contract import MAX_AGENT_REPEAT_FAILURES
 
 
 def repeat_key(name: str, args: Any) -> str:

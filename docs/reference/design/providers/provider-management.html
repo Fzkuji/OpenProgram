@@ -7,13 +7,14 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
 <tbody>
+<tr><th scope="row">Companies and their ways to connect</th><td><code translate="no">COMPANIES</code> in <code translate="no">openprogram/models/auth/login/login_method_registry.py</code>, sent as <code translate="no">family</code>, <code translate="no">family_label</code> and <code translate="no">way_label</code> by <code translate="no">openprogram/models/usage/provider_status.py</code></td></tr>
 <tr><th scope="row">Popular providers, key and billing pages</th><td><code translate="no">openprogram/models/providers/catalog/consoles.py</code></td></tr>
 <tr><th scope="row">Environment keys, local servers</th><td><code translate="no">openprogram/models/listing/detected.py</code></td></tr>
 <tr><th scope="row">Key check, connect</th><td><code translate="no">openprogram/models/listing/key_check.py</code></td></tr>
 <tr><th scope="row">Picker state, usage, fallback</th><td><code translate="no">openprogram/models/usage/provider_views.py</code></td></tr>
 <tr><th scope="row">Model picker state, spent-quota card</th><td><code translate="no">apps/web/lib/models/provider-state.ts</code>, <code translate="no">apps/web/lib/models/fallback.ts</code>, <code translate="no">apps/web/components/chat/top-bar/menus/agent-selector.tsx</code>, <code translate="no">apps/web/components/chat/messages/bubbles/quota-reply-card.tsx</code></td></tr>
 <tr><th scope="row">Settings pages</th><td><code translate="no">apps/web/components/settings/providers/</code> (<code translate="no">status/</code> list, <code translate="no">add/</code> dialog, <code translate="no">detail/</code> panels), <code translate="no">apps/web/lib/prefs/providers-view.ts</code>, <code translate="no">apps/web/components/settings/token-usage/</code></td></tr>
-<tr><th scope="row">Wire types</th><td>Generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code> by <code translate="no">scripts/generate_provider_status_types.py</code></td></tr>
+<tr><th scope="row">Wire types</th><td>Generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code> by <code translate="no">scripts/generators/generate_provider_status_types.py</code></td></tr>
 </tbody>
 </table>
 
@@ -21,9 +22,10 @@
 <ul>
 <li>The list holds connected providers only: a stored key or sign-in, or an enabled local server. The catalogue (about 236 providers) lives in Add provider.</li>
 <li>Cards and compact rows are two views of the same list. A segmented control in the page header switches them; the choice is remembered per user and cards are the default.</li>
-<li>A card has a top line (logo, name, billing tag, health chip), one quota block (windows, balance, rate limits or "No quota data") and a footer (30-day sparkline, spend or Included, cache share, default model).</li>
+<li>A card has a top line (logo, name, billing tag, health chip), one quota block (windows, balance or rate limits; none while nothing is reported) and a footer (30-day sparkline, spend or Included, cache share, default model).</li>
+<li>A company connected in more than one way is one card; the cards form a masonry (table below).</li>
 <li>A compact row puts the same facts on one line: the bar of the limit that runs out first, then "62% 5h · 14:30 · 15% Week", "$18.42 balance · ≈ 26 wk" or "46/50 rpm · no balance data"; 30-day cost or Included, the trend, tokens, cache share and the default model.</li>
-<li>Rows have fixed columns: every cell ends in an ellipsis inside its column with the whole text on hover, so a long status, quota line or model id never makes the table scroll sideways in a pane 640 px or wider; below 880 px Tokens and Cache give way.</li>
+<li>Rows have fixed columns: every cell ends in an ellipsis inside its column with the whole text on hover, so a long status, quota line or model id never makes the table scroll sideways in a pane 640 px or wider; below 1040 px Tokens and Cache give way.</li>
 <li>A balance in dollars shows its pace ("≈ 26 weeks at this pace") once three days have spend.</li>
 <li>The billing tag says API key, Local or Subscription. A subscription whose plan is known says the plan ("Plus", "Pro") in that tag; a compact row shows the same tag where it would say Included, with "Included in the Plus plan" and the API price on hover. An unknown plan changes nothing.</li>
 <li>A signed-out or stopped provider's numbers are dimmed; a snapshot older than 15 minutes is dimmed in both views and the card says "Updated 3 h ago".</li>
@@ -31,6 +33,19 @@
 <li>The header holds Providers | Routing, the time of the last update, Refresh, the Cards | Rows switch and Add provider. No paragraph of help.</li>
 <li>Refresh reads each provider again in order: its sign-in where it lives, then its quota endpoint; health follows from both. The icon spins on the button until the answer replaces the cards, and the update time counts that read.</li>
 </ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Company</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Card top line</th><td>The company's logo and name over "2 ways to connect"; the best health of its ways</td></tr>
+<tr><th scope="row">Section</th><td>One per connected way, titled by it ("ChatGPT subscription", "Go · monthly subscription"), with its own health, quota, sparkline, credentials and Add key or Add account. It opens that provider's page, which stays per catalogue id</td></tr>
+<tr><th scope="row">Section's second line</th><td>Plan, then "sign-in", "API key", or "Same key" when an earlier way holds that key, then the model</td></tr>
+<tr><th scope="row">One way connected</th><td>The ordinary card; ways not connected never appear</td></tr>
+<tr><th scope="row">Grouping</th><td>One table, <code translate="no">COMPANIES</code>, with each way's names in English and Chinese. The payload lists a company's ways together, where its first one was, in the table's order</td></tr>
+<tr><th scope="row">Layout</th><td>Two columns (one below 720 px); each card keeps its height and the next, in list order, goes into the shortest column 12 px below. Heights are measured, estimated before that, so nothing jumps; Tab follows list order</td></tr>
+<tr><th scope="row">Rows</th><td>A company row with its best health; its ways indented under it by short name ("ChatGPT", "API", "Go"), the title on hover</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers status</code></th><td>The company with its best state, each way indented under it by title; <code translate="no">--json</code> carries <code translate="no">family</code>, <code translate="no">family_label</code>, <code translate="no">way_label</code>; <code translate="no">login</code>, <code translate="no">keys</code>, <code translate="no">logout</code> take catalogue ids</td></tr>
+</tbody>
+</table>
 <table class="stack fixed">
 <thead><tr><th scope="col">Health</th><th scope="col">Fix</th><th scope="col">Opens</th></tr></thead>
 <tbody>
@@ -55,7 +70,6 @@
 <li>While the popular providers are read the grid shows a spinner; a failed read says so in one line with Retry.</li>
 </ol>
 <p>Step 2 is one masked key field with a "Get a key" link, or Sign in. When a key for that provider is already in the Worker's environment (from a tile, a search result or <code translate="no">?add=&lt;id&gt;</code>), step 2 offers it first, the same row as the pick list (variable name, masked tail, Use), with "Or paste a key" below it.</p>
-<p>An environment key that is rejected shows its one line with the paste field under it.</p>
 <p>The key is checked when pasted: a free read of the provider's model list or key endpoint, then a one-token ping only when that read cannot prove the key usable. The answer is one line:</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Result</th><th scope="col">When</th><th scope="col">Key kept</th></tr></thead>
@@ -70,7 +84,15 @@
 </table>
 <p>A kept key's balance is read once through the provider's verified quota reader.</p>
 <p>A provider's first <code translate="no">works</code> or <code translate="no">no_credit</code> key turns it on, as does an <code translate="no">unverified</code> key the provider answered with HTTP 200, and its first sign-in; a 5xx or no answer turns nothing on. There is no separate Enabled step. When none of its models is on, the three suggested models are turned on.</p>
-<p>Step 2 shows a vendor's ways to connect as tabs (the ChatGPT sign-in beside the OpenAI API key); Advanced folds the base URL away. A running local server connects with one button and a stopped one shows how to start it. Custom opens the custom provider form.</p>
+<p>Step 2 shows a company's ways to connect as tabs (the ChatGPT sign-in beside the OpenAI API key): the ways the company table marks as offered; Advanced folds the base URL away. A running local server connects with one button and a stopped one shows how to start it. Custom opens the custom provider form.</p>
+<p>Sign in lists the provider's ways in:</p>
+<ul>
+<li>Each row has an icon, a title, a one-line description and a chevron; an import also shows the file it reads in small mono type.</li>
+<li>With more than one way, the first (the browser sign-in) sits on a filled card marked Recommended and the rest follow under "Other ways".</li>
+<li>Titles, descriptions and files come from the login method registry in English and Chinese, so every sign-in provider and the Credentials section's add dialog show the same list.</li>
+<li>Choosing a row starts that method; the row shows a spinner until the browser, code or prompt takes over.</li>
+</ul>
+<p>The dialog's overlay is Nova's light scrim with no backdrop blur, the same for every Dialog and AlertDialog, so the page stays readable behind it.</p>
 <p>Step 3 offers those three, models already on first, then the newest with tool use, with context and price. Start chatting picks one for the composer.</p>
 
 <h2 id="detail">Provider detail</h2>
@@ -79,17 +101,52 @@
 <thead><tr><th scope="col">Panel</th><th scope="col">Holds</th></tr></thead>
 <tbody>
 <tr><th scope="row">Usage</th><td>7, 30 or 90 days by cost or tokens (a subscription opens on tokens; its Cost view prints no dollars on the axis and shows a day's list price only on hover); Spent, Tokens, Cache read and the limit that runs out first; daily bars of the top model over the others, with a dashed line at the daily pace a dollar key limit or balance allows</td></tr>
-<tr><th scope="row">Keys</th><td>One row per key or sign-in: the one in use, its name, the masked tail and its health from the key pool. Check, Rename, Replace key and Remove sit behind the row's ⋯. Add key, or Sign in for a sign-in provider. With two or more keys, rotation (Off, In order, Spread, Least used) turns each row into an include checkbox. The card's limit rows; Base URL under Advanced</td></tr>
+<tr><th scope="row">Credentials</th><td>The provider's ordered list of keys and sign-ins (<a href="#credentials">below</a>)</td></tr>
+<tr><th scope="row">Endpoint</th><td>The API base URL, for a key provider or a local server</td></tr>
 <tr><th scope="row">Models</th><td>On switch, id (its metadata on hover), context, in / out / cache-read price per million tokens, tool, vision and reasoning icons, this provider's 30-day spend per model (Included for a subscription, the list price on hover) and the default star; search, "N of M enabled", and Fetch models, Enable all, Disable all behind ⋯</td></tr>
 </tbody>
 </table>
-<p>Remove provider asks once (the destructive confirm). A custom provider is deleted; any other loses its saved keys and sign-ins and is switched off, which takes it off the list. A local or custom provider also adds a model by id.</p>
+<p>Remove provider asks once (the destructive confirm). A custom provider is deleted; any other loses its saved keys and sign-ins (an environment key stays in the environment) and is switched off, which takes it off the list. A local or custom provider also adds a model by id.</p>
+
+<h2 id="credentials">Credentials</h2>
+<p>The provider's ordered list of keys and sign-ins; how a request picks from it is <a href="auth/unified-account-management.html">Provider keys and failover</a>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Header</th><td>With two or more keys, a segmented choice: In order, Evenly, Least used. Each way the provider's login methods list: Add key when it takes keys, Sign in (Sign in with another account once it has one) when it has a sign-in</td></tr>
+<tr><th scope="row">Row</th><td>At least 56 px tall: a drag grip (a button the keyboard can pick up), the name (its own name, else a sign-in's email, else "Environment key", "API key" or "ChatGPT sign-in"; In use beside the one a new conversation would take), the masked tail or <code translate="no">$VAR</code> or the plan ("Pro Lite"), then the failure line, or "signed in with ChatGPT" and today's spend and requests. A sign-in's quota windows, its own account's, as two small bars</td></tr>
+<tr><th scope="row">Status</th><td>A badge with a dot: Ready, Back at 14:32, Out of quota (with its reset only when a window reports one; a spent balance has none), Invalid key, Sign in again, Not in use, Provider not set up (a key of a removed custom provider), Sign-in file not found (an import whose file is gone); a wait that has run out reads Ready on its own. The fix inline: Replace, Sign in again or Top up</td></tr>
+<tr><th scope="row">Row menu ⋯</th><td>Rename (inline), Check now, Replace key or Sign in again, Don't use for now / Use again, Move up, Move down, Remove…. Remove is the only action that asks; an environment key has no Rename or Remove</td></tr>
+<tr><th scope="row">Order</th><td>Drag a row by its grip, or pick it up with Space and move it one row per arrow press (a screen reader hears each row's name and place), or Move up / Move down; a line under the list says so once there is more than one row</td></tr>
+<tr><th scope="row">Empty</th><td>"No key yet" (or "Not signed in") over two lines, what to do and that more can be added, with Add key and Get a key, the provider's keys page</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Add dialog</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Choose</th><td>With more than one way in: the choice list of the provider's login methods, "Paste an API key" among them. With one way the dialog opens on it, and nothing shows until this provider's ways are read</td></tr>
+<tr><th scope="row">Key</th><td>Optional name ("API key ····c41e" when empty), a masked field showing its last four, with a show button. Checked (nothing stored) when pasted, on Enter, on blur, or 600 ms after typing stops once it looks like a whole key (20 characters, no spaces). Add key or Replace key waits for the check; only a refused key cannot be added. Back clears the key; Cancel leaves nothing behind</td></tr>
+<tr><th scope="row">Check details</th><td>A key typed during a check is checked when it ends; going back to a checked key shows its answer again. A key that could not be checked here (no address, region, unreachable) is kept. A key a variable also holds is stored and listed once</td></tr>
+<tr><th scope="row">Replace, Sign in again</th><td>The same dialog on that row; name and place stay</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">On a card</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Subtitle</th><td>The model last used, else the first one on; no line when there is none</td></tr>
+<tr><th scope="row">Footer</th><td>At the card's bottom: the count ("3 keys · 1 cooling · 1 invalid", "1 key · ····a1b2", "2 accounts"), wrapping rather than cutting a part</td></tr>
+<tr><th scope="row">Add</th><td>Add key, or Add account for a provider signed in to; filled while there is none, and then no second Connect</td></tr>
+<tr><th scope="row">Top up, Sign in again</th><td>The page, with the dialog on the failing row</td></tr>
+</tbody>
+</table>
+<p><code translate="no">provider.credentials.changed</code> refreshes the rows and the cards.</p>
 
 <h2 id="chat">In the chat</h2>
 <p>Everything the chat says about providers lives inside the model picker (trigger and menu). There is no chip or button beside the project folder in the composer, and no toast.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Provider row</th><th scope="col">Shows</th><th scope="col">Click</th></tr></thead>
 <tbody>
+<tr><th scope="row">Name</th><td>The provider's name; one way of a company reached several ways reads "Company · Way" ("OpenAI · ChatGPT", "OpenAI · API", "OpenCode · Go", "Perplexity · Agent"), one row per catalogue id</td><td>&mdash;</td></tr>
 <tr><th scope="row">Ready, under half used</th><td>The current model's name, or the model count</td><td>Opens its models</td></tr>
 <tr><th scope="row">Window or key limit half used</th><td>A 16 px ring of what is left; its hint reads "5h · 8% left · resets 14:30"</td><td>Opens its models</td></tr>
 <tr><th scope="row">Rate limited</th><td>"Rate limited · 14:02" in the warning tone</td><td>Opens its models</td></tr>
@@ -99,10 +156,19 @@
 </tbody>
 </table>
 <ul>
-<li>The ring and the bars use the context meter's tokens: warning from 80 % used, danger from 95 % or when spent; a value older than 15 minutes is drawn at half opacity.</li>
-<li>A submenu starts with the provider's quota rows, worst first: <code translate="no">label [bar] NN% · reset</code> for a window or key limit, the amount for a balance or credits. A provider that reports nothing has no header.</li>
+<li>The ring and the bars use the context meter's tokens: warning from 80 % used, danger from 95 % or when spent; a ring older than 15 minutes is drawn at half opacity; in the submenu a stale value is muted and its bar fill drawn at half opacity.</li>
+<li>A submenu starts with the provider's quota rows, worst first: a window or key limit is a line <code translate="no">label reset ···· NN%</code> over a full-width bar, a balance or credits is the line <code translate="no">label ···· amount</code> alone. A provider that reports nothing has no header.</li>
+<li>Each line is at <code translate="no">text-fs-sm</code>: the label in the primary text colour, the reset muted at <code translate="no">text-fs-xs</code> beside it, the value on the right edge of the model rows' check column (Settings decides whether digits are equal width). The text starts where the model names start.</li>
+<li>Tone colours the percent and the bar fill; a spent bar keeps a danger-tinted track so it does not vanish.</li>
+<li>The header lists every limit the status read carries, and always the limit the provider row's ring is drawn from and the balance of the picker state. The picker state arrives with the models, seconds before the status read (which also sums 30 days of spend), so until then the header shows those two rather than less than the row.</li>
+<li>At most four window or key limits, worst first; amounts follow and are never cut. A long label or reset time truncates at the line's end (logical sides, so RTL mirrors) and never widens the submenu or pushes the value off its edge.</li>
+<li>With two or more credentials, the provider's submenu ends with "This conversation uses Personal", Automatic and each credential; the check shows whether it is pinned. A choice pins this conversation (<code translate="no">POST /api/sessions/{sid}/credentials</code>, <code translate="no">null</code> for Automatic); Manage keys… opens the provider's page in place, or in a new tab with Cmd, Ctrl or Shift.</li>
+<li>A pin to a key that is gone says to go back to Auto; a pinned key turned off ends the request as a setting to change, not a failed sign-in.</li>
+<li>Every usage bar is the kit's Progress.</li>
+<li>When a reply moves to another credential, a muted line sits above it: "Switched to Work: Personal hit a rate limit". The line is stored with the reply and is still there after a reload; <code translate="no">--print</code> says it as a <code translate="no">credential_switch</code> event. While every credential waits, the retry line names the one it waits for and when it is back.</li>
 <li>The menu ends with Manage providers, which opens Settings → LLM Providers. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state.</li>
-<li>The trigger carries a dot on the provider logo only when the selected model's provider needs action or its quota warns (the Worker's <code translate="no">attention</code>: used 95 % or more, or 80 % or more while usage runs ahead of the time elapsed in the window). Its tooltip names the provider and the state or the window left.</li>
+<li>The trigger is plain while the selected model's provider can answer, whatever its usage. A quota that only warns shows in the ring and the bars, not on the trigger.</li>
+<li>A red dot on the provider logo appears only when the provider needs action (signed out, no credit, invalid key, not set up, not running) or its quota is 95 % used or spent: the Worker's <code translate="no">attention</code>. Its tooltip names the provider and the state or the window left.</li>
 </ul>
 <p>The state comes with the models (<code translate="no">GET /api/models/enabled</code>); opening the menu reads the status route for the quota rows, which reads endpoints older than ten minutes in the background. Each <code translate="no">provider_quota</code> frame updates both reads and is passed on as the window event <code translate="no">op:provider-quota</code>.</p>
 <p>When a reply fails because a quota is spent (<code translate="no">errorCause.cause</code> is <code translate="no">quota_exhausted</code>), the reply card reads "OpenAI Codex 5h limit reached" over "Resets 14:30 · Week 71% left". A spent balance (402, or the provider's state is no credit) reads "Kimi has no credit" over the balance. The raw error stays under the collapsed details.</p>
@@ -132,11 +198,17 @@
 <tr><th scope="row"><code translate="no">POST /api/providers/{id}/refresh</code></th><td>Reads that provider's sign-in and quota endpoint again now; its status</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/providers/{id}/usage</code></th><td>Spend by day and model over 1 to 90 days, with quota samples</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/providers/detected</code></th><td>Environment keys, local servers, the popular providers, the catalogue size</td></tr>
-<tr><th scope="row"><code translate="no">POST /api/providers/{id}/accounts/keys</code></th><td>Stores a pasted key; with <code translate="no">validate</code>, the one-line check, balance, models and whether the provider was turned on</td></tr>
-<tr><th scope="row"><code translate="no">POST /api/providers/{id}/accounts/env</code></th><td>The same for a key the Worker reads from its environment</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/{id}/credentials</code></th><td>The ordered list, its strategy, the credential in use, and the ways to add one</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/providers/{id}/credentials</code></th><td>Stores a pasted key; with <code translate="no">validate</code>, the one-line check, balance, models and whether the provider was turned on. A rejected key is not stored. A key the Worker reads from its environment is already a row of the list</td></tr>
+<tr><th scope="row"><code translate="no">PATCH</code>, <code translate="no">DELETE /api/providers/{id}/credentials/{cid}</code></th><td>Renames, sets aside or removes one credential; an environment key cannot be removed</td></tr>
+<tr><th scope="row"><code translate="no">POST …/credentials/check-key</code></th><td>Checks a pasted key (against a stored key's endpoint with <code translate="no">replace</code>) without storing it; the add or replace that follows reuses the result</td></tr>
+<tr><th scope="row"><code translate="no">POST …/credentials/{cid}/check</code>, <code translate="no">…/replace</code></th><td>Checks one credential again, or checks and stores a new key in its place</td></tr>
+<tr><th scope="row"><code translate="no">POST …/credentials/reorder</code>, <code translate="no">…/strategy</code></th><td>The new order; In order, Evenly or Least used</td></tr>
+<tr><th scope="row"><code translate="no">GET</code>, <code translate="no">POST /api/sessions/{sid}/credentials</code></th><td>A conversation's binding and pin per provider</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>The picker's models and each provider's picker state</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/providers/fallback</code></th><td>The model the spent-quota card offers, and up to four more</td></tr>
 <tr><th scope="row">WebSocket <code translate="no">provider_quota</code></th><td>One key's new quota and its provider's picker state</td></tr>
+<tr><th scope="row">WebSocket <code translate="no">provider.credentials.changed</code>, <code translate="no">session.credentials.changed</code></th><td>A provider's list changed; a conversation's binding or pin changed</td></tr>
 </tbody>
 </table>
 
@@ -150,12 +222,22 @@
 <tr><th scope="row">Ends on choosing a model</th><td>OpenCode</td><td>Connecting finishes where chatting starts</td></tr>
 <tr><th scope="row">Billing kind and fix per provider</th><td>ZCode</td><td>Each state carries the one action that clears it</td></tr>
 <tr><th scope="row">Cards and rows as two views</th><td>Owner's change</td><td>The same data at two densities; the person picks</td></tr>
+<tr><th scope="row">One card per company, a section per way</th><td>Owner's change</td><td>Two cards with near-identical names read as duplicates and counted a shared key twice; grouped, the company is found once and each way keeps its own state, quota and credentials</td></tr>
+<tr><th scope="row">Masonry instead of equal-height rows</th><td>Owner's change</td><td>Company cards differ a lot in height; stretching a row to its tallest left large empty areas in the shorter card. Explicit columns filled shortest-first keep list order as reading and Tab order, which CSS columns do not</td></tr>
 <tr><th scope="row">Provider state only in the model picker</th><td>Owner's change</td><td>The composer keeps its three sections; the picker is where a model is chosen</td></tr>
 <tr><th scope="row">Common providers as the empty state</th><td>Owner's change</td><td>One provider alone read as the only choice</td></tr>
 <tr><th scope="row">Suggest, never switch, on a spent quota</th><td>OpenCode, Codex</td><td>The person decides; the card names the model and the reset</td></tr>
 <tr><th scope="row">Compact row: the limit that runs out first, counting what is left</th><td>Codex</td><td>Read at a glance which window binds and when it resets</td></tr>
 <tr><th scope="row">Card: one quota block, worst window drawn hottest</th><td>Oh My Pi</td><td>A spent window stands out without reading every number</td></tr>
-<tr><th scope="row">Built from the app's own parts</th><td>Project rule</td><td>Tabs for both segmented controls, Dialog, RadioGroup, SearchInput, HoverTip, the menu styles, ProviderIcon, ProviderLogin, BaseUrl, SetupHint, the custom provider form and Routing are reused; Token Usage's stacked chart is shared with the usage panel. Only the 30-day sparkline is new. Peer UI code is bound to its own kit and types, so its structure is followed, not its code</td></tr>
+<tr><th scope="row">Built from the app's own parts</th><td>Project rule</td><td>Tabs for both segmented controls, Dialog, RadioGroup, SearchInput, HoverTip, the menu styles, ProviderIcon, ProviderLogin, BaseUrl, SetupHint, the custom provider form and Routing are reused; Token Usage's stacked chart is shared with the usage panel. Badge tones with a dot, Collapsible, Progress, CopyButton and SecretInput joined the kit for the credential pages. Peer UI code is bound to its own kit and types, so its structure is followed, not its code</td></tr>
+<tr><th scope="row">One ordered list of keys and sign-ins, with a strategy</th><td>Hermes Agent's credential pool</td><td>A spare key and a second account are the same to a request</td></tr>
+<tr><th scope="row">A conversation keeps its credential until it fails</th><td>Oh My Pi</td><td>Cache and limits stay on one account; a muted line marks a switch</td></tr>
+<tr><th scope="row">Pin in the model menu</th><td>Owner's change</td><td>The key sits where the conversation's model is chosen</td></tr>
+<tr><th scope="row">Check before storing</th><td>Hermes</td><td>A rejected key never joins the list</td></tr>
+<tr><th scope="row">Only Remove asks</th><td>Owner's change</td><td>Every other row action has an opposite</td></tr>
+<tr><th scope="row">Drag plus Move up / Move down</th><td>Project rule</td><td>The order stays reachable from the keyboard</td></tr>
+<tr><th scope="row">Ways to sign in as a described list, the default recommended</th><td>Owner's change</td><td>Equal bare buttons gave no reason to pick one; the registry's first method is already the default every surface pre-selects</td></tr>
+<tr><th scope="row">No backdrop blur behind dialogs</th><td>Owner's change</td><td>The blurred page hid where the person was; a light scrim keeps it in view</td></tr>
 <tr><th scope="row">Anthropic by API key only</th><td>Project rule</td><td>Anthropic is used only through its official API with an API key</td></tr>
 <tr><th scope="row">Plan name from what is already held</th><td>Codex CLI</td><td>The plan a reply's rate-limit frame named, else the sign-in token's <code translate="no">chatgpt_plan_type</code> claim. No request is made for a label, and the existing billing tag carries it</td></tr>
 <tr><th scope="row">Refresh reads the sign-in first</th><td>Owner's change</td><td>A provider registers <code translate="no">reread_login</code>: refresh a token about to expire, mark one that cannot be refreshed, take back one signed in again. A quota read alone showed nothing for a provider whose reader is off</td></tr>
@@ -174,5 +256,6 @@
 <tr><th scope="row">Region or plan refusal</th><td>Recognised only from a 403 whose body says so</td></tr>
 <tr><th scope="row">Key and billing pages</th><td>Listed for 15 providers; the others get no link</td></tr>
 <tr><th scope="row">Balances</th><td>Read only where a verified quota reader exists (OpenRouter today); see <a href="provider-quota.html">Provider quota</a></td></tr>
+<tr><th scope="row">Switch line</th><td>Drawn from the live stream only; a reply read back after a reload does not show it</td></tr>
 </tbody>
 </table>

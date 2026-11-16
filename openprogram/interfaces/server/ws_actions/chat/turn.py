@@ -259,7 +259,7 @@ async def _reserve_run(ws, _s, req: _ChatRequest) -> str | None:
     # that send, answered ``request_admitted``, never queued as a new one.
     request_id = client_request_id_of(req.cmd)
     key = {"key": f"send:{request_id}"} if request_id else {}
-    from openprogram.state.store.session.session_lock import SessionLockTimeout
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
     if req.side_branch_id:
         # A branch that is not selected has its own slot: one turn on it at
         # a time, whatever the selected branch is doing.
@@ -357,7 +357,7 @@ def _save_run_config(_s, req: _ChatRequest, conv: dict, msg_id: str):
     """Persist the session and its run settings; ``(run_cfg, permission)``."""
     session_id = req.session_id
     try:
-        from openprogram.runtime.conversation.session_config import (
+        from openprogram.runtime.conversation.session_settings.session_config import (
             permission_from_config,
             project_defaults,
             save_session_run_config,
@@ -610,7 +610,7 @@ def _build_user_msg(req: _ChatRequest, msg_id: str, parsed: dict,
         # send them again (``store.session.media``).
         try:
             from openprogram.runtime.context.session_db import default_db
-            from openprogram.state.store.session.media import records_for_attachments
+            from openprogram.state.store.session.files.media import records_for_attachments
             media = records_for_attachments(
                 default_db()._session_dir(req.session_id), req.attachments, 1)  # noqa: SLF001
         except Exception:  # noqa: BLE001 - the turn goes on without the copy
@@ -680,7 +680,7 @@ def _turn_request_fields(req: _ChatRequest, parsed: dict) -> dict:
         response_format.model_dump(mode="json")
         if hasattr(response_format, "model_dump") else response_format
     )
-    from openprogram.runtime.conversation.local_commands import slash_fields
+    from openprogram.runtime.conversation.turn_admission.local_commands import slash_fields
     return {
         # A typed /task or /merge: its own field, so `interaction` keeps the
         # authority's value (``--print`` builds the same fields).
@@ -753,7 +753,7 @@ def _admit_turn(_s, req: _ChatRequest, conv: dict, msg_id: str, run_cfg,
     # retained only as transport/DAG provenance and never becomes ownership.
     session_id = req.session_id
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-    from openprogram.runtime.conversation.turn_input import build_turn_request
+    from openprogram.runtime.conversation.turn_admission.turn_input import build_turn_request
     from openprogram.runtime.permissions.rule import load_merged_rules
     # The branch the turn was admitted on: its slot names it. The turn
     # writes there whatever the person selects while it runs.

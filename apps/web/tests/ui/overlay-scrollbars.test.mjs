@@ -97,3 +97,65 @@ test("a scroll caused by the box changing size does not show the thumb; a later 
   detach();
   delete globalThis.ResizeObserver;
 });
+
+test("a thumb paints in its box's layer, so a menu opened above the box covers it", async () => {
+  const { window, document } = parseHTML(
+    "<html><body><main id=page><div id=transcript></div></main>"
+    + "<div id=wrapper data-z=130 data-pos=fixed><div id=menu data-z=130 data-pos=relative><div id=list data-z=2 data-pos=relative></div></div></div></body></html>");
+  Object.assign(globalThis, { window, document, HTMLElement: window.HTMLElement, Event: window.Event, MutationObserver: window.MutationObserver,
+    requestAnimationFrame: (cb) => setTimeout(cb, 0), cancelAnimationFrame: clearTimeout,
+    getComputedStyle: (el) => ({ borderTopRightRadius: "0", borderBottomRightRadius: "0",
+      zIndex: el.dataset?.z ?? "auto", position: el.dataset?.pos ?? "static", display: "block" }) });
+  window.innerWidth = 800;
+  // A box in the page has no layer of its own: the CSS default (the sticky
+  // layer, under every menu and dialog) applies.
+  const transcript = document.getElementById("transcript");
+  assert.equal(api.layerOf(transcript), null);
+  // A box inside a popover takes the popover's root-level z-index, not an
+  // inner one, so its thumb sits on the popover and under a later submenu.
+  const list = document.getElementById("list");
+  assert.equal(api.layerOf(list), 130);
+
+  for (const box of [transcript, list]) {
+    Object.assign(box, { scrollHeight: 1000, clientHeight: 200, scrollWidth: 100, clientWidth: 100, scrollTop: 300 });
+    box.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 200, width: 100, height: 200 });
+  }
+  // The document listener belongs to the first test's document; attach directly.
+  api.attachOverlayScrollbar(transcript);
+  api.attachOverlayScrollbar(list);
+  // Not a scroll: the hidden thumbs are placed once things settle.
+  await wait(200);
+  const [pageThumb, menuThumb] = document.querySelectorAll(".overlay-thumb");
+  assert.equal(pageThumb.style.zIndex, "");
+  assert.equal(menuThumb.style.zIndex, "130");
+});
+
+test("the thumb's default layer is the sticky one, under menus and dialogs", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../../app/styles/base/scrollbar.css", import.meta.url), "utf8");
+  const rule = css.slice(css.indexOf(".overlay-thumb {"), css.indexOf("}", css.indexOf(".overlay-thumb {")));
+  assert.match(rule, /z-index: var\(--z-sticky\);/);
+  assert.doesNotMatch(css, /z-index: 9999/);
+});
+
+test("pressing a thumb does not reach the document, so a menu or dialog it scrolls stays open", async () => {
+  const { window, document } = parseHTML("<html><body><div id=box></div></body></html>");
+  Object.assign(globalThis, { window, document, HTMLElement: window.HTMLElement, Event: window.Event, MutationObserver: window.MutationObserver,
+    requestAnimationFrame: (cb) => setTimeout(cb, 0), cancelAnimationFrame: clearTimeout,
+    getComputedStyle: () => ({ borderTopRightRadius: "0", borderBottomRightRadius: "0" }) });
+  window.innerWidth = 800;
+  const box = document.getElementById("box");
+  Object.assign(box, { scrollHeight: 1000, clientHeight: 200, scrollWidth: 100, clientWidth: 100, scrollTop: 0 });
+  box.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 200, width: 100, height: 200 });
+  const detach = api.attachOverlayScrollbar(box);
+  await wait(150);
+  const thumb = document.querySelector(".overlay-thumb");
+  // Radix DismissableLayer listens for pointerdown on document.
+  let outside = 0;
+  document.addEventListener("pointerdown", () => { outside += 1; });
+  thumb.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+  assert.equal(outside, 0, "the press on the thumb is not a press outside the layer");
+  box.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+  assert.equal(outside, 1, "other presses still reach the document");
+  detach();
+});

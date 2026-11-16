@@ -184,7 +184,7 @@ async def _parse_chat_command(ws, cmd: dict) -> _ChatRequest | None:
     """Read the composer's fields. ``None`` means the turn stops here."""
     text = cmd.get("text", "").strip()
     session_id = cmd.get("session_id")
-    from openprogram.runtime.conversation.turn_input import INPUT_TOO_LARGE, input_too_large
+    from openprogram.runtime.conversation.turn_admission.turn_input import INPUT_TOO_LARGE, input_too_large
     too_large = input_too_large(text)
     if too_large:
         # Refused before anything is written; the composer keeps the text.

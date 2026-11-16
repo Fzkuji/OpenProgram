@@ -18,7 +18,7 @@ import pytest
 
 from openprogram.operations.worker import lifecycle, runner
 from openprogram.operations.worker import ports
-from openprogram.interfaces.cli.commands import web as web_command
+from openprogram.interfaces.cli.commands.services import web as web_command
 
 
 # ---- recognising the worker ------------------------------------------------
@@ -28,8 +28,8 @@ def test_the_holder_pid_reads_while_another_handle_holds_the_lock(tmp_path, monk
 
     lock_file = tmp_path / "worker.lock"
     monkeypatch.setattr(worker_lock, "lock_path", lambda: lock_file)
-    monkeypatch.setattr("openprogram.state.store.session.session_log.claim_main_writer", lambda: None)
-    monkeypatch.setattr("openprogram.state.store.session.session_log.release_main_writer", lambda: None)
+    monkeypatch.setattr("openprogram.state.store.session.files.session_log.claim_main_writer", lambda: None)
+    monkeypatch.setattr("openprogram.state.store.session.files.session_log.release_main_writer", lambda: None)
     held = worker_lock.WorkerLock()
     assert held.try_acquire()
     try:

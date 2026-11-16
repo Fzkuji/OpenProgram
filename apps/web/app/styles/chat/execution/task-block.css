@@ -1,0 +1,213 @@
+/* Task block (.tb): one named stretch of work inside a reply, drawn with no
+   frame. Spec: docs/reference/design/ui/chat/task-blocks.html. Component:
+   components/chat/messages/execution/task-block.tsx. A step's work reuses
+   the execution timeline's .tl-sub and .tl-step rows.
+
+   The hierarchy is indentation alone, one unit per level: a level's nodes
+   sit under the text of the level above it. The unit is the header's glyph
+   and its gap (16px + 8px), so the steps' nodes line up under the task's
+   name and a step's work under the step's text. Size and weight do not
+   mark the level. */
+.tb {
+  min-width: 0;
+  margin: 0;
+  container-type: inline-size;
+  --tb-indent: 24px;
+  /* A clickable row's hover fill reaches this far left of its text. */
+  --tb-pill: 4px;
+}
+/* The header is a 28px row like the tool group summary: it gives the empty
+   half-lines above and below back to the stream column's gap. */
+.chat-stream-body > .tb:not(:first-child) { margin-top: -7.5px; }
+.chat-stream-body > .tb[data-open="0"] { margin-bottom: -7.5px; }
+.tb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--ui-button-h-sm);
+  line-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-chat);
+  color: var(--text-muted);
+  min-width: 0;
+}
+.tb-head:hover { color: var(--text-secondary); }
+/* State is drawn on the glyph. */
+.tb-ico { flex: none; width: 16px; height: 16px; color: var(--text-secondary); }
+.tb[data-state="failed"] .tb-ico { color: var(--accent-red); }
+.tb-checked { fill: var(--text-secondary); color: var(--bg-primary); }
+.tb-checked circle { stroke: none; }
+.tb-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.tb-head:hover .tb-name:not(.tl-label-shimmer) { color: var(--text-bright); }
+/* The result and the current step give way before the name does: their
+   share of a shortfall is large enough that the name loses under a pixel
+   until they are gone. */
+.tb-out,
+.tb-cur {
+  flex: 0 100000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tb[data-open="1"] .tb-cur { display: none; }
+.tb-meta { flex: none; white-space: nowrap; }
+.tb-meta::before { content: "·"; margin-right: 8px; }
+.tb[data-open="1"] > .tb-head .tl-chev { transform: rotate(90deg); }
+/* In a narrow column the name keeps its room: the time and the diff pill
+   leave the header, the progress stays. */
+@container (max-width: 480px) {
+  .tb-head > .tb-time,
+  .tb-head > .tl-diff { display: none; }
+}
+.tl-stopped.is-fail {
+  background: color-mix(in srgb, var(--accent-red) 16%, transparent);
+  color: var(--accent-red);
+}
+
+/* The block's own text (the purpose) lines up under the name; the steps
+   sit one indent further in. */
+.tb-body { margin: 4px 0 6px; padding-left: var(--tb-indent); }
+.tb-purpose {
+  margin: 0 0 4px;
+  font-size: var(--fs-chat);
+  line-height: 18px;
+  color: var(--text-muted);
+}
+/* Second level: the steps the agent set, their nodes on one rail. */
+.tb-steps { padding-left: var(--tb-indent); }
+.tb-step { position: relative; padding: 1px 0; }
+/* The rail runs node to node: from each step's node to the next one's, so
+   it neither starts above the first step nor trails past the last one's
+   open work. Nodes sit on the page colour, which breaks the line at each. */
+.tb-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: calc(7.5px - var(--tb-indent));
+  top: 16px;
+  bottom: -16px;
+  width: 1px;
+  background: var(--timeline-line);
+}
+.tb-step-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin-left: calc(-1 * var(--tb-pill));
+  padding: 3px 8px 3px var(--tb-pill);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-chat);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.tb-step-head:hover { background: var(--bg-hover); }
+.tb-step-head.is-static { cursor: default; }
+.tb-step-head.is-static:hover { background: transparent; }
+.tb-step-ico {
+  position: absolute;
+  left: calc(var(--tb-pill) - var(--tb-indent));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  box-shadow: 0 0 0 3px var(--bg-primary);
+  border-radius: 50%;
+}
+/* State is the node and the text colour; every step has the row's weight. */
+.tb-step-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.tb-step-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--fs-chat);
+}
+.tb-step-chev {
+  flex: none;
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: transform var(--motion-medium) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard);
+}
+.tb-step-head:hover .tb-step-chev,
+.tb-step-head:focus-visible .tb-step-chev { opacity: 1; }
+.tb-step[data-open="1"] > .tb-step-head .tb-step-chev { transform: rotate(90deg); }
+.tb-step[data-state="done"] .tb-step-title { color: var(--text-secondary); }
+.tb-step[data-state="todo"] .tb-step-title { color: var(--text-muted); }
+.tb-step[data-state="todo"] .tb-step-ico { color: var(--text-muted); }
+.tb-step[data-state="drop"] .tb-step-title { color: var(--text-muted); text-decoration: line-through; }
+.tb-step[data-state="drop"] .tb-step-ico { color: var(--text-muted); }
+.tb-step[data-state="run"] .tb-step-ico { color: var(--text-primary); }
+.tb-step[data-state="fail"] .tb-step-ico,
+.tb-step[data-state="fail"] .tb-step-title { color: var(--accent-red); }
+.tb-jump .tb-step-head { color: var(--text-muted); }
+.tb-jump .tb-step-title { color: var(--text-muted); }
+
+/* Third level: a step's work, one indent in from the step's text. The
+   timeline's rows keep their look and lose their own rail: the steps' rail
+   is the one line in the block. Deeper rows (a function's own calls) take
+   the same indent again. */
+.tb .tl-sub { margin: 2px 0; padding-left: var(--tb-indent); }
+.tb .tl-sub::before { display: none; }
+.tb .tl-sub .tl-step-head { margin-left: calc(-1 * var(--tb-pill)); padding-left: var(--tb-pill); }
+.tb .tl-sub .tl-step-icon {
+  left: calc(var(--tb-pill) - var(--tb-indent));
+  width: 16px;
+  height: 16px;
+}
+.tb-step > .tl-collapse {
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition:
+    grid-template-rows var(--motion-slow) cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity var(--motion-medium) var(--ease-standard),
+    transform var(--motion-slow) cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.tb-step > .tl-collapse.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+/* What the agent said while it worked on the step. */
+.tb-say { margin: 4px 0; min-width: 0; }
+.tb-say .chat-text { font-size: var(--fs-chat); line-height: 1.65; color: var(--text-primary); }
+.tb-say .steering-input { margin: 4px 0; }
+/* A task that never advanced: its work lies flat under the outline, glyphs
+   in the row instead of on a rail. */
+.tb .tl-sub.tb-flat { padding-left: 0; }
+.tl-sub.tb-flat > .tl-step > .tl-step-head > .tl-step-icon { position: static; transform: none; flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-step > .tl-collapse { transition: none; }
+}

@@ -47,11 +47,16 @@ openprogram providers adopt codex_cli # one entry; --all imports everything</cod
 <p class="note">Enterprise SSO (<code translate="no">sso</code>) is not implemented; the API and resolver reject it.</p>
 <h2>Manage</h2>
 <p>Commands: <a href="README.html">Configure models</a>.</p>
-<p>Every provider supports named accounts, and an account's pool can hold several API keys. A key returning 401, 402, 429 or 503 cools down and the next healthy key serves the following request. Strategies: <code translate="no">fill_first</code> (default, backup key), <code translate="no">round_robin</code>, <code translate="no">random</code>, <code translate="no">least_used</code>. Rotating across whole accounts is a separate per-provider switch, off by default.</p>
+<p>A provider's keys and sign-ins form one ordered list. A conversation keeps the key it started on; one that is rate limited, out of quota or refused gives way to the next usable one, and the reply shows a one-line notice.</p>
+<p>Strategies: <code translate="no">in-order</code> (default, the first usable one), <code translate="no">evenly</code>, <code translate="no">least-used</code>. A conversation can be pinned to one key: <a href="several-keys.html">Use several keys</a>.</p>
+<pre translate="no"><code>openprogram providers keys openai list
+openprogram providers keys openai add --name work
+openprogram providers keys openai move work --to 1
+openprogram providers keys openai strategy evenly</code></pre>
 <details>
 <summary>Codex sign-in</summary>
 <ul>
-<li>Program calls use the provider's active account, including one set with <code translate="no">openprogram providers use openai-codex &lt;account&gt;</code>. A script can pin another: <code translate="no">create_runtime(provider="openai-codex", profile="&lt;account&gt;")</code>.</li>
+<li>Program calls use the provider's list like a conversation does: the first usable sign-in, in the order <code translate="no">openprogram providers keys openai-codex list</code> shows. Signing in again with the same ChatGPT account renews its row.</li>
 <li>Terminal authentication failures and errors marked non-retryable stop after one request, keeping their category through the Program runtime. Other callback failures keep the Program's bounded recovery.</li>
 <li>The callback listener starts before the authorization page. Keep the provider panel open until it reports success.</li>
 </ul>

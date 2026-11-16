@@ -58,7 +58,7 @@ def test_resume_rejects_a_different_active_chat_before_changing_goal(runtime, cl
 
 def test_unknown_effect_is_inspectable_without_disabling_safe_new_turn(runtime, client):
     from tests.component.agent.test_chat_restart_recovery import interrupted_chat
-    from openprogram.runtime.execution.effects import EffectStore
+    from openprogram.runtime.execution.recovery.effects import EffectStore
     goals, _, store = runtime
     admission, effect = interrupted_chat(store)
     goal = goals.load_goal("goal-chat")

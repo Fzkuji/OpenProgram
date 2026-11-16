@@ -20,7 +20,7 @@ import { trimHistoryFile } from '../../utils/history.js';
 import { randomLocalId, renderModel, stripProviderPrefix } from './helpers.js';
 import { handleChatResponse, offSelectedBranch, selectBranch } from './wsHandlers/handleChatResponse.js';
 import { branchDeletedOutcome, type BranchDeletedData } from './wsHandlers/branchDeleted.js';
-import { attachTodoBoard, todoBoard } from './wsHandlers/streamingHelpers.js';
+import { attachTodoBoard, changedTask } from './wsHandlers/streamingHelpers.js';
 import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
 import { decisionFromFrame, enqueueDecision } from './questionDecision.js';
 import type { SettingRow } from '../../components/SettingsPanel.js';
@@ -591,11 +591,11 @@ export function useWsEvents(ctx: WsEventsCtx): void {
       } else if (ev.type === 'channel_turn') {
         handleChannelTurn(ev.data, c, markSessionLive);
       } else if ((ev as { type: string }).type === 'todos_update') {
-        // The saved board: the newest todo call of the shown turn draws it.
-        const d = (ev as unknown as { data?: { session_id?: string; branch_id?: string; todos?: unknown } }).data ?? {};
+        // A task changed: the newest task call of the shown turn draws its steps.
+        const d = (ev as unknown as { data?: { session_id?: string; branch_id?: string; changed?: unknown } }).data ?? {};
         if ((!d.session_id || d.session_id === c.conversationId) && !offSelectedBranch(d, c.conversationId)) {
-          const board = todoBoard(d.todos);
-          c.setStreaming((s) => (s ? { ...s, blocks: attachTodoBoard(s.blocks ?? [], board) } : s));
+          const task = changedTask(d.changed);
+          if (task) c.setStreaming((s) => (s ? { ...s, blocks: attachTodoBoard(s.blocks ?? [], task.board, task.title) } : s));
         }
       } else if (ev.type === 'question.asked') {
         // runtime.ask / confirm / approval — backend paused a function

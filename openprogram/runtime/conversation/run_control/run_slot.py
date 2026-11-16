@@ -14,12 +14,15 @@ to the in-process turn registry.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 
 class RunSlotPort(Protocol):
     def reserve(self, session_id: str, owner: str, *,
-                lock_wait: float | None = None) -> bool: ...
+                lock_wait: float | None = None, branch_id: str | None = None) -> bool: ...
+
+    def adopt(self, session_id: str, owner: str, *, execution_id: str,
+              status_version: int, branch_id: str | None, runner: Any) -> bool: ...
 
     def activate(self, session_id: str, owner: str, *, execution_id: str,
                  status_version: int, runner: Any) -> bool: ...
@@ -44,8 +47,13 @@ def register_run_slot(port: RunSlotPort | None) -> None:
     _port = port
 
 
-def reserve(session_id: str, owner: str, *, lock_wait: float | None = None) -> bool:
+def reserve(session_id: str, owner: str, *, lock_wait: float | None = None,
+            branch_id: str | None = None) -> bool:
     """Take the conversation's run slot for ``owner``; ``False`` when a turn holds it.
+
+    ``branch_id`` names the branch the turn will run on: the slot taken is
+    that branch's own when it is a recorded branch other than the selected
+    one, the selected branch's otherwise.
 
     Taking it reads the conversation under its lock. ``lock_wait`` bounds
     that wait in seconds (``0``: do not wait at all; ``None``: the store's
@@ -55,17 +63,55 @@ def reserve(session_id: str, owner: str, *, lock_wait: float | None = None) -> b
     if _port is None:
         from .turns import is_turn_running
         return not is_turn_running(session_id)
-    if lock_wait is None or not _takes_lock_wait(_port):
-        return _port.reserve(session_id, owner)
-    return _port.reserve(session_id, owner, lock_wait=lock_wait)
+    options = {"lock_wait": lock_wait, "branch_id": branch_id}
+    taken = _parameters(_port.reserve)
+    return _port.reserve(session_id, owner, **{
+        name: value for name, value in options.items() if value is not None and name in taken})
 
 
-def _takes_lock_wait(port: Any) -> bool:
+def _parameters(method: Any) -> frozenset[str]:
     import inspect
     try:
-        return "lock_wait" in inspect.signature(port.reserve).parameters
+        return frozenset(inspect.signature(method).parameters)
     except (TypeError, ValueError):
-        return False
+        return frozenset()
+
+
+def hold_admitted(session_id: str, owner: str, *, execution_id: str, status_version: int,
+                  branch_id: str | None, runner: Any, still_wanted: Callable[[], bool],
+                  poll_s: float = 0.5) -> bool:
+    """Take the run slot for a turn that is already admitted, waiting for it.
+
+    A Goal's next turn is admitted from inside the turn before it, which
+    still holds the branch's slot, and another turn may have taken the
+    slot in the moment between the two. (A background-command notice does
+    not wait for that moment: the Goal's next turn carries it, see
+    ``process_notices.claim_for_turn``.)
+    The admitted turn waits
+    here, on its own thread, until its branch's slot is free, then holds it
+    like a typed message does: every client is told it runs, a Stop names
+    it, and no other turn starts on the branch beside it. The caller gives
+    the slot back with :func:`finish`.
+
+    ``False`` when ``still_wanted`` says the turn is no longer to run (it
+    was stopped or superseded while it waited, or the Worker is stopping);
+    nothing is held then. Without a host the turn runs as before.
+    """
+    adopt = getattr(_port, "adopt", None)
+    if adopt is None:
+        return still_wanted()
+    import time
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
+    while still_wanted():
+        try:
+            if adopt(session_id, owner, execution_id=execution_id, status_version=status_version,
+                     branch_id=branch_id, runner=runner):
+                return True
+        except SessionLockTimeout:
+            # The conversation's files are being written; the slot may be free.
+            pass
+        time.sleep(poll_s)
+    return False
 
 
 def activate(session_id: str, owner: str, *, execution_id: str,
@@ -105,6 +151,6 @@ def finishing(session_id: str, owner: str) -> None:
 
 
 __all__ = [
-    "RunSlotBusy", "RunSlotPort", "activate", "finish", "finishing", "register_run_slot",
-    "release", "reserve",
+    "RunSlotBusy", "RunSlotPort", "activate", "finish", "finishing", "hold_admitted",
+    "register_run_slot", "release", "reserve",
 ]

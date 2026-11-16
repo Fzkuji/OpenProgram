@@ -100,7 +100,7 @@ const DICT = {
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
-  "settings.tab.providers": { en: "LLM Providers", zh: "大模型 Provider" },
+  "settings.tab.providers": { en: "LLM Providers", zh: "LLM 服务商" },
   "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
   "settings.tab.import": { en: "Import", zh: "导入对话" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },

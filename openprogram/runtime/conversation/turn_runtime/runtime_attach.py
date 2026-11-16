@@ -72,7 +72,7 @@ def _wrap_agentic_runtime_block(
     _run_in_worker = bool(getattr(agent_tool, "_run_in_worker", False))
 
     async def _runtime_block_execute(call_id, args, cancel, on_update):
-        from openprogram.runtime.conversation.turn_request_context import capture_original_owner_input
+        from openprogram.runtime.conversation.turn_admission.turn_request_context import capture_original_owner_input
         try:
             original_owner_input = capture_original_owner_input(req)
         except Exception:
@@ -158,7 +158,7 @@ def _wrap_agentic_runtime_block(
         # RuntimeBlock's <ExecutionTree /> fills in live. Without this
         # the card sits empty until the result envelope lands.
         try:
-            from openprogram.runtime.execution.dag import (
+            from openprogram.runtime.execution.projections.dag import (
                 live_progress as _live_progress,
             )
             # In the Agent method subprocess the worker's
@@ -222,7 +222,7 @@ def _wrap_agentic_runtime_block(
                 from openprogram.runtime.conversation import turn_runtime as dispatcher
                 profile = (req.profile_snapshot if req.profile_snapshot is not None
                            else dispatcher._load_agent_profile(req.agent_id))
-                from openprogram.models.providers.utils.errors import LLMError
+                from openprogram.models.providers.utils.failures.errors import LLMError
                 selected_model = None
                 model_setup_error = None
                 try:
@@ -237,7 +237,7 @@ def _wrap_agentic_runtime_block(
                 work_dir = current_worktree_path()
 
                 def _run_subprocess():
-                    from openprogram.runtime.permissions.lifecycle import current_permission_request
+                    from openprogram.runtime.permissions.approvals.lifecycle import current_permission_request
 
                     from openprogram.runtime.permissions.identity import detached_from_window
 

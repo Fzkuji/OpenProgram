@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,8 +25,8 @@ import { ProviderIcon } from "../icons/provider-icon";
 import { STATUS_URL } from "../status/use-provider-status";
 import { fmtContext, fmtPrice } from "../status/model";
 import { HealthChip } from "../status/parts";
-import styles from "../status/status.module.css";
 import { refreshAgentChip, type Model, type Provider } from "../types";
+import { credentialUrl } from "../detail/credential-model";
 import { CATALOGUE_URL, DETECTED_URL, envKeysFor, hostOf, suggestFromModels, type Choice, type Stored } from "./data";
 import { CheckLine, KeyEntry, USABLE } from "./key-entry";
 import { EnvKeyRow, PickProvider } from "./pick";
@@ -82,7 +84,6 @@ export function AddProviderDialog({
   const [model, setModel] = useState("");
   const [usingEnv, setUsingEnv] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const entryOf = useCallback((id: string) => catalogue.find((p) => p.id === id), [catalogue]);
 
@@ -104,7 +105,8 @@ export function AddProviderDialog({
     family: family ?? [choice, ...choice.variants.map((v) => ({ ...v, variants: [] }))],
   });
 
-  /** Use on an environment key: the Worker reads, checks and stores it. From
+  /** Use on an environment key: the Worker checks the key it reads (an
+   *  environment key is always in the provider's list, read-only). From
    *  step 2 it is stored for the provider on screen (`target`), whose ways
    *  to connect stay as they were; from the pick list, for the row's provider. */
   const storeEnvKey = useCallback(async (row: DetectedEnvKey, target?: { choice: Choice; family: Choice[] }) => {
@@ -115,12 +117,10 @@ export function AddProviderDialog({
     setUsingEnv(row.env_var);
     setStep({ step: "connect", choice, family, check: null, envVar: row.env_var, busy: true });
     try {
-      const r = await fetch(`/api/providers/${encodeURIComponent(choice.id)}/accounts/env`, {
-        method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ env_var: row.env_var }),
-      });
+      const r = await fetch(`${credentialUrl(choice.id, `env:${row.env_var}`)}/check`, { method: "POST" });
       const d = await r.json().catch(() => ({}));
       const check = (d.check ?? null) as KeyCheck | null;
-      if (r.ok && d.ok) {
+      if (r.ok) {
         changed();
         if (check && USABLE.has(check.result)) { toModelStep(choice, suggestionOf(check)); return; }
       }
@@ -135,7 +135,6 @@ export function AddProviderDialog({
   // Every open starts where it was asked to.
   useEffect(() => {
     if (!open) return;
-    setShowAdvanced(false);
     setModel("");
     if (start.step === "pick" || start.step === "custom") setStep({ step: start.step });
     else if (start.step === "connect") setStep(connectChoice(start.choice));
@@ -192,7 +191,7 @@ export function AddProviderDialog({
   let foot: React.ReactNode = null;
 
   if (step.step === "pick") {
-    head = <DialogTitle className={styles.dialogHead}>{text("Add provider", "添加服务商")}</DialogTitle>;
+    head = <DialogTitle>{text("Add provider", "添加服务商")}</DialogTitle>;
     body = (
       <PickProvider
         detected={detected}
@@ -208,7 +207,7 @@ export function AddProviderDialog({
     );
   } else if (step.step === "custom") {
     head = (
-      <DialogTitle className={styles.dialogHead}>
+      <DialogTitle className="flex items-center gap-2">
         <Button variant="ghost" size="icon-sm" aria-label={text("Back", "返回")} onClick={() => setStep({ step: "pick" })}><ArrowLeft /></Button>
         {text("Custom provider", "自定义服务商")}
       </DialogTitle>
@@ -219,7 +218,7 @@ export function AddProviderDialog({
     );
   } else if (step.step === "connect" && choice) {
     head = (
-      <DialogTitle className={styles.dialogHead}>
+      <DialogTitle className="flex min-w-0 items-center gap-2">
         <Button variant="ghost" size="icon-sm" aria-label={text("Back", "返回")} onClick={() => setStep({ step: "pick" })}><ArrowLeft /></Button>
         <ProviderIcon id={choice.id} size={28} />
         <span>{choice.label}</span>
@@ -237,14 +236,14 @@ export function AddProviderDialog({
             <TabsList aria-label={text("How to connect", "接入方式")}>
               {variants.map((v) => (
                 <TabsTrigger key={v.id} value={v.id} className="px-3">
-                  {v.label} <span className={styles.muted}>· {v.auth === "sign_in" ? text("Sign in", "登录") : v.auth === "local" ? text("Local", "本地") : text("API key", "API key")}</span>
+                  {v.label} <span className="text-text-muted">· {v.auth === "sign_in" ? text("Sign in", "登录") : v.auth === "local" ? text("Local", "本地") : text("API key", "API key")}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
         ) : null}
         {step.busy && step.envVar ? (
-          <div className={`${styles.line} ${styles.wait}`} role="status"><Spinner /><span>{text(`Checking the key in ${step.envVar}…`, `正在检查 ${step.envVar} 里的密钥…`)}</span></div>
+          <FieldDescription role="status" className="flex items-center gap-2"><Spinner />{text(`Checking the key in ${step.envVar}…`, `正在检查 ${step.envVar} 里的密钥…`)}</FieldDescription>
         ) : step.envVar && step.check && choice.auth !== "api_key" ? (
           <CheckLine check={step.check} consoleUrl={consoleUrl} host={hostOf(entry)} />
         ) : choice.auth === "api_key" ? (
@@ -255,7 +254,7 @@ export function AddProviderDialog({
               <CheckLine check={step.check!} consoleUrl={consoleUrl} host={hostOf(entry)} />
             ) : envKeys.length > 0 ? (
               <>
-                <div className={styles.group}>{text("In your environment", "环境变量里已有")}</div>
+                <FieldTitle>{text("In your environment", "环境变量里已有")}</FieldTitle>
                 {envKeys.map((row) => (
                   <EnvKeyRow key={row.env_var} row={row} label={choice.label} icon={choice.id} usingEnv={usingEnv}
                     onUse={(r) => { void storeEnvKey(r, { choice, family: variants }); }} />
@@ -264,7 +263,7 @@ export function AddProviderDialog({
             ) : null}
             {/* Pasting is the alternative to an environment key, and the way
                 on when the one used was rejected. */}
-            {(envChecked ? !usable : envKeys.length > 0) ? <div className={styles.group}>{text("Or paste a key", "或粘贴密钥")}</div> : null}
+            {(envChecked ? !usable : envKeys.length > 0) ? <FieldTitle>{text("Or paste a key", "或粘贴密钥")}</FieldTitle> : null}
             {envChecked && usable ? null : (
               <KeyEntry
                 key={choice.id}
@@ -279,19 +278,22 @@ export function AddProviderDialog({
               />
             )}
             {!envChecked && entry && (entry.api_key_env || entry.local) ? (
-              <>
-                <button type="button" className={styles.fold} aria-expanded={showAdvanced} onClick={() => setShowAdvanced((v) => !v)}>
-                  <ChevronRight aria-hidden="true" />{text("Advanced", "高级")}
-                </button>
-                {showAdvanced ? <BaseUrl provider={entry} onChanged={() => changed()} /> : null}
-              </>
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="xs" className="group/adv px-0 text-text-secondary">
+                    <ChevronRight data-icon="inline-start" aria-hidden="true" className="transition-transform group-data-[state=open]/adv:rotate-90" />
+                    {text("Advanced", "高级")}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-2"><BaseUrl provider={entry} onChanged={() => changed()} /></CollapsibleContent>
+              </Collapsible>
             ) : null}
           </>
         ) : choice.auth === "sign_in" ? (
           entry && choice.id !== "anthropic" ? (
             <ProviderLogin provider={entry} bare onChanged={() => { changed(); void fromModels(choice); }} />
           ) : (
-            <div className={`${styles.xs} ${styles.muted}`}>{text("Sign-in is not available here", "这里不能登录")}</div>
+            <FieldDescription>{text("Sign-in is not available here", "这里不能登录")}</FieldDescription>
           )
         ) : choice.auth === "local" ? (
           <>
@@ -302,7 +304,7 @@ export function AddProviderDialog({
                   <HealthChip health={{ state: "not_running", until: null, detail: null }} />
                   {entry?.setup_hint ? <SetupHint hint={entry.setup_hint} configured={!!entry.configured} /> : null}
                 </>
-              ) : local ? <div className={`${styles.xs} ${styles.muted} ${styles.mono}`}>{local.base_url}</div> : null;
+              ) : local ? <FieldDescription className="font-mono text-fs-xs">{local.base_url}</FieldDescription> : null;
             })()}
           </>
         ) : (
@@ -321,7 +323,7 @@ export function AddProviderDialog({
     }
   } else if (step.step === "model") {
     head = (
-      <DialogTitle className={styles.dialogHead}>
+      <DialogTitle className="flex min-w-0 items-center gap-2">
         <ProviderIcon id={step.choice.id} size={28} />
         <span>{step.choice.label}</span>
         <HealthChip health={{ state: "ready", until: null, detail: null }} label={text("Connected", "已接入")} />
@@ -331,26 +333,29 @@ export function AddProviderDialog({
     const more = Math.max(0, count - top.length);
     body = top.length ? (
       <>
-        <RadioGroup value={model} onValueChange={setModel} aria-label={text("Default model", "默认模型")} className="gap-1">
+        <RadioGroup value={model} onValueChange={setModel} aria-label={text("Default model", "默认模型")} className="gap-2">
           {top.map((m) => (
-            <label key={m.id} className={styles.modelChoice} data-model={m.id}>
-              <RadioGroupItem value={m.id} />
-              <span className={styles.mono}>{m.id}</span>
-              <span className="flex-1" />
-              <span className={`${styles.modelMeta} ${styles.num}`}>
-                {[fmtContext(m.context_window), m.input_cost != null || m.output_cost != null ? `$${fmtPrice(m.input_cost)} / $${fmtPrice(m.output_cost)}` : null].filter(Boolean).join(" · ")}
-              </span>
-            </label>
+            <FieldLabel key={m.id} htmlFor={`model-${m.id}`} data-model={m.id}>
+              <Field orientation="horizontal">
+                <RadioGroupItem value={m.id} id={`model-${m.id}`} />
+                <FieldContent>
+                  <FieldTitle className="font-mono text-fs-sm">{m.id}</FieldTitle>
+                </FieldContent>
+                <FieldDescription className="whitespace-nowrap text-fs-xs">
+                  {[fmtContext(m.context_window), m.input_cost != null || m.output_cost != null ? `$${fmtPrice(m.input_cost)} / $${fmtPrice(m.output_cost)}` : null].filter(Boolean).join(" · ")}
+                </FieldDescription>
+              </Field>
+            </FieldLabel>
           ))}
         </RadioGroup>
         {more > 0 ? (
-          <div className={`${styles.xs} ${styles.muted}`} style={{ padding: "0 10px" }}>
+          <FieldDescription className="px-2.5 text-fs-xs">
             {text(`+${more} more · ${enabled.length} enabled`, `另有 ${more} 个 · 已启用 ${enabled.length} 个`)}
-          </div>
+          </FieldDescription>
         ) : null}
       </>
     ) : (
-      <div className={`${styles.xs} ${styles.muted}`}>{text("No models listed yet", "还没有列出模型")}</div>
+      <FieldDescription>{text("No models listed yet", "还没有列出模型")}</FieldDescription>
     );
     foot = top.length ? (
       <Button size="sm" onClick={() => void startChatting()} disabled={!model || starting}>
@@ -363,11 +368,13 @@ export function AddProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={styles.dialog} data-step={step.step}>
-        {head}
-        <DialogDescription className="sr-only">{text("Connect a model provider", "接入模型服务商")}</DialogDescription>
-        <div className="flex flex-col gap-[12px] px-[18px] pb-[16px] max-h-[min(70vh,640px)] overflow-y-auto min-w-0">{body}</div>
-        {foot ? <div className={styles.dialogFoot}><span className="flex-1" />{foot}</div> : null}
+      <DialogContent className="sm:max-w-[480px]" data-step={step.step}>
+        <DialogHeader>
+          {head}
+          <DialogDescription className="sr-only">{text("Connect a model provider", "接入模型服务商")}</DialogDescription>
+        </DialogHeader>
+        <div className="-mx-4 flex max-h-[min(70vh,640px)] min-w-0 flex-col gap-3 overflow-y-auto px-4">{body}</div>
+        {foot ? <DialogFooter>{foot}</DialogFooter> : null}
       </DialogContent>
     </Dialog>
   );

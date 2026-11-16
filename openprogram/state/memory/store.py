@@ -84,7 +84,7 @@ def workspace_id() -> str:
     if _WORKSPACE_ID.fullmatch(current):
         return current
 
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     from .management.transaction import workspace_write_lock
 
     with workspace_write_lock(root()):

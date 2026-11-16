@@ -9,6 +9,9 @@ registerHooks({
     if (specifier === "@/lib/net/fetch-client") {
       return { url: stub(`export const jsonFetch = (url, init) => { globalThis.__workRequests.push([url, init?.method ?? "GET", init?.body ?? null]); return Promise.resolve({}); };`), shortCircuit: true };
     }
+    if (specifier === "@/lib/execution/activity-reads") {
+      return { url: stub("export const lastActivityRead = () => null; export const activityReadStart = () => ({ at: 0, moves: 0 }); export const rememberActivityRead = () => {};"), shortCircuit: true };
+    }
     if (specifier === "react") {
       return { url: stub("export const useCallback = (f) => f; export const useEffect = () => {}; export const useRef = (v) => ({ current: v }); export const useState = (v) => [v, () => {}];"), shortCircuit: true };
     }

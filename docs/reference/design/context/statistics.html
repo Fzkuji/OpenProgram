@@ -47,13 +47,13 @@ free = max(0, window - displayed_used) if window else none</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">runtime/context/system_prompt_node.py</code></th><td>Actual system prompt by branch HEAD</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/tool_snapshot_node.py</code></th><td>Frozen tools of the turn and their cost</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/session_stats.py</code></th><td>Categorization, deduplication, calibration</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/budget.py</code></th><td>Frozen tool schema estimates</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/system_prompt_node.py</code></th><td>Actual system prompt by branch HEAD</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/tool_snapshot_node.py</code></th><td>Frozen tools of the turn and their cost</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/token_accounting/session_stats.py</code></th><td>Categorization, deduplication, calibration</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/token_accounting/budget.py</code></th><td>Frozen tool schema estimates</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/routes/files/tree.py</code></th><td>Computes the breakdown once for the response</td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/badges/context-breakdown-panel.tsx</code></th><td>Displays it in App and Web</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_session_stats_accuracy.py</code></th><td>Structured messages, uncategorized difference, overestimate calibration, branch ancestry, old snapshots, child Agents that do not advance HEAD, frozen tools, dynamic registries, model switches</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/statistics/test_session_stats_accuracy.py</code></th><td>Structured messages, uncategorized difference, overestimate calibration, branch ancestry, old snapshots, child Agents that do not advance HEAD, frozen tools, dynamic registries, model switches</td></tr>
 </tbody>
 </table>
 </details>

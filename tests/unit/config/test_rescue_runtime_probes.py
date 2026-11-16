@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from openprogram.interfaces.cli.commands import rescue
+from openprogram.interfaces.cli.commands.maintenance import rescue
 from openprogram.interfaces.server import frontend
 
 

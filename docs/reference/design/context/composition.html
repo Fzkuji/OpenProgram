@@ -67,7 +67,7 @@ class ContextComponent:
 <table class="stack">
 <thead><tr><th scope="col">Order</th><th scope="col">Component</th><th scope="col">Appears when</th></tr></thead>
 <tbody>
-<tr><th scope="row">10</th><td><code translate="no">base</code>: who the agent is, how it works, when it stops, what it owns, how it reports, what it trusts (<code translate="no">context/guides/base.md</code>)</td><td>Always</td></tr>
+<tr><th scope="row">10</th><td><code translate="no">base</code>: who the agent is, how it works, when it stops, what it owns, how it reports, what it trusts (<code translate="no">context/prompt_assembly/guides/base.md</code>)</td><td>Always</td></tr>
 <tr><th scope="row">20</th><td><code translate="no">output_style</code></td><td>Non-default style</td></tr>
 <tr><th scope="row">30</th><td><code translate="no">inline_prompt</code>: the agent's own instructions; wins conflicts</td><td><code translate="no">system_prompt</code> set</td></tr>
 <tr><th scope="row">—</th><td>Tools and MCP schema, in the request's tool list</td><td>Always</td></tr>
@@ -104,7 +104,7 @@ class ContextComponent:
 <h3 id="l2">L2</h3>
 <p><code translate="no">build_system_prompt</code> assembles L0 and L1 only. Programs add L2 with <code translate="no">ctx.context(name, build, layer="L2")</code>, registered as <code translate="no">&lt;owner&gt;:&lt;name&gt;</code>. <code translate="no">build_turn_sections(agent, turn, channel=, tools=)</code> builds them; builders read <code translate="no">turn_inputs()</code>; the conversation's own turn sends the text beside its message as the <code translate="no">pages</code> section; another turn (a verification, a check-in) appends it to its system prompt after the goal instructions.</p>
 <p>A resumed checkpoint keeps its saved prompt.</p>
-<p>Everything below rides in front of the turn's user message, in this order, stored on the user node as its <code translate="no">turn_context</code> list (<code translate="no">context.turn_context</code>). Later requests render the same bytes from it. The code that builds a request passes its <code translate="no">audience</code> to the render.</p>
+<p>Everything below rides in front of the turn's user message, in this order, stored on the user node as its <code translate="no">turn_context</code> list (<code translate="no">context.prompt_assembly.turn_context</code>). Later requests render the same bytes from it. The code that builds a request passes its <code translate="no">audience</code> to the render.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Content</th><th scope="col">Delivered by</th></tr></thead>
 <tbody>
@@ -256,7 +256,7 @@ causes infinite recursion). Use lower-level tools to do the work directly.
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Built</th><td><code translate="no">ContextComponent</code> and three registries in <code translate="no">context/components.py</code>: nine core components, <code translate="no">open_work</code> from the conversation package, and Program sections. Conversation and function calls both use <code translate="no">render_context</code> (<code translate="no">context/nodes.py</code>) and <code translate="no">render_dag_messages</code>: <code translate="no">frame_entry_seq=-1</code> at top level; otherwise <code translate="no">render_range</code> and <code translate="no">expose</code> set visibility</td></tr>
+<tr><th scope="row">Built</th><td><code translate="no">ContextComponent</code> and three registries in <code translate="no">context/prompt_assembly/components.py</code>: nine core components, <code translate="no">open_work</code> from the conversation package, and Program sections. Conversation and function calls both use <code translate="no">render_context</code> (<code translate="no">context/session_dag/nodes.py</code>) and <code translate="no">render_dag_messages</code>: <code translate="no">frame_entry_seq=-1</code> at top level; otherwise <code translate="no">render_range</code> and <code translate="no">expose</code> set visibility</td></tr>
 <tr><th scope="row">Not yet</th><td>The YAML call tree: history renders as provider messages. The situation block and output contract; only the depth ceiling guards self-recursion. A <code translate="no">cacheable</code> field. Computer-use guidance and a token budget hint. <code translate="no">fence_core</code>, the empty and failed lines, and the <code translate="no">&lt;environment&gt;</code> harness lines</td></tr>
 </tbody>
 </table>

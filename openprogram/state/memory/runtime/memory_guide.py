@@ -42,7 +42,7 @@ _LAYOUT = """\
 ## Layout
 
 - The core section at the end of this file — what every session needs, rendered from `topics/core.md`. Edit `topics/core.md`; the section is replaced on every write.
-- `topics/` — the organised memory: one file per person, project or recurring theme. A subject with parts of its own is a directory with `overview.md` and one file per part. Paragraphs end in a `^block-id` and cite footnotes that link the chat message they came from, `/s/<session>#<message>`. Pass that link to `memory_get` to read what was actually said.
+- `topics/` — the organised memory, in folders that follow meaning: a person, company, paper, trip or project with more than one note is a folder named after it, with `overview.md` and one file per aspect, and things of one kind sit under a folder named for the kind. Paragraphs end in a `^block-id` and cite footnotes that link the chat message they came from, `/s/<session>#<message>`. Pass that link to `memory_get` to read what was actually said.
 - `timeline/` — the same facts by date: a file per year, with month and day files below it, for "what happened when".
 - `relations.json`, `recent_events.jsonl` — links between paragraphs and the latest changes.
 
@@ -208,6 +208,76 @@ def drop_removed(memory_dir: Path) -> bool:
     return True
 
 
+def follow_moves(memory_dir: Path, moved: dict[str, str]) -> bool:
+    """Rewrite the map's paths for Topic files a write moved (``moved``:
+    old path to new, under ``topics/``), and for directories that moved
+    whole. True if the file changed. The core section is left as it is.
+
+    The agents own what the map says; where a file is, is a fact the
+    Runtime knows, and a map naming a path that is gone misleads every
+    session until an agent next repairs it."""
+    if not moved:
+        return False
+    from ..management import filing
+
+    memory_dir = Path(memory_dir)
+    path = memory_dir / GUIDE_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    topics = memory_dir / "topics"
+    remaining = {
+        "topics/" + item.relative_to(topics).as_posix()
+        for item in (topics.rglob("*") if topics.is_dir() else ())
+        if item.is_file()
+    }
+    renames = {f"topics/{old}": f"topics/{new}" for old, new in moved.items()}
+    renames.update(filing.directory_renames(renames, remaining))
+    found = _CORE_SECTION.search(text)
+    head, core, tail = ((text[:found.start()], found.group(0), text[found.end():])
+                        if found else (text, "", ""))
+    files = {old: new for old, new in renames.items() if old.endswith(".md")}
+    before = (remaining - set(files.values())) | set(files)
+
+    def followed(part: str) -> str:
+        return _follow_short(filing.rewrite_paths(part, renames), files, before)
+
+    updated = followed(head) + core + followed(tail)
+    if updated == text:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
+#: A Topic file named in the map by the end of its path, in a code span
+#: or as a link target: `visa/materials.md` under a line naming the folder.
+_SHORT_REFERENCE = re.compile(r"(?P<open>`|\]\()(?P<path>[^`()\s]+\.md)(?P<close>`|\))")
+
+
+def _follow_short(text: str, renames: dict[str, str], before: set[str]) -> str:
+    """Rewrite the map's short references to moved files. A reference is
+    followed only when exactly one file of the tree before the move ended
+    in it; the new one is written from the same folder when the file
+    stayed under it, and in full otherwise."""
+    def replace(match: re.Match[str]) -> str:
+        reference = match.group("path")
+        if reference.startswith("topics/"):
+            return match.group(0)
+        holders = [path for path in before if path.endswith("/" + reference)]
+        if len(holders) != 1 or holders[0] not in renames:
+            return match.group(0)
+        old, new = holders[0], renames[holders[0]]
+        folder = old[: -len(reference)]
+        return (
+            match.group("open")
+            + (new[len(folder):] if new.startswith(folder) else new)
+            + match.group("close")
+        )
+
+    return _SHORT_REFERENCE.sub(replace, text)
+
+
 def _title(path: Path) -> str:
     """A file's title: its front matter ``name``, its first heading, or
     nothing (the path stands alone)."""
@@ -295,7 +365,7 @@ def refresh_outside_map(memory_dir: Path) -> bool:
         if not tail:
             path.unlink(missing_ok=True)
             return True
-        from openprogram.state.store.session.atomic_file import atomic_write_text
+        from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, tail)

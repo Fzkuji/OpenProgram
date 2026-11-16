@@ -5,6 +5,7 @@
 // the Scheduler tasks set from it (GET /api/sessions/{id}/work).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { lastActivityRead, activityReadStart, rememberActivityRead } from "@/lib/execution/activity-reads";
 import type {
   AlwaysOnDelivery, AlwaysOnNotify, AlwaysOnQuietHours, AlwaysOnReportKind, AlwaysOnWakeOutcome,
 } from "@/lib/agents/always-on";
@@ -83,6 +84,21 @@ export type RoutineRun = {
   tip?: string | null;
 };
 
+/** How one run of a scheduled task came out (openprogram/runtime/scheduler/task_activity.py). */
+export type TaskRunOutcome = "running" | "waiting" | "quiet" | "notified" | "unable" | "failed" | "stopped" | "interrupted";
+
+/** A task's runs in short: how many, how many did not finish or told the
+ *  reader, when the last began, and the last 24 outcomes, oldest first. */
+export type TaskRunSummary = {
+  runs: number;
+  /** What its runs cost, their helpers included; null when nothing is priced. */
+  cost?: number | null;
+  unfinished: number;
+  notified: number;
+  last_at: number | null;
+  recent: TaskRunOutcome[];
+};
+
 export type Routine = {
   id: string;
   title: string;
@@ -100,7 +116,14 @@ export type Routine = {
   hook_url?: string;
   /** The last runs of a task that runs a prompt, newest first. */
   runs?: RoutineRun[];
+  summary?: TaskRunSummary;
 };
+
+/** A task that runs a prompt is an agent of the conversation: it has runs
+ *  and helpers, and a row in Agents. Reminders and commands do not. */
+export function isAgentTask(task: Routine): boolean {
+  return !task.reminder && !task.command;
+}
 
 export type ConversationWork = {
   session_id: string;
@@ -156,12 +179,13 @@ export function onConversationWorkChanged(listener: (sessionId: string) => void)
 
 /** Reads the conversation's work while the panel is open: on open, on the
  *  worker's change frames, on reconnect and focus, and every 30 seconds
- *  for Scheduler tasks, which publish no event of their own. */
+ *  for Scheduler tasks, which publish no event of their own. The last read
+ *  of the conversation draws until the new one answers (activity-reads.ts). */
 export function useConversationWork(active: boolean, sessionId: string | null) {
-  const [work, setWork] = useState<ConversationWork | null>(null);
+  const [read, setRead] = useState<{ sessionId: string; work: ConversationWork } | null>(null);
+  const work = read && read.sessionId === sessionId ? read.work : lastActivityRead<ConversationWork>("work", sessionId);
   const refreshRef = useRef<() => void>(() => {});
   const refresh = useCallback(() => refreshRef.current(), []);
-  useEffect(() => { setWork(null); }, [sessionId]);
   useEffect(() => {
     if (!active || !sessionId) return;
     let disposed = false;
@@ -171,8 +195,12 @@ export function useConversationWork(active: boolean, sessionId: string | null) {
       controller?.abort();
       const current = new AbortController();
       controller = current;
+      const startedAt = activityReadStart();
       jsonFetch<ConversationWork>(`${base(sessionId)}/work`, { signal: current.signal })
-        .then(data => { if (!disposed) setWork(data); })
+        .then(data => {
+          rememberActivityRead("work", sessionId, data, startedAt);
+          if (!disposed) setRead({ sessionId, work: data });
+        })
         .catch(() => { /* keep the last read; the next signal retries */ });
     };
     refreshRef.current = load;

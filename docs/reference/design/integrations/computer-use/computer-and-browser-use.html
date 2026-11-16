@@ -1,0 +1,224 @@
+<title>Computer and browser use</title>
+<meta name="description" content="The computer_use_agent tool: targets, guides and code, with the pages for each backend.">
+<h1>Computer and browser use</h1>
+
+<p>The model operates applications on macOS, Linux and Windows, web pages and a remote virtual machine through one tool.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 276" role="img" aria-label="One entry. The model has one screen tool, computer_use_agent, which takes one of three targets. app reaches an application's window, operated behind the user's work. browser reaches a tab in the App, a browser of its own with no window when no App window can be reached, or the user's Chrome or Edge when asked. vm reaches a virtual machine's screen.">
+  <defs><marker id="oe-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="130" translate="no">computer_use_agent</text>
+  <text class="t-soft" x="0" y="154">one screen tool,</text>
+  <text class="t-soft" x="0" y="174">one target per call</text>
+  <path class="ln" d="M212 123H280" marker-end="url(#oe-a)"/>
+  <path class="ln" d="M246 123V23H280" marker-end="url(#oe-a)"/>
+  <path class="ln" d="M246 123V235H280" marker-end="url(#oe-a)"/>
+  <text class="t-big" x="292" y="30" translate="no">app</text>
+  <text class="t-soft" x="292" y="54">an application's window,</text>
+  <text class="t-soft" x="292" y="74">behind the user's work</text>
+  <text class="t-big" x="292" y="130" translate="no">browser</text>
+  <text class="t-soft" x="292" y="154">a tab in the App</text>
+  <text class="t-soft" x="292" y="174">no App window in reach: a browser of its own</text>
+  <text class="t-soft" x="292" y="194">chrome or edge asked: the user's Chrome or Edge</text>
+  <text class="t-big" x="292" y="242" translate="no">vm</text>
+  <text class="t-soft" x="292" y="266">a virtual machine's screen</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">computer_use_agent</code></strong><small>one screen tool, one target per call</small></li>
+  <li><strong><code translate="no">app</code></strong><small>an application's window, behind the user's work</small></li>
+  <li><strong><code translate="no">browser</code></strong><small>a tab in the App; a browser of its own when no App window is in reach; the user's Chrome or Edge when asked</small></li>
+  <li class="flow-end"><strong><code translate="no">vm</code></strong><small>a virtual machine's screen</small></li>
+</ol>
+</figure>
+
+<h2 id="pages">Pages</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="approval.html">Screen approval</a></th><td>grants, permission modes, page scripts, rules and system access</td></tr>
+<tr id="application-backend"><th scope="row"><a href="app-target.html">Application target</a></th><td>actions, results, stable indices, one agent at a time, menus, OCR and audio</td></tr>
+<tr><th scope="row"><a href="macos.html">macOS delivery</a></th><td>background input, file dialogs, Spaces, busy applications and refusals</td></tr>
+<tr><th scope="row"><a href="linux-windows.html">Linux and Windows backends</a></th><td>what each platform uses, and the cua-driver question</td></tr>
+<tr id="interface-work"><th scope="row"><a href="interface.html">Computer use interface</a></th><td>agent cursor, window marker, cards, settings and pointing at things</td></tr>
+<tr id="the-browser-application"><th scope="row"><a href="../browser/application.html">Browser application</a></th><td>the modules, the service and a Program's web tabs</td></tr>
+<tr id="browser-target-the-tab-driver"><th scope="row"><a href="../browser/tab-driver.html">Browser tab driver</a></th><td>tabs, several agents, single writes, coordinates and preview</td></tr>
+<tr><th scope="row"><a href="../browser/tab-actions.html">Browser tab actions</a></th><td>reading, refs, acting, upload and page scripts</td></tr>
+</tbody>
+</table>
+
+<h2 id="three-ways-to-give-a-model-a-screen">Three ways to give a model a screen</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Codex (ChatGPT.app)</th><th scope="col">Claude Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry</th><td>One tool: <code translate="no">js</code> in the <code translate="no">cua_repl</code> MCP server, JavaScript against <code translate="no">sky</code> (Mac apps) and <code translate="no">agent.browsers</code> (in-app browser, Chrome)</td><td>Many small tools: built-in browser <code translate="no">navigate</code>, <code translate="no">read_page</code>, <code translate="no">find</code>, <code translate="no">computer</code>, <code translate="no">form_input</code> and about fifteen more; a second set for the user's Chrome</td><td>One tool, one small schema for every target</td></tr>
+<tr><th scope="row">Knowledge</th><td>Skills <code translate="no">computer-use</code>, <code translate="no">control-in-app-browser</code>, <code translate="no">control-chrome</code>, 3,200–3,400 tokens each; one context line per skill; the browser skill then runs <code translate="no">documentation()</code></td><td>Full schemas always in context; the Chrome set deferred as bare names until <code translate="no">ToolSearch</code></td><td>Per-target <a href="../../function/tool-guides.html">tool guides</a> come with the first call's result, with the target's state</td></tr>
+<tr><th scope="row">Arguments</th><td>Code</td><td>Schema-checked parameters</td><td>Structured <code translate="no">action</code> + <code translate="no">args</code>, up to 20 <code translate="no">actions</code>, or Python <code translate="no">code</code></td></tr>
+<tr><th scope="row">Cost</th><td>Two or three model calls to load; a model that skips reading does not know the API</td><td>Resident context in every conversation; two sets with the same verbs invite the wrong pick</td><td>No extra call; does not rely on the model remembering</td></tr>
+<tr><th scope="row">Context</th><td>The agent that calls the tool operates the screen; the tool has no argument that passes the task on</td><td>Not compared</td><td>As Codex: the caller operates, and nothing in the tool starts another agent</td></tr>
+<tr><th scope="row">Pointing</th><td>Not compared</td><td>Not compared</td><td>Element index, page ref, or pixel of the last screenshot</td></tr>
+</tbody>
+</table>
+
+<h2 id="computer_use_agent"><code translate="no">computer_use_agent</code></h2>
+
+<h3 id="shape">Shape</h3>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target, action?, args?, actions?, code?, timeout?)</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">Parameter</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">target</code></th><td><code translate="no">app</code>, <code translate="no">browser</code> or <code translate="no">vm</code>, as this host offers them when the turn starts; a target it cannot reach is not in the schema, and a call that still names one answers with how to set it up</td></tr>
+<tr><th scope="row"><code translate="no">action</code>, <code translate="no">args</code></th><td>one step and its arguments; omitted, the call opens the target</td></tr>
+<tr><th scope="row"><code translate="no">actions</code></th><td>up to 20 steps <code translate="no">{action, args}</code> on one target, stopping at the first error; the state comes back once</td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>Python run in the isolated interpreter (see Code); in the schema only where that sandbox runs (macOS)</td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td>seconds a code call may run, at most 120 (default 60); present with <code translate="no">code</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>How the schema is built</summary>
+<ul>
+<li>The description and schema are built when each turn resolves its tools (<code translate="no">tool.describe</code>, through the <code translate="no">describe</code> hook of <code translate="no">function()</code> and <code translate="no">current_tool</code>), so they name only what the host has:
+<ul>
+<li><code translate="no">app</code> where the platform backend loads</li>
+<li><code translate="no">browser</code> while the browser application is enabled</li>
+<li><code translate="no">vm</code> once <code translate="no">computer_use.vm_url</code> is set</li>
+<li>The user's Chrome or Edge only where the Playwright Extension is installed (<code translate="no">extension.installed</code>, which looks for <code translate="no">&lt;profile&gt;/Extensions/&lt;id&gt;</code> in the browser's data directory and never touches the browser)</li>
+<li><code translate="no">code</code> only where the sandbox runs</li>
+</ul>
+</li>
+<li>Without the extension the browser line says that a page in the user's Chrome or Edge is operated as an application window.</li>
+<li>The model therefore never learns of an absent target from a refusal.</li>
+<li>With no target at all, <code translate="no">check_fn</code> hides the tool.</li>
+</ul>
+<p><code translate="no">action</code>, <code translate="no">actions</code> and <code translate="no">code</code> are exclusive. Arguments are validated by the target, and an error names the right spelling, since the schema does not list every action's arguments.</p>
+</details>
+
+<h3 id="targets-and-guides">Targets and guides</h3>
+<table class="stack">
+<thead><tr><th scope="col">Target</th><th scope="col">Backend</th><th scope="col">Opening returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">app</code></th><td><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/</code> (macOS, Linux X11, Windows)</td><td><code translate="no">args.app</code> given: its state (tree and screenshot); otherwise the app list</td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td>the <a href="../browser/tab-driver.html">tab driver</a>: a page opens as a tab in the App, or in a browser of the driver's own with no window when no App window can be reached; with <code translate="no">args.browser</code> = <code translate="no">chrome</code> or <code translate="no">edge</code>, Playwright MCP in extension mode connected to the user's browser</td><td>the tab list</td></tr>
+<tr><th scope="row"><code translate="no">vm</code></th><td>an OSWorld-compatible server at <code translate="no">computer_use.vm_url</code></td><td>a screenshot</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Guide delivery and the user's browser</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Guides</th><td>Each target has a guide (<code translate="no">guides/&lt;target&gt;.md</code>; the app guide has macOS, Linux and Windows variants): its actions, their arguments and how results look.</td></tr>
+<tr><th scope="row">Delivery</th><td><code translate="no">tool.py</code> registers them as included tool guides: <code translate="no">computer_use_agent.&lt;target&gt;</code> arrives with the first result of a call that operates that target, and <code translate="no">computer_use_agent.code</code> arrives with the first result of a call that operates any target, on hosts where code runs, so the model has read how code works before it sends any.</td></tr>
+<tr><th scope="row">No waiting</th><td>No call waits for a guide: a call that sends code before either guide was seen runs, and the guides come back with its result.</td></tr>
+<tr><th scope="row">Known guides</th><td>Whether a guide is known is read from the request the agent loop last sent, so compaction, cleared tool results and a worker restart all lead to the guide being sent again; a guide inside a prompt that another agent wrote reaches the model inside the speaker's JSON envelope, so <code translate="no">guides.known</code> also matches the marker with its quotes escaped.</td></tr>
+<tr><th scope="row">On request</th><td><code translate="no">action: "guide"</code> and <code translate="no">help("computer_use_agent.&lt;target&gt;")</code> return them on request.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Actions</th><td>The <code translate="no">app</code> actions are those of the <a href="app-target.html">application target</a>, with the same arguments; the <code translate="no">browser</code> actions are the tab driver's (<code translate="no">tabs</code>, <code translate="no">open</code>, <code translate="no">read</code>, <code translate="no">click</code>, <code translate="no">type</code> …, see <a href="../browser/tab-driver.html">Browser target: the tab driver</a>).</td></tr>
+<tr><th scope="row">Browser first</th><td>As in Codex, the browser is chosen first and the actions do not change with it.</td></tr>
+<tr><th scope="row">Guide per delivery</th><td>The browser guide is built per delivery from the same check: it names only the user's browsers that have the extension, and with none it points pages in them to the <code translate="no">app</code> target.</td></tr>
+<tr><th scope="row">No extension</th><td>A call naming a browser without the extension is answered at once with that advice, asks no approval and starts no server.</td></tr>
+<tr><th scope="row">Server</th><td>For those that have it, <code translate="no">targets/browser.py</code> hands each step to <code translate="no">extension.py</code> of the browser application, which runs a pinned <code translate="no">@playwright/mcp --extension --browser chrome|msedge</code> through its own MCP client, one server per conversation and browser, kept between calls.</td></tr>
+<tr><th scope="row">Connection</th><td>The server opens <code translate="no">chrome-extension://&lt;id&gt;/connect.html</code> in that browser with the address of its relay, and the Playwright Extension connects back and relays CDP for the tab the user shares; with <code translate="no">computer_use.chrome_extension_token</code> set, the server passes <code translate="no">PLAYWRIGHT_MCP_EXTENSION_TOKEN</code> and the extension connects without asking.</td></tr>
+<tr><th scope="row">Action mapping</th><td><code translate="no">tabs</code>, <code translate="no">read</code> (with <code translate="no">tab</code> an index, which selects that tab), <code translate="no">open</code>, <code translate="no">close</code>, <code translate="no">screenshot</code>, <code translate="no">upload</code>, <code translate="no">evaluate</code> and the logs map to the server's tab, snapshot, screenshot, file, evaluate and log tools; every element and pointer action goes through <code translate="no">OfficialMCPPageBackend._action_call</code>, the same translation the <code translate="no">playwright_mcp</code> backend applies to App Pages.</td></tr>
+<tr><th scope="row">Refs</th><td>Refs are the server's snapshot refs.</td></tr>
+<tr><th scope="row">Code mode</th><td>In code mode <code translate="no">cu.browser</code> reaches the user's browser when the code call names it in <code translate="no">args.browser</code>.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="pointing">Pointing</h3>
+<p>A step points at its target in one of two ways, both passed to the backend as they are:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Given</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">element_index</code> (app) / <code translate="no">ref</code> (browser)</th><td>the backend acts on the element</td></tr>
+<tr><th scope="row"><code translate="no">x</code>, <code translate="no">y</code></th><td>pixels of the target's last screenshot</td></tr>
+</tbody>
+</table>
+<p>The VM has no element tree, so its pointer actions take <code translate="no">x</code>, <code translate="no">y</code> only.</p>
+
+<details id="code">
+<summary>Code</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Interpreter</th><td><code translate="no">code</code> runs in the persistent sandboxed interpreter of <code translate="no">computer_use_agent/sandbox/runner.py</code> (seatbelt on macOS, no file, network or process access).</td></tr>
+<tr><th scope="row">Namespace</th><td>The namespace has <code translate="no">cu.app</code>, <code translate="no">cu.browser</code> and <code translate="no">cu.vm</code>; <code translate="no">await cu.app.click(app="Numbers", element_index=3)</code> is the structured step <code translate="no">click</code> with those arguments, dispatched by the host through the same target code and checks, one effect receipt per step (<code translate="no">computer_use_agent/sandbox/broker.py</code>).</td></tr>
+<tr><th scope="row">Docstrings</th><td>The prelude gives each <code translate="no">cu</code> method the guide line of its action as its docstring, so <code translate="no">dir(cu.app)</code> and <code translate="no">help(cu.app.click)</code> work inside the interpreter.</td></tr>
+<tr><th scope="row">Parameter text</th><td>The <code translate="no">code</code> parameter's own description shows one such call for each target present, so a model that no longer has the code guide in view still writes <code translate="no">cu.browser.click(...)</code> and not a bare <code translate="no">click(...)</code>.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Screen</th><td>A code call acts on the screen its call names: for <code translate="no">app</code>, <code translate="no">args.app</code>; for <code translate="no">browser</code>, the browser of <code translate="no">args.browser</code> (the built-in one when omitted).</td></tr>
+<tr><th scope="row">Grant</th><td>The call's grant covers that screen, so <code translate="no">code._validator</code> refuses a step that names another application or another browser and lets everything else the target offers through, page scripts and opening sites included.</td></tr>
+<tr><th scope="row">Upload</th><td>Refused in code: an upload from the built-in browser sends a local file, so it is made as an action of its own.</td></tr>
+<tr><th scope="row">Page script</th><td>A page script does not run where nobody attends the turn, from code as from an action: <code translate="no">code.run</code> reads that from the turn's request when the call starts.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Lifetime</th><td>One interpreter serves one execution attempt, so variables persist for the rest of the turn; it is replaced when it fails or times out.</td></tr>
+<tr><th scope="row">Held by</th><td>Interpreters are held per conversation and execution, and the app target's window states per conversation and job (<code translate="no">tool.operator</code>, from the job the call runs in).</td></tr>
+<tr><th scope="row">Shared key</th><td>The conversation's own turns share one key, so a turn acts on the window the turn before it read. An agent the conversation starts runs as its own job, whose reads and code never replace what the main turn or another agent is acting on.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Limits</th><td>Each call may run 120 seconds and 100 steps.</td></tr>
+<tr><th scope="row">Printed text</th><td>Printed text is kept up to 256 KB and the rest is dropped with a note in the result; what a step returns goes to the code and is not counted against that.</td></tr>
+<tr><th scope="row">Not dispatched</th><td>A step that stops before input reaches the app (<code translate="no">NotDispatched</code>: an element that is gone, a hidden element, an app not found) returns <code translate="no">action_dispatched: false</code>, so the broker records it as not committed.</td></tr>
+<tr><th scope="row">Failed after input</th><td>A step that fails after input may have been sent raises in the code with the target's message, and the steps before it stay made.</td></tr>
+<tr><th scope="row">Timed out</th><td>A call that outruns its time, or whose interpreter stops, comes back as an error result: the steps already made stay made, the step that was running may or may not have applied, and the next code call starts a new interpreter without this one's variables.</td></tr>
+<tr><th scope="row">Open receipts</th><td>When a call returns, the broker closes the receipts of the steps whose outcome it never learned (<code translate="no">GuiBroker.settle</code>, receipt state <code translate="no">unknown</code>): the result is what tells the model, and no open receipt outlives the call.</td></tr>
+<tr><th scope="row">Platform</th><td>Code mode needs the macOS sandbox; elsewhere a code call reports that the sandbox is unavailable.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="context">
+<summary>Who operates</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Caller</th><td>The agent that calls the tool operates the screen and carries the task through. The tool takes no argument that passes the task to another agent, so a failed step is retried where it failed.</td></tr>
+<tr><th scope="row">Long tasks</th><td><code translate="no">code</code> runs many steps in one call and returns only what it prints, which keeps intermediate screens out of the conversation.</td></tr>
+<tr><th scope="row">Several screens</th><td>Work on separate screens at once goes through the <code translate="no">agent</code> tool, which the base instructions allow only when the user or project instructions ask for sub-agents. Each agent keeps its own window states, element indices and code interpreter.</td></tr>
+<tr><th scope="row">Time limit</th><td>The tool has no overall time limit: each action bounds itself and code stops at its own timeout.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="module-layout">
+<summary>Tool modules</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Module</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/tool.py</code></th><td>the registered tool: schema, catalogue, routing, guide registration, approval reason</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/guides/</code></th><td>the target guides</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/app.py</code></th><td>application actions over <code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/</code></td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/browser.py</code></th><td>the browser actions: the tab driver (the <code translate="no">browser</code> service's <code translate="no">tabs</code>), or the user's browser (its <code translate="no">extension</code>)</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/vm.py</code></th><td>screenshot and pyautogui input over the VM server's HTTP API</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/code.py</code></th><td>code mode over <code translate="no">computer_use_agent/sandbox/runner.py</code> and <code translate="no">sandbox/broker.py</code></td></tr>
+</tbody>
+</table>
+<p>There is no separate plan → decide → act → verify loop: the agent that calls the tool carries a long task through, with code for many steps in one call.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td><code translate="no">computer_use_agent</code> with the <code translate="no">app</code>, <code translate="no">browser</code> and <code translate="no">vm</code> targets, per-target guides on first use, several steps, code mode, the VM target over the OSWorld HTTP API (through the outbound policy as the <code translate="no">computer_use.vm</code> consumer), and the web presentation; unit tests cover routing, guides, the VM scripts and approval, and a sandbox test runs code against stub targets. Not yet run against a live VM server.</td></tr>
+<tr><th scope="row">Implemented</th><td>the user's Chrome and Edge in the <code translate="no">browser</code> target over Playwright MCP's extension mode, with unit tests for the action mapping, Edge, stopping on failure, the tab list and the approval subject. Not yet run against the Playwright Extension in a live browser.</td></tr>
+</tbody>
+</table>

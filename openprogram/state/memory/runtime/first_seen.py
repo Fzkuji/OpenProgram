@@ -83,7 +83,7 @@ def dates(memory_dir: Path, units: Iterable[Any]) -> dict[str, str]:
             day = _added_on(memory_dir, topic_path) or today
             for memory_id in ids:
                 known[memory_id] = day
-        from openprogram.state.store.session.atomic_file import atomic_write_text
+        from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
         atomic_write_text(
             _path(memory_dir),
@@ -96,4 +96,31 @@ def dates(memory_dir: Path, units: Iterable[Any]) -> dict[str, str]:
         return {}
 
 
-__all__ = ["FIRST_SEEN_FILE", "dates", "load"]
+def carry(memory_dir: Path, renamed: dict[str, str]) -> None:
+    """Give each new paragraph ID the recorded day of the ID it replaces
+    (a file moved, so the IDs derived from its path changed). Never
+    raises."""
+    if not renamed:
+        return
+    memory_dir = Path(memory_dir)
+    try:
+        known = load(memory_dir)
+        added = {
+            new: known[old] for old, new in renamed.items()
+            if old in known and new not in known
+        }
+        if not added:
+            return
+        known.update(added)
+        from openprogram.state.store.session.files.atomic_file import atomic_write_text
+
+        atomic_write_text(
+            _path(memory_dir),
+            json.dumps({"version": 1, "days": dict(sorted(known.items()))},
+                       indent=2, ensure_ascii=False),
+        )
+    except Exception as exc:  # noqa: BLE001 - a view never fails a write
+        logger.debug("memory: first-seen days not carried: %s", exc)
+
+
+__all__ = ["FIRST_SEEN_FILE", "carry", "dates", "load"]

@@ -70,7 +70,7 @@ def _with_code_nodes(db, session_id: str, head_id, node_ids: list) -> list:
     if not node_ids:
         return node_ids
     try:
-        from openprogram.runtime.context.nodes import render_context
+        from openprogram.runtime.context.session_dag.nodes import render_context
         from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
         graph = SessionNodeWriter(db, session_id).load()
@@ -138,8 +138,8 @@ def register(app):
             "web_search": "web", "web_fetch": "web",
             "pdf": "web", "image_analyze": "web", "image_generate": "web",
             "enter_plan_mode": "planning", "exit_plan_mode": "planning",
-            "todo_create": "planning",
-            "todo_update": "planning", "todo_list": "planning",
+            "task_start": "planning",
+            "task_step": "planning", "task_list": "planning",
             "agent": "agents", "archive_agent": "agents",
             "list_agents": "agents", "read_conversation": "agents",
             "send_message": "agents", "mixture_of_agents": "agents",
@@ -464,7 +464,7 @@ def register(app):
 
     def _context_range(session_id: str, head_id: str | None) -> dict:
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.runtime.context.persistence import rendered_history
+        from openprogram.runtime.context.compaction.persistence import rendered_history
 
         db = default_db()
         # The COMPACTED view, exactly what the dispatcher feeds the
@@ -492,7 +492,7 @@ def register(app):
         agent's system prompt and tools against the selected model, with
         the selected project's memory."""
         import asyncio
-        from openprogram.runtime.context import session_stats as _cs
+        from openprogram.runtime.context.token_accounting import session_stats as _cs
 
         try:
             bd = await asyncio.to_thread(
@@ -516,14 +516,14 @@ def register(app):
         """Per-category input-token breakdown for the session (Claude Code /context).
 
         The breakdown itself is recomputed live by
-        ``openprogram.runtime.context.session_stats``; the ``total_used`` /
+        ``openprogram.runtime.context.token_accounting.session_stats``; the ``total_used`` /
         ``window`` / ``basis`` triple on top of it is the same record the
         composer ring reads, so panel and ring never disagree.
         """
         return await _conversation_read(session_id, _session_context, session_id, head_id)
 
     def _session_context(session_id: str, head_id: str | None) -> dict:
-        from openprogram.runtime.context import session_stats as _cs
+        from openprogram.runtime.context.token_accounting import session_stats as _cs
         from openprogram.interfaces.server import server as _s
 
         try:
@@ -577,7 +577,7 @@ def register(app):
     @app.get("/api/sessions/{session_id}/dag")
     async def get_session_dag(session_id: str):
         """Full session session DAG as a TNode tree (step 8)."""
-        from openprogram.runtime.execution.dag import build_session_dag
+        from openprogram.runtime.execution.projections.dag import build_session_dag
         return await _conversation_read(
             session_id, lambda: {"tree": build_session_dag(session_id)})
 

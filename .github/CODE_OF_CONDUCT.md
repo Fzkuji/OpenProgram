@@ -48,7 +48,7 @@ is officially representing the community in public spaces.
 ## Enforcement
 
 Report abusive, harassing, or otherwise unacceptable behavior privately to
-[the maintainers through GitHub](https://github.com/FuzzyKuji/OpenProgram/security/advisories/new). Reports
+[the maintainers through GitHub](https://github.com/Fzkuji/OpenProgram/security/advisories/new). Reports
 will be reviewed promptly and fairly. Community leaders will respect the privacy
 and security of every reporter.
 

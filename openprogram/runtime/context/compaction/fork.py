@@ -98,8 +98,8 @@ def fork_source(session_id: str, chain_ids: Iterable[str], model: Any, *,
     if not candidates:
         return None
     source = max(candidates, key=lambda s: s.recorded_at)
-    from openprogram.runtime.context.budget import BudgetAllocator
-    from openprogram.runtime.context.tokens import _text_tokens, real_context_window
+    from openprogram.runtime.context.token_accounting.budget import BudgetAllocator
+    from openprogram.runtime.context.token_accounting.tokens import _text_tokens, real_context_window
     window = real_context_window(model)
     used = BudgetAllocator().allocate(
         context_window=window,

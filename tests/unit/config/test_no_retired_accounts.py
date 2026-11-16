@@ -1,6 +1,6 @@
 """No tracked file names one of the project's retired GitHub accounts.
 
-The names live only as hashes in ``scripts/retired_accounts.py``, so neither
+The names live only as hashes in ``scripts/publishing/retired_accounts.py``, so neither
 this test nor the scanner is itself a mention. ``publish-github.sh`` runs the
 same scanner over the commit it publishes.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import retired_accounts
+from scripts.publishing import retired_accounts
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -80,6 +80,6 @@ def test_scan_names_the_line_and_a_path_that_is_itself_a_mention(stand_in: str) 
 
 
 def test_the_scanner_does_not_name_the_accounts_it_looks_for() -> None:
-    source = (ROOT / "scripts/retired_accounts.py").read_text(encoding="utf-8")
+    source = (ROOT / "scripts/publishing/retired_accounts.py").read_text(encoding="utf-8")
     assert not retired_accounts.names_retired_account(source)
-    assert len(retired_accounts.RETIRED) == 5
+    assert len(retired_accounts.RETIRED) == 3

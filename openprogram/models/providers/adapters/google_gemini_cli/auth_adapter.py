@@ -33,6 +33,7 @@ from openprogram.models.auth.credential_provider import (
     ProviderAuthConfig,
     register_provider_config,
 )
+from openprogram.models.auth.account.account_labels import token_identity
 from openprogram.models.auth.types import (
     Credential,
     CredentialData,
@@ -48,7 +49,6 @@ def gemini_cli_credentials_path() -> Path:
 
 def import_from_gemini_cli(
     *,
-    account_id: str = "default",
     path: Optional[Path] = None,
 ) -> Optional[Credential]:
     """Read Gemini CLI's OAuth file; return a delegated credential or None."""
@@ -73,10 +73,9 @@ def import_from_gemini_cli(
 
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
-        kind="cli_delegated",
+        kind="import",
         payload=CredentialData(
-            kind="cli_delegated",
+            kind="import",
             data={
                 "store_path": str(target),
                 "access_key_path": ["access_token"],
@@ -84,7 +83,9 @@ def import_from_gemini_cli(
                 "expires_key_path": ["expiry_date"],
             },
         ),
-        source="gemini_cli_import",
+        source="import",
+        # The account's email, from the sign-in's id token.
+        identity=token_identity(data.get("id_token")),
         metadata=metadata,
         read_only=True,
     )

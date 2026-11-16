@@ -277,8 +277,10 @@ export function UserBubble({ msg, sessionIdOverride }: { msg: ChatMsg; sessionId
       {notSent && !editing ? (
         <NotSent msg={msg} sessionId={sessionId} withFiles={attachments.length > 0 || recordings.length > 0} />
       ) : null}
-      {!editing && !pending && !notSent ? (
-        <div className="message-actions-footer">
+      {/* Drawn from the first frame, so the row has its final height before
+          the server acknowledges the send; hidden until then (.is-pending). */}
+      {!editing && !notSent ? (
+        <div className="message-actions-footer" aria-hidden={pending || undefined}>
           <MessageActions sessionIdOverride={sessionIdOverride} msg={msg} onEdit={() => setEditing(true)} />
         </div>
       ) : null}

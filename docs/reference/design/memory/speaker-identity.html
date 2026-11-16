@@ -15,7 +15,7 @@
 <tr><th scope="row">Discord, Slack</th><td><code translate="no">peer_id</code> is <code translate="no">chat_id_user_id</code></td><td>one</td></tr>
 <tr><th scope="row">Web, CLI, TUI</th><td>no channel, no peer</td><td>one: <code translate="no">owner/local</code></td></tr>
 </tbody></table>
-<p class="note">A session row holds one peer, so identity goes on every message. Routing: <code translate="no">openprogram/interfaces/channels/_session_routing.py</code>. Its <code translate="no">session_scope</code> values derive from openclaw's <code translate="no">dmScope</code>.</p>
+<p class="note">A session row holds one peer, so identity goes on every message. Routing: <code translate="no">openprogram/interfaces/channels/inbound/_session_routing.py</code>. Its <code translate="no">session_scope</code> values derive from openclaw's <code translate="no">dmScope</code>.</p>
 <h2 id="chain">How identity travels</h2>
 <figure>
 <svg class="fig-wide" viewBox="0 0 680 290" role="img" aria-label="The channel adapter reads the sender's id and display name. The dispatcher, turn request and session store carry them beside the body. From stored message nodes, the live agent, memory writer and Web chat each read them.">

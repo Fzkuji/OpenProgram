@@ -50,7 +50,7 @@
      border, 16px corners. Like those cards, hover deepens the shadow. */
   background: var(--user-msg-bg);
   box-shadow: var(--composer-shadow);
-  transition: box-shadow var(--motion-medium) var(--ease-standard);
+  transition: box-shadow var(--motion-medium) var(--ease-standard), opacity var(--motion-medium) var(--ease-standard);
   border-radius: var(--radius-2xl);
   padding: 10px 16px;
   width: fit-content;
@@ -65,6 +65,9 @@
 /* A send the server has not acknowledged yet is drawn faded; one that never
    reached it says so on a quiet line under the bubble. */
 .message.user.is-pending .message-content { opacity: 0.6; }
+/* The action row keeps its place under a send that is not acknowledged yet,
+   so the row does not grow when it is. */
+.message.user.is-pending .message-actions-footer { visibility: hidden; }
 .message.user .user-not-sent {
   display: flex;
   align-items: center;

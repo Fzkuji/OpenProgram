@@ -45,7 +45,8 @@ const OWNERS = new Set([
   "app/styles/base/document.css",
   "lib/prefs/appearance/font-stacks.ts",
   "lib/prefs/appearance/font-pref.ts",
-  "components/settings/sections/general-section.tsx",
+  // Appearance holds the equal-width digits switch and the theme swatches.
+  "components/settings/sections/appearance-section.tsx",
 ]);
 
 // The Code rain theme is pixel art: its glyphs, the welcome canvas and the
@@ -75,11 +76,15 @@ const COLOUR_DATA = new Set([
   // Agent characters keep their own fixed colours, like a generated avatar.
   "components/avatar/bot/catalog.ts",
   "components/center-tabs/pages/launchpad/launchpad-icons.tsx",
+  // A chat app's logo is drawn in its own brand colour.
+  "lib/channels/channel-brands.ts",
   "components/files/file-type-icon.module.css",
   "components/files/preview/pdf-preview.tsx",
   "components/memory/icons.tsx",
   "components/right-sidebar/running/program-progress.tsx",
   "components/settings/search-providers/glyph.tsx",
+  // The letter-avatar swatches the user picks from.
+  "components/settings/sections/general-section.tsx",
   "components/settings/token-usage/index.tsx",
   "lib/chat/code-rain.ts",
   "lib/chat/markdown/mermaid.ts",
@@ -88,6 +93,8 @@ const COLOUR_DATA = new Set([
   "lib/effort/effort-color.ts",
   // A web page's own colour, read from a picture of it on a canvas.
   "lib/browser/web-tab/picture-edge.ts",
+  // A chat channel's brand colour, filling its one-colour logo.
+  "lib/channels/channel-brands.ts",
   "lib/prefs/appearance/theme-config.ts",
   "lib/prefs/user-profile.ts",
   "lib/runtime-bridge/dag/interaction/view/minimap.ts",

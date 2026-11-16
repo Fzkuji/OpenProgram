@@ -6,8 +6,8 @@
     per variable, matched to the catalogue by the provider's key names
     (the static table, then models.dev's ``env`` list), the way OpenCode
     recognises keys from its catalogue. Only the name and a masked tail
-    leave the process; ``Use`` stores the key server side
-    (``POST /api/providers/{id}/accounts/env``).
+    leave the process; each one is already a read-only credential row of its
+    provider (``models/auth/store.py`` ``env_rows``), never copied.
   * ``local`` — local servers (Ollama, LM Studio, vLLM, llama.cpp) that
     answer ``GET /models`` on their configured loopback address within a
     short timeout, without a key.
@@ -17,6 +17,8 @@
 Nothing here sends a request with a key.
 """
 from __future__ import annotations
+
+import contextlib
 
 import os
 from typing import Literal, Optional, TypedDict
@@ -112,16 +114,12 @@ def env_value(name: str) -> str:
 
 def _catalogue_ids() -> list[str]:
     ids: list[str] = []
-    try:
+    with contextlib.suppress(Exception):
         from openprogram.models.providers.catalog.metadata import _shipped_provider_ids
         ids += sorted(_shipped_provider_ids())
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         from openprogram.models.providers.catalog.sources import models_dev
         ids += sorted(p["id"] for p in models_dev.list_providers() if p.get("id"))
-    except Exception:
-        pass
     try:
         from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
     except Exception:
@@ -137,8 +135,8 @@ def _catalogue_ids() -> list[str]:
 
 def _rank() -> dict[str, int]:
     """Popular providers first, then their variants, in the table's order."""
-    from openprogram.models.providers.catalog.consoles import POPULAR
-    order = [pid for pid, _v in POPULAR] + [v for _pid, variants in POPULAR for v in variants]
+    from openprogram.models.providers.catalog.consoles import POPULAR, variants
+    order = list(POPULAR) + [v for pid in POPULAR for v in variants(pid)]
     return {pid: index for index, pid in enumerate(order)}
 
 
@@ -248,16 +246,16 @@ def _choice(pid: str, stored: set[str], env_by_provider: dict[str, str]) -> Prov
 
 
 def popular(*, stored: Optional[set[str]] = None, env: Optional[list[DetectedEnvKey]] = None) -> list[PopularProvider]:
-    from openprogram.models.providers.catalog.consoles import POPULAR
+    from openprogram.models.providers.catalog.consoles import POPULAR, variants
     stored = _stored_providers() if stored is None else stored
     env_by_provider: dict[str, str] = {}
     for row in env or []:
         for pid in row["providers"]:
             env_by_provider.setdefault(pid, row["env_var"])
     out: list[PopularProvider] = []
-    for pid, variants in POPULAR:
+    for pid in POPULAR:
         row: PopularProvider = {**_choice(pid, stored, env_by_provider),  # type: ignore[typeddict-item]
-                                "variants": [_choice(v, stored, env_by_provider) for v in variants]}
+                                "variants": [_choice(v, stored, env_by_provider) for v in variants(pid)]}
         out.append(row)
     return out
 

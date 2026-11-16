@@ -22,7 +22,7 @@ from openprogram.runtime.execution.run_control import (
 )
 from openprogram.runtime.agent.runtime import Runtime
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.control import RuntimeControlService
 from openprogram.runtime.execution.driver import DriverRegistry
 from openprogram.runtime.execution.model import CapabilitySet

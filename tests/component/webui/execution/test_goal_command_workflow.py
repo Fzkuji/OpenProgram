@@ -148,7 +148,7 @@ def test_worker_restart_projection_preserves_chat_goal_intent(
 ) -> None:
     from openprogram.runtime.context.session_db import SessionDB
     import openprogram.programs.tools.planning.goal as goal_pkg
-    from openprogram.runtime.execution.dag import reconcile_interrupted_runs
+    from openprogram.runtime.execution.projections.dag import reconcile_interrupted_runs
 
     db = SessionDB(tmp_path / "sessions-git")
     db.create_session("restart-goal", "main")

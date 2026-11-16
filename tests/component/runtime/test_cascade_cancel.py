@@ -62,7 +62,7 @@ def fake_worker(monkeypatch):
     entered = threading.Event()
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         calls.append({
             "session_id": request.session_id, "prompt": request.user_text,
         })
@@ -301,7 +301,7 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
     recorded = {}
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         # Simulate only the outer turn's tool call. Letting the same fake
         # spawn from the child would replace this direct-child id with a
         # recursively created descendant before the assertion runs.
@@ -334,7 +334,7 @@ def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
     import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     from openprogram.runtime.jobs import get_runner
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
     runner = get_runner()
     parents_ready = threading.Barrier(2)
@@ -404,7 +404,7 @@ def test_worker_clears_job_context_after_execution(store_fixture, fake_worker,
 
 def test_session_cancel_clears_inbox_with_sender_notice(store_fixture):
     """Session-level cancel drops queued messages and notifies senders."""
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
 
     inbox.enqueue(
         "p2",

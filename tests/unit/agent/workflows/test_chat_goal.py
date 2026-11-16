@@ -8,7 +8,7 @@ import pytest
 @pytest.mark.parametrize("source", ["web", "tui", "acp"])
 def test_chat_runtime_keeps_goal_tool_membership_on_approval_resume(monkeypatch, source):
     from openprogram.runtime.conversation import turn_runtime as dispatcher
-    from openprogram.runtime.execution.runtime_contract import validate_runtime_contract
+    from openprogram.runtime.execution.admission_input.runtime_contract import validate_runtime_contract
     from openprogram.runtime.conversation.turn_runtime import loop_runner
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.models.providers.types import AgentTool
@@ -18,12 +18,12 @@ def test_chat_runtime_keeps_goal_tool_membership_on_approval_resume(monkeypatch,
                   base_url="https://example.invalid/v1")
     tools = [AgentTool(name=name, label=name, description=name,
                        parameters={"type": "object"}, execute=lambda *args: None)
-             for name in ("goal", "todo_create", "update_goal")]
+             for name in ("goal", "task_start", "update_goal")]
     monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: tools)
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions", lambda *a: "")
     request = TurnRequest("approval-goal", "calculate", "main", source)
     request._execution_revision_id = "test-revision"
@@ -36,7 +36,7 @@ def test_chat_runtime_keeps_goal_tool_membership_on_approval_resume(monkeypatch,
 
 def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
     from openprogram.runtime.conversation import turn_runtime as dispatcher
-    from openprogram.runtime.execution.runtime_contract import validate_runtime_contract
+    from openprogram.runtime.execution.admission_input.runtime_contract import validate_runtime_contract
     from openprogram.runtime.conversation.turn_runtime import loop_runner
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.models.providers.types import AgentTool
@@ -46,7 +46,7 @@ def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
                   base_url="https://example.invalid/v1")
     tools = [AgentTool(name=name, label=name, description=name,
                        parameters={"type": "object"}, execute=lambda *args: None)
-             for name in ("todo_create", "update_goal")]
+             for name in ("task_start", "update_goal")]
     extra = AgentTool(name="weekly_report", label="weekly_report", description="weekly_report",
                       parameters={"type": "object"}, execute=lambda *args: None)
     live = {"extra": False}
@@ -58,7 +58,7 @@ def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", resolve)
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions", lambda *a: "")
     request = TurnRequest("approval-goal", "calculate", "main", "web")
     request._execution_revision_id = "test-revision"
@@ -71,7 +71,7 @@ def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
 
 
 def test_live_tool_visibility_preserves_execution_contract(monkeypatch):
-    from openprogram.runtime.permissions.lifecycle import wrap_live_permission
+    from openprogram.runtime.permissions.approvals.lifecycle import wrap_live_permission
     from openprogram.runtime.permissions.authority import owner_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.permissions.modes import PermissionRules
@@ -92,7 +92,8 @@ def test_live_tool_visibility_preserves_execution_contract(monkeypatch):
 
 def test_a_goal_started_from_the_controls_runs_in_the_conversations_mode(monkeypatch):
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import production_driver, session_config
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
     import openprogram.programs.tools.planning.goal as goals
 
     seen = {}
@@ -117,6 +118,61 @@ def test_a_goal_started_from_the_controls_runs_in_the_conversations_mode(monkeyp
     with pytest.raises(Stop):
         chat.start_from_controls("s")
     assert seen["request"].permission_mode == "plan"
+
+
+def test_a_goal_turn_started_from_the_controls_holds_the_run_slot(monkeypatch):
+    """The Goal's turn waits for its branch's run slot, runs while it holds
+    it and gives it back when it ends: clients show the conversation
+    running for the whole turn and no other turn starts beside it."""
+    import threading
+    from openprogram.programs.tools.planning.goal import chat
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
+    from openprogram.runtime.conversation.run_control import run_slot
+    import openprogram.programs.tools.planning.goal as goals
+
+    events = []
+    ended = threading.Event()
+
+    class Port:
+        tries = 0
+
+        def adopt(self, session_id, owner, *, execution_id, status_version, branch_id, runner):
+            self.tries += 1
+            events.append(("adopt", owner, execution_id, status_version))
+            return self.tries > 1
+
+        def finish(self, session_id, owner, *, execution_id):
+            events.append(("finish", owner, execution_id))
+            ended.set()
+
+    class Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, request, **_kwargs):
+            return SimpleNamespace(execution_id="e1", status_version=3)
+
+        async def activate(self, admission):
+            events.append(("run", admission.execution_id))
+
+        def fail_admission(self, admission, *, reason_code):
+            events.append(("failed", reason_code))
+
+    monkeypatch.setattr(run_slot, "_port", Port())
+    monkeypatch.setattr(goals, "load_goal", lambda _sid: {"status": "active", "text": "go", "id": "g"})
+    monkeypatch.setattr(goals, "_db", lambda: SimpleNamespace(get_session=lambda _sid: {"agent_id": "main"}))
+    monkeypatch.setattr(chat, "identity", lambda _goal: {"id": "g"})
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", Adapter)
+    monkeypatch.setattr(session_config, "conversation_permission",
+                        lambda _sid: {"permission_mode": "ask", "permission_rules": None})
+
+    started = chat.start_from_controls("s")
+
+    assert ended.wait(10)
+    owner = started["msg_id"]
+    assert events == [("adopt", owner, "e1", 3), ("adopt", owner, "e1", 3),
+                      ("run", "e1"), ("finish", owner, "e1")]
 
 
 @pytest.fixture
@@ -216,39 +272,75 @@ def test_chat_goal_completion_rejects_unfinished_todos(session, monkeypatch):
         "id": "1", "subject": "verify", "status": "pending",
         "goal_id": goal["goal_id"], "goal_revision": goal["revision"],
     }])
-    with pytest.raises(ValueError, match="todo"):
+    with pytest.raises(ValueError, match="unfinished task steps"):
         chat.update("chat-goal", "complete", expected=chat.identity(goal))
     assert goals.load_goal("chat-goal")["status"] == "active"
 
 
-def test_todo_tools_publish_current_goal_progress(session, monkeypatch, tmp_path):
+def test_a_dropped_step_does_not_hold_the_goal_back(session, monkeypatch):
     from openprogram.programs.tools.planning.goal import chat
     from openprogram.programs.tools.planning.todo import shared
-    from openprogram.programs.tools.planning.todo.todo_create.todo_create import _todo_create_impl
-    from openprogram.programs.tools.planning.todo.todo_update.todo_update import _todo_update_impl
+    goals, _ = session
+    goal = chat.create("chat-goal", "implement and verify")
+    owned = {"goal_id": goal["goal_id"], "goal_revision": goal["revision"]}
+    monkeypatch.setattr(shared, "load", lambda sid, branch_id=None: [
+        {"id": "1", "subject": "implement", "status": "completed", **owned},
+        {"id": "2", "subject": "old idea", "status": "dropped", **owned},
+    ])
+    assert chat.unfinished_todos("chat-goal", goal) == []
+    assert chat.project_todos("chat-goal", goal) == [{"text": "implement", "done": True}]
+    chat.update("chat-goal", "complete", expected=chat.identity(goal))
+    assert goals.load_goal("chat-goal")["phase"] == "verifying"
+
+
+def test_task_tools_publish_current_goal_progress(session, monkeypatch, tmp_path):
+    from openprogram.programs.tools.planning.goal import chat
+    from openprogram.programs.tools.planning.todo import shared
+    from openprogram.programs.tools.planning.todo.task_start.task_start import _task_start_impl
+    from openprogram.programs.tools.planning.todo.task_step.task_step import _task_step_impl
+    from openprogram.state.store import _current_turn_id
     goals, _ = session
     monkeypatch.setattr(shared, "todos_path", lambda sid: tmp_path / "todos.json")
     monkeypatch.setattr(shared, "current_session_id", lambda: "chat-goal")
     goal = chat.create("chat-goal", "verify")
     monkeypatch.setattr(chat, "current_identity", lambda: chat.identity(goal))
-    assert "created" in _todo_create_impl("verify")
-    assert goals.load_goal("chat-goal")["checklist"] == [{"text": "verify", "done": False}]
-    assert "updated" in _todo_update_impl("1", status="completed")
+    token = _current_turn_id.set("m1_reply")
+    try:
+        _task_start_impl("Check the output", steps=["verify", "report", "old idea"])
+        saved = goals.load_goal("chat-goal")
+        assert saved["checklist"] == [{"text": "verify", "done": False}, {"text": "report", "done": False},
+                                      {"text": "old idea", "done": False}]
+        assert saved["progress"] == {"task": "T1", "title": "Check the output", "step": "verify", "on": 1,
+                                     "done": 0, "total": 3, "anchor": "m1_reply"}
+        _task_step_impl(next=True, drop=[3])
+        saved = goals.load_goal("chat-goal")
+        # A dropped step leaves the checklist and the total.
+        assert saved["checklist"] == [{"text": "verify", "done": True}, {"text": "report", "done": False}]
+        assert saved["progress"] == {"task": "T1", "title": "Check the output", "step": "report", "on": 2,
+                                     "done": 1, "total": 2, "anchor": "m1_reply"}
+        _task_step_impl(outcome="output checked")
+    finally:
+        _current_turn_id.reset(token)
     saved = goals.load_goal("chat-goal")
-    assert saved["checklist"] == [{"text": "verify", "done": True}]
+    assert saved["checklist"] == [{"text": "verify", "done": True}, {"text": "report", "done": True}]
+    assert saved["progress"]["step"] is None and saved["progress"]["on"] is None
+    assert (saved["progress"]["done"], saved["progress"]["total"]) == (2, 2)
     assert saved["status"] == "active"
+    assert chat.tasks("chat-goal", saved)[0]["outcome"] == "output checked"
     goal = saved
     goal["revision"] += 1
     goals.save_goal("chat-goal", goal)
-    assert "updated" in _todo_update_impl("1", subject="old revision")
-    assert goals.load_goal("chat-goal")["checklist"] == []
+    # A new revision starts without the earlier revision's task.
+    chat.refresh_todos("chat-goal")
+    saved = goals.load_goal("chat-goal")
+    assert saved["checklist"] == [] and "progress" not in saved
 
 
 def test_todo_saved_success_survives_goal_projection_failure(session, monkeypatch, tmp_path):
     from openprogram.programs.tools.planning.goal import chat
     from openprogram.programs.tools.planning.todo import shared
-    from openprogram.programs.tools.planning.todo.todo_create.todo_create import _todo_create_impl
-    from openprogram.programs.tools.planning.todo.todo_update.todo_update import _todo_update_impl
+    from openprogram.programs.tools.planning.todo.task_start.task_start import _task_start_impl
+    from openprogram.programs.tools.planning.todo.task_step.task_step import _task_step_impl
     goals, _ = session
     monkeypatch.setattr(shared, "todos_path", lambda sid: tmp_path / "todos.json")
     monkeypatch.setattr(shared, "current_session_id", lambda: "chat-goal")
@@ -258,8 +350,8 @@ def test_todo_saved_success_survives_goal_projection_failure(session, monkeypatc
     def unavailable(_sid):
         raise goals.GoalConflictError("busy")
     monkeypatch.setattr(chat, "refresh_todos", unavailable)
-    assert "created" in _todo_create_impl("verify")
-    assert "updated" in _todo_update_impl("1", status="completed")
+    assert "started" in _task_start_impl("Check", steps=["verify"]).content[0].text
+    assert "finished" in _task_step_impl(outcome="checked").content[0].text
     assert shared.load("chat-goal")[0]["status"] == "completed"
     refresh("chat-goal")
     assert goals.load_goal("chat-goal")["checklist"] == [{"text": "verify", "done": True}]

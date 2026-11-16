@@ -75,6 +75,9 @@ const PLATFORM_GLOBALS = new Set([
   "Notification", "WebSocket", "Worker", "URL", "Image", "Audio", "Blob",
   "FileReader", "IntersectionObserver", "ResizeObserver", "MutationObserver",
   "AbortController", "EventSource", "speechSynthesis", "clipboardData",
+  // Region capture (Chromium): read through a cast, since TypeScript's DOM
+  // types do not declare it yet.
+  "CropTarget",
 ]);
 
 const files = [...sources(root)];

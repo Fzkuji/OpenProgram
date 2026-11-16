@@ -4,11 +4,11 @@ import time
 import uuid
 from typing import Any, Mapping
 from ..attempts import AttemptConflict, AttemptRecord, AttemptStatus
-from ..checkpoints import CheckpointManifest
+from ..recovery.checkpoints import CheckpointManifest
 from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord, ExecutionStatus, _json
 from ..store import ExecutionConflict
 from ..store.run_tables import RowConflict
-from ..safe_points import AgentSafePointConflict
+from ..recovery.safe_points import AgentSafePointConflict
 from ..state_machine import InvalidCommand
 
 from .shared import (

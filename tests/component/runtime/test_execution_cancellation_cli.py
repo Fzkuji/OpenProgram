@@ -54,7 +54,7 @@ def clean_runtime_control():
 
 def _run_cli(monkeypatch, argv: list[str], origin: str) -> tuple[int, str]:
     from openprogram.interfaces.cli.application import main
-    from openprogram.interfaces.cli.commands import execution as execution_cmd
+    from openprogram.interfaces.cli.commands.conversations import execution as execution_cmd
 
     monkeypatch.setattr(
         execution_cmd,

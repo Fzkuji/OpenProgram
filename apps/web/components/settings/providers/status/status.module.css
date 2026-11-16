@@ -5,7 +5,6 @@
    them (app/styles/themes/*.css), so light and dark need no rule here. */
 
 .num { white-space: nowrap; }
-.mono { font-family: var(--font-mono); }
 .muted { color: var(--text-muted); }
 .secondary { color: var(--text-secondary); }
 .xs { font-size: var(--fs-xs); line-height: 16px; }
@@ -16,32 +15,7 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
 
-/* ── chips and tags ─────────────────────────────────────────────────── */
-.chip {
-  display: inline-flex; align-items: center; gap: 6px; height: var(--ui-button-h-xs); padding: 0 8px;
-  border-radius: var(--radius-full); font-size: var(--fs-xs); line-height: 16px; font-weight: 500;
-  color: var(--text-secondary); background: var(--bg-hover); white-space: nowrap; flex: none;
-}
-.chipDot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
-.chip.ok .chipDot { color: var(--success-soft); }
-.chip.warn { color: var(--warning-soft); background: color-mix(in srgb, var(--warning-soft) 12%, transparent); }
-.chip.bad { color: var(--danger-soft); background: color-mix(in srgb, var(--danger-soft) 12%, transparent); }
-.chip.muted .chipDot { color: var(--text-muted); }
-.kind {
-  font-size: var(--fs-2xs); line-height: 16px; font-weight: 500; color: var(--text-muted);
-  border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0 6px; white-space: nowrap; flex: none;
-}
-.modelChip {
-  display: inline-block; height: var(--ui-control-inline); padding: 2px 6px; border-radius: var(--radius-sm); background: var(--bg-hover);
-  font-size: var(--fs-2xs); line-height: 16px; font-weight: 500; font-family: var(--font-mono); color: var(--text-secondary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; min-width: 0;
-}
-
 /* ── meter ──────────────────────────────────────────────────────────── */
-.bar { height: 6px; border-radius: var(--radius-full); background: var(--meter-track); overflow: hidden; flex: 1; min-width: 40px; }
-.barFill { display: block; height: 100%; border-radius: var(--radius-full); background: var(--meter-fill); }
-.bar.warning .barFill { background: var(--warning-soft); }
-.bar.danger .barFill { background: var(--danger-soft); }
 .qlabel { font-size: var(--fs-xs); line-height: 16px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qvalue { font-size: var(--fs-xs); line-height: 16px; color: var(--text-secondary); white-space: nowrap; }
 .qvalue b { font-weight: 600; color: var(--text-bright); }
@@ -63,31 +37,40 @@
 
 /* ── cards ──────────────────────────────────────────────────────────── */
 .listWrap { container-type: inline-size; }
-.card {
-  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sm); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 12px;
-  min-width: 0; cursor: pointer; transition: border-color var(--motion-fast, 120ms) ease;
+/* The kit Card on the raised face (bg-input and the raised shadow, as the
+   composer); the whole card opens the provider's page. */
+/* Each card keeps its own height: the masonry (masonry.tsx) puts the next
+   card straight under it, so no card is stretched to its row's tallest. */
+.card { background: var(--bg-input); box-shadow: var(--shadow-sm); cursor: pointer; min-width: 0; }
+.card:hover { box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-light); }
+/* A company's card: each way's section opens that provider, not the card. */
+.companyCard { cursor: default; }
+.companyCard:hover { box-shadow: var(--shadow-sm); }
+.way {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; cursor: pointer;
+  padding: 10px var(--card-spacing) 0; border-top: 1px solid var(--border);
 }
-.card:hover { border-color: var(--border-light); }
-.cardName {
-  font-size: var(--fs-base); line-height: 20px; font-weight: 600; color: var(--text-bright);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; border: 0; padding: 0;
-  cursor: pointer; text-align: left; min-width: 0;
+.way:first-child { border-top: 0; padding-top: 0; }
+.wayIcon {
+  display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: var(--radius-sm); background: var(--bg-hover); color: var(--text-secondary);
 }
-.cardName:focus-visible { outline: 2px solid var(--accent-blue, var(--meter-fill)); outline-offset: 2px; border-radius: var(--radius-xs); }
+.wayIcon svg { width: 12px; height: 12px; }
+.wayFoot { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); line-height: 16px; color: var(--text-secondary); min-width: 0; }
+.cardStats { display: flex; align-items: center; gap: 12px; font-size: var(--fs-xs); line-height: 16px; color: var(--text-secondary); min-width: 0; }
+.cardStats > span { white-space: nowrap; }
+.cardStats b { color: var(--text-bright); font-weight: 600; }
 .quota.stale .quotaBody { opacity: 0.5; }
 .quota.dim .quotaBody { opacity: 0.55; }
-.qcell.stale .qvalue, .qcell.stale .bar { opacity: 0.5; }
+.qcell.stale .qvalue, .qcell.stale [data-slot="progress"] { opacity: 0.5; }
 .cardFoot {
-  display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--border); padding-top: 10px;
+  display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; margin-top: auto;
   font-size: var(--fs-xs); line-height: 16px; color: var(--text-secondary); min-width: 0;
 }
-.cardFoot > span { white-space: nowrap; }
-.cardFoot b { color: var(--text-bright); font-weight: 600; }
 
 /* ── rows ───────────────────────────────────────────────────────────── */
-/* Fixed columns: Provider and Default share what Status, Quota, spend, the
-   trend, tokens and cache leave, and every cell ends in an ellipsis inside
+/* Fixed columns: Provider takes what Status, Quota, spend, the
+   trend, tokens, cache and Default leave, and every cell ends in an ellipsis inside
    its column (the whole text on hover), so the table never grows past the pane. */
 .rows { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--fs-sm); line-height: 18px; }
 .rows th {
@@ -95,22 +78,20 @@
   color: var(--text-muted); text-align: left; padding: 0 8px 8px; white-space: nowrap;
 }
 .rows td { padding: 0 8px; height: 52px; border-top: 1px solid var(--border); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
-.rows .colStatus { width: 120px; }
-.rows .colQuota { width: 34%; }
-.rows .colSpend { width: 76px; }
+.rows .colStatus { width: 164px; }
+.rows .colQuota { width: 25%; }
+.rows .colSpend { width: 92px; }
 .rows .colTrend { width: 72px; }
 .rows .colTokens { width: 64px; }
 .rows .colCache { width: 56px; }
-.rows .chip { max-width: 100%; }
-.rows .chip > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rows .colDefault { width: 16%; }
 .rows .qvalue { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.rows .modelChip { max-width: 100%; vertical-align: middle; }
 .rows tbody tr { cursor: pointer; }
 .rows tbody tr:hover td { background: var(--bg-hover); }
-.rowName { display: flex; align-items: center; gap: 10px; max-width: 100%; min-width: 0; font-size: var(--fs-base); line-height: 20px; font-weight: 500; color: var(--text-bright); background: none; border: 0; padding: 0; cursor: pointer; }
-/* A long custom provider name ends in an ellipsis instead of widening the table. */
-.rowLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.qcell .bar { flex: none; width: 72px; }
+/* A company's row names it over its ways; each way opens its own provider. */
+.rows tbody tr.companyRow { cursor: default; }
+.rows tbody tr.companyRow:hover td { background: none; }
+
 .qcell .qvalue b { color: var(--text-bright); }
 .qcell.warning .qvalue, .qcell.warning .qvalue b { color: var(--warning-soft); }
 .qcell.danger .qvalue, .qcell.danger .qvalue b { color: var(--danger-soft); }
@@ -118,66 +99,19 @@
 .rows tr.dimRow td.fade { color: var(--text-muted); }
 /* A narrow pane keeps the default model in view: tokens and cache go first
    (the provider's page still has them). */
-@container (max-width: 880px) { .rows .wide { display: none; } }
+@container (max-width: 1040px) { .rows .wide { display: none; } }
 
 /* ── empty state and picker ─────────────────────────────────────────── */
 .emptyTitle { font-size: var(--fs-md); line-height: 24px; font-weight: 600; color: var(--text-bright); margin: 0; text-align: center; }
-.group { font-size: var(--fs-2xs); line-height: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-.tile {
-  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px;
-  border-radius: var(--radius-lg); font-size: var(--fs-xs); line-height: 16px; color: var(--text-primary);
-  border: 1px solid transparent; background: none; cursor: pointer; min-width: 0; text-align: center;
-}
 /* The tile's logo sits on its brand's own plate — white, or black for a white mark — on every theme. */
 /* Border plus padding is the 7px every mark keeps from the plate edge (BRAND_PLATE_PADDING). */
-.tile > [data-plate] { border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 6px; }
-.tile > [data-plate="light"] { background: white; }
-.tile > [data-plate="dark"] { background: black; }
-.tile:hover, .tile:focus-visible { background: var(--bg-hover); border-color: var(--border-light); outline: none; }
-.tile > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tileConnected { font-size: var(--fs-2xs); color: var(--success-soft); }
-.plus { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--radius-lg); background: var(--bg-hover); color: var(--text-secondary); }
-.envRow {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-lg);
-  background: var(--bg-hover); font-size: var(--fs-sm); line-height: 18px; color: var(--text-bright); min-width: 0;
-}
-.envRow .mono { font-size: var(--fs-xs); color: var(--text-secondary); }
-.envRow > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.resultRow {
-  display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 8px; border-radius: var(--radius-md);
-  font-size: var(--fs-base); color: var(--text-bright); background: none; border: 0; cursor: pointer; text-align: left; width: 100%;
-}
-.resultRow:hover, .resultRow:focus-visible { background: var(--bg-hover); outline: none; }
+/* A way to sign in: icon, title over a one-line description (and an
+   import's file), chevron. The recommended one sits on a filled card. */
 
 /* ── Add provider dialog ────────────────────────────────────────────── */
-.dialog { padding: 0; gap: 0; max-width: min(480px, calc(100% - 2rem)); overflow: hidden; background: var(--bg-input); }
-.dialogHead { display: flex; align-items: center; gap: 10px; padding: 16px 52px 12px 18px; font-size: var(--fs-md); line-height: 24px; font-weight: 600; color: var(--text-bright); min-width: 0; }
-.dialogFoot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
-.keyField svg { flex: none; }
-.keyInput { font-family: var(--font-mono); letter-spacing: 0.02em; }
-.keyInput[aria-invalid="true"] { border-color: var(--danger-soft); }
-.line { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); line-height: 18px; color: var(--text-primary); min-width: 0; }
-.line svg { width: 16px; height: 16px; flex: none; }
-.line.ok svg { color: var(--success-soft); }
-.line.bad { color: var(--danger-soft); }
-.line.warn { color: var(--warning-soft); }
-.line.wait { color: var(--text-secondary); }
-.line a, .linkButton {
-  color: var(--text-bright); text-decoration: none; font-weight: 500; white-space: nowrap; background: none; border: 0; padding: 0; cursor: pointer; font-size: inherit;
-}
-.line a:hover, .linkButton:hover { text-decoration: underline; }
-.fold { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-secondary); background: none; border: 0; padding: 0; cursor: pointer; width: fit-content; }
-.fold svg { width: 14px; height: 14px; transition: transform var(--motion-fast, 120ms) ease; }
-.fold[aria-expanded="true"] svg { transform: rotate(90deg); }
-.modelChoice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-lg); font-size: var(--fs-base); color: var(--text-bright); cursor: pointer; }
-.modelChoice[data-state="checked"], .modelChoice:has([data-state="checked"]) { background: var(--bg-hover); }
-.modelChoice .mono { font-size: var(--fs-sm); }
-.modelMeta { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
 
 /* ── detail ─────────────────────────────────────────────────────────── */
 .detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; container-type: inline-size; }
-.crumb { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-muted); background: none; border: 0; padding: 0; cursor: pointer; width: fit-content; }
-.crumb:hover { color: var(--text-primary); }
 .detailTitle { font-size: var(--fs-title); line-height: 28px; font-weight: 600; color: var(--text-bright); margin: 0; }
 .panel { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 14px 16px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .panelHead { display: flex; align-items: center; gap: 8px; font-size: var(--fs-base); line-height: 20px; font-weight: 600; color: var(--text-bright); flex-wrap: wrap; }
@@ -189,13 +123,6 @@
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-secondary); }
 .legendSwatch { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-2xs); margin-right: 6px; }
 .legendPace { display: inline-block; width: 12px; height: 0; border-top: 1.5px dashed var(--warning-soft); margin-right: 6px; vertical-align: 3px; }
-.keyRow { display: flex; align-items: center; gap: 10px; min-height: 40px; border-top: 1px solid var(--border); font-size: var(--fs-sm); min-width: 0; }
-.keyRow:first-of-type { border-top: 0; }
-.keyName { color: var(--text-bright); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.keyMask { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
-.keyMenu { opacity: 0; transition: opacity var(--motion-fast, 120ms) ease; }
-.keyRow:hover .keyMenu, .keyRow:focus-within .keyMenu, .keyMenu[aria-expanded="true"] { opacity: 1; }
-.subhead { font-size: var(--fs-base); line-height: 20px; font-weight: 600; color: var(--text-bright); margin-top: 4px; }
 .models { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); line-height: 18px; }
 .models th { font-size: var(--fs-2xs); line-height: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); text-align: left; padding: 0 8px 6px; white-space: nowrap; }
 .models td { padding: 0 8px; height: 38px; border-top: 1px solid var(--border); white-space: nowrap; color: var(--text-primary); }
@@ -204,6 +131,3 @@
 .caps { display: inline-flex; gap: 6px; color: var(--text-muted); }
 .caps svg { width: 14px; height: 14px; }
 .caps .on { color: var(--text-secondary); }
-.star { background: none; border: 0; padding: 2px; cursor: pointer; color: var(--text-muted); display: inline-flex; border-radius: var(--radius-xs); }
-.star.on { color: var(--accent-fill); }
-.star.on svg { fill: var(--accent-fill); }

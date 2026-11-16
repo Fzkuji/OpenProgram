@@ -177,18 +177,30 @@ function reset() {
   };
 }
 
-test("Goal progress shows todos, never execution rounds", async () => {
+test("Goal progress shows the current step and counted steps, never execution rounds", async () => {
   reset();
   runtimeState.conversations.s1.goal = { ...snapshot(1), turns_used: 12, max_turns: 150 };
   const view = await mount();
   try {
     assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Active");
     assert.doesNotMatch(view.host.textContent, /12\/150/);
-    await frame({ ...snapshot(2), checklist: [{ text: "Verify", done: false }] });
-    assert.match(view.host.textContent, /Todos 0\/1/);
-    await frame({ ...snapshot(3), checklist: [{ text: "Verify", done: true }] });
-    assert.match(view.host.textContent, /Todos 1\/1/);
-    await frame({ ...snapshot(4, "paused_recoverable"), checklist: [] });
+    await frame({ ...snapshot(2), checklist: [{ text: "Verify", done: false }],
+      progress: { task: "T2", title: "Migrate", step: "Dark theme comparison", on: 11, done: 10, total: 12, anchor: "m_14_reply" } });
+    // Ten steps are finished: the step in progress is the eleventh.
+    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Dark theme comparison · 11/12");
+    // Worked out of order: the place is the step's own, as the block's header shows it.
+    await frame({ ...snapshot(2.5), checklist: [{ text: "Verify", done: false }],
+      progress: { task: "T2", title: "Migrate", step: "Run the tests", on: 4, done: 1, total: 5, anchor: "m_14_reply" } });
+    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Run the tests · 4/5");
+    assert.doesNotMatch(view.host.textContent, /Todos/);
+    // No step in progress: the status stands where the step name was.
+    await frame({ ...snapshot(3), progress: { task: "T2", title: "Migrate", step: null, done: 12, total: 12, anchor: "m_14_reply" } });
+    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Active · 12/12");
+    // A paused Goal names its status, not the step it was on, and counts the steps finished.
+    await frame({ ...snapshot(4, "paused_recoverable"), progress: { task: "T2", step: "Dark theme comparison", done: 11, total: 12, anchor: "m_14_reply" } });
+    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Paused · 11/12");
+    // A checklist alone is no progress, and neither is a task with no steps.
+    await frame({ ...snapshot(5, "paused_recoverable"), checklist: [{ text: "Verify", done: true }], progress: { task: "T3", step: null, done: 0, total: 0, anchor: "m_14_reply" } });
     assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Paused");
     await view.open();
     assert.doesNotMatch(view.host.textContent, /No todos yet|尚无待办|Progress/);
@@ -197,10 +209,11 @@ test("Goal progress shows todos, never execution rounds", async () => {
 
 test("completed todo progress remains Verifying until evidence passes", async () => {
   reset();
-  runtimeState.conversations.s1.goal = { ...snapshot(1), phase: "verifying", checklist: [{ text: "Verify", done: true }] };
+  runtimeState.conversations.s1.goal = { ...snapshot(1), phase: "verifying", checklist: [{ text: "Verify", done: true }],
+    progress: { task: "T2", step: null, done: 1, total: 1, anchor: "r9" } };
   const view = await mount();
   try {
-    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Verifying · Todos 1/1");
+    assert.equal(view.host.querySelector(".badge-short").textContent, "Goal · Verifying · 1/1");
     await frame({ ...snapshot(2, "achieved"), phase: "terminal" });
     assert.equal(view.host.querySelector(".badge-short"), null);
   } finally { await view.close(); }
@@ -889,4 +902,49 @@ test("function form removes advanced execution fields without replacement contro
     await view.open();
     assert.ok(view.host.querySelector("textarea").hasAttribute("readonly"));
   } finally {await view.close();}
+});
+
+test("the chip first goes to the open task block, and opens the details once the block is in view", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1),
+    progress: { task: "T2", title: "Migrate", step: "Dark theme comparison", done: 11, total: 12, anchor: "m_14_reply" } };
+  const stage = document.body.appendChild(document.createElement("div"));
+  stage.innerHTML = `<div id="chatArea"><section class="tb" data-task-id="T2" data-anchor="m_14_reply" data-open="1"></section></div>`;
+  const area = stage.querySelector("#chatArea"), block = stage.querySelector(".tb");
+  const scrolled = [];
+  block.scrollIntoView = (options) => scrolled.push(options);
+  area.getBoundingClientRect = () => ({ top: 0, bottom: 600 });
+  block.getBoundingClientRect = () => ({ top: 900, bottom: 928 });
+  const { getTaskOpen, reloadTaskOpen, taskOpenKey } = await import("../../lib/prefs/task-block-open.ts");
+  const view = await mount();
+  try {
+    const chip = view.host.querySelector("button");
+    assert.equal(chip.getAttribute("aria-label"), "Go to the current step; click again for Goal details");
+    await view.open();
+    assert.deepEqual(scrolled, [{ behavior: "smooth", block: "center" }]);
+    // Open by itself: the click is not the reader's choice, so the block still folds when the task ends.
+    assert.equal(getTaskOpen("m_14_reply", taskOpenKey("T2")), null);
+    assert.doesNotMatch(view.host.textContent, /Goal details/);
+    // Folded by the reader: the click opens it.
+    block.setAttribute("data-open", "0");
+    await view.open();
+    assert.equal(scrolled.length, 2);
+    assert.equal(getTaskOpen("m_14_reply", taskOpenKey("T2")), true, "the block is opened for the reader");
+    // The block is on screen now: the next click opens the Goal's details.
+    block.getBoundingClientRect = () => ({ top: 200, bottom: 228 });
+    await view.open();
+    assert.equal(scrolled.length, 2);
+    assert.match(view.host.textContent, /Goal details/);
+  } finally { await view.close(); stage.remove(); localStorage.removeItem("op.taskBlockOpen.v1"); reloadTaskOpen(); }
+});
+
+test("with no task block on the page the chip opens the details as before", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1), progress: { task: "T2", step: "x", done: 1, total: 2, anchor: "not_loaded" } };
+  const view = await mount();
+  try {
+    await view.open();
+    assert.match(view.host.textContent, /Goal details/);
+    assert.match(view.host.textContent, /Progress1\/2/);
+  } finally { await view.close(); }
 });

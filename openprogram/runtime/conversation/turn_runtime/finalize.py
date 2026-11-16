@@ -146,7 +146,7 @@ def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
     except Exception:
         _log.debug("no active worktree for session %s", session_id, exc_info=True)
     try:
-        from openprogram.runtime.conversation.workdir import project_workdir_for
+        from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
         wd = project_workdir_for(session_id)
         if wd is not None:
             candidates.append(str(wd))

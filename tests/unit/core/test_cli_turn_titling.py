@@ -41,7 +41,7 @@ def _stub_runtime_and_llm(monkeypatch: pytest.MonkeyPatch):
         lambda agent: fake_rt,
     )
     monkeypatch.setattr(
-        "openprogram.runtime.context.components.build_system_prompt",
+        "openprogram.runtime.context.prompt_assembly.components.build_system_prompt",
         lambda agent: "",
     )
     # Phase-2 LLM unavailable → background thread no-ops, leaving the

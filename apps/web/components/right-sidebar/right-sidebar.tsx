@@ -25,7 +25,7 @@
  * are registered on mount — see `setRightDockApi` below.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { SessionResourcesPanel } from "../session-resources/session-resources-panel";
 import { BrowserResourceProjection } from "@/lib/browser/browser-resource-projection";
 import { usePathname } from "next/navigation";
@@ -51,7 +51,7 @@ import {
 } from "../animated-icons";
 import { FileTree } from "../files/tree/file-tree";
 import { RunningPanel } from "./running/running-panel";
-import { PANEL_SNAP_WIDTHS } from "./running/agent-chart-model";
+import { PANEL_SNAP_WIDTHS } from "./running/agent-chart/agent-chart-model";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { resourceSessionId } from "@/lib/chat/resources/session-resources";
 import { useCurrentProject } from "@/lib/files/files-shared";
@@ -71,7 +71,8 @@ const VIEW_FILES = "files";
 const VIEW_RUNNING = "running";
 const VIEW_RESOURCES = "resources";
 
-export function RightSidebar() {
+// Memoized: the shell redraws on every tab and route change, and this takes no part in those.
+export const RightSidebar = memo(function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const storedView = useSessionStore((s) => s.rightDock.view);
@@ -144,10 +145,22 @@ export function RightSidebar() {
   const currentProject = useCurrentProject(canvasGroup || activitySessionId
     ? { sessionId: activitySessionId, chatKey: activitySessionId }
     : undefined);
+  // A New chat keeps its conversation id when its first message is sent,
+  // and its project is resolved again as a conversation's. The tree keeps
+  // the project it shows for that one conversation meanwhile: dropping it
+  // for that moment reloads the tree and closes its folders. Another
+  // conversation's project is never shown.
+  const treeConversation = activeTab?.kind === "session" ? activeTab.sessionId ?? null : null;
+  const shownProject = useRef<{ conversation: string | null; projectId: string | null }>({ conversation: null, projectId: null });
+  if (currentProject !== undefined) {
+    shownProject.current = { conversation: treeConversation, projectId: currentProject?.id ?? null };
+  }
+  const heldProjectId = treeConversation && shownProject.current.conversation === treeConversation
+    ? shownProject.current.projectId : null;
   const treeProjectId =
     activeTab?.kind === "file"
       ? (activeTab.projectId ?? null)
-      : (currentProject?.id ?? null);
+      : currentProject !== undefined ? (currentProject?.id ?? null) : heldProjectId;
 
   // Register the imperative rightDock handle so callers that don't own
   // this component (e.g. the turn file chips' "reveal in tree") can
@@ -377,4 +390,4 @@ export function RightSidebar() {
       </div>
     </SidebarShell>
   );
-}
+});

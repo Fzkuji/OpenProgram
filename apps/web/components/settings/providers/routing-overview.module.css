@@ -97,31 +97,6 @@
 .sessionLive {
   border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--border));
 }
-.sessionHead,
-.groupHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 6px 8px 5px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.sessionHead:hover,
-.groupHead:hover {
-  background: var(--bg-hover);
-}
-.sessionHeadStatic {
-  cursor: default;
-}
-.sessionHeadStatic:hover {
-  background: transparent;
-}
 .sessionTitle,
 .groupName {
   flex: 1;

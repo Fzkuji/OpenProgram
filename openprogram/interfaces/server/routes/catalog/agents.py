@@ -305,7 +305,7 @@ def register(app: FastAPI) -> None:
     @app.get("/api/agents-md")
     def get_agents_md():
         """The AGENTS.md files the next turn reads at the working directory."""
-        from openprogram.runtime.context import agents_md
+        from openprogram.runtime.context.prompt_assembly import agents_md
 
         cwd = agents_md.working_dir().resolve()
         root = agents_md.project_root(cwd)

@@ -374,7 +374,7 @@ def _chat_root(session_id: str, project_id: str) -> Path | None:
             _log.debug("project %s path unresolved", project_id, exc_info=True)
     if session_id and "/" not in session_id and "\\" not in session_id:
         try:
-            from openprogram.runtime.conversation.workdir import (
+            from openprogram.runtime.conversation.session_settings.workdir import (
                 runtime_location_for, session_workdir_for,
             )
             workdir = runtime_location_for(session_id, use_context=False).get("workdir")

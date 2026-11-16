@@ -9,11 +9,6 @@ import type {
   KeyPreview,
   AgenticFunction,
   FunctionsMeta,
-  AddCredentialBody,
-  AuthAccount,
-  CredentialView,
-  DiscoveredCredential,
-  PoolView,
 } from "@/lib/types";
 import type { PickerProvider } from "@/lib/settings/provider-status.generated";
 
@@ -212,62 +207,6 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  // ----- Auth v2 -----------------------------------------------------------
-
-  listProviderAccounts: () =>
-    jsonFetch<{ accounts: AuthAccount[]; default: string }>("/api/providers/accounts"),
-
-  createProviderAccount: (name: string, display_name = "", description = "") =>
-    jsonFetch<AuthAccount>("/api/providers/accounts", {
-      method: "POST",
-      body: JSON.stringify({ name, display_name, description }),
-    }),
-
-  deleteProviderAccount: (name: string) =>
-    jsonFetch<{ deleted: string }>(`/api/providers/accounts/${encodeURIComponent(name)}`, {
-      method: "DELETE",
-    }),
-
-  listProviderPools: (account?: string) => {
-    const qs = account ? `?account=${encodeURIComponent(account)}` : "";
-    return jsonFetch<{ pools: PoolView[] }>(`/api/providers/pools${qs}`);
-  },
-
-  getProviderPool: (provider: string, account: string) =>
-    jsonFetch<PoolView>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}`,
-    ),
-
-  addProviderCredential: (provider: string, account: string, body: AddCredentialBody) =>
-    jsonFetch<CredentialView>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}/credentials`,
-      { method: "POST", body: JSON.stringify(body) },
-    ),
-
-  removeProviderCredential: (provider: string, account: string, credentialId: string) =>
-    jsonFetch<{ removed: string }>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}/credentials/${encodeURIComponent(credentialId)}`,
-      { method: "DELETE" },
-    ),
-
-  discoverProviderCredentials: () =>
-    jsonFetch<{ discovered: DiscoveredCredential[] }>("/api/providers/discover", {
-      method: "POST",
-    }),
-
-  runProvidersDoctor: () =>
-    jsonFetch<DoctorReport>("/api/providers/doctor", { method: "POST" }),
-
-  adoptAllProviderCredentials: (account?: string) => {
-    const qs = account ? `?account=${encodeURIComponent(account)}` : "";
-    return jsonFetch<AdoptAllReport>(`/api/providers/adopt_all${qs}`, {
-      method: "POST",
-    });
-  },
-
-  listProviderAliases: () =>
-    jsonFetch<Record<string, string>>("/api/providers/aliases"),
-
   retryChat: (sessionId: string, msgId: string) =>
     jsonFetch<{ session_id: string; msg_id: string; truncated_from: string }>(
       "/api/chat/retry",
@@ -292,34 +231,3 @@ export const api = {
       exists: boolean;
     }>(`/api/canvas${path ? "?path=" + encodeURIComponent(path) : ""}`),
 };
-
-export interface DoctorFinding {
-  level: "ERROR" | "WARN" | "INFO";
-  code: string;
-  message: string;
-  provider?: string;
-  profile?: string;
-  credential_id?: string;
-}
-
-export interface DoctorReport {
-  pools_checked: number;
-  accounts_checked: number;
-  findings: DoctorFinding[];
-}
-
-export interface AdoptEvent {
-  level: "adopted" | "error";
-  source_id?: string;
-  provider_id?: string;
-  preview?: string;
-  error?: string;
-}
-
-export interface AdoptAllReport {
-  adopted: number;
-  skipped: number;
-  errored: number;
-  events: AdoptEvent[];
-  profile: string;
-}

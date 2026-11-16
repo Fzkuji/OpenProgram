@@ -10,10 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _attachments, _transport
+from openprogram.interfaces.channels.inbound import _attachments
+from openprogram.interfaces.channels.delivery import _transport
 from openprogram.interfaces.channels import _wechat_media as media
-from openprogram.interfaces.channels._message import Attachment
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound._message import Attachment
+from openprogram.interfaces.channels.delivery._transport import SendResult
 
 KEY = bytes(range(16))
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels" * 20

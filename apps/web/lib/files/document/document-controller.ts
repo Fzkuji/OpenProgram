@@ -366,6 +366,10 @@ export class DocumentController {
       || this.richEditor?.getState?.().dirty || this.state.status === "dirty" || this.state.status === "saving");
   }
 
+  /** A close has begun: the document is on its way out and a new view of
+   *  the same file gets a fresh controller instead. */
+  isClosing(): boolean { return this.closeRequested; }
+
   canReplacePreview(): boolean {
     // A native editing engine can have input still being edited before it
     // emits a dirty notification. Keep that pane visible until explicit open.
@@ -629,7 +633,8 @@ export async function beginDocumentRename(projectId: string, oldPath: string, ne
 }
 export function getOrCreateDocumentController(options: DocumentControllerOptions): DocumentController {
   const identity = identityFor(options);
-  return controllers.get(documentIdentityKey(identity)) ?? new DocumentController(options);
+  const existing = controllers.get(documentIdentityKey(identity));
+  return existing && !existing.isClosing() ? existing : new DocumentController(options);
 }
 export function lookupDocumentController(identity: DocumentIdentity): DocumentController | null {
   return controllers.get(documentIdentityKey(identity)) ?? null;

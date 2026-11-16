@@ -1,8 +1,9 @@
 /**
  * Fixtures and Radix stand-ins for the LLM Providers page tests: status
  * payloads in each state the design names, the add-provider catalogue, a
- * fetch that answers by "METHOD /path", and inline versions of the Nova
- * parts linkedom cannot run (Switch, Tabs, Dialog, RadioGroup, menus).
+ * provider's credential list, a fetch that answers by "METHOD /path", and
+ * inline versions of the Nova parts linkedom cannot run (Switch, Tabs,
+ * Dialog, RadioGroup, ToggleGroup, Collapsible, menus) and of dnd-kit.
  * No key here is real; every request is answered in-process.
  */
 
@@ -40,10 +41,34 @@ export const UI_STUBS = {
     "export const DropdownMenu = pass;",
     "export const DropdownMenuTrigger = ({ children }) => children;",
     "export const DropdownMenuContent = ({ children }) => h('div', { role: 'menu' }, children);",
-    "export const DropdownMenuItem = ({ children, onSelect }) => h('div', { role: 'menuitem', onClick: () => onSelect?.() }, children);",
+    "export const DropdownMenuItem = ({ children, onSelect, disabled, asChild, className, ...rest }) => asChild ? children : h('div', { role: 'menuitem', 'aria-disabled': disabled ? 'true' : undefined, onClick: () => { if (!disabled) onSelect?.(); }, ...rest }, children);",
     "export const DropdownMenuSeparator = () => h('hr');",
+    "export const DropdownMenuSub = pass;",
+    "export const DropdownMenuSubTrigger = ({ children, className, ...rest }) => h('div', { role: 'menuitem', 'aria-haspopup': 'menu', ...rest }, children);",
+    "export const DropdownMenuSubContent = ({ children }) => h('div', { role: 'menu' }, children);",
   ].join("\n"),
-  "/components/ui/menu/menu-parts.tsx": "import { createElement as h } from 'react'; export const MenuRow = ({ label }) => h('span', null, label); export const MenuIcon = () => null;",
+  "/components/ui/menu/menu-parts.tsx": "import { createElement as h } from 'react'; export const MenuRow = ({ label, trail, checked }) => h('span', { 'data-checked': checked === undefined ? undefined : String(checked) }, label, trail != null ? h('small', { 'data-trail': '' }, trail) : null); export const MenuIcon = () => null;",
+  "/components/ui/toggle-group.tsx": [
+    "import { createElement as h, createContext, useContext } from 'react';",
+    "const G = createContext(null);",
+    "export const ToggleGroup = ({ value, onValueChange, children, ...rest }) => h(G.Provider, { value: { value, onValueChange } }, h('div', { role: 'group', 'aria-label': rest['aria-label'] }, children));",
+    "export const ToggleGroupItem = ({ value, children }) => { const g = useContext(G); return h('button', { type: 'button', 'data-value': value, 'aria-pressed': String(g.value === value), onClick: () => g.onValueChange(value) }, children); };",
+  ].join("\n"),
+  "/components/ui/collapsible.tsx": [
+    "import { createElement as h, createContext, useContext, useState, cloneElement } from 'react';",
+    "const C = createContext(null);",
+    "export const Collapsible = ({ children }) => { const [open, setOpen] = useState(false); return h(C.Provider, { value: { open, setOpen } }, h('div', null, children)); };",
+    "export const CollapsibleTrigger = ({ children }) => { const c = useContext(C); return cloneElement(children, { 'aria-expanded': String(c.open), onClick: () => c.setOpen(!c.open) }); };",
+    "export const CollapsibleContent = ({ children }) => { const c = useContext(C); return c.open ? h('div', null, children) : null; };",
+  ].join("\n"),
+  "/@dnd-kit/core/": [
+    "const node = { setNodeRef() {}, listeners: {}, attributes: {}, transform: null, isDragging: false, isOver: false };",
+    "export const DndContext = ({ children }) => children;",
+    "export const useDraggable = () => node; export const useDroppable = () => node;",
+    "export const useSensor = () => null; export const useSensors = () => [];",
+    "export const PointerSensor = {}; export const KeyboardSensor = {};",
+    "export const KeyboardCode = { Space: 'Space', Down: 'ArrowDown', Right: 'ArrowRight', Left: 'ArrowLeft', Up: 'ArrowUp', Esc: 'Escape', Enter: 'Enter', Tab: 'Tab' };",
+  ].join("\n"),
   "/components/ui/confirm-dialog.tsx": "export const confirmAction = async (request) => { (globalThis.confirmRequests ??= []).push(request); return globalThis.confirmAnswer ?? true; };",
   "/components/ui/spinner.tsx": "export const Spinner = () => null;",
   "/components/settings/providers/icons/provider-icon.tsx": "export const ProviderIcon = () => null; export const providerLogo = () => null;",
@@ -103,7 +128,8 @@ export function status(id, overrides = {}) {
     health: { state: "ready", until: null, detail: null, ...(health ?? {}) },
     quota: { kind: "none", account: null, fetched_at: NOW - 120, stale: false, limits: [], read_error: null, read_at: NOW - 120, ...(quota ?? {}) },
     spend: spend(s), default_model: null, keys: [], fix: null, console_url: null,
-    plan: null, checked_at: null,
+    plan: null, checked_at: null, takes_keys: (rest.billing ?? "api_key") === "api_key",
+    family: id, family_label: rest.label ?? id[0].toUpperCase() + id.slice(1), way_label: null,
     ...rest,
   };
 }
@@ -140,6 +166,11 @@ export const STATES = {
   unread: status("xai", { label: "xAI", quota: { kind: "none", read_error: "HTTP 500 from the usage endpoint" } }),
   local: status("ollama", { label: "Ollama", billing: "local", health: { state: "not_running" }, fix: { action: "start_server", url: null }, spend: { cost_usd: 0, list_price_usd: 0, total_tokens: 0, cache_share: null, series: [] } }),
 };
+
+/** `p` as one way of a company (the company table's names). */
+export function way(p, family, familyLabel, title, short) {
+  return { ...p, family, family_label: familyLabel, way_label: { title, title_zh: title, short, short_zh: short } };
+}
 
 export function payload(providers = Object.values(STATES)) {
   return { generated_at: NOW - 60, stale_after_s: 900, providers };
@@ -193,4 +224,32 @@ export async function typeInto(view, input, value) {
   input.type ||= "text";
   Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value").set.call(input, value);
   await view.act(() => input.dispatchEvent(new Event("input", { bubbles: true })));
+}
+
+/** A credential row as GET /api/providers/{p}/credentials lists it. */
+export function credential(id, overrides = {}) {
+  return {
+    id, label: "", display_label: id, kind: "api_key", source: "web", identity: {}, key_tail: "a1b2",
+    env_var: null, read_only: false, enabled: true, status: "ready", cooldown_until: null,
+    blocked_models: {}, last_error: null, last_used_at: null, use_count: 0, created_at: NOW - 86400,
+    today: { calls: 0, cost_usd: 0 }, limits: [], ...overrides,
+  };
+}
+
+/** The login-method registry's "Paste an API key" entry, as the worker sends it. */
+export const KEY_ENTRY = {
+  id: "api_key", label: "Paste an API key", label_zh: "粘贴 API 密钥",
+  description: "A key from the provider's console.", description_zh: "使用在服务商控制台创建的密钥。",
+};
+
+/** A provider's credential list; its ways in default to pasting a key, as a
+ *  key provider's do. */
+export function credentialList(provider, credentials, overrides = {}) {
+  const { auth, ...rest } = overrides;
+  return {
+    provider, strategy: "in_order", strategies: ["in_order", "evenly", "least_used"],
+    active: credentials.find((c) => c.enabled && c.status === "ready")?.id ?? null,
+    auth: { methods: [KEY_ENTRY], env_vars: [], check: "models", keys_url: null, billing_url: null, ...(auth ?? {}) },
+    credentials, ...rest,
+  };
 }

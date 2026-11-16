@@ -1,22 +1,15 @@
-"""Wire layers must prefer a credential's own base_url/headers over the
-catalog default, and acquire_pooled must hand back the ResolvedConnection
-that carries them (not a bare token string) — the whole point of the
-credential-connection-unification refactor: a stored api-key (e.g. Aliyun
-Bailian) can point at its own endpoint instead of the provider's default."""
+"""A credential's own base_url and headers reach the adapter: the lease a
+request is sent with (``opts.credential``, models/auth/selection.py) carries
+them, so a stored key (e.g. Aliyun Bailian) can point at its own endpoint
+instead of the provider's default."""
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 
-from openprogram.models.auth.resolver import ResolvedConnection
-
-
-def test_wire_uses_credential_base_url_over_catalog():
-    # conn.base_url set → wins; conn.base_url None → falls back to model.base_url.
-    def pick(conn_base, model_base):
-        return (conn_base if conn_base else None) or model_base
-
-    assert pick("https://bailian/v1", "https://api.openai.com/v1") == "https://bailian/v1"
-    assert pick(None, "https://api.openai.com/v1") == "https://api.openai.com/v1"
+from openprogram.models.auth import selection
+from openprogram.models.providers.types import Model, SimpleStreamOptions
 
 
 @pytest.fixture
@@ -27,53 +20,51 @@ def store(tmp_path):
     s = AuthStore(root=tmp_path / "store")
     set_store_for_testing(s)
     set_credential_provider_for_testing(CredentialProvider(store=s))
+    selection.forget_bindings()
     yield s
     set_store_for_testing(None)
     set_credential_provider_for_testing(None)
 
 
-def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
-    """An api_key credential carrying its own base_url (e.g. a Bailian key)
-    must come back through acquire_pooled as a ResolvedConnection whose
-    .base_url is that stored value — not lost as a bare token string."""
-    from openprogram.models.auth import usage as u
+def _lease_for(provider: str):
+    seen = []
+
+    async def attempt(opts):
+        seen.append(opts)
+        if False:
+            yield None
+
+    async def drain():
+        model = Model(id="m", name="m", api="openai-completions", provider=provider,
+                      base_url="https://api.example/v1")
+        async for _ in selection.with_credential(model, SimpleStreamOptions(), attempt):
+            pass
+
+    asyncio.run(drain())
+    return seen[0]
+
+
+def _add(store, provider, value, **payload):
     from openprogram.models.auth.types import Credential, CredentialData
-
     store.add_credential(Credential(
-        provider_id="openai-compat", account_id="default", kind="api_key",
-        payload=CredentialData(
-            kind="api_key", auth_value="sk-bailian-key",
-            base_url="https://bailian/v1",
-        ),
-        source="test",
-    ))
-
-    got = u.acquire_pooled("openai-compat")
-    assert got is not None
-    conn, account, cred_id = got
-    assert isinstance(conn, ResolvedConnection)
-    assert conn.auth_value == "sk-bailian-key"
-    assert conn.base_url == "https://bailian/v1"
-    assert account == "default"
-    assert cred_id
+        provider_id=provider, kind="api_key",
+        payload=CredentialData(kind="api_key", auth_value=value, **payload)))
 
 
-def test_acquire_pooled_conn_base_url_none_when_unset(store):
-    """No base_url on the credential → conn.base_url is None (not ""), so
-    wire code's `conn.base_url or model.base_url` fallback triggers."""
-    from openprogram.models.auth import usage as u
-    from openprogram.models.auth.types import Credential, CredentialData
-
-    store.add_credential(Credential(
-        provider_id="plain", account_id="default", kind="api_key",
-        payload=CredentialData(kind="api_key", auth_value="sk-plain"),
-        source="test",
-    ))
-
-    conn, _, _ = u.acquire_pooled("plain")
-    assert conn.base_url is None
+def test_the_lease_carries_the_credential_base_url(store):
+    _add(store, "openai-compat", "sk-bailian-key", base_url="https://bailian/v1",
+         headers={"X-Org": "team"})
+    opts = _lease_for("openai-compat")
+    assert opts.api_key == "sk-bailian-key"
+    assert opts.credential.base_url == "https://bailian/v1"
+    assert opts.credential.headers == {"X-Org": "team"}
 
 
-def test_acquire_pooled_none_when_no_pool(store):
-    from openprogram.models.auth import usage as u
-    assert u.acquire_pooled("no-such-provider") is None
+def test_no_base_url_leaves_the_model_default(store):
+    _add(store, "plain", "sk-plain-000001")
+    assert _lease_for("plain").credential.base_url is None
+
+
+def test_a_provider_without_credentials_is_passed_through(store):
+    opts = _lease_for("no-such-provider")
+    assert opts.api_key is None and getattr(opts, "credential", None) is None

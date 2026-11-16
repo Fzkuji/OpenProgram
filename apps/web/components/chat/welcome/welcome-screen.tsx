@@ -13,7 +13,7 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useConversationAgent } from "@/lib/chat/transcript/use-bot-view";
@@ -49,7 +49,7 @@ function AlwaysOnStarters() {
   };
   return (
     <div className="relative z-[1] flex h-full w-full flex-col items-center justify-end gap-[8px] px-[16px] pb-[16px]">
-      <p className="text-fs-sm text-muted-foreground">
+      <p className="text-fs-sm text-text-muted">
         {text(
           `${agent.name || "This Agent"} keeps running between messages. Pick one to put it in the box, then edit and send it.`,
           `${agent.name || "这个 Agent"}会一直在后台运行。点一句放进输入框，改好后再发送。`,
@@ -67,7 +67,8 @@ function AlwaysOnStarters() {
   );
 }
 
-export function WelcomeScreen() {
+// Memoized: the shell redraws on every tab and route change, and this takes no part in those.
+export const WelcomeScreen = memo(function WelcomeScreen() {
   const visible = useSessionStore((s) => s.welcomeVisible);
   const fade = useSessionStore((s) => s.welcomeFade);
   const [stopping, setStopping] = useState(false);
@@ -92,4 +93,4 @@ export function WelcomeScreen() {
       <AlwaysOnStarters />
     </div>
   );
-}
+});

@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
-from openprogram.models.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.interfaces.server.routes.identity import accounts, providers
+from openprogram.models.auth.types import Credential, CredentialData
+from openprogram.interfaces.server.routes.identity import provider_credentials, providers
 from openprogram.interfaces.server.routes.settings import config
 
 
@@ -22,17 +22,10 @@ _NEW_SECRET = "sk-new-secret-abc4"
 def secret_api(tmp_path, monkeypatch):
     """Minimal route app with isolated config, environment and AuthStore."""
     from openprogram.state import config as user_config
-    from openprogram.models.auth.account import account_priority
-    from openprogram.models.auth.account import account_selection
-    from openprogram.models.auth import rotation
     from openprogram.models.listing import credentials
 
     config_path = tmp_path / "config.json"
     monkeypatch.setattr(user_config, "get_config_path", lambda: config_path)
-
-    sidecar_root = tmp_path / "sidecars"
-    for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "default_root", lambda: sidecar_root)
 
     for name in (
         "OPENAI_API_KEY",
@@ -58,7 +51,7 @@ def secret_api(tmp_path, monkeypatch):
 
     app = FastAPI()
     providers.register(app)
-    accounts.register(app)
+    provider_credentials.register(app)
     config.register(app)
     with TestClient(app, raise_server_exceptions=False) as client:
         yield SimpleNamespace(
@@ -78,27 +71,28 @@ def _put_credential(
     name: str = "work",
     kind: str = "api_key",
     value: str = _LONG_SECRET,
-) -> None:
-    store.put_pool(
-        CredentialPool(
+) -> str:
+    cred = store.add_credential(
+        Credential(
             provider_id=provider,
-            account_id=name,
-            credentials=[
-                Credential(
-                    provider_id=provider,
-                    account_id=name,
-                    kind=kind,
-                    payload=CredentialData(kind=kind, auth_value=value),
-                )
-            ],
+            kind=kind,
+            label=name,
+            payload=CredentialData(kind=kind, auth_value=value),
         )
     )
+    return cred.id
 
 
-def _stored_key(store: AuthStore, provider: str = "openai", name: str = "work") -> str:
-    pool = store.find_pool(provider, name)
-    assert pool is not None
-    return pool.credentials[0].payload.auth_value
+def _stored_key(store: AuthStore, provider: str = "openai") -> str:
+    return store.get(provider).credentials[0].payload.auth_value
+
+
+def _files(store: AuthStore) -> dict:
+    return {
+        path.relative_to(store.root): path.read_bytes()
+        for path in store.root.rglob("*")
+        if path.is_file() and path.suffix != ".lock"
+    }
 
 
 @pytest.mark.parametrize(
@@ -144,36 +138,15 @@ def test_config_key_reveal_query_is_not_a_route(secret_api, monkeypatch, query):
     assert _LONG_SECRET not in response.text
 
 
-def test_account_reveal_route_answers_a_stable_deprecation(secret_api):
-    """The legacy route answers, but never with a credential value.
-
-    A client scripted against the old reveal endpoint gets a fixed 410
-    with no credential field, so it fails loudly instead of quietly
-    reading a secret that no longer leaves the store.
-    """
+def test_credential_list_carries_only_nonsecret_key_fields(secret_api):
     _put_credential(secret_api.store)
 
-    response = secret_api.client.get(
-        "/api/providers/openai/accounts/work/reveal"
-    )
-
-    assert response.status_code == 410
-    assert response.json() == {
-        "error": "credential reveal is no longer supported"
-    }
-    assert _LONG_SECRET not in response.text
-
-
-def test_account_list_uses_only_nonsecret_key_fields(secret_api):
-    _put_credential(secret_api.store)
-
-    response = secret_api.client.get("/api/providers/openai/accounts")
+    response = secret_api.client.get("/api/providers/openai/credentials")
 
     assert response.status_code == 200
-    record = response.json()["accounts"][0]
-    assert record["has_value"] is True
-    assert record["masked_key"] == "sk-…abc4"
-    assert {"identity", "can_reveal", "value"}.isdisjoint(record)
+    row = response.json()["credentials"][0]
+    assert row["key_tail"] == "abc4"
+    assert {"value", "api_key", "auth_value", "payload", "can_reveal"}.isdisjoint(row)
     assert _LONG_SECRET not in response.text
 
 
@@ -296,16 +269,20 @@ def test_config_delete_unknown_name_is_404_without_mutation(secret_api):
     }
 
 
-def test_account_update_exact_schema_and_response(secret_api):
-    _put_credential(secret_api.store)
+def test_credential_replace_exact_response_keeps_name_and_place(secret_api):
+    cid = _put_credential(secret_api.store)
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
+        f"/api/providers/openai/credentials/{cid}/replace",
         json={"api_key": _NEW_SECRET},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    body = response.json()
+    assert body["ok"] is True
+    assert (body["credential"]["id"], body["credential"]["label"]) == (cid, "work")
+    assert body["credential"]["key_tail"] == "abc4"
+    assert _NEW_SECRET not in response.text
     assert _stored_key(secret_api.store) == _NEW_SECRET
 
 
@@ -318,136 +295,104 @@ def test_account_update_exact_schema_and_response(secret_api):
         {"api_key": ""},
         {"api_key": "sk-…abc4"},
         {"api_key": "line\nbreak"},
-        {"api_key": _NEW_SECRET, "validate": "false"},
-        {"api_key": _NEW_SECRET, "validate": None},
     ],
 )
-def test_account_update_invalid_body_does_not_mutate(secret_api, body):
-    _put_credential(secret_api.store)
+def test_credential_replace_invalid_body_does_not_mutate(secret_api, body):
+    cid = _put_credential(secret_api.store)
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
-        json=body,
+        f"/api/providers/openai/credentials/{cid}/replace", json=body
     )
 
     assert response.status_code == 400
     assert _stored_key(secret_api.store) == _LONG_SECRET
 
 
-@pytest.mark.parametrize(
-    "display_value",
-    [
-        "sk-…abc4",
-        "•" * 8,
-        "REDACTED",
-        "<redacted>",
-        "[redacted]",
-        "***REDACTED***",
-    ],
-)
-def test_account_update_rejects_every_display_value_without_rewriting_storage(
+_DISPLAY_VALUES = [
+    "sk-…abc4",
+    "•" * 8,
+    "REDACTED",
+    "<redacted>",
+    "[redacted]",
+    "***REDACTED***",
+]
+
+
+@pytest.mark.parametrize("display_value", _DISPLAY_VALUES)
+def test_credential_replace_rejects_every_display_value_without_rewriting_storage(
     secret_api, display_value
 ):
-    _put_credential(secret_api.store)
-    credential_path = secret_api.store.root / "auth/openai/work.json"
-    before = credential_path.read_bytes()
+    cid = _put_credential(secret_api.store)
+    before = _files(secret_api.store)
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
-        json={"api_key": display_value, "validate": False},
+        f"/api/providers/openai/credentials/{cid}/replace",
+        json={"api_key": display_value},
     )
 
     assert 400 <= response.status_code < 500
-    assert credential_path.read_bytes() == before
+    assert _files(secret_api.store) == before
 
 
-@pytest.mark.parametrize(
-    "display_value",
-    [
-        "sk-…abc4",
-        "•" * 8,
-        "REDACTED",
-        "<redacted>",
-        "[redacted]",
-        "***REDACTED***",
-    ],
-)
-def test_account_add_rejects_every_display_value_without_writing_storage(
+@pytest.mark.parametrize("display_value", _DISPLAY_VALUES)
+def test_credential_add_rejects_every_display_value_without_writing_storage(
     secret_api, display_value
 ):
-    before = {
-        path.relative_to(secret_api.store.root): path.read_bytes()
-        for path in secret_api.store.root.rglob("*")
-        if path.is_file()
-    }
+    before = _files(secret_api.store)
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/keys",
-        json={"api_key": display_value, "name": "work", "validate": False},
+        "/api/providers/openai/credentials",
+        json={"api_key": display_value, "label": "work", "validate": False},
     )
 
-    after = {
-        path.relative_to(secret_api.store.root): path.read_bytes()
-        for path in secret_api.store.root.rglob("*")
-        if path.is_file()
-    }
     assert 400 <= response.status_code < 500
-    assert secret_api.store.list_pools() == []
-    assert after == before
+    assert secret_api.store.get("openai").credentials == []
+    assert _files(secret_api.store) == before
 
 
 @pytest.mark.parametrize("kind", ["oauth", "device_code"])
-def test_account_update_non_api_key_account_is_404_without_probe(
+def test_credential_replace_of_a_sign_in_is_refused_without_probe(
     secret_api, monkeypatch, kind
 ):
     from openprogram.models.listing import credentials
 
-    _put_credential(secret_api.store, kind=kind, value="access-token")
+    cid = _put_credential(secret_api.store, kind=kind, value="access-token")
     calls = []
     monkeypatch.setattr(
-        credentials,
-        "validate_credential",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
+        credentials, "validate_credential", lambda *a, **k: calls.append((a, k))
     )
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
+        f"/api/providers/openai/credentials/{cid}/replace",
         json={"api_key": _NEW_SECRET},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 400
     assert calls == []
     assert _stored_key(secret_api.store) == "access-token"
 
 
-def test_account_update_missing_account_is_404_without_probe(
-    secret_api, monkeypatch
-):
+def test_credential_replace_missing_is_404_without_probe(secret_api, monkeypatch):
     from openprogram.models.listing import credentials
 
     calls = []
     monkeypatch.setattr(
-        credentials,
-        "validate_credential",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
+        credentials, "validate_credential", lambda *a, **k: calls.append((a, k))
     )
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/missing/update",
+        "/api/providers/openai/credentials/missing/replace",
         json={"api_key": _NEW_SECRET},
     )
 
     assert response.status_code == 404
     assert calls == []
-    assert secret_api.store.find_pool("openai", "missing") is None
 
 
-def test_account_update_rejected_credential_does_not_mutate(
-    secret_api, monkeypatch
-):
+def test_credential_replace_rejected_key_does_not_mutate(secret_api, monkeypatch):
     from openprogram.models.listing import credentials
 
-    _put_credential(secret_api.store)
+    cid = _put_credential(secret_api.store)
     monkeypatch.setattr(
         credentials,
         "validate_credential",
@@ -459,7 +404,7 @@ def test_account_update_rejected_credential_does_not_mutate(
     )
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
+        f"/api/providers/openai/credentials/{cid}/replace",
         json={"api_key": _NEW_SECRET},
     )
 
@@ -467,10 +412,8 @@ def test_account_update_rejected_credential_does_not_mutate(
     assert _stored_key(secret_api.store) == _LONG_SECRET
 
 
-def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
+def test_credential_add_validate_false_skips_probe(secret_api, monkeypatch):
     from openprogram.models.listing import credentials
-
-    _put_credential(secret_api.store)
 
     def unexpected_probe(*args, **kwargs):
         raise AssertionError("validation should be skipped")
@@ -478,58 +421,62 @@ def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
     monkeypatch.setattr(credentials, "validate_credential", unexpected_probe)
 
     response = secret_api.client.post(
-        "/api/providers/openai/accounts/work/update",
-        json={"api_key": _NEW_SECRET, "validate": False},
+        "/api/providers/openai/credentials",
+        json={"api_key": _NEW_SECRET, "label": "work", "validate": False},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json()["credential"]["label"] == "work"
+    assert _NEW_SECRET not in response.text
     assert _stored_key(secret_api.store) == _NEW_SECRET
 
 
-def test_account_remove_has_exact_response_and_clears_active_pin(secret_api):
-    from openprogram.models.auth.account.account_selection import get_active_pin
-    from openprogram.models.auth.account.account_selection import set_active_account
+def test_credential_remove_drops_the_row(secret_api):
+    cid = _put_credential(secret_api.store)
 
-    _put_credential(secret_api.store)
-    set_active_account("openai", "work")
-
-    response = secret_api.client.post(
-        "/api/providers/openai/accounts/remove",
-        json={"id": "work"},
-    )
+    response = secret_api.client.delete(f"/api/providers/openai/credentials/{cid}")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "removed": True,
-        "name": "work",
-        "cleared_active": True,
-    }
-    assert secret_api.store.find_pool("openai", "work") is None
-    assert get_active_pin("openai") == ""
+    assert response.json() == {"ok": True}
+    assert secret_api.store.get("openai").credentials == []
+
+
+def test_check_key_stores_nothing_and_the_add_that_follows_reuses_its_check(secret_api, monkeypatch):
+    from openprogram.models.auth import manage
+    from openprogram.models.listing import credentials
+
+    manage._checked.clear()
+    probes = []
+    monkeypatch.setattr(
+        credentials,
+        "validate_credential",
+        lambda *args, **kwargs: probes.append(1) or SimpleNamespace(
+            status="valid", detail=None, to_dict=lambda: {"status": "valid"}),
+    )
+    before = _files(secret_api.store)
+
+    checked = secret_api.client.post(
+        "/api/providers/openai/credentials/check-key", json={"api_key": _NEW_SECRET})
+
+    assert checked.status_code == 200
+    assert checked.json()["ok"] is True
+    assert _NEW_SECRET not in checked.text
+    assert _files(secret_api.store) == before  # a check stores nothing
+    assert len(probes) == 1
+
+    added = secret_api.client.post(
+        "/api/providers/openai/credentials",
+        json={"api_key": _NEW_SECRET, "label": "named"})
+
+    assert added.status_code == 200
+    assert added.json()["credential"]["label"] == "named"  # name in the same request
+    assert len(probes) == 1  # the dialog's check was reused, not repeated
 
 
 @pytest.mark.parametrize(
-    ("body", "status"),
-    [
-        ({}, 404),
-        ({"id": "missing"}, 404),
-        ({"name": "work"}, 400),
-        ({"id": "work", "extra": True}, 400),
-        ({"id": None}, 400),
-        ({"id": ""}, 400),
-        ({"id": "bad\nname"}, 400),
-    ],
+    "body",
+    [{}, {"api_key": _NEW_SECRET, "label": "x"}, {"api_key": "sk-…abc4"}, {"api_key": _NEW_SECRET, "replace": ""}],
 )
-def test_account_remove_invalid_request_does_not_mutate(
-    secret_api, body, status
-):
-    _put_credential(secret_api.store)
-
-    response = secret_api.client.post(
-        "/api/providers/openai/accounts/remove",
-        json=body,
-    )
-
-    assert response.status_code == status
-    assert _stored_key(secret_api.store) == _LONG_SECRET
+def test_check_key_refuses_a_bad_body(secret_api, body):
+    response = secret_api.client.post("/api/providers/openai/credentials/check-key", json=body)
+    assert response.status_code == 400

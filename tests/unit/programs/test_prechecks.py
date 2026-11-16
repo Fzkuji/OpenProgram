@@ -29,7 +29,7 @@ def test_self_update_prepare_checks_its_plan_before_approval():
 def test_an_invalid_call_never_reaches_the_approval_card(monkeypatch):
     from openprogram.runtime.permissions.authority import owner_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     import openprogram.programs.tools.system.self_update  # noqa: F401
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _sid: None)
     events, ran = [], []

@@ -17,7 +17,7 @@ Ctrl-C in questionary returns ``None`` from the prompt; treat that as
 "go back / cancel". The top-level :func:`run_interactive_setup` loops
 until the user picks Quit or sends EOF.
 
-All real work (scanning, adopting, login, account CRUD) is delegated to
+All real work (scanning, adopting, signing in) is delegated to
 the same helpers that the non-interactive CLI uses — this module only
 handles presentation.
 """
@@ -91,15 +91,13 @@ def run_interactive_setup() -> int:
                 Choice("Continue — use these credentials",    value="done"),
                 Choice("Scan & import discoverable",           value="scan"),
                 Choice("Add a provider login",                 value="login"),
-                Choice("Diagnose current pools",               value="doctor"),
-                Choice("Manage accounts",                      value="accounts"),
+                Choice("Diagnose current credentials",         value="doctor"),
             ]
         else:
             choices = [
                 Choice("Scan & import discoverable",           value="scan"),
                 Choice("Add a provider login",                 value="login"),
                 Choice("Skip (set up providers later)",        value="done"),
-                Choice("Manage accounts",                      value="accounts"),
             ]
         # unsafe_ask lets KeyboardInterrupt propagate. When called from
         # `openprogram setup`'s providers section, the outer
@@ -123,71 +121,23 @@ def run_interactive_setup() -> int:
             _action_pick_provider_and_login()
         elif pick == "doctor":
             _action_run_doctor()
-        elif pick == "accounts":
-            _action_accounts_menu()
 
 
 def _show_provider_status() -> bool:
-    """Print imported + detected-unimported credentials. Returns True
-    iff at least one pool has at least one credential.
-
-    Imported list comes from the store (authoritative). "Detected"
-    list runs the scan sources and filters out anything already
-    imported — so it only shows what would actually be added by
-    picking "Scan".
-    """
+    """Print the providers with credentials and the sign-ins other tools
+    hold that are not added yet. Returns True iff any provider has one."""
     from openprogram.models.auth.store import get_store
-    try:
-        from openprogram.models.auth.sources import CodexCliSource
-        from openprogram.models.auth.sources import EnvApiKeySource
-        from openprogram.models.auth.sources import GhCliSource
-        from openprogram.models.auth.sources import QwenCliSource
-        from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-        from openprogram.models.auth.account.accounts import get_account_manager
-        from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
-    except Exception:
-        return False
-
     store = get_store()
-    pools = store.list_pools()
     imported_rows: list[str] = []
-    for p in pools:
-        if not p.credentials:
-            continue
-        sources = sorted({c.source for c in p.credentials})
-        imported_rows.append(f"  ✓ {p.provider_id}  ({', '.join(sources)})")
+    for p in store.list_pools():
+        names = ", ".join(c.display_label() for c in p.credentials)
+        imported_rows.append(f"  ✓ {p.provider_id}  ({names})")
 
-    # Scan for unimported credentials. Cheap — the sources only read
-    # files in well-known paths.
-    pm = get_account_manager()
-    account = DEFAULT_ACCOUNT_NAME
-    account_obj = pm.get_account(account)
-    sources_list: list[Any] = [
-        CodexCliSource(account_id=account),
-        QwenCliSource(account_id=account),
-        GhCliSource(),
-    ]
-    for p_id, env_var in PROVIDER_ENV_VARS.items():
-        sources_list.append(EnvApiKeySource(
-            provider_id=p_id, env_var=env_var, account_id=account,
-        ))
-
-    available_rows: list[str] = []
-    for src in sources_list:
-        try:
-            for cred in src.try_import(account_obj.root):
-                existing = store.find_pool(cred.provider_id, account)
-                if existing and any(c.source == cred.source
-                                    for c in existing.credentials):
-                    continue
-                available_rows.append(
-                    f"  · {cred.provider_id}  (via {src.source_id})"
-                )
-        except Exception:
-            continue
+    available_rows = [f"  · {cred.provider_id}  (via {src.source_id})"
+                      for src, cred, held in _discoverable() if not held]
 
     if imported_rows:
-        _say("\nImported:")
+        _say("\nAdded:")
         for row in imported_rows:
             _say(row)
     if available_rows:
@@ -195,11 +145,27 @@ def _show_provider_status() -> bool:
         for row in available_rows:
             _say(row)
     if not imported_rows and not available_rows:
-        _say("\nNo providers imported yet, nothing auto-detected.\n"
+        _say("\nNo providers added yet, nothing auto-detected.\n"
              "You can add one via `Scan` (re-tries detection) or "
              "`Add a provider login`.")
     _say("")
     return bool(imported_rows)
+
+
+def _discoverable() -> list[tuple[Any, Any, bool]]:
+    """``(source, credential, already held)`` for each sign-in another tool holds."""
+    from openprogram.models.auth.adoption import _sources
+    from openprogram.models.auth.store import get_store
+    from .setup import _already_held
+    store = get_store()
+    found: list[tuple[Any, Any, bool]] = []
+    for src in _sources():
+        try:
+            for cred in src.try_import(store.root):
+                found.append((src, cred, _already_held(store, cred)))
+        except Exception:
+            continue
+    return found
 
 
 def pick_login_method_interactive(
@@ -229,51 +195,16 @@ def pick_login_method_interactive(
 
 def _action_scan_and_import() -> None:
     from .formatting import _payload_summary
-    from openprogram.models.auth.sources import CodexCliSource
-    from openprogram.models.auth.sources import EnvApiKeySource
-    from openprogram.models.auth.sources import GhCliSource
-    from openprogram.models.auth.sources import QwenCliSource
-    from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-    from openprogram.models.auth.account.accounts import get_account_manager
     from openprogram.models.auth.store import get_store
 
     store = get_store()
-    pm = get_account_manager()
-    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
-    account_obj = pm.get_account(account)
-
-    sources: list[Any] = [
-        CodexCliSource(account_id=account),
-        QwenCliSource(account_id=account),
-        GhCliSource(),
-    ]
-    from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
-    for p_id, env_var in PROVIDER_ENV_VARS.items():
-        sources.append(
-            EnvApiKeySource(provider_id=p_id, env_var=env_var, account_id=account),
-        )
-
-    candidates: list[tuple[Any, Any]] = []
-    for src in sources:
-        try:
-            for cred in src.try_import(account_obj.root):
-                candidates.append((src, cred))
-        except Exception:
-            continue
-
+    candidates = _discoverable()
     if not candidates:
         _say("  Nothing discoverable.")
         return
 
-    # Pre-check items whose (provider, source) isn't already in the pool
-    # so re-runs default to "nothing new" rather than "import everything".
     choices = []
-    for i, (src, cred) in enumerate(candidates):
-        cred.account_id = account
-        existing = store.find_pool(cred.provider_id, cred.account_id)
-        already = existing is not None and any(
-            c.source == cred.source for c in existing.credentials
-        )
+    for i, (src, cred, already) in enumerate(candidates):
         label = (f"{src.source_id:24s} → {cred.provider_id}  "
                  f"{_payload_summary(cred)}"
                  + ("  (already imported)" if already else ""))
@@ -293,13 +224,12 @@ def _action_scan_and_import() -> None:
     from .formatting import _payload_summary as _preview
     adopted = 0
     for i in picks:
-        src, cred = candidates[i]
-        existing = store.find_pool(cred.provider_id, cred.account_id)
-        if existing and any(c.source == cred.source for c in existing.credentials):
-            continue  # user left it checked but it's already in — skip
-        store.add_credential(cred)
+        src, cred, already = candidates[i]
+        if already:
+            continue  # left checked, but it's already in — skip
+        kept = store.add_credential(cred)
         adopted += 1
-        _say(f"  + {cred.provider_id}/{cred.account_id}: {_preview(cred)}")
+        _say(f"  + {kept.provider_id}: {_preview(kept)}")
     _say(f"  Imported {adopted}.")
     # First-run convenience: subscription providers have no list-models API, so
     # adopting their credentials should also enable their default model set
@@ -313,10 +243,8 @@ def _action_scan_and_import() -> None:
 
 
 def _action_pick_provider_and_login() -> None:
-    from .login import _cmd_login
-    from .login import _available_login_methods
-    from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-    from openprogram.models.auth.account.accounts import get_account_manager
+    from .keys import _cmd_add
+    from openprogram.models.auth.login.login_method_registry import login_methods
     from openprogram.models.auth.store import get_store
 
     # Popular canonical providers, plus anything we already have a pool
@@ -334,10 +262,7 @@ def _action_pick_provider_and_login() -> None:
         ("mistral",           "Mistral"),
     ]
     store = get_store()
-    pm = get_account_manager()
-    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
-
-    existing = {p.provider_id for p in store.list_pools() if p.account_id == account}
+    existing = {p.provider_id for p in store.list_pools()}
     popular_ids = {pid for pid, _ in popular}
     choices = []
     for prov_id, label in popular:
@@ -354,7 +279,7 @@ def _action_pick_provider_and_login() -> None:
     choices.append(Choice("← Back", value="__back__"))
 
     provider = questionary.select(
-        f"Pick a provider to log into  (account: {account})",
+        "Pick a provider to add a key or sign in to",
         choices=choices,
         qmark="›",
     ).unsafe_ask()
@@ -374,7 +299,7 @@ def _action_pick_provider_and_login() -> None:
         from openprogram.models.auth.account.aliases import resolve as _canonical
         provider = _canonical(typed.strip())
 
-    methods = _available_login_methods(provider)
+    methods = login_methods(provider)
     if not methods:
         _say(f"  No login method implemented for {provider!r}.")
         return
@@ -384,97 +309,19 @@ def _action_pick_provider_and_login() -> None:
 
     # Hand off to the shared login implementation — it does the
     # paste/import work and writes to the store.
-    _cmd_login(provider, account, method)
+    _cmd_add(provider, method=method)
 
 
 def _action_run_doctor() -> None:
     from openprogram.models.auth.doctor import run_doctor
     from .doctor import _print_doctor_report
     report = run_doctor()
-    _print_doctor_report(
-        report["pools_checked"], report["accounts_checked"], report["findings"],
-    )
-
-
-def _action_accounts_menu() -> None:
-    from openprogram.models.auth.account.accounts import get_account_manager
-    from openprogram.models.auth.account.accounts import AuthConfigError
-    pm = get_account_manager()
-
-    while True:
-        accounts = pm.list_accounts()
-        labels = [Choice(f"{p.name:16s}  {p.display_name or '-'}", value=p.name)
-                  for p in accounts]
-        labels.append(Choice("+ Create new account", value="__create__"))
-        labels.append(Choice("← Back",               value="__back__"))
-
-        pick = questionary.select(
-            "Accounts", choices=labels, qmark="›",
-        ).unsafe_ask()
-        if pick is None or pick == "__back__":
-            return
-
-        if pick == "__create__":
-            name = questionary.text("Account name:").unsafe_ask()
-            if not name:
-                continue
-            display = questionary.text(
-                "Display name (optional):", default="",
-            ).unsafe_ask() or ""
-            try:
-                pm.create_account(name.strip(), display_name=display)
-                _say(f"  Created account {name}.")
-            except AuthConfigError as e:
-                _say(f"  Failed: {e}")
-            continue
-
-        # Existing account selected — offer delete or back.
-        sub = questionary.select(
-            f"Account {pick!r}",
-            choices=[
-                Choice("Delete",  value="delete"),
-                Choice("← Back",  value="__back__"),
-            ],
-            qmark="›",
-        ).unsafe_ask()
-        if sub == "delete":
-            ok = questionary.confirm(
-                f"Delete account {pick!r} and all its credentials?",
-                default=False,
-            ).unsafe_ask()
-            if ok:
-                try:
-                    pm.delete_account(pick)
-                    _say(f"  Deleted {pick}.")
-                except AuthConfigError as e:
-                    _say(f"  Failed: {e}")
+    _print_doctor_report(report["pools_checked"], report["findings"])
 
 
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
-
-def _pick_account(pm, *, default: str) -> Optional[str]:
-    """Ask which account to act on. Returns None on cancel.
-
-    Never pass default= to questionary.select — questionary flags the
-    default-matching choice permanently and the cursor-row highlight
-    breaks for that row (see setup._qstyle docstring). We
-    reorder instead so the default sits at index 0 where the initial
-    cursor lands.
-    """
-    accounts = pm.list_accounts()
-    if len(accounts) == 1:
-        return accounts[0].name
-    ordered = ([p for p in accounts if p.name == default]
-               + [p for p in accounts if p.name != default])
-    choices = [Choice(p.name, value=p.name) for p in ordered]
-    return questionary.select(
-        "Which account?",
-        choices=choices,
-        qmark="›",
-    ).unsafe_ask()
-
 
 def _banner() -> None:
     print()

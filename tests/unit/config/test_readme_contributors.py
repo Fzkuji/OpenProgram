@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 
-from scripts import retired_accounts
-from scripts.update_readme_contributors import (
+from scripts.publishing import retired_accounts
+from scripts.publishing.update_readme_contributors import (
     is_listed_contributor,
     render_block,
     replace_block,

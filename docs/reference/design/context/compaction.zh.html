@@ -36,7 +36,7 @@
 </dl>
 </figure>
 
-<p>摘要在包含它覆盖的全部轮次的每条链上代替这些轮次，每条链读自己的那份。一条规则 <code translate="no">active_summary_for_chain</code>（<code translate="no">state/store/session/summaries.py</code>）同时服务渲染、压缩输入和图构建器，所以它们从不分歧。摘要的胶囊画法：<a href="../runtime/dag/rendering.zh.html">DAG 渲染第九节</a>。</p>
+<p>摘要在包含它覆盖的全部轮次的每条链上代替这些轮次，每条链读自己的那份。一条规则 <code translate="no">active_summary_for_chain</code>（<code translate="no">state/store/session/reading/summaries.py</code>）同时服务渲染、压缩输入和图构建器，所以它们从不分歧。摘要的胶囊画法：<a href="../runtime/dag/rendering.zh.html">DAG 渲染第九节</a>。</p>
 
 <h2 id="data-model">摘要节点</h2>
 <table class="stack fixed">
@@ -80,7 +80,7 @@
 </details>
 
 <h2 id="rendering-rule">渲染规则</h2>
-<p><code translate="no">context/nodes.py</code> 的 <code translate="no">render_context</code> 决定模型读什么。设 S 为这条链的摘要，L 为其 <code translate="no">covers_ids</code>：去掉 L，在其位置放入 S，作为一条用户消息（摘要，然后是恢复的状态）；在 Anthropic 上它和下一条用户消息合并。</p>
+<p><code translate="no">context/session_dag/nodes.py</code> 的 <code translate="no">render_context</code> 决定模型读什么。设 S 为这条链的摘要，L 为其 <code translate="no">covers_ids</code>：去掉 L，在其位置放入 S，作为一条用户消息（摘要，然后是恢复的状态）；在 Anthropic 上它和下一条用户消息合并。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">情形</th><th scope="col">结果</th></tr></thead>
 <tbody>
@@ -236,7 +236,7 @@
 
 <details id="tuning">
 <summary>按用户自己的调用选择比例</summary>
-<p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 系统 → 模型 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
+<p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 系统 → 模型 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/token_accounting/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
 <ul>
 <li>按顺序回放，每个 prompt 按实际增长，去掉记录到的压缩（降到至少 20K prompt 的 60% 以下）。</li>
 <li>超过阈值（窗口比例减回复预留）时，压缩读完整 prompt，写一份和所见摘要一样长的摘要（没有时比对话开头多 10K）。下一次调用把它写入缓存，之后读回记录的压缩后的内容（见到五次前至少 10K）。</li>
@@ -264,15 +264,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">不变量</th><th scope="col">测试位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">压缩后，活动分支渲染为 <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/test_compaction_covers.py</code>；场景套件</td></tr>
-<tr><th scope="row">每条链读自己的摘要；切换不写入；回退时退回；构建器一致</th><td><code translate="no">tests/unit/context/test_summary_per_chain.py</code></td></tr>
+<tr><th scope="row">压缩后，活动分支渲染为 <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/compaction/test_compaction_covers.py</code>；场景套件</td></tr>
+<tr><th scope="row">每条链读自己的摘要；切换不写入；回退时退回；构建器一致</th><td><code translate="no">tests/unit/context/compaction/test_summary_per_chain.py</code></td></tr>
 <tr><th scope="row">超长只重试那个请求，每轮最多两次；停止时以已停止结束</th><td><code translate="no">tests/component/context/test_reactive_retry.py</code></td></tr>
-<tr><th scope="row">新摘要是带前缀的用户输入；缺段或碰到上限的失败并计入 hold</th><td><code translate="no">tests/unit/context/test_summary_prompt_and_role.py</code></td></tr>
-<tr><th scope="row">恢复的状态跟在摘要后，在预算内，每个请求字节相同</th><td><code translate="no">tests/unit/context/test_compaction_restore.py</code></td></tr>
-<tr><th scope="row">摘要请求复用上一个请求的前缀；超长恢复从不分叉</th><td><code translate="no">tests/unit/context/test_compaction_fork.py</code></td></tr>
+<tr><th scope="row">新摘要是带前缀的用户输入；缺段或碰到上限的失败并计入 hold</th><td><code translate="no">tests/unit/context/compaction/test_summary_prompt_and_role.py</code></td></tr>
+<tr><th scope="row">恢复的状态跟在摘要后，在预算内，每个请求字节相同</th><td><code translate="no">tests/unit/context/compaction/test_compaction_restore.py</code></td></tr>
+<tr><th scope="row">摘要请求复用上一个请求的前缀；超长恢复从不分叉</th><td><code translate="no">tests/unit/context/compaction/test_compaction_fork.py</code></td></tr>
 <tr><th scope="row">降级由更大的模型总结，再由该轮的模型</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
 <tr><th scope="row">窗口内一轮的请求只在末尾增长；超过时只有一个检查点，不逐个总结结果</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
-<tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；在 openai-codex 上，S 前的一对让 tools 数组在压缩前后不变；其他 provider 先读 S</th><td><code translate="no">tests/unit/context/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；在 openai-codex 上，S 前的一对让 tools 数组在压缩前后不变；其他 provider 先读 S</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">压缩从不移动 HEAD</th><td>场景套件</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> 绝不指向被总结链之外的节点</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
 <tr><th scope="row">HEAD 经得起重启、加载会话、切换模型、保存元数据</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>
@@ -285,8 +285,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">代码</th></tr></thead>
 <tbody>
-<tr><th scope="row">节点形状和流水线</th><td><code translate="no">runtime/context/persistence.py</code>（<code translate="no">insert_summary_node</code>、<code translate="no">covered_chain_ids</code>、<code translate="no">rendered_history</code>），<code translate="no">runtime/context/engine.py</code></td></tr>
-<tr><th scope="row">用哪份摘要</th><td><code translate="no">state/store/session/summaries.py</code>；<code translate="no">runtime/context/nodes.py</code>（<code translate="no">render_context</code>）；<code translate="no">state/store/session/graph/builder.py</code></td></tr>
+<tr><th scope="row">节点形状和流水线</th><td><code translate="no">runtime/context/compaction/persistence.py</code>（<code translate="no">insert_summary_node</code>、<code translate="no">covered_chain_ids</code>、<code translate="no">rendered_history</code>），<code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row">用哪份摘要</th><td><code translate="no">state/store/session/reading/summaries.py</code>；<code translate="no">runtime/context/session_dag/nodes.py</code>（<code translate="no">render_context</code>）；<code translate="no">state/store/session/graph/builder.py</code></td></tr>
 <tr><th scope="row">超长恢复、轮次中途压缩</th><td><code translate="no">runtime/agent/loop/loop.py</code>，<code translate="no">turn_runtime/turn_compaction.py</code></td></tr>
 <tr><th scope="row">提示词、恢复、分叉</th><td><code translate="no">compaction/prompts.py</code>、<code translate="no">summarize.py</code>、<code translate="no">bounded_summary.py</code>、<code translate="no">restore.py</code>、<code translate="no">fork.py</code></td></tr>
 <tr><th scope="row">模型降级</th><td><code translate="no">turn_runtime/loop_runner.py</code>（<code translate="no">_auto_compact_new_turn</code>）</td></tr>

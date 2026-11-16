@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
-from openprogram.runtime.context.tokens import _text_tokens, estimate_history_tokens, real_context_window
+from openprogram.runtime.context.token_accounting.tokens import _text_tokens, estimate_history_tokens, real_context_window
 from openprogram.models.providers.types import Context, SimpleStreamOptions, TextContent, UserMessage
-from openprogram.models.providers.utils.overflow import is_context_overflow
+from openprogram.models.providers.utils.failures.overflow import is_context_overflow
 
 #: Seconds a summary stream may go without an event before it fails.
 SUMMARY_IDLE_S = 60.0

@@ -12,7 +12,6 @@ import { AgentNoticeRows, ReceivedMessageRow } from "../../cards/agent-event-row
 import { AssistantBubble } from "../../bubbles/assistant-bubble";
 import { AttachCard } from "../../cards/attach-card";
 import { PromptTurn } from "../../cards/sub-agent-prompt";
-import { TodoPlans } from "../../cards/todo-plan-card";
 import { SubAgentStrip } from "../../execution/execution-strip";
 import { StepExpansionScope } from "../../execution/step-expansion";
 import { isAgentLive } from "@/lib/chat/transcript/row-status";
@@ -57,13 +56,7 @@ function dispatch(kind: RowKind, msg: ChatMsg, scope: TranscriptScope): ReactNod
     case "assistant":
       // A goal check whose verdict landed before the server's row did stays hidden too.
       if (msg.goalVerification) return null;
-      return scope.embedded ? (
-        <>
-          <AssistantBubble msg={msg} sessionIdOverride={sessionId} viewKey={viewKey} embedded />
-          {/* The sub-agent's own plan sits under its own reply. */}
-          <TodoPlans sessionId={scope.sessionId} viewKey={viewKey} rowId={msg.id} />
-        </>
-      ) : <AssistantBubble msg={msg} sessionIdOverride={sessionId} viewKey={viewKey} />;
+      return <AssistantBubble msg={msg} sessionIdOverride={sessionId} viewKey={viewKey} embedded={scope.embedded} />;
     case "function_run":
       // 手动函数运行（fn-form / /run）：RuntimeBlock 内部已统一为
       // 时间线组件（根行 + 递归子树，子节点逐层展开）。

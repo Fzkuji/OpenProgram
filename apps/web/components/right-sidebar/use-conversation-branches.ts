@@ -6,6 +6,9 @@
  * each one's lane colour in the graph. The runtime fetches them when a
  * conversation loads; this re-reads them whenever it says they changed.
  * Sub-agents' own conversations and scheduled tasks' branches are left out.
+ * A branch the runtime opened and no person wrote on stays in, marked
+ * `runtimeStarted`, unless it is the one checked out: it is not a branch
+ * the reader made, and a list of the reader's branches leaves it out.
  */
 import { useEffect, useState } from "react";
 import { runtimeState } from "@/lib/runtime-bridge/state";
@@ -22,9 +25,12 @@ interface BranchRow {
   sub_agent?: boolean;
   /** A scheduled task's branch; its runs show on the task's page. */
   scheduled_task?: boolean;
+  /** Opened by a runtime turn (a Goal continuation, a background-command
+   *  notice) in a conversation saved while those were recorded as branches. */
+  runtime_started?: boolean;
 }
 
-export type ConversationBranch = { branchId?: string; head: string; name: string | null; active: boolean; color: string; updatedAt: number | null };
+export type ConversationBranch = { branchId?: string; head: string; name: string | null; active: boolean; color: string; updatedAt: number | null; runtimeStarted: boolean };
 
 function read(sessionId: string | null): ConversationBranch[] {
   if (!sessionId) return [];
@@ -34,7 +40,7 @@ function read(sessionId: string | null): ConversationBranch[] {
   return rows.map((row, index) => ({
     branchId: row.branch_id, head: row.head_msg_id, name: row.name || null, active: Boolean(row.active),
     color: colors[row.head_msg_id] || LANE_COLORS[index % LANE_COLORS.length],
-    updatedAt: row.updated_at ?? null, subAgent: Boolean(row.sub_agent) || (Boolean(row.scheduled_task) && !row.active),
+    updatedAt: row.updated_at ?? null, runtimeStarted: Boolean(row.runtime_started) && !row.active, subAgent: Boolean(row.sub_agent) || (Boolean(row.scheduled_task) && !row.active),
   })).filter(row => !row.subAgent).map(({ subAgent: _, ...row }) => row);
 }
 

@@ -19,7 +19,7 @@ async def handle_rewind_list(ws, cmd: dict):
     limit = cmd.get("limit", 10)
     try:
         from openprogram.interfaces.server import server as _s
-        from openprogram.runtime.conversation.rewind import list_rewind_points
+        from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points
         loop = asyncio.get_event_loop()
         points = await loop.run_in_executor(
             None, lambda: list_rewind_points(
@@ -64,7 +64,7 @@ async def handle_rewind(ws, cmd: dict):
             await _send_run_active(ws, _s, session_id, refusal)
             return
     try:
-        from openprogram.runtime.conversation.rewind import (
+        from openprogram.runtime.conversation.rewinds.rewind import (
             list_rewind_points,
             plan_rewind,
             rewind_to,
@@ -184,7 +184,7 @@ async def _send_run_active(ws, _s, session_id: str, refusal: dict | None = None)
 
 async def handle_rewind_marks(ws, cmd: dict):
     """Send the Undo and Redo marks for the transcript at the current HEAD."""
-    from openprogram.runtime.conversation.rewind_marks import list_rewind_marks
+    from openprogram.runtime.conversation.rewinds.rewind_marks import list_rewind_marks
 
     session_id = (cmd.get("session_id") or "").strip()
     marks = await asyncio.to_thread(list_rewind_marks, session_id) if session_id else []

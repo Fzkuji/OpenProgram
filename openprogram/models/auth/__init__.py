@@ -1,53 +1,31 @@
-"""OpenProgram auth v2 — credential management.
+"""OpenProgram credentials.
 
-Public surface, layered from inside out:
-
-  * :mod:`.types`    — plain dataclasses + errors + events, zero deps
-  * :mod:`.store`    — on-disk persistence, singleton, per-pool locks
-  * :mod:`.credential_provider` — refresh, pool rotation, fallback chains
-  * :mod:`.resolver` — flattens a credential to the bearer string a request sends
-  * :mod:`.methods`  — interactive login flows
-  * :mod:`.sources`  — external credential importers
-  * :mod:`.accounts` — isolation boundary
-
-Call sites should reach for ``credential_provider.acquire`` for API usage
-and the ``methods`` login flows for interactive enrollment. The lower
-layers are intentionally minimal so they can be exercised in tests
-without mocking the network.
-
-Two things named "account" and "profile" are kept apart deliberately:
-an **account** here is a set of credentials for one provider identity
-(``account_id``, ``~/.openprogram/profiles/<name>/``), while a
-**profile** is the workspace scope in :mod:`openprogram.state.paths`
-(``--profile``, ``~/.openprogram-<name>/``) covering config and
-sessions. One workspace profile can hold many credential accounts.
+  * :mod:`.types`    — dataclasses, errors, events; no dependencies
+  * :mod:`.store`    — one ``credentials.json`` per provider, atomic writes
+  * :mod:`.carry_over` — the one-time move from the per-account layout
+  * :mod:`.selection` — which credential a request uses, and failover
+  * :mod:`.manage`   — renaming, ordering, checking, removing; the list the web shows
+  * :mod:`.credential_provider` — refresh of sign-ins, per-provider hooks
+  * :mod:`.resolver` — a credential to the bearer value a request sends
+  * :mod:`.login`, :mod:`.methods`, :mod:`.sources` — adding credentials
 """
 from .types import (
-    AuthBillingBlockedError, AuthConfigError,
-    AuthCorruptCredentialError, AuthError, AuthEvent, AuthEventListener,
-    AuthEventType, AuthExpiredError, AuthCredentialProcessError,
-    AuthNeedsReauthError,
-    AuthPoolExhaustedError, AuthRateLimitedError, AuthReadOnlyError,
-    AuthRefreshError, AuthRevokedError, AuthRotationConsumedError,
-    Credential, CredentialData, CredentialKind, CredentialPayload,
-    CredentialPool, CredentialSource, CredentialStatus,
-    LoginMethod, LoginUi,
-    PoolStrategy, Account, RemovalStep,
+    AuthConfigError, AuthCorruptCredentialError, AuthCredentialProcessError,
+    AuthError, AuthEvent, AuthEventListener, AuthEventType, AuthNeedsReauthError,
+    AuthPoolExhaustedError, AuthReadOnlyError, AuthRefreshError,
+    AuthRotationConsumedError, Credential, CredentialData, CredentialKind,
+    CredentialPayload, CredentialPool, CredentialSource, CredentialStatus,
+    LoginMethod, LoginUi, RemovalStep, STRATEGIES, Strategy,
 )
 from .store import AuthStore, get_store, set_store_for_testing
 
 __all__ = [
-    # types
-    "CredentialData",
-    "CredentialPayload", "Credential", "CredentialKind", "CredentialStatus",
-    "PoolStrategy", "CredentialPool", "Account",
+    "CredentialData", "CredentialPayload", "Credential", "CredentialKind",
+    "CredentialStatus", "CredentialPool", "Strategy", "STRATEGIES",
     "AuthEventType", "AuthEvent", "AuthEventListener",
     "AuthError", "AuthConfigError", "AuthCorruptCredentialError",
     "AuthReadOnlyError", "AuthRefreshError", "AuthRotationConsumedError",
-    "AuthExpiredError", "AuthRateLimitedError", "AuthBillingBlockedError",
-    "AuthRevokedError", "AuthNeedsReauthError", "AuthPoolExhaustedError",
-    "AuthCredentialProcessError",
+    "AuthNeedsReauthError", "AuthPoolExhaustedError", "AuthCredentialProcessError",
     "RemovalStep", "CredentialSource", "LoginMethod", "LoginUi",
-    # store
     "AuthStore", "get_store", "set_store_for_testing",
 ]

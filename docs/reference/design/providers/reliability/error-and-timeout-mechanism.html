@@ -19,7 +19,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Layer</th><th scope="col">Bounds</th><th scope="col">Retries</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>Sets one absolute deadline in a ContextVar (<code translate="no">utils/deadline.py</code>); checks it before each attempt and each sleep</td><td><code translate="no">max_retries</code> 3 (<code translate="no">OPENPROGRAM_MAX_RETRIES</code>), <code translate="no">1.5·2^n</code> s, ±25%</td></tr>
+<tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>Sets one absolute deadline in a ContextVar (<code translate="no">utils/http_transport/deadline.py</code>); checks it before each attempt and each sleep</td><td><code translate="no">max_retries</code> 3 (<code translate="no">OPENPROGRAM_MAX_RETRIES</code>), <code translate="no">1.5·2^n</code> s, ±25%</td></tr>
 <tr><th scope="row"><code translate="no">Runtime._call</code> → <code translate="no">_run_async</code></th><td>No running loop: <code translate="no">asyncio.run</code> on this thread. Running loop (Web, worker): a pool thread, deadline forwarded</td><td>none</td></tr>
 <tr><th scope="row"><code translate="no">AgentSession._run_with_retry</code></th><td>Draws on the invocation's transport allowance</td><td>2 s, 4 s, 8 s</td></tr>
 <tr><th scope="row"><code translate="no">retry_stream</code> (Codex), retry loop (completions)</th><td>Reads the deadline before each attempt and sleep</td><td>5 attempts, 2 s base, 30 s cap</td></tr>
@@ -116,7 +116,7 @@
 </details>
 
 <h2 id="classification">Classification</h2>
-<p><code translate="no">classify_error</code> in <code translate="no">utils/errors.py</code>:</p>
+<p><code translate="no">classify_error</code> in <code translate="no">utils/failures/errors.py</code>:</p>
 <table class="stack">
 <thead><tr><th scope="col">Order</th><th scope="col">Basis</th><th scope="col">Reason</th><th scope="col">Retryable</th></tr></thead>
 <tbody>

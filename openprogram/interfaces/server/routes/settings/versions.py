@@ -55,8 +55,8 @@ def _start_conversation(title: str, text: str, *, tools: list[str] | None) -> st
     """Open a conversation and start the owner's turn in it."""
     from openprogram.runtime.agent_registry.manager import get_default
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn
-    from openprogram.runtime.conversation.session_model import ensure_session_chat_model
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn
+    from openprogram.runtime.conversation.session_settings.session_model import ensure_session_chat_model
 
     spec = get_default()
     agent_id = spec.id if spec is not None else "main"

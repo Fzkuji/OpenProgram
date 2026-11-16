@@ -5,7 +5,7 @@ import { type ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { executionPending } from "@/lib/execution/activity-model";
 import { presentTool } from "@/components/chat/messages/execution/tool-presentation";
 import { shortTime } from "../debugger/debugger-presentation";
-import { type Routine, type RoutineRun } from "@/lib/chat/conversation-work";
+import { type Routine, type RoutineRun, type TaskRunOutcome, type TaskRunSummary } from "@/lib/chat/conversation-work";
 import { seconds, type ProgressLook } from "./program-progress";
 import type { Text, Tone } from "./running-rows";
 
@@ -70,12 +70,26 @@ export function programState(item: ManagedProcess, text: Text): string {
   }[item.status] as [string, string] | undefined || [item.status, item.status]));
 }
 
+/** Going now. A program that lost its supervisor keeps its record open
+ *  until it expires, but nothing is known to run: it is history. */
+export const programLive = (item: ManagedProcess): boolean =>
+  processIsActive(item) && item.status !== "unknown";
+
 export function programTone(item: ManagedProcess): Tone {
-  if (processIsActive(item) && item.status !== "unknown") return "run";
+  if (programLive(item)) return "run";
   if (["completed", "exited"].includes(item.status)) return "ok";
   if (item.status === "failed") return "err";
   return "muted";
 }
+
+/** Ended in an error: it failed, or exited with a code other than 0. */
+export const programFailed = (item: ManagedProcess): boolean =>
+  item.status === "failed" || (item.status === "exited" && item.exit_code != null && item.exit_code !== 0);
+
+/** Listed in the overview: a program that is going, and one that failed.
+ *  What ended normally, was stopped or lost its supervisor is not listed. */
+export const programListed = (item: ManagedProcess): boolean =>
+  programLive(item) || programFailed(item);
 
 export function programName(item: ManagedProcess, text: Text): string {
   const display = item.display;
@@ -138,4 +152,75 @@ export function routineSchedule(task: Routine, text: Text): string {
       : task.cron || "";
   const watch = task.watch ? text(" · when its check changes", " · 检查结果变化时") : "";
   return [kind, when].filter(Boolean).join(" · ") + watch + (task.enabled === false ? text(" · Paused", " · 已暂停") : "");
+}
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/** A cron schedule in words, for the shapes tasks are set with; any other
+ *  expression is shown as written. */
+export function cronWords(cron: string | undefined, text: Text): string {
+  const parts = (cron || "").trim().split(/\s+/);
+  if (parts.length !== 5) return cron || "";
+  const [minute, hour, day, month, weekday] = parts;
+  const everyDay = day === "*" && month === "*";
+  const at = /^\d+$/.test(minute) && /^\d+$/.test(hour) ? `${pad2(Number(hour))}:${pad2(Number(minute))}` : "";
+  const step = (field: string) => field.match(/^\*\/(\d+)$/)?.[1];
+  if (everyDay && weekday === "*") {
+    if (minute === "*" && hour === "*") return text("Every minute", "每分钟");
+    if (step(minute) && hour === "*") return text(`Every ${step(minute)} minutes`, `每 ${step(minute)} 分钟`);
+    if (minute === "0" && hour === "*") return text("Every hour", "每小时");
+    if (/^\d+$/.test(minute) && hour === "*") return text(`Every hour at :${pad2(Number(minute))}`, `每小时第 ${Number(minute)} 分`);
+    if (/^\d+$/.test(minute) && step(hour)) return text(`Every ${step(hour)} hours`, `每 ${step(hour)} 小时`);
+    if (at) return text(`Every day at ${at}`, `每天 ${at}`);
+  }
+  if (everyDay && weekday === "1-5" && at) return text(`Weekdays at ${at}`, `工作日 ${at}`);
+  if (everyDay && /^[0-7]$/.test(weekday) && at) {
+    const index = Number(weekday) % 7;
+    return text(`${WEEKDAYS_EN[index]}s at ${at}`, `每${WEEKDAYS_ZH[index]} ${at}`);
+  }
+  if (weekday === "*" && /^\d+$/.test(day) && at) {
+    if (month === "*") return text(`Day ${Number(day)} of each month at ${at}`, `每月 ${Number(day)} 日 ${at}`);
+    if (/^\d+$/.test(month) && Number(month) >= 1 && Number(month) <= 12) {
+      return text(`Every year on ${MONTHS_EN[Number(month) - 1]} ${Number(day)} at ${at}`, `每年 ${Number(month)} 月 ${Number(day)} 日 ${at}`);
+    }
+  }
+  return cron || "";
+}
+
+const WEEKDAYS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A run's outcome as a tone: green when it worked, red when it failed,
+ *  yellow when it was stopped, cut off or could not check. */
+export function taskOutcomeTone(outcome: TaskRunOutcome): Tone {
+  switch (outcome) {
+    case "quiet": case "notified": return "ok";
+    case "failed": return "err";
+    case "running": return "run";
+    default: return "warn";
+  }
+}
+
+export function taskOutcomeWords(outcome: TaskRunOutcome, text: Text): string {
+  return text(...({
+    running: ["Running", "正在运行"], waiting: ["Waiting for you", "等你处理"], quiet: ["Nothing new", "无新内容"],
+    notified: ["Notified", "已通知"], unable: ["Couldn't check", "没能检查"], failed: ["Failed", "失败"],
+    stopped: ["Stopped", "已停止"], interrupted: ["Interrupted", "已中断"],
+  }[outcome] as [string, string]));
+}
+
+/** A time on a task's row: the clock within the last day, else the day. */
+export function recentTime(seconds: number, text: Text, now = Date.now() / 1000): string {
+  return now - seconds < 86400 ? shortTime(seconds * 1000) : when(seconds, text);
+}
+
+/** "178 runs · 9 didn't finish · last 23:00". */
+export function taskSummaryLine(summary: TaskRunSummary, text: Text, now?: number): string {
+  if (!summary.runs) return text("No runs yet", "还没有运行");
+  return [
+    text(`${summary.runs} run${summary.runs === 1 ? "" : "s"}`, `${summary.runs} 次运行`),
+    summary.unfinished ? text(`${summary.unfinished} didn't finish`, `${summary.unfinished} 次没完成`) : "",
+    summary.last_at != null ? text(`last ${recentTime(summary.last_at, text, now)}`, `最近 ${recentTime(summary.last_at, text, now)}`) : "",
+  ].filter(Boolean).join(" · ");
 }

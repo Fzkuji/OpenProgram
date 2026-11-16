@@ -1,0 +1,224 @@
+<title>文档站</title>
+<meta name="description" content="文档站如何渲染、路由、构建和提供源文件，以及它采用的阅读规则。">
+<h1 id="documentation-html-rendering-and-authoring">文档站</h1>
+
+<span id="渲染方式"></span>
+<h2 id="rendering-paths">渲染方式</h2>
+<table class="stack">
+<thead><tr><th scope="col">源文件</th><th scope="col">发布结果</th><th scope="col">作者负责</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTML 文档</th><td>共享基底上的文章，并生成 <code translate="no">.html.md</code> 副本</td><td>只写内容，见<a href="authoring.zh.html">写一页文档</a></td></tr>
+<tr><th scope="row">Markdown</th><td>站点布局中的文章</td><td>仅限生成的参考页；手写页面都是 HTML 文档</td></tr>
+<tr><th scope="row">交互原型</th><td>带 iframe 的站点页面，加 <code translate="no">.raw.html</code> 载荷</td><td>自己的布局、主题和内部导航</td></tr>
+</tbody>
+</table>
+<p class="note">只有 <code translate="no">PROTOTYPE_PAGES</code>（<code translate="no">governance/policy.py</code>）里的页面走这条路径；其他违反格式的页面构建失败。见<a href="governance.zh.html">文档治理</a>。iframe 只隔离布局，不是不可信脚本的沙箱。</p>
+
+<span id="实现位置"></span>
+<h2 id="implementation-ownership">实现位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">scripts/docs_site/nav.py</code></th><td>发现源文件、语言配对、九个 Tab、分区、<code translate="no">PAGE_ORDER</code></td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/build.py</code></th><td>渲染、相对链接、静态资源、搜索记录、重定向、原子输出</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/html_source.py</code></th><td>解析 HTML 文档、标题 id、Markdown 副本</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/template.py</code></th><td>共享布局和页面元数据</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/search.py</code></th><td>搜索索引</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/site.css</code></th><td>基底：字体、间距、响应式布局、亮暗令牌</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/site.js</code></th><td>导航、语言、搜索、全屏、代码复制</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/theme.js</code></th><td>主题控制器，在解析 body 前运行</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/docs.py</code></th><td>选择源码或打包站点，默认 worker 的 <code translate="no">/docs/</code> 挂载</td></tr>
+</tbody>
+</table>
+
+<span id="阅读结构与视觉规范"></span>
+<h2 id="reading-and-visual-design">阅读结构与视觉规范</h2>
+<p>新页面是同一基底上的 HTML 文档：中性色加一个蓝色强调色，亮暗两套。原型页通过 <code translate="no">--bg</code>、<code translate="no">--bg-code</code>、<code translate="no">--tx</code>、<code translate="no">--tx-soft</code>、<code translate="no">--acc</code>、<code translate="no">--bd</code> 工作，它们是基底令牌的别名。文章内不写固定的仅亮色配色。</p>
+<ul>
+<li>页面从问题、读者、范围和实现边界出发；公开入口和数据流先于细节；页尾写剩余工作。</li>
+<li>稳定的标题 <code translate="no">id</code> 提供页内导航。</li>
+<li>图有可访问的标题和描述。详细证据放进原生折叠。键盘焦点、减少动态和手机阅读都属于验收。</li>
+<li>宽表保留在可键盘操作的横向滚动区域，列宽可读。独立 HTML 另有图表滚动区域，未定义背景时有不透明兜底画布。这些辅助不证明页面所述的实现成立。</li>
+</ul>
+
+<span id="导航与双语源码"></span>
+<h2 id="navigation-and-bilingual-sources">导航与双语源码</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab</th><td><code translate="no">start</code>、<code translate="no">install</code>、<code translate="no">capabilities</code>、<code translate="no">interfaces</code>、<code translate="no">models</code>、<code translate="no">integrations</code>、<code translate="no">server</code>、<code translate="no">reference</code> 和虚拟的 <code translate="no">design</code>。设计源文件留在 <code translate="no">docs/reference/design/</code>。</td></tr>
+<tr><th scope="row">顺序</th><td><code translate="no">TAB_SECTIONS</code> 定阅读顺序，<code translate="no">PAGE_ORDER</code> 定页面顺序。登记 <code translate="no">topic.md</code> 的条目在 Markdown 删除后也作用于 <code translate="no">topic.html</code>。其余页面按目录分组，用配置标签或 README 标题。侧栏不是文件树。</td></tr>
+<tr><th scope="row">语言</th><td>英文为默认。<code translate="no">topic.zh.md</code> 配 <code translate="no">topic.md</code>，<code translate="no">topic.zh.html</code> 配 <code translate="no">topic.html</code>，通过语言控件到达。两者一起改。</td></tr>
+<tr><th scope="row">同名伴生页</th><td>与 Markdown 同名时，HTML 输出为 <code translate="no">topic.viz.html</code>（中文 <code translate="no">topic.zh.viz.html</code>）。相对链接 <code translate="no">topic.md</code> 指向文本，<code translate="no">topic.html</code> 指向伴生页并保留锚点。仅为兼容；应比较后合并，不维护两份说明。</td></tr>
+<tr><th scope="row">排除</th><td><code translate="no">_site</code>、<code translate="no">_site.tmp</code>、<code translate="no">_site.old</code>、<code translate="no">_static_root</code>、<code translate="no">images</code>、<code translate="no">node_modules</code>。前导下划线本身不排除任何目录。</td></tr>
+</tbody>
+</table>
+
+<span id="构建与本地展示"></span>
+<h2 id="build-and-serving">构建与本地展示</h2>
+<pre translate="no"><code>python -m scripts.docs_site.check --all
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.checklang
+python -m scripts.docs_site.check_landing</code></pre>
+<p class="note">在仓库根目录、具备文档依赖时运行；<code translate="no">uv run</code> 形式见<a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">贡献指南</a>。<code translate="no">check</code> 不需要构建；<code translate="no">checklinks</code> 读构建后的 HTML，先构建。<code translate="no">checklang</code> 扫描默认语言源文件，不比较中文配对。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">构建</th><td>重新生成 CLI、配置和供应商参考页，写入 <code translate="no">docs/_site.tmp/</code>，再替换被 Git 忽略的 <code translate="no">docs/_site/</code>。</td></tr>
+<tr><th scope="row"><code translate="no">docs/_static_root/</code></th><td>拷入站点，不进导航和搜索；其中文本文件里的 <code translate="no">{{SITE_URL}}</code> 换成<a href="../distribution/github-publishing.zh.html#website">网站地址</a>。<code translate="no">.github/workflows/docs-pages.yml</code> 把根文件（<code translate="no">robots.txt</code>、<code translate="no">sitemap.xml</code>、<code translate="no">llms.txt</code>、Search Console 证明、IndexNow 密钥，以及构建为自定义域名写出的 <code translate="no">CNAME</code>）移到站点根，并检查证明内容。生成的 <code translate="no">sitemap.xml</code> 是唯一站点地图。</td></tr>
+<tr><th scope="row">源码检出</th><td>提供自己的 <code translate="no">docs/_site/</code>。worker 在注册路由时检查是否重建；HTTP 读取不扫描也不重建。没有监听模式。</td></tr>
+<tr><th scope="row">已安装运行时</th><td>提供 Server 的 <code translate="no">_frontend/docs/</code> 内置包。重建其他检出不会更新它：声称验收前先比较实际页面。</td></tr>
+</tbody>
+</table>
+
+<span id="方案比较"></span>
+<details>
+<summary id="design-alternatives">方案比较</summary>
+<p>仓库内的 Python 渲染器保留原生 HTML、SVG 和脚本内容，并融入单端口 worker。它使用 <code translate="no">markdown-it-py</code>、<code translate="no">mdit-py-plugins</code> 和 Pygments，没有客户端框架、编辑器或 CMS。比较针对本项目需求，不是外部产品的现状调研。</p>
+<table class="stack">
+<thead><tr><th scope="col">考虑项</th><th scope="col">Python 渲染器</th><th scope="col">VitePress</th><th scope="col">MkDocs</th></tr></thead>
+<tbody>
+<tr><th scope="row">原生可视文档</th><td>保留为片段或独立页面</td><td>需评估与组件和布局的集成</td><td>需评估原始 HTML 和主题集成</td></tr>
+<tr><th scope="row">导航、搜索</th><td>在本仓库维护</td><td>内置，需评估</td><td>内置，需评估</td></tr>
+<tr><th scope="row">工具链</th><td>Python、静态浏览器资源</td><td>额外的 Node 构建</td><td>Python 构建和主题配置</td></tr>
+<tr><th scope="row">维护</th><td>项目负责布局、导航、可访问性</td><td>框架配置和升级</td><td>框架、主题配置和升级</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="reader-navigation">阅读导航</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">布局</th><td>分类 Tab 在分组页面导航之上，中间阅读栏，右侧章节索引。窄屏：页面索引变抽屉，章节索引收在可展开的阅读进度控件后。</td></tr>
+<tr><th scope="row">指示线</th><td>一条连续虚线从首行到选中行，圆角末端对齐标签中心；组内导航时改变高度。悬停和焦点预览单独的中性指示线。焦点是文字下划线加淡行背景。筛选、换行、语言和缩放都重算几何。</td></tr>
+<tr><th scope="row">进度</th><td>跟踪当前滚动容器中的活动标题。展开后是真实锚点，选择后关闭并跳转；Esc 和点击外部关闭。SPA 导航重建引用。全屏用内容滚动容器。独立 iframe 时隐藏。减少动态时不做滚动动画。</td></tr>
+<tr><th scope="row">代码块</th><td>语言头和始终可用、位于横向溢出之外的复制按钮。只复制代码文本并报告成败。作者自带的复制控件保留。</td></tr>
+<tr><th scope="row">根概览</th><td>明确的中英文标签，不由文件名推导。</td></tr>
+<tr><th scope="row">依赖</th><td>不增加外部运行时请求。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>交互参考与验收</summary>
+<p><a href="https://www.rareui.com/components/hooksidebar">Rare UI Hook Sidebar</a>、<a href="https://www.rareui.com/components/scrollprogressindicator">Scroll Progress</a> 和 <a href="https://www.rareui.com/components/codeblock">Code Block</a> 为静态资源中的独立实现提供参考。不包含 Rare UI 源码或 React 依赖；复用组件源码另有许可要求。不采用装饰性光球、邻近缩放和粘滞导航，因为阅读需要稳定的文字目标。</p>
+<p>验收：深链接、分类与页面切换、浏览器历史、语言切换、键盘关闭、代码复制、长短文章、全屏、手机溢出、iframe 隔离。</p>
+</details>
+
+<h2 id="design-information-architecture">设计文档的信息结构</h2>
+<p>三级：领域、模块、页面。七个领域：架构、Agent 与工作流、上下文与记忆、界面、模型与外部连接、安全与工程、支撑材料。落地页使用同样的七个。架构直接列出入口页。</p>
+<ul>
+<li>每页属于一个模块。加载或导航到某页时展开其祖先。</li>
+<li>筛选匹配页面和分类名，保持匹配祖先展开；清空后各级恢复原状。原生 details 和 summary 提供键盘操作。</li>
+<li>新页面出现在“待分类”领域。</li>
+<li>两种语言共用层级、顺序和输出映射。</li>
+<li>原型、实现记录和研究在“支撑材料”下分开，不表示产品已实现。</li>
+</ul>
+<details>
+<summary>侧栏层级与验收</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签字号</th><td>领域 13px，模块 12px，页面 13px</td></tr>
+<tr><th scope="row">布局</th><td>模块只缩进 12px；页面对齐并自然换行</td></tr>
+<tr><th scope="row">计数</th><td>只在领域一级</td></tr>
+<tr><th scope="row">选中</th><td>连续指示线和强调色文字，无背景填充</td></tr>
+<tr><th scope="row">悬停</th><td>保持透明</td></tr>
+<tr><th scope="row">键盘焦点</th><td>单独的内嵌环；多行标签不加下划线</td></tr>
+<tr><th scope="row">边线</th><td>去掉多余竖线</td></tr>
+<tr><th scope="row">范围</th><td>只作用于设计导航，兼顾两种主题和窄屏</td></tr>
+</tbody>
+</table>
+<p>验收：成员完整且唯一、七个顶级入口、祖先展开、筛选恢复、双语和手机行为、与其他 Tab 兼容。</p>
+</details>
+
+<h2 id="canonical-documents">唯一正文与稳定网址</h2>
+<ul>
+<li>一个主题一份维护源。合并时保留独有的图、约束、状态和证据，并把每个退役标题留作锚点。设计理由和模型选型分析放在设计契约旁；使用指南和 API 参考保持独立。</li>
+<li>文件名用描述性的小写连字符单词，不带日期、TODO 或 PROBLEM 前缀。延期提案在标题中说明。</li>
+<li>子系统目录内的文件名和标题省略子系统前缀：<code translate="no">context/statistics.html</code>、<code translate="no">memory/editor.html</code>、<code translate="no">runtime/dag/layout.html</code>。去掉一词会改变含义时保留既有术语。短名已被文本页占用时加“图”限定。</li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">重定向方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td><code translate="no">docs/redirects.json</code>，退役输出路径到规范页面，包括独立 raw 和伴生页 URL</td></tr>
+<tr><th scope="row">输出</th><td>只含重定向的 HTML，不进导航、搜索和站点地图；保留查询串和片段</td></tr>
+<tr><th scope="row">执行</th><td>worker CSP 下的同源 <code translate="no">redirect.js</code>，不用内联脚本。SPA 导航做完整加载，浏览器历史已选中该 URL 时显式重载</td></tr>
+<tr><th scope="row">校验</th><td>目标必须存在；别名不得替换真实页面或指向另一个别名，否则原子构建中止。旧别名直接指向最新输出。有对应版本时语言专属 URL 保持语言</td></tr>
+</tbody>
+</table>
+<p class="note">验收：每个存续源文件恰被发现一次，每个旧 URL 直接解析，独有内容保留，链接和语言通过，导航和重定向在默认本地挂载上验证。整合不证明延期设计已实现。</p>
+
+<h2 id="language-consistency">语言一致性</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">每篇文档</th><td>完整的英文和中文正文，包括图、代码、标识符、链接和状态边界</td></tr>
+<tr><th scope="row">标题、图上可见标签</th><td>跟随文档语言</td></tr>
+<tr><th scope="row">侧栏、面包屑、上下页、搜索</th><td>本地化标题和目标</td></tr>
+<tr><th scope="row">语言检查</th><td>覆盖设计笔记、HTML、SVG 和可访问标签，保留技术标识符和兼容锚点；交互页还需检查脚本生成的文字</td></tr>
+<tr><th scope="row">功能矩阵</th><td>两种语言使用同样的数值、明细行和图表一致性检查</td></tr>
+</tbody>
+</table>
+
+<h2 id="navigation-names">目录命名</h2>
+<dl class="pairs">
+<dt>形式</dt><dd>简短名词短语，与完整标题分开；英文句首大写，保留专有名词和缩写</dd>
+<dt>英文</dt><dd>首选两三个词；无歧义时一个词；最多四个词、26 个字符</dd>
+<dt>中文</dt><dd>最多 12 个字符</dd>
+<dt>去掉</dt><dd>产品或父分类前缀、完整性声明、代码签名、括号说明</dd>
+<dt>修饰词</dt><dd>图、对比、原型，用法一致</dd>
+<dt>唯一性</dt><dd>同一叶子分区内</dd>
+<dt>来源</dt><dd>一份双语目录 <code translate="no">page_titles.json</code>，按规范源路径索引，供导航、面包屑、搜索和上下页使用。生成参考页的名称由代码推导</dd>
+<dt>检查</dt><dd>标签放得下侧栏，不裁切、不省略；正文、URL、锚点和层级不变</dd>
+</dl>
+
+<h2 id="documentation-completeness">文档完整性</h2>
+<p>仓库 README 和结构相同的中文版介绍项目、经核实的入口命令、示例和引用。文档首页引向九个 Tab，不重复它。参考概览链接任务指南和生成的细节。</p>
+<p>参考生成从同一 argparse 树、设置 schema 和供应商清单输出中英文配对；名称、参数、键、默认值和协议值保持精确。</p>
+<ul>
+<li>源字符串目录（<code translate="no">reference_zh.json</code>）提供中文；缺翻译时生成失败。</li>
+<li>两种语言遍历每一层命令、选项相同，只在内容变化时写入。删除的命令页两种语言都删。</li>
+<li>只读 schema 默认值，不读用户配置；不含凭据。</li>
+<li>生成器在发现页面前完成；失败则中止构建。</li>
+</ul>
+<p class="note">验收：所有参考配对、递归选项一致、缺翻译失败、幂等、清理过期页、首页语言链接、短名称、链接、语言检查，以及默认本地实例上可见的语言切换。</p>
+
+<h2 id="theme-preference">主题偏好</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">偏好</th><td>系统、亮、暗，存于 <code translate="no">op-docs-theme</code>。缺失或无效时取系统</td></tr>
+<tr><th scope="row">系统</th><td>实时跟随 <code translate="no">prefers-color-scheme</code></td></tr>
+<tr><th scope="row">跨标签页</th><td>storage 事件更新偏好，不写回</td></tr>
+<tr><th scope="row">存储失败</th><td>内存中的控件和系统跟随仍可用</td></tr>
+<tr><th scope="row">首屏</th><td>head 中同步的同源 <code translate="no">theme.js</code> 在解析 body 前应用配色、<code translate="no">color-scheme</code> 和语法高亮；取代被 <code translate="no">script-src 'self'</code> 策略拒绝的内联引导</td></tr>
+<tr><th scope="row">控制器</th><td>负责状态、媒体监听和可访问、本地化的三选项菜单；SPA 导航后保留；在 window 上派发 <code translate="no">documentThemeChange</code></td></tr>
+<tr><th scope="row">边界</th><td>不改变独立 iframe（收不到该事件）和操作系统外观</td></tr>
+</tbody>
+</table>
+<p class="note">验收：两种配色的首次加载、系统实时变化、显式覆盖与回到系统、无效值、存储不可用、跨标签页、菜单键盘和语言、代码颜色、SPA 导航。浏览器媒体模拟在验证后恢复。</p>
+
+<h2 id="toc-hierarchy">标题层级</h2>
+<ul>
+<li>没有页内目录的页面隐藏空列，把空间给文章；全屏控件留在右边缘；SPA 导航随之更新。</li>
+<li>嵌套列表覆盖 h2 到 h6。每个标题归属最近的、更浅的前置标题；跳级不产生空组。顺序、标签和锚点不变。</li>
+<li>每组有自己缩进的虚线引导。选中标题和祖先路径有各组自己的指示线，线条不跨越无关层级。中性子引导在选中子项前显示结构。</li>
+<li>有子项的标题使用侧栏的 details/summary 箭头，只切换该子树；链接仍可导航。叶子没有箭头，保留弯曲引导端点。分组默认展开，滚动尊重用户折叠；折叠的活动后代标记其父路径，跟踪最近的可见祖先。悬停和选中不加行框。</li>
+<li>端点使用实际换行后的行。预览限于同级组内。只有一个 <code translate="no">aria-current</code> 位置。缩放和 SPA 变化重算几何并释放旧观察器。</li>
+</ul>
+<p class="note">验收：多个父组、跳级、深层标题、换行、活动祖先、悬停、缩放、SPA 导航。</p>
+
+<span id="实现状态"></span>
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">状态</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTML 文档、生成的 Markdown 和原型渲染</th><td>已实现</td><td>每条路径有各自的布局责任</td></tr>
+<tr><th scope="row">双语路由、九个 Tab</th><td>已实现</td><td>配对不翻译正文</td></tr>
+<tr><th scope="row">原子构建、打包提供</th><td>已实现</td><td>构建成功不等于更新已安装包</td></tr>
+<tr><th scope="row">共享基底</th><td>已用于 HTML 文档页</td><td>剩余独立页需逐一检查</td></tr>
+<tr><th scope="row">Frontmatter <code translate="no">scripts</code>、<code translate="no">styles</code> 注入</th><td>未实现</td><td>使用受支持的 HTML 路径</td></tr>
+<tr><th scope="row">持续监听源文件</th><td>未实现</td><td>显式重建</td></tr>
+</tbody>
+</table>

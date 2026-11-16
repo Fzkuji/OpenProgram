@@ -364,8 +364,8 @@ def test_a_conversation_whose_lock_is_not_had_is_locked_not_busy(monkeypatch):
     again (503 ``conversation_locked``), not that the conversation is busy."""
     import asyncio
 
-    from openprogram.runtime.conversation import owner_turn
-    from openprogram.state.store.session.session_lock import SessionLockTimeout
+    from openprogram.runtime.conversation.turn_admission import owner_turn
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
 
     def locked(session_id, *_a, **_k):
         raise SessionLockTimeout(session_id, 60.0, "another process")
@@ -384,7 +384,7 @@ def test_a_conversation_whose_lock_is_not_had_is_locked_not_busy(monkeypatch):
 def test_a_named_conversation_whose_lock_is_not_had_is_locked(client, monkeypatch):
     """Reading the named conversation waited out its lock: 503
     ``conversation_locked``, not an internal error, and nothing started."""
-    from openprogram.state.store.session.session_lock import SessionLockTimeout
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
 
     class _Locked:
         def get_session(self, session_id):

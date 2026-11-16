@@ -1,4 +1,4 @@
-export interface HistoryAnchor { id: string; offset: number; head?: string | null }
+export interface HistoryAnchor { id: string; offset: number }
 
 const followLocks = new Set<string>();
 
@@ -11,7 +11,6 @@ export function setFollowLock(scrollerKey: string, locked: boolean): void {
 export function isFollowLocked(scrollerKey: string): boolean {
   return followLocks.has(scrollerKey);
 }
-const STORAGE_KEY = 'chatReadingAnchors';
 
 export function captureHistoryAnchor(area: HTMLElement): HistoryAnchor | null {
   const top = area.getBoundingClientRect().top;
@@ -32,21 +31,6 @@ export function restoreHistoryAnchor(area: HTMLElement, anchor: HistoryAnchor): 
   area.scrollTop += row.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset;
   area.dispatchEvent(new Event('scroll'));
   return true;
-}
-export function readHistoryAnchor(id: string): HistoryAnchor | null {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')[id];
-    return value && typeof value.id === 'string' && Number.isFinite(value.offset) ? value : null;
-  } catch { return null; }
-}
-export function saveHistoryAnchor(id: string, anchor: HistoryAnchor | null): void {
-  try {
-    const map = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}');
-    delete map[id];
-    if (anchor) map[id] = anchor;
-    const entries = Object.entries(map).slice(-64);
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
-  } catch { /* Storage may be disabled. */ }
 }
 
 export interface AreaRestoreState {

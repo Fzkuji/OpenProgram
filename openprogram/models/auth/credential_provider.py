@@ -1,52 +1,34 @@
 """
-Auth v2 — the runtime face of credential management.
+Refreshing the sign-ins a request is about to use.
 
-This is what every API-calling code path reaches for. It wraps
-:class:`AuthStore` + :mod:`.pool` with the two behaviours the raw layers
-can't provide on their own:
+What every request path reaches for once :mod:`.selection` has chosen a
+credential: :meth:`CredentialProvider.prepare` returns it ready to send — an
+OAuth access token near its expiry is refreshed first (one refresh at a
+time per credential, in this process and across processes through the
+refresh lock beside the provider's file), and a provider that reads its
+login where another tool keeps it (Codex) gets its ``view`` of it.
 
-  * **Refresh dedup.** Multiple concurrent calls near token expiry all
-    hit one :meth:`acquire`; only the first actually performs a refresh,
-    everyone else awaits its result. Implemented with per-pool
-    in-flight :class:`asyncio.Future` plus the :class:`AuthStore` async
-    lock (so cross-process mtime reloads also serialize against us).
-    Pattern is the one Hermes lifted from Claude Code.
-
-  * **Fallback chains.** If a pool is exhausted (every key cooling down,
-    revoked, or needing reauth), the manager walks the configured
-    fallback chain — ``[(provider_id, account_id), ...]`` — trying the
-    next one. This is the only place that knows about fallback; pools
-    don't chain, runtimes don't reimplement it.
-
-The manager is deliberately refresh-agnostic: it accepts a
-``RefreshFn`` callable supplied by the provider plugin (or inferred
-from :class:`Credential.kind`). That keeps the manager free of httpx /
-pi-ai dependencies, so tests can exercise the full state machine with
-a fake refresh that just increments a counter.
+The refresh itself is provider code (``ProviderAuthConfig.refresh``),
+registered by the provider adapters; this module stays free of HTTP so the
+state machine is testable with a fake refresh.
 """
 from __future__ import annotations
 
 import asyncio
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
-from . import pool as _pool
-from .context import get_affinity_key
-from .pool import PoolFailurePolicy
 from .store import AuthStore, get_store
 from .types import (
-    AuthConfigError,
     AuthEvent,
     AuthEventType,
     AuthNeedsReauthError,
-    AuthPoolExhaustedError,
     AuthReadOnlyError,
     AuthRefreshError,
     AuthRotationConsumedError,
     Credential,
-    CredentialPool,
 )
 import logging
 
@@ -89,12 +71,9 @@ class ProviderAuthConfig:
     # Either sync or async; the manager prefers async if both are provided.
     refresh: Optional[RefreshFn] = None
     async_refresh: Optional[AsyncRefreshFn] = None
-    # Per-provider cooldown policy override (defaults kick in if None).
-    failure_policy: Optional[PoolFailurePolicy] = None
-    # Fallback chain: if the primary pool is exhausted, try these
-    # (provider_id, account_id) pairs in order. If they're exhausted
-    # too, the manager raises :class:`AuthPoolExhaustedError`.
-    fallback_chain: list[tuple[str, str]] = field(default_factory=list)
+    # The credential as a request sends it, when the provider keeps its login
+    # elsewhere and reads it there each time (Codex's ``auth.json``).
+    view: Optional[Callable[[Credential], Credential]] = None
     # Read every stored login of this provider again, where it lives (its
     # own store, another CLI's file): refresh what is about to expire, mark
     # what can no longer be refreshed, clear the mark of one that was signed
@@ -211,392 +190,134 @@ def get_provider_config(provider_id: str) -> ProviderAuthConfig:
 
 
 # ---------------------------------------------------------------------------
-# CredentialProvider — the orchestrator
+# CredentialProvider
 # ---------------------------------------------------------------------------
 
 class CredentialProvider:
-    """Pool-aware credential acquirer with in-flight refresh dedup and
-    fallback chains.
-
-    Instantiate once per process (or use :func:`get_credential_provider`). Hold a
-    reference in your runtime; don't construct it per-call — the
-    in-flight future bookkeeping depends on identity.
-    """
+    """Makes a chosen credential ready to send. One per process."""
 
     def __init__(self, store: Optional[AuthStore] = None) -> None:
-        self._store = store or get_store()
-        # (provider_id, account_id, credential_id) → Future that resolves
-        # to the refreshed Credential. Multiple coroutines awaiting the
-        # same future get the same refreshed credential; exactly one
-        # upstream refresh call happens per key.
-        self._in_flight: dict[tuple[str, str, str], asyncio.Future[Credential]] = {}
-        self._in_flight_lock = asyncio.Lock()
+        self._store = store
+        self._locks: dict[tuple[str, str], threading.Lock] = {}
+        self._locks_guard = threading.Lock()
 
     @property
     def store(self) -> AuthStore:
-        return self._store
+        return self._store or get_store()
 
-    # -- acquire (async) -----------------------------------------------------
+    def _lock(self, cred: Credential) -> threading.Lock:
+        key = (cred.provider_id, cred.id)
+        with self._locks_guard:
+            return self._locks.setdefault(key, threading.Lock())
 
-    def acquire_sync(self, provider_id: str, account_id: Optional[str] = None) -> Credential:
-        """Sync wrapper around :meth:`acquire`.
+    # -- what request paths call ----------------------------------------------
 
-        Three cases:
-          * no event loop running on this thread → spin up a private
-            one (cheap, refresh is at most one HTTPS POST).
-          * loop running on this thread → run ``acquire`` on a private
-            background thread (joined synchronously). Doing this rather
-            than raising lets sync constructors that are called from
-            inside async front-ends — Textual TUI, FastAPI handlers,
-            asyncio test fixtures — keep working without each one
-            having to refactor to be async.
-          * cross-thread is always safe: each thread has its own loop.
-        """
-        return _run_sync(lambda: self.acquire(provider_id, account_id),
-                         f"acquire_sync-{provider_id}-{account_id}")
+    def acquire_sync(self, provider_id: str) -> Credential:
+        """The credential a request outside any conversation would use now
+        (the first usable one by the provider's strategy), ready to send.
+        Raises :class:`AuthConfigError` when the provider has none and
+        :class:`AuthPoolExhaustedError` when none can be used now."""
+        from .selection import choose
+
+        return self.prepare(choose(provider_id, record=False))
+
+    def needs_preparing(self, cred: Credential) -> bool:
+        cfg = get_provider_config(cred.provider_id)
+        return cfg.view is not None or (
+            cred.kind in ("oauth", "device_code") and _oauth_stale(cred, cfg.refresh_skew_seconds))
+
+    def prepare(self, cred: Credential) -> Credential:
+        """``cred`` ready to send: refreshed when its token is near expiry,
+        then the provider's ``view`` of it."""
+        cfg = get_provider_config(cred.provider_id)
+        if cred.kind in ("oauth", "device_code"):
+            cred = self._maybe_refresh(cred, cfg)
+        if cfg.view is not None:
+            cred = cfg.view(cred)
+        return cred
 
     def force_refresh_sync(self, cred: Credential) -> Credential:
         """Refresh ``cred`` now, before its recorded expiry, because the
-        provider rejected its access token (a revoked or rotated session).
-        A peer process that already refreshed it wins; read-only
-        credentials come back unchanged."""
-        pool = self._store.find_pool(cred.provider_id, cred.account_id)
-        if pool is None or cred.read_only:
+        provider refused its access token. A peer process that already
+        refreshed it wins; read-only credentials come back unchanged."""
+        if cred.read_only:
             return cred
-        return _run_sync(lambda: self._maybe_refresh(cred, pool, force=True),
-                         f"force_refresh-{cred.provider_id}-{cred.account_id}")
+        return self._maybe_refresh(cred, get_provider_config(cred.provider_id), force=True)
 
     def refresh_if_stale_sync(self, cred: Credential) -> Credential:
-        """Refresh ``cred`` when its access token is past or near expiry,
-        whatever the pool would pick: a refusal of its refresh token marks
-        it ``needs_reauth``. Read-only credentials come back unchanged."""
-        pool = self._store.find_pool(cred.provider_id, cred.account_id)
-        if pool is None or cred.read_only or cred.kind not in ("oauth", "device_code"):
+        """Refresh ``cred`` when its access token is past or near expiry: a
+        refusal of its refresh token marks it ``needs_login``."""
+        if cred.read_only or cred.kind not in ("oauth", "device_code"):
             return cred
-        return _run_sync(lambda: self._maybe_refresh(cred, pool),
-                         f"refresh_if_stale-{cred.provider_id}-{cred.account_id}")
+        return self._maybe_refresh(cred, get_provider_config(cred.provider_id))
 
-    async def acquire(self, provider_id: str, account_id: Optional[str] = None) -> Credential:
-        """Return a usable credential for ``(provider, account)``.
+    # -- refresh ---------------------------------------------------------------
 
-        When ``account_id`` is None the provider's ACTIVE account is used
-        (:func:`auth.account_selection.get_active_account` — its pinned account, else the
-        ambient ``auth_scope``, else ``"default"``), so a request runs on
-        whichever account the user activated for that provider.
-
-        Side effects:
-          * may refresh an OAuth credential if its access token is
-            expired or about to expire
-          * updates pool's pick bookkeeping (``use_count`` etc.)
-          * may rotate to a fallback chain entry if the pool is exhausted
-
-        Does not persist every mutation — only refreshes are written
-        back, to keep the hot path cheap. Cooldown updates happen via
-        :meth:`apply_failure`.
-        """
-        if account_id is None:
-            from .account.account_selection import get_active_account
-            account_id = get_active_account(provider_id)
-        return await self._acquire_recursive(provider_id, account_id, visited=set())
-
-    async def _acquire_recursive(
-        self,
-        provider_id: str,
-        account_id: str,
-        *,
-        visited: set[tuple[str, str]],
-    ) -> Credential:
-        key = (provider_id, account_id)
-        if key in visited:
-            # Fallback chain cycles back to a pool we already tried.
-            # Preserve the outermost exception rather than looping forever.
-            raise AuthPoolExhaustedError(
-                f"fallback chain for {provider_id}/{account_id} cycled",
-                provider_id=provider_id, account_id=account_id,
-            )
-        visited.add(key)
-
-        pool = self._store.find_pool(provider_id, account_id)
-        if pool is None:
-            # No pool registered. If a fallback chain exists on the
-            # provider config, try it. Otherwise it's a genuine config
-            # error the caller must surface as "please log in".
-            cfg = get_provider_config(provider_id)
-            for nxt_prov, nxt_prof in cfg.fallback_chain:
-                try:
-                    return await self._acquire_recursive(
-                        nxt_prov, nxt_prof, visited=visited,
-                    )
-                except AuthConfigError:
-                    continue
-                except AuthPoolExhaustedError:
-                    continue
-            raise AuthConfigError(
-                f"no auth configured for {provider_id}/{account_id}",
-                provider_id=provider_id, account_id=account_id,
-            )
-
-        # Pick a healthy credential — may raise PoolExhausted.
-        try:
-            cred = _pool.pick(pool, affinity_key=get_affinity_key())
-        except AuthPoolExhaustedError:
-            # Try the pool-specific fallback chain first (set on the pool
-            # itself), then provider-level, then surrender.
-            for nxt_prov, nxt_prof in pool.fallback_chain:
-                try:
-                    return await self._acquire_recursive(
-                        nxt_prov, nxt_prof, visited=visited,
-                    )
-                except (AuthConfigError, AuthPoolExhaustedError):
-                    continue
-            cfg = get_provider_config(provider_id)
-            for nxt_prov, nxt_prof in cfg.fallback_chain:
-                if (nxt_prov, nxt_prof) in visited:
-                    continue
-                try:
-                    return await self._acquire_recursive(
-                        nxt_prov, nxt_prof, visited=visited,
-                    )
-                except (AuthConfigError, AuthPoolExhaustedError):
-                    continue
-            self._store._emit(AuthEvent(                  # type: ignore[attr-defined]
-                type=AuthEventType.POOL_EXHAUSTED,
-                provider_id=provider_id,
-                account_id=account_id,
-            ))
-            raise
-
-        # Maybe refresh it. Only OAuth / device_code credentials need it;
-        # static api_key and external-process creds are always "fresh".
-        if cred.kind in ("oauth", "device_code"):
-            cred = await self._maybe_refresh(cred, pool)
-        return cred
-
-    # -- refresh -------------------------------------------------------------
-
-    async def _maybe_refresh(
-        self, cred: Credential, pool: CredentialPool, *, force: bool = False,
-    ) -> Credential:
+    def _maybe_refresh(self, cred: Credential, cfg: ProviderAuthConfig, *, force: bool = False) -> Credential:
         if cred.read_only:
-            # Read-only credentials (imported from external CLI) don't
-            # get refreshed by us — the external tool owns that. If
-            # they're past expiry, the external tool's stale state is
-            # the user's problem; we surface it cleanly.
-            if _oauth_stale(cred, get_provider_config(cred.provider_id).refresh_skew_seconds):
+            if _oauth_stale(cred, cfg.refresh_skew_seconds):
                 raise AuthReadOnlyError(
-                    f"read-only credential for {cred.provider_id}/{cred.account_id} "
-                    "is expired; re-run the external CLI's login",
+                    f"the {cred.provider_id} login read from another tool has expired; "
+                    "sign in with that tool again",
                     provider_id=cred.provider_id,
-                    account_id=cred.account_id,
                 )
             return cred
-
-        cfg = get_provider_config(cred.provider_id)
         if not force and not _oauth_stale(cred, cfg.refresh_skew_seconds):
             return cred
-
         if cfg.refresh is None and cfg.async_refresh is None:
-            # Expired and no refresh path registered → the user must
-            # re-auth. Don't leave them thinking the API call succeeded.
             raise AuthNeedsReauthError(
-                f"credential for {cred.provider_id}/{cred.account_id} "
-                "is expired and no refresh is configured",
+                f"the {cred.provider_id} sign-in has expired and cannot be refreshed",
                 provider_id=cred.provider_id,
-                account_id=cred.account_id,
             )
-
-        key = (cred.provider_id, cred.account_id, cred.credential_id)
-        async with self._in_flight_lock:
-            future = self._in_flight.get(key)
-            if future is None:
-                # We're the designated refresher.
-                future = asyncio.get_event_loop().create_future()
-                self._in_flight[key] = future
-                owner = True
-            else:
-                owner = False
-
-        if not owner:
-            # Wait on the in-flight one; do not start a second request.
-            return await future
-
         from . import refresh_lock
 
-        try:
-            async with self._store.async_lock(cred.provider_id, cred.account_id), \
-                    refresh_lock.held_async(self._store.pool_file(cred.provider_id, cred.account_id)):
-                # Under the cross-process lock, re-check disk — another
-                # process (a second worker, a cron subprocess) may have
-                # spent the refresh token already; its result is on disk
-                # (``find_pool`` reloads a changed file). If our credential
-                # is no longer stale in the fresh view, just use it.
-                fresh_pool = self._store.find_pool(cred.provider_id, cred.account_id)
-                if fresh_pool is not None:
-                    for fc in fresh_pool.credentials:
-                        if fc.credential_id == cred.credential_id:
-                            renewed = (fc.payload.auth_value != cred.payload.auth_value
-                                       if force else not _oauth_stale(fc, cfg.refresh_skew_seconds))
-                            if renewed:
-                                future.set_result(fc)
-                                return fc
-                            cred = fc
-                            break
+        with self._lock(cred), refresh_lock.held(self.store.pool_file(cred.provider_id)):
+            # Another process may have spent the refresh token already; its
+            # result is on disk.
+            fresh = self.store.find(cred.provider_id, cred.id)
+            if fresh is not None:
+                renewed = (fresh.payload.auth_value != cred.payload.auth_value if force
+                           else not _oauth_stale(fresh, cfg.refresh_skew_seconds))
+                if renewed:
+                    return fresh
+                cred = fresh
+            self.store.emit(AuthEvent(type=AuthEventType.REFRESH_STARTED,
+                                       provider_id=cred.provider_id, credential_id=cred.id))
+            try:
+                refreshed = self._call_refresh(cred, cfg)
+            except AuthRotationConsumedError:
+                fresh = self.store.find(cred.provider_id, cred.id)
+                if fresh is not None and not _oauth_stale(fresh, cfg.refresh_skew_seconds):
+                    return fresh
+                raise
+            except Exception as e:
+                if _is_permanent_refresh_failure(e):
+                    from .selection import mark
+                    mark(cred.provider_id, cred.id, "needs_login", message=str(e)[:200])
+                self.store.emit(AuthEvent(type=AuthEventType.REFRESH_FAILED,
+                                           provider_id=cred.provider_id, credential_id=cred.id,
+                                           detail={"error": str(e)[:200]}))
+                raise
 
-                self._store._emit(AuthEvent(                     # type: ignore[attr-defined]
-                    type=AuthEventType.REFRESH_STARTED,
-                    provider_id=cred.provider_id,
-                    account_id=cred.account_id,
-                    credential_id=cred.credential_id,
-                ))
-                refreshed = await self._call_refresh(cred, cfg)
-                # Persist: the pool object holds the same credential, so
-                # mutate it in place and put_pool the whole thing.
-                pool_to_save = self._store.find_pool(cred.provider_id, cred.account_id) or pool
-                for i, existing in enumerate(pool_to_save.credentials):
-                    if existing.credential_id == cred.credential_id:
-                        pool_to_save.credentials[i] = refreshed
-                        break
-                self._store.put_pool(pool_to_save)
-                self._store._emit(AuthEvent(                     # type: ignore[attr-defined]
-                    type=AuthEventType.REFRESH_SUCCEEDED,
-                    provider_id=cred.provider_id,
-                    account_id=cred.account_id,
-                    credential_id=cred.credential_id,
-                ))
-                future.set_result(refreshed)
-                return refreshed
-        except AuthRotationConsumedError as e:
-            # Reload from disk once; maybe a peer process already
-            # succeeded. If the disk copy is usable now, we're fine.
-            self._store._reload_if_disk_changed(          # type: ignore[attr-defined]
-                (cred.provider_id, cred.account_id),
-            )
-            fresh_pool = self._store.find_pool(cred.provider_id, cred.account_id)
-            if fresh_pool is not None:
-                for fc in fresh_pool.credentials:
-                    if fc.credential_id == cred.credential_id and not _oauth_stale(
-                        fc, cfg.refresh_skew_seconds,
-                    ):
-                        future.set_result(fc)
-                        return fc
-            future.set_exception(e)
-            raise
-        except Exception as e:
-            future.set_exception(e)
-            # Retrieve the exception off the future so a single-caller
-            # refresh (no concurrent waiter ever awaits this future)
-            # doesn't trip asyncio's "Future exception was never
-            # retrieved" warning on GC. Waiters that `await future`
-            # still get the exception re-raised — `.exception()` only
-            # clears the unretrieved flag, it doesn't consume the state.
-            future.exception()
-            # A refresh that fails because the refresh_token itself is
-            # dead (400 invalid_grant / 401 / 403) is NOT transient:
-            # retrying just re-fails and spams the logs. Persist
-            # status=needs_reauth so `pick` skips the credential and the
-            # refresh never runs again until the user re-logs in. A
-            # transient failure (network / 5xx / timeout) leaves the
-            # credential untouched (design: "5xx / network errors do NOT
-            # touch the credential") so it retries on the next call.
-            if _is_permanent_refresh_failure(e):
-                try:
-                    save_pool = self._store.find_pool(
-                        cred.provider_id, cred.account_id,
-                    ) or pool
-                    target = next(
-                        (c for c in save_pool.credentials
-                         if c.credential_id == cred.credential_id),
-                        None,
-                    )
-                    if target is not None:
-                        ev = _pool.mark_failure(
-                            target, "needs_reauth",
-                            policy=cfg.failure_policy,
-                            detail=str(e)[:200],
-                        )
-                        self._store.put_pool(save_pool)
-                        self._store._emit(ev)   # type: ignore[attr-defined]
-                except Exception:
-                    # Persisting the failure state must never mask the
-                    # original refresh error the caller is about to see.
-                    _log.warning(
-                        "needs_reauth state not persisted for %s/%s",
-                        cred.provider_id, cred.account_id, exc_info=True)
-            self._store._emit(AuthEvent(                         # type: ignore[attr-defined]
-                type=AuthEventType.REFRESH_FAILED,
-                provider_id=cred.provider_id,
-                account_id=cred.account_id,
-                credential_id=cred.credential_id,
-                detail={"error": str(e)},
-            ))
-            raise
-        finally:
-            async with self._in_flight_lock:
-                self._in_flight.pop(key, None)
+            def _save(row: Credential) -> None:
+                row.payload = refreshed.payload
+                row.metadata = {**row.metadata, **(refreshed.metadata or {})}
+                row.identity = {**row.identity, **(refreshed.identity or {})}
+                if row.status == "needs_login":
+                    row.status = "ready"
+                row.updated_at_ms = int(time.time() * 1000)
 
-    async def _call_refresh(self, cred: Credential, cfg: ProviderAuthConfig) -> Credential:
-        if cfg.async_refresh is not None:
-            return await cfg.async_refresh(cred)
+            saved = self.store.update(cred.provider_id, cred.id, _save) or refreshed
+            self.store.emit(AuthEvent(type=AuthEventType.REFRESH_SUCCEEDED,
+                                       provider_id=cred.provider_id, credential_id=cred.id))
+            return saved
+
+    def _call_refresh(self, cred: Credential, cfg: ProviderAuthConfig) -> Credential:
         if cfg.refresh is not None:
-            # Run sync refresh in a thread to not block the event loop —
-            # refresh is a network call, so this matters.
-            return await asyncio.get_event_loop().run_in_executor(
-                None, cfg.refresh, cred,
-            )
-        raise AuthRefreshError("no refresh callable registered",
-                               provider_id=cred.provider_id,
-                               account_id=cred.account_id)
-
-    # -- failure reporting ---------------------------------------------------
-
-    def apply_failure(
-        self,
-        provider_id: str,
-        account_id: str,
-        credential_id: str,
-        reason: str,
-        *,
-        detail: str = "",
-    ) -> None:
-        """Record an API-call failure so the pool layer can cool the
-        credential down. Idempotent-ish: calling twice just updates the
-        last error; cooldown window is set from the first call.
-
-        ``reason`` values map to :func:`pool.mark_failure` semantics.
-        Callers (the HTTP wrapper around provider APIs) classify each
-        error response before calling.
-        """
-        pool = self._store.find_pool(provider_id, account_id)
-        if pool is None:
-            return
-        cred = next(
-            (c for c in pool.credentials if c.credential_id == credential_id),
-            None,
-        )
-        if cred is None:
-            return
-        cfg = get_provider_config(provider_id)
-        ev = _pool.mark_failure(cred, reason, policy=cfg.failure_policy, detail=detail)
-        self._store.put_pool(pool)
-        self._store._emit(ev)          # type: ignore[attr-defined]
-
-    def apply_success(self, provider_id: str, account_id: str, credential_id: str) -> None:
-        """Called on 2xx. Clears transient error state if its cooldown
-        window has passed. Cheap; OK to call on every successful
-        response."""
-        pool = self._store.find_pool(provider_id, account_id)
-        if pool is None:
-            return
-        cred = next(
-            (c for c in pool.credentials if c.credential_id == credential_id),
-            None,
-        )
-        if cred is None:
-            return
-        _pool.mark_success(cred)
-        # Intentionally no put_pool — the hot success path shouldn't
-        # fsync every time. Next credential-modifying call (refresh,
-        # cooldown, add, remove) will persist the state anyway.
+            return cfg.refresh(cred)
+        if cfg.async_refresh is not None:
+            return _run_sync(lambda: cfg.async_refresh(cred), f"refresh-{cred.provider_id}")
+        raise AuthRefreshError("no refresh callable registered", provider_id=cred.provider_id)
 
 
 # ---------------------------------------------------------------------------
@@ -679,8 +400,6 @@ def _oauth_stale(cred: Credential, skew_seconds: int) -> bool:
 # Process-wide singleton
 # ---------------------------------------------------------------------------
 
-import threading  # noqa: E402  (module-level threading only used here)
-
 _manager: Optional[CredentialProvider] = None
 _manager_lock = threading.Lock()
 
@@ -699,8 +418,6 @@ def set_credential_provider_for_testing(manager: Optional[CredentialProvider]) -
         _manager = manager
 
 
-# Public re-exports for convenience — callers just import from
-# ``openprogram.models.auth.credential_provider`` and get everything they need.
 __all__ = [
     "CredentialProvider", "get_credential_provider", "set_credential_provider_for_testing",
     "ProviderAuthConfig", "register_provider_config", "get_provider_config",

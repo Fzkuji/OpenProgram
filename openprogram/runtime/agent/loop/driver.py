@@ -489,7 +489,7 @@ class LoopDriver:
             err_reason = err_retryable = err_retry_after_s = err_cause = None
             if not is_aborted:
                 try:
-                    from openprogram.models.providers.utils.errors import failure_cause, taxonomy_fields
+                    from openprogram.models.providers.utils.failures.errors import failure_cause, taxonomy_fields
                     err_reason, err_retryable, err_retry_after_s = taxonomy_fields(err)
                     err_cause = failure_cause(err)
                 except Exception:

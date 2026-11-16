@@ -43,7 +43,7 @@ class OwnerSourceProbeAgent(Agent):
 
     def owner_source_probe(self, task: str, fault: str = "") -> str:
         """Inspect original source membership without browser or retrieval effects."""
-        from openprogram.runtime.conversation import turn_request_context as context
+        from openprogram.runtime.conversation.turn_admission import turn_request_context as context
         from openprogram.runtime.agent import turn_request as agent_turn_request
         from openprogram.programs._authoring.reports.evidence_gate import EvidenceGate
 

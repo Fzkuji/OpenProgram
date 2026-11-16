@@ -223,7 +223,7 @@ def test_mcp_http_and_sse_supply_managed_sdk_clients():
 
 
 def test_channel_error_mapping_never_echoes_peer_body_or_url():
-    from openprogram.interfaces.channels._transport import (
+    from openprogram.interfaces.channels.delivery._transport import (
         _classify_http_status,
         _classify_network_error,
     )
@@ -286,8 +286,8 @@ def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, caplog
 
 
 def test_attachment_failure_does_not_echo_url_secret(monkeypatch, caplog):
-    from openprogram.interfaces.channels import _attachments
-    from openprogram.interfaces.channels._message import Attachment
+    from openprogram.interfaces.channels.inbound import _attachments
+    from openprogram.interfaces.channels.inbound._message import Attachment
 
     secret = "attachment-secret"
 
@@ -499,7 +499,7 @@ def test_fixed_provider_entry_reaches_mapped_real_socket(
 def test_wechat_internal_configured_base_reaches_real_socket(
     monkeypatch, compatibility_server
 ):
-    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels.delivery import _transport
     from openprogram.interfaces.channels import accounts
 
     port = compatibility_server.server_address[1]

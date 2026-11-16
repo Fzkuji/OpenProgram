@@ -1,6 +1,6 @@
 """Re-sending a streamed request whose reply failed in transport.
 
-A reply that stops arriving (the idle bound of ``utils/stream_idle.py``) or
+A reply that stops arriving (the idle bound of ``utils/streams/stream_idle.py``) or
 whose connection drops before its final event says nothing about the request
 itself, so the same request goes out again. This is the one place that does
 it for every provider and every caller of ``stream()`` / ``stream_simple()``:
@@ -14,7 +14,7 @@ new attempt carries ``restart=True`` when content had already been streamed,
 so a consumer drops what it showed of the failed response.
 
 The bound is the shared one. Each re-send reserves a transport recovery on
-the invocation's ``RecoveryState`` (``utils/recovery.py``) and is capped at
+the invocation's ``RecoveryState`` (``utils/failures/recovery.py``) and is capped at
 ``OPENPROGRAM_PROVIDER_STREAM_RETRIES`` attempts for one request; a request
 that gets through refunds its reservations. When the bound is spent the
 failure is flagged ``transport_exhausted`` so no layer above retries it again.
@@ -39,7 +39,7 @@ import logging
 from typing import Any
 
 from ..types import EventRetry
-from ..utils.errors import ErrorReason, ExecInterrupt, taxonomy_fields
+from ..utils.failures.errors import ErrorReason, ExecInterrupt, taxonomy_fields
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class Resend:
     """The re-send decisions of one request, attempt after attempt."""
 
     def __init__(self, model: Any, opts: Any, *, governed: bool) -> None:
-        from ..utils.stream_retry import PROVIDER_STREAM_MAX_ATTEMPTS
+        from ..utils.streams.stream_retry import PROVIDER_STREAM_MAX_ATTEMPTS
 
         self._model = model
         self._opts = opts
@@ -75,9 +75,9 @@ class Resend:
         ``shown`` says whether this attempt had streamed any content.
         """
         from ..structured_output import StructuredOutputError
-        from ..utils.deadline import expired, remaining
-        from ..utils.recovery import current_recovery, reserve_recovery
-        from ..utils.stream_retry import (
+        from ..utils.http_transport.deadline import expired, remaining
+        from ..utils.failures.recovery import current_recovery, reserve_recovery
+        from ..utils.streams.stream_retry import (
             retry_after_beyond_cap,
             retry_error_text,
             stream_backoff_seconds,
@@ -124,7 +124,7 @@ class Resend:
 
     async def wait(self, wait_s: float) -> None:
         """Sit out the backoff; a stop during it ends the request instead."""
-        from ..utils.stream_retry import _sleep_unless_aborted
+        from ..utils.streams.stream_retry import _sleep_unless_aborted
 
         await _sleep_unless_aborted(wait_s, self._stopped)
 
@@ -132,7 +132,7 @@ class Resend:
         """The request got through: its re-sends are not charged to the invocation."""
         if self._reserved <= 0:
             return
-        from ..utils.recovery import current_recovery
+        from ..utils.failures.recovery import current_recovery
 
         state = current_recovery.get()
         if state is not None:

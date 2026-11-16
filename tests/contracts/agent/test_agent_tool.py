@@ -532,7 +532,7 @@ def test_a_waited_agent_stopped_by_the_person_reports_where_its_work_is(monkeypa
     caller reads the same "(no reply)" pointer a stopped background helper's
     notice carries, not an error line with ``None`` in it."""
     from openprogram.programs.tools.agents.agent.agent.agent import _sync_result
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.runtime.jobs.types import Job, JobStatus
 
     job = Job(id="j_stop", parent_session_id="s1", prompt="sleep", agent_id="main",

@@ -1,5 +1,5 @@
 // Rule: the environment row's squeeze levels are pure CSS on the data-* states
-// useCompactEnvironmentRow sets (tested in tests/chat/composer/compact-environment-row.test.mjs):
+// useCompactEnvironmentRow sets (tested in tests/chat/composer/controls/compact-environment-row.test.mjs):
 // labels animate out (max-width/opacity, never display:none), and the
 // measuring pass lays chips out at natural width with transitions off.
 import assert from "node:assert/strict";

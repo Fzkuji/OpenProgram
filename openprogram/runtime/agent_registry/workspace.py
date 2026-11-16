@@ -2,7 +2,7 @@
 
 Agents used to carry ``<state>/agents/<id>/workspace/`` with AGENTS.md,
 SOUL.md, USER.md and TOOLS.md seeded from templates. Instructions now come
-from AGENTS.md files layered by directory (``openprogram.runtime.context.agents_md``)
+from AGENTS.md files layered by directory (``openprogram.runtime.context.prompt_assembly.agents_md``)
 and an agent's own instructions are its ``system_prompt`` setting, so these
 files are no longer read.
 

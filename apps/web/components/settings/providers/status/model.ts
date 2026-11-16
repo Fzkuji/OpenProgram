@@ -2,7 +2,7 @@
  * What the provider cards, rows and detail page show, worked out from the
  * status payload (`GET /api/providers/status`, lib/settings/provider-status.generated.ts).
  * Pure functions only, so every state the page can draw is tested without a
- * DOM (tests/settings/provider-status-model.test.mjs).
+ * DOM (tests/settings/providers/provider-status-model.test.mjs).
  *
  * The rules follow the approved design (docs/reference/design/models/provider-management.html):
  *  - quota rows count what is LEFT, as Codex does; a bar turns warning at
@@ -14,6 +14,7 @@
 import type {
   HealthState,
   HealthWire,
+  KeyHealth,
   ProviderStatus,
   QuotaLimitWire,
   SpendDay,
@@ -149,24 +150,6 @@ export function healthLabel(health: Pick<HealthWire, "state" | "until">, text: T
   }
 }
 
-/** A key's pool status (KeyHealth.status) read as a health state. */
-export function keyState(status: string, cooldownUntil: number | null, now: number): HealthState {
-  switch (status) {
-    case "valid":
-    case "expiring_soon":
-    case "refreshing":
-      return cooldownUntil && cooldownUntil > now ? "rate_limited" : "ready";
-    case "rate_limited":
-      return cooldownUntil && cooldownUntil > now ? "rate_limited" : "ready";
-    case "needs_reauth":
-    case "stale": return "signed_out";
-    case "billing_blocked": return "no_credit";
-    case "revoked":
-    case "invalid_credential": return "invalid_key";
-    default: return "unknown";
-  }
-}
-
 /** States whose card dims its quota block: the numbers are not current. */
 export function dimmed(state: HealthState): boolean {
   return state === "signed_out" || state === "not_running";
@@ -217,6 +200,15 @@ const RATE_LABELS: Record<string, [string, string]> = {
   tpm_out: ["Out tok/min", "输出 Token/分钟"],
 };
 
+/** The window names the server writes (``quota.window_label``), in the reader's language. */
+const WINDOW_LABELS: Record<string, [string, string]> = {
+  "5h": ["5h", "5 小时"],
+  Daily: ["Daily", "每天"],
+  Weekly: ["Weekly", "每周"],
+  Monthly: ["Monthly", "每月"],
+  Annual: ["Annual", "每年"],
+};
+
 /** One bar row of a quota block: "5h [bar] 62% left · 14:30",
  *  "Req/min [bar] 46 / 50", "Key limit [bar] $3.20 of $20". */
 export function quotaRow(limit: QuotaLimitWire, now: number, text: Text): QuotaRow {
@@ -225,7 +217,8 @@ export function quotaRow(limit: QuotaLimitWire, now: number, text: Text): QuotaR
   const tone = barTone(limit);
   const reset = fmtReset(limit.resets_at, now);
   const rate = RATE_LABELS[key];
-  const label = rate ? text(rate[0], rate[1]) : limit.label;
+  const named = rate ?? WINDOW_LABELS[limit.label];
+  const label = named ? text(named[0], named[1]) : limit.label;
   if (limit.unit !== "percent" && limit.remaining == null && limit.limit == null && limit.used == null && limit.used_fraction == null) {
     // A limit the provider reports without a number: Codex's unlimited
     // credits, Copilot's unlimited premium requests.
@@ -385,9 +378,13 @@ export type SpendView = {
   tip: string;
 };
 
-/** A plan as its provider writes it: "plus" → "Plus", "pro_lite" → "Pro Lite". */
+/** Plan ids a provider writes as one word. */
+const PLAN_NAMES: Record<string, string> = { prolite: "Pro Lite" };
+
+/** A plan as its provider writes it: "plus" → "Plus", "pro_lite" and "prolite" → "Pro Lite". */
 export function planLabel(plan: string | null | undefined): string {
-  return (plan ?? "").trim().split(/[\s_-]+/).filter(Boolean)
+  const id = (plan ?? "").trim();
+  return PLAN_NAMES[id.toLowerCase()] ?? id.split(/[\s_-]+/).filter(Boolean)
     .map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
 }
 
@@ -401,7 +398,7 @@ export function spendView(spend: SpendWire, text: Text, plan?: string | null): S
       ? text(`Included in the ${name} plan`, `${name} 套餐内`)
       : text("Included in the plan", "套餐内");
     return {
-      value: fmtCount(spend.total_tokens), suffix: text("tok", "tok"), byCost: false,
+      value: fmtCount(spend.total_tokens), suffix: text("tok", "token"), byCost: false,
       tip: spend.list_price_usd > 0
         ? covered + text(` · ${fmtUsd(spend.list_price_usd)} at API prices`, ` · 按 API 价约 ${fmtUsd(spend.list_price_usd)}`)
         : covered,
@@ -410,7 +407,7 @@ export function spendView(spend: SpendWire, text: Text, plan?: string | null): S
   const cost = spend.cost_usd ?? 0;
   if (cost <= 0 && spend.total_tokens > 0) {
     // No price known for these calls: tokens say more than "$0.00".
-    return { value: fmtCount(spend.total_tokens), suffix: text("tok", "tok"), byCost: false, tip: unpriced };
+    return { value: fmtCount(spend.total_tokens), suffix: text("tok", "token"), byCost: false, tip: unpriced };
   }
   return { value: fmtUsd(cost), suffix: text("30d", "30 天"), byCost: true, tip: unpriced };
 }
@@ -424,7 +421,7 @@ export function sparkValues(series: SpendDay[], byCost: boolean): number[] {
 export function billingLabel(billing: ProviderStatus["billing"], text: Text, plan?: string | null): string {
   if (billing === "subscription") return planLabel(plan) || text("Subscription", "订阅");
   if (billing === "local") return text("Local", "本地");
-  return text("API key", "API key");
+  return text("API key", "API 密钥");
 }
 
 /** When one provider's status was last read: its quota, or a Refresh of its login and health. */
@@ -437,4 +434,102 @@ export function providerUpdatedAt(p: Pick<ProviderStatus, "quota" | "checked_at"
 export function updatedAt(providers: ProviderStatus[], generatedAt: number): number {
   const times = providers.map(providerUpdatedAt).filter((t): t is number => t != null);
   return times.length ? Math.max(...times) : generatedAt;
+}
+
+// ── companies ──────────────────────────────────────────────────────────────
+
+/** Health from best to worst: a company's chip shows its best way's. */
+const HEALTH_ORDER: HealthState[] = [
+  "ready", "unknown", "rate_limited", "signed_out", "no_credit", "invalid_key", "not_configured", "not_running",
+];
+
+/** The best of several healths (the first of equals). */
+export function bestHealth(healths: HealthWire[]): HealthWire {
+  const rank = (h: HealthWire) => {
+    const i = HEALTH_ORDER.indexOf(h.state);
+    return i < 0 ? HEALTH_ORDER.length : i;
+  };
+  return healths.reduce((best, h) => (rank(h) < rank(best) ? h : best));
+}
+
+/** One card of the list: a company connected in more than one way, or one provider. */
+export type CompanyGroup = { family: string; label: string; ways: ProviderStatus[] };
+
+/** The list as cards. The payload lists each company's ways together, in
+ *  the company table's order (models/auth/login/login_method_registry.py);
+ *  a company connected one way only is a group of one, drawn as today. */
+export function companyGroups(providers: ProviderStatus[]): CompanyGroup[] {
+  const groups = new Map<string, CompanyGroup>();
+  for (const p of providers) {
+    const family = p.family || p.id;
+    const group = groups.get(family);
+    if (group) group.ways.push(p);
+    else groups.set(family, { family, label: p.family_label || p.label, ways: [p] });
+  }
+  return [...groups.values()];
+}
+
+/** A way's title on its company's card ("ChatGPT subscription"). */
+export function wayTitle(p: Pick<ProviderStatus, "label" | "way_label">, text: Text): string {
+  return p.way_label ? text(p.way_label.title, p.way_label.title_zh) : p.label;
+}
+
+/** A way's name in a row under its company ("ChatGPT", "Go"). */
+export function wayShort(p: Pick<ProviderStatus, "label" | "way_label">, text: Text): string {
+  return p.way_label ? text(p.way_label.short, p.way_label.short_zh) : p.label;
+}
+
+/** Whether every credential of `p` is one an earlier way already holds
+ *  (the same environment variable, or a key with the same last four). */
+export function sharesKey(p: Pick<ProviderStatus, "keys">, earlier: Pick<ProviderStatus, "keys">[]): boolean {
+  const held = earlier.flatMap((e) => e.keys);
+  const same = (a: KeyHealth, b: KeyHealth) => (a.env_var ? a.env_var === b.env_var : !!a.key_tail && a.key_tail === b.key_tail);
+  return p.keys.length > 0 && p.keys.every((k) => held.some((h) => same(k, h)));
+}
+
+/** A way's second line: its plan, how it is connected ("sign-in", "API
+ *  key", "Same key" for a key an earlier way holds) and its model. `keys`:
+ *  its credentials are keys (countsKeys), not sign-ins. */
+export function wayMeta(
+  p: Pick<ProviderStatus, "billing" | "plan" | "keys" | "default_model">,
+  { keys, shared }: { keys: boolean; shared: boolean },
+  text: Text,
+): string {
+  const parts: string[] = [];
+  const plan = p.billing === "subscription" ? planLabel(p.plan) : "";
+  if (plan) parts.push(plan);
+  if (p.billing !== "local") {
+    if (!p.keys.length) parts.push(keys ? text("No key yet", "还没有密钥") : text("Not signed in", "还没登录"));
+    else parts.push(shared ? text("Same key", "同一个密钥") : keys ? text("API key", "API 密钥") : text("sign-in", "登录"));
+  }
+  if (p.default_model) parts.push(p.default_model);
+  return parts.join(" · ");
+}
+
+// ── masonry ────────────────────────────────────────────────────────────────
+
+/** Where each card goes: in list order, into the column that is shortest
+ *  so far (the leftmost of equals), at that column's height. Each top is
+ *  at or below the one before, so the list order is also the reading order. */
+export function placeMasonry(heights: number[], columns: number, gap: number): { column: number; top: number }[] {
+  const bottoms = Array.from({ length: Math.max(1, columns) }, () => 0);
+  return heights.map((height) => {
+    const column = bottoms.indexOf(Math.min(...bottoms));
+    const top = bottoms[column];
+    bottoms[column] = top + Math.ceil(height) + gap;
+    return { column, top };
+  });
+}
+
+/** A card's height before it is measured, close enough that the first
+ *  paint already puts each card in the column it will keep. */
+export function estimateCardHeight(group: CompanyGroup): number {
+  const body = (p: ProviderStatus) => {
+    const limits = p.quota?.limits?.length ?? 0;
+    const quota = limits ? 6 + limits * 26 : p.fix && p.fix.action !== "connect" ? 50 : 0;
+    const stats = p.spend.calls > 0 || p.spend.total_tokens > 0 ? 32 : 0;
+    return quota + stats + 34;
+  };
+  if (group.ways.length === 1) return 24 + 40 + 12 + body(group.ways[0]) + 11;
+  return 24 + 40 + 12 + group.ways.reduce((sum, p, i) => sum + (i ? 21 : 0) + 46 + body(p), 0);
 }

@@ -66,7 +66,7 @@ def is_worker_stopping() -> bool:
 
 def raise_if_worker_stopping() -> None:
     if is_worker_stopping():
-        from openprogram.models.providers.utils.errors import ExecInterrupt
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
         raise ExecInterrupt("worker_stopping")
 
 
@@ -93,7 +93,7 @@ def _cancel_hook() -> None:
     entry (and every Runtime.exec call) aborts once the turn is cancelled.
     """
     if _worker_stopping.is_set():
-        from openprogram.models.providers.utils.errors import ExecInterrupt
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
         raise ExecInterrupt("worker_stopping")
     token = _active_token()
     if token is not None and token.is_cancelled():

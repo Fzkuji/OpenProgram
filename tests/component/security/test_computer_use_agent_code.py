@@ -6,7 +6,7 @@ import pytest
 from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.broker import GuiBroker
 from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.runner import GuiPythonRunner
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.effects import EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectStore
 from openprogram.runtime.execution.model import CapabilitySet
 from openprogram.runtime.execution.store import ExecutionStore
 from openprogram.programs._host.execution import ToolReturn
@@ -106,7 +106,7 @@ def test_code_runs_page_scripts_only_where_the_owner_attends(interpreter, source
 def test_a_step_that_fails_after_starting_is_reported_and_leaves_nothing_for_a_person(interpreter, monkeypatch):
     """The call's own result tells the model the step may have applied; an
     open record would stop the turn at its next checkpoint instead."""
-    from openprogram.runtime.execution.effects import EffectStatus
+    from openprogram.runtime.execution.recovery.effects import EffectStatus
     calls, effects = interpreter
     monkeypatch.setattr(app, "run", lambda steps, args, session: ToolReturn(text="Error: the window closed", is_error=True))
     result = code.run("await cu.app.click(app='Numbers', element_index=3)", {"app": "Numbers"}, "s")

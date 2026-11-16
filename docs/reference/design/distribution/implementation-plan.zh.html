@@ -121,7 +121,7 @@
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">约定</th></tr></thead>
 <tbody>
 <tr><th scope="row">入口</th><td><code translate="no">npm --prefix apps/desktop run dist</code> 构建一个完整的临时 App，用打包运行时冒烟验证，只替换 <code translate="no">/Applications/OpenProgram.app</code></td></tr>
-<tr><th scope="row">刷新版本</th><td><code translate="no">scripts/refresh-local-app.sh</code> 要求 bundle、运行时 manifest、Python 元数据、Python 源码和桌面源码版本一致，升级到更新的源码除外</td></tr>
+<tr><th scope="row">刷新版本</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> 要求 bundle、运行时 manifest、Python 元数据、Python 源码和桌面源码版本一致，升级到更新的源码除外</td></tr>
 <tr><th scope="row">降级</th><td><code translate="no">install-app.sh</code> 在加锁前和对暂存副本各拒绝一次更旧的候选，都在停 worker 和改文件之前。数字段按任意精度十进制比较；没有覆盖开关，没有预发布排序。</td></tr>
 <tr><th scope="row">路径上是无效 App</th><td>保留并拒绝，绝不当作不存在</td></tr>
 <tr><th scope="row">激活失败</th><td>保留旧 App 的唯一副本；Launch Services 注册后失败时恢复并重新注册，保留原始错误</td></tr>

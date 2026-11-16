@@ -63,7 +63,7 @@
 <table class="stack">
 <thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>收到外部消息。<br><code translate="no">interfaces/channels/_conversation.py</code></td></tr>
+<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>收到外部消息。<br><code translate="no">interfaces/channels/inbound/_conversation.py</code></td></tr>
 <tr><th scope="row"><code translate="no">branch.message_sent</code><span class="arg">agent</span></th><td><code translate="no">{from, to}</code></td><td>消息发往另一会话分支。<br><code translate="no">programs/tools/agents/send_message/send_message/send_message.py, programs/tools/agents/agent/agent/agent.py</code></td></tr>
 <tr><th scope="row"><code translate="no">agents.listed</code><span class="arg">agent</span></th><td><code translate="no">{sessions, branches}</code></td><td><code translate="no">list_agents</code> 列出协作目标。<br><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py</code></td></tr>
 <tr><th scope="row"><code translate="no">subagent.started</code><span class="arg">system</span></th><td><code translate="no">{job_id, label}</code></td><td>后台 Agent 任务进入运行。<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
@@ -110,7 +110,7 @@ remove = get_event_bus().subscribe_gate("tool.before", guard)</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">类型</th><th scope="col">情况</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">credential.cooldown</code>、<code translate="no">credential.rotated</code>、<code translate="no">credential.exhausted</code></th><td>由 <code translate="no">bridges.py</code> 从 AuthEvent 翻译而来，载荷 <code translate="no">{provider, profile, credential, detail}</code>。总线容忍并每类型警告一次。</td></tr>
+<tr><th scope="row"><code translate="no">credential.cooldown</code>、<code translate="no">credential.rotated</code>、<code translate="no">credential.exhausted</code></th><td>由 <code translate="no">bridges.py</code> 从 AuthEvent 翻译而来，载荷 <code translate="no">{provider, credential, detail}</code>。总线容忍并每类型警告一次。</td></tr>
 <tr><th scope="row"><code translate="no">proactive.inject</code>、<code translate="no">proactive.prepare_requested</code></th><td>主动引擎的派生事件；引擎当前未安装。</td></tr>
 <tr><th scope="row"><code translate="no">question.replied</code>、<code translate="no">question.rejected</code>、<code translate="no">programs:changed</code></th><td>只是 <code translate="no">ws.frame</code> 内的帧类型，不是类型事件。spawn、attach 卡片、报告、通知、合并和删除以 <code translate="no">transcript_update</code> 送达打开的对话。</td></tr>
 </tbody>

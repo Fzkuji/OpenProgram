@@ -137,7 +137,7 @@ def test_invalid_mode():
 
 
 def test_permission_from_config_defaults_to_unrestricted():
-    from openprogram.runtime.conversation.session_config import (
+    from openprogram.runtime.conversation.session_settings.session_config import (
         SessionRunConfig, permission_from_config,
     )
     empty = SessionRunConfig()
@@ -153,7 +153,7 @@ import asyncio
 import pytest
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions import approval as _approval
+from openprogram.runtime.permissions.approvals import approval as _approval
 
 
 def _make_tool(name: str):
@@ -263,7 +263,7 @@ def test_allow_rule_runs_without_approval_in_ask(authority_path, monkeypatch):
 def test_auto_denies_command_with_unsafe_verdict(monkeypatch):
     async def classify(*args, **kwargs):
         return True, "unsafe command"
-    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.auto_mode.classifier.auto_classify_tool", classify)
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
                       permission_mode="auto")
@@ -291,7 +291,7 @@ def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
                       permission_mode="acceptEdits")
     # path inside cwd → safe → auto-allow
     async def _fake(*a, **k): return (False, None, "once")  # would deny if asked
-    import openprogram.runtime.permissions.approval as _ap
+    import openprogram.runtime.permissions.approvals.approval as _ap
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
     import asyncio
@@ -380,7 +380,7 @@ def test_acceptedits_denies_dangerous_path(tmp_path, monkeypatch):
 
 def _run_with_args(tool, req, args, approve=True, scope="once"):
     import asyncio
-    import openprogram.runtime.permissions.approval as _ap
+    import openprogram.runtime.permissions.approvals.approval as _ap
     async def _fake(*a, **k): return (approve, None, scope)
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
@@ -1108,7 +1108,7 @@ def test_a_program_gets_its_pages_under_unrestricted(owner, monkeypatch):
 
 def test_a_malformed_call_goes_back_to_the_model_without_a_card(owner, monkeypatch):
     from openprogram.programs._authoring import prechecks
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     tool, ran = _make_tool("needs_a_shape")
     monkeypatch.setitem(prechecks._registry, "needs_a_shape", lambda args: "shape is required")
     wrapped = _approval.wrap_with_approval(tool, _owner_request("ask"), lambda _event: None, _live=False)
@@ -1122,7 +1122,8 @@ def test_a_malformed_call_goes_back_to_the_model_without_a_card(owner, monkeypat
 
 def test_a_tool_refusal_becomes_the_standard_denied_result(owner):
     from openprogram.models.providers.types import AgentTool
-    from openprogram.runtime.permissions import approval as _approval, refusal
+    from openprogram.runtime.permissions.approvals import approval as _approval
+    from openprogram.runtime.permissions import refusal
 
     async def execute(*_args):
         raise refusal.sandbox("bash", "path is outside writable roots: /x")

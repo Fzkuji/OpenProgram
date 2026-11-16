@@ -213,7 +213,7 @@ def _tree_updates(chat: LiveChat) -> int:
 
 
 def function_run_tree(chat: LiveChat) -> str:
-    from openprogram.runtime.execution.dag import live_progress
+    from openprogram.runtime.execution.projections.dag import live_progress
 
     chat.model.add(ScriptedText("before the function run"))
     chat.send("hello")
@@ -229,7 +229,7 @@ def function_run_tree(chat: LiveChat) -> str:
 
 
 def function_tree_in_reply(chat: LiveChat) -> str:
-    from openprogram.runtime.execution.dag import live_progress
+    from openprogram.runtime.execution.projections.dag import live_progress
 
     reply: dict[str, str] = {}
 

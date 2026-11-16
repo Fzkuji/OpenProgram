@@ -22,3 +22,14 @@ function seedWire(id,{messages,history}){
   seedTurnsWire(id,toWireTurns(messages),toWireWindow(history));registerWire(id,toWireWindow(history));
 }
 """
+
+
+def drawn_rows(stored: list[dict], *, session_id: str | None = None) -> list[dict]:
+    """Stored rows as a read sends them: shaped by the server's one row projection.
+
+    A test page passes these to ``applyRead`` after ``withToolBodies``, which is
+    what the browser does with the rows of each turn it receives.
+    """
+    from openprogram.interfaces.server.transcript.rows import project_rows
+
+    return project_rows([dict(row) for row in stored], session_id=session_id)

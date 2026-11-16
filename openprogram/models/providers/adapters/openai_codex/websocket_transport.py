@@ -45,8 +45,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
-from openprogram.models.providers.utils.http_client import register_loop_closer
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.http_transport.http_client import register_loop_closer
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
 _log = logging.getLogger(__name__)
 
@@ -540,7 +540,7 @@ async def _dial(url: str, headers: dict[str, str], key: str, host: str) -> _Kept
     from websockets.asyncio.client import connect
     from websockets.exceptions import InvalidStatus
 
-    from openprogram.models.providers.utils.http_proxy import proxy_for_url
+    from openprogram.models.providers.utils.http_transport.http_proxy import proxy_for_url
 
     _install_proxy_protocol()
     handshake = {
@@ -629,13 +629,13 @@ async def _begin(
             status = _error_status(frame)
             text = json.dumps(error or frame, ensure_ascii=False)
             if 400 <= status <= 599:
-                from openprogram.models.providers.utils.stream_retry import is_retryable_status
-
+                # The credential layer retries or switches on a status
+                # (models/auth/selection.py); the transport does not.
                 raise ProviderStreamError(
                     f"HTTP {status}: {text}",
                     http_status=status,
                     error_text=text,
-                    retryable=is_retryable_status(status, text),
+                    retryable=False,
                 )
         prelude.append(frame)
         break

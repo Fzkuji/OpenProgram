@@ -25,7 +25,7 @@ TURN_LAUNCH_MODULE = "openprogram.interfaces.server.ws_actions.chat.turn_launch"
 from openprogram.runtime.execution import AttemptStore, ExecutionStore, RuntimeControlService
 from openprogram.runtime.execution.driver import DriverAck, DriverBinding, DriverRegistry
 from openprogram.runtime.execution.model import CapabilitySet, CommandKind, CommandStatus, ExecutionStatus
-from openprogram.runtime.execution.effects import EffectStatus
+from openprogram.runtime.execution.recovery.effects import EffectStatus
 
 
 class FakeWS:
@@ -104,7 +104,7 @@ def public_chat(tmp_path, monkeypatch):
     from openprogram.state.store.session.session_store import SessionStore
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.ws_actions import chat as chat_actions
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
     import openprogram.state.store.session.session_store as session_store_module
     import openprogram.interfaces.server.ws_actions.session as session_actions
@@ -268,7 +268,7 @@ def test_agent_state_blob_preserves_large_payloads_and_content_addressed_metadat
     """Agent state refs preserve payloads and validate ownership and metadata."""
 
     store, _attempts, _active, execution = _agent_execution(tmp_path)
-    from openprogram.runtime.execution.state_blobs import (
+    from openprogram.runtime.execution.recovery.state_blobs import (
         ExecutionStateBlobStore,
         StateBlobConflict,
     )
@@ -318,7 +318,7 @@ def test_agent_state_blob_ownership_and_gc_preserve_published_references(tmp_pat
     _other_attempts, _ignored, _other_active, second = _agent_execution(
         tmp_path, execution_id="exec-owner-2", store=store
     )
-    from openprogram.runtime.execution.state_blobs import ExecutionStateBlobStore
+    from openprogram.runtime.execution.recovery.state_blobs import ExecutionStateBlobStore
 
     blobs = ExecutionStateBlobStore(store)
     payload = b'{"shared":true}'
@@ -820,7 +820,7 @@ def test_unsupported_handler_and_missing_activation_are_rejected_without_mutatio
     assert rejected["rejection_code"] == "unsupported_capability"
     assert store.get_execution(execution.execution_id) == before
 
-    from openprogram.runtime.execution.safe_points import AgentSafePointConflict
+    from openprogram.runtime.execution.recovery.safe_points import AgentSafePointConflict
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
     with pytest.raises(AgentSafePointConflict) as unavailable:
         asyncio.run(
@@ -983,7 +983,7 @@ def test_effect_dispatch_crash_blocks_continue_and_step_until_reconciled(public_
         generation=leased.generation,
         expected_execution_version=reserved.status_version,
     )
-    from openprogram.runtime.execution.effects import EffectClassification
+    from openprogram.runtime.execution.recovery.effects import EffectClassification
 
     effect = effects.register(
         effect_id="effect-crash-1",
@@ -1109,8 +1109,8 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
 @pytest.mark.parametrize("kind,orphan", [("provider.before", True), ("tool.before", False)])
 @pytest.mark.parametrize("attention", [None, "wait", "command", "cancel", "cancel_applying"])
 def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp_path, monkeypatch, kind, orphan, attention):
-    from openprogram.runtime.execution.effects import EffectClassification, EffectStatus
-    from openprogram.runtime.execution.public import execution_snapshot
+    from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectStatus
+    from openprogram.runtime.execution.projections.public import execution_snapshot
 
     store, attempts, active, execution = _admitted_agent_execution(tmp_path)
     control = RuntimeControlService(store, attempts, DriverRegistry())

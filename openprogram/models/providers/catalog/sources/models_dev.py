@@ -101,7 +101,7 @@ def hold_background_refresh() -> None:
     The ``openprogram.models.providers`` package builds the enabled-model
     registry while it imports, and that read can find the catalogue stale
     and want a refresh. A thread started at that point imports
-    ``utils.http_proxy`` on its way to the socket, which needs the package
+    ``utils.http_transport.http_proxy`` on its way to the socket, which needs the package
     lock the importing thread still holds, while the importing thread goes
     on to import ``utils`` itself and waits for the lock the thread took
     first: Python reports the cycle as ``_DeadlockError`` and the import

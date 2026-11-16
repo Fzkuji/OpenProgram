@@ -197,7 +197,7 @@ async def handle_switch_model(ws, cmd: dict):
 
 
 def _broadcast_execution(execution: dict, event_cursor: dict) -> None:
-    from openprogram.runtime.execution.public import execution_update_frame
+    from openprogram.runtime.execution.projections.public import execution_update_frame
     from openprogram.interfaces.server import server as _s
     _s._broadcast(json.dumps(
         execution_update_frame(execution, event_cursor), default=str,
@@ -208,13 +208,13 @@ def _trusted_runtime_actor(ws) -> dict | None:
     return trusted_runtime_actor(getattr(ws, "scope", None), surface="ws")
 
 
-from openprogram.runtime.execution.public import public_event as _public_event
+from openprogram.runtime.execution.projections.public import public_event as _public_event
 
 
 def _public_execution_snapshot(execution, *, event_sequence: int | None = None) -> tuple[dict, dict]:
     """Return the one snapshot shape shared by command and reconnect paths."""
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.public import execution_snapshot
+    from openprogram.runtime.execution.projections.public import execution_snapshot
 
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
     resource = None
@@ -321,7 +321,7 @@ async def _send_command_update(ws, command, execution) -> None:
     await ws.send_text(json.dumps(update, default=str))
     if not has_public_snapshot:
         return
-    from openprogram.runtime.execution.public import execution_update_frame
+    from openprogram.runtime.execution.projections.public import execution_update_frame
     await ws.send_text(json.dumps(
         execution_update_frame(execution_data, cursor), default=str,
     ))

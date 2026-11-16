@@ -542,7 +542,7 @@ def test_sdk_injection_accepts_exact_managed_assignment_container(tmp_path):
     (package / "managed.py").write_text(
         """
 import openai
-from openprogram.models.providers.utils.http_client import get_shared_async_client
+from openprogram.models.providers.utils.http_transport.http_client import get_shared_async_client
 
 kwargs = {
     "http_client": get_shared_async_client(

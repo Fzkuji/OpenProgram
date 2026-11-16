@@ -280,7 +280,7 @@ def test_canonical_driver_receives_immutable_job_resource_context(
     captured = []
 
     def inspect_context(*, execution_context, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         captured.append(execution_context)
         return AgentTurnResult(

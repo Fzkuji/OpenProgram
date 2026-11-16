@@ -21,7 +21,7 @@
 </table>
 
 <figure>
-<img src="execution/agent-code-structure.svg" alt="Runtime packages by concept">
+<img src="agent-code-structure.svg" alt="Runtime packages by concept">
 </figure>
 
 <h3 id="dependency-direction">Dependency direction</h3>
@@ -40,16 +40,16 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Registration</th><th scope="col">Supplies</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">conversation/context_registration.py</code></th><td>The <code translate="no">open_work</code> system-prompt section and the Agent profile loader for context breakdowns</td></tr>
-<tr><th scope="row"><code translate="no">conversation/permission_registration.py</code></th><td>Session and turn facts read by <code translate="no">permissions/session_facts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/context_registration.py</code></th><td>The <code translate="no">open_work</code> system-prompt section and the Agent profile loader for context breakdowns</td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/permission_registration.py</code></th><td>Session and turn facts read by <code translate="no">permissions/session_facts.py</code></td></tr>
 <tr><th scope="row"><code translate="no">context/scope.py</code></th><td>Task-local call state <code translate="no">Context</code> reads (<code translate="no">_call_id</code>, workflow call site); the call core imports it from there</td></tr>
 <tr><th scope="row"><code translate="no">runtime/agent/engine_link.py</code></th><td>The one port for what the call core needs from the engine: running a persistent turn or saved continuation (<code translate="no">Agent.run_turn</code> / <code translate="no">resume_turn</code>) and its Agent profile, a saved Agent's tools, binding a resumed tool call's pre-approved question wait, whether the worker is stopping, the running job's activity and operation timeout, the runtime contract a resumable tool loop checkpoints</td></tr>
-<tr><th scope="row"><code translate="no">conversation/engine_registration.py</code></th><td>Implements that port when <code translate="no">openprogram.runtime.conversation</code> is imported; the worker and Server import it at start. The same import brings in <code translate="no">conversation/run_control</code>, which claims the core's cancellation check.</td></tr>
+<tr><th scope="row"><code translate="no">conversation/layer_registrations/engine_registration.py</code></th><td>Implements that port when <code translate="no">openprogram.runtime.conversation</code> is imported; the worker and Server import it at start. The same import brings in <code translate="no">conversation/run_control</code>, which claims the core's cancellation check.</td></tr>
 </tbody>
 </table>
 <ul>
 <li>With nothing registered the core is a plain library: the worker is not stopping, no background job runs, <code translate="no">Agent.run_turn</code> raises <code translate="no">EngineUnavailable</code>.</li>
-<li>Imported directly, with or without an engine: bound session and execution, nested-call admission and terminal marking (<code translate="no">execution/run_control/</code>), approval gating (<code translate="no">permissions.approval.wrap_with_approval</code>), the pre-approved wait id (<code translate="no">permissions.session_facts</code>).</li>
+<li>Imported directly, with or without an engine: bound session and execution, nested-call admission and terminal marking (<code translate="no">execution/run_control/</code>), approval gating (<code translate="no">permissions.approvals.approval.wrap_with_approval</code>), the pre-approved wait id (<code translate="no">permissions.session_facts</code>).</li>
 <li><code translate="no">TurnRequest</code> and the request in force (<code translate="no">agent/turn_request.py</code>) are call-core types the engine builds and binds.</li>
 <li>A module exports only the names it owns: execution binding from <code translate="no">openprogram.runtime.execution.run_control</code>, permission vocabulary from <code translate="no">permissions/modes.py</code>, tool contract (<code translate="no">AgentTool</code>, <code translate="no">AgentToolResult</code>) from <code translate="no">openprogram.models.providers.types</code>, call-scope ContextVars from <code translate="no">context/scope.py</code>. <code translate="no">tests/contracts/repository/test_no_transitional_reexports.py</code> keeps moved names from returning.</li>
 <li><code translate="no">process_runner.py</code>, which runs a turn's Agent method tools in a subprocess, is engine code in <code translate="no">conversation/</code>.</li>
@@ -144,8 +144,8 @@
 <tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/registry.py</code></th><td><code translate="no">detect_provider</code>, built-in <code translate="no">PROVIDERS</code> table</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/factory.py</code></th><td><code translate="no">create_runtime</code>, built from that detection</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/provider_runtimes/</code></th><td>Runtime subclasses of subscription and CLI-credential providers (<code translate="no">openai_codex.py</code>, <code translate="no">google_gemini_cli.py</code>), <code translate="no">PROVIDER_RUNTIMES</code>. Others run on the base Runtime; <code translate="no">openprogram/models/providers/adapters/&lt;vendor&gt;/</code> holds only model, auth and wire code.</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>: DAG to reads (the semantics of <code translate="no">render_range</code>)</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code>: reads to provider messages</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/nodes.py</code></th><td><code translate="no">render_context</code>: DAG to reads (the semantics of <code translate="no">render_range</code>)</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/render.py</code></th><td><code translate="no">render_dag_messages</code>: reads to provider messages</td></tr>
 </tbody>
 </table>
 </details>
@@ -158,12 +158,12 @@
 <tr><th scope="row"><a href="dag/rendering.html">DAG rendering</a></th><td>Authoritative: layout, edges, legend, default visibility, 12 scenarios</td></tr>
 <tr><th scope="row"><a href="dag/branch-collaboration.html">Branch collaboration</a></th><td>Communication, dispatch, merge</td></tr>
 <tr><th scope="row"><a href="dag/nested-llm-node-content.html">Nested LLM node content</a></th><td>Ordered chat blocks</td></tr>
-<tr><th scope="row"><a href="execution/agent-call-flow.html">Call flow</a></th><td>Turn and loop skeleton, orthogonal to the node model</td></tr>
+<tr><th scope="row"><a href="agent/agent-call-flow.html">Call flow</a></th><td>Turn and loop skeleton, orthogonal to the node model</td></tr>
 <tr><th scope="row"><a href="execution/agent-worktree.html">Agent worktree</a></th><td>Worktrees</td></tr>
 <tr><th scope="row"><a href="execution/async-job-lifecycle.html">Async job lifecycle</a></th><td>Background jobs</td></tr>
 <tr><th scope="row"><a href="execution/control.html">Execution control</a></th><td>Authoritative: pause, continue, step, steering, cancellation, checkpoint, revision, recovery</td></tr>
 <tr><th scope="row"><a href="execution/dispatcher-split.html">Dispatcher split</a></th><td>One module per responsibility in <code translate="no">conversation/turn_runtime/</code></td></tr>
-<tr><th scope="row"><a href="execution/agentic-llm-streaming.html">Nested <code translate="no">llm()</code> streaming</a></th><td>Per-node tokens: protocol, buffer, persistence, cancel and reconnect, in process and subprocess</td></tr>
+<tr><th scope="row"><a href="agent/agentic-llm-streaming.html">Nested <code translate="no">llm()</code> streaming</a></th><td>Per-node tokens: protocol, buffer, persistence, cancel and reconnect, in process and subprocess</td></tr>
 <tr><th scope="row"><a href="operations/file-management.html">File management</a></th><td>Authoritative: attribution, Review, Undo, Restore, branch alignment, multi-agent ownership</td></tr>
 <tr><th scope="row"><a href="operations/streaming-resume.html">Streaming resume</a></th><td>Reconnecting to a running stream</td></tr>
 <tr><th scope="row"><a href="operations/user-input-requests.html">User input requests</a></th><td><code translate="no">runtime.ask</code> / <code translate="no">confirm</code>, question registry, WS/REST protocol, subprocess bridge</td></tr>

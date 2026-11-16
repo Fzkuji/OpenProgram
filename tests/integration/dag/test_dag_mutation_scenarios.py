@@ -101,7 +101,7 @@ def test_fork_and_checkout_between_branches(store):
 # --- compaction ------------------------------------------------------
 
 def test_chat_continues_after_compaction(store):
-    from openprogram.runtime.context.persistence import Persister
+    from openprogram.runtime.context.compaction.persistence import Persister
 
     tip = _seed(store, "s", 5)
     msgs = store.get_messages("s")
@@ -120,8 +120,8 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
     """The §3 substitution end to end: the model's next context is
     [ROOT, summary, kept tail…] — covered turns absent, summary at the
     segment's position, subsequent turns unaffected."""
-    from openprogram.runtime.context.nodes import render_context
-    from openprogram.runtime.context.persistence import Persister, rendered_history
+    from openprogram.runtime.context.session_dag.nodes import render_context
+    from openprogram.runtime.context.compaction.persistence import Persister, rendered_history
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     _seed(store, "s", 5)
@@ -146,8 +146,8 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
 
 
 def test_double_compaction_extends_coverage_and_keeps_one_active(store):
-    from openprogram.runtime.context.nodes import active_summary_for_chain, render_context
-    from openprogram.runtime.context.persistence import Persister, rendered_history
+    from openprogram.runtime.context.session_dag.nodes import active_summary_for_chain, render_context
+    from openprogram.runtime.context.compaction.persistence import Persister, rendered_history
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     tip = _seed(store, "s", 6)
@@ -179,7 +179,7 @@ def test_head_refuses_to_land_on_a_summary(store):
     """A summary is a stand-in, never a tip: any set_head onto it (a
     stray checkout, a buggy caller) must be refused, not stored."""
     import pytest as _pytest
-    from openprogram.runtime.context.persistence import Persister
+    from openprogram.runtime.context.compaction.persistence import Persister
 
     tip = _seed(store, "s", 3)
     sid = Persister().insert_summary_node(
@@ -207,7 +207,7 @@ def test_head_survives_meta_save(store):
 
 def test_rewind_restores_an_earlier_tip(store):
     _seed(store, "s", 4)
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
 
     res = rewind_to("s", "u2")          # undo turns 2 and 3
     assert not res.get("error"), res
@@ -229,7 +229,7 @@ def test_rewind_leaves_sibling_branches_alone(store):
                                "content": "fork answer", "predecessor": "f0"})
     # Work on the MAIN branch again and rewind its last turn.
     store.set_head("s", "u1_reply")
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
     res = rewind_to("s", "u1")
     assert not res.get("error"), res
     _check(store, "s")

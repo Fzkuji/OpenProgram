@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { SecretInput } from "@/components/ui/secret-input";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { normalizeSecretReplacement } from "@/lib/net/auth/secret-replacement";
 
-import styles from "../provider-pane.module.css";
-
 /** Single API-key input — masked status plus explicit replacement. Used by
- *  web-search providers (Tavily / Exa / …). LLM providers use <AccountManager>
- *  instead, which manages one-or-many keys as a list. */
+ *  web-search providers (Tavily / Exa / …). LLM providers use the
+ *  Credentials section instead, which manages one-or-many keys as a list. */
 export function ApiKey({
   envVar,
   configured,
@@ -68,27 +68,28 @@ export function ApiKey({
     }
   }
 
+  const id = `api-key-${envVar}`;
   return (
-    <div className="flex flex-col gap-[10px]">
-      <div className={styles.detailSectionTitle}>
-        <span>API Key</span>
-        <span className={styles.modelCountSummary}>
+    <Field>
+      <div className="flex items-center justify-between gap-2">
+        <FieldLabel htmlFor={id}>API Key</FieldLabel>
+        <Badge variant={configured ? "success" : "secondary"} dot>
           {configured ? text("Configured", "已配置") : text("Not set", "未设置")}
-        </span>
+        </Badge>
       </div>
-      <div className={`${styles.detailRow} flex gap-[10px] items-center`}>
-        <Input
-          className="flex-1 font-mono"
-          type="password"
+      <div className="flex items-center gap-2">
+        <SecretInput
+          id={id}
+          className="flex-1"
           placeholder={masked || envVar}
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
           autoComplete="new-password"
         />
-        <Button onClick={save} disabled={!replacement.trim()}>
+        <Button variant="elevated" onClick={save} disabled={!replacement.trim()}>
           {text("Save", "保存")}
         </Button>
       </div>
-    </div>
+    </Field>
   );
 }

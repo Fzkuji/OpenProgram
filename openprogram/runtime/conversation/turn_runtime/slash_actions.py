@@ -85,7 +85,7 @@ def run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> b
     attach_node_id = uuid.uuid4().hex[:12]
 
     def _on_accepted(job) -> None:
-        from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
         # While it runs the row stays out of the spawned turn's own context;
         # the end write removes this delivery so the finished report is read.
         write_attach_placeholder_for_spawn(
@@ -100,7 +100,7 @@ def run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> b
         )
 
     try:
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn
         result = run_agent_turn(
             session_id=session_id,
             prompt=prompt,
@@ -133,7 +133,7 @@ def run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> b
     # another agent. ``session_id`` deliberately matches the CURRENT session:
     # the spawn lives as a branch here, not as a separate sub_xxx session.
     # The transcript publisher sends the row to every open view.
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_pointer_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_pointer_for_spawn
     write_attach_pointer_for_spawn(
         session_id=session_id,
         caller_msg_id=msg_id,
@@ -257,7 +257,7 @@ def run_spawn_async(
     # Submit to runner. The runner takes over: status transitions and
     # attach card finalization.
     try:
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn_async
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn_async
         job_id = run_agent_turn_async(
             session_id=session_id,
             prompt=prompt,
@@ -384,7 +384,7 @@ def run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str,
         peers.append(peer)
 
     try:
-        from openprogram.runtime.conversation.merge import process_merge_turn
+        from openprogram.runtime.conversation.peer_agents.merge import process_merge_turn
         result = process_merge_turn(
             target_session_id=session_id,
             peers=peers,
@@ -416,7 +416,7 @@ def run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str,
     # SessionDB and would silently orphan the merge reply. Route the
     # move through _set_active_head, the single head-write primitive
     # that refreshes DB + mirror + message cache together.
-    from openprogram.runtime.conversation.merge import still_selected
+    from openprogram.runtime.conversation.peer_agents.merge import still_selected
     if result.target_assistant_id and still_selected(session_id, result.branch_id):
         interface_link.set_active_head(session_id, result.target_assistant_id)
 

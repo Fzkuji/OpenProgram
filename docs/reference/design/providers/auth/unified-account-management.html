@@ -1,54 +1,64 @@
-<title>Accounts and rotation</title>
-<meta name="description" content="Accounts are profiles, managed the same way from CLI, web and TUI, with optional rotation.">
-<h1>Accounts and rotation</h1>
+<title>Provider keys and failover</title>
+<meta name="description" content="Each provider holds one ordered list of keys and sign-ins; a conversation keeps one, and a failure moves it to the next.">
+<h1>Provider keys and failover</h1>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Concept</th><th scope="col">Meaning</th></tr></thead>
 <tbody>
-<tr><th scope="row">Account</th><td>A profile: one pool at <code translate="no">~/.openprogram/auth/&lt;provider&gt;/&lt;profile&gt;.json</code>. OAuth refresh rotation allows one OAuth credential per pool, so this is the only model that covers every provider.</td></tr>
-<tr><th scope="row"><code translate="no">account_id</code></th><td>Stable ASCII key from the runtime (<code translate="no">default</code>, <code translate="no">account-2</code>, …); never changes</td></tr>
-<tr><th scope="row"><code translate="no">label</code></th><td>Unicode display text; renamed freely; duplicates allowed</td></tr>
+<tr><th scope="row">List</th><td>One file per provider, <code translate="no">~/.openprogram/auth/&lt;provider&gt;/credentials.json</code>: <code translate="no">strategy</code> and the ordered <code translate="no">credentials</code>. Every change (<code translate="no">AuthStore.mutate</code>) holds the file's lock from the read to the write and applies to the file as it is then, so a key the CLI added or a token another process refreshed is never lost. Removing or replacing a key also drops the last good copy (<code translate="no">.bak</code>, <code translate="no">.bad-*</code>), so its secret leaves the disk (<code translate="no">models/auth/store.py</code>).</td></tr>
+<tr><th scope="row">Use counts</th><td><code translate="no">&lt;provider&gt;/usage.json</code>: each credential's uses, uses today, last use, and where <code translate="no">evenly</code> continues. A request writes only this file, never the secrets file.</td></tr>
+<tr><th scope="row">Credential</th><td><code translate="no">id</code>, <code translate="no">label</code>, <code translate="no">kind</code> (<code translate="no">api_key</code>, <code translate="no">oauth</code>, <code translate="no">device_code</code>, <code translate="no">import</code>, <code translate="no">token</code>, <code translate="no">credential_process</code>), <code translate="no">source</code> (<code translate="no">web</code>, <code translate="no">cli</code>, <code translate="no">import</code>, <code translate="no">env</code>), <code translate="no">identity</code>, <code translate="no">enabled</code>, <code translate="no">status</code>, cooldown, blocked models, last error, last use</td></tr>
+<tr><th scope="row">Status</th><td><code translate="no">ready</code>, <code translate="no">cooling</code>, <code translate="no">quota</code>, <code translate="no">invalid_key</code>, <code translate="no">needs_login</code></td></tr>
+<tr><th scope="row">Environment key</th><td>A set variable the provider reads (<code translate="no">login_method_registry.env_vars</code>) is a read-only row <code translate="no">env:&lt;VAR&gt;</code>, read from the environment at use; its place and state are kept, its value never</td></tr>
+<tr><th scope="row">Sign in again</th><td>The same <code translate="no">account_id</code> or email renews its row in place: same id, name and place</td></tr>
 </tbody>
 </table>
-<p class="note">Label of a new login: typed label, OAuth email, provider display name, then stable id. Identity comes from credential metadata, nested OAuth data or <code translate="no">id_token</code> claims. Older credentials derive it on read.</p>
-<h2>Request path</h2>
+<p class="note">The name shown: the label, else the sign-in's email (the plan is shown beside it), else the variable, else <code translate="no">Key ····1234</code>. No listing carries a secret.</p>
+<h2>Choosing a credential</h2>
+<ol class="flow">
+<li><strong>Pin</strong><small>the conversation's chosen credential, if usable</small></li>
+<li><strong>Binding</strong><small>the credential the conversation last used</small></li>
+<li class="flow-end"><strong>Strategy</strong><small><code translate="no">in_order</code>, <code translate="no">evenly</code>, <code translate="no">least_used</code> (fewest uses today)</small></li>
+</ol>
+<p>The binding and the pin live in the session's metadata (<code translate="no">credential_binding</code>, <code translate="no">credential_pin</code>); a call reads the conversation in its context before the cache key a <code translate="no">Runtime</code> sends (<code translate="no">op-…</code>), and a child session follows its <code translate="no">parent_session_id</code> up to the conversation, so programs, agent methods, sub-agents and Goal turns spend the conversation's pinned or bound key.</p>
+<p>One <code translate="no">with_credential()</code> (<code translate="no">models/auth/selection.py</code>) wraps every adapter's stream; adapter SDKs do not retry on their own.</p>
+<h2>What a failure does</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Behaviour</th></tr></thead>
+<thead><tr><th scope="col">Failure</th><th scope="col">Credential</th><th scope="col">Request</th></tr></thead>
 <tbody>
-<tr><th scope="row">Active account</th><td><code translate="no">auth/account/account_selection.py</code>: <code translate="no">get_active_account</code>, <code translate="no">set_active_account</code>, <code translate="no">get_active_pin</code>. <code translate="no">acquire</code> and the resolver default to it; chat and execute enter <code translate="no">auth_scope</code>. Default stays <code translate="no">default</code>.</td></tr>
-<tr><th scope="row">Outcome reporting</th><td><code translate="no">auth/usage.py</code> and <code translate="no">openai_completions.stream_simple</code> acquire per request and report; a 429 cools the key, the outer retry rotates. No-op without a real AuthStore pool.</td></tr>
-<tr><th scope="row">Conversation affinity</th><td>The stream runs in <code translate="no">conversation_affinity(session_id)</code>; <code translate="no">pool.pick</code> keeps the conversation's last healthy credential if active within 1 h (<code translate="no">AFFINITY_IDLE_MS</code>), so vendor caches are not paid twice. A cooling or revoked credential moves it for good. Per process, at most 4096 (<code translate="no">AFFINITY_MAX</code>). Follows magpie (yetone/magpie, MIT).</td></tr>
-<tr><th scope="row">Strategy</th><td><code translate="no">fixed</code>, <code translate="no">fill_first</code>, <code translate="no">round_robin</code>, <code translate="no">random</code>, <code translate="no">least_used</code>; cooldown skip in <code translate="no">auth/pool.py</code>; fallback in <code translate="no">auth/credential_provider.py</code></td></tr>
+<tr><th scope="row">429, Retry-After ≤ 5 s</th><td>unchanged</td><td>same credential once more</td></tr>
+<tr><th scope="row">429</th><td><code translate="no">cooling</code> for Retry-After, else 60 s doubling per strike to 15 min</td><td>next usable one</td></tr>
+<tr><th scope="row">Quota or balance</th><td><code translate="no">quota</code> until the reset the provider reports, else 24 h</td><td>next usable one</td></tr>
+<tr><th scope="row">401, or 403 naming the key</th><td>a sign-in is refreshed once (only here, not again in the adapter); then <code translate="no">invalid_key</code> or <code translate="no">needs_login</code></td><td>same after refresh, else next</td></tr>
+<tr><th scope="row">Other 403</th><td>a 403 about a model (verification, organization) blocks that model; one about a region or policy leaves the key alone</td><td>next usable one, or the error</td></tr>
+<tr><th scope="row">Model refused</th><td>that model blocked for 24 h</td><td>next usable one</td></tr>
+<tr><th scope="row">5xx, network</th><td>unchanged</td><td>two backoff retries on the same credential</td></tr>
+<tr><th scope="row">None usable</th><td>—</td><td>wait if one is back within 60 s, the one that just failed included (one key and a 429 waits out its cooldown); else the model fallback; else an error listing each credential's state</td></tr>
 </tbody>
 </table>
-<h2>REST</h2>
-<p>Under <code translate="no">/api/providers/{provider}/accounts</code>:</p>
+<p class="note">A switch adds a muted notice to the reply (<code translate="no">EventRetry</code>, reason <code translate="no">credential</code>). A stored error message has the key, <code translate="no">Bearer</code> tokens and <code translate="no">?key=</code> values removed first. Once output has been shown, a failure is not retried on another credential.</p>
+<h2>Interfaces</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Effect</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Entry</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">GET</code></th><td><code translate="no">{active, accounts:[{id,label,name,email?,status,kind,is_active,is_fallback}]}</code>, strategy, <code translate="no">add_mode</code> (<code translate="no">code_paste</code> or <code translate="no">login</code>). <code translate="no">name</code> aliases <code translate="no">label</code>.</td></tr>
-<tr><th scope="row"><code translate="no">POST /use {id}</code></th><td>Pins; <code translate="no">""</code> hands back to the fallback (<code translate="no">default</code>), whose switch cannot turn off alone</td></tr>
-<tr><th scope="row"><code translate="no">POST /rename {id,name}</code></th><td>Display text only</td></tr>
-<tr><th scope="row"><code translate="no">POST /remove {id}</code></th><td>Removes</td></tr>
-<tr><th scope="row"><code translate="no">POST /add</code>, <code translate="no">/keys {api_key,name?,validate?}</code></th><td>New account; a blank name auto-picks</td></tr>
-<tr><th scope="row"><code translate="no">GET /{name}/reveal</code>, <code translate="no">POST /{name}/update</code></th><td>Full key; replace it</td></tr>
-<tr><th scope="row"><code translate="no">POST /{name}/validate</code>, <code translate="no">/validate-all</code></th><td>Validate one or all</td></tr>
-<tr><th scope="row"><code translate="no">POST /rotation {enabled,strategy?}</code></th><td>Off: active account only. On: cool, skip, move on. Off by default.</td></tr>
-<tr><th scope="row"><code translate="no">POST /reorder {order}</code></th><td>Rotation priority</td></tr>
-<tr><th scope="row"><code translate="no">POST /enabled</code></th><td>In or out of rotation</td></tr>
-<tr><th scope="row"><code translate="no">POST /{name}/retry</code></th><td>Clears the cooldown</td></tr>
+<tr><th scope="row">REST</th><td><code translate="no">/api/providers/{p}/credentials</code>: list, add, <code translate="no">PATCH</code> label or enabled, delete, <code translate="no">check</code>, <code translate="no">replace</code>, <code translate="no">reorder</code>, <code translate="no">strategy</code>. <code translate="no">/api/sessions/{sid}/credentials</code>: binding and pin.</td></tr>
+<tr><th scope="row">Events</th><td><code translate="no">provider.credentials.changed {provider}</code>, <code translate="no">session.credentials.changed {session_id, binding, pin}</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers keys &lt;provider&gt; list|add|replace|rename|move|enable|disable|check|remove|strategy</code>; <code translate="no">providers login</code> is <code translate="no">keys add</code></td></tr>
+<tr><th scope="row">Usage</th><td>Each usage row records <code translate="no">credential_id</code>; quota is read per credential</td></tr>
 </tbody>
 </table>
-<p class="note">Login add reuses <code translate="no">/api/providers/{id}/login/{start,poll,submit,cancel}</code> with an optional <code translate="no">label</code>; the runtime allocates the id. Multi-profile and diagnostics: <code translate="no">routes/identity/credentials.py</code> (<code translate="no">/profiles</code>, <code translate="no">/pools</code>, <code translate="no">/doctor</code>, SSE <code translate="no">/events</code>).</p>
-<h2>Surfaces</h2>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Component</th></tr></thead>
-<tbody>
-<tr><th scope="row">Web</th><td>One keys panel (<code translate="no">detail/keys-panel.tsx</code>) for every provider. Backends differ only in how to add and what an identity looks like.</td></tr>
-<tr><th scope="row">TUI</th><td><code translate="no">providerAccounts.tsx</code>, <code translate="no">providerLoginFlow.tsx</code> over <code translate="no">/login/*</code>; <code translate="no">/login &lt;provider&gt;</code> works for any provider</td></tr>
-<tr><th scope="row">CLI</th><td><code translate="no">providers use &lt;provider&gt; [profile]</code>; <code translate="no">← active</code> in <code translate="no">providers list</code></td></tr>
-</tbody>
-</table>
-<details><summary>Implementation status</summary>
-<p>Not in place: a <code translate="no">fallback_chain</code> toggle in the UI, TUI pool controls, native <code translate="no">providers pool …</code> verbs, retiring the <code translate="no">fixed</code> strategy now that account equals profile.</p>
-</details>
+<p>A pasted key is checked with <code translate="no">POST /api/providers/{p}/credentials/check-key</code>, which stores nothing; Add key or Replace key stores it with its name in one request and reuses that check. Adding a sign-in reuses <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>. Changes to the list go through <code translate="no">models/auth/manage.py</code>, which the routes and the CLI share.</p>
+<h2>Carry-over</h2>
+<p>The first start on this layout carries the old per-account files over once (<code translate="no">models/auth/carry_over.py</code>):</p>
+<ol>
+<li>Read every old account file: an object with a <code translate="no">credentials</code> list and the old account fields. Any other file is left alone; an unreadable one is logged by path.</li>
+<li>Copy <code translate="no">auth/</code> once to <code translate="no">auth/.carry-over-backup</code>, inside the folder the sandbox never lets a tool read.</li>
+<li>Flatten each provider's files into one list, in account order and then each account's credentials; a missing or repeated id gets a new one.</li>
+<li>Keep every stored key. An old environment row that stored its key becomes a stored key with a new id, whatever the starting process's environment holds. A key a variable also holds is listed once at read time (<code translate="no">store.env_rows</code>). An environment row with no stored value is left out and logged.</li>
+<li>Correct the rest: a key refused for a spent balance (HTTP 402, or OpenCode's 401 <code translate="no">CreditsError</code>) is out of quota for a day from when it was seen, ready when no time is recorded. A sign-in takes its email and plan from its <code translate="no">id_token</code>.</li>
+<li>Check every row arrived, and only then remove that provider's old files.</li>
+</ol>
+<p>A provider that fails keeps its old files without holding up the others. Running again adds nothing twice and makes no second backup.</p>
+<p>An older OpenProgram installed elsewhere on the machine still writes an old file from the environment variable it reads, so the carry-over can run on any start. A key the list already holds is not added again, and rows that repeat a stored key keep only the earliest, which has the key's history.</p>
+<p>A list an earlier carry-over wrote gets steps 4 and 5 once, on the next start (<code translate="no">carry_over.repair</code>, marked <code translate="no">.repaired</code> in the backup). It never changes a secret, so every <code translate="no">.bak</code> stays, and it reads a spent balance from the <code translate="no">.bak</code> when a later check wrote over it.</p>
+<p>It also tidies: a lock file goes only while the repair holds that lock, empty folders go, and folders become 0700. A folder it cannot change stays as it is, and the repair is still marked done.</p>
 <p class="next"><a href="unified-auth-storage.html">Auth storage</a></p>

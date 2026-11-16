@@ -238,7 +238,7 @@
 </ul>
 </details>
 <details>
-<summary>Local App refresh: <code translate="no">scripts/refresh-local-app.sh</code></summary>
+<summary>Local App refresh: <code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
 <ul>
 <li>Installs only <code translate="no">refs/heads/stable</code>, or during a promotion the fast-forward of it being promoted, moving <code translate="no">stable</code> once healthy (<a href="dev-instance.html#promoting-to-stable">Promoting to stable</a>). Without a <code translate="no">stable</code> branch, the checkout must contain local <code translate="no">main</code> and fetched <code translate="no">origin/main</code>.</li>
 <li>Paths are resolved first, so slashes, dot components and symlink aliases share checks and lock. A genuinely custom App keeps its own source check.</li>

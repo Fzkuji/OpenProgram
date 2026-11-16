@@ -13,7 +13,7 @@ Two behaviours the method supports, configurable per source:
     CLI rotations don't propagate to us. Useful when we want to pin
     a specific frozen state or when the external CLI is about to be
     uninstalled.
-  * ``link`` — create a ``CredentialData(kind="cli_delegated")`` pointing
+  * ``link`` — create a ``CredentialData(kind="import")`` pointing
     at the external file. Every API call re-reads the file. Any rotation the
     external CLI does is picked up automatically. Downside: expiry
     becomes the external tool's responsibility — if they mess up, we
@@ -83,12 +83,9 @@ class CliImportMethod(LoginMethod):
         self,
         provider_id: str,
         config: CliImportConfig,
-        *,
-        account_id: str = "default",
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._account_id = account_id
 
     async def run(self, ui: LoginUi) -> Credential:
         path = Path(self._cfg.store_path).expanduser()
@@ -103,6 +100,8 @@ class CliImportMethod(LoginMethod):
         except json.JSONDecodeError as e:
             raise RuntimeError(f"external auth file is not JSON: {e}") from e
 
+        from ..account.account_labels import file_identity
+
         if self._cfg.mode == "link":
             # "Link" mode stores only a pointer. We don't copy the
             # secret bits into our own file, so leaking ours doesn't
@@ -110,10 +109,9 @@ class CliImportMethod(LoginMethod):
             metadata = self._extract_metadata(data)
             return Credential(
                 provider_id=self.provider_id,
-                account_id=self._account_id,
-                kind="cli_delegated",
+                kind="import",
                 payload=CredentialData(
-                    kind="cli_delegated",
+                    kind="import",
                     data={
                         "store_path": str(path),
                         "access_key_path": list(self._cfg.access_path),
@@ -121,7 +119,9 @@ class CliImportMethod(LoginMethod):
                         "expires_key_path": list(self._cfg.expires_path),
                     },
                 ),
-                source=f"{self.method_id}:{self._cfg.source_id}",
+                source="import",
+                # The account's email and plan, from the file's id token.
+                identity=file_identity(path),
                 metadata=metadata,
                 read_only=True,
             )
@@ -137,7 +137,6 @@ class CliImportMethod(LoginMethod):
 
         return Credential(
             provider_id=self.provider_id,
-            account_id=self._account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth",
@@ -148,7 +147,7 @@ class CliImportMethod(LoginMethod):
                     "client_id": self._cfg.client_id_hint,
                 },
             ),
-            source=f"{self.method_id}:{self._cfg.source_id}",
+            source="import",
             metadata=metadata,
             read_only=False,
         )

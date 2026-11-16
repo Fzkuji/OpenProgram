@@ -1,6 +1,6 @@
 """Provider-side web search: intent resolution, loop pass-through, projection.
 
-Contract: docs/reference/design/providers/web-search.html.
+Contract: docs/reference/design/providers/requests/web-search.html.
 """
 from __future__ import annotations
 
@@ -376,7 +376,7 @@ def test_chat_turn_resolves_the_search_switch_against_the_model(
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: list(tools))
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt",
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt",
                         lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions",
                         lambda *a: "")

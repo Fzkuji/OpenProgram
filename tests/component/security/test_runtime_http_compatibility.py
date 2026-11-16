@@ -1442,7 +1442,7 @@ def test_sdk_dispositions_are_enforced_by_the_runtime_inventory() -> None:
             require_active_sdk_transport(consumer, expected[2])
 
     result = subprocess.run(
-        [sys.executable, "scripts/check_runtime_http.py"],
+        [sys.executable, "scripts/checks/check_runtime_http.py"],
         check=False,
         capture_output=True,
         text=True,

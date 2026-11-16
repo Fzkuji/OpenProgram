@@ -1,7 +1,7 @@
 """Resource governance: views."""
 from __future__ import annotations
 import time
-from typing import Any
+from typing import Any, Callable, Optional
 from openprogram.runtime.jobs.types import Job
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.runtime.jobs.resource_governance.contracts import (
@@ -62,7 +62,10 @@ def build_job_resource_view(
     *,
     ledger: UsageLedger,
     resolved: ResolvedResourceLimits,
+    jobs_in: Optional[Callable[[str], list[Job]]] = None,
 ) -> JobResourceView:
+    """``jobs_in`` lists a session's Jobs for the subtree usage; a caller
+    building many views passes one ``store.session_jobs_reader``."""
     usage = ledger.job_resource_usage(job.id)
     counts = ledger.resource_counts(job.parent_session_id, job.id)
     snapshot = job.resolved_limits_snapshot
@@ -203,15 +206,15 @@ def build_job_resource_view(
                 if legacy else _shared_remaining(ledger, job.id)
             ),
             # This Job and every helper it started (Activity's cost column).
-            "subtree": _subtree(job, ledger),
+            "subtree": _subtree(job, ledger, jobs_in),
         },
     )
 
 
-def _subtree(job: Job, ledger: UsageLedger) -> dict[str, Any]:
+def _subtree(job: Job, ledger: UsageLedger, jobs_in) -> dict[str, Any]:
     try:
         from openprogram.runtime.jobs.agent_status import subtree_usage
-        return subtree_usage(job, ledger=ledger)
+        return subtree_usage(job, ledger=ledger, jobs_in=jobs_in)
     except Exception:  # noqa: BLE001 - the view stands without it
         return {"tokens": None, "cost_usd": None}
 

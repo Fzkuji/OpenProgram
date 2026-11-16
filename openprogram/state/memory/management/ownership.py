@@ -9,11 +9,13 @@ file's hash and the block IDs it holds, with its origin:
 - ``outside``: a file that appeared without us, or one changed elsewhere
   so that block IDs we installed are gone — another tool's file.
 
-A file our transaction did not touch keeps the origin it had.
+A file our transaction did not touch keeps the origin it had, and so does
+one a transaction moved with every byte kept (see ``filing``).
 
 ``outside_paths`` answers which files are outside now. An outside file is
 read and recalled like any other, but no writer, normalization step or
-organizer changes, moves or links into it; a person saving it in
+organizer changes or links into it (filing it into a folder moves it
+whole); a person saving it in
 Settings is our transaction touching it, so it becomes ``runtime``.
 """
 from __future__ import annotations
@@ -101,19 +103,28 @@ def record_install(
     try:
         recorded = {path_key(name): entry for name, entry in load(memory_dir).items()}
         after = snapshot(memory_dir / "topics")
+        # A file moved with every byte kept is the same file: it keeps
+        # the origin it had at the path it left.
+        left: dict[str, list[str]] = {}
+        for relative in sorted(set(before) - set(after)):
+            left.setdefault(before[relative]["sha256"], []).append(relative)
         files = {}
-        for relative, entry in after.items():
+        for relative, entry in sorted(after.items()):
             previous = before.get(relative)
+            origin_path = relative
+            if previous is None and left.get(entry["sha256"]):
+                origin_path = left[entry["sha256"]].pop(0)
+                previous = before[origin_path]
             if previous is None or previous["sha256"] != entry["sha256"]:
                 origin = RUNTIME
             else:
                 origin = _origin_before(
-                    relative, previous, recorded.get(path_key(relative)),
+                    origin_path, previous, recorded.get(path_key(origin_path)),
                 )
             files[relative] = {
                 "sha256": entry["sha256"], "ids": entry["ids"], "origin": origin,
             }
-        from openprogram.state.store.session.atomic_file import atomic_write_text
+        from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
         atomic_write_text(
             _path(memory_dir),

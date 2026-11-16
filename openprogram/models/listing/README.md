@@ -42,7 +42,7 @@ The optional touch-points, only when something can't be derived:
   1. Append to ``openprogram.models.providers.catalog.metadata.PROVIDER_LABELS`` to pin a
      display name, and to ``metadata.FETCH_MODELS_PROVIDERS`` only for an
      OpenAI-compatible /v1/models lister not already covered.
-  2. Map its env var in ``metadata.ENV_API_KEYS``.
+  2. Give it an entry in ``auth/login/login_method_registry.py`` (methods, env var, check, console).
   3. Add to ``metadata.PROVIDER_DEFAULT_API`` ONLY to correct a
      ``enabled_models`` mislabel or pin a multi-api provider's route —
      it is normally empty.
@@ -71,4 +71,4 @@ The optional touch-points, only when something can't be derived:
 
 - **`fetchers/`** — Model-list dispatcher
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

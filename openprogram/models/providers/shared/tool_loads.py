@@ -30,9 +30,10 @@ NOTE = "note"
 
 #: The ``details`` keys a tool node keeps beside its result text: the load
 #: record, a search's note, the attachment sent after the result
-#: (``shared.tool_attachments``) and where a bounded result's whole text is
-#: (``OUTPUT``).
-DURABLE_DETAIL_KEYS = (LOADS, NOTE, "attachment", "output")
+#: (``shared.tool_attachments``), where a bounded result's whole text is
+#: (``OUTPUT``) and what a task tool call made the reply belong to (``task``:
+#: ``{"task", "step"}``, read by ``state.task_blocks``).
+DURABLE_DETAIL_KEYS = (LOADS, NOTE, "attachment", "output", "task")
 
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.interfaces.cli.commands import channels_setup as ch_setup
+from openprogram.interfaces.cli.commands.services import channels_setup as ch_setup
 
 
 @pytest.fixture

@@ -168,19 +168,13 @@ async def stream_simple(
     opts = options or SimpleStreamOptions()
     api_key = opts.api_key
 
-    # Configure SDK-level retry. google-genai exposes full
-    # HttpRetryOptions; we match the other providers' shape:
-    # 3 attempts, exponential backoff base 2, ±25% jitter, retry on
-    # standard transient statuses. Env override via
-    # ``OPENPROGRAM_GOOGLE_MAX_RETRIES``.
+    # The SDK's own retries are off (one attempt): the credential layer
+    # (``models/auth/selection.py``) and the stream's re-send see every
+    # failure once.
     from google.genai.types import HttpRetryOptions
-    from openprogram.models.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_transport.http_client import build_google_http_options
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
-    import os as _os
-    from ...streaming.budget import provider_retry_attempts
-    sdk_attempts = provider_retry_attempts(
-        int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3")),
-    )
+    sdk_attempts = 1
     configured_origin = normalize_origin(
         getattr(model, "base_url", None)
         or "https://generativelanguage.googleapis.com"
@@ -251,7 +245,7 @@ async def stream_simple(
             # Caller cancel (Stop button): raising abandons the SDK stream;
             # the except below finalizes the turn as "aborted".
             if _cancelled():
-                from openprogram.models.providers.utils.errors import StreamAborted
+                from openprogram.models.providers.utils.failures.errors import StreamAborted
                 raise StreamAborted("stream cancelled by caller signal")
             if chunk.usage_metadata is not None:
                 um = chunk.usage_metadata

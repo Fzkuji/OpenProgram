@@ -4,7 +4,7 @@ A rewind moves a session's head through a journal: the intent is written
 first, then the head is compared-and-set. Opening a session replays any
 journal entry that has no outcome yet, before the session is shown, so a
 reader never sees a half-applied rewind. Planning and applying a rewind is
-the runtime's (``openprogram.runtime.conversation.rewind``); replaying its
+the runtime's (``openprogram.runtime.conversation.rewinds.rewind``); replaying its
 journal only touches the store and the session's checkpoint journal.
 """
 from __future__ import annotations

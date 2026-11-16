@@ -44,6 +44,11 @@ def _known(fields: dict) -> dict:
     return {key: value for key, value in fields.items() if value is not None}
 
 
+def _owned(block: dict) -> dict:
+    """The task and step a block belongs to (``state/task_blocks.py``)."""
+    return {key: block[key] for key in ("task", "step") if isinstance(block.get(key), str) and block[key]}
+
+
 def project_blocks(row_id: str, stored: list) -> tuple[list[dict], list[dict], str | None]:
     """``(blocks, tools, thinking)`` for one reply.
 
@@ -60,11 +65,11 @@ def project_blocks(row_id: str, stored: list) -> tuple[list[dict], list[dict], s
         kind = block.get("type")
         if kind == "thinking" and block.get("text"):
             thinking = (thinking or "") + block["text"]
-            blocks.append({"index": index, "type": "thinking", "text": block["text"]})
+            blocks.append({"index": index, "type": "thinking", "text": block["text"], **_owned(block)})
         elif kind == "text" and block.get("text"):
             citations = normalize_citations(block.get("citations"))
             blocks.append({"index": index, "type": "text", "text": block["text"],
-                           **({"citations": citations} if citations else {})})
+                           **({"citations": citations} if citations else {}), **_owned(block)})
         elif kind == "steering" and block.get("message_id"):
             blocks.append({"index": index, "type": "steering", "message_id": block["message_id"],
                            "text": block.get("text"), "timestamp": block.get("timestamp")})
@@ -81,6 +86,7 @@ def project_blocks(row_id: str, stored: list) -> tuple[list[dict], list[dict], s
                 "message_id": block.get("message_id") or (row_id if full_output else None),
                 "node_id": block.get("node_id") or (call_id if full_output else None),
                 "is_error": bool(block.get("is_error")), "outcome": block.get("outcome"),
+                **_owned(block),
             })
             if not block.get("tool_call_id"):
                 drawn["id"] = f"tool:{index}"

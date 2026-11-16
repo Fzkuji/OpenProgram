@@ -95,7 +95,7 @@
 </table>
 
 <h3 id="cross-turn-tool-context">Tool output</h3>
-<p>One rule throughout: a later request sends the bytes the turn sent. A result is cut once, where it is made, and history stores that form. Code: <code translate="no">runtime/agent/loop/tool_dispatch.py</code> (<code translate="no">_as_stored</code>), <code translate="no">state/store/session/spill.py</code>, <code translate="no">models/providers/shared/tool_attachments.py</code>.</p>
+<p>One rule throughout: a later request sends the bytes the turn sent. A result is cut once, where it is made, and history stores that form. Code: <code translate="no">runtime/agent/loop/tool_dispatch.py</code> (<code translate="no">_as_stored</code>), <code translate="no">state/store/session/files/spill.py</code>, <code translate="no">models/providers/shared/tool_attachments.py</code>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
 <tbody>
@@ -131,7 +131,7 @@
 </details>
 
 <h3 id="pictures-and-pastes">Pictures and long messages</h3>
-<p>Every way a picture enters a conversation writes the same record, so the next request carries the picture the turn carried, on every adapter. Code: <code translate="no">state/store/session/media.py</code>, <code translate="no">runtime/conversation/branch_fork.py</code>, <code translate="no">models/providers/shared/google.py</code>.</p>
+<p>Every way a picture enters a conversation writes the same record, so the next request carries the picture the turn carried, on every adapter. Code: <code translate="no">state/store/session/files/media.py</code>, <code translate="no">runtime/conversation/turn_admission/branch_fork.py</code>, <code translate="no">models/providers/shared/google.py</code>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Path</th><th scope="col">What is kept</th></tr></thead>
 <tbody>
@@ -195,7 +195,7 @@
 <h3 id="occupancy">Occupancy: one record, two readers</h3>
 <pre translate="no" tabindex="0"><code>{"window": int, "total_used": int, "basis": "measured" | "estimated",
  "estimated": int, "calibration": float}   # calibration only when measured</code></pre>
-<p class="note"><code translate="no">openprogram/runtime/context/session_stats.py</code> builds it; <code translate="no">server.session_context_stats</code> serves <code translate="no">/context</code>; <code translate="no">server._broadcast_context_stats</code> pushes the <code translate="no">context_stats</code> frame. <a href="occupancy-status.html">Occupancy and compaction</a></p>
+<p class="note"><code translate="no">openprogram/runtime/context/token_accounting/session_stats.py</code> builds it; <code translate="no">server.session_context_stats</code> serves <code translate="no">/context</code>; <code translate="no">server._broadcast_context_stats</code> pushes the <code translate="no">context_stats</code> frame. <a href="occupancy-status.html">Occupancy and compaction</a></p>
 <table class="stack">
 <thead><tr><th scope="col">Basis</th><th scope="col">When</th><th scope="col"><code translate="no">total_used</code></th></tr></thead>
 <tbody>
@@ -234,6 +234,7 @@
 <tr><th scope="row">Tools</th><td>Loaded, on demand, MCP</td></tr>
 <tr><th scope="row">Memory</th><td><code translate="no">MEMORY.md</code> of each layer</td></tr>
 <tr><th scope="row">Conversation</th><td>By kind (<code translate="no">messages_detail.groups</code>) and largest messages (<code translate="no">messages_detail.top</code>), each linking to its transcript row</td></tr>
+<tr><th scope="row">Last compaction</th><td>One note under Compact conversation (<code translate="no">last_compaction</code>): when, how many messages, tokens before and after</td></tr>
 </tbody>
 </table>
 <ul>
@@ -257,7 +258,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Authoritative</th><td><code translate="no">openprogram/runtime/context/engine.py</code>, <code translate="no">nodes.py</code>, <code translate="no">render.py</code>, <code translate="no">compaction/view.py</code>, <code translate="no">state/store/session/spill.py</code>, <code translate="no">media.py</code></td></tr>
+<tr><th scope="row">Authoritative</th><td><code translate="no">openprogram/runtime/context/engine.py</code>, <code translate="no">nodes.py</code>, <code translate="no">render.py</code>, <code translate="no">compaction/view.py</code>, <code translate="no">state/store/session/files/spill.py</code>, <code translate="no">media.py</code></td></tr>
 <tr><th scope="row">Partial</th><td>Context commits are written at turn finalization and by merge turns; they are not on the render path, and the timeline does not show an ordinary turn's rendered view</td></tr>
 <tr><th scope="row">Not yet</th><td>Summarization and branch summary use a fixed prompt (<code translate="no">compaction/prompts.py</code>) that does not follow the agent's <code translate="no">AGENTS.md</code>, identity or skills. No manual pin or unpin of context items. No model in the catalog declares <code translate="no">tool_output_weight</code> yet, so every model uses the default. The input box shows no hint of its own for <code translate="no">input_too_large</code> (the refusal shows as "Not sent"), and the card's "full output saved" line waits on a look at its styling.</td></tr>
 </tbody>

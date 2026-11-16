@@ -385,7 +385,7 @@ def main() -> int:
             "package homepage is not the configured website address", failures)
     require(project_urls.get("Documentation") == DOCS_URL,
             "package documentation URL is not canonical", failures)
-    require(project_urls.get("Repository") == "https://github.com/FuzzyKuji/OpenProgram",
+    require(project_urls.get("Repository") == "https://github.com/Fzkuji/OpenProgram",
             "package repository URL is not canonical", failures)
     software = next((item for item in page.structured_data
                      if item.get("@type") == "SoftwareSourceCode"), None)
@@ -413,8 +413,8 @@ def main() -> int:
         require(removed not in source,
                 f"landing page still links the removed {removed}", failures)
     for community_url in (
-        "https://github.com/FuzzyKuji/OpenProgram/discussions",
-        "https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md",
+        "https://github.com/Fzkuji/OpenProgram/discussions",
+        "https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md",
     ):
         require(community_url in page.anchors,
                 f"missing community link {community_url}", failures)
@@ -622,7 +622,7 @@ def main() -> int:
         for url in (
             SITE_URL,
             DOCS_URL,
-            "https://github.com/FuzzyKuji/OpenProgram",
+            "https://github.com/Fzkuji/OpenProgram",
             DOCS_URL + "capabilities/agentic-programming/self-programming-ai-agents.html",
             DOCS_URL + "reference/comparisons/ai-agent-frameworks.html",
         ):

@@ -1,0 +1,139 @@
+<title>会话记录通信协议与模块</title>
+<meta name="description" content="协议 3 的帧和过滤、会话记录模型新增和变更的模块，以及每个交付步骤删除的内容。">
+<h1 id="title">会话记录通信协议与模块</h1>
+<p class="note">属于<a href="overview.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="overview.zh.html#status">实现状态</a>。</p>
+<h2 id="wire-protocol">通信协议</h2>
+<p>在 <code translate="no">websocket_dispatch.py</code> 中按 socket 协商。<code translate="no">history_version: 3</code> 设置 <code translate="no">_history_protocol = 3</code> 和 <code translate="no">_bounded_history = True</code>。Web 在 <code translate="no">list_sessions</code> 和 <code translate="no">load_session</code> 上发送 3。<code translate="no">ws_delivery.py</code> 中的分片门和 <code translate="no">load.py</code> 中的分页门涵盖协议 3。版本 3 的回复不含图。</p>
+<p><strong>请求。</strong> <code translate="no">load_session</code> 保留 <code translate="no">history_before</code>、<code translate="no">history_after</code>、<code translate="no">history_around</code>、<code translate="no">history_latest</code>，现在接受任意行 id，并新增 <code translate="no">history_turn</code> 用于单轮读取。<code translate="no">history_snapshot</code> 和 <code translate="no">history_head</code> 不存在。<code translate="no">search_session</code> 不再接受快照令牌。<code translate="no">close_view { session_id, view }</code> 是新增的。</p>
+<p><strong>回复。</strong> 全部在超过 128 KiB 时分片。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">帧</th><th scope="col">协议 3 形状</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_loaded</code></th><td><code translate="no">messages</code> 和 <code translate="no">history</code> 替换为 <code translate="no">turns</code> 和 <code translate="no">window</code>；其余字段不变</td></tr>
+<tr><th scope="row"><code translate="no">session_history_page</code></th><td><code translate="no">{ id, turns, window, request_id, action }</code></td></tr>
+<tr><th scope="row"><code translate="no">sub_agent_transcript</code></th><td>其视图键的 <code translate="no">turns</code> 和 <code translate="no">window</code></td></tr>
+<tr><th scope="row"><code translate="no">chat_ack</code></th><td>socket 未持有该会话视图时增加 <code translate="no">first_read: { turns, window }</code>。函数和重试确认增加聊天确认已带的 <code translate="no">client_request_id</code>。</td></tr>
+</tbody>
+</table>
+<p><strong>新帧。</strong></p>
+<pre translate="no" tabindex="0">transcript_update { session_id, view, previous, revision, changes: [...] }
+  turn_upsert   { turn, afterTurnId }
+  row_upsert    { turnId, afterRowId, row }
+  item_upsert   { turnId, rowId, list: blocks | attachCards | runtimeChildren | callRoots, item, index? }
+  row_patch     { turnId, rowId, fields }
+  window_stale  { head_id, reason: branch | structure }
+transcript_gap  { session_id }          critical；该会话每个持有的视图读取一次
+branches_changed { session_id }         replace 类
+view_closed     { session_id, view }    critical</pre>
+<p><code translate="no">list: blocks</code> 必须带 <code translate="no">index</code>。</p>
+<p><strong>变更的帧，对所有 socket 都是增量的。</strong> <code translate="no">chat_response</code> <code translate="no">stream_event</code> 的 <code translate="no">text</code> 和 <code translate="no">thinking</code> 增加 <code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>。<code translate="no">text_end</code> 增加 <code translate="no">row_id</code>、<code translate="no">item_id</code>。旧客户端仍能看到 <code translate="no">seq</code>。</p>
+<p class="note">工具调用、推理或 steer 之后开启一段文字的 <code translate="no">text</code> 事件还带 <code translate="no">separator</code>：回复的整段文字在这段增量之前要加的内容（<a href="../../runtime/execution/dispatcher-split.zh.html#reply-text">回复的文字</a>）。</p>
+<p>一个轮次的每个 <code translate="no">chat_response</code> 都带回复的 <code translate="no">row_id</code>，由该轮次的 <code translate="no">naming_reply_row</code> 包装加上。浏览器按这些 id 查找行，从不由一个 id 构造另一个。</p>
+<p><strong><code translate="no">ws_delivery.py</code>。</strong></p>
+<ul>
+<li>新帧种类 <code translate="no">transcript</code>，绝不替换或淘汰。溢出时移除该会话已排队的 transcript 帧并入队一个 critical <code translate="no">transcript_gap</code>；该会话后续的 transcript 帧被丢弃，直到这个 gap 离开队列。<code translate="no">_evict_replaceable_for</code> 把一个会话的 transcript 帧折叠成一个 gap，而不是移除。</li>
+<li><code translate="no">_merge_adjacent</code> 只在同一 <code translate="no">item_id</code> 按 <code translate="no">offset</code> 连续时合并流式文本。</li>
+<li>读取进行中时，在 <code translate="no">QueuedWebSocket</code> 上按会话暂存会写行的帧。</li>
+<li>协议 3 的过滤放在 <code translate="no">_enqueue</code> 内，用它已有的解析。</li>
+</ul>
+<p><strong>协议 3 socket 不接收</strong> <code translate="no">stream_event</code> 的 <code translate="no">tool_use</code> 和 <code translate="no">tool_result</code>、<code translate="no">tree_update</code> 和 <code translate="no">user_message</code>；它们改变的内容由发布器以会话记录更新发送。</p>
+<p>它们接收 <code translate="no">text</code>、<code translate="no">thinking</code>、<code translate="no">text_end</code>、<code translate="no">retry</code>、<code translate="no">structured_output_retry</code>，终态 <code translate="no">chat_response</code> 帧（只有运行级效果，不写行），<code translate="no">chat_ack</code>、<code translate="no">running_task</code>、<code translate="no">running_task_clear</code>、<code translate="no">branch_running_task</code> 及其清除帧（未选中分支上的轮次）、状态、<code translate="no">context_stats</code>、<code translate="no">goal_update</code>、<code translate="no">execution.updated</code>。斜杠命令 <code translate="no">/spawn</code> 和 <code translate="no">/merge</code> 的结果帧为其他 socket 保留；协议 3 的 reducer 不能把它们应用到行上。</p>
+<p>带 <code translate="no">restart</code> 的 <code translate="no">retry</code> 帧表示这次回复从头重发。流式 tap 把这一行的块截回到这次回复开始的位置并写入该行，所以后续文字帧的偏移以截短后的行为准。</p>
+<p>跨部署保持打开的标签页不需要新机制：<code translate="no">frontend_build</code> 会重新加载它们。</p>
+<h2 id="modules">模块</h2>
+<h3>新增</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">路径</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no" data-claim="example">openprogram/interfaces/server/transcript/schema.py</code></th><td>Turn、Row、Block、TranscriptChange；生成 TypeScript 的来源</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/turn_index.py</code></th><td>TranscriptView、成员关系、归属表、tip 规则、压缩槽位、派生字段表、LRU</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/turns.py</code></th><td><code translate="no">project_turn(members, context)</code>，在成员行上复用聚合、运行时卡片和截断辅助函数</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/rows.py</code></th><td><code translate="no">project_row</code> 和 <code translate="no">rowKind</code> 判定</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/blocks.py</code></th><td><code translate="no">project_block</code>、块 id、截断、<code translate="no">fullOutput</code></td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/children.py</code></th><td><code translate="no">attachCards</code>、<code translate="no">runtimeChildren</code>、<code translate="no">callRoots</code>、<code translate="no">blockId</code> 解析</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/navigation.py</code></th><td>通过子节点表的同级导航，规则与 <code translate="no">git/dag.py</code> 相同</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/status.py</code></th><td>状态词表和所有存储形式的映射</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/legacy.py</code></th><td>每种旧记录形状。未知形状画成普通行。</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/reader.py</code></th><td><code translate="no">first_read</code>、<code translate="no">page</code>、<code translate="no">one_turn</code>、<code translate="no">search</code>；由 <code translate="no">load.py</code>、<code translate="no">sub_agent.py</code>、<code translate="no">search.py</code> 和聊天确认使用</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/publisher.py</code></th><td>排空观察者记录，解析、投影、编号、发送；持有者、视图上限、<code translate="no">notice_tree</code>、Stop 规则</td></tr>
+<tr><th scope="row"><code translate="no">.../transcript/flat_rows.py</code></th><td>供 CLI、<code translate="no">worker_turn</code>、<code translate="no">rehearsal</code>、HTTP 使用的 <code translate="no">id</code>、<code translate="no">role</code>、<code translate="no">content</code> 列表</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">apps/web/lib/chat/transcript/apply-transcript-update.ts</code></th><td>唯一的写行者：对封闭的服务端变更和带类型的本地变更（本地追加、替换、补丁、移除、设置覆盖层、清除覆盖层）的一个纯 reducer，并返回效果</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/chat/transcript/apply-read.ts</code></th><td>把读取应用到视图，并确认它带来的插话；添加本地提示</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/text-frames.ts</code></th><td>按动画帧批处理文字帧，按偏移放进每个持有该行的视图，报告丢失的帧</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">apps/web/lib/chat/transcript/owned-children.ts</code></th><td>按 id 把块和子项配对</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">apps/web/lib/chat/transcript/row-status.ts</code></th><td>唯一一张 <code translate="no">isLive</code>、<code translate="no">isOpen</code>、<code translate="no">isSettled</code> 表</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">apps/web/lib/chat/transcript/wire-types.generated.ts</code></th><td>由 <code translate="no" data-claim="example">scripts/generators/generate_transcript_types.py</code> 生成</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">apps/web/components/chat/messages/list/transcript-rows.tsx</code></th><td>主对话、分屏窗格和展开的子代理视图共用的唯一行列表：覆盖、目标记录、决策回执和回退标记，并把会话和视图交给每一行</td></tr>
+<tr><th scope="row"><code translate="no">docs/reference/design/ui/transcript-model/overview.html</code> + <code translate="no">.zh.html</code></th><td>本工程记录的入口页；各主题页与它并列，全部登记在 <code translate="no">PAGE_ORDER</code> 中</td></tr>
+</tbody>
+</table>
+<h3>变更</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">路径</th><th scope="col">变更</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">state/store/session/files/session_log.py</code></th><td><code translate="no">_append</code> 末尾的观察者，由 <code translate="no">is_main_writer</code> 把关；<code translate="no">patch_node</code> 上的 <code translate="no">quiet</code></td></tr>
+<tr><th scope="row"><code translate="no">state/store/session/session_store/messages.py</code>、<code translate="no">storage.py</code>、<code translate="no">service.py</code></th><td><code translate="no">append_message(advance_head=...)</code>、<code translate="no">update_stream_progress</code>、过期重建和 <code translate="no">invalidate_cache</code> 处的外部变更通知</td></tr>
+<tr><th scope="row"><code translate="no">state/store/session/memory_index.py</code></th><td><code translate="no">rebuild</code> 原子交换</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/stream_tap.py</code></th><td>先持久化后发送；<code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>；<code translate="no">naming_reply_row</code> 给该轮次的其他每个帧加上 <code translate="no">row_id</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/server_runtime/session_persistence.py</code>、<code translate="no">ws_actions/session/load.py</code>、<code translate="no">ws_actions/chat/turn.py</code>、<code translate="no">runtime/jobs/runner/shared.py</code></th><td><code translate="no">running_task</code> 和 <code translate="no">chat_ack</code> 带 <code translate="no">reply_id</code>；<code translate="no">job_status</code> 带 <code translate="no">continues_job_id</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/__init__.py</code></th><td>取消时最终块是 <code translate="no">tap.blocks</code>，否则是 <code translate="no">_ordered_blocks or tap.blocks</code>，两个调用点都如此</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code></th><td><code translate="no">event_parsing</code> 让 <code translate="no">text_end</code> 块 id 穿过 tap；插话元数据不变</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/peer_agents/sub_agent_run.py</code>、<code translate="no">programs/tools/agents/agent/agent/agent.py</code></th><td><code translate="no">run_agent_turn(attach_pointer_id=...)</code>，从 <code translate="no">on_accepted</code> 写同步占位，结束写入为补丁</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/projections/dag.py</code></th><td>对账关闭作业不活跃的 attach 行</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/event_effects.py</code></th><td>终态执行落定未结束的锚定行；写入 <code translate="no">paused</code> 及回到 <code translate="no">running</code>；开始前已停止的聊天一轮补上它的回复行，状态为 <code translate="no">cancelled</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/git/dag.py</code></th><td><code translate="no">_is_chat_lane</code> 拒绝 <code translate="no">covers_ids</code>。<code translate="no">deepest_leaf</code> 和带索引的 <code translate="no">latest_child</code> 跳过 <code translate="no">_is_side_row</code>（<code translate="no">function=attach</code>、带 <code translate="no">display=runtime</code> 的 <code translate="no">type=status</code>、<code translate="no">covers_ids</code>），除非有普通行从它延续。<code translate="no">active_branch_chain</code> 按分支顺序。</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/persistence.py</code></th><td><code translate="no">aggregate_tool_messages</code> 复制列表（<code translate="no">:166</code>），并在没有 <code translate="no">extra</code> 的行上合并迟到的调用</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_delivery.py</code></th><td><a href="#wire-protocol">通信协议</a></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/server_runtime/websocket_dispatch.py</code></th><td>版本 3</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/session/load.py</code></th><td>变薄：解析、读取、发送</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/session/search.py</code></th><td>使用 <code translate="no">reader.search</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/session/tool_output.py</code></th><td>同时匹配 <code translate="no">&lt;message_id&gt;_t_&lt;node_id&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/sub_agent.py</code></th><td>通过 <code translate="no">reader.py</code> 提供视图</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/chat/turn.py</code>、<code translate="no">retry.py</code>、<code translate="no">turn_local_command.py</code></th><td>确认带 <code translate="no">first_read</code>。<code translate="no">_build_user_msg</code> 把 <code translate="no">client_request_id</code> 存到 user 行。<code translate="no">retry.py</code> 用 <code translate="no">client_request_id_of(cmd)</code> 读取，<code translate="no">turn_local_command.py</code> 从 <code translate="no">_client_request_id</code> 上下文取得，各自传给 <code translate="no">run_agent_method_call</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/routes/chat.py</code></th><td><code translate="no">run_agent_method_call(client_request_id=...)</code> 把它存到预创建节点的元数据；<code translate="no">POST /api/function/{name}</code> 在请求体中接受它</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/routes/control/commands.py</code></th><td>读取 <code translate="no">flat_rows</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/session-store/index.ts</code></th><td>每视图的行和轮次在 <code translate="no">selectRow(viewKey, id)</code> 之后；窗口只保存轮次 id 和字节数</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/chat-stream.ts</code></th><td>帧路由、本地发送行和运行级副作用；文本批处理移到 <code translate="no">text-frames.ts</code>；从 1287 行降到 392 行</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/session-load.ts</code></th><td><code translate="no">accept</code> 先应用再发待发读取；按视图为键</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/use-ws.ts</code>、<code translate="no">lib/runtime-bridge/session/chat-handlers.ts</code>、<code translate="no">session-history-loader.ts</code>、<code translate="no">conversations.ts</code>、<code translate="no">lib/chat/history/history-window.ts</code></th><td>窗口、<code translate="no">close_view</code>、不写行</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/messages/list/use-history-window.ts</code>、<code translate="no">components/page-shell.tsx</code>、<code translate="no">navigation/conversation-find.tsx</code></th><td>用窗口存在性判断代替 <code translate="no">snapshot</code>；没有快照令牌</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/messages/list/rows/message-rows.tsx</code>、<code translate="no">bubbles/assistant-bubble.tsx</code>、<code translate="no">runtime/runtime-block.tsx</code></th><td>按 <code translate="no">rowKind</code> 分发，按 <code translate="no">blockId</code> 取子项，稳定的 key，状态来自行</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/messages/bubbles/user-bubble.tsx</code></th><td><code translate="no">NotSent</code> 绘制行的 <code translate="no">errorDetail</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/src/screens/repl/useWsEvents.ts</code></th><td>不变</td></tr>
+</tbody>
+</table>
+<h2 id="deleted">删除的内容</h2>
+<p>这张表里的一切都已从仓库中移除，最后一列是移除它的步骤。</p>
+<table class="stack">
+<thead><tr><th scope="col">内容</th><th scope="col">位置</th><th scope="col">步骤</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取失败时的 <code translate="no">conv_snapshot</code> 替换</th><td><code translate="no">load.py:162</code></td><td>1</td></tr>
+<tr><th scope="row">attach 和提示写入前后的 head 翻转与恢复</th><td><code translate="no">sub_agent_run.py:577,665</code>；<code translate="no">slash_actions.py:195,324</code>；<code translate="no">inbox.py:225</code>；<code translate="no">conversation/peer_agents/merge.py:366</code>；<code translate="no">ws_actions/branch.py:528</code>（<code translate="no">branch.py:562-565</code> 的镜像刷新保留）</td><td>3</td></tr>
+<tr><th scope="row">硬编码的 Running 步骤</th><td><code translate="no">runtime-block.tsx:343-352</code></td><td>4</td></tr>
+<tr><th scope="row">FIFO 和按位置配对，键 <code translate="no">txt_</code>、<code translate="no">fn_</code>、<code translate="no">seg_</code></th><td><code translate="no">assistant-bubble.tsx</code></td><td>4</td></tr>
+<tr><th scope="row">造行和手工维护的形状：<code translate="no">replyId</code> 推导、<code translate="no">ensureReply</code>、四路 <code translate="no">tree_update</code>、<code translate="no">handleRuntimeRow</code>、<code translate="no">sub_agent</code> 分支、<code translate="no">finalize</code>、<code translate="no">handleSubAgentResponse</code> 写行、<code translate="no">handleUserMessage</code> 写行、<code translate="no">ensureSubAgentPrompt</code></th><td><code translate="no">chat-stream.ts</code>、<code translate="no">sub-agent-transcripts.ts</code></td><td>8</td></tr>
+<tr><th scope="row">第二个终态写入者、<code translate="no">running_task</code> 行定位、<code translate="no">settleClearedTurnRows</code>、<code translate="no">__reloadOnTaskClear</code>、<code translate="no">_pendingBranchReload</code> 及其设置者、直接的 <code translate="no">local_command</code> 和压缩追加</th><td><code translate="no">chat-handlers.ts</code>；<code translate="no">use-function-dispatch.ts</code>；<code translate="no">runtime-block.tsx</code>；<code translate="no">message-editor.tsx:74</code>；<code translate="no">message-actions.tsx:264</code>；<code translate="no">rewind-actions.ts:88</code>；<code translate="no">state.ts:80,165</code></td><td>8</td></tr>
+<tr><th scope="row">重放缓冲：<code translate="no">sequencedEvents</code>、<code translate="no">replayStreamAfterLoad</code>、<code translate="no">clearSessionByMsgId</code> 接线</th><td><code translate="no">chat-stream.ts</code>、<code translate="no">use-ws.ts</code></td><td>8</td></tr>
+<tr><th scope="row">合并层：<code translate="no">retainChangedRows</code>、<code translate="no">reconcileMessageSnapshot</code>、<code translate="no">hasMissingProgress</code>、<code translate="no">preserveSessionReadRows</code>、<code translate="no">session-history-loader.ts:189-197</code> 的加载器合并</th><td><code translate="no">session-load.ts</code>、<code translate="no" data-claim="example">message-snapshot.ts</code>、<code translate="no">runtime-bridge/session/session-load.ts</code></td><td>8</td></tr>
+<tr><th scope="row"><code translate="no">settledExecution</code> 覆盖</th><td><code translate="no">assistant-bubble.tsx:254-261</code></td><td>8</td></tr>
+<tr><th scope="row"><code translate="no">applyChapterFrame</code> 写行</th><td><code translate="no">chapter-pin.ts</code>、<code translate="no">use-ws.ts:944-947</code>（帧作为请求的回复保留）</td><td>8</td></tr>
+<tr><th scope="row"><code translate="no">rememberSystemAccessFromTree</code>、<code translate="no">liveRequests</code>、<code translate="no">hasSystemAccessRequest</code>、<code translate="no">consumeSystemAccessRequest</code>（没有生产读取方）及其测试</th><td><code translate="no">system-access-result.ts</code>、<code translate="no">chat-stream.ts:584,841</code></td><td>8</td></tr>
+<tr><th scope="row">展开视图的作业状态重读</th><td><code translate="no">sub-agent-transcript.tsx:97</code></td><td>8</td></tr>
+<tr><th scope="row">公开的存储写入函数 <code translate="no">appendMessage</code>、<code translate="no">updateMessage</code>、<code translate="no">removeMessage</code>、<code translate="no">rekeyMessage</code>、<code translate="no">truncateFrom</code>、<code translate="no">setMessages</code>（17 个文件中 72 处调用）；只读的 <code translate="no">messagesById</code> 索引（32 个文件中 132 处引用）</th><td><code translate="no">session-store/index.ts</code></td><td>8</td></tr>
+<tr><th scope="row">分发中对内容、display 和 function 的嗅探、<code translate="no">GOAL_SPAWN_LABELS</code>、客户端回执分类、<code translate="no">coversIds</code> 覆盖</th><td><code translate="no">message-rows.tsx</code>、<code translate="no">agent-notices.ts</code>、<code translate="no">message-list.tsx</code></td><td>9</td></tr>
+<tr><th scope="row">依赖窗口的折叠和 Web 对 <code translate="no">convToChatMsgs</code> 的使用；该文件</th><td><code translate="no" data-claim="example">conv-mapper.ts</code></td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">markRestartContinuations</code>、存储级的 <code translate="no">restartPredecessors</code>。<code translate="no">joinedReply</code> 保留。</th><td><code translate="no">restart-continuation.ts</code></td><td>10</td></tr>
+<tr><th scope="row">旧顺序配对兜底</th><td><code translate="no">owned-children.ts</code></td><td>10</td></tr>
+<tr><th scope="row">作为会话记录副本的 <code translate="no">conv.messages</code>、<code translate="no">feedStoreFromConv</code>、<code translate="no">spliceCompactionFromGraph</code>、线路行分块</th><td><code translate="no">conversations.ts</code>、<code translate="no">history-window.ts</code></td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">HistorySnapshot</code>、按连接的临时文件、快照令牌、<code translate="no">patch_message</code>、<code translate="no">install_snapshot</code>、<code translate="no">close_snapshots</code>、<code translate="no">history_page</code>、<code translate="no">chapter.py:40-58</code> 的快照循环</th><td><code translate="no" data-claim="example">session_history.py</code>（文件移除）；<code translate="no">QueuedWebSocket.stop</code> 调用</td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">_splice_attach_pointers</code>、<code translate="no">_splice_runtime_placeholders</code>、<code translate="no">_rows_with_sibling_navigation</code>、<code translate="no">_page_history_window</code>、<code translate="no">_serve_cached_history_page</code>、把拼接后的链写入 <code translate="no">conv['messages']</code>（镜像为其他读取方保留，由 <code translate="no">get_branch</code> 填充）</th><td><code translate="no">load.py</code></td><td>10</td></tr>
+<tr><th scope="row">全部 23 个 <code translate="no">session_reload</code> 发送点，包括三个 self-update 的，以及 Web 分支</th><td><code translate="no">event_effects.py</code>（4）；<code translate="no">submission.py</code>；<code translate="no">recovery.py</code>（3）；<code translate="no">cancellation.py</code>（2）；<code translate="no">shared.py</code>；<code translate="no">progress.py</code>（2）；<code translate="no">sub_agent_run.py</code>；<code translate="no">slash_actions.py</code>（2）；<code translate="no">always_on/runtime.py</code>；<code translate="no">self_update/delivery/delivery.py</code>、<code translate="no">owner_notice.py</code>、<code translate="no">control/held_turns.py</code>；<code translate="no">ws_actions/merge.py</code>、<code translate="no">branch.py</code>、<code translate="no">dag_nodes.py</code>；<code translate="no">jobs/runner/__init__.py</code> 中的再导出；<code translate="no">use-ws.ts</code>；<code translate="no">chat-handlers.ts</code></td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">emit_spawn_event</code> 和 <code translate="no">sub_agent</code> 流事件</th><td><code translate="no">sub_agent_run.py:440-485</code>、<code translate="no">agent.py</code> 调用点</td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">_poll_progress</code> 及其 <code translate="no">job_progress</code> 原因（无调用方）</th><td><code translate="no">jobs/runner/progress.py:127-210</code></td><td>10</td></tr>
+<tr><th scope="row">协议 1 和 2 的 Web 路径</th><td><code translate="no">load.py</code>、<code translate="no" data-claim="example">session_history.py</code>、Web 客户端</td><td>10</td></tr>
+<tr><th scope="row"><code translate="no">PUBLISH_CHAT_ROWS</code> 及其 False 分支：终态帧暂存、为无视图 socket 保留的重新加载；<code translate="no">rows_published</code> 标记</th><td><code translate="no">transcript/publisher.py</code>、<code translate="no">ws_delivery.py</code></td><td>10</td></tr>
+<tr><th scope="row">比较工具和黄金对照中实时运行的映射器一侧；映射器的行冻结在 <code translate="no">mapper-rows.json</code></th><td><code translate="no" data-claim="example">compare_transcript_projection.py</code>、对照测试</td><td>10</td></tr>
+<tr><th scope="row">客户端的 id 推导：<code translate="no">replyRowId</code>、<code translate="no">executionKey</code>、决策锚点和待送引导的 <code translate="no">_reply</code> 后缀、对 Job 父节点的 <code translate="no">_user_reply</code> 解析</th><td><code translate="no">chat-stream.ts</code>、<code translate="no">chat-handlers.ts</code>、<code translate="no">running-task-clear.ts</code>、<code translate="no">session-store/index.ts</code>、<code translate="no">pending-steers.tsx</code>、<code translate="no">sub-agent-transcripts.ts</code></td><td>10</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="delivery.zh.html">交付步骤</a></p>

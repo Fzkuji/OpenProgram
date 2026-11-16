@@ -39,12 +39,10 @@ class ApiKeyPasteMethod(LoginMethod):
         self,
         provider_id: str,
         *,
-        account_id: str = "default",
         prompt_message: str = "",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
-        self._account_id = account_id
         self._prompt_message = prompt_message or f"Paste your {provider_id} API key"
         self._metadata = dict(metadata or {})
 
@@ -62,9 +60,8 @@ class ApiKeyPasteMethod(LoginMethod):
             raise ValueError("empty API key")
         return Credential(
             provider_id=self.provider_id,
-            account_id=self._account_id,
             kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=key),
-            source=f"{self.method_id}:{self.provider_id}",
+            source="cli",
             metadata=self._metadata,
         )

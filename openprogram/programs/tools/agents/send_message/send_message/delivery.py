@@ -141,7 +141,7 @@ def enqueue_for_busy_target(
     sender's own session only the addressed branch counts (a sub-agent
     still working on it) — the sender's own turn is always running there.
     """
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     if not inbox.target_busy(run_session, branch_from, sender_session_id):
         return None
     scope = "session" if run_session != sender_session_id else "branch"

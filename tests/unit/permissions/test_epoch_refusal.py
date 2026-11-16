@@ -66,7 +66,7 @@ def test_a_refused_tool_keeps_its_definition_and_asks_nobody():
 
 
 def test_the_availability_section_lists_tools_by_name():
-    from openprogram.runtime.context import turn_context
+    from openprogram.runtime.context.prompt_assembly import turn_context
     text = turn_context.availability_text({"web_search": "b", "chat_send": "a"})
     assert text == "- chat_send: a\n- web_search: b"
     assert turn_context.availability_text({}) == ""

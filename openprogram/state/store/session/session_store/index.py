@@ -16,17 +16,33 @@ class IndexOperations:
 
 
     def _load_locations(self) -> dict[str, str]:
+        """The location index as the file holds it now.
+
+        Every lookup of a session's folder asks for it, so the parsed index
+        is kept against the file's inode, mtime and size: an unchanged file
+        is not read or resolved again, and a rewrite (always a rename onto
+        the path) is a new inode.
+        """
         p = self._locations_path()
-        if not p.exists():
+        from openprogram.host._platform.filesystem import filesystem_path
+        try:
+            info = shared.os.stat(filesystem_path(p))
+        except OSError:
             return {}
+        key = (info.st_ino, info.st_mtime_ns, info.st_size)
+        cached = getattr(self, "_locations_read", None)
+        if cached is not None and cached[0] == key:
+            return dict(cached[1])
         try:
             data = shared.json.loads(shared.read_text_with_retry(p))
             if not isinstance(data, dict):
                 return {}
-            from ..placement import rooted_location
-            return {str(k): str(rooted_location(self.root_path, v)) for k, v in data.items()}
+            from ..files.placement import rooted_location
+            locations = {str(k): str(rooted_location(self.root_path, v)) for k, v in data.items()}
         except (OSError, shared.json.JSONDecodeError):
             return {}
+        self._locations_read = (key, locations)
+        return dict(locations)
 
 
     def _save_locations(self, locations: dict[str, str]) -> None:
@@ -57,8 +73,8 @@ class IndexOperations:
         index is updated only after that durable repair, never as a
         best-effort rewrite.
         """
-        from ..placement import legacy_project_session_dir
-        from ..migration import load_journal, update_journal_row
+        from ..files.placement import legacy_project_session_dir
+        from ..files.migration import load_journal, update_journal_row
 
         base = shared.Path(new_project_path).expanduser()
         moved = 0
@@ -242,7 +258,7 @@ class IndexOperations:
         """
         now = shared.time.time()
         try:
-            from ..migration import load_journal
+            from ..files.migration import load_journal
             journal_rows = load_journal(self.root_path, strict=True).get("sessions") or {}
         except Exception:
             shared._log.warning("migration journal unreadable; startup cleanup skipped",

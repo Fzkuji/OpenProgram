@@ -23,6 +23,8 @@ from ..html_source import Node
 
 CLI_PARSER = "openprogram/interfaces/cli/parser.py"
 CLI_COMMANDS = "openprogram/interfaces/cli/commands"
+# The folders a verb's module sits in: commands/<group>/<verb>.py.
+CLI_COMMAND_GROUPS = ("capabilities", "conversations", "maintenance", "services", "updates")
 CLI_AREA = "openprogram/interfaces/cli/"
 SERVER_AREA = "openprogram/interfaces/server/"
 SETTINGS_FILE = "openprogram/state/settings.py"
@@ -275,6 +277,18 @@ def _subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction |
     return next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
 
 
+def _leading_positionals(parser: argparse.ArgumentParser) -> int:
+    """How many positionals the parser takes before its verb, as in
+    ``providers keys <provider> list``."""
+    count = 0
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return count
+        if not action.option_strings:
+            count += 1
+    return 0
+
+
 def verify_command(root: argparse.ArgumentParser, command: str,
                    settings: set[str]) -> list[CommandProblem]:
     """Walk one documented command line through the real parser."""
@@ -288,6 +302,7 @@ def verify_command(root: argparse.ArgumentParser, command: str,
     parser = root
     positionals = [a for a in parser._actions if not a.option_strings
                    and not isinstance(a, argparse._SubParsersAction)]
+    leading = _leading_positionals(parser)
     path: list[str] = []
     problems: list[CommandProblem] = []
     index = 0
@@ -316,8 +331,13 @@ def verify_command(root: argparse.ArgumentParser, command: str,
         if _is_placeholder(tokens[index - 1]):
             if positionals:
                 positionals.pop(0)
+                leading = max(0, leading - 1)
                 continue
             break
+        if leading:
+            positionals.pop(0)
+            leading -= 1
+            continue
         action_sub = _subparsers(parser)
         if action_sub is not None:
             if token not in action_sub.choices:
@@ -327,6 +347,7 @@ def verify_command(root: argparse.ArgumentParser, command: str,
             parser = action_sub.choices[token]
             positionals = [a for a in parser._actions if not a.option_strings
                            and not isinstance(a, argparse._SubParsersAction)]
+            leading = _leading_positionals(parser)
             continue
         if not positionals:
             continue
@@ -359,6 +380,7 @@ def command_path(root: argparse.ArgumentParser, command: str) -> tuple[str, ...]
     tokens = _command_tokens(command)
     parser = root
     path: list[str] = []
+    leading = _leading_positionals(parser)
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -368,11 +390,15 @@ def command_path(root: argparse.ArgumentParser, command: str) -> tuple[str, ...]
             if action is not None and action.nargs != 0 and "=" not in token:
                 index += 1
             continue
+        if leading:
+            leading -= 1
+            continue
         children = _subparsers(parser)
         if children is None or token not in children.choices:
             break
         path.append(token)
         parser = children.choices[token]
+        leading = _leading_positionals(parser)
     return tuple(path)
 
 

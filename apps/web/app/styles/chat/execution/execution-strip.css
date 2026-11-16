@@ -8,8 +8,13 @@
 .tl {
   /* Placed by the stream column's gap (chat/stream-blocks.css). */
   margin: 0;
+  /* The rail colour. The step tones live in tool-tones.css, shared with the DAG. */
   --timeline-line: light-dark(rgba(36, 36, 32, 0.22), rgba(226, 225, 218, 0.28));
-  /* The step tones live in tool-tones.css, shared with the DAG. */
+}
+/* A task block (.tb) holds step rows outside any .tl, so it carries the
+   same rail colour. */
+.tb {
+  --timeline-line: light-dark(rgba(36, 36, 32, 0.22), rgba(226, 225, 218, 0.28));
 }
 /* The summary row is 28px tall for its click target, which leaves ~7.5px
    of empty row above and below the sentence. The stream column's gap is
@@ -83,11 +88,10 @@
   white-space: nowrap;
 }
 /* A retry the reply waits on (retry-status.tsx): part of the sentence,
-   orange while it answers a failure; the seconds keep their width. */
+   orange while it answers a failure. */
 .tl-retry {
   flex: none;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 .tl-retry.is-failure { color: var(--accent-orange); }
 .tl-toggle:hover .tl-retry.is-failure { color: var(--accent-orange); }

@@ -15,7 +15,7 @@ INTERVAL_SECONDS = 300
 
 def mark_pending(root: Path) -> None:
     """Called under the workspace lock before installing the first edit."""
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     path = runtime_dir(root) / "manual-checkpoint.json"
     if path.exists():
         return

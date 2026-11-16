@@ -145,7 +145,7 @@ def test_dag_render_excludes_prompt_and_placeholder(db: SessionStore):
     the user prompt itself) — with the old guard the trailing user
     message was rendered AND re-added as the prompt, so the model saw
     it twice ("I see 2 user message(s)")."""
-    from openprogram.runtime.conversation.turn_lifecycle import insert_placeholder
+    from openprogram.runtime.conversation.turn_admission.turn_lifecycle import insert_placeholder
     from openprogram.runtime.context.engine import DefaultContextEngine
 
     sid = "s-render-1"

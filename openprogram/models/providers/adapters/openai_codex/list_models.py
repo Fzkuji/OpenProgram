@@ -117,14 +117,13 @@ def fetch(provider_id: str, timeout: float) -> Any:
     Returns ``{"error": ...}`` when unreachable / unauthorized so the
     dispatcher leaves the saved model list untouched."""
     from .oauth import _get_account_id_from_jwt
-    from .openai_codex import _resolve_codex_bearer_token
     from .catalog import codex_client_version
+    from . import auth_adapter
 
-    from openprogram.models.auth.types import AuthNeedsReauthError
-    try:
-        token = _resolve_codex_bearer_token(None)
-    except AuthNeedsReauthError:
-        token = ""  # the login needs signing in again: the same answer as none
+    from openprogram.models.auth.resolver import resolve_api_key_sync
+    # The sign-in a request would use now; one that needs signing in again
+    # gives none, the same answer as no sign-in.
+    token = resolve_api_key_sync(auth_adapter.PROVIDER_ID) or ""
     if not token:
         cached = _cached_codex_models()
         if cached:

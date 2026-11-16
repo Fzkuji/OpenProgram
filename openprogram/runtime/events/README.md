@@ -30,4 +30,4 @@ bus does not know webui.
 - **`shell_hooks.py`** — Config-driven shell subscribers (Claude Code hooks exit-code protocol)
 - **`tool_gate.py`** — tool.before gate
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

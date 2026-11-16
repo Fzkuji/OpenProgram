@@ -22,8 +22,8 @@ from openprogram.models.providers.types import (
     Model,
     TextContent,
 )
-from openprogram.models.providers.utils.errors import ErrorReason, LLMError
-from openprogram.models.providers.utils.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
 
 @pytest.fixture

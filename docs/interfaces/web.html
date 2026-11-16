@@ -204,17 +204,19 @@
 </tbody>
 </table>
 
-<h3 id="task-list">Task list</h3>
+<h3 id="task-list">Task blocks</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Shown</th></tr></thead>
 <tbody>
-<tr><th scope="row">Source</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>; under the reply of the turn that changed it</td></tr>
-<tr><th scope="row">While running</th><td>Open: done, in progress, to do</td></tr>
-<tr><th scope="row">Turn ends</th><td>Goes away</td></tr>
-<tr><th scope="row">Sub-agents still running</th><td>Stays, with their count on the waiting task</td></tr>
-<tr><th scope="row">Stopped or failed with work left</th><td>Stays until your next message</td></tr>
-<tr><th scope="row">New turn with no plan</th><td>The unfinished list, labelled <strong>Plan from before your last message</strong></td></tr>
-<tr><th scope="row">Long plan</th><td>Twelve tasks, counts of the rest</td></tr>
+<tr><th scope="row">Source</th><td>The agent names a longer stretch of work with <code translate="no">task_start</code>; that work is drawn as one block inside the reply. Small work has no block.</td></tr>
+<tr><th scope="row">While running</th><td>Open: the task's name, the step it is on such as <strong>3/5</strong>, the time, and its steps. The current step is open to its tool rows and what the agent said; finished steps are one row with a short result.</td></tr>
+<tr><th scope="row">Finished</th><td>Folds to one line: name, result, step count, changed lines, time. Click to open it again.</td></tr>
+<tr><th scope="row">Stopped, failed or interrupted</th><td>Stays open on the step it was on, with the tag. Nothing is ticked for it.</td></tr>
+<tr><th scope="row">A second task in the reply</th><td>The first folds; unfinished, it reads <strong>stopped at 3/5</strong></td></tr>
+<tr><th scope="row">Text</th><td>What the agent says before the work, between two tasks and as its answer is always visible. Text said during a step folds with the block.</td></tr>
+<tr><th scope="row">Goal over several turns</th><td>Each reply shows the steps of that turn; <strong>5 earlier steps done</strong> jumps to the earlier ones</td></tr>
+<tr><th scope="row">Opening and folding</th><td>Your choice is kept for that reply in this browser. Enter or Space toggles; Left folds, Right opens.</td></tr>
+<tr><th scope="row">Conversations saved with todo lists</th><td>Each list is one folded block named <strong>Todos</strong></td></tr>
 </tbody>
 </table>
 
@@ -222,7 +224,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row">Ticks on the left edge</th><td>One per message, with two or more of yours. Point for a preview card; click to scroll.</td></tr>
+<tr><th scope="row">Ticks on the left edge</th><td>One per message, with two or more of yours. Point for a preview card; click to scroll. A turn with a task has a longer tick, and its card lists the tasks: click one to go to its block.</td></tr>
 <tr><th scope="row"><strong>Pin as chapter</strong>, reply action row</th><td>Thicker purple tick, filled bookmark, shown action row; on every branch containing that message and in every window</td></tr>
 <tr><th scope="row"><strong>Unpin chapter</strong></th><td>Removes it</td></tr>
 </tbody>
@@ -407,7 +409,7 @@
 <tbody>
 <tr><th scope="row"><strong>Waiting for you</strong>, when any</th><td>Always-on reports left for you</td><td>Opens the conversation</td></tr>
 <tr><th scope="row"><strong>Agents</strong></th><td><strong>Main agent</strong> with state and sub-agent count; a red badge counts waiting items. One row per branch, <strong>Current</strong> marked. Always-on status line when <a href="../capabilities/always-on-agents.html">on</a>.</td><td>Its runs, newest first, with what each did inside it; the <strong>Always-on</strong> row when on; a branch offers <strong>Switch to this branch</strong></td></tr>
-<tr><th scope="row"><strong>Programs and commands</strong></th><td>Running commands, <strong>Interrupted</strong> ones, all background programs, running first</td><td>Progress, command, terminal output, <strong>Stop program</strong>, directory and environment under <strong>Technical details</strong>; a command shows its output once it returned</td></tr>
+<tr><th scope="row"><strong>Programs and commands</strong></th><td>Commands and background programs running now, and programs that failed; finished ones leave the list</td><td>Progress, command, terminal output, <strong>Stop program</strong>, directory and environment under <strong>Technical details</strong>; a command shows its output once it returned</td></tr>
 <tr><th scope="row"><strong>Open work</strong>, when any</th><td><a href="../capabilities/agents.html#open-work">What the agent still owes you</a></td><td>Note, <strong>Mark done</strong> or <strong>Reopen</strong>, <strong>Remove</strong></td></tr>
 <tr><th scope="row"><strong>Scheduled tasks</strong></th><td>Scheduler tasks, <a href="../capabilities/reminders.html">reminders</a>, <a href="../capabilities/event-triggers.html">event triggers</a> from this conversation</td><td><strong>Open in Scheduler</strong>; a <strong>Task</strong> row with its prompt or command, and for webhooks the address and key with <strong>Copy</strong>; its last 20 runs</td></tr>
 </tbody>

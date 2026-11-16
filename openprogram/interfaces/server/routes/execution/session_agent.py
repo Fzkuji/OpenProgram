@@ -118,7 +118,7 @@ def register(app) -> None:
         settings put back to inherit, as the Agent API's does; a JSON
         ``null`` value is refused, so clearing has one spelling."""
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.runtime.conversation.session_config import VALID_SERVICE_TIER, VALID_THINKING
+        from openprogram.runtime.conversation.session_settings.session_config import VALID_SERVICE_TIER, VALID_THINKING
         from openprogram.interfaces.server.branch_settings import write_branch_settings
         from openprogram.state.store.session.branch_config import BranchConfigConflict, snapshot
         body = body or {}
@@ -184,7 +184,7 @@ def register(app) -> None:
 
 
 def _resolved(session_id: str, body: dict):
-    from openprogram.runtime.conversation.session_config import resolve_branch_settings
+    from openprogram.runtime.conversation.session_settings.session_config import resolve_branch_settings
     named = body.get("branch_id") if isinstance(body.get("branch_id"), str) and body.get("branch_id") else None
     return resolve_branch_settings(session_id, named)
 

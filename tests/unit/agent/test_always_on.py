@@ -245,7 +245,7 @@ def test_busy_idle_and_check_in_tools(agent, world):
     enable(agent, autonomy="act")
     runtime.wake(sid)
     turn = world["calls"]["turns"][-1]
-    assert "create_goal" in turn["tools"] and "todo_create" in turn["tools"]
+    assert "create_goal" in turn["tools"] and "task_start" in turn["tools"] and "task_step" in turn["tools"]
     assert "previous check-in was" in turn["text"]
 
 
@@ -432,7 +432,7 @@ def _capture_deliveries(monkeypatch):
 
 def test_report_is_sent_to_picked_channels_and_failures_are_recorded(agent, world, monkeypatch):
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
 
     enable(agent, channels=[TELEGRAM, SLACK])
     sid = world["db"].create_session("c1", agent)
@@ -481,7 +481,7 @@ def _bound_to_telegram(world, agent, monkeypatch, peer="42"):
 
 def _capture_sends(monkeypatch):
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
 
     sent = []
     monkeypatch.setattr(outbound, "send_full", lambda channel, account_id, peer_id, text: (
@@ -779,7 +779,7 @@ def test_report_tools_are_offered_only_in_always_on_conversations(monkeypatch, h
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: list(tools))
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions", lambda *a: "")
     monkeypatch.setattr("openprogram.runtime.conversation.always_on.agent_for_session",
                         lambda sid: "scout" if home else None)
@@ -807,7 +807,7 @@ def test_a_scheduled_run_is_not_offered_the_report_or_preference_tool(monkeypatc
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: list(tools))
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions", lambda *a: "")
     monkeypatch.setattr("openprogram.runtime.conversation.always_on.agent_for_session", lambda sid: "scout")
 
@@ -842,7 +842,7 @@ def test_a_turn_with_no_person_behind_it_is_not_offered_the_question_tool(monkey
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: list(tools))
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **k: "system")
     monkeypatch.setattr("openprogram.programs.tools.planning.goal.chat.instructions", lambda *a: "")
     monkeypatch.setattr(authority, "owner_principal_id", lambda: "owner/install/1234567890abcdef")
 
@@ -872,7 +872,7 @@ def test_report_tool_is_registered_outside_the_default_set():
     names = ["always_on_report", "always_on_schedule", "always_on_preference"]
     assert not set(names) & set(DEFAULT_TOOLS)
     assert [tool.name for tool in agent_tools(names=names)] == names
-    from openprogram.runtime.permissions.classifier import SAFE_AUTO_ALLOWLIST
+    from openprogram.runtime.permissions.auto_mode.classifier import SAFE_AUTO_ALLOWLIST
     assert set(names) <= SAFE_AUTO_ALLOWLIST
 
 
@@ -940,7 +940,7 @@ def test_ticker_skips_a_quiet_wake(agent, world):
 def handoffs(monkeypatch, world):
     """Owner turns another conversation starts, recorded instead of run."""
     from types import SimpleNamespace
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
 
     turns: list[dict] = []
 
@@ -964,7 +964,8 @@ def test_send_message_names_the_listing():
 
 
 def test_a_handoff_stops_polling_once_its_conversation_is_archived(monkeypatch):
-    from openprogram.runtime.conversation import owner_turn, run_control
+    from openprogram.runtime.conversation.turn_admission import owner_turn
+    from openprogram.runtime.conversation import run_control
     answers = iter([False, False, True])
     monkeypatch.setattr(run_control, "is_turn_running", lambda _sid: True)
     monkeypatch.setattr(owner_turn, "start_owner_turn", lambda *_a, **_k: pytest.fail("woke it"))
@@ -1002,7 +1003,7 @@ def test_a_stopped_turn_says_so_on_its_result(tmp_path, monkeypatch):
 
 
 def test_a_wake_told_to_give_up_starts_nothing(monkeypatch):
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
     from openprogram.runtime.conversation import run_control
     monkeypatch.setattr(run_control, "is_turn_running", lambda _sid: False)
     monkeypatch.setattr(owner_turn, "start_owner_turn", lambda *_a, **_k: pytest.fail("admitted"))
@@ -1014,8 +1015,10 @@ def _start_recovery_turn(monkeypatch, saved, adapter, *, new=None):
     import contextlib
     from openprogram.programs.tools.planning import goal as goals
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import production_driver, restart_turn
-    from openprogram.runtime.execution import chat_recovery, foreground, restart
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.turn_admission import restart_turn
+    from openprogram.runtime.execution.recovery import chat_recovery, restart
+    from openprogram.runtime.execution.projections import foreground
     from openprogram.runtime.execution.model import ExecutionStatus
 
     execution = SimpleNamespace(execution_id="e1", session_id="b", status=ExecutionStatus.INTERRUPTED,
@@ -1325,7 +1328,7 @@ def test_a_check_in_cut_off_by_a_restart_is_interrupted(agent, world, monkeypatc
 def _turn_stopped_short(world, monkeypatch, *, handoff=True, by_restart=False):
     """The check-in's turn came back without having ended."""
     from openprogram.runtime import execution as execution_package
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
 
     world["calls"]["result"] = SimpleNamespace(failed=False, error=None, assistant_msg_id="half",
                                                _execution_safe_point_handoff=handoff)
@@ -1504,7 +1507,7 @@ def test_the_daily_budget_holds_scheduled_check_ins_until_tomorrow(agent, world)
 
 def test_notify_decides_desktop_and_channels_per_kind(agent, world, monkeypatch):
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     enable(agent, channels=[TELEGRAM], notify={"finding": {"desktop": False, "channels": False}})
     sid = world["db"].create_session("c1", agent)
     sent = []
@@ -1533,7 +1536,7 @@ def _channel_conversation(world, agent, sid="phone"):
 def test_channel_reply_to_a_report_clears_the_approval_and_has_context(agent, world, monkeypatch):
     from openprogram.runtime.conversation.always_on import pending
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     enable(agent, channels=[TELEGRAM])
     sid = world["db"].create_session("c1", agent, source="web")
     phone = _channel_conversation(world, agent)
@@ -1553,7 +1556,7 @@ def test_channel_reply_to_a_report_clears_the_approval_and_has_context(agent, wo
 
 def test_a_report_gets_no_copy_without_another_channel_conversation(agent, world, monkeypatch):
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     enable(agent, channels=[TELEGRAM])
     monkeypatch.setattr(outbound, "send_full", lambda *args: SendResult.success("m"))
     threads = _capture_deliveries(monkeypatch)
@@ -1608,7 +1611,7 @@ def test_what_a_handoff_message_starts_still_reaches_the_bound_channel(agent, wo
 
 def test_a_report_survives_a_failed_look_for_the_channel_conversation(agent, world, monkeypatch):
     from openprogram.interfaces.channels import outbound
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     enable(agent, channels=[TELEGRAM])
     sid = world["db"].create_session("c1", agent, source="web")
     monkeypatch.setattr(outbound, "send_full", lambda *args: SendResult.success("m"))
@@ -1763,6 +1766,28 @@ def test_an_empty_conversation_has_nothing_to_check(agent, world):
     sid = world["db"].create_session("c1", agent, head_id=None)
     assert runtime.wake(sid, reason="manual")["outcome"] == "skipped"
     assert not world["calls"]["turns"]
+
+
+def test_only_steps_of_an_open_task_of_the_conversation_give_a_check_in_something_to_do(monkeypatch):
+    from openprogram.programs.tools.planning.todo import shared as todos
+    from openprogram.runtime.conversation import open_work
+    monkeypatch.setattr(open_work, "open_items", lambda sid: [])
+    monkeypatch.setattr(runtime, "_last_message_at", lambda sid: 10.0)
+    board = {"tasks": [], "todos": []}
+    monkeypatch.setattr(todos, "load_tasks", lambda sid: board["tasks"])
+    monkeypatch.setattr(todos, "load", lambda sid: board["todos"])
+    state = {"last_check_in_at": 20.0}
+    steps = [{"id": "1", "plan": "T1", "status": "in_progress"}, {"id": "2", "plan": "T1", "status": "pending"}]
+    # A task that never advanced is closed with its steps as they were.
+    board.update(tasks=[{"id": "T1", "status": "done"}], todos=steps)
+    assert runtime._nothing_to_check("s1", {}, state) is True
+    # So is what a sub-agent's run left behind.
+    board.update(tasks=[{"id": "T1", "status": "open", "scope": "agent:reviewer:job7_reply"}])
+    assert runtime._nothing_to_check("s1", {}, state) is True
+    board.update(tasks=[{"id": "T1", "status": "open"}])
+    assert runtime._nothing_to_check("s1", {}, state) is False
+    board.update(todos=[{"id": "1", "plan": "T1", "status": "completed"}, {"id": "2", "plan": "T1", "status": "dropped"}])
+    assert runtime._nothing_to_check("s1", {}, state) is True
 
 
 def test_a_background_turn_is_never_a_reply_of_a_bound_chat():
@@ -2241,7 +2266,7 @@ def test_a_cut_off_check_in_that_left_a_goal_starts_it_once(agent, world):
 def test_a_goal_start_is_an_ordinary_turn_of_the_owner(monkeypatch):
     import openprogram.programs.tools.planning.goal as goals
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.conversation import production_driver
     admitted = {}
     goal = {"text": "Fix", "status": "active", "goal_id": "g", "revision": 1, "run_id": "r",
@@ -2295,6 +2320,7 @@ def goal_turn_end(monkeypatch):
     monkeypatch.setattr(goals, "accumulate_goal_usage", lambda *a, **k: None)
     monkeypatch.setattr(goals, "checkpoint_active_elapsed", lambda *a, **k: 0.0)
     monkeypatch.setattr(chat, "project_todos", lambda *a: [])
+    monkeypatch.setattr(chat, "progress", lambda *a: None)
     monkeypatch.setattr(chat, "publish", lambda sid, g: g)
     monkeypatch.setattr(chat, "start_next", lambda *a, **k: continued.append(a))
     monkeypatch.setattr(chat, "used_tools", lambda *a: True)
@@ -2516,7 +2542,7 @@ def test_ordinary_commands_pass_in_an_automatic_goal(monkeypatch, handoffs):
 # ── batch 6: a background turn never compacts and reads a bounded tail ─
 
 def _graph_tail():
-    from openprogram.runtime.context.tail import bounded_tail
+    from openprogram.runtime.context.session_dag.tail import bounded_tail
     from openprogram.state.store.session.nodes import Call, Graph, ROLE_CODE, ROLE_LLM, ROLE_USER
     return bounded_tail, Call, Graph, ROLE_CODE, ROLE_LLM, ROLE_USER
 
@@ -2530,7 +2556,7 @@ def test_tail_keeps_everything_that_fits():
 
 
 def test_tail_is_bounded_and_keeps_the_summary_outside_the_budget():
-    from openprogram.runtime.context.tokens import estimate_message_tokens
+    from openprogram.runtime.context.token_accounting.tokens import estimate_message_tokens
     bounded_tail, Call, Graph, _code, LLM, USER = _graph_tail()
     graph = Graph()
     summary = graph.add(Call(role=LLM, output="summary " * 5000, metadata={"covers_ids": ["gone"]}))
@@ -2698,8 +2724,8 @@ def _summaries(db):
 
 
 def test_over_budget_background_turn_installs_no_summary_and_reads_a_bounded_tail(tmp_path, monkeypatch):
-    from openprogram.runtime.context.tail import BACKGROUND_TAIL_TOKENS, OMITTED_NOTE
-    from openprogram.runtime.context.tokens import estimate_message_tokens
+    from openprogram.runtime.context.session_dag.tail import BACKGROUND_TAIL_TOKENS, OMITTED_NOTE
+    from openprogram.runtime.context.token_accounting.tokens import estimate_message_tokens
     from openprogram.runtime.conversation import turn_runtime
 
     db, head = _long_conversation(tmp_path, monkeypatch)
@@ -2825,8 +2851,9 @@ def test_check_in_recall_does_not_follow_a_paired_senders_words(world):
 
 
 def test_a_check_in_turn_is_admitted_with_its_recall_query(world, monkeypatch):
-    from openprogram.runtime.conversation import production_driver, session_config
-    from openprogram.runtime.conversation.session_config import SessionRunConfig
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
+    from openprogram.runtime.conversation.session_settings.session_config import SessionRunConfig
     from openprogram.runtime.permissions import rule
 
     world["db"].create_session("admitted", "a")
@@ -3522,7 +3549,8 @@ def test_only_a_typed_turn_moves_the_wake_ladder_back(tmp_path, monkeypatch, fie
     (False, True, True),
 ])
 def test_a_check_in_follows_the_web_search_choice(agent, monkeypatch, agent_choice, conversation_choice, searches):
-    from openprogram.runtime.conversation import production_driver, session_config
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.permissions import rule
 
     policy = {"mode": "automatic"} if agent_choice is None else {"mode": "automatic", "web_search": agent_choice}
@@ -3565,7 +3593,8 @@ def test_a_check_in_follows_the_web_search_choice(agent, monkeypatch, agent_choi
 ])
 def test_a_check_in_searches_exactly_when_a_normal_turn_could(monkeypatch, policy, conversation_choice):
     import openprogram.programs as programs
-    from openprogram.runtime.conversation import model_tools, session_config
+    from openprogram.runtime.conversation import model_tools
+    from openprogram.runtime.conversation.session_settings import session_config
 
     def registry(names=None, toolset=None, source=None, only_available=False, include_disabled=False):
         known = ["read", "web_search"]
@@ -3582,7 +3611,8 @@ def test_a_check_in_searches_exactly_when_a_normal_turn_could(monkeypatch, polic
 
 
 def test_a_check_in_whose_agent_was_just_deleted_still_reaches_admission(agent, monkeypatch):
-    from openprogram.runtime.conversation import production_driver, session_config
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.permissions import rule
 
     seen = {}
@@ -3613,7 +3643,8 @@ def test_a_check_in_stopped_before_it_starts_has_no_result(agent, monkeypatch):
     The adapter returns ``None`` then; the turn already ended cancelled, so
     its admission is not failed over it.
     """
-    from openprogram.runtime.conversation import production_driver, session_config
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.permissions import rule
 
     failed = []
@@ -3778,7 +3809,7 @@ def test_a_refused_wake_is_not_a_firing(agent, world):
 
 
 def _chat_prompt(profile, *, channel="web", delivery=""):
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     return dict(components.assemble_sections(profile, ["L0", "L1"], channel=channel, chat_delivery=delivery))
 
@@ -3787,7 +3818,7 @@ ALWAYS_ON_PROFILE = {"id": "butler", "name": "Butler", "always_on": {"enabled": 
 
 
 def test_an_always_on_chat_turn_is_told_it_is_messaging_someone():
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     sections = _chat_prompt(ALWAYS_ON_PROFILE)
     assert sections["messaging"].startswith("# How you talk")
@@ -3829,7 +3860,7 @@ def test_a_report_reaches_a_chat_app_with_tables_flattened(monkeypatch):
 
 @pytest.mark.parametrize("profile", [{"id": "main"}, {"id": "main", "always_on": {"enabled": False}}])
 def test_a_normal_agent_prompt_is_unchanged_by_the_chat_turn_signal(profile):
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     assert components.assemble_sections(profile, ["L0"], channel="web", chat_delivery="") \
         == components.assemble_sections(profile, ["L0"], channel="web")

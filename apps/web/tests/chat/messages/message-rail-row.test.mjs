@@ -17,6 +17,7 @@ const { createElement } = await import("react");
 const { packRailRow, unpackRailRow } = await import("../../../components/chat/messages/navigation/message-rail-row.ts");
 const { MessageRail } = await import("../../../components/chat/messages/navigation/message-rail.tsx");
 const { selectRow, useSessionStore } = await import("../../../lib/session-store/index.ts");
+const { useTaskStore } = await import("../../../lib/chat/transcript/task-blocks.ts");
 const { transcriptRows } = await import("../../_support/transcript-rows.mjs");
 const transcript = transcriptRows(useSessionStore, selectRow);
 
@@ -47,6 +48,17 @@ const rows = [
 
 test("rows with spaces, newlines, quotes, fences, CJK and separators round-trip exactly", () => {
   for (const row of rows) assert.deepEqual(unpackRailRow(packRailRow(row)), row);
+});
+
+test("a turn's tasks ride the packed row, and a turn with none carries no field", () => {
+  const tasks = [
+    { id: "T1", title: "盘点设置页控件", anchor: "a1", steps: 3 },
+    { id: "T2", title: "Migrate to Nova", anchor: "a1", from: 6, to: 9 },
+  ];
+  const row = { ...rows[0], tasks };
+  assert.deepEqual(unpackRailRow(packRailRow(row)), row);
+  assert.equal("tasks" in unpackRailRow(packRailRow({ ...rows[0], tasks: [] })), false);
+  assert.notEqual(packRailRow(row), packRailRow(rows[0]));
 });
 
 test("empty optional fields come back as undefined, not empty strings", () => {
@@ -106,6 +118,76 @@ describe("message rail", () => {
       // At rest a chapter tick is longer than the others, which stay alike.
       assert.deepEqual(ticks.map((tick) => tick.style.width), ["9px", "18px", "9px"]);
     } finally { await view.unmount(); }
+  });
+
+  test("a turn whose reply declared a task has a longer tick, and its card lists the task", async () => {
+    seed(["u1", "u2", "u3"], ["u3"]);
+    useTaskStore.getState().setAll("s1", [
+      { anchor_id: "u2_reply", plan_id: "T1", scope: "", title: "Fold the agent list", state: "done", advanced: true,
+        todos: [{ id: "1", subject: "look", status: "completed" }, { id: "2", subject: "edit", status: "completed" }] },
+      { anchor_id: "u2_reply", plan_id: "T9", scope: "agent:reviewer", title: "Its own task", state: "done", todos: [] },
+    ]);
+    const view = await render(createElement(MessageRail, {}));
+    try {
+      const ticks = [...view.container.querySelectorAll(".msg-rail-dash")];
+      assert.deepEqual(ticks.map((tick) => tick.style.width), ["9px", "14px", "18px"]);
+      await view.act(() => ticks[1].dispatchEvent(new Event("focusin", { bubbles: true })));
+      const entries = [...view.container.querySelectorAll(".msg-rail-card-task")];
+      assert.deepEqual(entries.map((entry) => entry.textContent), ["Fold the agent list2 steps"]);
+      assert.ok(view.container.querySelector(".msg-rail-card").classList.contains("has-tasks"));
+    } finally { await view.unmount(); useTaskStore.getState().setAll("s1", []); }
+  });
+
+  test("a task reply's card shows the answer after its last call, not text said inside a step", async () => {
+    seed(["u1", "u2"]);
+    useSessionStore.setState((state) => ({ rowsByView: { s1: {
+      ...state.rowsByView.s1,
+      u1_reply: { ...state.rowsByView.s1.u1_reply, rowKind: "assistant" },
+      u2_reply: { ...state.rowsByView.s1.u2_reply, rowKind: "assistant", blocks: [
+        { type: "text", text: "opening" },
+        { type: "tool", tool: "task_start", tool_call_id: "c1" },
+        { type: "text", text: "said inside a step" },
+        { type: "tool", tool: "bash", tool_call_id: "c2" },
+        { type: "text", text: "the answer" },
+      ] },
+    } } }));
+    useTaskStore.getState().setAll("s1", [
+      { anchor_id: "u2_reply", plan_id: "T1", scope: "", title: "Fold the agent list", state: "done", advanced: true,
+        todos: [{ id: "1", subject: "look", status: "completed" }] },
+    ]);
+    const view = await render(createElement(MessageRail, {}));
+    try {
+      const ticks = [...view.container.querySelectorAll(".msg-rail-dash")];
+      await view.act(() => ticks[1].dispatchEvent(new Event("focusin", { bubbles: true })));
+      assert.equal(view.container.querySelector(".msg-rail-card-reply").textContent.trim(), "the answer");
+      await view.act(() => ticks[0].dispatchEvent(new Event("focusin", { bubbles: true })));
+      assert.equal(view.container.querySelector(".msg-rail-card-reply").textContent.trim(), "answer u1");
+    } finally { await view.unmount(); useTaskStore.getState().setAll("s1", []); }
+  });
+
+  test("one message draws no rail, unless its replies hold two task blocks, as a Goal's do", async () => {
+    seed(["u1"]);
+    const reply = { id: "u1_next", role: "assistant", content: "next turn", status: "done" };
+    useSessionStore.setState((state) => ({
+      rowsByView: { s1: { ...state.rowsByView.s1, u1_next: reply } }, messageOrder: { s1: ["u1", "u1_reply", "u1_next"] },
+    }));
+    const segment = (anchor, earlier) => ({
+      anchor_id: anchor, plan_id: "T1", scope: "", title: "Migrate to Nova", state: "running", advanced: true, earlier,
+      todos: [{ id: "1", subject: "a", status: "completed" }, { id: "2", subject: "b", status: "in_progress" }],
+    });
+    useTaskStore.getState().setAll("s1", [segment("u1_reply", [])]);
+    let view = await render(createElement(MessageRail, {}));
+    try {
+      assert.equal(view.container.querySelector(".msg-rail-dash"), null);
+    } finally { await view.unmount(); }
+    useTaskStore.getState().setAll("s1", [segment("u1_reply", []), segment("u1_next", ["1"])]);
+    view = await render(createElement(MessageRail, {}));
+    try {
+      const ticks = [...view.container.querySelectorAll(".msg-rail-dash")];
+      assert.equal(ticks.length, 1);
+      await view.act(() => ticks[0].dispatchEvent(new Event("focusin", { bubbles: true })));
+      assert.equal(view.container.querySelectorAll(".msg-rail-card-task").length, 2);
+    } finally { await view.unmount(); useTaskStore.getState().setAll("s1", []); }
   });
 
   test("pinning a turn in the store retints its tick in place", async () => {

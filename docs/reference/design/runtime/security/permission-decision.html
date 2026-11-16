@@ -48,7 +48,7 @@
 
 <details>
 <summary>Calls that are not well-formed, and Pages</summary>
-<p>A malformed call never reaches the decision. <code translate="no">call_problem(name, args)</code> in <code translate="no">openprogram/programs/_authoring/prechecks.py</code> combines <code translate="no">guides.missing_required</code> (<code translate="no">GUIDE_REQUIRED</code>) and <code translate="no">prechecks.problem</code> (<code translate="no">INVALID_ARGUMENTS</code>); <code translate="no">permissions/approval.py</code> calls it first:</p>
+<p>A malformed call never reaches the decision. <code translate="no">call_problem(name, args)</code> in <code translate="no">openprogram/programs/_authoring/prechecks.py</code> combines <code translate="no">guides.missing_required</code> (<code translate="no">GUIDE_REQUIRED</code>) and <code translate="no">prechecks.problem</code> (<code translate="no">INVALID_ARGUMENTS</code>); <code translate="no">permissions/approvals/approval.py</code> calls it first:</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Caller</th><th scope="col">On a problem</th></tr></thead>
 <tbody>

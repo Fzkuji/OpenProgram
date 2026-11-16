@@ -143,7 +143,7 @@ class AgentContext(BaseModel):
     # The notes sent beside this turn's message between its date and its
     # recalled memory: a rewind note, the sections whose text changed since
     # the kept system prompt, the plan-mode and Goal notes
-    # (``context.turn_context.notes_text``). None/"": none.
+    # (``context.prompt_assembly.turn_context.notes_text``). None/"": none.
     turn_notes: str | None = None
     # Resolved immutable runtime contract used by durable safe points.  This
     # is metadata only; executable tool callbacks never enter the context.
@@ -231,6 +231,9 @@ class AgentEventToolStart(BaseModel):
     # DAG visibility policy of the decorated tool. Hidden tools still emit
     # lifecycle events, but their arguments/results are never persisted.
     expose: str | None = None
+    # What the call's ``task_progress`` made it and what follows belong to
+    # (``{"task", "step"}``, ``state.task_blocks``); None when it moved nothing.
+    task_effect: dict | None = None
     # Only an actual concurrent dispatcher supplies this id. The sequential
     # Python tool loop leaves it empty; consumers must not infer groups from
     # adjacency.

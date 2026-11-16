@@ -226,17 +226,17 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>Timestamps, registry locks, snapshots, deferred flush, merged heads and store locks</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_node_writer.py</code></th><td>One activity timestamp per append, shared by metadata and index</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_index_consistency.py</code></th><td>Public regressions for ordering, snapshots and concurrent writes</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_lock.py</code></th><td>The conversation lock: process lock, flock holder record, bounded waits</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_stress.py</code></th><td>Many threads on one conversation; a stuck conversation errors</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_processes.py</code></th><td>Two processes on one conversation; a killed holder; a revert that misses the cache</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_index_consistency.py</code></th><td>Public regressions for ordering, snapshots and concurrent writes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/files/session_lock.py</code></th><td>The conversation lock: process lock, flock holder record, bounded waits</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_lock_stress.py</code></th><td>Many threads on one conversation; a stuck conversation errors</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_lock_processes.py</code></th><td>Two processes on one conversation; a killed holder; a revert that misses the cache</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/</code>, <code translate="no">openprogram/interfaces/server/routes/</code></th><td>Store work of the handlers in worker threads</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/session_lifecycle.py</code></th><td>Slot admission waits for the lock; <code translate="no">conversation_locked</code> apart from <code translate="no">run_active</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/conversation_work.py</code></th><td>A conversation's lane in the lanes' own pool</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/execution/control/</code></th><td>Control commands' store work in the execution's lane (<code translate="no">off_loop</code>)</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/_conversation.py</code>, <code translate="no">openprogram/runtime/conversation/owner_turn.py</code></th><td>A lock not had: a room event skips, a channel message is not delivered, a wake tries again</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/inbound/_conversation.py</code>, <code translate="no">openprogram/runtime/conversation/turn_admission/owner_turn.py</code></th><td>A lock not had: a room event skips, a channel message is not delivered, a wake tries again</td></tr>
 <tr><th scope="row"><code translate="no">tests/component/webui/chat/test_conversation_lock_off_loop.py</code></th><td>A held conversation and the loop's heartbeat for every handler; a Stop; forty waiters; a slow lock admitted; a lock not had reported as locked</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_conversation_work.py</code></th><td>Lane width and order, cancellation, context, a held lock, a fork, a full default pool</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_conversation_work.py</code></th><td>Lane width and order, cancellation, context, a held lock, a fork, a full default pool</td></tr>
 </tbody>
 </table>
 <p>Not yet in a lane: store work of handlers outside one conversation (settings, catalog, recordings) still runs through <code translate="no">asyncio.to_thread</code> on the loop's default pool, off the loop but unbounded; a Job's wait-resume scheduler is called on the caller's loop.</p>

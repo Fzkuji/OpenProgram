@@ -219,7 +219,7 @@ def register(app: FastAPI) -> None:
     @app.get("/api/channels/access")
     def list_access(request: Request):
         _require_local_request(request)
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
         from openprogram.interfaces.channels import accounts as _acc
 
         rows = []
@@ -250,7 +250,7 @@ def register(app: FastAPI) -> None:
     @app.post("/api/channels/access/group-users")
     def add_group_user(request: Request, body: AddGroupUserRequest):
         _require_local_request(request)
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
         from openprogram.interfaces.channels import accounts as _acc
 
         channel = body.channel.strip().lower()
@@ -271,7 +271,7 @@ def register(app: FastAPI) -> None:
         user_id: str,
     ):
         _require_local_request(request)
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
 
         try:
             removed = _access.remove_group_user(channel, account_id, user_id)
@@ -284,7 +284,7 @@ def register(app: FastAPI) -> None:
     @app.post("/api/channels/access/approve")
     def approve_pairing(request: Request, body: ApprovePairingRequest):
         _require_local_request(request)
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
 
         try:
             user_id = _access.approve(
@@ -309,7 +309,7 @@ def register(app: FastAPI) -> None:
         user_id: str,
     ):
         _require_local_request(request)
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
 
         try:
             removed = _access.revoke(channel, account_id, user_id)

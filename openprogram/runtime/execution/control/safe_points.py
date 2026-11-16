@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any, Mapping
 from .. import hooks
 from ..attempts import AttemptConflict
-from ..checkpoints import CheckpointFragment
+from ..recovery.checkpoints import CheckpointFragment
 from ..model import CommandKind, CommandStatus, ExecutionStatus, TERMINAL_EXECUTION_STATUSES, _thaw_json
 
 from .shared import (

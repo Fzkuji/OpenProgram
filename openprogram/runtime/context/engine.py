@@ -47,16 +47,16 @@ import logging
 import threading
 from typing import Any, Callable, Optional
 
-from openprogram.runtime.context.budget import BudgetAllocator, default_allocator
-from openprogram.runtime.context.persistence import Persister, default_persister
+from openprogram.runtime.context.token_accounting.budget import BudgetAllocator, default_allocator
+from openprogram.runtime.context.compaction.persistence import Persister, default_persister
 from openprogram.runtime.context.compaction.summarize import Summarizer, default_summarizer
-from openprogram.runtime.context.tokens import real_context_window
+from openprogram.runtime.context.token_accounting.tokens import real_context_window
 from openprogram.runtime.context.types import (
     CompactResult,
     TurnPrep,
     UsageState,
 )
-from openprogram.runtime.context.usage import UsageTracker, default_tracker as _usage_tracker
+from openprogram.runtime.context.token_accounting.usage import UsageTracker, default_tracker as _usage_tracker
 
 
 _log = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ def _compaction_audience() -> str:
     without recalled memory while memory is off, so the summary does not
     carry it on (``turn_context.without_recall``). Earlier turns keep what
     they were sent until then."""
-    from openprogram.runtime.context.turn_context import OWN_PROMPT, without_recall
+    from openprogram.runtime.context.prompt_assembly.turn_context import OWN_PROMPT, without_recall
     return OWN_PROMPT if memory_readable() else without_recall(OWN_PROMPT)
 
 
@@ -344,7 +344,7 @@ class DefaultContextEngine(ContextEngine):
         # "previous summary + more turns" instead of re-summarising raw
         # turns the previous summary already covers.
         from openprogram.runtime.context.compaction.view import load_compaction_view
-        from openprogram.runtime.context.tokens import estimate_history_tokens
+        from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
         view = load_compaction_view(db, session_id, head_id, audience=_compaction_audience())
         history = view.history
         tokens_before = self._occupancy_tokens(session_id, history, head_id=view.head_id)
@@ -452,7 +452,7 @@ class DefaultContextEngine(ContextEngine):
         elif not 0 < summary.cut_idx < len(history):
             result = _no_op("Invalid compaction range")
         else:
-            from openprogram.runtime.context.persistence import covered_chain_ids
+            from openprogram.runtime.context.compaction.persistence import covered_chain_ids
             covers = covered_chain_ids(history[:summary.cut_idx])
             restored = self._restored_state(session_id, view, covers)
             candidate = view.candidate_messages(summary.summary_text, summary.cut_idx,
@@ -555,7 +555,7 @@ class DefaultContextEngine(ContextEngine):
     # ---- Internals -----------------------------------------------------
 
     def _build_system_prompt(self, agent: Any, *, tools: Any = None) -> str:
-        from openprogram.runtime.context.components import build_system_prompt
+        from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
         return build_system_prompt(agent, tools=tools)
 
     def _build_messages_from_dag(
@@ -591,7 +591,7 @@ class DefaultContextEngine(ContextEngine):
         test_retry_branch_isolation.py.
 
         ``tail_tokens`` bounds the rendered conversation to the summary and
-        the latest steps (context/tail.py), for a turn that must stay small
+        the latest steps (context/session_dag/tail.py), for a turn that must stay small
         without compacting.
 
         ``head_id`` is the tip of the branch a turn runs on when that is not
@@ -605,9 +605,9 @@ class DefaultContextEngine(ContextEngine):
         ``shown``, when given, receives what the render shows that the
         caller decides on: ``section_notes``, the last note of each section
         in it, and ``turn_view``, what it shows of earlier dates, plan-mode
-        and Goal notes and todo use (``context.turn_context``).
+        and Goal notes and todo use (``context.prompt_assembly.turn_context``).
 
-        ``audience`` is who the request is for (``context.turn_context``): a
+        ``audience`` is who the request is for (``context.prompt_assembly.turn_context``): a
         conversation turn's own request shows the section notes beside
         earlier messages; the default, a call with its own prompt, does not.
 
@@ -617,8 +617,8 @@ class DefaultContextEngine(ContextEngine):
             return []
         if not session_id:
             raise RuntimeError("dag render path requires session_id")
-        from openprogram.runtime.context.nodes import render_context
-        from openprogram.runtime.context.render import render_dag_messages
+        from openprogram.runtime.context.session_dag.nodes import render_context
+        from openprogram.runtime.context.session_dag.render import render_dag_messages
         from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
         from openprogram.runtime.context.model import Context
@@ -678,7 +678,7 @@ class DefaultContextEngine(ContextEngine):
 
         omitted = False
         if tail_tokens is not None:
-            from openprogram.runtime.context.tail import bounded_tail
+            from openprogram.runtime.context.session_dag.tail import bounded_tail
             read_ids, omitted = bounded_tail(graph, read_ids, tail_tokens)
 
         session_directory = None
@@ -692,9 +692,9 @@ class DefaultContextEngine(ContextEngine):
         messages = render_dag_messages(graph, read_ids, session_directory,
                                        reasoning_for=model, audience=audience)
         if shown is not None:
-            from openprogram.runtime.context.turn_context import last_sections
+            from openprogram.runtime.context.prompt_assembly.turn_context import last_sections
             shown["section_notes"] = last_sections(graph, read_ids, audience)
-            from openprogram.runtime.context.turn_context import turn_view
+            from openprogram.runtime.context.prompt_assembly.turn_context import turn_view
             shown["turn_view"] = turn_view(graph, read_ids)
         if omitted:
             messages = self._with_omitted_note(graph, read_ids, messages)
@@ -711,8 +711,8 @@ class DefaultContextEngine(ContextEngine):
         import time
 
         from openprogram.models.providers.types import TextContent, UserMessage
-        from openprogram.runtime.context.nodes import summary_covers_ids
-        from openprogram.runtime.context.tail import OMITTED_NOTE
+        from openprogram.runtime.context.session_dag.nodes import summary_covers_ids
+        from openprogram.runtime.context.session_dag.tail import OMITTED_NOTE
 
         first = read_ids[0] if read_ids else None
         position = 1 if (first in graph.nodes
@@ -725,7 +725,7 @@ class DefaultContextEngine(ContextEngine):
         return [*messages[:position], note, *messages[position:]]
 
     def _estimate(self, history: list[dict]) -> int:
-        from openprogram.runtime.context.tokens import estimate_history_tokens
+        from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
         return estimate_history_tokens(history)
 
     def _occupancy_tokens(self, session_id: str, history: list[dict],
@@ -733,7 +733,7 @@ class DefaultContextEngine(ContextEngine):
         """Same total the ring and /context panel use for the chain ending
         at ``head_id`` (rendered view)."""
         try:
-            from openprogram.runtime.context.session_stats import estimate_total_used
+            from openprogram.runtime.context.token_accounting.session_stats import estimate_total_used
             total, _ = estimate_total_used(session_id, head_id)
             if total > 0:
                 return int(total)

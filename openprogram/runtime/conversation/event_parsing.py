@@ -87,16 +87,20 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
 
     if t == "tool_execution_start":
         args = getattr(ev, "args", None)
+        event = {"type": "tool_use",
+                 "tool": getattr(ev, "tool_name", "?"),
+                 "input": json.dumps(args, default=str)
+                          if args is not None else None,
+                 "tool_call_id": getattr(ev, "tool_call_id", None)}
+        if getattr(ev, "task_effect", None) is not None:
+            # The call's ``task_progress`` moved the reply (``state.task_blocks``).
+            event["task_effect"] = ev.task_effect
         return {
             "type": "chat_response",
             "data": {"type": "stream_event",
                      "session_id": cid,
                      "msg_id": req.user_msg_id,
-                     "event": {"type": "tool_use",
-                               "tool": getattr(ev, "tool_name", "?"),
-                               "input": json.dumps(args, default=str)
-                                        if args is not None else None,
-                               "tool_call_id": getattr(ev, "tool_call_id", None)}},
+                     "event": event},
         }
 
     if t == "tool_execution_end":
@@ -303,7 +307,7 @@ def _stored_media(req, content) -> list:
         return []
     try:
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.state.store.session.media import records_for_blocks
+        from openprogram.state.store.session.files.media import records_for_blocks
 
         session_dir = default_db()._session_dir(req.session_id)  # noqa: SLF001
         return records_for_blocks(session_dir, content)

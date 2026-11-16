@@ -35,7 +35,10 @@ from openprogram.runtime.agent.workflow_site import add_workflow_root
 add_workflow_root(sys.argv[1])
 report = {"entries": [], "problems": []}
 try:
-    import importlib
+    import importlib, os
+    from pathlib import Path
+    from openprogram.programs._host.packages import examine_working_copy
+    examine_working_copy(Path(sys.argv[1]) / sys.argv[3])
     module = importlib.import_module(sys.argv[3])
     from openprogram.programs._host.packages import entry_problems
     report["problems"] = entry_problems(module)
@@ -56,8 +59,10 @@ from openprogram.runtime.agent.workflow_site import add_workflow_root
 add_workflow_root(sys.argv[1])
 # Register the entries as tools, as the worker does, so tests can call them
 # through the tool registry.
-from openprogram.programs._host.packages import register_entries
+from pathlib import Path
+from openprogram.programs._host.packages import examine_working_copy, register_entries
 _name = os.path.basename(sys.argv[3].rstrip(os.sep))
+examine_working_copy(Path(sys.argv[3]))
 register_entries(importlib.import_module(_name), owner=_name)
 import pytest
 raise SystemExit(pytest.main(["-q", "--tb=short", "-p", "no:cacheprovider",

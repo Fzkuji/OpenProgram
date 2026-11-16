@@ -22,9 +22,9 @@ import textwrap
 import types
 
 from openprogram.runtime.execution import AttemptStore, RuntimeControlService
-from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.driver import DriverRegistry
-from openprogram.runtime.execution.effects import EffectStatus
+from openprogram.runtime.execution.recovery.effects import EffectStatus
 from openprogram.runtime.execution.function_log import DISPATCHED, FunctionLog, function_log_at
 from openprogram.runtime.execution.model import CommandKind, CommandStatus
 
@@ -569,8 +569,8 @@ class _ParentOwner:
 
 def publish_function_checkpoint(store, execution_id, attempt_id, call_key, policy):
     """Record where a restarted Worker finds this call's progress."""
-    from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
-    from openprogram.runtime.execution.restart import window_seconds
+    from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
+    from openprogram.runtime.execution.recovery.restart import window_seconds
 
     with store._transaction() as connection:
         execution = store._require_execution(connection, execution_id)
@@ -698,7 +698,7 @@ def _publish_pause(store, context, attempt_id, generation, call_key, policy):
     )
     if not commands:
         return
-    from openprogram.runtime.execution.restart import window_seconds
+    from openprogram.runtime.execution.recovery.restart import window_seconds
 
     RuntimeControlService(store, AttemptStore(store), DriverRegistry()).arrive_safe_point(
         attempt_id=attempt_id,

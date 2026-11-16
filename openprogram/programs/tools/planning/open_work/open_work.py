@@ -22,7 +22,7 @@ def _current() -> str:
         "current task (a reply you wait on, a check you promised, a draft the "
         "user has not answered). It stays with the conversation and shows in "
         "your system prompt on every turn here. For planning the steps of the "
-        "current task, use the todo tools instead.\n"
+        "current task, use task_start instead.\n"
         "\n"
         "Args:\n"
         "  action: list | add | update | done | remove.\n"

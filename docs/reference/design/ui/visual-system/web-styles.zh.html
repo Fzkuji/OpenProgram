@@ -25,7 +25,7 @@
 <tr><th scope="row">位置跟随组件树</th><td>绘制代码在 <code translate="no">lib/runtime-bridge/dag/render/nodes.ts</code> 的样式放 <code translate="no">dag/graph/nodes.css</code>；聊天气泡放 <code translate="no">chat/messages/bubbles.css</code></td></tr>
 <tr><th scope="row">全局的留在全局</th><td>令牌在 <code translate="no">design/</code>，主题值在 <code translate="no">themes/</code>，外壳在 <code translate="no">base/</code>。<code translate="no">chat/pane/layout.css</code>（<code translate="no">.main</code>、<code translate="no">#chatView</code>）是唯一有意跨组件的文件。</td></tr>
 <tr><th scope="row">Module CSS 不动</th><td>已用 <code translate="no">*.module.css</code> 的组件（输入框）继续用；这棵树只管全局层</td></tr>
-<tr><th scope="row">样式测试</th><td>通过 postcss 读取组件各自的文件，如 <code translate="no">apps/web/tests/tabs/canvas-css-geometry.test.mjs</code> 读 center-tabs 模块</td></tr>
+<tr><th scope="row">样式测试</th><td>通过 postcss 读取组件各自的文件，如 <code translate="no">apps/web/tests/tabs/canvas/canvas-css-geometry.test.mjs</code> 读 center-tabs 模块</td></tr>
 </tbody>
 </table>
 
@@ -37,7 +37,8 @@
 <tr><th scope="row">显示</th><td>只在区域滚动或滑块被按住时；900ms 后淡出。纵向，横向溢出时也有横向。</td></tr>
 <tr><th scope="row">不显示</th><td>悬停、尺寸变化、内容变化。淡出的滑块不接收指针事件。</td></tr>
 <tr><th scope="row">布局</th><td>不占宽度</td></tr>
-<tr><th scope="row">层级</th><td>在最上层，包括对话框。<code translate="no">data-scrollbar-layer="content"</code> 让它留在区域的行之上、边缘控件之下（Agent 列表、Agent 网格）。</td></tr>
+<tr><th scope="row">层级</th><td>跟随所在区域的层级：取区域最外层带层级的祖先（对话框、弹层、抽屉）的 z-index，页面里的区域取 sticky 层，所以在滚动区域上方打开的菜单会盖住它的滑块。<code translate="no">data-scrollbar-layer="content"</code> 让它留在区域的行之上、边缘控件之下（Agent 列表、Agent 网格）。</td></tr>
+<tr><th scope="row">按下</th><td>按在滑块上的事件只交给滑块。滑块挂在 <code translate="no">&lt;body&gt;</code> 下，不在菜单或对话框里，否则菜单或对话框会把这次按下当成点在外面而关闭。</td></tr>
 <tr><th scope="row">Shadow root</th><td>自己隐藏滚动条并调用 <code translate="no">attachOverlayScrollbar</code></td></tr>
 </tbody>
 </table>

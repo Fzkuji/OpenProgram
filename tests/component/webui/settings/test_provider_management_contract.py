@@ -34,15 +34,15 @@ def _probe(status, *, http_status=200, kind="openrouter_key", via="GET /key", de
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     from openprogram.state import config as user_config
-    from openprogram.models.auth.account import account_priority, account_selection
-    from openprogram.models.auth import rotation
+    from openprogram.models.auth import selection
+    from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
     import openprogram.models.usage.ledger as ledger_module
 
     monkeypatch.setattr(user_config, "get_config_path", lambda: tmp_path / "config.json")
-    for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "default_root", lambda: tmp_path / "sidecars")
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
+    set_credential_provider_for_testing(CredentialProvider(store=store))
+    selection.forget_bindings()
     ledger = UsageLedger(db_path=tmp_path / "usage.db")
     monkeypatch.setattr(ledger_module, "default_ledger", ledger)
     qstore = quota.QuotaStore(ledger)
@@ -71,15 +71,16 @@ def api(tmp_path, monkeypatch):
                              model_id="a/model-1", input_tokens=100, output_tokens=10, cache_read_tokens=50,
                              total_tokens=110, cost_total=0.5, cost_source="model_catalog"))
 
-    from openprogram.interfaces.server.routes.identity import accounts, providers
+    from openprogram.interfaces.server.routes.identity import provider_credentials, providers
     from openprogram.interfaces.server.routes.settings import usage
     app = FastAPI()
     providers.register(app)
-    accounts.register(app)
+    provider_credentials.register(app)
     usage.register(app)
     with TestClient(app, raise_server_exceptions=False) as client:
         yield SimpleNamespace(client=client, store=store, sent=sent)
     set_store_for_testing(None)
+    set_credential_provider_for_testing(None)
     ledger.close()
 
 
@@ -100,9 +101,15 @@ def test_every_route_answers_its_documented_shape(api, monkeypatch):
     assert all(set(row) == _keys(detected.DetectedLocal) and row["running"] is False for row in body["local"])
     assert all(set(row) == _keys(detected.PopularProvider) for row in body["popular"])
 
-    added = c.post("/api/providers/openrouter/accounts/env", json={"env_var": "OPENROUTER_API_KEY"})
+    listed = c.get("/api/providers/openrouter/credentials").json()
+    assert [row["id"] for row in listed["credentials"]] == ["env:OPENROUTER_API_KEY"]
+    assert _SECRET not in str(listed)
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+
+    added = c.post("/api/providers/openrouter/credentials", json={"api_key": _SECRET, "validate": True})
     assert added.status_code == 200, added.text
     assert _SECRET not in added.text
+    cid = added.json()["credential"]["id"]
     check = added.json()["check"]
     assert set(check) == _keys(key_check.KeyCheck)
     assert check["result"] == "works" and check["auto_enabled"] is True
@@ -142,7 +149,7 @@ def test_every_route_answers_its_documented_shape(api, monkeypatch):
     assert fallback.status_code == 200 and set(fallback.json()) == _keys(provider_views.FallbackPayload)
     assert c.get("/api/providers/fallback?provider=&model=x").status_code == 400
 
-    validated = c.post("/api/providers/openrouter/accounts/default/validate")
+    validated = c.post(f"/api/providers/openrouter/credentials/{cid}/check")
     assert validated.status_code == 200 and set(validated.json()["check"]) == _keys(key_check.KeyCheck)
     assert _SECRET not in validated.text
 
@@ -154,14 +161,14 @@ def test_every_route_answers_its_documented_shape(api, monkeypatch):
 def test_a_key_the_provider_did_not_accept_does_not_turn_the_provider_on(api, monkeypatch):
     # A 5xx on the auth endpoint says nothing about the key: it is kept, not trusted.
     monkeypatch.setattr(cr, "validate_credential", lambda *a, **k: _probe(cr.UNKNOWN, http_status=503))
-    r = api.client.post("/api/providers/openrouter/accounts/keys", json={"api_key": _SECRET, "validate": True})
+    r = api.client.post("/api/providers/openrouter/credentials", json={"api_key": _SECRET, "validate": True})
     assert r.status_code == 200 and r.json()["check"]["result"] == "unverified"
     assert r.json()["check"]["auto_enabled"] is False and r.json()["check"]["models"] == []
 
 
 def test_a_rejected_key_is_answered_and_not_stored(api, monkeypatch):
     monkeypatch.setattr(cr, "validate_credential", lambda *a, **k: _probe(cr.INVALID_CREDENTIAL, http_status=401))
-    r = api.client.post("/api/providers/openrouter/accounts/keys", json={"api_key": _SECRET, "validate": True})
+    r = api.client.post("/api/providers/openrouter/credentials", json={"api_key": _SECRET, "validate": True})
     assert r.status_code == 400 and set(r.json()["check"]) == set(key_check.KeyCheck.__annotations__)
-    assert api.store.find_pool("openrouter", "default") is None
+    assert api.store.stored("openrouter").credentials == []
     assert _SECRET not in r.text

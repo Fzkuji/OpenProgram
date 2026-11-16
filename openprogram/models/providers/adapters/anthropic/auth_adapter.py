@@ -10,7 +10,6 @@ PROVIDER_ID = "anthropic"
 def import_api_key(
     api_key: str,
     *,
-    account_id: str = "default",
     metadata: Optional[dict[str, Any]] = None,
 ) -> Credential:
     """Wrap a pasted ANTHROPIC_API_KEY as a :class:`Credential`.
@@ -24,10 +23,9 @@ def import_api_key(
     md = {"imported_from": "paste"} | (metadata or {})
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
         kind="api_key",
         payload=CredentialData(kind="api_key", auth_value=api_key.strip()),
-        source="anthropic_paste",
+        source="cli",
         metadata=md,
         read_only=False,
     )

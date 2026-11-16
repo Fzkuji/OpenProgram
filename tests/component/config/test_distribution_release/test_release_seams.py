@@ -167,7 +167,7 @@ def test_unsigned_names_come_from_the_release_steps():
         (".github/workflows/release.yml", [
             'name="OpenProgram-${RELEASE_TAG#v}-seed-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"',
         ]),
-        ("openprogram/interfaces/cli/commands/upgrade.py", [
+        ("openprogram/interfaces/cli/commands/updates/upgrade.py", [
             'f"OpenProgram-{version}-runtime-{platform_name}-{arch}{suffix}"',
         ]),
     ],

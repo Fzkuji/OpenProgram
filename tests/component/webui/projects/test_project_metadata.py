@@ -49,7 +49,7 @@ def test_edit_project_round_trip_and_validation(tmp_path, monkeypatch):
 
 def test_source_folders_are_defaults_not_overrides(tmp_path, monkeypatch):
     from openprogram.runtime.context import session_db
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     monkeypatch.setattr(store, "_registry_path", lambda: tmp_path / "registry.json")
     project = store.resolve_project(tmp_path)
     store.update_project(project.id, {"source_folders": [str(tmp_path.parent)]})

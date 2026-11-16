@@ -299,7 +299,7 @@ def test_a_runtime_assembled_in_place_is_held_to_this_machines_macos(
     monkeypatch.setattr(check.__globals__["platform"], "mac_ver", lambda: ("14.2", ("", "", ""), "arm64"))
     with pytest.raises(RuntimeError, match="needs macOS 15.0"):
         check(runtime, {"macosMinimum": "13.5"}, this_machine=True)
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8")
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(encoding="utf-8")
     assert "--write --this-machine" in refresh
     for release_script in ("build-product-runtime.sh", "prepare-desktop-runtime.sh", "archive-product-runtime.sh"):
         assert "--this-machine" not in (ROOT / "scripts" / "release" / release_script).read_text(encoding="utf-8")

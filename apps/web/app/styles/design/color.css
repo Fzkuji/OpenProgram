@@ -187,6 +187,10 @@
   --theme-scene-gradient-2: #6d3bc4;
   --theme-scene-gradient-3: #0f6d86;
   --theme-scene-gradient-base: #10111c;
+  /* The three dots on the Gradient preview. */
+  --theme-scene-gradient-dot-1: #fff;
+  --theme-scene-gradient-dot-2: #c4b5fd;
+  --theme-scene-gradient-dot-3: #67e8f9;
   /* The Gradient theme's scene behind Launchpad
      (center-tabs/pages/launchpad/launchpad.module.css): the four blobs and
      base above, the veil over them, and the glass chrome drawn on the

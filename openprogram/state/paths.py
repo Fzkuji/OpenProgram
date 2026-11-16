@@ -35,6 +35,16 @@ _log = logging.getLogger(__name__)
 
 _ENV_PROFILE = "OPENPROGRAM_PROFILE"
 
+# pytest sets this in its own process for the length of each test, and every
+# child that process starts inherits it.
+_ENV_UNDER_TEST = "PYTEST_CURRENT_TEST"
+# A run that means to use the person's own state says so.
+_ENV_TEST_REAL_HOME = "OPENPROGRAM_TEST_REAL_HOME"
+
+
+class RealStateUnderTest(PermissionError):
+    """A test resolved the state folder of the person's own account."""
+
 # Canonical state dir basename. Everything lives under
 # ``~/.openprogram/`` — one hidden directory, matching the project
 # name. Earlier builds split state across two dirs (``~/.agentic/``
@@ -92,6 +102,7 @@ def get_state_dir() -> Path:
     else:
         canonical = Path.home() / _CANONICAL_BASENAME
         legacy = Path.home() / _LEGACY_BASENAME
+    _refuse_real_state_under_test(canonical)
     _maybe_migrate_legacy_state(legacy, canonical)
     # Every path in this module funnels through here, so this is the one
     # place that can promise the profile root is owner-only however it
@@ -100,6 +111,58 @@ def get_state_dir() -> Path:
     # case is a single boolean test, not a stat per path lookup.
     _restrict_profile_root_once(canonical)
     return canonical
+
+
+_account_home_cache: list[Optional[str]] = []
+
+
+def _account_home() -> Optional[str]:
+    """The home folder of the account, whatever ``HOME`` says now."""
+    if _account_home_cache:
+        return _account_home_cache[0]
+    home: Optional[str] = None
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            buffer = ctypes.create_unicode_buffer(260)
+            # CSIDL_PROFILE; read from the account, not from USERPROFILE.
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 40, None, 0, buffer) == 0:
+                home = buffer.value or None
+        else:
+            import pwd
+
+            home = pwd.getpwuid(os.getuid()).pw_dir or None
+    except Exception:
+        home = None
+    if home:
+        home = os.path.realpath(home)
+    _account_home_cache.append(home)
+    return home
+
+
+def _refuse_real_state_under_test(canonical: Path) -> None:
+    """Refuse the account's own state folder while a test is running.
+
+    The suite's ``tests/conftest.py`` points ``HOME`` at a throwaway folder,
+    but a test file run without it (a copy in a scratch folder, ``pytest
+    --noconftest``, a child process handed the real ``HOME``) would resolve
+    ``~/.openprogram`` itself and register its fake projects and
+    conversations there, or find and use the instance running from it. Every
+    state path and the Worker's endpoint files come through
+    ``get_state_dir``, so refusing here covers all of them.
+    """
+    if not os.environ.get(_ENV_UNDER_TEST) or os.environ.get(_ENV_TEST_REAL_HOME) == "1":
+        return
+    home = _account_home()
+    if home is None:
+        return
+    if os.path.realpath(str(canonical.parent)) != home:
+        return
+    raise RealStateUnderTest(
+        f"a test resolved the real state folder {canonical}: run it from the repository's "
+        "tests/ tree, where conftest.py gives the run its own home, or point HOME at a "
+        f"temporary folder ({_ENV_TEST_REAL_HOME}=1 allows the real one)")
 
 
 _root_mode_checked: set[Path] = set()

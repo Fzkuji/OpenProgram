@@ -283,7 +283,7 @@ def load_outbound_security_config(
     from openprogram.host.security.safe_http import uses_ambient_proxy
 
     if uses_ambient_proxy(consumer) and result.policy_proxy is None:
-        from openprogram.models.providers.utils.http_proxy import get_proxy_mounts
+        from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts
 
         result = replace(
             result,

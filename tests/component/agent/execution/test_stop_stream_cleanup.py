@@ -39,7 +39,7 @@ class _SocketLikeProvider:
 
     def stream_simple(self, model, context, options=None):
         from openprogram.models.providers.types import AssistantMessage
-        from openprogram.models.providers.utils.event_stream import AssistantMessageEventStream
+        from openprogram.models.providers.utils.streams.event_stream import AssistantMessageEventStream
 
         stream = AssistantMessageEventStream()
         output = AssistantMessage(
@@ -56,7 +56,7 @@ class _SocketLikeProvider:
                 while True:
                     await asyncio.sleep(0.01)
                     if options is not None and options.signal is not None and options.signal.is_set():
-                        from openprogram.models.providers.utils.errors import StreamAborted
+                        from openprogram.models.providers.utils.failures.errors import StreamAborted
 
                         raise StreamAborted("stream cancelled by caller signal")
                     number += 1

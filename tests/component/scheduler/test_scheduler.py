@@ -813,3 +813,23 @@ def test_scheduler_creates_a_task_without_memory_refs_while_memory_is_off(
             cwd=str(tmp_path),
             authority=local_owner_authority(),
         )
+
+
+def test_deleting_a_task_is_logged_and_the_list_before_it_is_kept(scheduler_env, caplog):
+    import logging
+    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.scheduler import service
+
+    tmp_path, schedule = scheduler_env
+    task = service.create_task(
+        title="Hourly stock check", task_type="recurring", prompt="Check the stock.",
+        cron="0 * * * *", cwd=str(tmp_path), authority=local_owner_authority(),
+    )
+    with caplog.at_level(logging.INFO, logger="openprogram.runtime.scheduler.service"):
+        assert service.delete_task(task["id"], by="the Scheduler API")
+    assert f"scheduler task {task['id']}" in caplog.text
+    assert "Hourly stock check" in caplog.text and "the Scheduler API" in caplog.text
+    assert service.list_tasks() == []
+    kept = cron_tool._load(str(schedule) + cron_tool.PREVIOUS_SUFFIX)
+    assert [row["id"] for row in kept] == [task["id"]]

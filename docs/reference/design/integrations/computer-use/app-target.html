@@ -1,0 +1,174 @@
+<title>Application target</title>
+<meta name="description" content="The app target of computer_use_agent: actions, results, indices, holding an application, menus, OCR and audio.">
+<h1>Application target</h1>
+
+
+<h2 id="shape-1">Shape</h2>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", action, args={app, element_index | x,y, …})</code></pre>
+<p>Actions come in three groups:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Reading</th><td><code translate="no">list_apps</code>, <code translate="no">list_windows</code>, <code translate="no">get_app_state</code> (<code translate="no">include</code> = all / tree / screenshot, <code translate="no">window</code> or <code translate="no">window_id</code>), <code translate="no">zoom</code> (a region of the last screenshot at full pixel density), <code translate="no">find</code> (text and role search over the last tree).</td></tr>
+<tr><th scope="row">Acting</th><td>, Codex's target API: <code translate="no">click</code> (button, count, held modifiers, hold duration), <code translate="no">type_text</code>, <code translate="no">press_key</code>, <code translate="no">set_value</code>, <code translate="no">scroll</code> (pages or pixels), <code translate="no">drag</code>, <code translate="no">perform_secondary_action</code>, <code translate="no">select_text</code>, <code translate="no">paste</code>; and from the Claude app's <code translate="no">app_*</code> set: <code translate="no">copy</code>, <code translate="no">focus</code>, <code translate="no">menu</code>, <code translate="no">show_window</code>; and <code translate="no">open_file</code> (macOS).</td></tr>
+<tr><th scope="row">Several steps</th><td>(<code translate="no">actions</code>): up to 20 acting steps on one app, in order, stopping at the first error; one settle and one state at the end. A final <code translate="no">get_app_state</code> step chooses what that state is: the tree alone, the full tree, or another window.</td></tr>
+</tbody>
+</table>
+
+<h2>Results and the tree</h2>
+<p>Only <code translate="no">list_apps</code> needs no grant. A step in <code translate="no">actions</code> cannot name a different app, because the grant the call carries names only the call's app.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Acting result</th><td>Every acting call returns <code translate="no">Done: &lt;summary&gt;</code> followed by the Accessibility tree <strong>diff</strong> against the state the model last saw: <code translate="no">- line</code> for elements that vanished, <code translate="no">+ index line</code> for new or changed ones.</td></tr>
+<tr><th scope="row">Whole tree</th><td>When more than half the lines (and at least twelve) changed, the whole tree is returned instead, because a diff of a rebuilt view is longer than the view.</td></tr>
+<tr><th scope="row">Full tree</th><td><code translate="no">get_app_state(full=true)</code> returns the full tree on demand.</td></tr>
+<tr><th scope="row">Rendering</th><td>The tree is capped at 1500 nodes and rendered one element per line: index, role (<code translate="no">AXTextField</code> → <code translate="no">text field</code>, with the subrole in parentheses), label, value, placeholder, flags (<code translate="no">focused</code>, <code translate="no">selected</code>, <code translate="no">checked</code>, <code translate="no">disabled</code>, <code translate="no">secure</code>, <code translate="no">settable</code> …) and the element's secondary actions other than the primary press.</td></tr>
+<tr><th scope="row">Bidirectional marks</th><td>Bidirectional marks some apps wrap numbers in are dropped from the rendering and from <code translate="no">find</code>.</td></tr>
+</tbody>
+</table>
+<p>The tree covers the window, the menus, popovers and dialogs beside it, and the menu bar with only open menus expanded. Closed menus are read by the <code translate="no">menu</code> action, so every read covers the same ground and a diff never shows a whole menu bar appearing or vanishing.</p>
+<p>Results that changed nothing are marked: <code translate="no">menu</code> listings, <code translate="no">copy</code> and an already-visible <code translate="no">show_window</code> return a <code translate="no">Report</code>, and the tool returns it without settling or reading the state again.</p>
+
+<h2 id="stable-indices">Stable indices</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Basis</th><td><code translate="no">tree.number</code> gives indices against the window's previous <code translate="no">Snapshot</code> (its index-free lines, their indices, and the next unused index).</td></tr>
+<tr><th scope="row">Equal line</th><td>A line that is equal keeps its index.</td></tr>
+<tr><th scope="row">Changed block</th><td>Within a block of changed lines, a line with the same depth, role and label as an earlier one is that element with a new value or state and keeps its index wherever the block moved it, so lines added above it do not take its place; what is left pairs in place when depth and role hold (a renamed button).</td></tr>
+<tr><th scope="row">New line</th><td>Any other new line takes the next unused index, and indices freed by removed elements are never reused.</td></tr>
+<tr><th scope="row">Guarantee</th><td>The model's earlier indices therefore never point at a different element after an insertion above them, which Codex's positional numbering does not guarantee.</td></tr>
+</tbody>
+</table>
+
+<h2 id="replaced-elements">Replaced elements</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Cause</th><td>Apps, web pages above all, rebuild their accessibility elements while the window still shows the same controls, on their own or after another agent's step.</td></tr>
+<tr><th scope="row">Dead element</th><td>The element the backend kept from the last read is then dead although its line is still there.</td></tr>
+<tr><th scope="row">Detection</th><td><code translate="no">_element</code> in each backend detects that, reads the same window again and matches it with <code translate="no">tree.rebind</code>: the fresh tree is numbered against what the model last saw, and the index is taken while its line reads the same, or keeps its depth, role and name (label or placeholder).</td></tr>
+<tr><th scope="row">Step</th><td>The step then runs on the live element.</td></tr>
+<tr><th scope="row">Still fails</th><td>An unnamed control that changed, a line that is gone and a window that closed still fail with "element N no longer exists", before any input.</td></tr>
+<tr><th scope="row">Last view</th><td>The model's last view (<code translate="no">WindowState.snapshot</code>) is kept through the repair, so the state returned after the step reports everything that changed since that view.</td></tr>
+</tbody>
+</table>
+
+<h2 id="one-agent-at-a-time">One agent at a time</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>Agents of one conversation (the main turn and the agents it starts) each keep their own reading of a window, and the window is one.</td></tr>
+<tr><th scope="row">Hold</th><td><code translate="no">targets/app.py</code> holds the application for the length of a call: a single action with its settle and state, a list of actions, or a <code translate="no">get_app_state</code>.</td></tr>
+<tr><th scope="row">Waiting</th><td>Another agent's call on that application waits, polling with cancellation checks, and after <code translate="no">APP_WAIT_SECONDS</code> (60 s) fails with nothing sent (<code translate="no">action_dispatched: false</code>).</td></tr>
+<tr><th scope="row">Identity</th><td>The application is the backend's identity for it where it has one (<code translate="no">app_key</code>, the bundle id on macOS, so a name, a bundle id and a path are one application), else the name as written.</td></tr>
+<tr><th scope="row">Other agents</th><td>Each application records its acting calls with the agent that made them; a result starts with a note when another agent acted since this agent's last result, and the changes it lists include theirs.</td></tr>
+<tr><th scope="row">No hold</th><td>Read-only calls take no hold: <code translate="no">list_apps</code>, <code translate="no">list_windows</code>, <code translate="no">zoom</code>, <code translate="no">find</code>.</td></tr>
+<tr><th scope="row">Code steps</th><td>Code steps hold the application one step at a time.</td></tr>
+</tbody>
+</table>
+
+<h2 id="settling">Settling</h2>
+<p>After an action the tool polls a cheap fingerprint of the first 400 elements every 0.2 seconds, starting after 0.3 seconds, and stops when two fingerprints agree, after 1.5 seconds, or after 5 seconds while a busy indicator or an unfinished progress indicator is present — Codex's "about a second, up to five while loading".</p>
+
+<h2 id="menu-bar">Menu bar</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Path</th><td><code translate="no">menu</code> walks <code translate="no">AXMenuBar</code> by title, case-insensitively and ignoring a trailing <code translate="no">…</code> or <code translate="no">...</code>.</td></tr>
+<tr><th scope="row">Listing</th><td>A path that ends at a submenu lists its items with shortcut glyphs (<code translate="no">⌃⌥⇧⌘</code> from <code translate="no">AXMenuItemCmdModifiers</code>), <code translate="no">[checked]</code> and <code translate="no">[disabled]</code>; a leaf is pressed with <code translate="no">AXPress</code>.</td></tr>
+<tr><th scope="row">Side effect</th><td>Reading the menu tree through Accessibility opens nothing on screen.</td></tr>
+<tr><th scope="row">copy</th><td><code translate="no">copy</code> presses the app's own menu item whose shortcut is ⌘C, found by shortcut rather than by its localized title, and falls back to posting ⌘C; when that item exists but is disabled (nothing selected, or focus on a control) it reports so at once.</td></tr>
+<tr><th scope="row">Pasteboard</th><td>Otherwise it waits for the pasteboard change count, reads the string, and restores the previous pasteboard.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">No prior state</th><td><code translate="no">copy</code>, <code translate="no">press_key</code>, <code translate="no">type_text</code> and <code translate="no">paste</code> without an <code translate="no">element_index</code> act on the app's current focus and need no earlier <code translate="no">get_app_state</code>; <code translate="no">menu</code>, <code translate="no">show_window</code> and <code translate="no">wait</code> never need one.</td></tr>
+<tr><th scope="row">hover and wait</th><td>From Claude's computer-use tool come <code translate="no">hover</code> (three <code translate="no">mouseMoved</code> events posted to the process, approaching the point, then a 0.8-second rest; the real cursor stays put) and <code translate="no">wait</code> (up to 10 seconds, cancellable, followed by the usual settle and tree diff).</td></tr>
+<tr><th scope="row">focus</th><td><code translate="no">focus</code> sets <code translate="no">AXFocused</code> and waits up to half a second for the app to report it, since apps apply focus on a later run-loop turn.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Screenshot</th><td>The screenshot is the window's own image captured through ScreenCaptureKit, scaled so the long side is at most 1568 pixels; coordinates the model sends are pixels of that image.</td></tr>
+<tr><th scope="row">Coordinates</th><td>A step maps them to screen points with the scale that produced the image (2 on a Retina display, less when a large window was captured smaller) and the window's origin as the window server reports it at that moment (<code translate="no">screen_point</code>, after <code translate="no">_follow_window</code>), so a window the user moved since the read is still hit where the model pointed.</td></tr>
+</tbody>
+</table>
+
+<h2 id="text-on-the-screenshot">Text on the screenshot</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Sparse window</th><td>A window whose own walk yields fewer than 12 elements (frame, title bar buttons and little else) is drawn without Accessibility.</td></tr>
+<tr><th scope="row">Recognition</th><td>For such a window every full or screenshot-only read also runs Vision's accurate text recognizer on the screenshot it just took and lists each line as <code translate="no">"text" at (cx, cy), WxH</code> in screenshot pixels, top to bottom and left to right, at most 150 lines.</td></tr>
+<tr><th scope="row">Languages</th><td>The first recognition language picks Vision's model, so the languages are a hint (the user's preferred languages, then Chinese, Japanese, Korean and English) and language detection chooses per image.</td></tr>
+<tr><th scope="row">find fallback</th><td><code translate="no">find</code> with <code translate="no">text</code> falls back to these lines when no element matches; for a window that was not sparse it captures and reads the window once at the same scale, so the positions stay valid for actions.</td></tr>
+<tr><th scope="row">Not in the tree</th><td>OCR text has no indices and is not part of the tree diff: it is evidence for coordinate actions, and a failure of the recognizer leaves the read without it.</td></tr>
+<tr><th scope="row">Shapes</th><td>The same reads list icons and controls without text (<code translate="no">ocr.detect_shapes</code>): Vision's contour detector runs twice, once for dark marks on a light window and once for light on dark, at most 1024 pixels on the long side.</td></tr>
+<tr><th scope="row">Merging and dropping</th><td>Top-level outlines within 3 points of each other merge into one shape, and a shape is dropped when it covers a recognized line of two or more characters, is under 8 points on its short side, over 80 points on its long side, more than 4:1, or touches the screenshot's edge (the window's rounded corners and border).</td></tr>
+<tr><th scope="row">One character</th><td>A one-character line does not rule a shape out, because the recognizer often reads an icon as a glyph.</td></tr>
+<tr><th scope="row">Order</th><td>Shapes the two passes both find are kept once, and the list is sorted in 16-point rows, left to right, at most 60.</td></tr>
+<tr><th scope="row">No name</th><td>A shape carries no name: the model reads the screenshot to tell a gear from a trash can.</td></tr>
+</tbody>
+</table>
+
+<h2 id="audio">Audio</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>Codex records computer audio with <code translate="no">start_audio_recording</code> / <code translate="no">stop_audio_recording</code> (60 seconds by default, 300 at most) and hands the clip to the model as audio input.</td></tr>
+<tr><th scope="row">Kept</th><td>OpenProgram keeps the two actions and their limits.</td></tr>
+<tr><th scope="row">Clip</th><td>The clip becomes a WAV on disk plus a transcript from the Settings → Voice engine, which every model can read.</td></tr>
+<tr><th scope="row">Content block</th><td><code translate="no">ToolReturn.audio</code> also carries the WAV as an <code translate="no">AudioContent</code> block.</td></tr>
+<tr><th scope="row">Audio input</th><td>When the model lists <code translate="no">audio</code> among its inputs, the Gemini converter passes it as inline audio and the Chat Completions converter as <code translate="no">input_audio</code>, each in a user turn after the run of tool results, which must stay together.</td></tr>
+<tr><th scope="row">Chat Completions</th><td>That Chat Completions turn also carries the run's screenshots for vision models, since a <code translate="no">tool</code> message holds only text.</td></tr>
+<tr><th scope="row">Other converters</th><td>The Responses and Anthropic converters skip audio blocks, and tool-result media is not written to the conversation history, so the clip costs nothing for models that cannot hear it.</td></tr>
+<tr><th scope="row">Capture</th><td><code translate="no">audio.py</code> opens an <code translate="no">SCStream</code> whose filter is the display with only the target application included, asks for 16 kHz mono float samples, excludes the OpenProgram process, and attaches only an audio output: the 2×2, one-frame-a-second video side is never consumed.</td></tr>
+<tr><th scope="row">Limit</th><td>Samples past the limit are dropped and a timer stops the stream half a second after it, so a forgotten recording releases the capture.</td></tr>
+<tr><th scope="row">Storage</th><td>One recording runs per conversation; it is converted to 16-bit PCM on stop and saved under the state directory, keeping the newest 20.</td></tr>
+<tr><th scope="row">Approval</th><td>The action keeps the per-application approval: only the named app's sound is in the clip.</td></tr>
+<tr><th scope="row">Silence</th><td>A clip whose peak stays under 1e-4 is reported silent and not transcribed.</td></tr>
+<tr><th scope="row">No window</th><td>An application without a window has no <code translate="no">SCRunningApplication</code> and cannot be recorded.</td></tr>
+</tbody>
+</table>
+
+<details id="module-layout-1">
+<summary>Backend modules</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Module</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/base.py</code></th><td>what every backend shares: <code translate="no">ComputerUseError</code>, <code translate="no">Report</code>, <code translate="no">Observation</code>, <code translate="no">AudioClip</code>, argument checks, recording storage</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/backends.py</code></th><td><code translate="no">support()</code> and <code translate="no">backend()</code> for the host: <code translate="no">macos</code> on Darwin, <code translate="no">linux</code> on Linux, <code translate="no">windows</code> on Windows</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/keys.py</code></th><td>xdotool chord parsing to macOS key codes and modifier flags (<code translate="no">super+shift+z</code>, <code translate="no">ctrl++</code>, <code translate="no">KP_0</code>, lone modifiers)</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/tree.py</code></th><td><code translate="no">Node</code>, rendering, signatures, stable numbering (<code translate="no">Snapshot</code>, <code translate="no">number</code>), re-matching a replaced element (<code translate="no">rebind</code>) and the diff</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/audio.py</code></th><td>ScreenCaptureKit audio capture of one application, sample limit, WAV encoding</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/ocr.py</code></th><td>Vision text recognition (tesseract TSV on Linux), box conversion to screenshot pixels, reading order, language hints, contour shapes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/skylight.py</code></th><td>ctypes bindings to SkyLight for background pointer and keyboard routing</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/macos.py</code></th><td><code translate="no">MacComputer</code>: app resolution, window selection, capture, tree walk, every action</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/linux.py</code></th><td><code translate="no">LinuxComputer</code>: the same interface over AT-SPI, xdotool, Gdk capture and PipeWire/PulseAudio</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/windows.py</code></th><td><code translate="no">WindowsComputer</code>: the same interface over UI Automation (comtypes), window messages, <code translate="no">SendInput</code> and <code translate="no">PrintWindow</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/windows_audio.py</code></th><td>WASAPI process-loopback capture of one process tree</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/targets/app.py</code></th><td>the <code translate="no">app</code> target: step validation, several steps, holding the application for one call, result assembly</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>the <code translate="no">app</code> target on macOS with the reading and acting actions above, stable indices, adaptive settling, background pointer and keyboard delivery, tree diffs, per-app approval with the four scopes, system-access gating, web presentation, unit tests for keys, tree numbering, menu matching, several steps, rules and approval wiring.</td></tr>
+<tr><th scope="row">Implemented</th><td>OCR text for windows with a sparse tree and as the <code translate="no">find</code> fallback, with a test that reads a rendered image through Vision.</td></tr>
+<tr><th scope="row">Implemented</th><td>per-application audio recording with WAV output and Voice-engine transcription.</td></tr>
+<tr><th scope="row">Implemented</th><td>recordings as audio input for Gemini and Chat Completions audio models; tool-result screenshots on Chat Completions vision models.</td></tr>
+<tr><th scope="row">Implemented</th><td>outlines of icons and controls without text in sparse windows.</td></tr>
+<tr><th scope="row">Not implemented</th><td>audio input over the Responses and Anthropic APIs, whose models take no audio; moving a window from another Space, and typing into it with keys (<a href="macos.html">macOS delivery</a>); naming an icon from its outline (the model reads the screenshot).</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.html">Computer and browser use</a></p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { memo, useRef } from "react";
 
 import { GoalChip } from "../../badges/goal-chip";
 import { ProjectBadge, WorkingDirChips } from "../../top-bar";
@@ -15,7 +15,9 @@ interface EnvironmentRowProps {
   sessionId: string | null;
 }
 
-export function EnvironmentRow({ sessionId }: EnvironmentRowProps) {
+// Memoized: the composer redraws on every keystroke and settings frame;
+// the chips read their own state.
+export const EnvironmentRow = memo(function EnvironmentRow({ sessionId }: EnvironmentRowProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   useCompactEnvironmentRow(rowRef);
 
@@ -32,4 +34,4 @@ export function EnvironmentRow({ sessionId }: EnvironmentRowProps) {
       <WebSurfaceChip sessionId={sessionId} />
     </div>
   );
-}
+});

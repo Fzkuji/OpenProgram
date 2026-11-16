@@ -1,0 +1,54 @@
+<title>浏览器应用</title>
+<meta name="description" content="作为应用的内置浏览器：它的模块，以及核心访问它的服务。">
+<h1>浏览器应用</h1>
+
+
+<p>内置浏览器是应用 <code translate="no">openprogram/programs/applications/browser/</code>。核心从不 import 它：应用的 <code translate="no">setup(ctx)</code> 提供服务 <code translate="no">browser</code>，核心里每个调用方都用 <code translate="no">_services.lookup("browser")</code> 查找它，查找返回 <code translate="no">None</code> 时就在没有浏览器的情况下运行。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">模块</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">setup</code>：提供服务，注册 L2 上下文段 <code translate="no">pages</code>。应用不注册任何工具</td></tr>
+<tr><th scope="row"><code translate="no">service.py</code></th><td><code translate="no">BrowserService</code>，即服务的成员（见下）</td></tr>
+<tr><th scope="row"><code translate="no">pages.py</code></th><td><code translate="no">BrowserResourceStore</code>、按对话的 Page 投影、资源控制、人的页面输入</td></tr>
+<tr><th scope="row"><code translate="no">tabs.py</code></th><td><code translate="no">computer_use_agent(target="browser")</code> 的<a href="tab-driver.zh.html">标签页驱动</a></td></tr>
+<tr><th scope="row"><code translate="no">extension.py</code></th><td>经 Playwright Extension 操作用户的 Chrome 或 Edge</td></tr>
+<tr><th scope="row"><code translate="no">page_actions.py</code>、<code translate="no">file_inputs.py</code></th><td>上面两者共用的参数解析和页面脚本；一次上传发送的已批准本地文件</td></tr>
+<tr><th scope="row"><code translate="no">app_endpoint.py</code>、<code translate="no">privacy.py</code></th><td>App 的 CDP 端点；密码值脱敏</td></tr>
+<tr><th scope="row"><code translate="no">prompt.py</code></th><td>一次调用的 prompt 里关于已打开 Page 的段落</td></tr>
+</tbody>
+</table>
+<p>Agent 只用一个工具操作浏览器：<code translate="no">computer_use_agent(target="browser")</code>。App 的标签页走标签页驱动，用户的 Chrome 或 Edge 走扩展。动作见<a href="tab-actions.zh.html">浏览器标签页动作</a>。</p>
+<p>服务的成员是 <code translate="no">pages</code>、<code translate="no">tabs</code>、<code translate="no">chrome</code>、<code translate="no">extension</code>、<code translate="no">user_browser_names</code>、<code translate="no">open_tab(url)</code>、<code translate="no">authorized_page(arguments, window_id)</code> 和 <code translate="no">browser_of()</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用方</th><th scope="col">无服务时</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用提示词</th><td>没有 Pages 部分；已打开的 Page 不会给该轮加上屏幕工具</td></tr>
+<tr><th scope="row">进程路由</th><td>不列出浏览器资源；浏览器控制返回 404</td></tr>
+<tr><th scope="row">网页标签桥</th><td>跳过 Page 记账</td></tr>
+<tr><th scope="row"><code translate="no">computer_use_agent(target="browser")</code></th><td>报告该目标不可用；桌面目标照常工作</td></tr>
+<tr><th scope="row">程序的网页标签命令</th><td>以 <code translate="no">browser_not_enabled</code> 拒绝</td></tr>
+<tr><th scope="row">权限策略</th><td>看不到用户浏览器</td></tr>
+</tbody>
+</table>
+
+<h2 id="程序的网页标签">程序的网页标签</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td><code translate="no">framework</code> 接口的 <code translate="no">tabs.openWebTab</code> 调用 <code translate="no">open_tab(url)</code>：标签页在后台为当前对话打开，和浏览器目标的 <code translate="no">open</code> 一样。</td></tr>
+<tr><th scope="row">操作</th><td>对网页标签的原生展示命令用 <code translate="no">arguments.tab</code> 指明标签页，即 <code translate="no">tabs</code> 给出的标签页 id（省略时是对话上次用的标签页）。<code translate="no">authorized_page</code> 按 App 当前的窗口和绑定核对它，再把 App 自己的标签页 id 发给 App。</td></tr>
+<tr><th scope="row">权限</th><td>两者都需要 <code translate="no">computer_use_agent</code> 所需的权限：不能用屏幕工具的轮次，也不能这样接触网页标签。</td></tr>
+</tbody>
+</table>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>内置浏览器作为应用 <code translate="no">programs/applications/browser/</code>，只经 <code translate="no">browser</code> 服务访问，每个调用方都有无服务时的测试。</td></tr>
+<tr><th scope="row">已实现</th><td>模型、程序和网页标签命令共用一个浏览器入口：<code translate="no">computer_use_agent(target="browser")</code> 背后的标签页驱动和扩展。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../computer-use/computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

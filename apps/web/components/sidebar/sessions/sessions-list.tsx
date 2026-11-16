@@ -37,6 +37,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { autoRenameSession } from "@/lib/chat/session-auto-rename";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { listSessionProjects } from "@/lib/projects/list-projects";
 import { projectGroups, moveProject, filterProjectItems } from "@/lib/projects/project-groups";
 import { EMPTY_SELECTION, pickChat, type ChatSelection } from "@/lib/sidebar/chat-selection";
 import { RecentsFilter } from "./recents-filter";
@@ -53,9 +54,11 @@ import { newSession } from "@/lib/runtime-bridge/session/conversations";
 import { deleteSessionAndRefocus } from "@/lib/tabs/navigation/open-session";
 import { type LegacyConv, wsSend, labelFor } from "./helpers";
 import { recentsConversationsEqual, runningIdSetEqual } from "./recents-select";
+import { useStoreWithEqualityFn } from "zustand/traditional";
+import { sessionsWithBranchRun, useOtherBranchRuns } from "@/lib/chat/run/other-branch-runs";
 import { buildSections } from "./sections";
 import { ProjectGroupHeader } from "./project-group-header";
-import { ConvItem } from "./conv-item";
+import { ConvRow, type ConvRowSource } from "./conv-item";
 
 interface SidebarProject extends EditableProject {
   id: string;
@@ -104,6 +107,12 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const clearConversations = useSessionStore((s) => s.clearConversations);
   const currentId = useCurrentSessionId();
   const runningTasks = useSessionStore((s) => s.runningTasks, runningIdSetEqual);
+  // A turn on a branch other than the selected one (a Goal that follows its
+  // own branch, a message sent to another branch) is work in this
+  // conversation too: its row shows running whichever branch is selected.
+  const branchRuns = useStoreWithEqualityFn(
+    useOtherBranchRuns, (s) => sessionsWithBranchRun(s.runs), runningIdSetEqual);
+  const isRunning = (id: string) => !!runningTasks[id] || !!branchRuns[id];
   const view = useRecentsView();
 
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
@@ -132,11 +141,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   const [projects, setProjects] = useState<SidebarProject[]>(() => lastProjects);
   const refreshProjects = useCallback(async (): Promise<boolean> => {
-    const data = await wsRequest<{ projects: SidebarProject[] }>(
-      "list_projects",
-      { session_id: "" },
-      "projects_list",
-    );
+    // The shared read: a new conversation's set change, or a reader in the
+    // page asking for the same list, reuses the answer the page already
+    // has; `project-changed` (every binding change) drops it first.
+    const data = await listSessionProjects<{ projects: SidebarProject[]; session_id?: string | null }>("");
     if (data?.projects) {
       const next = data.projects;
       // Even an updater that returns the same list renders the list once.
@@ -150,10 +158,11 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   }, []);
 
   // The registry supplies both project grouping and stable-ID filtering. It
-  // re-runs when the session SET changes (create / delete — also what a
-  // WS reconnect's list_sessions replay produces), since the registry's
-  // reverse index may have gained/lost bindings; `project-changed`
-  // (topbar picker / group ＋) refetches too. On a fresh page the
+  // re-reads when the session SET changes (create / delete — also what a
+  // WS reconnect's list_sessions replay produces); that read is the shared
+  // one, so it costs a request only when no answer is kept. A new binding
+  // is broadcast as `project-changed`, which drops the kept answer and
+  // refetches here. On a fresh page the
   // WebSocket may not be OPEN yet, so retry (~6s) until it answers —
   // same pattern as the topbar ProjectBadge.
   const convIdsKey = Object.keys(conversations).sort().join(",");
@@ -504,6 +513,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     projects.find((p) => (p.session_ids || []).includes(sessionId))?.id
       ?? projects.find((p) => p.is_default)?.id ?? "";
 
+  // What each row was last given: a row that is drawn the same does not
+  // render again (ConvRow), and runs these handlers when one is used.
+  const rowSource = useRef<ConvRowSource["current"]>(new Map());
+  rowSource.current = new Map();
   const renderRow = (c: LegacyConv) => {
     const label = labelFor(c, t("sidebar.untitled"));
     const home = projectOf(c.id);
@@ -511,9 +524,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     const inSelection = selection.ids.includes(c.id);
     const bulkIds = inSelection && selection.ids.length > 1 ? selection.ids : null;
     const visibleProjects = projects.filter((p) => !p.hidden).map((p) => ({ id: p.id, name: p.name }));
-    return (
-      <ConvItem
+    const row = (
+      <ConvRow
         key={c.id}
+        source={rowSource}
         conv={c}
         label={label}
         active={c.id === currentId}
@@ -526,7 +540,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
           onArchive: () => { for (const id of bulkIds) setFlags(id, { archived: true }); setSelection(EMPTY_SELECTION); },
           onClear: () => setSelection(EMPTY_SELECTION),
         } : undefined}
-        running={!!runningTasks[c.id]}
+        running={isRunning(c.id)}
         groups={allGroups}
         projects={projects.length > 1 ? projects.filter((p) => p.id !== home && !p.hidden).map((p) => ({ id: p.id, name: p.name })) : undefined}
         onMoveToProject={(projectId) => void moveChat(c.id, projectId)}
@@ -550,6 +564,9 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         onDelete={() => del(c.id)}
       />
     );
+    const { source: _source, ...given } = row.props;
+    rowSource.current.set(c.id, given);
+    return row;
   };
 
   // Build the sectioned list. Each section is { key, label, items };
@@ -557,7 +574,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // Claude's rich Recents logic — date buckets by default, Working /
   // Completed when grouping by state. (Group-by → Project bypasses
   // this entirely — the registry-backed tree above renders instead.)
-  const isWorking = (id: string) => !!runningTasks[id];
+  const isWorking = isRunning;
   const sections = projectMode
     ? []
     : buildSections(visible, {

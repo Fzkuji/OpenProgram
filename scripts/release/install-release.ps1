@@ -967,7 +967,7 @@ try {
                 Download-ReleaseFile "$ReleaseUrl/$ArchiveName" $Archive "OpenProgram $Version for Windows $Arch"
             } catch {
                 if ("$($_.Exception.Message)" -match "HTTP 404") {
-                    throw "OpenProgram $Version has no Windows $Arch package ($ArchiveName is not attached to the release). Install from source instead: https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/install/install.html#development-checkout"
+                    throw "OpenProgram $Version has no Windows $Arch package ($ArchiveName is not attached to the release). Install from source instead: https://github.com/Fzkuji/OpenProgram/blob/main/docs/install/install.html#development-checkout"
                 }
                 throw
             }

@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col">域</th><th scope="col">是什么</th><th scope="col">工具</th></tr></thead>
 <tbody>
-<tr><th scope="row">计划：todo</th><td>手工维护的计划。编辑不运行任何东西。</td><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code></td></tr>
+<tr><th scope="row">计划：任务</th><td>手工维护的计划：一个有名字的任务和它的步骤。编辑不运行任何东西。</td><td><code translate="no">task_start</code>、<code translate="no">task_step</code>、<code translate="no">task_list</code></td></tr>
 <tr><th scope="row">执行：job</th><td>已接纳的记录，有 <code translate="no">execution_id</code>、状态和结果</td><td><code translate="no">read_conversation(execution_id)</code>、<code translate="no">list_agents</code>、<code translate="no">close_agent</code>；<code translate="no">execution.cancel</code> 是界面和 API 的命令</td></tr>
 <tr><th scope="row">实体：agent</th><td>运行中的对话分支。已存 <code translate="no">AgentSpec</code> 是由 <code translate="no">agent</code> 选择的独立配置。</td><td><code translate="no">agent</code>、<code translate="no">list_agents</code>、<code translate="no">close_agent</code></td></tr>
 <tr><th scope="row">通信：message</th><td>继续分支或读取其历史</td><td><code translate="no">send_message</code>、<code translate="no">read_conversation</code></td></tr>
@@ -23,7 +23,7 @@
 <tr><th scope="row">创建</th><td><code translate="no">agent(prompt, description, …)</code></td><td>新分支，以 <code translate="no">description</code> 命名；运行 <code translate="no">prompt</code>；接纳 Job</td><td>前台：等待并返回最终结果。<code translate="no">run_in_background=true</code>：<code translate="no">execution_id</code>。</td></tr>
 <tr><th scope="row">分派</th><td><code translate="no">send_message(to="name", message=…)</code></td><td>已有分支、对话或 Agent；接纳 Job；忙时排队</td><td><code translate="no">execution_id</code></td></tr>
 <tr><th scope="row">等待</th><td><code translate="no">send_message(to="name", notify_when_idle=true)</code></td><td>不投递；目标空闲时发一条通知</td><td>现在的最新回复，或一个观察</td></tr>
-<tr><th scope="row">查询</th><td><code translate="no">list_agents</code>、<code translate="no">read_conversation</code>、<code translate="no">todo_list</code></td><td>只读，不启动任何东西</td><td>文本</td></tr>
+<tr><th scope="row">查询</th><td><code translate="no">list_agents</code>、<code translate="no">read_conversation</code>、<code translate="no">task_list</code></td><td>只读，不启动任何东西</td><td>文本</td></tr>
 </tbody>
 </table>
 <p class="note">前台创建经 <code translate="no">run_agent_turn</code> 和 <code translate="no">runner.spawn_job(wait=True)</code>：等待既不免除接纳和资源限制，也不去掉执行身份。</p>
@@ -89,11 +89,11 @@ openprogram config set agent.max_spawn_fanout 8</code></pre>
 <details open>
 <summary>分派一批任务</summary>
 <ol>
-<li><code translate="no">todo_create(subject=…)</code>，用 <code translate="no">blocked_by</code> 标依赖。</li>
+<li><code translate="no">task_start(title=…, steps=[…])</code>，每项工作一个步骤，按依赖顺序排列。</li>
 <li>对每项 <code translate="no">agent(prompt, description, run_in_background=true)</code>，立即返回 <code translate="no">execution_id</code>。</li>
 <li><code translate="no">list_agents()</code> 看运行中的工作；<code translate="no">read_conversation(execution_id)</code> 取输出；用 <code translate="no">close_agent</code> 或界面停止。</li>
 <li>完成通知到达调用方。</li>
-<li><code translate="no">todo_update(todo_id, status="completed")</code>。</li>
+<li>每项返回后 <code translate="no">task_step(next=true)</code>；子 agent 可以用 <code translate="no">task_step(step=N)</code> 勾掉自己那一步。</li>
 </ol>
 </details>
 <details>
@@ -151,9 +151,9 @@ openprogram config set agent.max_spawn_fanout 8</code></pre>
 <details>
 <summary>代码</summary>
 <ul>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/__init__.py">已注册模型工具</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/job_output/job_output.py">job_output</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/conversation/sub_agent_run.py">Attach 节点</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/messages/cards/attach-card.tsx">AttachCard</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/interfaces/server/transcript/rows.py">行投影</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/progress.py">Job 完成</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/notices.py">通知</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/dispatch.py">分派</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/borrowed.py">借用认领</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/agents/send_message/send_message/send_message.py">消息投递</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/knowledge/read_conversation.py">历史读取</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/__init__.py">已注册模型工具</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/agent/job_output/job_output.py">job_output</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/conversation/peer_agents/sub_agent_run.py">Attach 节点</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/cards/attach-card.tsx">AttachCard</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/server/transcript/rows.py">行投影</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/progress.py">Job 完成</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/notices.py">通知</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/dispatch.py">分派</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/jobs/runner/borrowed.py">借用认领</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/agents/send_message/send_message/send_message.py">消息投递</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/knowledge/read_conversation.py">历史读取</a></li>
 </ul>
 </details>

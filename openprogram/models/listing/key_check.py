@@ -6,10 +6,11 @@ and finishing a sign-in all end here:
 
   * :func:`check_of` turns the probe (``credentials.validate_credential``,
     layer 1 then a layer-2 ping only when the provider has no billing
-    endpoint) into one of six results the Add-provider dialog prints as a
+    endpoint) into one of seven results the Add-provider dialog prints as a
     single line: ``works``, ``rejected``, ``no_credit``, ``not_available``
-    (region or plan), ``unreachable`` and ``unverified`` (accepted, not
-    proven usable). A key that is not rejected is kept.
+    (region or plan), ``unreachable``, ``unverified`` (accepted, not
+    proven usable) and ``not_configured`` (the provider has no address
+    here, so nothing was asked). A key that is not rejected is kept.
   * :func:`connect` runs once the key is stored: it reads the key's balance
     when the provider has a verified quota reader, lists the provider's
     models, turns the provider on when this was its first credential and
@@ -27,7 +28,8 @@ from typing import Any, Literal, Optional, TypedDict
 
 _log = logging.getLogger(__name__)
 
-CheckResult = Literal["works", "rejected", "no_credit", "not_available", "unreachable", "unverified"]
+CheckResult = Literal["works", "rejected", "no_credit", "not_available", "unreachable", "unverified",
+                      "not_configured"]
 #: Results whose key the provider accepted (usable, or once topped up): they turn a
 #: new provider on. ``unverified`` counts only when the provider answered 200 to the
 #: key (auth accepted, usability not proven); a 5xx or no answer proves nothing.
@@ -91,9 +93,28 @@ def result_of(probe: Any) -> CheckResult:
         return "no_credit"
     if status == c.NOT_AVAILABLE:
         return "not_available"
+    if status == c.UNKNOWN and getattr(probe, "detail", None) == c.NO_BASE_URL:
+        # The provider has no address here (a custom provider no longer in
+        # the config): nothing was asked, so nothing is known about the key.
+        return "not_configured"
     if status == c.UNKNOWN and getattr(probe, "http_status", None) is None and getattr(probe, "model", None) is None:
         return "unreachable"
     return "unverified"
+
+
+def provider_set_up(provider_id: str) -> bool:
+    """Whether a key of ``provider_id`` can be sent anywhere: a provider whose
+    check needs a base address has one (from the catalogue or the config).
+    A custom provider removed from the config is not set up, so its stored
+    keys are neither ready nor refused."""
+    from . import credentials as c
+    if c._kind_for(provider_id) not in ("openai_bearer", "openrouter_key", "anthropic_compat"):
+        return True
+    try:
+        from openprogram.models.providers.settings.storage import _resolve_base_url
+        return bool(_resolve_base_url(provider_id))
+    except Exception:
+        return True
 
 
 def check_of(provider_id: str, probe: Any) -> KeyCheck:
@@ -242,6 +263,7 @@ __all__ = [
     "check_of",
     "connect",
     "key_accepted",
+    "provider_set_up",
     "read_new_balance",
     "result_of",
     "suggested_models",

@@ -10,12 +10,14 @@
  * 平滑滚到那条消息并闪一下。sticky 挂在滚动容器（#chatArea）里。
  * 钉为章节的那一轮（用户消息的 chapterPinnedAt，见 lib/chat/transcript/
  * chapter.ts）刻度是主题紫色、加粗，静息更长（CHAPTER_W），交互与其他刻度相同。
+ * 回复里声明了任务的那一轮（lib/chat/transcript/task-blocks.ts）刻度稍长
+ * （TASK_W），预览卡列出任务标题，点一条滚到那个任务块并展开。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { selectViewRows, useSessionStore } from "@/lib/session-store";
-import { whenAreaScrollSettles } from "@/lib/chat/history/chat-scroll";
+import { announceReaderSeek, whenAreaScrollSettles } from "@/lib/chat/history/chat-scroll";
 import type { TurnFileSummary } from "@/lib/session-store/types";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { parseAttachments, AttachmentChips } from "../attachments/user-attachments";
@@ -30,7 +32,11 @@ import {
   packRailRow,
   unpackRailRow,
   type RailMsg,
+  type RailTask,
 } from "./message-rail-row";
+import { placedAnchor, railRange, useTaskStore, type TaskSegment } from "@/lib/chat/transcript/task-blocks";
+import { revealTask } from "@/lib/chat/transcript/use-row-tasks";
+import { useTranslation } from "@/lib/i18n";
 import { isLive } from "@/lib/chat/transcript/row-status";
 
 const EMPTY_ORDER: string[] = [];
@@ -38,6 +44,9 @@ const EMPTY_ORDER: string[] = [];
 const BASE_W = 9; // 静息宽度 px
 const MAX_EXTRA_W = 27; // 放大最多再加的宽度 px：最长 36，和右上角控件竖条同宽
 const CHAPTER_W = 18; // 钉为章节的刻度静息宽度 px：一眼能从普通刻度里挑出来
+const TASK_W = 14; // 回复里声明了任务的那一轮：比普通刻度长，比章节短
+const CARD_LEAVE_MS = 160; // 从刻度移到预览卡里的任务条目，中间那段空隙不收卡
+const NO_SEGMENTS: TaskSegment[] = [];
 const GAP = 10; // 刻度间距 px（固定，不随消息数压缩；超长时 rail 内部滚动）
 
 /** Flatten one rail row into scalars so the subscription can compare
@@ -52,6 +61,9 @@ function useUserMessages(): RailMsg[] {
   // query) tearing down and re-running per delta. The rail only depends
   // on USER turns and the head of each reply, neither of which moves
   // while the assistant streams — the compare makes those deltas free.
+  // Task segments change only when a task tool runs, not per token.
+  const sessionId = useSessionStore((s) => s.currentSessionId);
+  const segments = useTaskStore((s) => (sessionId ? s.segmentsBySession[sessionId] : undefined) ?? NO_SEGMENTS);
   const packed = useSessionStore(
     useShallow((s): string[] => {
       const sid = s.currentSessionId;
@@ -71,6 +83,22 @@ function useUserMessages(): RailMsg[] {
       let assistantTurnFiles: TurnFileSummary | undefined;
       let assistantFileWriteState: FileWriteState = "none";
         let assistantReverted = false;
+        // The tasks of the turn's replies, the conversation's own agent only.
+        const tasks: RailTask[] = [];
+        if (segments.length) {
+          const replies = new Set<string>();
+          for (let j = i + 1; j < order.length; j++) {
+            const a = rows[order[j]];
+            if (a?.role === "user" && a.rowKind !== "silent") break;
+            if (a?.role === "assistant") replies.add(a.id);
+          }
+          for (const segment of segments) {
+            if (segment.legacy || segment.scope) continue;
+            const anchor = placedAnchor(segment.anchorId, rows);
+            if (!replies.has(anchor) || tasks.some((task) => task.id === segment.taskId && task.anchor === anchor)) continue;
+            tasks.push({ id: segment.taskId, title: segment.title, anchor, ...railRange(segment) });
+          }
+        }
         for (let j = i + 1; j < order.length; j++) {
           const a = rows[order[j]];
           if (!a) continue;
@@ -79,7 +107,13 @@ function useUserMessages(): RailMsg[] {
           assistantId = a.id;
           const live = isLive(a.status);
           if (!live) {
-            const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
+            // A reply with a task lists the task above; the text under it is
+            // the answer after the last call, not what was said inside a step.
+            const blocks = a.blocks ?? [];
+            const answer = tasks.some((task) => task.anchor === a.id)
+              ? blocks.slice(blocks.findLastIndex((b) => b.type === "tool") + 1)
+              : blocks;
+            const t = answer.find((b) => b.type === "text")?.text ?? (answer === blocks ? a.content : "") ?? "";
             // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
             assistantSummary = t.trim().slice(0, 200);
           }
@@ -99,6 +133,7 @@ function useUserMessages(): RailMsg[] {
             assistantFileWriteState,
             assistantReverted,
             chapter: Boolean(m.chapterPinnedAt),
+            tasks,
           }),
         );
       }
@@ -132,6 +167,9 @@ function scrollToMsg(id: string, onSeek?: (id: string) => void): void {
   };
 
   const area = document.getElementById("chatArea");
+  // The reader is moving: a reply that grows meanwhile must not snap the
+  // view back to the latest (a keyboard activation reaches no area listener).
+  announceReaderSeek(target);
   target.scrollIntoView({ behavior: "smooth", block: "start" });
   // 等平滑滚动停下再闪：和 Jump to latest 同一条 scrollend / 700ms。
   if (area) whenAreaScrollSettles(area, flash);
@@ -148,7 +186,14 @@ function PreviewCard({
   assistantTurnFiles,
   assistantFileWriteState = "none",
   assistantReverted,
+  tasks,
+  onEnter,
+  onLeave,
 }: {
+  /** The turn's tasks; an entry scrolls to that task's block and opens it. */
+  tasks?: RailTask[];
+  onEnter?: () => void;
+  onLeave?: () => void;
   content: string;
   top: number;
   left: number;
@@ -162,14 +207,45 @@ function PreviewCard({
     () => parseAttachments(content),
     [content],
   );
+  const { text: tr } = useTranslation();
   return (
-    <div className="msg-rail-card" style={{ top, left }} role="presentation">
+    <div
+      className={"msg-rail-card" + (tasks?.length ? " has-tasks" : "")}
+      style={{ top, left }}
+      role="presentation"
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
       {text ? (
         <div className="msg-rail-card-text">
           <Markdown source={text} escapeRawHtml />
         </div>
       ) : null}
       <AttachmentChips items={attachments} />
+      {tasks?.length ? (
+        <div className="msg-rail-card-tasks">
+          {tasks.map((task) => (
+            <button
+              key={`${task.anchor}:${task.id}`}
+              type="button"
+              className="msg-rail-card-task"
+              onClick={(event) => {
+                event.stopPropagation();
+                revealTask(task.id, task.anchor);
+              }}
+            >
+              <span className="msg-rail-card-task-title">{task.title}</span>
+              <small>
+                {task.from !== undefined
+                  ? (task.from === task.to ? `${task.from}` : `${task.from}–${task.to}`)
+                  : task.steps
+                    ? (task.steps === 1 ? tr("1 step", "1 步") : tr(`${task.steps} steps`, `${task.steps} 步`))
+                    : ""}
+              </small>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {assistantSummary ? (
         <div className="msg-rail-card-reply">
           <Markdown source={assistantSummary} escapeRawHtml />
@@ -209,6 +285,18 @@ export function MessageRail({
   // 光标最靠近的刻度索引；null = 鼠标不在条上。预览卡、加宽、加亮
   // 都锁到这同一条，保证"指哪条就是哪条"。
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // The card stays while the pointer crosses from a tick to its task entries.
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keepCard = () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
+  };
+  const leaveRail = (hovered: number | null) => {
+    keepCard();
+    if (hovered == null || !msgs[hovered]?.tasks?.length) { setHoverIdx(null); return; }
+    leaveTimer.current = setTimeout(() => setHoverIdx(null), CARD_LEAVE_MS);
+  };
+  useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
   const railRef = useRef<HTMLDivElement>(null);
   const dashRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // wheel 原生监听要用到 idxFromY，但它每次渲染重建；用 ref 转接。
@@ -308,13 +396,15 @@ export function MessageRail({
     return () => rail.removeEventListener("wheel", onWheel);
   }, [msgs.length]);
 
-  if (msgs.length < 2) return null;
+  // One message has nowhere to jump to, unless its replies hold several
+  // task blocks: a Goal runs many turns under the message that set it.
+  if (msgs.length < 2 && (msgs[0]?.tasks?.length ?? 0) < 2) return null;
 
   // 以命中条为中心的直线坡度：命中条最长，向外每条线性递减，第 SPAN
   // 条归零（三角形凸包，非曲线）。基于离散 hoverIdx，跟手不滞后。
   const SPAN = 4; // 命中条向外第几条收回静息长度
   const widthAt = (i: number): number => {
-    const rest = msgs[i]?.chapter ? CHAPTER_W : BASE_W;
+    const rest = msgs[i]?.chapter ? CHAPTER_W : msgs[i]?.tasks?.length ? TASK_W : BASE_W;
     if (hoverIdx == null) return rest;
     const d = Math.abs(i - hoverIdx);
     const t = Math.max(0, 1 - d / SPAN);
@@ -346,8 +436,8 @@ export function MessageRail({
         ref={railRef}
         className="msg-rail"
         style={{ gap: GAP }}
-        onMouseMove={(e) => setHoverIdx(idxFromY(e.clientY))}
-        onMouseLeave={() => setHoverIdx(null)}
+        onMouseMove={(e) => { keepCard(); setHoverIdx(idxFromY(e.clientY)); }}
+        onMouseLeave={() => leaveRail(hoverIdx)}
         onClick={(e) => {
           const i = idxFromY(e.clientY);
           if (i != null && msgs[i]) scrollToMsg(msgs[i].id, onSeek);
@@ -400,6 +490,9 @@ export function MessageRail({
               assistantId={msgs[hoverIdx].assistantId}
               assistantTurnFiles={msgs[hoverIdx].assistantTurnFiles}
               assistantReverted={msgs[hoverIdx].assistantReverted}
+              tasks={msgs[hoverIdx].tasks}
+              onEnter={keepCard}
+              onLeave={() => setHoverIdx(null)}
             />
           );
         })()

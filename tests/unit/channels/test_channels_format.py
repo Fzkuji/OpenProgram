@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.interfaces.channels import _format
+from openprogram.interfaces.channels.delivery import _format
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def test_strip_markdown_helper() -> None:
 
 
 def test_visual_blocks_stay_in_the_app():
-    from openprogram.interfaces.channels._format import VISUAL_ONLY_NOTE, drop_visuals, render, strip_markdown
+    from openprogram.interfaces.channels.delivery._format import VISUAL_ONLY_NOTE, drop_visuals, render, strip_markdown
     reply = "Here is the chart.\n\n```visual\n<div class=\"card\">x</div>\n<script>draw()</script>\n```\n\nDone."
     for platform in ("wechat", "telegram", "slack", "discord"):
         out = render(platform, reply)
@@ -114,7 +114,7 @@ def test_visual_blocks_stay_in_the_app():
 # ---------------------------------------------------------------------------
 
 def test_split_code_block_renders_as_code_in_every_chunk() -> None:
-    from openprogram.interfaces.channels._transport import _chunk
+    from openprogram.interfaces.channels.delivery._transport import _chunk
 
     body = "\n".join(f"**{i}** < x" for i in range(800))
     chunks = _chunk(f"```py\n{body}\n```", 4000)

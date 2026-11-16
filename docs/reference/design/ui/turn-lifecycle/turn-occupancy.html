@@ -54,6 +54,28 @@
 <li><strong>Test</strong>: <code translate="no">tests/component/webui/chat/test_send_after_result.py</code> sends through the real chat handler the instant the first turn's <code translate="no">result</code> is broadcast.</li>
 </ul>
 
+<h2 id="turns-the-runtime-starts">Turns the runtime starts on its own</h2>
+<p>A turn nobody typed holds the same slot a typed one does, for as long as it runs: clients are told it runs (<code translate="no">running_task</code>, or <code translate="no">branch_running_task</code> on a branch that is not selected), Stop names it, and no other turn starts on its branch.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Turn</th><th scope="col">How it takes the slot</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reminder wake, handed-over message</th><td>Reserves before admission (<code translate="no">owner_turn.start_owner_turn</code>); refused while a turn holds it</td></tr>
+<tr><th scope="row">Notice of a background command that ended</th><td>Reserves before admission without waiting (<code translate="no">process_notices.deliver</code>); a busy conversation gets it at the next sweep</td></tr>
+<tr><th scope="row">A Goal's next turn, its verification, a Goal started from the controls</th><td>Admitted first, from inside the turn before it, then waits on its own thread for the branch's slot and takes it (<code translate="no">run_slot.hold_admitted</code>, <code translate="no">ServerRunSlot.adopt</code>)</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Why the Goal's turn is admitted first</strong>: the turn before it still holds the slot when it admits the next one, and the admission is what makes the continuation durable. Reserving first would wait on the thread that has to free the slot.</li>
+<li><strong>Which slot</strong>: the turn's own branch (<code translate="no">branch_id</code>): the selected branch's slot, or that branch's own when another one is selected.</li>
+<li><strong>Why a slot at all</strong>: a turn with no slot is announced to no client, and a load answers <code translate="no">run_active: false</code> for a conversation that is working; a notice and a Goal's next turn could also run on one branch at once.</li>
+<li><strong>A queued turn that is stopped or superseded while it waits</strong> takes nothing and does not run.</li>
+<li><strong>Tests</strong>: <code translate="no">tests/component/runtime/test_owner_turn_run_slot.py</code>, <code translate="no">tests/unit/processes/test_exit_notices.py</code>, <code translate="no">tests/unit/agent/workflows/test_chat_goal.py</code>.</li>
+</ul>
+
+<h2 id="a-client-that-connects-mid-turn">A client that connects mid-turn</h2>
+<p>Run frames announce a turn as it starts, so a new connection asks once: <code translate="no">get_running_sessions</code> is answered <code translate="no">running_sessions</code>, one run state per conversation with a turn on any branch, each shaped like <code translate="no">run_state</code> (<code translate="no">run_active</code>, <code translate="no">run_task</code>, <code translate="no">running_branches</code>, <code translate="no">run_seq</code>). The client applies each (<code translate="no">applyRunState</code>) and sends <code translate="no">get_run_state</code> for a conversation it still shows running that the answer leaves out, which clears it.</p>
+<p class="note">One rule decides whether a durable turn is the page's running turn: its <code translate="no">branch_id</code> against the branch selected now, on the server (<code translate="no">on_selected_branch</code>) and on the page (<code translate="no">onSelectedBranch</code>); the <code translate="no">side_branch</code> flag frozen at admission answers only when one of the two is unknown.</p>
+
 <h2 id="run-state-frames-are-ordered-by-run_seq">Run-state frames are ordered by <code translate="no">run_seq</code></h2>
 <p><code translate="no">running_task</code>, <code translate="no">running_task_clear</code>, <code translate="no">run_state</code> and <code translate="no">session_loaded</code> (<code translate="no">run_active</code>, <code translate="no">run_task</code>) carry it: a server-wide increasing number (<code translate="no">server._next_run_seq()</code>, microsecond wall time, increasing across worker restarts and exact in JSON), taken before the frame's run state is read.</p>
 <table class="stack fixed">
@@ -81,7 +103,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">iter_until_cancelled</code></th><td>In <code translate="no">providers/utils/cancelable_stream.py</code>: polls the cancel signal every 250ms at most while one <code translate="no">__anext__</code> stays outstanding, then exits so <code translate="no">async with</code> closes the stream. Used by the Anthropic and OpenAI Completions adapters.</td></tr>
+<tr><th scope="row"><code translate="no">iter_until_cancelled</code></th><td>In <code translate="no">providers/utils/streams/cancelable_stream.py</code>: polls the cancel signal every 250ms at most while one <code translate="no">__anext__</code> stays outstanding, then exits so <code translate="no">async with</code> closes the stream. Used by the Anthropic and OpenAI Completions adapters.</td></tr>
 <tr><th scope="row">No <code translate="no">wait_for</code></th><td>Do not <code translate="no">wait_for</code> the next chunk: the timeout cancels that read and kills httpx and OpenAI SSE iterators. Grok thinking often has no chunk for longer than 250ms, which would finalize an empty reply.</td></tr>
 <tr><th scope="row"><code translate="no">finish_reason</code></th><td>ends the turn. Grok and xAI often leave SSE open after the last token, so usage drains for <code translate="no">USAGE_DRAIN_S</code> (1.5 s), then <code translate="no">EventDone</code>.</td></tr>
 </tbody>

@@ -60,7 +60,7 @@ def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
     from openprogram.models.providers.types import Model
     from openprogram.state.store import SessionStore, session_scope
     from openprogram.state.worktree.context import reset_worktree, set_worktree
-    from tests.component.providers.adapters.test_stream_fixes import (
+    from tests.component.providers.adapters.openai_codex.test_stream_fixes import (
         _COMPLETED,
         _FakeHTTPClient,
         _FakeSSEResponse,

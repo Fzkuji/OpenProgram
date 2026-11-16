@@ -11,9 +11,9 @@ import threading
 
 import pytest
 
-from openprogram.interfaces.channels import _access
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _access
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 
 
@@ -223,7 +223,7 @@ def _msg(**kw) -> ChannelMessage:
 def test_unknown_sender_never_reaches_dispatch(monkeypatch) -> None:
     called = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: called.append(kw) or "reply")
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg())
@@ -239,7 +239,7 @@ def test_unpaired_group_message_is_not_recorded(monkeypatch) -> None:
 
     called = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: called.append(kw) or "reply",
     )
     ch = _GateChannel()
@@ -267,7 +267,7 @@ def test_channel_message_cannot_approve_itself(monkeypatch) -> None:
     """A message whose text is exactly the approve command is still just
     a message: it stays pending and never lands in the allowlist."""
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: pytest.fail("dispatch must not run for unknown sender"))
     ch = _GateChannel()
     ch._dispatch_and_reply(
@@ -280,7 +280,7 @@ def test_channel_message_cannot_approve_itself(monkeypatch) -> None:
 def test_allowed_sender_reaches_dispatch(monkeypatch) -> None:
     seen = {}
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.update(kw) or None)
     _access.approve_user("faketg", "acct1", "7")
     ch = _GateChannel()

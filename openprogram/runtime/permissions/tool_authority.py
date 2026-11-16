@@ -41,7 +41,7 @@ _NETWORK_TOOLS = {
 # itself, so it needs only ``reply``.
 _CHAT_REPLY_TOOLS = {"chat_send"}
 _REPLY_LOCAL_TOOLS = {
-    "todo_create", "todo_update", "todo_list", "open_work", "enter_plan_mode",
+    "task_start", "task_step", "task_list", "open_work", "enter_plan_mode",
     "exit_plan_mode", "clarify", "skill", "help", "tool_search", "job_output",
     "job_stop", "close_agent",
 }

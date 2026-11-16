@@ -1,0 +1,46 @@
+<title>请求脱敏</title>
+<meta name="description" content="不让凭据和邮箱地址进入提供商收到的内容，而 Agent 继续使用真实值。">
+<h1>请求脱敏</h1>
+<p>默认关闭；<code translate="no">privacy.redact_requests</code> 设置开启。<a href="../../../../models/providers.zh.html#redacting-secrets-in-requests">产品说明</a>。</p>
+
+<h2 id="where-it-sits">位置</h2>
+<pre translate="no"><code>agent_loop ─ redacting_stream_fn ─ failover_stream_fn ─ snapshot_stream ─ provider
+              redact Context  ──────────────────────────────────────▶
+              restore events  ◀──────────────────────────────────────</code></pre>
+<p class="note">最外层，在<a href="../reliability/llm-fault-tolerance.zh.html">故障转移</a>之外：一个 vault 覆盖所有候选模型，回复只恢复一次。代码：<code translate="no">openprogram/models/providers/utils/redaction.py</code>。</p>
+
+<h2 id="redacting">脱敏</h2>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">形态</th><th scope="col">占位符</th></tr></thead>
+<tbody>
+<tr><th scope="row">整段密钥</th><td>私钥块、<code translate="no">sk-ant-…</code>、<code translate="no">sk-…</code>、<code translate="no">sk-proj-…</code>、<code translate="no">sk-svcacct-…</code>、<code translate="no">ghp_…</code> 系列、<code translate="no">github_pat_…</code>、AWS <code translate="no">AKIA</code>/<code translate="no">ASIA</code>、Google <code translate="no">AIza…</code>、Slack <code translate="no">xox?-…</code>、JWT</td><td><code translate="no">[[SECRET_n]]</code></td></tr>
+<tr><th scope="row">赋值</th><td><code translate="no">Bearer</code> 之后；<code translate="no">password</code>、<code translate="no">passwd</code>、<code translate="no">pwd</code>、<code translate="no">api_key</code>、<code translate="no">secret</code>、<code translate="no">secret_key</code>、<code translate="no">access_token</code>、<code translate="no">auth_token</code>、<code translate="no">client_secret</code> 后跟 <code translate="no">:</code> 或 <code translate="no">=</code></td><td><code translate="no">[[SECRET_n]]</code></td></tr>
+<tr><th scope="row">邮箱地址</th><td><code translate="no">local@domain.tld</code></td><td><code translate="no">[[EMAIL_n]]</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">覆盖</th><td>系统提示、用户文本、助手文本和思考、工具调用参数、工具结果、工具定义</td></tr>
+<tr><th scope="row">跳过</th><td>图片和媒体的 <code translate="no">data</code>、<code translate="no">thought_signature</code>、<code translate="no">thinking_signature</code>、id、<code translate="no">cache_control</code></td></tr>
+<tr><th scope="row">原 <code translate="no">Context</code></th><td>不修改；未变部分共享</td></tr>
+<tr><th scope="row">精度</th><td>只认高精度形态：误判会破坏请求</td></tr>
+<tr><th scope="row">编号</th><td>按首次出现，一个值对应一个占位符，同一历史脱敏结果相同：提示缓存有效，思考块一致</td></tr>
+<tr><th scope="row">无需脱敏</th><td>请求原样传递</td></tr>
+<tr><th scope="row">其他使用者</th><td><code translate="no">remove_secrets</code> 用同样的形态、固定的 <code translate="no">[secret removed]</code>、不建 vault，供<a href="../../runtime/session/external-import.zh.html">导入的会话</a>使用，这些会话绝不能保存原值</td></tr>
+</tbody>
+</table>
+
+<h2 id="restoring">恢复</h2>
+<p>每个事件都复制并换回真实值：<code translate="no">partial</code>、<code translate="no">text_end</code> 和 <code translate="no">thinking_end</code> 内容、<code translate="no">toolcall_end.tool_call</code>、<code translate="no">done</code> 或 <code translate="no">error</code> 消息。工具用真实值运行，对话记录也存真实值。</p>
+<p>占位符可能被拆到多个 delta（<code translate="no">"[["</code>、<code translate="no">"SECRET_"</code>、<code translate="no">"1]]"</code>）。<code translate="no">_DeltaRestorer</code> 按内容块保留可能是占位符开头的尾巴（距末尾 <code translate="no">len("[[SECRET_99999]]")</code> 内有 <code translate="no">[</code>，且没有 <code translate="no">]]</code>），拼到下一个 delta 前。<code translate="no">*_end</code> 事件把它作为最后一个 delta 冲出。delta 的 <code translate="no">partial</code> 也在这样的尾巴前截断。</p>
+
+<h2 id="lifetime">生命周期</h2>
+<p>每次提供商调用一个 vault，只在内存里。下一次调用从真实值的历史重新构建。</p>
+
+<h2 id="limits">限制</h2>
+<ul>
+<li>没有可识别形态或键名的自由文本密钥会原样发送。</li>
+<li>模型改写占位符（例如 <code translate="no">[[SECRET 1]]</code>）时，该文本原样返回。</li>
+<li>只有提供商侧工具才见到的值（例如托管网页搜索）不经过 <code translate="no">Context</code>。</li>
+</ul>

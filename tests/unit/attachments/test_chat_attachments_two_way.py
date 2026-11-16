@@ -8,7 +8,7 @@ Covers the four seams the two-way flow rests on:
   marker, on top of still reaching the model as an image block.
 * ``functions.tools.send_file`` — what the agent may hand back, and the
   spelled-out refusal when it names something out of bounds.
-* ``channels._conversation`` — the marker becomes a real platform upload
+* ``channels.inbound._conversation`` — the marker becomes a real platform upload
   and stops being text on the wire.
 """
 from __future__ import annotations
@@ -162,7 +162,7 @@ def test_bound_project_falls_back_to_the_session_meta(state, tmp_path, monkeypat
     work = tmp_path / "Research"; work.mkdir()
     repo = state / "projects" / "p1" / "chats" / "local_s1"
     repo.mkdir(parents=True)
-    from openprogram.state.store.session.session_log import SessionLog
+    from openprogram.state.store.session.files.session_log import SessionLog
     SessionLog(repo).write_meta({"id": "local_s1", "project_id": "p1"})
     (repo / "events.jsonl").write_text("")
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: None)
@@ -587,7 +587,8 @@ def test_send_file_is_hidden_where_there_is_no_attachment_channel():
 # ---------------------------------------------------------------------------
 
 def test_channel_uploads_the_file_and_drops_the_marker(monkeypatch):
-    from openprogram.interfaces.channels import _conversation, _transport
+    from openprogram.interfaces.channels.inbound import _conversation
+    from openprogram.interfaces.channels.delivery import _transport
     calls = []
     monkeypatch.setattr(_transport, "post_file",
                         lambda ch, acct, target, path, caption="":
@@ -605,7 +606,8 @@ def test_channel_without_file_upload_says_so_in_words(monkeypatch):
     """WeChat's iLink has no upload API. Leaking the raw marker to the
     user is the failure this whole lexicon exists to avoid, and silently
     dropping it is worse — rewrite it into a sentence."""
-    from openprogram.interfaces.channels import _conversation, _transport
+    from openprogram.interfaces.channels.inbound import _conversation
+    from openprogram.interfaces.channels.delivery import _transport
     monkeypatch.setattr(
         _transport, "post_file",
         lambda *a, **k: _transport.SendResult.fail("not_supported", "no api"))
@@ -617,7 +619,7 @@ def test_channel_without_file_upload_says_so_in_words(monkeypatch):
 
 
 def test_channel_text_without_markers_is_untouched():
-    from openprogram.interfaces.channels import _conversation
+    from openprogram.interfaces.channels.inbound import _conversation
     reply = "just words, and a [bracket] for good measure"
     assert _conversation._deliver_outbound_files(
         "t", "d", "1", reply, attached_files=[]) == reply
@@ -766,7 +768,7 @@ def test_a_resumed_turn_keeps_files_sent_before_the_pause(in_session, monkeypatc
     from openprogram.runtime.conversation import turn_runtime as T
     from openprogram.runtime.conversation.turn_runtime import finalize, persistence, turn_writer
     from openprogram.runtime.context import Context
-    from openprogram.runtime.context import persistence as context_persistence
+    from openprogram.runtime.context.compaction import persistence as context_persistence
     from openprogram.state.memory import policy
 
     before = in_session / "draft.mp4"
@@ -793,7 +795,7 @@ def test_a_resumed_turn_keeps_files_sent_before_the_pause(in_session, monkeypatc
     monkeypatch.setattr(T.TurnBindings, "bind",
                         classmethod(lambda cls, **kwargs: SimpleNamespace(release=lambda **kw: None)))
     monkeypatch.setattr(T, "make_stream_tap",
-                        lambda **kwargs: SimpleNamespace(flush=lambda: None, blocks=[]))
+                        lambda **kwargs: SimpleNamespace(flush=lambda: None, blocks=[], initial=None))
     monkeypatch.setattr(T, "_run_loop_blocking", lambda **kwargs: ("Here they are.", {}, calls))
     monkeypatch.setattr(persistence, "persist_assistant_message",
                         lambda **kwargs: (stored.append(kwargs["final_text"]) or {"id": "a1"}, [], calls, {}))

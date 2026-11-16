@@ -18,7 +18,7 @@ from openprogram.runtime.context.compaction.prompts import (
     SYSTEM_PROMPT,
     missing_sections,
 )
-from openprogram.runtime.context.tokens import (
+from openprogram.runtime.context.token_accounting.tokens import (
     estimate_message_tokens,
 )
 
@@ -111,7 +111,7 @@ class Summarizer:
         # from the model and passes it through.
         if context_window is None:
             try:
-                from openprogram.runtime.context.tokens import real_context_window
+                from openprogram.runtime.context.token_accounting.tokens import real_context_window
                 context_window = real_context_window(model)
             except Exception:
                 context_window = 0

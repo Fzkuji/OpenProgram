@@ -16,7 +16,9 @@ See ``docs/design/providers/auth/credential-validation-unification.md``.
 """
 from __future__ import annotations
 
+import contextvars
 import dataclasses
+import re
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
@@ -38,6 +40,10 @@ NOT_AVAILABLE = "not_available"
 MISSING = "missing"
 NOT_APPLICABLE = "not_applicable"
 UNKNOWN = "unknown"
+
+#: The detail of a check that could not run because the provider has no
+#: address here (a custom provider removed from the config): not set up.
+NO_BASE_URL = "No base URL resolvable."
 
 # ``ok`` / green Valid means usable *now* — only the exact persist-grade
 # ``valid``. Probe-only statuses (no balance, model down) must never be ok.
@@ -96,17 +102,6 @@ def _result(
     )
 
 
-# provider KIND classification (doc §6)
-_OAUTH_PROVIDERS = frozenset({
-    "openai-codex", "gemini-subscription", "github-copilot",
-    "xai-subscription",
-    "opencode", "opencode-go",
-})
-_CLOUD_PROVIDERS = frozenset({
-    "amazon-bedrock", "google-vertex", "azure-openai-responses",
-})
-
-
 def _provider_api(provider_id: str) -> str | None:
     """The wire API a provider speaks (``anthropic-messages`` /
     ``openai-completions`` / …), used to pick the right auth probe.
@@ -123,24 +118,14 @@ def _provider_api(provider_id: str) -> str | None:
 
 
 def _kind_for(provider_id: str) -> str:
-    if provider_id == "openrouter":
-        return "openrouter_key"
-    if provider_id == "anthropic":
-        return "anthropic_native"
-    if provider_id == "google":
-        return "google_query"
-    if provider_id in _OAUTH_PROVIDERS:
-        return "oauth"
-    if provider_id in _CLOUD_PROVIDERS:
-        return "cloud"
-    # Third-party providers that speak the Anthropic Messages wire format
-    # (e.g. minimax-cn at api.minimaxi.com/anthropic) need an Anthropic-
-    # style probe against THEIR OWN base_url — x-api-key + GET /v1/models,
-    # not the OpenAI-shaped GET /models + POST /chat/completions, which
-    # 404s on those hosts and would brand a perfectly good key as invalid.
-    if _provider_api(provider_id) == "anthropic-messages":
-        return "anthropic_compat"
-    return "openai_bearer"
+    """How a key of ``provider_id`` is checked, from the provider's connection
+    entry (``auth/login/login_method_registry.py``): ``oauth`` for a provider
+    signed in to (its stored login is read), ``cloud`` for a cloud credential
+    chain, else the probe style (``openai_bearer``, ``anthropic_native``,
+    ``anthropic_compat``, ``google_query``, ``openrouter_key``)."""
+    from openprogram.models.auth.login.login_method_registry import check_style
+    style = check_style(provider_id)
+    return "oauth" if style == "login" else style
 
 
 # status-code interpretation (doc §7)
@@ -162,7 +147,7 @@ def _is_not_available(status: int, body: str) -> bool:
     """A 403 whose body says the region or the plan is not served."""
     if status != 403:
         return False
-    from openprogram.models.providers.utils.errors import _NOT_AVAILABLE_MARKERS
+    from openprogram.models.providers.utils.failures.errors import _NOT_AVAILABLE_MARKERS
     low = (body or "").lower()
     return any(marker in low for marker in _NOT_AVAILABLE_MARKERS if marker not in (
         "permission_denied", "permission_error"))
@@ -171,13 +156,54 @@ def _is_not_available(status: int, body: str) -> bool:
 _NOT_AVAILABLE_DETAIL = "Not available in your region or plan (HTTP 403)."
 
 
+_SECRET_LIKE = re.compile(r"(sk|pk|rk|key|tok)[-_][A-Za-z0-9*_\-.]{4,}|[A-Za-z0-9*_\-]{24,}", re.I)
+#: The key the running check sends, so a provider that echoes it in its
+#: error (a dotted Zhipu id.secret, a base64 secret split by ``/``) has the
+#: exact value cut out, not only what looks like a key.
+_KEY_IN_CHECK: "contextvars.ContextVar[str]" = contextvars.ContextVar("key_in_check", default="")
+
+
+def _provider_message(body: str, limit: int = 160, secret: str | None = None) -> str:
+    """The provider's own error sentence in ``body`` (``error.message``,
+    ``message`` or ``error``), with the key being checked (``secret``, else
+    the running check's) and anything shaped like a key or a secret cut
+    out; empty when there is none."""
+    try:
+        import json
+        data = json.loads(body or "")
+    except (TypeError, ValueError):
+        return ""
+    found = ""
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            found = error.get("message") or error.get("code") or ""
+        elif isinstance(error, str):
+            found = error
+        found = found or data.get("message") or data.get("detail") or ""
+    if not isinstance(found, str):
+        return ""
+    from openprogram.models.providers.utils.redaction import remove_secrets
+    key = (secret if secret is not None else _KEY_IN_CHECK.get()) or ""
+    for value in {key, key.strip()}:
+        if len(value) >= 4:
+            found = found.replace(value, "…")
+    found = _SECRET_LIKE.sub("…", " ".join(found.split()))
+    return remove_secrets(found)[:limit].rstrip()
+
+
+def _with_reason(detail: str, body: str) -> str:
+    said = _provider_message(body)
+    return f"{detail} {said}" if said else detail
+
+
 def _is_no_balance(status: int, body: str) -> bool:
     """402, or any 4xx whose body says the credit is spent — checked before
     401/403 because some providers (OpenCode Zen) answer a zero balance
     with 401 ``CreditsError``."""
     if status == 402:
         return True
-    from openprogram.models.providers.utils.errors import is_billing_exhausted
+    from openprogram.models.providers.utils.failures.errors import is_billing_exhausted
     return is_billing_exhausted(body)
 
 
@@ -298,9 +324,11 @@ def _interpret(
         return _result(provider_id, NOT_AVAILABLE, kind=kind, via=via, http_status=status,
                        latency_ms=latency, detail=_NOT_AVAILABLE_DETAIL)
     if status in (401, 403):
+        # The provider's own reason ("This API key has expired") says more
+        # than the status does.
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
                        http_status=status, latency_ms=latency,
-                       detail=f"Key rejected (HTTP {status}). Re-check the key or re-login.")
+                       detail=_with_reason(f"Key rejected (HTTP {status}).", body))
     # 404/400/5xx on the *auth* endpoint is ambiguous for key validity — don't
     # brand the key bad; report unknown so a save still succeeds.
     return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
@@ -378,9 +406,9 @@ def _layer2_response(
     if status in (401, 403):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
                        http_status=status, latency_ms=latency, model=model,
-                       detail=f"HTTP {status}.")
+                       detail=_with_reason(f"Key rejected (HTTP {status}).", text))
     return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
-                   latency_ms=latency, model=model, detail=f"HTTP {status}.")
+                   latency_ms=latency, model=model, detail=_with_reason(f"HTTP {status}.", text))
 
 
 def _layer2_post(
@@ -427,19 +455,25 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
     if kind in ("openai_bearer", "openrouter_key"):
         if not base:
             return _result(provider_id, UNKNOWN, kind=kind, model=model,
-                           detail="No base URL resolvable.")
-        url = base.rstrip("/") + "/chat/completions"
+                           detail=NO_BASE_URL)
+        if _provider_api(provider_id) == "openai-responses":
+            # A Responses provider's models refuse ``max_tokens`` on chat
+            # completions; ask the way its requests are sent.
+            path = "/responses"
+            # ``store: false``: a key check leaves no stored response in the account.
+            body = {"model": model, "input": "PING", "max_output_tokens": 16, "store": False}
+        else:
+            path = "/chat/completions"
+            body = {"model": model, "messages": [{"role": "user", "content": "PING"}],
+                    "max_tokens": 4}
+        url = base.rstrip("/") + path
         res = _layer2_post(
             url,
             headers={
                 "Content-Type": "application/json",
                 **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
             },
-            json_body={
-                "model": model,
-                "messages": [{"role": "user", "content": "PING"}],
-                "max_tokens": 4,
-            },
+            json_body=body,
             timeout=timeout,
             configured_url=base,
         )
@@ -450,7 +484,7 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
             )
         status, text, latency = res
         return _layer2_response(
-            provider_id, kind, "POST /chat/completions", model, status, text, latency,
+            provider_id, kind, f"POST {path}", model, status, text, latency,
         )
 
     if kind in ("anthropic_native", "anthropic_compat"):
@@ -460,7 +494,7 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
         else:
             if not base:
                 return _result(provider_id, UNKNOWN, kind=kind, model=model,
-                               detail="No base URL resolvable.")
+                               detail=NO_BASE_URL)
             url = base.rstrip("/") + "/v1/messages"
             configured_url = base
         res = _layer2_post(
@@ -556,38 +590,52 @@ def _xai_subscription_probe(provider_id: str, kind: str, token: str) -> Credenti
     )
 
 
-def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
-    """OAuth/subscription providers carry no api_key — read the CredentialProvider
-    credential status instead of touching a model."""
+def _oauth_check(provider_id: str, kind: str, cred=None) -> CredentialResult:
+    """A sign-in carries no key to probe: read its stored state (``cred``, else
+    the one a request would use now), refreshing it when near expiry."""
     try:
         from openprogram.models.auth.credential_provider import get_credential_provider
-        cred = get_credential_provider().acquire_sync(provider_id)
-    except Exception:
-        return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider",
-                       detail=(f"Not logged in or couldn't read login state — run "
-                               f"`openprogram providers login {provider_id}`."))
+        manager = get_credential_provider()
+        cred = manager.prepare(cred) if cred is not None else manager.acquire_sync(provider_id)
+    except Exception as exc:
+        return _result(provider_id, INVALID_CREDENTIAL if "refresh" in str(exc).lower() else UNKNOWN,
+                       kind=kind, via="CredentialProvider",
+                       detail=(f"Not signed in, or the sign-in could not be read — run "
+                               f"`openprogram providers keys {provider_id} add`."))
     st = getattr(cred, "status", None)
     token = _oauth_token(cred)
-    if st in ("needs_reauth", "revoked"):
+    if st == "needs_login":
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via="CredentialProvider",
-                       detail=f"Login expired — run `openprogram providers login {provider_id}`.")
-    if st == "billing_blocked":
-        return _result(provider_id, VALID_NO_BALANCE, kind=kind, via="CredentialProvider",
-                       detail="Logged in, but billing is blocked.")
-    logged_in = st in (
-        "valid", "fresh", "expiring_soon", "stale", "refreshing", "rate_limited",
-    ) or bool(token)
-    if not logged_in:
+                       detail=f"Sign-in expired — run `openprogram providers keys {provider_id} add`.")
+    if not token:
         return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider",
-                       detail="Login state unknown.")
-    if provider_id == "xai-subscription" and token:
+                       detail="Sign-in state unknown.")
+    if provider_id == "xai-subscription":
         live = _xai_subscription_probe(provider_id, kind, token)
         # Transport failure: still treat the stored login as valid so Check
         # does not bounce back to "unknown" after a flaky proxy hop.
         if live.http_status is not None or live.status != UNKNOWN:
             return live
-    return _result(provider_id, VALID, kind=kind, via="CredentialProvider",
-                   detail=f"Logged in{f' ({st})' if st else ''}.")
+    return _result(provider_id, VALID, kind=kind, via="CredentialProvider", detail="Signed in.")
+
+
+def check_credential(provider_id: str, cred, *, timeout: float = 15.0) -> CredentialResult:
+    """Check one stored credential: a sign-in is read (and refreshed), a key
+    is probed against the provider (its own base URL first) and, when the
+    probe only proves the key is accepted, pinged once to prove it can answer."""
+    if cred.kind not in ("api_key", "credential_process"):
+        return _oauth_check(provider_id, "oauth", cred)
+    from openprogram.models.auth.resolver import resolve_connection
+    try:
+        conn = resolve_connection(cred)
+    except Exception as exc:
+        return _result(provider_id, INVALID_CREDENTIAL, kind=_kind_for(provider_id),
+                       detail=str(exc)[:200])
+    if conn is None:
+        return _result(provider_id, MISSING, kind=_kind_for(provider_id),
+                       detail="This credential has no key to send.")
+    return validate_credential(provider_id, api_key=conn.auth_value, base_url=conn.base_url,
+                               timeout=timeout, use_cache=False, prove_usable=True)
 
 
 # 60s cache (doc §8)
@@ -630,61 +678,19 @@ def probe_proves_usable(result: CredentialResult) -> bool:
     return False
 
 
-# Persisted account statuses (shown in Settings). Probe-only values such as
-# ``valid_no_balance`` are mapped here and must never be written as ``valid``.
-_PERSIST_BILLING = "billing_blocked"
-_PERSIST_REAUTH = "needs_reauth"
+def status_from_probe(probe_status: str, *, usable_proven: bool = False) -> str | None:
+    """The credential status a check result sets (``models/auth/types.py``
+    ``CredentialStatus``), or ``None`` to leave it as it is.
 
-
-def persist_status_from_probe(
-    probe_status: str,
-    *,
-    previous: str = "",
-    usable_proven: bool = False,
-) -> str | None:
-    """Map a probe status onto the persisted enum, or ``None`` to leave previous.
-
-    ``valid`` is returned only when ``usable_proven`` is true. Auth-only layer-1
-    200 must not upgrade a credential (and must not clear ``billing_blocked``).
-    """
+    ``ready`` only when the check proved the key can answer now: an
+    auth-only listing 200 does not clear a spent quota."""
     if probe_status == VALID:
-        return VALID if usable_proven else None
+        return "ready" if usable_proven else None
     if probe_status == VALID_NO_BALANCE:
-        return _PERSIST_BILLING
+        return "quota"
     if probe_status == INVALID_CREDENTIAL:
-        return _PERSIST_REAUTH
-    if probe_status == VALID_MODEL_UNAVAILABLE:
-        return None
-    if probe_status == MISSING:
-        return MISSING
-    if probe_status == UNKNOWN:
-        return None
-    if probe_status == "rate_limited":
-        return "rate_limited"
+        return "invalid_key"
     return None
-
-
-def display_status_from_probe(
-    probe_status: str,
-    *,
-    previous: str = "",
-    usable_proven: bool = False,
-) -> str:
-    """Status the Settings chip / connectivity check should render."""
-    persist = persist_status_from_probe(
-        probe_status, previous=previous, usable_proven=usable_proven,
-    )
-    if persist:
-        return persist
-    if probe_status == VALID_MODEL_UNAVAILABLE:
-        return VALID_MODEL_UNAVAILABLE
-    if probe_status == VALID and not usable_proven:
-        if previous == _PERSIST_BILLING:
-            return _PERSIST_BILLING
-        return UNKNOWN
-    if probe_status == UNKNOWN:
-        return previous or UNKNOWN
-    return probe_status or UNKNOWN
 
 
 def _first_id_from_models_json(body: str) -> str | None:
@@ -763,7 +769,17 @@ def _maybe_layer2_usable(
             detail=("Key accepted, but no model is configured or listed to "
                     "confirm it is usable."),
         )
-    return _layer2_ping(provider_id, kind, api_key, base, model, timeout)
+    ping = _layer2_ping(provider_id, kind, api_key, base, model, timeout)
+    if ping.status == UNKNOWN and ping.http_status is not None and 400 <= ping.http_status < 500:
+        # The provider accepted the key (layer 1 answered 200) and the test
+        # message was turned down for something other than the key or the
+        # balance (those have statuses of their own): the key works.
+        return _result(
+            provider_id, VALID_MODEL_UNAVAILABLE, kind=kind, via=ping.via,
+            http_status=ping.http_status, latency_ms=ping.latency_ms, model=model,
+            detail=f"Key accepted; the test message failed: {ping.detail}",
+        )
+    return ping
 
 
 # public API
@@ -771,6 +787,7 @@ def _maybe_layer2_usable(
 def validate_credential(
     provider_id: str, *, api_key: str | None = None, model: str | None = None,
     timeout: float = 15.0, use_cache: bool = True, prove_usable: bool = False,
+    base_url: str | None = None,
 ) -> CredentialResult:
     """Validate a provider credential without invoking a model (unless ``model``
     is given, which additionally checks that one model's reachability).
@@ -799,17 +816,27 @@ def validate_credential(
     if not api_key and is_local_provider(provider_id):
         api_key = ""
     elif not api_key:
-        from openprogram.models.providers.catalog.metadata import env_var_for
-        env = env_var_for(provider_id)
         return _result(provider_id, MISSING, kind=kind,
-                       detail=f"No API key set ({env})." if env else "No credential configured.")
+                       detail=f"No API key — add one with: openprogram providers keys {provider_id} add")
 
     if "sk-ant-oat" in api_key:
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, detail=API_KEY_REQUIRED)
 
+    token = _KEY_IN_CHECK.set(api_key)
+    try:
+        return _validate_key(provider_id, kind, api_key, model=model, timeout=timeout,
+                             use_cache=use_cache, prove_usable=prove_usable, base_url=base_url)
+    finally:
+        _KEY_IN_CHECK.reset(token)
+
+
+def _validate_key(provider_id: str, kind: str, api_key: str, *, model: str | None,
+                  timeout: float, use_cache: bool, prove_usable: bool,
+                  base_url: str | None) -> CredentialResult:
+    """:func:`validate_credential` once the key to send is known."""
     # Cache only the model-independent (layer-1) result. A prove-usable ping
     # is never served from that cache — it would hide a dead quota.
-    cache_key = (provider_id, model or "")
+    cache_key = (provider_id, model or "", base_url or "")
     if use_cache and model is None and not prove_usable:
         hit = _cache_get(cache_key)
         if hit is not None:
@@ -818,9 +845,9 @@ def validate_credential(
     base = None
     if kind in ("openai_bearer", "openrouter_key", "anthropic_compat"):
         from openprogram.models.providers.settings.storage import _resolve_base_url
-        base = _resolve_base_url(provider_id)
+        base = base_url or _resolve_base_url(provider_id)
         if not base:
-            return _result(provider_id, UNKNOWN, kind=kind, detail="No base URL resolvable.")
+            return _result(provider_id, UNKNOWN, kind=kind, detail=NO_BASE_URL)
 
     if model is not None:
         return _layer2_ping(provider_id, kind, api_key, base, model, timeout)

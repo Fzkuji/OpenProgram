@@ -17,14 +17,14 @@ import time
 
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from openprogram.models.providers.utils.stream_retry import retry_after_beyond_cap
+from openprogram.models.providers.utils.streams.stream_retry import retry_after_beyond_cap
 from openprogram.models.providers.structured_output import StructuredOutputError
 import logging
 
 _log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from openprogram.models.providers.utils.errors import RetryInfo
+    from openprogram.models.providers.utils.failures.errors import RetryInfo
 
 from .shared import (
     _ExecCallState,
@@ -359,8 +359,8 @@ class ExecutionOperations:
         # the SSE parser honour the SAME wall-clock budget — otherwise the
         # nested loops multiply (max_attempts × max_retries) with nobody
         # capping the total. See docs/design/providers/reliability/error-and-timeout-mechanism.html.
-        from openprogram.models.providers.utils.errors import ExecInterrupt
-        from openprogram.models.providers.utils import deadline as _dl
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+        from openprogram.models.providers.utils.http_transport import deadline as _dl
 
         if structured_format is not None:
             response_format_token = _current_response_format.set(structured_format)
@@ -373,7 +373,7 @@ class ExecutionOperations:
                 }
             )
         _deadline_token = _dl.set_deadline(_deadline)
-        from openprogram.models.providers.utils.recovery import (
+        from openprogram.models.providers.utils.failures.recovery import (
             RecoveryState,
             current_recovery,
             recovery_limit_from_max_retries,
@@ -416,7 +416,7 @@ class ExecutionOperations:
                 # may have already crossed the line, in which case we
                 # don't even start another attempt.
                 if _deadline is not None and time.monotonic() >= _deadline:
-                    from openprogram.models.providers.utils.errors import ErrorReason as _ER
+                    from openprogram.models.providers.utils.failures.errors import ErrorReason as _ER
 
                     cause = TimeoutError(
                         f"exec() timed out after {timeout_s}s "
@@ -528,7 +528,7 @@ class ExecutionOperations:
                         or attempts_used >= self.max_retries
                         or retry_after_beyond_cap(getattr(e, "retry_after_s", None))
                     ):
-                        from openprogram.models.providers.utils.errors import (
+                        from openprogram.models.providers.utils.failures.errors import (
                             ErrorReason as _ER,
                         )
 
@@ -555,7 +555,7 @@ class ExecutionOperations:
                         _deadline is not None
                         and (time.monotonic() + sleep_s) >= _deadline
                     ):
-                        from openprogram.models.providers.utils.errors import (
+                        from openprogram.models.providers.utils.failures.errors import (
                             ErrorReason as _ER,
                         )
 
@@ -640,7 +640,7 @@ class ExecutionOperations:
         if timeout_s is not None:
             remaining_timeout = timeout_s - (time.monotonic() - _exec_start)
             if remaining_timeout <= 0:
-                from openprogram.models.providers.utils.errors import ErrorReason as _ER
+                from openprogram.models.providers.utils.failures.errors import ErrorReason as _ER
 
                 cause = TimeoutError(
                     f"exec() exhausted timeout_s={timeout_s}s before choice "
@@ -777,8 +777,8 @@ class ExecutionOperations:
         _deadline = _exec_start + timeout_s if (timeout_s and timeout_s > 0) else None
         # Same end-to-end deadline publish as exec() — the inner stream-retry
         # loop and SSE parser read it. See error-and-timeout-mechanism.html.
-        from openprogram.models.providers.utils.errors import ExecInterrupt
-        from openprogram.models.providers.utils import deadline as _dl
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+        from openprogram.models.providers.utils.http_transport import deadline as _dl
 
         if structured_format is not None:
             response_format_token = _current_response_format.set(structured_format)
@@ -791,7 +791,7 @@ class ExecutionOperations:
                 }
             )
         _deadline_token = _dl.set_deadline(_deadline)
-        from openprogram.models.providers.utils.recovery import (
+        from openprogram.models.providers.utils.failures.recovery import (
             RecoveryState,
             current_recovery,
             recovery_limit_from_max_retries,
@@ -828,7 +828,7 @@ class ExecutionOperations:
             while attempts_used < self.max_retries:
                 # Pre-attempt deadline check (see exec() for the rationale).
                 if _deadline is not None and time.monotonic() >= _deadline:
-                    from openprogram.models.providers.utils.errors import ErrorReason as _ER
+                    from openprogram.models.providers.utils.failures.errors import ErrorReason as _ER
 
                     cause = TimeoutError(
                         f"async_exec() timed out after {timeout_s}s "
@@ -940,7 +940,7 @@ class ExecutionOperations:
                         or attempts_used >= self.max_retries
                         or retry_after_beyond_cap(getattr(e, "retry_after_s", None))
                     ):
-                        from openprogram.models.providers.utils.errors import (
+                        from openprogram.models.providers.utils.failures.errors import (
                             ErrorReason as _ER,
                         )
 
@@ -962,7 +962,7 @@ class ExecutionOperations:
                         _deadline is not None
                         and (time.monotonic() + sleep_s) >= _deadline
                     ):
-                        from openprogram.models.providers.utils.errors import (
+                        from openprogram.models.providers.utils.failures.errors import (
                             ErrorReason as _ER,
                         )
 

@@ -278,7 +278,7 @@ function renderContent(){
       <div class="msgs">
         <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
         <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，代理解析统一到一个入口，1594 个测试全过。</div>
-        <div class="m-tool" data-action="open-file" data-file="http_proxy.py">✏️ 编辑 <span class="fp mono">providers/utils/http_proxy.py</span></div>
+        <div class="m-tool" data-action="open-file" data-file="http_proxy.py">✏️ 编辑 <span class="fp mono">providers/utils/http_transport/http_proxy.py</span></div>
         <div class="m-ai" style="color:var(--text2);font-size:12px">↑ 点文件路径 → 右边树高亮 + 新开一个文件 tab（就像浏览器点链接）</div>
       </div>
       <div class="composer">说明需要继续修改的内容…

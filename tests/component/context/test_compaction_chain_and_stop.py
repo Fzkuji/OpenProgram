@@ -23,8 +23,8 @@ from openprogram.models.providers.types import AssistantMessage, Model, SimpleSt
 from openprogram.runtime.context.compaction.bounded_summary import summary_reply
 from openprogram.runtime.context.compaction.view import load_compaction_view
 from openprogram.runtime.context.engine import DefaultContextEngine
-from openprogram.runtime.context.nodes import active_summary_for_chain, render_context
-from openprogram.runtime.context.persistence import Persister, rendered_history
+from openprogram.runtime.context.session_dag.nodes import active_summary_for_chain, render_context
+from openprogram.runtime.context.compaction.persistence import Persister, rendered_history
 from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 from openprogram.state.store.session.session_store import SessionStore
 

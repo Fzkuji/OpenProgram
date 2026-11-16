@@ -2,7 +2,7 @@
 
 Every source gets:
   * happy-path import returns a well-formed Credential
-  * missing-file / missing-env returns []
+  * missing-file returns []
   * corrupt-file returns []
   * removal_steps() yields at least one step with the right metadata
 
@@ -17,67 +17,17 @@ from pathlib import Path
 
 from openprogram.models.auth.sources import (
     CodexCliSource,
-    EnvApiKeySource,
     GhCliSource,
     QwenCliSource,
 )
 from openprogram.models.auth.sources.gh_cli import _parse_hosts_yml
 
 
-# ---- EnvApiKeySource ------------------------------------------------------
-
-def test_env_source_returns_credential_when_set(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_TEST_KEY", "sk-xyz")
-    src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY")
-    creds = src.try_import(tmp_path)
-    assert len(creds) == 1
-    c = creds[0]
-    assert c.provider_id == "openai"
-    assert c.kind == "api_key"
-    assert c.payload.auth_value == "sk-xyz"
-    assert c.metadata["env_var"] == "OPEN_TEST_KEY"
-    assert c.read_only is True
-
-
-def test_env_source_strips_bearer_prefix(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_TEST_KEY", "Bearer  sk-zzz")
-    src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY")
-    creds = src.try_import(tmp_path)
-    assert creds[0].payload.auth_value == "sk-zzz"
-
-
-def test_env_source_returns_empty_when_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("OPEN_TEST_KEY_MISSING", raising=False)
-    src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY_MISSING")
-    assert src.try_import(tmp_path) == []
-
-
-def test_env_source_returns_empty_when_blank(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_TEST_KEY", "   ")
-    src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY")
-    assert src.try_import(tmp_path) == []
-
-
-def test_env_source_removal_step_is_instructional(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_TEST_KEY", "k")
-    src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY")
-    [cred] = src.try_import(tmp_path)
-    [step] = src.removal_steps(cred)
-    assert step.executable is False
-    assert step.kind == "env"
-    assert step.target == "OPEN_TEST_KEY"
-
-
-def test_env_source_id_encodes_var_name():
-    src = EnvApiKeySource(provider_id="openai", env_var="FOO_KEY")
-    assert src.source_id == "env:FOO_KEY"
-
-
 # ---- CodexCliSource -------------------------------------------------------
 
 def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
     # Force the "codex binary is on PATH" branch so the test asserts
-    # the cli_delegated path regardless of whether the test runner
+    # the imported-login path regardless of whether the test runner
     # (e.g. GitHub Actions ubuntu image) actually has codex installed.
     # Without this the CI box hits the fallback adoption path that
     # tags the credential as ``oauth`` instead.
@@ -94,7 +44,7 @@ def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
     }))
     src = CodexCliSource(override_path=str(path))
     [cred] = src.try_import(tmp_path)
-    assert cred.kind == "cli_delegated"
+    assert cred.kind == "import"
     assert cred.payload.data["store_path"] == str(path)
     assert cred.payload.data["access_key_path"] == ["tokens", "access_token"]
     assert cred.payload.data.get("expires_key_path", []) == []
@@ -145,7 +95,7 @@ def test_qwen_source_imports_fields(tmp_path: Path):
     }))
     src = QwenCliSource(override_path=str(path))
     [cred] = src.try_import(tmp_path)
-    assert cred.kind == "cli_delegated"
+    assert cred.kind == "import"
     assert cred.payload.data["expires_key_path"] == ["expiry_date"]
     assert cred.metadata["resource_url"] == "portal.qwen.ai"
     assert cred.read_only is True
@@ -183,9 +133,9 @@ def test_gh_source_parses_two_hosts(tmp_path: Path):
     assert len(creds) == 2
     by_host = {c.metadata["host"]: c for c in creds}
     assert by_host["github.com"].payload.auth_value == "gho_abc123"
-    assert by_host["github.com"].account_id == "default"
+    assert by_host["github.com"].label == "alice"
     assert by_host["github.enterprise.example"].payload.auth_value == "gho_zzz999"
-    assert by_host["github.enterprise.example"].account_id == "github.enterprise.example"
+    assert by_host["github.enterprise.example"].identity["account_id"] == "github.enterprise.example/bob"
 
 
 def test_gh_source_filter_by_host(tmp_path: Path):

@@ -50,7 +50,7 @@ openprogram config set agent.output_style lab-notes</code></pre>
 <details>
 <summary>文本落在哪里</summary>
 <ul>
-<li>注册的上下文组件（<code translate="no">output_style</code>，L0 层），经 <code translate="no">openprogram/runtime/context/components.py</code> 的组装器进入，而不是贴在用户消息上。</li>
+<li>注册的上下文组件（<code translate="no">output_style</code>，L0 层），经 <code translate="no">openprogram/runtime/context/prompt_assembly/components.py</code> 的组装器进入，而不是贴在用户消息上。</li>
 <li>位于身份和工具使用指引之后、agent 内联系统提示词之前，所以冲突时 agent 的指令优先。</li>
 <li><code translate="no">default</code> 为空，空组件被丢弃：提示词与没有该组件时逐字节相同。</li>
 </ul>

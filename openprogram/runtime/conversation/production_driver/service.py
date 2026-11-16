@@ -108,7 +108,7 @@ class AgentProductionDriver(ActivationOperations, ExecutionOperations, SafePoint
         on_event: shared.Callable[[dict], None] | None = None,
         execution_context: shared.Mapping[str, shared.Any] | None = None,
     ) -> shared.Any:
-        from openprogram.runtime.conversation.sub_agent_run import (
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
             validate_self_update_turn_request,
         )
         from openprogram.runtime.conversation.turn_runtime import process_user_turn

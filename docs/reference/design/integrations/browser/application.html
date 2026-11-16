@@ -1,0 +1,54 @@
+<title>Browser application</title>
+<meta name="description" content="The built-in browser as an application: its modules and the service the core reaches it through.">
+<h1>Browser application</h1>
+
+
+<p>The built-in browser is the application <code translate="no">openprogram/programs/applications/browser/</code>. The core never imports it: the application's <code translate="no">setup(ctx)</code> provides the service <code translate="no">browser</code>, and every core caller looks it up with <code translate="no">_services.lookup("browser")</code> and runs without a browser when the lookup returns <code translate="no">None</code>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Module</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">setup</code>: provides the service and registers the L2 context section <code translate="no">pages</code>. The application registers no tool</td></tr>
+<tr><th scope="row"><code translate="no">service.py</code></th><td><code translate="no">BrowserService</code>, the service's members (below)</td></tr>
+<tr><th scope="row"><code translate="no">pages.py</code></th><td><code translate="no">BrowserResourceStore</code>, per-conversation Page projections, resource control, human page input</td></tr>
+<tr><th scope="row"><code translate="no">tabs.py</code></th><td>the <a href="tab-driver.html">tab driver</a> for <code translate="no">computer_use_agent(target="browser")</code></td></tr>
+<tr><th scope="row"><code translate="no">extension.py</code></th><td>the user's Chrome or Edge through the Playwright Extension</td></tr>
+<tr><th scope="row"><code translate="no">page_actions.py</code>, <code translate="no">file_inputs.py</code></th><td>argument parsing and page scripts the two above share; the approved local file an upload sends</td></tr>
+<tr><th scope="row"><code translate="no">app_endpoint.py</code>, <code translate="no">privacy.py</code></th><td>the App's CDP endpoint; password-value redaction</td></tr>
+<tr><th scope="row"><code translate="no">prompt.py</code></th><td>the open-Pages section of a call's prompt</td></tr>
+</tbody>
+</table>
+<p>The Agent operates the browser with one tool, <code translate="no">computer_use_agent(target="browser")</code>: the App's tabs through the tab driver, the user's Chrome or Edge through the extension. Its actions are in <a href="tab-actions.html">Browser tab actions</a>.</p>
+<p>The service's members are <code translate="no">pages</code>, <code translate="no">tabs</code>, <code translate="no">chrome</code>, <code translate="no">extension</code>, <code translate="no">user_browser_names</code>, <code translate="no">open_tab(url)</code>, <code translate="no">authorized_page(arguments, window_id)</code> and <code translate="no">browser_of()</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Caller</th><th scope="col">Without the service</th></tr></thead>
+<tbody>
+<tr><th scope="row">A call's prompt</th><td>No Pages section; open Pages do not add the screen tool to the turn</td></tr>
+<tr><th scope="row">Process routes</th><td>List no browser resources; 404 for browser control</td></tr>
+<tr><th scope="row">Web tab bridge</th><td>Skips Page bookkeeping</td></tr>
+<tr><th scope="row"><code translate="no">computer_use_agent(target="browser")</code></th><td>Reports the target unavailable; desktop targets keep working</td></tr>
+<tr><th scope="row">A Program's web tab commands</th><td>Refused with <code translate="no">browser_not_enabled</code></td></tr>
+<tr><th scope="row">Permission policy</th><td>Sees no user browser</td></tr>
+</tbody>
+</table>
+
+<h2 id="program-web-tabs">A Program's web tabs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Open</th><td><code translate="no">tabs.openWebTab</code> of the <code translate="no">framework</code> interface calls <code translate="no">open_tab(url)</code>: the tab opens in the background for the running conversation, as <code translate="no">open</code> of the browser target does.</td></tr>
+<tr><th scope="row">Act</th><td>A native presentation command on a web tab names it with <code translate="no">arguments.tab</code>, the tab's id from <code translate="no">tabs</code> (omitted: the tab the conversation used last). <code translate="no">authorized_page</code> checks it against the App's current window and binding and sends the App its own tab id.</td></tr>
+<tr><th scope="row">Authority</th><td>Both need what <code translate="no">computer_use_agent</code> needs: a turn that may not use the screen tool may not reach a web tab this way either.</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>the built-in browser as the application <code translate="no">programs/applications/browser/</code>, reached only through the <code translate="no">browser</code> service, with tests for each caller running without it.</td></tr>
+<tr><th scope="row">Implemented</th><td>one browser entry for the model, Programs and web tab commands: the tab driver and the extension behind <code translate="no">computer_use_agent(target="browser")</code>.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../computer-use/computer-and-browser-use.html">Computer and browser use</a></p>

@@ -96,7 +96,7 @@ def test_responses_client_routes_to_the_selected_subscription_model(monkeypatch)
     )
     monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: kwargs)
     monkeypatch.setattr(
-        "openprogram.models.providers.utils.http_client.get_shared_async_client",
+        "openprogram.models.providers.utils.http_transport.http_client.get_shared_async_client",
         lambda *args, **kwargs: object(),
     )
     result = adapter._create_client(

@@ -66,6 +66,19 @@ export function patchHeldRow(rowId: string, fields: Partial<ChatMsg>): void {
   }
 }
 
+/** One more credential switch over a reply, in every view holding its row. */
+export function appendCredentialNotice(rowId: string, notice: NonNullable<ChatMsg["credentialNotices"]>[number]): void {
+  flushTextFrames();
+  const store = useSessionStore.getState();
+  for (const view of viewsHolding(rowId)) {
+    const held = store.rowsByView[view][rowId];
+    store.applyLocalChange(view, {
+      kind: "local_patch", rowId,
+      fields: { credentialNotices: [...(held?.credentialNotices ?? []), notice], retryStatus: undefined },
+    });
+  }
+}
+
 /** Sources land on the block their `text_end` closes, after the text before it. */
 export function placeCitations(rowId: string, itemId: string, citations: unknown[]): void {
   flushTextFrames();

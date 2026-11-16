@@ -183,7 +183,7 @@ class AgentSession:
         attempt = 0
         transport_reserved = 0
         current_fn = run_fn
-        from openprogram.models.providers.utils.recovery import current_recovery
+        from openprogram.models.providers.utils.failures.recovery import current_recovery
 
         while True:
             await current_fn()

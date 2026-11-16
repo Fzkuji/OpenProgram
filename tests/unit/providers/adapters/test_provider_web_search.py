@@ -1,6 +1,6 @@
 """Provider-side web search: capability, request tools, stream blocks, replay.
 
-Contract: docs/reference/design/providers/web-search.html ("Wire contract").
+Contract: docs/reference/design/providers/requests/web-search.html ("Wire contract").
 """
 import asyncio
 from types import SimpleNamespace as NS
@@ -125,7 +125,6 @@ def _run_anthropic(monkeypatch, context, opts, events=()):
         params.update(kwargs)
         return _AnthropicStream(events)
 
-    monkeypatch.setattr("openprogram.models.auth.usage.acquire_pooled", lambda *args: None)
     monkeypatch.setattr(anthropic, "_build_client", lambda *a, **k: (NS(messages=NS(stream=stream)), False))
     model = _model("anthropic-messages", "anthropic", "claude-sonnet-4-5")
 

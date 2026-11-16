@@ -73,7 +73,6 @@ openprogram config set ui.web_port 8101</code></pre>
 <thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_PROFILE</code></th><td>等同 <code translate="no">--profile</code>；<code translate="no">~/.openprogram-&lt;name&gt;/</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_HOME</code></th><td>认证账号的替代基础目录</td><td><code translate="no">openprogram/models/auth/account/accounts.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_WORKDIR</code></th><td>agent 默认工作目录，优先于 <code translate="no">default_workdir</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
 </tbody>
 </table>
@@ -105,14 +104,14 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>瞬态失败重试次数（默认 6）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code></th><td>退避基数秒（默认 1.5）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td><code translate="no">runtime.exec</code> 默认墙钟预算（未设或 <code translate="no">0</code>：不限）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>覆盖 <code translate="no">model_fallback</code> 设置。未设：按该设置（默认关闭）。<code translate="no">same-provider</code>：该 provider 其他已启用模型，最多两个。<code translate="no">off</code> 或 <code translate="no">none</code>：关闭。逗号分隔的 <code translate="no">provider/model</code> 列表：按顺序，可跨 provider。</td><td><code translate="no">openprogram/models/providers/utils/failover.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>每个流式请求的尝试次数，含第一次（默认 5）。连接重试有独立额度，为此值减一。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>重试用尽后等待不可达端点，每 5 至 30 秒检查（默认 1800；<code translate="no">0</code> 立即失败）。取消回合会结束等待。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>重试愿意等待的最长 <code translate="no">Retry-After</code>（默认 300）。更长则立即失败，让回退模型、其他账号或用户接手。<code translate="no">0</code> 取消上限。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>覆盖 <code translate="no">model_fallback</code> 设置。未设：按该设置（默认关闭）。<code translate="no">same-provider</code>：该 provider 其他已启用模型，最多两个。<code translate="no">off</code> 或 <code translate="no">none</code>：关闭。逗号分隔的 <code translate="no">provider/model</code> 列表：按顺序，可跨 provider。</td><td><code translate="no">openprogram/models/providers/utils/failures/failover.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>每个流式请求的尝试次数，含第一次（默认 5）。连接重试有独立额度，为此值减一。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>重试用尽后等待不可达端点，每 5 至 30 秒检查（默认 1800；<code translate="no">0</code> 立即失败）。取消回合会结束等待。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>重试愿意等待的最长 <code translate="no">Retry-After</code>（默认 300）。更长则立即失败，让回退模型、其他账号或用户接手。<code translate="no">0</code> 取消上限。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET</code></th><td><code translate="no">0</code>：ChatGPT 登录的 Codex 回合用 HTTP 而不是 WebSocket。WebSocket 默认开启，接续的回合只发送新输入</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/websocket_transport.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_ZSTD</code></th><td><code translate="no">0</code>：Codex HTTP 回合不压缩（默认 zstd）</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/request_compression.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_STRICT_TOOLS</code></th><td><code translate="no">0</code>：关闭严格工具 schema（默认开启）</td><td><code translate="no">openprogram/models/providers/schema/__init__.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>：强制 IPv4 源地址</td><td><code translate="no">openprogram/models/providers/utils/http_client.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>：强制 IPv4 源地址</td><td><code translate="no">openprogram/models/providers/utils/http_transport/http_client.py</code></td></tr>
 </tbody>
 </table>
 <h3>调试</h3>

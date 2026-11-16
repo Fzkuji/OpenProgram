@@ -593,7 +593,7 @@ def test_prime_reads_are_bounded_by_the_runtime_models_window(originals, monkeyp
     # them as it bounds a turn's results (spill.result_cap).
     from types import SimpleNamespace
     from openprogram.runtime.agent.runtime import Runtime
-    from openprogram.state.store.session import spill
+    from openprogram.state.store.session.files import spill
 
     monkeypatch.setattr(Runtime, "_resolve_session_model",
                         lambda self: SimpleNamespace(context_window=8_000))

@@ -27,11 +27,10 @@ from openprogram.models.providers.types import (
     ThinkingContent,
     Usage,
 )
-from openprogram.models.providers.utils import stream_retry
+from openprogram.models.providers.utils.streams import stream_retry
 from tests.component.cli.test_print_turn import (  # noqa: F401 - fixtures
     API,
     MODEL,
-    _never_in_a_real_profile,
     provider,
 )
 

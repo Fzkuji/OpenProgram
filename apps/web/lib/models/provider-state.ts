@@ -11,11 +11,12 @@
  *                        action ("No credit", "Sign in", "Rate limited · 14:02").
  *   - `quotaTone`      — the bar colour rule: warning from 80 % used, danger
  *                        from 95 % or when spent.
- *   - `triggerMark`    — whether the picker trigger carries its small mark:
- *                        only when the selected provider needs action or its
- *                        quota warns (the Worker's time-aware 80 % / 95 % rule).
+ *   - `triggerMark`    — whether the picker trigger carries its small red
+ *                        mark: only when the selected provider needs action
+ *                        or its quota is 95 % used or spent.
  *   - `fixLink`        — where a row that needs action leads.
  *   - `quotaCardText`  — the title and reset line of the spent-quota card.
+ *   - `headerRows`     — the limits a provider's submenu header lists.
  *
  * Design: docs/reference/design/providers/provider-management.html#chat.
  */
@@ -77,7 +78,7 @@ export function stateWord(
     case "no_credit":
       return { label: text("No credit", "没有余额"), tone: "danger" };
     case "invalid_key":
-      return { label: text("Invalid key", "Key 无效"), tone: "danger" };
+      return { label: text("Invalid key", "密钥无效"), tone: "danger" };
     case "not_running":
       return { label: text("Not running", "未运行"), tone: "muted" };
     case "rate_limited":
@@ -151,23 +152,23 @@ export function providerPage(id: string): string {
 
 export const PROVIDERS_PAGE = "/settings/providers";
 
-/** The picker trigger's mark: shown only when the selected model's provider
- *  needs action or its quota warns (`attention`, the Worker's rule). The
- *  tone is danger when the provider cannot answer or the quota is nearly
- *  spent, warning otherwise. */
+/** The picker trigger's mark, always in the danger tone and only when the
+ *  selected model's provider cannot answer: it needs action (signed out, no
+ *  credit, invalid key, not set up, not running) or its quota is nearly
+ *  spent (95 % used) or spent. A quota that only warns — the 80 % rule
+ *  the bars and the ring follow — leaves the trigger plain. */
 export function triggerMark(
   p: PickerProvider | undefined | null,
   text: Text,
   now?: number,
 ): { tone: Tone; detail: string } | null {
-  if (!p || !p.attention) return null;
-  const word = stateWord(p, text, now);
-  if (word) {
-    const tone: Tone = word.tone === "danger" ? "danger" : "warning";
-    return { tone, detail: word.label };
+  if (!p) return null;
+  if (needsAction(p)) {
+    const word = stateWord(p, text, now);
+    return { tone: "danger", detail: word?.label ?? "" };
   }
-  if (p.quota) {
-    return { tone: p.quota.tone === "danger" ? "danger" : "warning", detail: quotaSummary(p.quota, text, now) };
+  if (p.quota?.tone === "danger") {
+    return { tone: "danger", detail: quotaSummary(p.quota, text, now) };
   }
   return null;
 }
@@ -225,42 +226,99 @@ export function quotaCardText(
   return { title, detail: parts.join(" · ") };
 }
 
-/** One limit as a submenu header row: a bar (% left) or an amount. */
+/** One limit as a submenu header row: a window or key limit (% left, its
+ *  reset, a bar) or an amount without a limit (balance, credits). */
 export interface QuotaRow {
   key: string;
   label: string;
   /** Bar fill, 0–1 left; null for an amount without a limit. */
   left: number | null;
-  /** "8% · 14:30" or "$18.42". */
-  value: string;
+  /** Whole percent left; null for an amount. */
+  pct: number | null;
+  /** "14:30", "Thu 02:22"; null without a reset time or for an amount. */
+  reset: string | null;
+  /** "$18.42", "38,991.82 credits"; null for a window. */
+  value: string | null;
   tone: Tone;
   stale: boolean;
 }
 
 const MONEY_KEYS = new Set(["balance", "credits"]);
 
-/** The rows the provider's submenu header shows, worst first, at most four. */
-export function quotaRows(limits: QuotaLimitWire[], text: Text, now?: number): QuotaRow[] {
+function windowRow(
+  key: string, label: string, leftFraction: number, resetsAt: number | null | undefined,
+  tone: Tone, stale: boolean, text: Text, now?: number,
+): QuotaRow {
+  return {
+    key, label, left: Math.max(0, Math.min(1, leftFraction)), pct: percentLeft(leftFraction),
+    reset: resetsAt ? clockLabel(resetsAt, text, now) : null, value: null, tone, stale,
+  };
+}
+
+const byLeft = (a: QuotaRow, b: QuotaRow) => (a.left ?? 2) - (b.left ?? 2);
+
+/** At most this many window or key limits in the header, worst first; the
+ *  amounts (one short line each, no bar) follow them and are never cut. */
+const MAX_WINDOWS = 4;
+
+function capped(rows: QuotaRow[]): QuotaRow[] {
+  const windows = rows.filter((r) => r.left != null).sort(byLeft).slice(0, MAX_WINDOWS);
+  return [...windows, ...rows.filter((r) => r.left == null)];
+}
+
+function limitRows(limits: QuotaLimitWire[], text: Text, now?: number): QuotaRow[] {
   const rows: QuotaRow[] = [];
   for (const limit of limits) {
     const base = limit.limit_key.split(":").pop() ?? limit.limit_key;
     if (limit.left_fraction != null && !MONEY_KEYS.has(base)) {
-      const left = percentLeft(limit.left_fraction);
-      const reset = limit.resets_at ? ` · ${clockLabel(limit.resets_at, text, now)}` : "";
-      rows.push({
-        key: limit.limit_key, label: limit.label, left: Math.max(0, Math.min(1, limit.left_fraction)),
-        value: `${left}%${reset}`, tone: quotaTone(limit.left_fraction, limit.status), stale: limit.stale,
-      });
+      rows.push(windowRow(
+        limit.limit_key, limit.label, limit.left_fraction, limit.resets_at,
+        quotaTone(limit.left_fraction, limit.status), limit.stale, text, now,
+      ));
     } else if (limit.remaining != null) {
       rows.push({
-        key: limit.limit_key, label: limit.label, left: null,
+        key: limit.limit_key, label: limit.label, left: null, pct: null, reset: null,
         value: balanceLabel({ amount: limit.remaining, unit: limit.unit }),
         tone: limit.status === "exhausted" ? "danger" : "normal", stale: limit.stale,
       });
     }
   }
-  rows.sort((a, b) => (a.left ?? 2) - (b.left ?? 2));
-  return rows.slice(0, 4);
+  return rows;
+}
+
+/** The rows a status read gives the submenu header: windows worst first
+ *  (at most four), then amounts. */
+export function quotaRows(limits: QuotaLimitWire[], text: Text, now?: number): QuotaRow[] {
+  return capped(limitRows(limits, text, now));
+}
+
+/** The submenu header's rows: every limit the status read carries, and
+ *  always the limit the provider row's ring is drawn from and the balance
+ *  of the picker state. The picker state arrives first and the status read
+ *  seconds later (it also sums 30 days of spend), so until then the header
+ *  shows what the ring and balance already know, never less. */
+export function headerRows(
+  limits: QuotaLimitWire[],
+  picker: PickerProvider | undefined | null,
+  text: Text,
+  now?: number,
+): QuotaRow[] {
+  // Dedupe against every limit of the read before the cap, so a ring limit
+  // the cap drops is not brought back from the picker state.
+  const rows = limitRows(limits, text, now);
+  const stale = !!picker?.stale;
+  const ring = picker?.quota;
+  if (ring && !rows.some((r) => r.key === ring.limit_key)) {
+    rows.push(windowRow(ring.limit_key, ring.label, ring.left_fraction, ring.resets_at, ring.tone, stale, text, now));
+  }
+  const balance = picker?.balance;
+  if (balance && !rows.some((r) => r.left == null)) {
+    rows.push({
+      key: "picker:balance", label: balance.label || text("Balance", "余额"), left: null, pct: null, reset: null,
+      value: balanceLabel(balance), tone: "normal", stale,
+    });
+  }
+  return capped(rows);
 }
 
 /** Query keys of the picker's two reads. Both start with "models-enabled",

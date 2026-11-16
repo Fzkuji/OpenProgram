@@ -24,7 +24,7 @@
 <li>新会话和切换 Agent 都不写模型，所以改了 Agent 的模型，下一轮就用新的。</li>
 <li>准入时把模型记进 <code translate="no">turn_settings</code>。Agent 让它和这条线上一轮不同时，用户消息带 <code translate="no">model_change</code>，页面显示一行说明，缓存断点报告记为 <code translate="no">model_switch</code>。</li>
 <li>换到窗口更小的模型时，先用旧模型压缩。</li>
-<li><code translate="no">scripts/migrate_branch_follow_agent.py</code> 清掉只是抄了 Agent 的模型和联网搜索开关。默认只演练，改动前先写备份。</li>
+<li><code translate="no">scripts/maintenance/migrate_branch_follow_agent.py</code> 清掉只是抄了 Agent 的模型和联网搜索开关。默认只演练，改动前先写备份。</li>
 </ul>
 
 <h2 id="writes">写设置</h2>

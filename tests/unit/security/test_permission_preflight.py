@@ -6,11 +6,11 @@ import pytest
 from openprogram.runtime.agent.loop import _execute_tool_calls
 from openprogram.runtime.permissions.authority import owner_authority
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 from openprogram.runtime.permissions.modes import PermissionRules
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.models.providers.types import AssistantMessage, ToolCall
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 
 @pytest.mark.parametrize("blocked", [False, True])
@@ -32,7 +32,7 @@ def test_review_precedes_dispatch_and_controls_bash(monkeypatch, blocked):
         order.append(kind)
         return False
 
-    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.auto_mode.classifier.auto_classify_tool", classify)
     request = TurnRequest(session_id="preflight", user_text="inspect changes", agent_id="main",
         source="web", permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell",
@@ -61,7 +61,7 @@ def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
         called.append(True)
         return AgentToolResult(content=[], details={})
 
-    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.auto_mode.classifier.auto_classify_tool", classify)
     req = TurnRequest(session_id="revocation", user_text="inspect", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
@@ -93,7 +93,7 @@ def test_argument_mutation_during_review_never_executes(monkeypatch, with_manife
         called.append(values)
         return AgentToolResult(content=[], details={})
 
-    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.auto_mode.classifier.auto_classify_tool", classify)
     req = TurnRequest(session_id="mutation", user_text="inspect", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
@@ -125,7 +125,7 @@ def test_preflight_uses_validated_operation(monkeypatch):
             seen.append(("dispatch", payload["arguments"]))
         return False
 
-    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.auto_mode.classifier.auto_classify_tool", classify)
     request = TurnRequest(session_id="canonical", user_text="test", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="probe", label="probe", description="test",

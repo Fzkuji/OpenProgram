@@ -21,4 +21,4 @@ the ACP layer only translates protocol shapes in both directions.
 - **`jsonrpc.py`** — JSON-RPC 2.0 over newline-delimited JSON on a byte stream
 - **`server.py`** — ACP agent-side server: protocol methods mapped onto the turn dispatcher
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

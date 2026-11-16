@@ -50,7 +50,7 @@
 <tr><th scope="row">应用</th><td><code translate="no">openprogram/programs/applications/meeting/</code></td><td><code translate="no">meeting</code> 服务：存储、转换、转写队列、合并、摘要</td></tr>
 <tr><th scope="row">语音</th><td><code translate="no">openprogram/runtime/speech_link.py</code> → <code translate="no">openprogram/interfaces/speech/stt.py</code></td><td><code translate="no">transcribe_segments</code>：用“设置 → 语音”里的引擎得到带时间的片段</td></tr>
 <tr><th scope="row">说话人</th><td><code translate="no">meeting/diarize.py</code>，可选的 <code translate="no">sherpa-onnx</code></td><td>给 system 片段标上 <code translate="no">others:&lt;n&gt;</code></td></tr>
-<tr><th scope="row">摘要</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code></td><td>新对话里的一轮 owner turn</td></tr>
+<tr><th scope="row">摘要</th><td><code translate="no">openprogram/runtime/conversation/turn_admission/owner_turn.py</code></td><td>新对话里的一轮 owner turn</td></tr>
 <tr><th scope="row">窗口</th><td><code translate="no">apps/web/components/applications/windows/meeting-window.tsx</code></td><td>开始和停止、实时进度、过往会议的摘要与转写稿</td></tr>
 </tbody>
 </table>

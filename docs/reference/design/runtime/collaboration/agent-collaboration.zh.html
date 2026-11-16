@@ -76,7 +76,7 @@
 <tr><th scope="row"><code translate="no">start_from</code></th><td><code translate="no">fresh</code>（默认）：只有 prompt。<code translate="no">fork</code>：调用方的历史，以及调用方分支记录下的系统提示，逐字节相同（<code translate="no">loop_runner.forked_prompt</code>），所以共用服务商的提示缓存；用别的 Agent 时退回全新并说明。<code translate="no">SID:MSG</code>：那个节点。旧值 <code translate="no">inherit</code> 和 <code translate="no">clean</code> 仍分别表示 fork 和 fresh。</td></tr>
 <tr><th scope="row"><code translate="no">agent</code></th><td>工具说明末尾名单里某个保存的 Agent，或 Markdown Agent 文件定义的 Agent（<a href="#agent-settings">保存的 Agent 设置</a>），按 id 或名称。留空：调用方自己的 Agent。关闭了委派的 Agent 被拒绝，除非是调用方自己的。</td></tr>
 <tr><th scope="row"><code translate="no">isolation</code></th><td><code translate="no">worktree</code>、<code translate="no">none</code>，或留空按<a href="#agent-settings">保存的 Agent 设置</a>里的规则</td></tr>
-<tr><th scope="row">何时派生</th><td>基础指令（<code translate="no">runtime/context/guides/base.md</code>）禁止派生，除非用户、AGENTS.md 或技能明确要求子 Agent、委派或并行工作，与 Codex 相同。这条规则保持不变。</td></tr>
+<tr><th scope="row">何时派生</th><td>基础指令（<code translate="no">runtime/context/prompt_assembly/guides/base.md</code>）禁止派生，除非用户、AGENTS.md 或技能明确要求子 Agent、委派或并行工作，与 Codex 相同。这条规则保持不变。</td></tr>
 <tr><th scope="row"><code translate="no">to</code> 地址</th><td>依次：<code translate="no">SID:HEAD</code>、分支或助手名称、对话 id 或完整标题、保存的 Agent 的名称或 id（它唯一的对话）。名称有歧义时列出候选并失败；目标不存在是错误，绝不新建分支。发给本回合启动、仍在运行的助手的消息，在它下一个工具步骤送到（<a href="#busy-targets">目标正忙</a>）。</td></tr>
 <tr><th scope="row">直接发给自己</th><td>拒绝</td></tr>
 </tbody>
@@ -315,7 +315,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row">已存的交接</th><td><code translate="no">openprogram/runtime/conversation/always_on/handoff_migration.py</code></td></tr>
 <tr><th scope="row">结果形状、转交、名单信息</th><td><code translate="no">openprogram/runtime/jobs/agent_result.py</code>、<code translate="no">notices.py</code>、<code translate="no">agent_status.py</code></td></tr>
 <tr><th scope="row">花费、卡住、强制停止</th><td><code translate="no">openprogram/runtime/jobs/delegation_watch.py</code>、<code translate="no">runner/progress.py</code></td></tr>
-<tr><th scope="row">收件箱</th><td><code translate="no">openprogram/runtime/conversation/inbox.py</code></td></tr>
+<tr><th scope="row">收件箱</th><td><code translate="no">openprogram/runtime/conversation/peer_agents/inbox.py</code></td></tr>
 </tbody>
 </table>
 </details>

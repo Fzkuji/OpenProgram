@@ -1,6 +1,6 @@
 """Skills module — external skill loader, remote discovery, watcher, tool.
 
-See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
+See ``docs/reference/design/integrations/extensions/skills-and-plugins.html`` section 2 for the design.
 """
 from __future__ import annotations
 

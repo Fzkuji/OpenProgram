@@ -139,7 +139,7 @@ def test_tui_accessibility_options_reach_ink_launcher(monkeypatch) -> None:
 
 def test_chat_command_forwards_tui_display_options(monkeypatch) -> None:
     from openprogram.interfaces.cli import chat
-    from openprogram.interfaces.cli.commands import chat as command_chat
+    from openprogram.interfaces.cli.commands.conversations import chat as command_chat
 
     launched: list[dict[str, object]] = []
     monkeypatch.setattr(chat, "run_cli_chat", lambda **kwargs: launched.append(kwargs))

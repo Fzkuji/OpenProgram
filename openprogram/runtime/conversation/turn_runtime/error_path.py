@@ -20,7 +20,7 @@ from typing import Optional, TYPE_CHECKING
 
 from openprogram.runtime.conversation.turn_runtime.types import TurnResult
 from openprogram.runtime.conversation.turn_runtime.finalize import finalize_error_turn
-from openprogram.runtime.conversation.turn_lifecycle import (
+from openprogram.runtime.conversation.turn_admission.turn_lifecycle import (
     fold_error_into_placeholder as _fold_error_into_placeholder,
     write_standalone_error_node as _write_standalone_error_node,
 )
@@ -72,7 +72,7 @@ def handle_turn_error(
     # render a retryable rate-limit differently from a fatal auth/context
     # failure. See docs/design/providers/reliability/error-taxonomy-propagation.md.
     try:
-        from openprogram.models.providers.utils.errors import error_kind, failure_cause, taxonomy_fields
+        from openprogram.models.providers.utils.failures.errors import error_kind, failure_cause, taxonomy_fields
         # The reason is always an ``ErrorReason`` value; what failed beyond
         # it (``memory_unavailable``, ``stream_idle``) is the kind; which
         # limit or refusal it was (a spent quota and its reset) is the cause.

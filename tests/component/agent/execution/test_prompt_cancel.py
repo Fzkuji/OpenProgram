@@ -33,7 +33,7 @@ def test_stop_interrupts_operation_without_waiting_for_another_event(real_agent_
 
 def test_stop_does_not_wait_for_provider_cleanup(real_agent_chat, monkeypatch):
     import asyncio
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
     h = real_agent_chat
     cleaned = []
     def stream_simple(model, context, options=None):

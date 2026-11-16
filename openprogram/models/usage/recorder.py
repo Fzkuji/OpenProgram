@@ -137,6 +137,7 @@ def build_message_event(
         provider=getattr(model, "provider", "") or "",
         api=getattr(model, "api", None),
         model_id=getattr(model, "id", "") or "",
+        credential_id=getattr(message, "credential_id", None),
         input_tokens=inp,
         output_tokens=out,
         cache_read_tokens=cr,

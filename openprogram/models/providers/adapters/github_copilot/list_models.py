@@ -17,16 +17,18 @@ from typing import Any
 
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
-    try:
-        from .token_cache import get_cached_token
-        token = get_cached_token()
-    except Exception:
-        token = None
-    if not token:
+    from openprogram.models.auth.resolver import resolve_api_key_sync
+    github_token = resolve_api_key_sync("github-copilot")
+    if not github_token:
         return {"error": (
-            "Copilot needs a live session token. Open a chat with any "
-            "Copilot model once so the token cache populates, then retry."
+            "Copilot is not signed in. Run `openprogram providers keys "
+            "github-copilot add`, then fetch again."
         )}
+    try:
+        from .token_cache import get_copilot_api_token
+        token = get_copilot_api_token(github_token)
+    except Exception as e:
+        return {"error": f"Copilot did not issue a session token: {e}"}
     try:
         from openprogram.host.security.safe_http import safe_client
 

@@ -311,7 +311,7 @@ def _tool_candidates(tool_calls: list[dict] | None) -> tuple[list[str], list[str
 def _bases(session_id: str | None) -> list[Path]:
     """Where a relative path in the reply is looked up: the project the
     turn worked in, then the session's own workdir."""
-    from openprogram.runtime.conversation.workdir import project_workdir_for, session_workdir_for
+    from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for, session_workdir_for
     out: list[Path] = []
     for find in (project_workdir_for, session_workdir_for):
         try:

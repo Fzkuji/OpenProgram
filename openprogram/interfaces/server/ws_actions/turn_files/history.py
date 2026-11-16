@@ -399,7 +399,7 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
         result = {"status": "blocked", "restored_paths": [], "conflicts": [], "unavailable": [],
                   "error": "run_active", "blocking": refusal.get("blocking")}
     else:
-        from openprogram.runtime.conversation.revert import revert_turn
+        from openprogram.runtime.conversation.rewinds.revert import revert_turn
         try:
             result = await _run(lambda: revert_turn(
                 session_id, msg_id,
@@ -438,7 +438,7 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
         result = {"status": "blocked", "restored_paths": [], "conflicts": [], "unavailable": [],
                   "error": "run_active", "blocking": refusal.get("blocking")}
     else:
-        from openprogram.runtime.conversation.revert import reapply_turn
+        from openprogram.runtime.conversation.rewinds.revert import reapply_turn
         try:
             result = await _run(lambda: reapply_turn(
                 session_id, msg_id,

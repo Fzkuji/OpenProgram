@@ -524,7 +524,7 @@ def _registry_transaction():
             finally:
                 _reg_state.depth = depth
             return
-        from openprogram.state.store.session.session_lock import registry_file_lock
+        from openprogram.state.store.session.files.session_lock import registry_file_lock
         with registry_file_lock(projects_dir(), "projects-registry"):
             _reg_state.depth = 1
             try:

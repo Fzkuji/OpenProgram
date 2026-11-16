@@ -135,7 +135,7 @@ class RequestSlot:
     request; a later capture in the same context (an adapter called outside
     the chokepoint) finds it taken and leaves it alone. When the attempt
     sends its request again, mended after the provider refused its shape
-    (``utils/request_repair.py``), it reopens the slot first
+    (``utils/failures/request_repair.py``), it reopens the slot first
     (:func:`reopen_slot`), so the slot holds the request that was answered."""
 
     def __init__(self, on_capture: Optional[Callable[[CapturedRequest], Any]] = None) -> None:

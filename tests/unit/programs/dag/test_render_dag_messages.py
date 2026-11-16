@@ -1,4 +1,4 @@
-"""context.render.render_dag_messages — DAG nodes → provider messages.
+"""context.session_dag.render.render_dag_messages — DAG nodes → provider messages.
 
 Pure function. Tests use small hand-built graphs and assert the
 resulting message list role/content shape.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 
 from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
-from openprogram.runtime.context.render import render_dag_messages
+from openprogram.runtime.context.session_dag.render import render_dag_messages
 
 
 def _texts(messages) -> list[str]:

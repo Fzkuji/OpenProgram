@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from openprogram.models.providers.utils.json_parse import parse_streaming_json
+from openprogram.models.providers.utils.streams.json_parse import parse_streaming_json
 from openprogram.models.providers.utils.sanitize_unicode import sanitize_surrogates
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
         StopReason,
         Tool,
     )
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +555,7 @@ async def process_responses_stream(
     provider can finalize the turn as ``stop_reason="aborted"``.
     """
     from openprogram.models.providers.catalog.models import calculate_cost
-    from openprogram.models.providers.utils.errors import StreamAborted
+    from openprogram.models.providers.utils.failures.errors import StreamAborted
 
     blocks = output.content
     refusal_seen = False
@@ -885,7 +885,7 @@ async def process_responses_stream(
             # doomed no-backoff storm. A real error (with a code/message) stays
             # a hard failure.
             if not code and not msg_text:
-                from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+                from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
                 raise ProviderStreamError(
                     "empty error event (transient backend hiccup)",
                     retryable=not bool(getattr(output, "content", None)),

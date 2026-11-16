@@ -23,7 +23,7 @@ _STALE = object()
 
 def _resolve_local_command(text: str, session_id: str):
     # One resolver for every surface (``--print`` runs the same commands).
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.runtime.conversation.turn_admission import local_commands
     return local_commands.resolve(text, session_id)
 
 
@@ -157,7 +157,7 @@ async def _run_local_command(ws, req: _ChatRequest) -> bool:
     )
     if _validated_surface is _STALE:
         return False
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.runtime.conversation.turn_admission import local_commands
     # The command runs on the branch it was sent on.
     _outcome = await asyncio.to_thread(local_commands.run, _local_res, session_id,
                                        branch_id=req.side_branch_id)

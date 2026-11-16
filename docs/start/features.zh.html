@@ -72,21 +72,20 @@ class ExampleAgent(Agent):
 <h2 id="mini-dag">DAG 视图</h2>
 <p>右栏画出每个节点（用户消息、LLM 调用、代码 Call、附加）和边。随聊天滚动，高亮当前可见范围，点节点滚动到对应消息。<a href="../reference/design/runtime/dag/rendering.zh.html">渲染规则</a>。</p>
 
-<h2 id="multi-account">多账户与密钥轮换</h2>
-<p>账户就是 profile：provider 的一组独立凭据。API key 类 provider 同样持有一个密钥列表。</p>
-<pre translate="no"><code>openprogram providers login openai --account work
-openprogram providers use openai work
-openprogram providers use openai                     # 回到默认账户
-openprogram providers list</code></pre>
-<p class="note">Web（设置 → 大模型 Provider）和 TUI（<code translate="no">/login &lt;provider&gt;</code>，在终端完成 OAuth、设备码、CLI 导入或粘贴密钥）有相同的面板。</p>
+<h2 id="multi-account">一个 Provider 多个 key</h2>
+<p>每个 provider 持有一个有序的 API key 和登录列表。可以命名、调整顺序、停用某一个，或让对话固定用某一个。</p>
+<pre translate="no"><code>openprogram providers keys openai add --name work
+openprogram providers keys openai list
+openprogram providers keys openai strategy evenly</code></pre>
+<p class="note">Web（设置 → 大模型 Provider）和 TUI（<code translate="no">/login &lt;provider&gt;</code>，在终端完成 OAuth、设备码、CLI 导入或粘贴密钥）显示同一个列表。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">密钥管理</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">添加</th><td>粘贴，先校验再加入列表。可为每个命名</td></tr>
-<tr><th scope="row">使用</th><td>被调用的是当前密钥。通过环境变量或配置设置的密钥会迁入</td></tr>
-<tr><th scope="row">轮换，可选，默认关</th><td>失败的密钥冷却，下一个接替</td></tr>
-<tr><th scope="row">冷却</th><td><code translate="no">429</code> 约 1 到 5 分钟，<code translate="no">402</code> 账单 24 小时，<code translate="no">5xx</code> 30 秒</td></tr>
-<tr><th scope="row">策略</th><td><code translate="no">in order</code>、<code translate="no">spread evenly</code>、<code translate="no">random</code>、<code translate="no">least used</code>，可用 ↑ ↓ 调优先级</td></tr>
+<tr><th scope="row">添加</th><td>粘贴，先检查再加到列表末尾。provider 环境变量里的 key 也会列出，只读</td></tr>
+<tr><th scope="row">使用</th><td>对话一直用开始时的 key；子 agent 和 Goal 轮次用同一个</td></tr>
+<tr><th scope="row">切换</th><td>被限流、额度用完或被拒时，下一个可用的 key 接替，并显示一行提示</td></tr>
+<tr><th scope="row">冷却</th><td><code translate="no">429</code> 按服务给的 Retry-After，否则 1 分钟起翻倍到 15 分钟；额度到重置时间；<code translate="no">5xx</code> 在同一个 key 上重试两次</td></tr>
+<tr><th scope="row">策略</th><td><code translate="no">in-order</code>、<code translate="no">evenly</code>、<code translate="no">least-used</code>；用 <code translate="no">move</code> 调整顺序</td></tr>
 </tbody>
 </table>
 <p class="note"><a href="../reference/design/providers/auth/unified-account-management.zh.html">设计与状态</a>。</p>

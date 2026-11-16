@@ -32,15 +32,15 @@ from openprogram.models.providers.shared.google import (
 )
 from openprogram.models.providers.shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.models.providers.shared.validate_modalities import validate_input_modalities
-from openprogram.models.providers.utils.event_stream import EventStream
-from openprogram.models.providers.utils.http_client import build_async_client
+from openprogram.models.providers.utils.streams.event_stream import EventStream
+from openprogram.models.providers.utils.http_transport.http_client import build_async_client
 from openprogram.models.providers.utils.sanitize_unicode import sanitize_surrogates
-from openprogram.models.providers.utils.stream_idle import (
+from openprogram.models.providers.utils.streams.stream_idle import (
     event_idle_timeout_s,
     idle_bounded,
     idle_bounded_open,
 )
-from openprogram.models.providers.utils.stream_retry import retry_after_beyond_cap
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 import logging
 
 _log = logging.getLogger(__name__)
@@ -52,7 +52,6 @@ GoogleThinkingLevel = str  # "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | 
 
 _DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com"
 _MAX_RETRIES = 3
-_BASE_DELAY_MS = 1000
 _MAX_EMPTY_STREAM_RETRIES = 2
 _EMPTY_STREAM_BASE_DELAY_MS = 500
 
@@ -94,12 +93,6 @@ async def _data_lines(response: Any):
             yield line
 
 
-def _is_retryable_error(status: int, error_text: str) -> bool:
-    if status in (429, 500, 502, 503, 504):
-        return True
-    return bool(re.search(r"rate.?limit|overloaded|quota|resource.?exhausted", error_text, re.IGNORECASE))
-
-
 def _resolve_endpoints(model: "Model") -> list[str]:
     model_base_url = getattr(model, "base_url", None)
     return [model_base_url] if model_base_url else [_DEFAULT_ENDPOINT]
@@ -125,7 +118,6 @@ def stream_google_gemini_cli(
                 "The HTTP client is missing; reinstall the complete OpenProgram release."
             )
 
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
 
         output: dict[str, Any] = {
             "role": "assistant",
@@ -144,7 +136,7 @@ def stream_google_gemini_cli(
         }
 
         try:
-            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
+            api_key = opts.get("api_key") or ""
 
             # Endpoint selection
             endpoints = _resolve_endpoints(model)
@@ -222,18 +214,18 @@ def stream_google_gemini_cli(
                             ):
                                 endpoint_index += 1
                                 continue
-                            if attempts_used < max_attempts and _is_retryable_error(response.status_code, error_text):
-                                hinted = extract_retry_delay(error_text)
-                                # A quota reset hours away is not sat through
-                                # in-process: the error goes up at once.
-                                if hinted and retry_after_beyond_cap(hinted / 1000):
-                                    raise RuntimeError(f"HTTP {response.status_code}: {error_text}")
-                                delay = hinted or (
-                                    _BASE_DELAY_MS * (2 ** (attempts_used - 1))
-                                )
-                                await asyncio.sleep(delay / 1000)
-                                continue
-                            raise RuntimeError(f"HTTP {response.status_code}: {error_text}")
+                            # A limit, a refusal or a server error is the
+                            # credential layer's to wait out, retry or switch
+                            # (models/auth/selection.py), not this loop's.
+                            hinted = extract_retry_delay(error_text)
+                            raise ProviderStreamError(
+                                f"HTTP {response.status_code}: {error_text}",
+                                http_status=response.status_code,
+                                retry_after_s=hinted / 1000 if hinted else None,
+                                error_text=error_text,
+                                retryable=False,
+                                provider=model.provider,
+                            )
 
                         current_block: dict[str, Any] | None = None
                         blocks = output["content"]
@@ -250,7 +242,7 @@ def stream_google_gemini_cli(
                             # through ``async with client.stream(...)``, which
                             # closes the connection.
                             if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
-                                from openprogram.models.providers.utils.errors import StreamAborted
+                                from openprogram.models.providers.utils.failures.errors import StreamAborted
                                 raise StreamAborted("stream cancelled by caller signal")
                             data_str = line[6:].strip()
                             if not data_str or data_str == "[DONE]":

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.runtime.conversation import session_config
-from openprogram.runtime.conversation.session_config import resolve_branch_settings
+from openprogram.runtime.conversation.session_settings import session_config
+from openprogram.runtime.conversation.session_settings.session_config import resolve_branch_settings
 from openprogram.state.store.session.branch_config import (
     BranchConfigConflict,
     config_for_branch,

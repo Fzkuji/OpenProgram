@@ -61,7 +61,7 @@ def world(tmp_path, monkeypatch):
     store.close()
 
     def model_turn(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         with runs.open("a") as handle:
             handle.write(f"{request.session_id}\n")
@@ -152,7 +152,7 @@ def _next_worker(world, session_id: str, *, busy: bool = False,
                  then: Callable[[Any], None] | None = None) -> dict[str, Any]:
     """Start a runner (its recovery runs), let the work finish, report the state."""
     def body() -> dict[str, Any]:
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         from openprogram.runtime.jobs import get_runner, notices
         from openprogram.runtime.jobs.types import is_terminal
 
@@ -200,7 +200,7 @@ def _dispatch_to_busy() -> None:
 
 
 def _drain(runner) -> None:
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     inbox.drain("p2")
 
 
@@ -209,7 +209,7 @@ def _drain(runner) -> None:
 
 def test_killed_after_admission_before_the_inbox_the_dispatch_still_runs(world):
     def act() -> None:
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         _die_before(inbox, "enqueue")
         _dispatch_to_busy()
 
@@ -223,7 +223,7 @@ def test_killed_after_admission_before_the_inbox_the_dispatch_still_runs(world):
 
 def test_killed_right_after_the_inbox_write_the_entry_stays_once(world):
     def act() -> None:
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         _die_after(inbox, "enqueue")
         _dispatch_to_busy()
 
@@ -241,7 +241,7 @@ def test_killed_right_after_the_inbox_write_the_entry_stays_once(world):
 def test_killed_after_the_drain_published_the_job_it_runs_once(world):
     def act() -> None:
         import openprogram.runtime.conversation.run_control as run_control
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         from openprogram.runtime.jobs import get_runner
 
         _dispatch_to_busy()
@@ -269,7 +269,7 @@ def _spawn_in_background() -> None:
 
 def test_background_spawn_killed_before_its_card_still_runs_and_reports(world):
     def act() -> None:
-        from openprogram.runtime.conversation import sub_agent_run
+        from openprogram.runtime.conversation.peer_agents import sub_agent_run
         _die_before(sub_agent_run, "write_attach_placeholder_for_spawn")
         _spawn_in_background()
 
@@ -295,7 +295,7 @@ def test_background_spawn_killed_after_its_card_is_published_without_a_second_ca
 
 def test_waited_spawn_whose_waiter_died_reports_by_notice(world):
     def act() -> None:
-        from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
         from openprogram.runtime.jobs import get_runner
         from openprogram.runtime.jobs.resource_governance import ResourceGovernor
 
@@ -337,7 +337,7 @@ def test_killed_between_the_terminal_write_and_the_notice_the_parent_still_hears
 def test_a_waited_spawn_answered_in_time_sends_no_notice(world):
     """The ordinary case: the waiter is alive, so the result went back as the tool result."""
     def body() -> dict[str, Any]:
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn
         from openprogram.runtime.jobs import get_runner, notices
 
         _open(world, busy=False)
@@ -374,7 +374,7 @@ def _card_tool_call_ids(world) -> list:
 def test_a_card_written_by_recovery_keeps_the_calls_tool_call_id(world):
     def act() -> None:
         from openprogram.programs._host import runtime as host_runtime
-        from openprogram.runtime.conversation import sub_agent_run
+        from openprogram.runtime.conversation.peer_agents import sub_agent_run
         _die_before(sub_agent_run, "write_attach_placeholder_for_spawn")
         host_runtime._current_tool_call_id.set("call_abc")
         _spawn_in_background()
@@ -392,7 +392,7 @@ def test_a_message_to_an_agent_by_name_survives_a_kill_after_the_inbox_write(wor
             _send_message_impl,
         )
         from openprogram.runtime.agent_registry import manager
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         from openprogram.runtime.jobs import get_runner
 
         manager.list_all = lambda: []

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
-from openprogram.runtime.conversation.revert import reapply_turn, revert_turn
+from openprogram.runtime.conversation.rewinds.history_ownership import owned_change_set_closure
+from openprogram.runtime.conversation.rewinds.revert import reapply_turn, revert_turn
 from openprogram.runtime.jobs.store import save_job, update_job_status
 from openprogram.runtime.jobs.runner import _mirror_linked_job_to_caller
 from openprogram.runtime.jobs.types import Job, JobStatus

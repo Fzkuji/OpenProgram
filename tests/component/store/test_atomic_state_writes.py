@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.state.store.session import atomic_file
+from openprogram.state.store.session.files import atomic_file
 
 
 def test_atomic_state_is_private_before_and_after_publication(tmp_path, monkeypatch):

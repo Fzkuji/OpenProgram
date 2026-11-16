@@ -2,7 +2,7 @@
 from openprogram.runtime.agent.turn_request import TurnRequest
 from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.effects import EffectClassification, EffectStatus, EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectStatus, EffectStore
 import threading
 from types import SimpleNamespace
 
@@ -34,7 +34,7 @@ def interrupted_chat(store, *, kind="tool.before", graceful=False):
             metadata={"kind": kind, "payload": {"tool_name": "bash", "tool_call_id": "original-call"}})
         effects.mark_dispatched(effect.effect_id, expected_status=EffectStatus.PLANNED)
     if graceful:
-        from openprogram.runtime.execution.restart import prepare_shutdown
+        from openprogram.runtime.execution.recovery.restart import prepare_shutdown
         prepare_shutdown(SimpleNamespace(_execution_store=store, _execution_control=adapter.entry.control))
     adapter.entry.control.recover_owner_loss(admission.execution_id)
     return admission, effect
@@ -93,10 +93,10 @@ def test_explicit_resume_supersedes_unconfirmed_cancel_without_claiming_effect_c
 @pytest.mark.parametrize("fault", [None, "after_admission", "goal_publication", "startup_after_admission", "shutdown_pause"])
 def test_restart_admits_one_new_turn_with_original_authority(runtime, monkeypatch, has_goal, fault):
     from openprogram.runtime.execution import default_control_service
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     from openprogram.runtime.execution.model import ExecutionStatus
     goals, chat, store = runtime
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: -1)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: -1)
     if not has_goal:
         goals.save_goal("goal-chat", {"version": goals.load_goal("goal-chat")["version"], "status": "cleared"})
     calls = []
@@ -161,9 +161,9 @@ def test_restart_admits_one_new_turn_with_original_authority(runtime, monkeypatc
 @pytest.mark.parametrize("change", ["pause", "cancel", "revision", "budget", "disabled", "expired", "child"])
 def test_restart_preserves_user_controls_limits_and_live_children(runtime, monkeypatch, change):
     from openprogram.runtime.execution import default_control_service
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     goals, chat, store = runtime
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: 10 if change == "expired" else -1)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: 10 if change == "expired" else -1)
     admission, _ = interrupted_chat(store)
     goal = goals.load_goal("goal-chat")
     if change == "pause":
@@ -177,10 +177,10 @@ def test_restart_preserves_user_controls_limits_and_live_children(runtime, monke
         goal["usage"]["total_tokens"] = 2
         goal["legacy_usage"] = {"total_tokens": 2}
     elif change == "disabled":
-        monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: 0)
+        monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: 0)
     elif change == "expired":
         event = next(e for e in store.list_events(admission.execution_id) if e.kind == "execution.restart.requested")
-        monkeypatch.setattr("openprogram.runtime.execution.restart.time", lambda: event.payload["resume_before"] + 1)
+        monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.time", lambda: event.payload["resume_before"] + 1)
     elif change == "child":
         old = store.get_execution(admission.execution_id)
         store.create_execution(session_id=old.session_id, revision_id=old.revision_id,
@@ -209,11 +209,11 @@ def test_durable_admission_key_rejects_changed_authority(runtime):
 
 @pytest.mark.parametrize("failure", ["continuation_contract_mismatch", "credentials_unavailable"])
 def test_only_incompatible_checkpoint_falls_back_to_new_chat(runtime, monkeypatch, failure):
-    from openprogram.runtime.execution.runtime_contract import RuntimeContractError
+    from openprogram.runtime.execution.admission_input.runtime_contract import RuntimeContractError
     from openprogram.runtime.execution import default_control_service
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     goals, chat, store = runtime
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: -1)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: -1)
     admission, _ = interrupted_chat(store, kind=None)
     service = default_control_service()
     async def incompatible(*args):
@@ -252,11 +252,11 @@ def test_goal_created_inside_running_turn_recovers_only_its_original_identity(ru
     import asyncio
     from openprogram.runtime.execution.run_control import get_current_execution_id
     from openprogram.runtime.execution import default_control_service
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     from openprogram.programs.tools.planning.goal.execution import GoalStopUnconfirmed
     goals, chat, store = runtime
     goals.apply_goal_action("goal-chat", "clear")
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: -1)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: -1)
     calls = []
     class ProcessLost(BaseException):
         pass

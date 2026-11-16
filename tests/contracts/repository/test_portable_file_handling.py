@@ -54,7 +54,7 @@ KNOWN_BARE_REPLACE = {
     # The seam itself.
     "openprogram/host/_platform/filesystem.py": 1,
     # Inside the seam's retry, with extended-length paths on both sides.
-    "openprogram/state/store/session/atomic_file.py": 1,
+    "openprogram/state/store/session/files/atomic_file.py": 1,
     # Inside its own 30 second wait for a process exiting from the directory.
     "openprogram/operations/self_update/versions/build.py": 1,
     # The POSIX branch; Windows moves the pointer with MoveFileExW and retries.

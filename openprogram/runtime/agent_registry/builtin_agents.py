@@ -41,7 +41,7 @@ from openprogram.runtime.agent_registry import manager
 
 _READ = ["read", "glob", "grep", "list"]
 _MEMORY = ["memory_search", "memory_get", "memory_update"]
-_PLAN = ["todo_create", "todo_update", "todo_list"]
+_PLAN = ["task_start", "task_step", "task_list"]
 _CODE_READ = ["lsp_definition", "lsp_references", "lsp_diagnostics"]
 _LANGUAGES = {"en", "zh"}
 # What every always-on built-in has besides its job's tools: report, set its
@@ -510,6 +510,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "ce1cf403c6e746d790f72ef58b9b9a8655509174e109d1e70666b4106eaf83b0": "zh",
         "bd96520dbd1c7c98926c36bfdaeb9eeb11718dc2124eee4f5a04467a34e5f59b": "en",
         "23752eed6245ea6feb78c6195daa7d9a6c14c477455d7256a2a705ec6215ca60": "zh",
+        "8d5a009716d4348b120711f9c6881c0b06faa4b808e562e8dfb7700d25904588": "en",
+        "344262ce9e6ee824fa48e28d9be90c73e62c36f43dacba9b235cfdadf574dd44": "zh",
     },
     "spec-writer": {
         "00b036c58d81fa45420d4fa4c3f5c2c8aca091ba3f8d909aad19990e21c204ad": "en",
@@ -524,6 +526,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "d7fa13098a2f2ab4a1aeb83b2d6606d52bb18c975c96d7f6d98a2e0281cf31b3": "zh",
         "892ba517dda64936a4ba6102f73955f644a341ebcb365d56437c0b9008445fbc": "en",
         "8b93be0ff4f93bafb028f7fcdc1f4b0ca0f7415d5ddd006d37425024fca17aaf": "zh",
+        "543786eef7c50b1d4622dc23a8160f65dc4a76d60ee060ade793020cfa784d15": "en",
+        "e93c43cd4d03d3d0adce75b8d9ac7409ba4ea7fd0a3dc11078d18115d934fe19": "zh",
     },
     "bug-reproducer": {
         "2287e48d3992973310530778e312ac7dc4357a4d794d224de0d796b7dcb5efd9": "en",
@@ -552,6 +556,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "76b9787b2714f9591d0ef1b87b41139939b4ec6936d4a8556e613ff2b9bf27bb": "zh",
         "a75bc746df244f8c8e0d1eae15b1810a508b22a4d7d3ad4635ba0df649c85890": "en",
         "e1549d9d02bef243b4c32a1062622a66812d79297692ee80612d19a6d4894875": "zh",
+        "72dba4cbfc5af50fa41edac950ea0619534116b45ea766e3fae992834cbdcf1f": "en",
+        "7260296b782a314257734fab695bde32c8e7148839b60fae9d34465320c62f6e": "zh",
     },
     "pr-verifier": {
         "bf493898cc69ef4c8cd7d1a5176ca27198cd7308fa865b0c2f2d972cbc353e6b": "en",
@@ -598,6 +604,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "2ffc685bdad6f36c25fcf91aeaa917017daf701108197c661a58262e3c86f095": "zh",
         "8df25ec7cf8175ee534701c6ebe609a384e2bca8db49c2617b4dc05434ff20a9": "en",
         "c4ac2b172491e34deaece79f27e40c7ce68bf73794265012bdbf77792589cc7a": "zh",
+        "7c8115741042ae58cc14798dcc25a202a7bc8c689de021e33bd5fec795a28971": "en",
+        "0e61dd16897ee806cdbce5a1b127831e84b7e77f96f79dbacd991670244752c5": "zh",
     },
     "career-scout": {
         "3d1b962bdaa315ee4da5bd53d607c9330f2c24bff7c55b96e0745a49604d5720": "en",
@@ -614,6 +622,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "2cc2153615d1d8010b35628d76172c0c0da3e926dbdec79a0daedafa1b446126": "zh",
         "e2270a8308ca18b505538f73de8d6e3d49a9919bc9245ab101da0d26292c8217": "en",
         "a84b59ffffe8aa613a78e77d9039da0fa4c62693285e03bc1c67d9910afd88cf": "zh",
+        "27c5a48f05f3ede59f46f6fa659468eace027f36eae706d709b290a35f7221aa": "en",
+        "59436b4f24d1b58f7b177367c2ded639ece4f718451fb8a64587e884ef2ae14b": "zh",
     },
     "knowledge-keeper": {
         "99547718bae35656e06d33227f2102593ea64128c269196d127cc1394edd6cea": "en",

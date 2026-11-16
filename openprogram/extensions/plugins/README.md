@@ -10,7 +10,7 @@ provider directories described by its manifest, mounted through a
 ``ProgramContext`` owned by ``plugin:<name>``. A manifest that names code
 is refused; code that adds tools or a UI is an application. Sources are
 npm, a local path (usually a link) and project pins. Design record:
-``docs/reference/design/integrations/plugin-runtime.html``.
+``docs/reference/design/integrations/extensions/plugin-runtime.html``.
 
 The host exposes the HTTP API in ``routes/catalog/plugins.py``; this
 package parses manifests, loads plugins, and keeps their contributions and
@@ -29,4 +29,4 @@ persisted state.
 - **`registry.py`** — What each loaded plugin contributed, for the HTTP API and the commands registry
 - **`trust.py`** — Trust 等级持久化。
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

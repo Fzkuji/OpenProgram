@@ -10,10 +10,11 @@ provider's native login works from every surface instead of "go use the other
 one".
 
 Shape:
-  POST /api/providers/{name}/login/start   {method?, account?, label?, api_key?}
+  POST /api/providers/{name}/login/start   {method?, label?, api_key?}
       -> {session, method}; spawns the login coroutine in the background.
   GET  /api/providers/{name}/login/poll?session=&cursor=
-      -> {events[], cursor, waiting, prompt, done, ok, error, name}
+      -> {events[], cursor, waiting, prompt, done, ok, error, name, label}
+         (``name`` the id of the credential the sign-in added or renewed)
   POST /api/providers/{name}/login/submit  {session, value}
       -> {ok}; resolves the driver's pending prompt with `value`.
 
@@ -51,7 +52,7 @@ class _LoginSession:
         self.ok: bool = False
         self.error_code: str | None = None
         self.error: str | None = None
-        self.name: str | None = None        # saved account id on success
+        self.name: str | None = None        # the saved credential's id on success
         self.label: str | None = None       # saved human-readable label
         self.task: asyncio.Task | None = None
         self.started_at: float = time.time()
@@ -85,31 +86,6 @@ class _RemoteLoginUi:
             return await asyncio.wait_for(fut, timeout=_SESSION_TTL)
         finally:
             self._s.pending = None
-
-
-def _free_account(provider: str) -> str:
-    """Pick a account id for a NEW account that no existing credential occupies.
-
-    First account → "default"; thereafter "account-2", "account-3", … The pool
-    is the credential pool id (claude-code's credentials live under
-    `anthropic`), so we check occupancy in the right place.
-    """
-    try:
-        from openprogram.interfaces.server.routes.identity.accounts import _pool_id
-        from openprogram.models.auth.store import get_store
-        pool = _pool_id(provider)
-        taken = {
-            p.account_id for p in get_store().list_pools()
-            if p.provider_id == pool and p.credentials
-        }
-    except Exception:
-        return "default"
-    if "default" not in taken:
-        return "default"
-    i = 2
-    while f"account-{i}" in taken:
-        i += 1
-    return f"account-{i}"
 
 
 def _has_credentials(provider: str) -> bool:
@@ -154,11 +130,11 @@ def _reap() -> None:
 def register(app):
     @app.get("/api/providers/{name}/login/methods")
     async def login_methods_list(name: str):
-        from openprogram.models.auth.login.login_method_registry import login_methods
-        methods = login_methods(name)
+        from openprogram.models.auth.login.login_method_registry import login_method_payload
+        methods = login_method_payload(name)
         return JSONResponse(content={
-            "methods": [{"id": mid, "label": label} for mid, label in methods],
-            "default": methods[0][0] if methods else None,
+            "methods": methods,
+            "default": methods[0]["id"] if methods else None,
         })
 
     @app.post("/api/providers/{name}/login/start")
@@ -178,24 +154,17 @@ def register(app):
             return JSONResponse(content={"error": "Unsupported provider"}, status_code=404)
         if not isinstance(body, dict):
             return JSONResponse(content={"error": "body must be a JSON object"}, status_code=400)
-        unknown = sorted(set(body) - {"method", "account", "label", "api_key"})
+        unknown = sorted(set(body) - {"method", "label", "api_key"})
         if unknown:
             return JSONResponse(content={"error": f"unknown field: {unknown[0]}"}, status_code=400)
         b = body
-        explicit_account = b.get("account", "")
         method = b.get("method", "")
         requested_label = b.get("label", "")
         api_key = b.get("api_key")
-        if not isinstance(explicit_account, str) or not isinstance(method, str):
-            return JSONResponse(content={"error": "account and method must be strings"}, status_code=400)
+        if not isinstance(method, str):
+            return JSONResponse(content={"error": "method must be a string"}, status_code=400)
         if api_key is not None and not isinstance(api_key, str):
             return JSONResponse(content={"error": "api_key must be a string"}, status_code=400)
-        explicit_account = explicit_account.strip()
-        if explicit_account:
-            from openprogram.interfaces.server.routes.identity.credential_secrets import is_nonempty_printable_ascii
-
-            if not is_nonempty_printable_ascii(explicit_account):
-                return JSONResponse(content={"error": "invalid account id"}, status_code=400)
         try:
             from openprogram.models.auth.account.account_labels import normalize_account_label
             requested_label = normalize_account_label(
@@ -211,14 +180,6 @@ def register(app):
         if name == "anthropic" and method != "api_key":
             return JSONResponse(content={"error": "Anthropic requires an API key"}, status_code=400)
 
-        # An account == a account == one credential. If the user named the
-        # account, honour it; otherwise pick a account that ISN'T already
-        # occupied, so a new sign-in never lands in a account that already
-        # holds a credential (which would hide it behind the existing one in
-        # the UI and make the runtime resolve the wrong credential). The pool
-        # is keyed by the credential pool id.
-        account = explicit_account or _free_account(name)
-
         sess = _LoginSession()
         sid = secrets.token_hex(8)
         _SESSIONS[sid] = sess
@@ -230,13 +191,14 @@ def register(app):
             try:
                 cred = await run_login(
                     name,
-                    account,
                     method,
                     _RemoteLoginUi(sess),
                     api_key=api_key,
                     label=requested_label,
+                    source="web",
                 )
-                persist(cred)
+                # Signing in again with the same account renews its row.
+                cred = persist(cred)
                 # A provider's first sign-in turns it on, as its first usable
                 # key does (models/listing/key_check.py).
                 if not had_credentials:
@@ -251,9 +213,8 @@ def register(app):
                     # leave the picker empty.
                     _log.warning(
                         "default models not enabled after login to %s", name, exc_info=True)
-                sess.name = getattr(cred, "account_id", account)
-                from openprogram.models.auth.account.account_labels import effective_account_label
-                sess.label = effective_account_label(cred, sess.name)
+                sess.name = cred.id
+                sess.label = cred.display_label()
                 sess.ok = True
                 sess.done = True
                 sess.done_at = time.time()

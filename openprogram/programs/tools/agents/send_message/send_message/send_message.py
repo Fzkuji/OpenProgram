@@ -23,6 +23,8 @@ Design: docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
+import contextlib
+
 import logging
 
 from openprogram.programs._host.runtime import function
@@ -185,11 +187,9 @@ def _send_message_impl(
         )
     if run_session != sid and not (agent_id or "").strip():
         # Another conversation answers as its own Agent, as a handoff did.
-        try:
+        with contextlib.suppress(Exception):
             from openprogram.runtime.context.session_db import default_db
             chosen_agent = (default_db().get_session(run_session) or {}).get("agent_id") or chosen_agent
-        except Exception:
-            pass
 
     # A watch, not a message: one notice when the target goes idle.
     if notify_when_idle and not (message or "").strip():
@@ -217,7 +217,7 @@ def _send_message_impl(
 
 
 def _watch(sid, aid, agent_id, run_session, branch_from, messages, generations, authority) -> str:
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.runtime.jobs import notices
     address = f"{run_session}:{branch_from}"
     if not inbox.target_busy(run_session, branch_from, sid):

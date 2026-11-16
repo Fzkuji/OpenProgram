@@ -13,7 +13,7 @@ import { fmtUsd } from "@/components/settings/providers/status/model";
 import { formatTokens } from "@/lib/chat/context-occupancy";
 import type { RosterStatus } from "@/lib/execution/agent-roster";
 import { subAgentShape } from "@/lib/runtime-bridge/dag/render/agent-look";
-import { AgentGlyph, type Text } from "./running-rows";
+import { AgentGlyph, Status, type Text } from "./running-rows";
 import styles from "./running-panel.module.css";
 
 /** One status set for every agent row. Waiting on the reader and stalled
@@ -41,6 +41,10 @@ export function RosterBadge({ status, text }: { status: RosterStatus; text: Text
     default: return <Badge variant="outline" className="text-text-muted">{words}</Badge>;
   }
 }
+
+/** In Activity a helper that waits on the reader says so with a dot and
+ *  the words, the way the rows' status lines do, not a pill. */
+const waitsOnReader = (status: RosterStatus) => status === "approval" || status === "input" || status === "stalled";
 
 /** "18.4k tokens · 12 tool calls", with whatever of the two is known. */
 export function usageTip(facts: { usage: { tokens?: number | null; tool_calls?: number | null } | null } | null | undefined, text: Text): string {
@@ -85,10 +89,10 @@ export function RosterRow({ name, status, indent, cost = null, tip = "", outgoin
     <AgentGlyph shape={subAgentShape(name)} />
     {/* One line that gives up the cost first: when name, badge and cost do
         not fit, the cost wraps out of sight and the name keeps the room. */}
-    <span className="flex h-[20px] min-w-0 flex-[1_1_0] flex-wrap items-center gap-x-[8px] overflow-hidden">
-      <span className="flex h-[20px] max-w-full min-w-0 flex-auto items-center gap-[8px]">
+    <span className="flex h-(--ui-control-inline) min-w-0 flex-[1_1_0] flex-wrap items-center gap-x-[8px] overflow-hidden">
+      <span className="flex h-(--ui-control-inline) max-w-full min-w-0 flex-auto items-center gap-[8px]">
         <span className={`${styles.name} min-w-0 flex-initial`}>{outgoing ? <span className={styles.arrow} aria-hidden="true">→ </span> : null}{name}</span>
-        <RosterBadge status={status} text={text} />
+        {waitsOnReader(status) ? <span className="flex-none"><Status tone="warn">{rosterBadgeWords(status, text)}</Status></span> : <RosterBadge status={status} text={text} />}
       </span>
       {cost !== null ? <span className={styles.cost}>{fmtUsd(cost)}</span> : null}
     </span>
@@ -98,13 +102,14 @@ export function RosterRow({ name, status, indent, cost = null, tip = "", outgoin
   return label ? <HoverTip label={label} side="left">{row}</HoverTip> : row;
 }
 
-/** The quiet last row: how many helpers finished. It opens in place. */
-export function FinishedRow({ count, open, indent, onToggle, onFold, text }: {
-  count: number; open: boolean; indent: number; onToggle: () => void; onFold?: () => void; text: Text;
+/** The quiet last row: how many helpers finished (or, with `label`, how
+ *  many branches are at rest). It opens in place. */
+export function FinishedRow({ count, open, indent, onToggle, onFold, label, text }: {
+  count: number; open: boolean; indent: number; onToggle: () => void; onFold?: () => void; label?: string; text: Text;
 }) {
   return <Button variant="ghost" className={styles.agentRow} style={{ ["--indent" as string]: `${indent}px` }}
     data-finished="" data-roster-row="" aria-expanded={open} onClick={onToggle} onKeyDown={foldOnLeft(onFold)}>
     <span className={styles.finishedChevron} aria-hidden="true"><ChevronRight size={14} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform var(--motion-medium) var(--ease-standard)" }} /></span>
-    <span className={styles.finishedLabel}>{text(`${count} finished`, `${count} 个已完成`)}</span>
+    <span className={styles.finishedLabel}>{label ?? text(`${count} finished`, `${count} 个已完成`)}</span>
   </Button>;
 }

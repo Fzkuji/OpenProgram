@@ -35,9 +35,15 @@ def _isolated_models_dev_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(
         models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
     )
+    with models_dev._cache_lock:
+        saved = dict(models_dev._cache)
     _reset_models_dev_cache(models_dev)
     yield models_dev
-    _reset_models_dev_cache(models_dev)
+    # The next test gets the catalogue it had: an emptied one would start a
+    # background refresh on its first read.
+    with models_dev._cache_lock:
+        models_dev._cache.clear()
+        models_dev._cache.update(saved)
 
 
 def _repo_zip() -> bytes:
@@ -712,7 +718,7 @@ def _render_exception(error: BaseException) -> str:
 
 
 def test_skills_cli_status_error_hides_signed_source_url(server):
-    from openprogram.interfaces.cli.commands.skills import _cmd_skills_search
+    from openprogram.interfaces.cli.commands.capabilities.skills import _cmd_skills_search
 
     url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
 
@@ -822,7 +828,7 @@ def test_skills_invalid_index_hides_peer_values_from_web_routes(
 
 
 def test_skills_invalid_index_hides_peer_values_from_cli(server):
-    from openprogram.interfaces.cli.commands.skills import _cmd_skills_install, _cmd_skills_search
+    from openprogram.interfaces.cli.commands.capabilities.skills import _cmd_skills_install, _cmd_skills_search
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -845,7 +851,7 @@ def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.interfaces.cli.commands.plugins import _cmd_plugins_search
+    from openprogram.interfaces.cli.commands.capabilities.plugins import _cmd_plugins_search
     from openprogram.extensions.plugins import marketplace
     from openprogram.interfaces.server.routes.catalog import plugins
 

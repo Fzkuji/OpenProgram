@@ -20,12 +20,12 @@ transparently inside :mod:`providers.shared.github_copilot_headers`
 lived api_token is never persisted in the credential store, only the
 long-lived GitHub token is.
 
-Env-var import routes: ``COPILOT_GITHUB_TOKEN`` → ``GH_TOKEN`` →
-``GITHUB_TOKEN`` in priority order, matching :mod:`env_api_keys`.
+A GitHub token can also be pasted (:func:`import_pasted_token`) or read from
+``COPILOT_GITHUB_TOKEN`` / ``GH_TOKEN`` / ``GITHUB_TOKEN``, which show as
+read-only credential rows (``models/auth/store.py`` ``env_rows``).
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 
 from openprogram.models.auth.credential_provider import (
@@ -41,44 +41,27 @@ from openprogram.models.auth.types import (
 PROVIDER_ID = "github-copilot"
 
 
-# Ordered by preference — first non-empty wins.
-_ENV_TOKEN_VARS = ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
-
-
-def import_from_env_tokens(
-    *,
-    account_id: str = "default",
-) -> Optional[Credential]:
-    """Read Copilot-compatible GitHub tokens from environment variables.
-
-    Returns an ``api_key`` credential (read-only — env-owned) or ``None``
-    if no matching variable is set. The resulting credential doesn't
-    distinguish between a classic PAT and an OAuth access token; Copilot's
-    internal token-exchange endpoint accepts either.
-    """
-    for var in _ENV_TOKEN_VARS:
-        value = os.environ.get(var, "").strip()
-        if value:
-            return Credential(
-                provider_id=PROVIDER_ID,
-                account_id=account_id,
-                kind="api_key",
-                payload=CredentialData(kind="api_key", auth_value=value),
-                source=f"env:{var}",
-                metadata={"env_var": var},
-                # Env-owned: we never rewrite the user's shell; refresh
-                # is meaningless for a PAT. Mark read-only so rotation
-                # attempts surface loudly instead of silently no-op'ing.
-                read_only=True,
-            )
-    return None
+def import_pasted_token(token: str) -> Credential:
+    """A pasted GitHub token (a classic or fine-grained PAT, or an OAuth
+    token) as a credential; Copilot's token exchange accepts either."""
+    value = (token or "").strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    if not value:
+        from openprogram.models.auth.types import AuthConfigError
+        raise AuthConfigError("empty token — nothing to save", provider_id=PROVIDER_ID)
+    return Credential(
+        provider_id=PROVIDER_ID,
+        kind="token",
+        payload=CredentialData(kind="token", auth_value=value),
+        source="web",
+    )
 
 
 def import_oauth_credential(
     access_token: str,
     refresh_token: str = "",
     *,
-    account_id: str = "default",
     expires_at_ms: int = 0,
     metadata: Optional[dict[str, Any]] = None,
 ) -> Credential:
@@ -92,7 +75,6 @@ def import_oauth_credential(
     md = {"imported_from": "github_device_code"} | (metadata or {})
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -103,7 +85,7 @@ def import_oauth_credential(
                 "client_id": "Iv1.b507a08c87ecfe98",
             },
         ),
-        source="github_copilot_device_code",
+        source="web",
         metadata=md,
         read_only=False,
     )
@@ -134,7 +116,7 @@ register_github_copilot_auth()
 
 __all__ = [
     "PROVIDER_ID",
-    "import_from_env_tokens",
+    "import_pasted_token",
     "import_oauth_credential",
     "register_github_copilot_auth",
 ]

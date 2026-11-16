@@ -19,4 +19,4 @@ Nothing in this package applies an update during worker startup.
 - **`detect.py`** — Detect how OpenProgram is installed on this machine
 - **`github.py`** — Validated metadata and small files from formal GitHub Releases
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

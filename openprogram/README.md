@@ -40,5 +40,5 @@ Most packages, at the top level and inside a group, have their own `README.md`. 
 READMEs use the corresponding `__init__.py` docstring as their source and are
 checked by the repository contracts.
 
-See [Repository Structure](../docs/reference/design/repository-structure.html)
+See [Repository Structure](../docs/reference/design/repository/structure.html)
 for ownership rules and [the test guide](../tests/README.md) for test placement.

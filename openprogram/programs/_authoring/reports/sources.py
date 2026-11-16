@@ -81,7 +81,7 @@ def conversation_candidates(week):
     """
     from zoneinfo import ZoneInfo
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.state.store.session.transcript import session_read_violation
+    from openprogram.state.store.session.reading.transcript import session_read_violation
     from openprogram.state.memory.policy import allowed, consume_sources
 
     if not allowed():

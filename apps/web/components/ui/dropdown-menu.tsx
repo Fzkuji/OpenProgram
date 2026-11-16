@@ -10,6 +10,11 @@
  * outside-click, and `role="menu"/"menuitem"` semantics. A submenu sits
  * where shadcn's radix-nova one does (no offsets): against its trigger
  * row, top edges level.
+ *
+ * Every panel hides once its trigger leaves the layout (`hideWhenDetached`):
+ * a row that routes away from the chat hides the chat column while the
+ * panel still fades out, and Floating UI would otherwise place the fading
+ * panel against the trigger's zero rect, at the window's top-left corner.
  */
 
 import * as React from "react"
@@ -24,12 +29,13 @@ const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, align = "end", sideOffset = 4, ...props }, ref) => (
+>(({ className, align = "end", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
       align={align}
       sideOffset={sideOffset}
+      hideWhenDetached={hideWhenDetached}
       className={cn(
         "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
         className
@@ -53,12 +59,13 @@ const DropdownMenuSubContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
 // A submenu stands 4px off its parent panel (the offset is measured from
 // the row, inside the panel's p-1), and its first row lines up with that row.
->(({ className, sideOffset = 8, alignOffset = -4, ...props }, ref) => (
+>(({ className, sideOffset = 8, alignOffset = -4, hideWhenDetached = true, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
       alignOffset={alignOffset}
+      hideWhenDetached={hideWhenDetached}
       className={cn(
         "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className

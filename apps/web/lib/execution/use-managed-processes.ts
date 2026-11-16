@@ -4,19 +4,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import "@/lib/net/ws/ws-events";
 import { getProcess, getSessionProcesses, type AgentCall, type ManagedProcess, type ActiveToolCall } from "../net/execution/process-client";
+import { lastActivityRead, activityReadStart, rememberActivityRead } from "./activity-reads";
 
-/** Reads persisted records; selection never consumes the process tool's log cursor. */
+/** One read of a conversation's programs and calls. */
+type ProcessList = { sessionId: string; items: ManagedProcess[]; calls: ActiveToolCall[]; spawns: AgentCall[] };
+const NONE: ProcessList = { sessionId: "", items: [], calls: [], spawns: [] };
+
+/** Reads persisted records; selection never consumes the process tool's log
+ *  cursor. The conversation's last read draws at once (activity-reads.ts). */
 export function useManagedProcesses(active: boolean, sessionId: string | null, selectedId: string | null) {
-  const [calls, setCalls] = useState<ActiveToolCall[]>([]);
-  const [spawns, setSpawns] = useState<AgentCall[]>([]);
-  const [items, setItems] = useState<ManagedProcess[]>([]);
+  const [read, setRead] = useState<ProcessList | null>(() => lastActivityRead<ProcessList>("processes", sessionId));
+  const list = (read?.sessionId === sessionId ? read : lastActivityRead<ProcessList>("processes", sessionId)) ?? NONE;
+  const { items, calls, spawns } = list;
+  const loaded = list !== NONE;
   const [detail, setDetail] = useState<{ process: ManagedProcess; output: string } | null>(null);
   const [failedSessionId, setFailedSessionId] = useState<string | null>(null);
   const stale = failedSessionId !== null && failedSessionId === sessionId;
-  const [loaded, setLoaded] = useState(false);
   const refreshRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const refresh = useCallback(() => refreshRef.current(), []);
-  useEffect(() => { setItems([]); setCalls([]); setSpawns([]); setDetail(null); setLoaded(false); setFailedSessionId(null); }, [sessionId]);
+  useEffect(() => { setDetail(null); setFailedSessionId(null); }, [sessionId]);
   useEffect(() => { setDetail(null); }, [sessionId, selectedId]);
   useEffect(() => {
     if (!active || !sessionId) return;
@@ -32,11 +38,14 @@ export function useManagedProcesses(active: boolean, sessionId: string | null, s
       clearTimeout(timer);
       pending = (async () => {
         controller = new AbortController();
+        const startedAt = activityReadStart();
         const timeout = setTimeout(() => controller.abort(), 15000);
         try {
           const data = await getSessionProcesses(sessionId, controller.signal);
           if (disposed) return false;
-          setItems(data.items || []); setCalls(data.calls || []); setSpawns(data.spawns || []); setLoaded(true);
+          const read: ProcessList = { sessionId, items: data.items || [], calls: data.calls || [], spawns: data.spawns || [] };
+          rememberActivityRead("processes", sessionId, read, startedAt);
+          setRead(read);
           if (selectedId) {
             if (!(data.items || []).some(item => item.id === selectedId)) {
               setDetail(null);

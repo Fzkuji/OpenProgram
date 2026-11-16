@@ -96,6 +96,7 @@ _TOOL_KINDS: dict[str, str] = {
     "web_search": "fetch", "web_fetch": "fetch", "fetch": "fetch",
     "bash": "execute", "write_stdin": "execute", "shell": "execute", "run": "execute",
     "think": "think", "todo_write": "think", "task": "think",
+    "task_start": "think", "task_step": "think", "task_list": "think",
     "delete": "delete", "move": "move",
 }
 
@@ -284,7 +285,7 @@ class ACPServer:
         The binding is the one ``openprogram --print`` makes for the
         directory it runs in, so the session's tools start in ``cwd``.
         """
-        from openprogram.interfaces.cli.print_turn import working_directory_project
+        from openprogram.interfaces.cli.print_mode.print_turn import working_directory_project
         from openprogram.runtime.context.session_db import default_db
 
         project_id = working_directory_project(cwd)
@@ -405,7 +406,7 @@ class ACPServer:
 
         from openprogram.runtime.permissions.authority import local_owner_authority
         from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-        from openprogram.runtime.conversation.turn_input import build_turn_request
+        from openprogram.runtime.conversation.turn_admission.turn_input import build_turn_request
 
         if not sess.created:
             try:

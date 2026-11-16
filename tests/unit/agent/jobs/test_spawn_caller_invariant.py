@@ -19,7 +19,7 @@ import threading
 
 import pytest
 
-from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
 
 @pytest.fixture
@@ -55,10 +55,10 @@ def captured_run(monkeypatch):
         return AgentTurnResult(head_id="head_x", final_text="(reply)")
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn", fake_run,
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.write_attach_pointer_for_spawn",
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
     return cap
@@ -235,7 +235,7 @@ def test_agent_async_passes_caller_and_depth(store, monkeypatch):
         return "t_fake"
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", fake_async,
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn_async", fake_async,
     )
     from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl
     out = _run_with_ctx(
@@ -337,7 +337,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
     from openprogram.programs.tools.agents.send_message.send_message.depth import (
         current_chain_generations, current_chain_messages,
     )
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult as _R
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult as _R
     seen = {}
 
     def fake_run(**kw):
@@ -346,10 +346,10 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
         return _R(head_id="h", final_text="(reply)")
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn", fake_run,
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.write_attach_pointer_for_spawn",
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
     from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl

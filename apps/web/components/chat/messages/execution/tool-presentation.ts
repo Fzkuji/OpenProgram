@@ -107,7 +107,10 @@ export function parseToolArgs(input?: string): Args {
   if (!input) return {};
   try {
     const v = JSON.parse(input);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Args) : { input: v };
+    if (!v || typeof v !== "object" || Array.isArray(v)) return { input: v };
+    // The runtime's task progress, not the tool's own argument.
+    const { task_progress: _progress, ...args } = v as Args;
+    return args;
   } catch {
     return { input };
   }
@@ -286,6 +289,11 @@ export function presentTool(
         target: pick(args, "name", "skill") };
     case "resource":
       return { icon: "database", tone: "read", title: text("Resource", "资源"), target: genericTarget(args) };
+  }
+  if (name === "task_start" || name === "task_step" || name === "task_list") {
+    // Drawn only where a call is shown outside a reply's task block.
+    return { icon: "checklist", tone: "plan", title: text("Updated task", "更新任务"),
+      target: firstLine(pick(args, "title", "outcome", "result")) };
   }
   if (name.startsWith("todo_")) {
     return { icon: "checklist", tone: "plan", title: text("Updated todos", "更新待办"),

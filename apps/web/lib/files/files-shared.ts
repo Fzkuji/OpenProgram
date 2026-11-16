@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { wsRequest } from "@/lib/net/ws/ws-request";
+import { listSessionProjects } from "@/lib/projects/list-projects";
 import { useSessionStore } from "@/lib/session-store";
 import {
   fileScopeKey,
@@ -71,19 +71,8 @@ export function useCurrentProject(scope?: { sessionId: string | null; chatKey: s
     const controller = new AbortController();
     resolveController.current = controller;
     setResult(null);
-    const data = await wsRequest<ProjectListResponse>(
-      "list_projects",
-      { session_id: sessionId ?? "" },
-      "projects_list",
-      // 为什么要认领回复：侧栏 Projects 分组、/projects 页也会并发发
-      // list_projects（session_id 为空），那些回复的 current_project_id
-      // 恒为 null。wsRequest 仅按帧类型匹配时会拿到别人的空回复，导致
-      // 这里误回落到默认项目——右栏文件树被钉死在默认根目录。后端会
-      // 回显请求的 session_id（空串回显 null），据此只认自己那条。
-      (d) => (d.session_id ?? null) === (sessionId || null),
-      4000,
-      { signal: controller.signal },
-    );
+    // Every reply on screen resolves its project here; they share one request.
+    const data = await listSessionProjects<ProjectListResponse>(sessionId);
     if (generation !== resolveGeneration.current || controller.signal.aborted) return false;
     if (!data || data.status === "error" || !Array.isArray(data.projects)) return false;
     const projects = data.projects;

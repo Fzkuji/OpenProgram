@@ -95,7 +95,7 @@
 </table>
 
 <h3 id="cross-turn-tool-context">工具输出</h3>
-<p>一条规则贯穿始终：之后的请求发出的字节和这一轮发出的一样。结果只在产生的地方截一次，历史存的就是截过的样子。代码：<code translate="no">runtime/agent/loop/tool_dispatch.py</code>（<code translate="no">_as_stored</code>）、<code translate="no">state/store/session/spill.py</code>、<code translate="no">models/providers/shared/tool_attachments.py</code>。</p>
+<p>一条规则贯穿始终：之后的请求发出的字节和这一轮发出的一样。结果只在产生的地方截一次，历史存的就是截过的样子。代码：<code translate="no">runtime/agent/loop/tool_dispatch.py</code>（<code translate="no">_as_stored</code>）、<code translate="no">state/store/session/files/spill.py</code>、<code translate="no">models/providers/shared/tool_attachments.py</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
 <tbody>
@@ -131,7 +131,7 @@
 </details>
 
 <h3 id="pictures-and-pastes">图片和长消息</h3>
-<p>图片进入会话的每条路都写同一种记录，所以下一个请求带着本轮带过的图片，每个适配器都一样。代码：<code translate="no">state/store/session/media.py</code>、<code translate="no">runtime/conversation/branch_fork.py</code>、<code translate="no">models/providers/shared/google.py</code>。</p>
+<p>图片进入会话的每条路都写同一种记录，所以下一个请求带着本轮带过的图片，每个适配器都一样。代码：<code translate="no">state/store/session/files/media.py</code>、<code translate="no">runtime/conversation/turn_admission/branch_fork.py</code>、<code translate="no">models/providers/shared/google.py</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">路径</th><th scope="col">保留什么</th></tr></thead>
 <tbody>
@@ -195,7 +195,7 @@
 <h3 id="occupancy">占用：一条记录，两个读者</h3>
 <pre translate="no" tabindex="0"><code>{"window": int, "total_used": int, "basis": "measured" | "estimated",
  "estimated": int, "calibration": float}   # calibration 仅 measured 时有</code></pre>
-<p class="note"><code translate="no">openprogram/runtime/context/session_stats.py</code> 构建；<code translate="no">server.session_context_stats</code> 供给 <code translate="no">/context</code>；<code translate="no">server._broadcast_context_stats</code> 推送 <code translate="no">context_stats</code> 帧。<a href="occupancy-status.html">占用与压缩</a></p>
+<p class="note"><code translate="no">openprogram/runtime/context/token_accounting/session_stats.py</code> 构建；<code translate="no">server.session_context_stats</code> 供给 <code translate="no">/context</code>；<code translate="no">server._broadcast_context_stats</code> 推送 <code translate="no">context_stats</code> 帧。<a href="occupancy-status.html">占用与压缩</a></p>
 <table class="stack">
 <thead><tr><th scope="col">依据</th><th scope="col">何时</th><th scope="col"><code translate="no">total_used</code></th></tr></thead>
 <tbody>
@@ -234,6 +234,7 @@
 <tr><th scope="row">工具</th><td>已加载、按需、MCP</td></tr>
 <tr><th scope="row">记忆</th><td>各层的 <code translate="no">MEMORY.md</code></td></tr>
 <tr><th scope="row">对话</th><td>按类型（<code translate="no">messages_detail.groups</code>）和最大消息（<code translate="no">messages_detail.top</code>），各链接到对话行</td></tr>
+<tr><th scope="row">上次压缩</th><td>“压缩对话”下面的一条说明（<code translate="no">last_compaction</code>）：时间、盖住多少条消息、压缩前后的 token 数</td></tr>
 </tbody>
 </table>
 <ul>
@@ -257,7 +258,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">权威实现</th><td><code translate="no">openprogram/runtime/context/engine.py</code>、<code translate="no">nodes.py</code>、<code translate="no">render.py</code>、<code translate="no">compaction/view.py</code>、<code translate="no">state/store/session/spill.py</code>、<code translate="no">media.py</code></td></tr>
+<tr><th scope="row">权威实现</th><td><code translate="no">openprogram/runtime/context/engine.py</code>、<code translate="no">nodes.py</code>、<code translate="no">render.py</code>、<code translate="no">compaction/view.py</code>、<code translate="no">state/store/session/files/spill.py</code>、<code translate="no">media.py</code></td></tr>
 <tr><th scope="row">部分</th><td>上下文提交在轮次收尾和合并轮写入，不在渲染路径上；时间线不显示普通轮次的渲染视图</td></tr>
 <tr><th scope="row">尚未</th><td>摘要和分支摘要用固定提示（<code translate="no">compaction/prompts.py</code>），不跟随智能体的 <code translate="no">AGENTS.md</code>、身份或技能。没有手动固定或取消固定上下文条目。目录里还没有模型声明 <code translate="no">tool_output_weight</code>，所以每个模型都用默认值。输入框对 <code translate="no">input_too_large</code> 没有自己的提示（拒绝显示为"未发送"）；卡片上"全文已保存"那一行的样式还等确认。</td></tr>
 </tbody>

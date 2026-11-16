@@ -10,7 +10,7 @@ stored.
 from __future__ import annotations
 
 from openprogram.models.providers.types import AssistantMessage, TextContent, ToolResultMessage
-from openprogram.runtime.context.tokens import estimate_history_tokens
+from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
 from tests.support.request_bytes import call, install_bench, reply, text_tool, wire_model
 from tests.support.summary_stream import install_summary_reply, sectioned
 
@@ -53,7 +53,7 @@ def test_a_smaller_window_compacts_instead_of_cutting_stored_results(monkeypatch
     # A summary stood in for the results it covered: a durable one, or,
     # when the one earlier turn is too short to cut, the request checkpoint
     # of the turn's completed rounds. Any other result goes as it was stored.
-    from openprogram.runtime.context.persistence import SUMMARY_PREFIX
+    from openprogram.runtime.context.compaction.persistence import SUMMARY_PREFIX
     texts = [m.content if isinstance(m.content, str) else getattr(m.content[0], "text", "")
              for m in sent.messages]
     assert any(t.startswith((SUMMARY_PREFIX, "[Earlier execution summary]")) for t in texts), (

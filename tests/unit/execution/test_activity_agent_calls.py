@@ -2,7 +2,7 @@
 import json
 from types import SimpleNamespace
 
-from openprogram.runtime.execution.activity_calls import agent_calls
+from openprogram.runtime.execution.projections.activity_calls import agent_calls
 
 
 class _Store:

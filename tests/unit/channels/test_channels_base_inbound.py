@@ -18,8 +18,8 @@ import threading
 
 import pytest
 
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 
 
@@ -35,7 +35,7 @@ def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
 def _paired_access(_tmp_state):
     """These tests exercise the dispatch path, not the access gate —
     pair their fixed fake senders through the local management API."""
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
 
     for sender_id in ("7", "701", "702", "u456", "9", "42"):
         _access.approve_user("faketg", "acct1", sender_id)
@@ -77,7 +77,7 @@ def test_dispatch_and_reply_fallback_goes_through_send_text(
         return "the reply"
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", fake_dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", fake_dispatch)
     ch = _FakeChannel()
     ch._dispatch_and_reply(_msg())
 
@@ -98,7 +98,7 @@ def test_dispatch_and_reply_streaming_path_sends_nothing(
     """dispatch returns None (reply already edited into the progress
     placeholder) → no extra send."""
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: None)
     ch = _FakeChannel()
     ch._dispatch_and_reply(_msg())
@@ -120,7 +120,7 @@ def test_handle_inbound_does_not_block_caller(
         return "late reply"
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", slow_dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", slow_dispatch)
     ch = _FakeChannel()
     ch.handle_inbound(_msg())          # must return immediately
     assert started.wait(30), "dispatch never ran in the background thread"
@@ -174,7 +174,7 @@ def test_quoted_text_becomes_quoted_block(
         return None
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", fake_dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", fake_dispatch)
     ch = _FakeChannel()
     ch._dispatch_and_reply(_msg(text="what about this?",
                                 quoted_text="line one\nline two"))
@@ -190,7 +190,7 @@ def test_quoted_text_truncated_at_cap(
     from openprogram.interfaces.channels.base import QUOTED_MAX_CHARS
     seen: dict = {}
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.update(kw))
     ch = _FakeChannel()
     ch._dispatch_and_reply(_msg(quoted_text="q" * (QUOTED_MAX_CHARS + 100)))
@@ -207,7 +207,7 @@ def _dispatched(monkeypatch: pytest.MonkeyPatch, *msgs) -> list[dict]:
     arguments each one hands to dispatch_inbound."""
     calls: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: calls.append(kw))
     ch = _FakeChannel()
     for m in msgs:
@@ -243,7 +243,7 @@ def test_group_routing_target_is_not_used_as_the_speaker(
     comments without changing either structured field."""
     seen: dict = {}
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.update(kw),
     )
     body = (
@@ -291,7 +291,7 @@ def test_display_name_is_squashed_to_one_line(
 # ---------------------------------------------------------------------------
 
 def test_max_chars_table_values() -> None:
-    from openprogram.interfaces.channels._transport import MAX_CHARS
+    from openprogram.interfaces.channels.delivery._transport import MAX_CHARS
     assert MAX_CHARS == {
         "telegram": 4000,    # hard cap 4096
         "slack":    39000,   # chat.postMessage truncates past 40000
@@ -315,7 +315,7 @@ def test_adapters_have_no_chunk_copies() -> None:
 def test_post_message_chunks_at_platform_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels.delivery import _transport
 
     sent: list[str] = []
 
@@ -349,7 +349,7 @@ def slow_download(monkeypatch: pytest.MonkeyPatch) -> tuple[threading.Event, thr
         return []
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._attachments.download_inbound", download)
+        "openprogram.interfaces.channels.inbound._attachments.download_inbound", download)
     return started, finish
 
 
@@ -380,7 +380,7 @@ def _record_dispatch(monkeypatch: pytest.MonkeyPatch, *, on_call=None) -> _Order
         return None
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", fake_dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", fake_dispatch)
     return order
 
 
@@ -491,7 +491,7 @@ def test_a_place_left_in_the_middle_of_the_line_is_skipped() -> None:
 def test_dispatch_gives_the_place_back_only_once_it_holds_the_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _conversation as C
+    from openprogram.interfaces.channels.inbound import _conversation as C
 
     events: list[object] = []
     lock = C._session_lock_for("session-order")
@@ -510,7 +510,7 @@ def test_dispatch_gives_the_place_back_only_once_it_holds_the_session(
 def test_new_conversation_answers_busy_within_the_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _conversation as C
+    from openprogram.interfaces.channels.inbound import _conversation as C
 
     started: list[object] = []
     monkeypatch.setattr(C, "RUN_SLOT_WAIT_SECONDS", 0.05)
@@ -532,7 +532,7 @@ def test_new_conversation_answers_busy_within_the_bound(
 def test_busy_new_conversation_keeps_the_room_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _conversation as C, _room
+    from openprogram.interfaces.channels.inbound import _conversation as C, _room
 
     monkeypatch.setattr(C, "start_new_conversation", lambda **kw: C.BUSY_REPLY)
     cleared: list[object] = []
@@ -555,7 +555,7 @@ def _empty_mention(quoted: str = "") -> ChannelMessage:
 
 
 def _room_channel(monkeypatch: pytest.MonkeyPatch):
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
 
     class _RoomChannel(Channel):
         platform_id = "emptyroom"
@@ -570,7 +570,7 @@ def _room_channel(monkeypatch: pytest.MonkeyPatch):
 def test_empty_mention_starts_no_turn(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.append(kw))
     _room_channel(monkeypatch)._dispatch_and_reply(_empty_mention())
     assert seen == []
@@ -579,7 +579,7 @@ def test_empty_mention_starts_no_turn(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_empty_mention_does_not_use_up_the_room_turn_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _room
+    from openprogram.interfaces.channels.inbound import _room
 
     key = ("emptyroom", "default", "-100")
     _room._turns.pop(key, None)
@@ -594,7 +594,7 @@ def test_empty_mention_on_a_quoted_message_starts_a_turn(
 ) -> None:
     seen: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.append(kw))
     _room_channel(monkeypatch)._dispatch_and_reply(_empty_mention("what about this"))
     assert "what about this" in seen[0]["user_text"]
@@ -603,11 +603,11 @@ def test_empty_mention_on_a_quoted_message_starts_a_turn(
 def test_empty_mention_with_pending_history_starts_a_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _room
+    from openprogram.interfaces.channels.inbound import _room
 
     seen: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.append(kw))
     channel = _room_channel(monkeypatch)
     key = ("emptyroom", "default", "-100")

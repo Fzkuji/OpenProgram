@@ -208,7 +208,7 @@ def save_routine(
     except OSError as exc:
         if task is not None and task_id != str(existing.get("routine-task") or ""):
             from openprogram.runtime.scheduler import service
-            service.delete_task(task_id)
+            service.delete_task(task_id, by="a routine that could not be saved")
         return f"Error: could not write {path}: {exc}"
 
     verb = "Updated" if existing else "Saved"

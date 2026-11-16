@@ -20,11 +20,14 @@
 .message.assistant.pending-standalone > .pending-body {
   display: flex;
 }
-.message.assistant.pending-standalone .message-timestamp {
+.message.assistant.pending-standalone > .pending-body .message-timestamp {
   padding: 0;
   margin-left: 2px;
   opacity: 0.78;
 }
+/* The standalone indicator stands as tall as the empty reply that replaces
+   it: the reply's action row is here too, holding its place unseen. */
+.message.assistant.pending-standalone > .message-actions-footer { visibility: hidden; }
 /* .pending-pulse retired — runtime / chat surfaces now use the
    generic .indicator-dot system. See section below. */
 .pending-label {

@@ -94,7 +94,10 @@ def _append_msg(conv: dict, msg: dict, *, strict: bool = False) -> None:
                 from openprogram.state.store import SessionNodeWriter as _GS
                 _ROOT_ID = "ROOT"
                 if not db.message_exists(cid, _ROOT_ID):
-                    _GS(db, cid).append(_C(
+                    # The root marker is no branch's message: a conversation
+                    # whose earlier messages were written without it keeps
+                    # its branch where it is, and this message continues it.
+                    _GS(db, cid, advance_head=False).append(_C(
                         id=_ROOT_ID, role=_RU, output="",
                         metadata={"display": "root"},
                     ))
@@ -228,7 +231,7 @@ def _resolve_context_window(provider_name, model) -> int | None:
     (``catalog.models.split_model_ref``); a bare id uses ``provider_name``.
     ``None`` when the model does not resolve.
     """
-    from openprogram.runtime.context.session_stats import model_ref_window
+    from openprogram.runtime.context.token_accounting.session_stats import model_ref_window
     return model_ref_window(str(model) if model else None, provider_name or None)
 
 
@@ -242,7 +245,7 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
     computed (a brand-new session with no branch yet, a DB read failure),
     so a transient error never blanks the ring.
     """
-    from openprogram.runtime.context import session_stats as _cs
+    from openprogram.runtime.context.token_accounting import session_stats as _cs
 
     try:
         occupancy = _cs.build_stats(
@@ -346,7 +349,7 @@ def _branch_model_ref(conv, branch: dict) -> tuple[str | None, str]:
     if branch.get("model_override"):
         return str(branch["model_override"]), provider
     try:
-        from openprogram.runtime.conversation.session_model import (
+        from openprogram.runtime.conversation.session_settings.session_model import (
             new_session_chat_model, override_string,
         )
         agent_ref = override_string(*new_session_chat_model(
@@ -398,7 +401,7 @@ def _conv_model_ref(conv, head_id=None) -> tuple[str | None, str]:
     if row.get("model_override"):
         return str(row["model_override"]), (row.get("provider_override") or provider)
     try:
-        from openprogram.runtime.conversation.session_model import (
+        from openprogram.runtime.conversation.session_settings.session_model import (
             new_session_chat_model, override_string,
         )
         agent_id = conv.get("agent_id") or row.get("agent_id")

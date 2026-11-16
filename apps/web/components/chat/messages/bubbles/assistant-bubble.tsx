@@ -24,6 +24,7 @@ import { useTranslation } from "@/lib/i18n";
 
 import { AttachCard } from "../cards/attach-card";
 import { RetryStep, RetryStrip, RetryTag } from "../execution/retry-status";
+import { CredentialNotices } from "../execution/credential-notice";
 import {
   ExecutionStrip,
   FunctionStep,
@@ -44,7 +45,10 @@ import { mountVisualsIn } from "@/lib/chat/markdown/visual-frames";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { splitMarkdownBlocks } from "@/lib/chat/markdown/streaming-blocks";
 import { TurnFilesChips } from "../turn-files/turn-files-chips";
-import { summarizeToolGroup } from "../execution/tool-group-summary";
+import { livePhrase, summarizeToolGroup } from "../execution/tool-group-summary";
+import { TaskBlock } from "../execution/task-block";
+import { drawnState, lastTaskPart, layoutReply, type WorkItem } from "@/lib/chat/transcript/task-blocks";
+import { useRowTasks } from "@/lib/chat/transcript/use-row-tasks";
 import { shouldRenderTurnFiles } from "../turn-files/turn-files-presentation";
 import { AssistantFileCards, sentFilePath } from "../attachments/assistant-file-cards";
 import { ProseFileLinks } from "./prose-file-links";
@@ -55,7 +59,7 @@ import { PendingSteers } from "./pending-steers";
 import { CitationSources } from "./web-sources";
 import { isProviderSearch } from "@/lib/chat/transcript/web-sources";
 import { blockIds, ownedChildren, spawnFacts } from "@/lib/chat/transcript/owned-children";
-import { isLive, isStopped } from "@/lib/chat/transcript/row-status";
+import { isAgentRunning, isLive, isSettled, isStopped } from "@/lib/chat/transcript/row-status";
 import { continuedRows, fallbackBlocks as flatBlocks, joinedReply } from "@/lib/chat/transcript/restart-continuation";
 import { useRowSessionId } from "../list/transcript-view-scope";
 
@@ -115,7 +119,7 @@ export function errorHeadline(
     case "auth":
       return text(
         "Your API key was rejected — check it in Settings → Providers.",
-        "API key 被拒 —— 去 设置 → Providers 检查。",
+        "API 密钥被拒 —— 去 设置 → LLM 服务商 检查。",
       );
     case "authz":
       return text(
@@ -268,6 +272,8 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
     () => joinedReply(cutOff, ownMsg, (content) => parseAttachments(content).text),
     [cutOff, ownMsg],
   );
+  // The tasks the agent declared for this reply's work (task-blocks.ts).
+  const tasks = useRowTasks(bubbleSessionId, bubbleView, ownMsg.id);
   const rewindOffered = useRewindOffered(bubbleSessionId, msg.errorReason);
   const quotaCause = msg.status === "error" && msg.errorCause?.cause === "quota_exhausted" ? msg.errorCause : null;
   const { text } = useTranslation();
@@ -343,6 +349,7 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
         <ProseFileLinks sessionId={bubbleSessionId} settled={!streaming}>
         <div className="chat-stream-body">
           <StepExpansionScope view={viewKey ?? bubbleSessionId} row={msg.id}>
+          <CredentialNotices notices={msg.credentialNotices} />
           {effBlocks ? (
             (() => {
 
@@ -353,156 +360,167 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
               // as one text node after the tool cards so the user
               // still sees the answer.
               const hasTextBlock = effBlocks.some((b) => b.type === "text");
-              // ── 分段：text 块常驻；连续的 thinking/tool 块聚成一段
-              // 执行痕迹。流式与结束后都保留同一个可展开的摘要条。
-              // 段内出现 agent/send_message 调用时，把对应的
-              // Spawned 卡（一行态）挂在该段摘要条下面——在哪调用就
-              // 画在哪。
-              type ExecSeg = {
-                kind: "exec";
-                items: Array<{ b: AssistantBlock; i: number }>;
-                cards: ChatMsg[];
-              };
-              type TextSeg = { kind: "text"; b: AssistantBlock; i: number } | { kind: "steering"; b: AssistantBlock; i: number };
-              const segs: Array<ExecSeg | TextSeg> = [];
-              effBlocks.forEach((b, i) => {
-                if (b.type === "text" || b.type === "steering") {
-                  segs.push({ kind: b.type, b, i });
-                  return;
-                }
-                const last = segs[segs.length - 1];
-                const seg: ExecSeg =
-                  last && last.kind === "exec"
-                    ? last
-                    : (() => {
-                        const s: ExecSeg = { kind: "exec", items: [], cards: [] };
-                        segs.push(s);
-                        return s;
-                      })();
-                seg.items.push({ b, i });
-                const card = owned.cards.get(blockKeys[i]);
-                if (card) seg.cards.push(card);
-              });
+              // ── 分段（lib/chat/transcript/task-blocks.ts 的 layoutReply）：
+              // text 块常驻；连续的 thinking/tool 块聚成一段执行痕迹；模型
+              // 声明了任务的那一段工作收进任务块（task-block.tsx）。流式与
+              // 结束后都走同一条路径。段内出现 agent/send_message 调用时，
+              // 对应的 Spawned 卡画成子代理行——在哪调用就画在哪。
+              const parts = layoutReply(effBlocks, blockKeys, tasks);
               const rendered: React.ReactNode[] = [];
               const drawnFiles = new Set<string>();
-              // A turn stopped while it worked marks its last row; one stopped
-              // while it wrote says so in a sentence below.
-              const lastSeg = segs[segs.length - 1];
-              stopTagged = Boolean(stoppedAs && lastSeg?.kind === "exec");
-              segs.forEach((seg, si) => {
-                if (seg.kind === "steering") {
-                  rendered.push(<SteeringInput key={blockKeys[seg.i]} block={seg.b} sessionId={bubbleSessionId} viewKey={bubbleView}/>);
-                  return;
+              const lastPart = parts[parts.length - 1];
+              const lastTask = lastTaskPart(parts);
+              // A turn stopped while it worked marks its last row or its task
+              // block; one stopped while it wrote says so in a sentence below.
+              // A stopped task block carries the tag for the whole reply:
+              // nothing after it is tagged again.
+              const lastDrawn = lastTask ? drawnState(lastTask.segment, msg.status) : null;
+              const taskStopped = lastDrawn === "stopped" || lastDrawn === "interrupted";
+              stopTagged = Boolean(stoppedAs && (lastPart?.kind === "exec" || taskStopped));
+              const replyEndedAt = isSettled(msg.status) && msg.finishedAt ? msg.finishedAt : undefined;
+              const isRunning = (b: AssistantBlock) => activeExecution && !!b.tool_call_id && runningToolIds.has(b.tool_call_id);
+              const cardsOf = (items: WorkItem[]) => items.flatMap(({ i }) => owned.cards.get(blockKeys[i]) ?? []);
+              const summaryOptions = (items: WorkItem[]) => ({
+                text,
+                active: activeExecution && items.some(({ i }) => i === lastBlockIdx),
+                runningIds: runningToolIds,
+                ...spawnFacts(cardsOf(items), text),
+                sessionId: bubbleSessionId,
+                turnFiles: msg.turnFiles,
+                turnBlocks: effBlocks,
+              });
+              const withOutcomes = (items: WorkItem[]) => items.map(({ b }) => {
+                const outcome = b.type === "tool" ? toolOutcome(b, msg.status, isRunning(b)) : b.outcome;
+                return outcome === b.outcome ? b : { ...b, outcome };
+              });
+              const summaryOf = (items: WorkItem[]) => summarizeToolGroup(withOutcomes(items), summaryOptions(items));
+              // 时间线步骤（chat-turn-visual-spec.html）——流式与落定同一条
+              // 路径。thinking → 思考行；spawn 调用 → 子代理行；agentic 工具
+              // → 函数行 + context_tree 递归子层级；普通工具 → 函数行。执行
+              // 痕迹和任务块里某一步的工作共用这一个函数。
+              const stepNode = ({ b, i }: WorkItem): React.ReactNode => {
+                const blockId = blockKeys[i];
+                if (b.type === "thinking") {
+                  return (
+                    <ThinkingStep
+                      key={blockId}
+                      expansionId={blockId}
+                      text={b.text || ""}
+                      running={activeExecution && i === lastBlockIdx}
+                    />
+                  );
                 }
-                if (seg.kind === "text") {
-                  rendered.push(<MarkdownText key={blockKeys[seg.i]} text={seg.b.text || ""} streaming={streaming && seg.i === lastBlockIdx} />);
-                  if (seg.b.citations?.length) {
-                    rendered.push(<CitationSources key={`cite:${blockKeys[seg.i]}`} citations={seg.b.citations} />);
-                  }
-                  return;
-                }
-
-                // 时间线步骤（chat-turn-visual-spec.html）——流式与落定
-                // 同一条路径：进行中折叠为 shimmer 摘要条，点击展开实时
-                // 列表；运行中的行呼吸点。thinking → 思考行；spawn 调用
-                // → 子代理行；agentic 工具 → 函数行 + context_tree 递归
-                // 子层级；普通工具 → 函数行。
-                const stripId = `exec:${blockKeys[seg.items[0].i]}`;
-                const steps: React.ReactNode[] = [];
-                seg.items.forEach(({ b, i }) => {
-                  const blockId = blockKeys[i];
-                  if (b.type === "thinking") {
-                    steps.push(
-                      <ThinkingStep
-                        key={blockId}
-                        expansionId={blockId}
-                        text={b.text || ""}
-                        running={activeExecution && i === lastBlockIdx}
-                      />,
-                    );
-                    return;
-                  }
-                  if (b.type === "restart") {
-                    steps.push(<RestartStep key={blockId} />);
-                    return;
-                  }
-                  if (b.type !== "tool") return;
-                  if (isProviderSearch(b)) {
-                    // The provider ran it: no call tree, no runtime row,
-                    // no function card — one "Searched the web" row.
-                    steps.push(
-                      <ProviderSearchStep
-                        key={blockId}
-                        expansionId={blockId}
-                        block={b}
-                        running={activeExecution && !!b.tool_call_id && runningToolIds.has(b.tool_call_id)}
-                        sessionId={bubbleSessionId}
-                        turnStatus={msg.status}
-                      />,
-                    );
-                    return;
-                  }
-                  const card = owned.cards.get(blockId);
-                  if (card) {
-                    steps.push(<SubAgentStep key={blockId} expansionId={blockId} card={card} />);
-                    return;
-                  }
-                  const tree = (owned.runtimeChildren.get(blockId)?.contextTree as TNode | undefined)
-                    || owned.callRoots.get(blockId) || null;
-                  steps.push(
-                    <FunctionStep
+                if (b.type === "restart") return <RestartStep key={blockId} />;
+                if (b.type !== "tool") return null;
+                if (isProviderSearch(b)) {
+                  // The provider ran it: no call tree, no runtime row,
+                  // no function card — one "Searched the web" row.
+                  return (
+                    <ProviderSearchStep
                       key={blockId}
                       expansionId={blockId}
                       block={b}
-                      tree={tree}
-                      running={activeExecution && !!b.tool_call_id && runningToolIds.has(b.tool_call_id)}
+                      running={isRunning(b)}
                       sessionId={bubbleSessionId}
                       turnStatus={msg.status}
-                    />,
+                    />
                   );
-                });
-                const carriesRetry = !!retry && si === segs.length - 1;
-                if (carriesRetry) {
-                  steps.push(<RetryStep key="retry" retry={retry} />);
-                  retryPlaced = true;
                 }
-                const cardFacts = spawnFacts(seg.cards, text);
-                rendered.push(
-                  <ExecutionStrip
-                    key={stripId}
-                    expansionId={stripId}
-                    status={carriesRetry ? <RetryTag retry={retry} /> : undefined}
-                    stopped={stopTagged && si === segs.length - 1 ? stoppedAs : undefined}
-                    streaming={activeExecution && seg.items.some(({ i }) => i === lastBlockIdx)}
-                    subagentHeads={cardFacts.spawnHeads}
-                    label={summarizeToolGroup(seg.items.map(({ b }) => {
-                      const outcome = b.type === "tool"
-                        ? toolOutcome(b, msg.status, activeExecution && !!b.tool_call_id && runningToolIds.has(b.tool_call_id))
-                        : b.outcome;
-                      return outcome === b.outcome ? b : { ...b, outcome };
-                    }), {
-                      text,
-                      active: activeExecution && seg.items.some(({ i }) => i === lastBlockIdx),
-                      runningIds: runningToolIds,
-                      ...cardFacts,
-                      sessionId: bubbleSessionId,
-                      turnFiles: msg.turnFiles,
-                      turnBlocks: effBlocks,
-                    })}
-                  >
-                    {steps}
-                  </ExecutionStrip>,
+                const card = owned.cards.get(blockId);
+                if (card) return <SubAgentStep key={blockId} expansionId={blockId} card={card} />;
+                const tree = (owned.runtimeChildren.get(blockId)?.contextTree as TNode | undefined)
+                  || owned.callRoots.get(blockId) || null;
+                return (
+                  <FunctionStep
+                    key={blockId}
+                    expansionId={blockId}
+                    block={b}
+                    tree={tree}
+                    running={isRunning(b)}
+                    sessionId={bubbleSessionId}
+                    turnStatus={msg.status}
+                  />
                 );
-                const segFiles = sentFiles(seg.items.map(({ b }) => b)).filter((path) => {
+              };
+              // Inside a task block the text said during a step folds with it.
+              const workNode = (item: WorkItem): React.ReactNode => {
+                const { b, i } = item;
+                if (b.type === "steering") {
+                  return <div key={blockKeys[i]} className="tb-say"><SteeringInput block={b} sessionId={bubbleSessionId} viewKey={bubbleView} /></div>;
+                }
+                if (b.type !== "text") return stepNode(item);
+                return (
+                  <div key={blockKeys[i]} className="tb-say">
+                    <MarkdownText text={b.text || ""} streaming={streaming && i === lastBlockIdx} />
+                    {b.citations?.length ? <CitationSources citations={b.citations} /> : null}
+                  </div>
+                );
+              };
+              const pushFiles = (key: string, items: WorkItem[]) => {
+                const files = sentFiles(items.map(({ b }) => b)).filter((path) => {
                   if (drawnFiles.has(path)) return false;
                   drawnFiles.add(path);
                   return true;
                 });
-                if (segFiles.length) {
+                if (files.length) {
                   rendered.push(
-                    <AssistantFileCards key={`files:${stripId}`} msg={msg} sessionId={bubbleSessionId} attachments={outboundFiles} only={segFiles} />,
+                    <AssistantFileCards key={`files:${key}`} msg={msg} sessionId={bubbleSessionId} attachments={outboundFiles} only={files} />,
                   );
                 }
+              };
+              parts.forEach((part, si) => {
+                if (part.kind === "steering") {
+                  rendered.push(<SteeringInput key={blockKeys[part.i]} block={part.b} sessionId={bubbleSessionId} viewKey={bubbleView}/>);
+                  return;
+                }
+                if (part.kind === "text") {
+                  rendered.push(<MarkdownText key={blockKeys[part.i]} text={part.b.text || ""} streaming={streaming && part.i === lastBlockIdx} />);
+                  if (part.b.citations?.length) {
+                    rendered.push(<CitationSources key={`cite:${blockKeys[part.i]}`} citations={part.b.citations} />);
+                  }
+                  return;
+                }
+                const carriesRetry = !!retry && si === parts.length - 1;
+                if (carriesRetry) retryPlaced = true;
+                if (part.kind === "task") {
+                  rendered.push(
+                    <TaskBlock
+                      key={part.key}
+                      rowId={msg.id}
+                      part={part}
+                      drawn={drawnState(part.segment, msg.status)}
+                      active={activeExecution}
+                      endedAt={replyEndedAt}
+                      last={part === lastTask}
+                      agentsRunning={cardsOf(part.items).some((card) => isAgentRunning(card.attach?.status))}
+                      earlierAnchor={tasks.earlierAnchor[part.segment.taskId]}
+                      renderItem={workNode}
+                      summarize={summaryOf}
+                      livePhrase={(items) => livePhrase(withOutcomes(items), summaryOptions(items))}
+                      status={carriesRetry ? <RetryTag retry={retry} /> : undefined}
+                      tail={carriesRetry ? <RetryStep key="retry" retry={retry} /> : undefined}
+                    />,
+                  );
+                  pushFiles(part.key, part.items);
+                  return;
+                }
+                const steps: React.ReactNode[] = part.items.map(stepNode);
+                if (carriesRetry) steps.push(<RetryStep key="retry" retry={retry} />);
+                const options = summaryOptions(part.items);
+                rendered.push(
+                  <ExecutionStrip
+                    key={part.key}
+                    expansionId={part.key}
+                    status={carriesRetry ? <RetryTag retry={retry} /> : undefined}
+                    stopped={stopTagged && !taskStopped && si === parts.length - 1 ? stoppedAs : undefined}
+                    streaming={options.active}
+                    subagentHeads={options.spawnHeads}
+                    label={summarizeToolGroup(withOutcomes(part.items), options)}
+                  >
+                    {steps}
+                  </ExecutionStrip>,
+                );
+                pushFiles(part.key, part.items);
               });
               if (!hasTextBlock && hasContent && (msg.status !== "error" || !!msg.errorDetail)) {
                 rendered.push(

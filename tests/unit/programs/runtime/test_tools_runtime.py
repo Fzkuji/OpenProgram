@@ -639,7 +639,7 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
 
     import openprogram.runtime.conversation.process_runner as process_runner
     import openprogram.runtime.context.session_db as session_db
-    import openprogram.runtime.execution.dag as exec_dag
+    import openprogram.runtime.execution.projections.dag as exec_dag
     from openprogram.runtime.agent.loop.session import AgentSession
     from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
@@ -757,7 +757,7 @@ def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
 
     import openprogram.runtime.conversation.process_runner as process_runner
     import openprogram.runtime.context.session_db as session_db
-    import openprogram.runtime.execution.dag as exec_dag
+    import openprogram.runtime.execution.projections.dag as exec_dag
     from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
     )
@@ -835,7 +835,7 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
 
     import openprogram.runtime.conversation.process_runner as process_runner
     import openprogram.runtime.context.session_db as session_db
-    import openprogram.runtime.execution.dag as exec_dag
+    import openprogram.runtime.execution.projections.dag as exec_dag
     from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
     )
@@ -954,7 +954,7 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
 
 def test_approval_wrapper_preserves_worker_resident_marker() -> None:
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.models.providers.types import AgentTool
 
     async def execute(call_id, args, cancel, on_update):
@@ -1462,7 +1462,7 @@ def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> N
 def test_dispatcher_wrappers_preserve_tool_dag_exposure(expose, live_permission):
     from openprogram.runtime.conversation.turn_runtime.runtime_attach import _wrap_agentic_runtime_block
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.models.providers.types import AgentTool
 
     async def execute(call_id, args, cancel, on_update):

@@ -12,7 +12,7 @@
 <tr><th scope="row">端口</th><td><code translate="no">18100</code></td><td><code translate="no">18200</code></td></tr>
 <tr><th scope="row">浏览器调试端口</th><td><code translate="no">9223</code></td><td><code translate="no">9224</code></td></tr>
 <tr><th scope="row">数据</th><td><code translate="no">~/.openprogram</code>（默认 profile）</td><td><code translate="no">~/.openprogram-dev</code>（<code translate="no">dev</code> profile）</td></tr>
-<tr><th scope="row">更新方式</th><td><code translate="no">openprogram dev promote</code>，再运行 <code translate="no">scripts/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>，再运行 <code translate="no">scripts/refresh-dev-instance.sh</code></td></tr>
+<tr><th scope="row">更新方式</th><td><code translate="no">openprogram dev promote</code>，再运行 <code translate="no">scripts/local-instances/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>，再运行 <code translate="no">scripts/local-instances/refresh-dev-instance.sh</code></td></tr>
 </tbody>
 </table>
 
@@ -20,7 +20,7 @@
 
 <h2 id="deploying-to-the-development-instance">部署到开发版</h2>
 
-<p><code translate="no">openprogram dev deploy [ref]</code>（默认 <code translate="no">dev</code>）把提交检出到 detached worktree <code translate="no">~/.openprogram-dev/source</code>，在那里运行 <code translate="no">scripts/refresh-dev-instance.sh</code>。稳定版不会被停止或写入。</p>
+<p><code translate="no">openprogram dev deploy [ref]</code>（默认 <code translate="no">dev</code>）把提交检出到 detached worktree <code translate="no">~/.openprogram-dev/source</code>，在那里运行 <code translate="no">scripts/local-instances/refresh-dev-instance.sh</code>。稳定版不会被停止或写入。</p>
 
 <ol>
 <li>拒绝未提交或未跟踪的文件。同一时间只跑一次部署，第二次等待。</li>
@@ -30,7 +30,7 @@
 <li>设置 <code translate="no">dev</code> profile 的端口，绑定 Program 目录。</li>
 <li>只安装或重启 <code translate="no">dev</code> worker，作为登录服务（launchd 或 systemd；其他系统直接停止再启动）。最多等 120 秒 <code translate="no">/healthz</code>，再把提交记入 <code translate="no">runtime/source-revision</code>。</li>
 <li>把 wheel 和 TUI 包留在 <code translate="no">~/.openprogram-dev/artifacts</code> 供晋升使用。</li>
-<li>macOS：运行 <code translate="no">scripts/install-dev-app.sh</code>。</li>
+<li>macOS：运行 <code translate="no">scripts/local-instances/install-dev-app.sh</code>。</li>
 </ol>
 
 <details>
@@ -104,7 +104,7 @@
 <tr><th scope="row">后端</th><td><code translate="no">openprogram/operations/self_update/control/backend.py</code> 选择，这个是 <code translate="no">control/dev_stable.py</code></td></tr>
 <tr><th scope="row">位置</th><td><code translate="no">&lt;state&gt;/self-updates/&lt;id&gt;/controller</code> 下的运行时私有副本，在 App 和开发版运行时之外：它的步骤会替换这两者，而代码是懒加载的</td></tr>
 <tr><th scope="row">运行方式</th><td>macOS 上是 launchd 任务，其他系统是脱离的会话。挂掉时由 worker 启动拉起</td></tr>
-<tr><th scope="row">环境</th><td>没有 <code translate="no">OPENPROGRAM_SESSION_ID</code>：设置了它，<code translate="no">scripts/refresh-local-app.sh</code> 会脱离并立刻报告成功</td></tr>
+<tr><th scope="row">环境</th><td>没有 <code translate="no">OPENPROGRAM_SESSION_ID</code>：设置了它，<code translate="no">scripts/local-instances/refresh-local-app.sh</code> 会脱离并立刻报告成功</td></tr>
 <tr><th scope="row">重启</th><td>步骤幂等。更新目录里的日志记录落地的提交和 rebase 基点，重启后从所在阶段继续</td></tr>
 <tr><th scope="row">别的会话晋升</th><td>它在新 worker 健康后才移动 <code translate="no">stable</code>，控制器继续等 App 服务该提交</td></tr>
 <tr><th scope="row">撤销</th><td><code translate="no">self_update(action="undo", target=&lt;提交&gt;)</code> 在 <code translate="no">dev</code> 的 worktree 里 <code translate="no">git revert</code>，作为普通 <code translate="no">prepare</code> 提交</td></tr>
@@ -130,7 +130,7 @@
 <ol>
 <li>趁旧 worker 还在服务，备份稳定版 profile（<code translate="no">openprogram backup</code>，标签 <code translate="no">pre-promote</code>，保留最新 5 份）。</li>
 <li>把提交检出到 <code translate="no">~/.openprogram/release-source</code>。</li>
-<li>运行 <code translate="no">scripts/refresh-local-app.sh</code>，<code translate="no">OPENPROGRAM_PROMOTE_FROM</code> 设为上面读到的 <code translate="no">stable</code> 位置，即使在对话里调用也等它结束。它复用开发版对同一提交的构建，按下面的事务安装。</li>
+<li>运行 <code translate="no">scripts/local-instances/refresh-local-app.sh</code>，<code translate="no">OPENPROGRAM_PROMOTE_FROM</code> 设为上面读到的 <code translate="no">stable</code> 位置，即使在对话里调用也等它结束。它复用开发版对同一提交的构建，按下面的事务安装。</li>
 <li>新 worker 健康后，脚本从那个位置 compare-and-swap 把 <code translate="no">refs/heads/stable</code> 移到该提交：两次晋升不会互相覆盖，<code translate="no">stable</code> 只会快进。</li>
 </ol>
 
@@ -145,13 +145,13 @@
 </tbody>
 </table>
 
-<p>App 安装器（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>）也是这样替换 App：整个包在同一卷上准备好，再以改名切换，所以停机只覆盖切换和 worker 启动，新版本上可能失败的步骤都不在已安装的 App 上执行。</p>
+<p>App 安装器（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>）也是这样替换 App：整个包在同一卷上准备好，再以改名切换，所以停机只覆盖切换和 worker 启动，新版本上可能失败的步骤都不在已安装的 App 上执行。</p>
 
 <p>晋升只读取稳定版的数据存储，用来查看正在运行的工作。只有持有 <code translate="no">worker.lock</code> 的进程写运行状态，所以由重启后的新代码 worker 接管（见<a href="../runtime/execution/control.zh.html#store-schema-ownership">谁拥有运行状态</a>）。</p>
 
 <details>
 <summary>刷新闸门与 Electron 升级</summary>
-<p>stable 分支存在后，<code translate="no">scripts/refresh-local-app.sh</code> 只安装 <code translate="no">refs/heads/stable</code>；从其他提交运行会被拒绝，并指向开发版。晋升时它改为安装要晋升的提交，但要求 <code translate="no">stable</code> 仍是晋升读到的位置且该提交包含它，构建前检查一次，App 停止前再检查一次，否则拒绝。</p>
+<p>stable 分支存在后，<code translate="no">scripts/local-instances/refresh-local-app.sh</code> 只安装 <code translate="no">refs/heads/stable</code>；从其他提交运行会被拒绝，并指向开发版。晋升时它改为安装要晋升的提交，但要求 <code translate="no">stable</code> 仍是晋升读到的位置且该提交包含它，构建前检查一次，App 停止前再检查一次，否则拒绝。</p>
 <p>稳定版刷新替换 <code translate="no">app.asar</code>，保留 App 的 Electron。当 <code translate="no">apps/desktop/package.json</code> 锁定了另一个 Electron 或版本更新时，脚本构建同样的外壳，把 frameworks、可执行文件、<code translate="no">Info.plist</code> 和 locales 搬入准备好的 App，所以晋升带来的是开发版 App 已经跑过的 Electron。</p>
 </details>
 

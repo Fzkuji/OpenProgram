@@ -180,7 +180,7 @@ class TurnRequest:
     # changes the conversation's status, unread dot, model or title, and its
     # reply is never delivered to a channel the chat is bound to. It never
     # compacts the conversation, on the normal or the overflow path, and it
-    # reads only the summary and a bounded tail (context/tail.py).
+    # reads only the summary and a bounded tail (context/session_dag/tail.py).
     background: bool = False
     # Told to the model with this turn's message and not shown as part of it:
     # a scheduled run's last result and how to say there is nothing new.
@@ -229,7 +229,7 @@ class TurnRequest:
     slash_action: Optional[str] = None
     # A foreground sub-agent's approval questions are shown in its caller's
     # conversation, which waits on it: ``{"session_id", "execution_id",
-    # "label"}``, frozen at admission (permissions/lifecycle.py
+    # "label"}``, frozen at admission (permissions/approvals/lifecycle.py
     # ``spawn_question_route``). None: nobody waits on this turn's questions.
     asks_through: Optional[dict[str, Any]] = None
     # The message sets a Goal (``/goal <objective>``): written on the turn's
@@ -247,10 +247,10 @@ def owns_conversation_effects(request: Any) -> bool:
     """Whether a turn carries the conversation's own effects.
 
     Read from the flag frozen at admission; the rule lives in
-    :mod:`openprogram.runtime.execution.turn_effects`, below the call core,
+    :mod:`openprogram.runtime.execution.admission_input.turn_effects`, below the call core,
     because the execution control plane reads it too.
     """
-    from openprogram.runtime.execution.turn_effects import (
+    from openprogram.runtime.execution.admission_input.turn_effects import (
         owns_conversation_effects as read_frozen_flag,
     )
     return read_frozen_flag(request)
@@ -313,9 +313,9 @@ def inner_turn_request(source: str) -> Optional[Any]:
 
 def slash_action_of(request: Any) -> Optional[str]:
     """The slash action a turn request carries out, or ``None`` for a model
-    turn (:func:`openprogram.runtime.execution.slash_actions.slash_action_of`,
+    turn (:func:`openprogram.runtime.execution.admission_input.slash_actions.slash_action_of`,
     which recovery reads stored requests with)."""
-    from openprogram.runtime.execution.slash_actions import slash_action_of as _of
+    from openprogram.runtime.execution.admission_input.slash_actions import slash_action_of as _of
     return _of(request)
 
 

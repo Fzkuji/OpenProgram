@@ -27,6 +27,8 @@ user approved that one command running outside the write boundary.
 """
 from __future__ import annotations
 
+import contextlib
+
 import glob
 import os
 
@@ -71,11 +73,9 @@ def _state_dirs() -> list[str]:
     home = os.path.expanduser("~")
     found = set(glob.glob(os.path.join(home, ".openprogram")))
     found.update(glob.glob(os.path.join(home, ".openprogram-*")))
-    try:
+    with contextlib.suppress(Exception):  # noqa: BLE001 — a broken state module must not open the floor
         from openprogram.state.paths import get_state_dir
         found.add(str(get_state_dir()))
-    except Exception:  # noqa: BLE001 — a broken state module must not open the floor
-        pass
     return sorted(path for path in found if os.path.isdir(path) or not os.path.exists(path))
 
 

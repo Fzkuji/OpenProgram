@@ -109,7 +109,7 @@ def edit(file_path: str,
     except Exception as e:
         return f"Error: mutation journal preparation failed for {file_path}: {e}"
     try:
-        from openprogram.runtime.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.approvals.file_state import write_checked
         write_checked(file_path, new_text)
     except Exception as e:
         if prepared:

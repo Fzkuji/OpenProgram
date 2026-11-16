@@ -16,8 +16,9 @@ import httpcore
 import httpx
 import pytest
 
-from openprogram.interfaces.channels import _attachments, _transport
-from openprogram.interfaces.channels._message import Attachment
+from openprogram.interfaces.channels.inbound import _attachments
+from openprogram.interfaces.channels.delivery import _transport
+from openprogram.interfaces.channels.inbound._message import Attachment
 from openprogram.programs.tools.web.image_analyze.providers import gemini
 from openprogram.programs.tools.web.image_generate import image_generate
 from openprogram.programs.tools.web.image_generate.registry import GeneratedImage

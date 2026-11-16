@@ -17,8 +17,8 @@ from openprogram.models.providers.types import (
     ToolResultMessage,
     UserMessage,
 )
-from openprogram.models.providers.utils.event_stream import EventStream
-from openprogram.models.providers.utils.overflow import is_context_overflow
+from openprogram.models.providers.utils.streams.event_stream import EventStream
+from openprogram.models.providers.utils.failures.overflow import is_context_overflow
 from openprogram.runtime.agent.loop.types import (
     AgentContext,
     AgentEvent,
@@ -51,14 +51,14 @@ OVERFLOW_COMPACTIONS_PER_TURN = 2
 
 
 async def _run_loop(current_context, new_messages, config, cancel_event, ev_stream, stream_fn):
-    from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+    from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
 
     token = None
     if current_recovery.get() is None:
         limit = config.response_format.max_validation_retries if config.response_format else 2
         token = current_recovery.set(RecoveryState(limit=limit))
     from openprogram.models.providers.structured_output import StructuredOutputError
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     from openprogram.programs._authoring import guides
     guides_token = guides.begin_loop()
@@ -91,7 +91,7 @@ async def _run_loop_with_recovery(
     # Keep this import at function scope.  Repetitive-output recovery can
     # raise the same cancellation boundary as structured recovery; importing
     # it only in a later branch makes that path an UnboundLocalError.
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     first_turn = True
     pending_messages: list[AgentMessage] = []
@@ -151,8 +151,8 @@ async def _run_loop_with_recovery(
         if not isinstance(error, StructuredOutputValidationError) and not incomplete:
             return False
         if cancel_event is not None and cancel_event.is_set():
-            from openprogram.models.providers.utils.errors import ExecInterrupt
-            from openprogram.models.providers.utils.recovery import current_recovery
+            from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+            from openprogram.models.providers.utils.failures.recovery import current_recovery
             state = current_recovery.get()
             if state is not None:
                 state.mark_cancelled()
@@ -161,7 +161,7 @@ async def _run_loop_with_recovery(
             return False
         if iteration_cap is not None and inner_iterations >= iteration_cap:
             return False
-        from openprogram.models.providers.utils.recovery import reserve_recovery
+        from openprogram.models.providers.utils.failures.recovery import reserve_recovery
         if not reserve_recovery(error.code):
             return False
         next_attempt = structured_attempt + 1
@@ -284,7 +284,7 @@ async def _run_loop_with_recovery(
                 ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                 return
             except RepetitiveOutputError as error:
-                from openprogram.models.providers.utils.recovery import (
+                from openprogram.models.providers.utils.failures.recovery import (
                     current_recovery,
                     reserve_recovery,
                 )
@@ -414,7 +414,7 @@ async def _run_loop_with_recovery(
                 )
 
                 if message.stop_reason == "aborted":
-                    from openprogram.models.providers.utils.errors import ExecInterrupt
+                    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
                     raise ExecInterrupt("aborted")
                 if message.stop_reason == "error" and message.error_message:
                     reason = message.error_message.lower()

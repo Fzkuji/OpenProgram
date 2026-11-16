@@ -42,13 +42,16 @@ export const POPOVER_SURFACE =
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
+>(({ className, align = "center", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => (
   <PopoverPrimitive.Portal>
     <PopoverPrimitive.Content
       ref={ref}
       data-slot="popover-content"
       align={align}
       sideOffset={sideOffset}
+      // Hidden once the trigger leaves the layout, as the menus are
+      // (ui/dropdown-menu.tsx): never drawn at the window's top-left corner.
+      hideWhenDetached={hideWhenDetached}
       className={cn(
         "z-(--z-popover) origin-(--radix-popover-content-transform-origin) outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
         /\bbg-transparent\b/.test(className ?? "") ? "w-72" : POPOVER_SURFACE,

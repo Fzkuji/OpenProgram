@@ -15,8 +15,8 @@ def test_engineering_records_live_only_under_the_design_archive() -> None:
 
     assert not (ROOT / "docs" / "superpowers").exists()
     assert any(path.startswith("reference/design/plans/") for path in paths)
-    assert "reference/design/repository-structure.html" in paths
-    assert "reference/design/repository-structure-implementation.html" in paths
+    assert "reference/design/repository/structure.html" in paths
+    assert "reference/design/repository/structure-implementation.html" in paths
 
 
 def test_language_check_uses_the_same_public_docs_boundary(
@@ -375,7 +375,7 @@ def test_authored_navigation_names_are_short_and_unambiguous() -> None:
 
 
 def test_short_navigation_names_preserve_document_identity(tmp_path) -> None:
-    folder = tmp_path / "reference/design/runtime/execution"
+    folder = tmp_path / "reference/design/runtime/agent"
     folder.mkdir(parents=True)
     for suffix, title in (("", "Self-Recursion Guard for Agentic Functions"),
                           (".zh", "Agentic 函数防自递归机制")):

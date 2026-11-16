@@ -5,7 +5,8 @@ import { Check, Pause, Play, Square } from "lucide-react";
 import { CheckIcon, HistoryIcon } from "@/components/animated-icons";
 import { useActionIconAnimation } from "../messages/bubbles/use-action-icon-animation";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { FillIcon } from "@/components/ui/fill-icon";
 import { SolarIcon } from "@/components/solar-icons";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
@@ -24,6 +25,8 @@ import { runtimeState } from "@/lib/runtime-bridge/state";
 import { updateSessionGoal } from "@/lib/runtime-bridge/actions/goal-state";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { formatElapsed } from "@/lib/format-utils/elapsed";
+import { revealTask, taskBlockElement } from "@/lib/chat/transcript/use-row-tasks";
 
 import styles from "./goal-chip.module.css";
 
@@ -57,6 +60,18 @@ export interface GoalState {
     active_time_known?: boolean;
   };
   checklist?: { text: string; done: boolean }[] | null;
+  /** The Goal's latest task: its current step and counted steps. Dropped
+   *  steps are not in the total; absent while the Goal has no steps. */
+  progress?: {
+    task?: string;
+    title?: string;
+    step?: string | null;
+    /** The place of the step in progress among the counted steps. */
+    on?: number | null;
+    done?: number;
+    total?: number;
+    anchor?: string;
+  } | null;
   last_reason?: string;
   recoverable?: boolean;
   pause_reason?: string;
@@ -113,12 +128,13 @@ function stopReason(goal: GoalState, zh: boolean): string {
   }
 }
 
-function formatElapsed(seconds: number | undefined): string {
-  const total = Math.max(0, Math.round(seconds ?? 0));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const rest = total % 60;
-  return hours ? `${hours}h ${minutes}m` : minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+/** Whether an element can be seen in the chat's scroll area right now. */
+function inChatView(element: HTMLElement): boolean {
+  const area = document.getElementById("chatArea")?.getBoundingClientRect();
+  const rect = element.getBoundingClientRect();
+  const top = area?.top ?? 0;
+  const bottom = area?.bottom ?? window.innerHeight;
+  return rect.bottom > top && rect.top < bottom;
 }
 
 function readGoalFromRuntime(sid: string | null): GoalState | null {
@@ -252,15 +268,31 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const checklist = goal.checklist ?? [];
-  const done = checklist.filter((item) => item.done).length;
-  const progress = checklist.length
-    ? `${text("Todos", "待办")} ${done}/${checklist.length}`
-    : null;
+  const task = goal.progress ?? null;
+  const counted = task ? Number(task.total) || 0 : 0;
+  const finished = task ? Number(task.done) || 0 : 0;
+  // While the Goal works the chip names the step it is on and that step's
+  // place; otherwise the steps finished, as the task block's header does.
+  const stepName = goal.status === "active" && goal.phase !== "verifying" && counted > 0 ? (task?.step || "").trim() : "";
+  const place = Number(task?.on) || 0;
+  const progress = counted > 0 ? `${stepName && place > 0 ? Math.min(place, counted) : finished}/${counted}` : null;
+  const currentStep = stepName.length > 32 ? `${stepName.slice(0, 31)}…` : stepName;
+  const blockAt = !historical && task?.task && task.anchor ? { task: task.task, anchor: task.anchor } : null;
+  /** The first click goes to the open task block; with the block already in
+   *  view, or none on the page, it opens the Goal's details. */
+  function openFromChip() {
+    if (blockAt) {
+      const block = taskBlockElement(blockAt.task, blockAt.anchor);
+      // The block of the task in progress opens by itself: the click only scrolls.
+      if (!(block && inChatView(block)) && revealTask(blockAt.task, blockAt.anchor, document, false)) return;
+    }
+    setOpen(true);
+  }
   const completionIcon = useActionIconAnimation();
   const elapsed = goal.usage?.active_elapsed_s;
   const hasElapsed = typeof elapsed === "number" && Number.isFinite(elapsed) && elapsed >= 0;
   const elapsedLabel = goal.usage?.active_time_known === false
-    ? text(`at least ${formatElapsed(elapsed)}`, `至少 ${formatElapsed(elapsed)}`) : formatElapsed(elapsed);
+    ? text(`at least ${formatElapsed(elapsed)}`, `至少 ${formatElapsed(elapsed, text)}`) : formatElapsed(elapsed, text);
   const completionLabel = goal.status === "achieved"
     ? hasElapsed ? text(`Goal achieved in ${elapsedLabel}`, `目标已达成，用时 ${elapsedLabel}`) : text("Goal achieved", "目标已达成")
     : `${text("Goal", "目标")} · ${statusLabel(goal.status, zh, goal.phase)}`;
@@ -325,10 +357,13 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
     }
   }
 
+  const chipHint = blockAt
+    ? text("Go to the current step; click again for Goal details", "跳到当前步骤，再点一次打开 Goal 详情")
+    : text("Click for progress and controls", "点击查看进度与控制");
   const goalTip = (
     <TipBody
       title={text("Goal", "目标")}
-      detail={<>{goal.text}<br />{text("Click for progress and controls", "点击查看进度与控制")}</>}
+      detail={<>{goal.text}<br />{historical ? text("Click for progress and controls", "点击查看进度与控制") : chipHint}</>}
     />
   );
 
@@ -343,12 +378,12 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
       </Button></HoverTip> : !terminal || stopPending ? <HoverTip label={goalTip}><button
         ref={trigger}
         type="button"
-        className={`runtime-badge workdir-badge ${styles.trigger}`}
-        onClick={() => setOpen(true)}
-        aria-label={text("Open Goal details", "打开 Goal 详情")}
+        className={cn(buttonVariants({ variant: "elevated", size: "sm" }), "runtime-badge workdir-badge")}
+        onClick={openFromChip}
+        aria-label={blockAt ? chipHint : text("Open Goal details", "打开 Goal 详情")}
       >
         <SolarIcon name="target" size={16} fit="fill" className="workdir-icon" />
-        <span className="badge-short">Goal · {stopPending ? text("Stop not confirmed", "停止未确认") : statusLabel(goal.status, zh, goal.phase)}{progress ? ` · ${progress}` : null}</span>
+        <span className="badge-short">Goal · {stopPending ? text("Stop not confirmed", "停止未确认") : currentStep || statusLabel(goal.status, zh, goal.phase)}{progress ? ` · ${progress}` : null}</span>
       </button></HoverTip> : null}
       <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setConfirmCancel(false); }}>
         <DialogContent className={styles.dialog} aria-busy={busy} onCloseAutoFocus={(event) => {
@@ -382,7 +417,7 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
 
           <div className={`${styles.metrics} grid grid-cols-[repeat(auto-fit,_minmax(96px,_1fr))] gap-[8px]`}>
             <div><span>{text("Status", "状态")}</span><strong>{statusLabel(goal.status, zh, goal.phase)}</strong></div>
-            {progress ? <div><span>{text("Progress", "进度")}</span><strong>{progress}</strong></div> : null}
+            {counted > 0 ? <div><span>{text("Progress", "进度")}</span><strong>{finished}/{counted}</strong></div> : null}
             <div><span>{text("Tokens", "Token")}</span><strong>{goal.usage?.unknown_token_requests
               ? text(`Known ${goal.usage.total_tokens ?? 0}; ${goal.usage.unknown_token_requests} request(s) unknown`, `已知 ${goal.usage.total_tokens ?? 0}；另有 ${goal.usage.unknown_token_requests} 次请求未知`)
               : goal.usage?.tokens_known === false ? text("Unknown", "未知") : goal.usage?.total_tokens ?? 0}{limitSuffix(budget.max_tokens)}</strong></div>
@@ -391,8 +426,8 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
               : goal.usage?.cost_known === true && Number.isFinite(goal.usage.cost_usd)
                 ? `$${goal.usage.cost_usd!.toFixed(4)}` : text("Unknown", "未知")}{limitSuffix(budget.max_cost_usd, (v) => `$${v}`)}</strong></div>
             <div><span>{text("Active time", "执行时间")}</span><strong>{goal.usage?.active_time_known === false
-              ? text(`At least ${formatElapsed(goal.usage.active_elapsed_s)}; interrupted interval unknown`, `至少 ${formatElapsed(goal.usage.active_elapsed_s)}；中断时段未知`)
-              : formatElapsed(goal.usage?.active_elapsed_s)}{limitSuffix(budget.max_elapsed_s, formatElapsed)}</strong></div>
+              ? text(`At least ${formatElapsed(goal.usage.active_elapsed_s)}; interrupted interval unknown`, `至少 ${formatElapsed(goal.usage.active_elapsed_s, text)}；中断时段未知`)
+              : formatElapsed(goal.usage?.active_elapsed_s, text)}{limitSuffix(budget.max_elapsed_s, (seconds) => formatElapsed(seconds, text))}</strong></div>
           </div>
 
 

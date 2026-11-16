@@ -53,3 +53,46 @@ def test_session_store_root_is_a_throwaway():
         f"the default SessionStore points at {root} — its startup cleanup "
         "would delete real sessions"
     )
+
+
+def _as_the_account_home(monkeypatch, folder):
+    from openprogram.state import paths
+
+    monkeypatch.setenv("HOME", str(folder))
+    monkeypatch.setenv("USERPROFILE", str(folder))
+    monkeypatch.setattr(paths, "_account_home_cache", [os.path.realpath(str(folder))])
+    return paths
+
+
+def test_a_test_that_resolves_the_accounts_own_state_is_refused(monkeypatch, tmp_path):
+    """A test file run without this tree's conftest (a scratch copy,
+    ``--noconftest``) keeps the real HOME; the path layer itself refuses."""
+    paths = _as_the_account_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("OPENPROGRAM_TEST_REAL_HOME", raising=False)
+
+    with pytest.raises(paths.RealStateUnderTest):
+        paths.get_state_dir()
+    monkeypatch.setenv("OPENPROGRAM_PROFILE", "dev")
+    with pytest.raises(paths.RealStateUnderTest):
+        paths.get_state_dir()
+    assert not (tmp_path / ".openprogram").exists()
+    assert not (tmp_path / ".openprogram-dev").exists()
+
+
+def test_the_refusal_is_for_tests_only_and_can_be_opted_out_of(monkeypatch, tmp_path):
+    paths = _as_the_account_home(monkeypatch, tmp_path)
+
+    monkeypatch.setenv("OPENPROGRAM_TEST_REAL_HOME", "1")
+    assert paths.get_state_dir() == tmp_path / ".openprogram"
+
+    monkeypatch.delenv("OPENPROGRAM_TEST_REAL_HOME")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST")
+    assert paths.get_state_dir() == tmp_path / ".openprogram"
+
+
+def test_the_account_home_is_read_from_the_account_not_from_home():
+    from openprogram.state import paths
+
+    account = paths._account_home()
+    assert account is not None
+    assert "openprogram-test-home" not in account

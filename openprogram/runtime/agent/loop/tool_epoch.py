@@ -11,7 +11,7 @@ provider re-reads everything after a changed entry.
 So what the user changes mid-epoch is enforced where the call is dispatched,
 not in the array:
 
-- plan mode never takes a tool out (``permissions.lifecycle``): the calls are
+- plan mode never takes a tool out (``permissions.approvals.lifecycle``): the calls are
   refused by ``permission_decision``, as Codex refuses ``update_plan`` in its
   Plan mode;
 - a whole-tool deny rule and a capability the identity lacks take a tool out
@@ -80,7 +80,7 @@ def _stored(session_id: Optional[str], key: str) -> Optional[EpochRecord]:
         return None
     try:
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.runtime.context.tool_snapshot_node import latest_recorded_tool_snapshot
+        from openprogram.runtime.context.prompt_assembly.tool_snapshot_node import latest_recorded_tool_snapshot
 
         snapshot = latest_recorded_tool_snapshot(default_db(), session_id) or {}
     except Exception:

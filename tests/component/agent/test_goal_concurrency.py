@@ -142,7 +142,7 @@ def test_a_goal_keeps_its_books_while_everything_touches_it(books, monkeypatch, 
     monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: Model(
         id="fake", name="fake", provider="openai", api="openai-completions", base_url="https://example.invalid"))
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **kw: "System")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **kw: "System")
     monkeypatch.setattr(shared, "todos_path", lambda sid: tmp_path / "todos.json")
 
     hammer = Hammer(goals)

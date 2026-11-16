@@ -119,7 +119,7 @@ def test_group_sender_display_never_falls_back_to_the_chat(
 
 
 def test_transport_splits_per_user_target() -> None:
-    from openprogram.interfaces.channels._transport import _tg_chat_id
+    from openprogram.interfaces.channels.delivery._transport import _tg_chat_id
     assert _tg_chat_id("-100123_777") == -100123
     assert _tg_chat_id("42") == 42
     assert _tg_chat_id("@channelname") == "@channelname"

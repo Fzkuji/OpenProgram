@@ -246,7 +246,7 @@ def test_a_call_that_never_started_gets_a_not_run_result(db) -> None:
     from openprogram.runtime.conversation.turn_runtime.persistence import (
         _close_stopped_calls, stopped_reply_interruption,
     )
-    from openprogram.runtime.context.render import render_dag_messages
+    from openprogram.runtime.context.session_dag.render import render_dag_messages
     from openprogram.runtime.execution.run_control.stop_reasons import NOT_RUN_TEXT
     from openprogram.state.store import SessionNodeWriter
     from openprogram.state.store.session.nodes import Call, ROLE_CODE

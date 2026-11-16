@@ -55,18 +55,20 @@ test("reset times read as a clock today, a weekday this week, a date later", () 
   assert.equal(S.clockLabel(at(9, 0, 20), en, NOW), "12/4");
 });
 
-test("the trigger is marked only when the provider needs action or its quota warns", () => {
+test("the trigger is marked, in red, only when the provider cannot answer or its quota is nearly spent", () => {
   assert.equal(S.triggerMark(provider({ quota: quota(0.3) }), en, NOW), null);
   assert.equal(S.triggerMark(undefined, en), null);
-  // The Worker sets attention by the time-aware rule; the mark follows it.
-  const warned = S.triggerMark(provider({ attention: true, quota: quota(0.08, { warn: true }) }), en, NOW);
-  assert.deepEqual(warned, { tone: "warning", detail: "5h · 8% left · resets 14:30" });
-  const spent = S.triggerMark(provider({ attention: true, quota: quota(0.02) }), en, NOW);
-  assert.equal(spent.tone, "danger");
+  // A quota that only warns (80 % used, even ahead of the window) leaves it plain.
+  assert.equal(S.triggerMark(provider({ attention: true, quota: quota(0.16, { warn: true }) }), en, NOW), null);
+  assert.equal(S.triggerMark(provider({ attention: true, quota: quota(0.08, { warn: true }) }), en, NOW), null);
+  // A temporary rate limit is a word in the menu, not a mark on the trigger.
+  assert.equal(S.triggerMark(provider({ state: "rate_limited", until: at(14, 2) }), en, NOW), null);
+  const spent = S.triggerMark(provider({ attention: true, quota: quota(0.02, { warn: true }) }), en, NOW);
+  assert.deepEqual(spent, { tone: "danger", detail: "5h · 2% left · resets 14:30" });
   assert.deepEqual(S.triggerMark(provider({ attention: true, state: "no_credit" }), en),
     { tone: "danger", detail: "No credit" });
   assert.deepEqual(S.triggerMark(provider({ attention: true, state: "not_configured" }), en),
-    { tone: "warning", detail: "Not set up" });
+    { tone: "danger", detail: "Not set up" });
 });
 
 test("a fix leads to the provider's page, to Add provider when nothing is saved, or to its billing page for no credit", () => {
@@ -102,11 +104,61 @@ test("the submenu header lists windows worst first, then amounts", () => {
     limit("balance", "Balance", { unit: "usd", remaining: 18.42 }),
     limit("rpm", "Req/min", {}),
   ], en, NOW);
-  assert.deepEqual(rows.map((r) => [r.label, r.value, r.tone]), [
-    ["5h", "8% · 14:30", "warning"], ["Week", "71%", "normal"], ["Balance", "$18.42", "normal"],
+  assert.deepEqual(rows.map((r) => [r.label, r.pct, r.reset, r.value, r.tone]), [
+    ["5h", 8, "14:30", null, "warning"], ["Week", 71, null, null, "normal"], ["Balance", null, null, "$18.42", "normal"],
   ]);
   assert.equal(rows[0].left, 0.08);
   assert.equal(rows[2].left, null);
+});
+
+test("the header lists the ring's limit and the balance before the status read arrives", () => {
+  const picker = provider({
+    stale: true,
+    quota: quota(0.16, { label: "Weekly", resets_at: at(2, 22, 4), tone: "warning" }),
+    balance: { amount: 38991.8227, unit: "credits", label: "Credits" },
+  });
+  // No status read yet: the ring's limit and the balance, both stale.
+  assert.deepEqual(S.headerRows([], picker, en, NOW).map((r) => [r.label, r.pct, r.reset, r.value, r.stale]), [
+    ["Weekly", 16, "Wed 02:22", null, true], ["Credits", null, null, "38,991.82 credits", true],
+  ]);
+  // Once it arrives its rows win; the ring's limit is not listed twice.
+  const limit = (key, label, fields) => ({
+    limit_key: key, label, unit: "percent", source: "frame", fetched_at: NOW, used: null, limit: null,
+    remaining: null, used_fraction: null, left_fraction: null, window_minutes: 10080, resets_at: null,
+    status: "ok", stale: false, ...fields,
+  });
+  const rows = S.headerRows([
+    limit("primary", "Weekly", { left_fraction: 0.16, status: "warning" }),
+    limit("secondary", "5h", { left_fraction: 0.5 }),
+    limit("credits", "Credits", { unit: "credits", remaining: 38991.8227 }),
+  ], picker, en, NOW);
+  assert.deepEqual(rows.map((r) => [r.key, r.stale]), [["primary", false], ["secondary", false], ["credits", false]]);
+  assert.deepEqual(S.headerRows([], null, en, NOW), []);
+});
+
+test("the header keeps the four worst windows and every amount, spent and full alike", () => {
+  const limit = (key, label, fields) => ({
+    limit_key: key, label, unit: "percent", source: "headers", fetched_at: NOW, used: null, limit: null,
+    remaining: null, used_fraction: null, left_fraction: null, window_minutes: 300, resets_at: null,
+    status: "ok", stale: false, ...fields,
+  });
+  const limits = [
+    limit("a", "A", { left_fraction: 1 }),
+    limit("b", "B", { left_fraction: 0, status: "exhausted" }),
+    limit("c", "C", { left_fraction: 0.5 }),
+    limit("d", "D", { left_fraction: 0.3, stale: true }),
+    limit("e", "E", { left_fraction: 0.9 }),
+    limit("credits", "Credits", { unit: "credits", remaining: 0, status: "exhausted" }),
+    limit("unknown", "Unknown", {}),
+  ];
+  // The ring is drawn from the dropped best window; it is not brought back.
+  const picker = provider({ quota: quota(1, { limit_key: "a", label: "A" }), balance: { amount: 5, unit: "usd", label: "Balance" } });
+  for (const rows of [S.quotaRows(limits, en, NOW), S.headerRows(limits, picker, en, NOW)]) {
+    assert.deepEqual(rows.map((r) => [r.key, r.pct, r.value, r.tone, r.stale]), [
+      ["b", 0, null, "danger", false], ["d", 30, null, "normal", true], ["c", 50, null, "normal", false],
+      ["e", 90, null, "normal", false], ["credits", null, "0 credits", "danger", false],
+    ]);
+  }
 });
 
 test("the spent-quota card names the provider, the limit and when it resets", () => {

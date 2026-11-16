@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.cli.commands.jobs import job_resource_payload
+from openprogram.interfaces.cli.commands.conversations.jobs import job_resource_payload
 from openprogram.programs.tools.agents.agent.list_jobs.list_jobs import _list_jobs_impl
 from openprogram.runtime.execution.run_control.binding import _current_session_id
 from openprogram.runtime.jobs.types import JobStatus

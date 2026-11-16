@@ -46,7 +46,7 @@ def transport(monkeypatch):
     """Keep actual builtin admission/adapter; substitute only its SDK transport."""
     from openprogram.models.providers.catalog.api_registry import get_api_provider, has_audited_accounting
     from openprogram.models.providers.adapters.openai_completions import openai_completions
-    from tests.component.providers.adapters.test_completions_thinking_retry import _Stream
+    from tests.component.providers.adapters.openai_completions.test_completions_thinking_retry import _Stream
     provider = get_api_provider("openai-completions")
     assert has_audited_accounting(provider, "openai-completions")
     calls = []

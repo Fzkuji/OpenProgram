@@ -40,7 +40,7 @@
 </table>
 
 <p class="note">Status comes from the branch's newest execution, plus real waits, active descendants and owned processes. Declined waits read Declined and open ones Waiting for your response; declining does not run the pending operation.</p>
-<p class="note">During first load, reconnect or cursor resync Activity shows no error: a notice needs a confirmed request failure owned by the current conversation. Failed reads keep saved records and retry.</p>
+<p class="note">Activity shows no error while loading or reconnecting. A failed read keeps what was read and retries silently; only runs never read say so (<a href="../../ui/chat/activity-panel.html#reading-overview">reading</a>).</p>
 
 <h2 id="branch-run-slots">Two branches running at once</h2>
 
@@ -382,10 +382,10 @@
 <thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">execution/agent_journal.py</code></th><td>Versioned Agent state payload, written as lines of the session log</td></tr>
-<tr><th scope="row"><code translate="no">execution/job_input.py</code></th><td>A Job's strict admission input envelope</td></tr>
+<tr><th scope="row"><code translate="no">execution/admission_input/job_input.py</code></th><td>A Job's strict admission input envelope</td></tr>
 <tr><th scope="row"><code translate="no">execution/run_control/</code></th><td>Bound session and execution, cancellation tokens, live owners and grace period, exact cancel and child admission</td></tr>
 <tr><th scope="row"><code translate="no">conversation/run_control</code></th><td>The turn side: turn tokens, cancel events, active exec runtimes</td></tr>
-<tr><th scope="row"><code translate="no">execution/resource_saga.py</code></th><td>Takes its governor as an argument; the governor implements <code translate="no">ResourceGovernor</code></td></tr>
+<tr><th scope="row"><code translate="no">execution/recovery/resource_saga.py</code></th><td>Takes its governor as an argument; the governor implements <code translate="no">ResourceGovernor</code></td></tr>
 </tbody>
 </table>
 <p>Goal hooks belong to conversations because a chat Goal runs as conversation turns; they import <code translate="no">openprogram.programs.tools.planning.goal</code> on first call, since that tool can load after startup recovery.</p>
@@ -515,10 +515,10 @@
 <details id="reference">
 <summary>Source and references</summary>
 <ul>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution/activity_branches.py">Branch membership</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/component/webui/execution/test_activity_branches.py">Branch membership tests</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/tests/execution/activity-panel.test.mjs">Activity panel tests</a></li>
-<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution">Execution protocol and persistence</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/execution/projections/activity_branches.py">Branch membership</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/webui/execution/test_activity_branches.py">Branch membership tests</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/tests/execution/activity/activity-panel.test.mjs">Activity panel tests</a></li>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/execution">Execution protocol and persistence</a></li>
 </ul>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
@@ -536,4 +536,4 @@
 </table>
 </details>
 
-<p class="next"><a href="async-job-lifecycle.html">Background Jobs</a> · <a href="../reliability/agent-resource-governance.html">Resource allocation</a> · <a href="../../error-handling.html">Error handling</a></p>
+<p class="next"><a href="async-job-lifecycle.html">Background Jobs</a> · <a href="../reliability/agent-resource-governance.html">Resource allocation</a> · <a href="../../repository/error-handling.html">Error handling</a></p>

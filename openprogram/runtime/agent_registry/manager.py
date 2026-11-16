@@ -20,6 +20,8 @@ to defaults).
 """
 from __future__ import annotations
 
+import contextlib
+
 import json
 import math
 import os
@@ -398,11 +400,9 @@ def _roster_changed(before: "AgentSpec | None", after: "AgentSpec | None") -> No
         getattr(before, f) == getattr(after, f) for f in _ROSTER_FIELDS
     ):
         return
-    try:
+    with contextlib.suppress(Exception):
         from openprogram.models.usage.prefix_fingerprint import expect_break_everywhere
         expect_break_everywhere("agent_roster")
-    except Exception:
-        pass
 
 
 @dataclass
@@ -430,7 +430,7 @@ class AgentSpec:
     })
     identity: AgentIdentity = field(default_factory=AgentIdentity)
     # Session routing policy (see agents/context_engine.py and
-    # channels/_conversation.py). Values mirror OpenClaw's dmScope:
+    # channels/inbound/_conversation.py). Values mirror OpenClaw's dmScope:
     #   "main"                      — one shared session across all DMs
     #   "per-peer"                  — one session per sender (any channel)
     #   "per-channel-peer"          — one per (channel, sender)

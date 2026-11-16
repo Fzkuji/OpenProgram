@@ -101,20 +101,24 @@ def _no_browser_of_its_own(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _env_keys_stay_with_their_print_run(monkeypatch):
-    """A ``--print`` run lets its own process read provider keys from the
-    environment (``read_env_keys_in_this_process``); one run in-process by a
-    test does not carry that over to the tests after it in the worker."""
-    from openprogram.models.providers.settings import env_api_keys
+def _no_provider_keys_from_the_shell(monkeypatch):
+    """A provider key variable set in the developer's shell would show up as
+    a read-only credential row (``models/auth/store.py`` ``env_rows``); tests
+    start without any and set the ones they need."""
+    import os as _os
+    from openprogram.models.auth.login.login_method_registry import listed_providers, provider_auth
 
-    monkeypatch.setattr(env_api_keys, "_env_keys_in_process", False)
+    names = {n for p in listed_providers() for n in (provider_auth(p).env_vars or ())}
+    for name in list(_os.environ):
+        if name in names or name.endswith("_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
     yield
 
 
 @pytest.fixture(autouse=True)
 def _this_process_writes_main_session_logs():
     """Tests stand where the worker stands: appends land in ``main.jsonl``."""
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
 
     session_log.claim_main_writer()
     yield
@@ -406,20 +410,20 @@ def _forget_learned_provider_limits():
 
     A provider's byte cap (body_cap), a model's prefill refusal (prefill),
     a conversation's compaction failures
-    (compaction.hold) and a conversation's credential (pool affinity) are
+    (compaction.hold) and a conversation's credential (its binding) are
     kept for the process's life on purpose. Under pytest every test shares
     that process, so one test's refusals would hold another's compaction
     or fit its requests.
     """
     yield
-    from openprogram.models.auth.pool import forget_affinity
-    from openprogram.models.providers.utils import body_cap, prefill
+    from openprogram.models.auth.selection import forget_bindings
+    from openprogram.models.providers.utils.failures import body_cap, prefill
     from openprogram.runtime.context.compaction.hold import default_hold
 
     body_cap.forget()
     prefill.forget()
     default_hold.clear()
-    forget_affinity()
+    forget_bindings()
 
 
 @pytest.fixture(autouse=True)

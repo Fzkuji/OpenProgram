@@ -152,15 +152,15 @@ def test_followup_can_create_the_next_wave_of_agents(tmp_db, monkeypatch):
     follow-up inherited the worker's count of 1 and every spawn in the
     chain was refused from then on.
     """
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     _seed_session(tmp_db, "s_caller")
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn",
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn",
         lambda **kw: AgentTurnResult(head_id="h_next",
                                      final_text="(second wave)"),
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.write_attach_pointer_for_spawn",
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
 

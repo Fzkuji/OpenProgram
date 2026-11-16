@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from .auth_adapter import (
     PROVIDER_ID,
-    import_from_env_tokens,
+    import_pasted_token,
     register_github_copilot_auth,
 )
 
 __all__ = [
     "PROVIDER_ID",
-    "import_from_env_tokens",
+    "import_pasted_token",
     "register_github_copilot_auth",
 ]

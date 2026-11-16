@@ -121,7 +121,7 @@ def test_a_side_call_keeps_its_instructions_across_midnight_and_is_told_the_date
     model is told the date beside the call's own message."""
     import datetime
 
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     day = {"value": datetime.date(2026, 11, 12)}
     monkeypatch.setattr(components, "current_date_note",

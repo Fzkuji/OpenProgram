@@ -8,7 +8,7 @@ import pytest
 
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 from openprogram.runtime.permissions.policy import permission_decision
 
 OWNER = "owner/install/0123456789abcdef"
@@ -66,7 +66,7 @@ def test_no_tool_that_runs_commands_or_drives_a_browser_names_a_channel():
     named = {tool for tool, where in _unsafe_in_channel.items()
              if where & channels and capability_for_tool(tool) in {"process.exec", "browser.control"}}
     # These keep the channel entry for how they display, not for what they may do.
-    assert named <= {"todo_create", "todo_update", "create_goal", "update_goal"}
+    assert named <= {"task_start", "task_step", "create_goal", "update_goal"}
 
 
 def test_a_scheduled_turn_with_a_missing_macos_grant_ends_with_an_error(owner, monkeypatch):
@@ -94,7 +94,7 @@ def _named(*names):
 
 
 def _visible(owner, monkeypatch, mode):
-    from openprogram.runtime.permissions import lifecycle
+    from openprogram.runtime.permissions.approvals import lifecycle
 
     monkeypatch.setattr(lifecycle, "permission_state", lambda _sid: {"mode": mode, "version": 2, "principal_id": OWNER})
     return {name for name, tool in owner.tools.items() if tool._permission_visible()}
@@ -102,7 +102,7 @@ def _visible(owner, monkeypatch, mode):
 
 @pytest.fixture
 def planned(owner):
-    from openprogram.runtime.permissions.lifecycle import wrap_live_permission
+    from openprogram.runtime.permissions.approvals.lifecycle import wrap_live_permission
 
     request = owner(mode="plan")
     tools = {name: wrap_live_permission(_tool(name, []), request, lambda _event: None)
@@ -236,7 +236,7 @@ def _open_wait(reason, speaker="owner/local"):
 @pytest.mark.parametrize("force", [False, True])
 def test_changing_the_selector_does_not_approve_an_open_plan(monkeypatch, force):
     from contextlib import nullcontext
-    from openprogram.runtime.permissions import lifecycle
+    from openprogram.runtime.permissions.approvals import lifecycle
 
     wait, service, answers, request, waits, session_facts = _open_wait("PLAN_EXIT")
     monkeypatch.setattr(waits.DurableWaitStore, "list_open", lambda _self, session_id: [wait])
@@ -251,7 +251,7 @@ def test_changing_the_selector_does_not_approve_an_open_plan(monkeypatch, force)
 @pytest.mark.parametrize("speaker,answered", [("owner/local", True), ("7000000", False)])
 def test_the_migration_only_resumes_the_local_owners_waits(monkeypatch, speaker, answered):
     from contextlib import nullcontext
-    from openprogram.runtime.permissions import lifecycle
+    from openprogram.runtime.permissions.approvals import lifecycle
 
     wait, service, answers, request, waits, session_facts = _open_wait("MODE_APPROVAL", speaker)
     monkeypatch.setattr(waits.DurableWaitStore, "list_open", lambda _self, session_id: [wait])
@@ -303,7 +303,7 @@ def test_a_local_workdir_with_no_sandbox_available_is_a_sandbox_refusal(monkeypa
 
 
 def test_listing_retained_versions_is_a_free_read():
-    from openprogram.runtime.permissions.classifier import safe_call
+    from openprogram.runtime.permissions.auto_mode.classifier import safe_call
     from openprogram.runtime.permissions.tool_authority import capability_for_tool
 
     assert safe_call("self_update", {"action": "versions"}) is True

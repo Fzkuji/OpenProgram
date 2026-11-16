@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import logging
 
-from collections.abc import Mapping
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -20,9 +18,16 @@ from openprogram.state.store.session.conversation_work import run_for_conversati
 _log = logging.getLogger(__name__)
 
 
-def _execution_payload(execution, *, event_sequence: int | None = None):
+def _execution_payload(execution, *, event_sequence: int | None = None, jobs_in=None):
+    """One execution's public snapshot, with its Job and resource view.
+
+    ``jobs_in`` is a ``jobs.store.session_jobs_reader`` shared by a caller
+    that projects many executions: the Job is looked up in the Jobs of the
+    execution's session, read once for the whole pass, and an execution
+    with no Job there (a foreground turn) is not looked for again.
+    """
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.public import execution_snapshot
+    from openprogram.runtime.execution.projections.public import execution_snapshot
 
     resource = None
     job = None
@@ -30,8 +35,13 @@ def _execution_payload(execution, *, event_sequence: int | None = None):
         from openprogram.runtime.jobs import get_runner
 
         runner = get_runner()
-        view = runner.get_job_resource_view(execution.execution_id)
-        job = runner.get_job(execution.execution_id)
+        if jobs_in is None:
+            job = runner.get_job(execution.execution_id)
+        else:
+            job = next((item for item in jobs_in(execution.session_id)
+                        if item.id == execution.execution_id), None)
+        view = (runner.get_job_resource_view(execution.execution_id, job=job, jobs_in=jobs_in)
+                if job is not None else None)
         # ExecutionSnapshot.resource is the resource projection itself.  The
         # surrounding JobResourceDTO is a separate public view and must not
         # be nested into the snapshot resource field.
@@ -61,7 +71,7 @@ def _actor_and_session(request: Request):
 
 def _authorize_read(actor, bound_session, execution, action: str, conversation_session_id: str | None = None) -> bool:
     from openprogram.runtime.execution.authorization import ExecutionAuthorizationError, authorize_execution_action
-    from openprogram.runtime.execution.public import project_id_for_session
+    from openprogram.runtime.execution.projections.public import project_id_for_session
 
     try:
         if conversation_session_id is not None:
@@ -83,7 +93,7 @@ def _authorize_read(actor, bound_session, execution, action: str, conversation_s
         return False
 
 
-from openprogram.runtime.execution.public import public_event as _public_event
+from openprogram.runtime.execution.projections.public import public_event as _public_event
 
 
 def register(app):
@@ -94,7 +104,7 @@ def register(app):
         from openprogram.runtime.execution import default_store
         from openprogram.runtime.execution.authorization import ExecutionAuthorizationError, authorize_session_action
         from openprogram.runtime.execution.conversation_scope import conversation_execution_scope
-        from openprogram.runtime.execution.public import project_id_for_session
+        from openprogram.runtime.execution.projections.public import project_id_for_session
 
         actor, bound_session = _actor_and_session(request)
         if bound_session is not None and bound_session != session_id:
@@ -106,21 +116,30 @@ def register(app):
         except ExecutionAuthorizationError:
             return JSONResponse({"error": "not_found"}, status_code=404)
         items = []
-        executions, parents = conversation_execution_scope(default_store(), session_id)
+        from openprogram.runtime.jobs.store import session_jobs_reader
+        from openprogram.runtime.scheduler import task_activity
+
+        store = default_store()
+        executions, parents = conversation_execution_scope(store, session_id)
+        # Every row's Job, and the helpers under it, come from one read of
+        # each session's Jobs instead of a lookup per row.
+        jobs_in = session_jobs_reader()
+        # The runs a schedule started belong to their task, not to the
+        # reader's branches.
+        scheduled = {run.execution_id: run.task_id
+                      for runs in task_activity.read_runs(session_id, store).values() for run in runs}
         # Membership is proved by this scoped query; principal/action grants
         # above apply to the caller conversation, not every target session.
         for execution in executions:
-            snapshot = _execution_payload(execution)
+            snapshot = _execution_payload(execution, jobs_in=jobs_in)
             # Request excerpts are restricted to this authorized conversation;
             # global execution projections never expose input text.
-            payload = default_store().get_agent_turn_input(execution.execution_id) or {}
-            turn = payload.get("request", {}) if payload.get("kind") == "chat" else payload
-            user_text = turn.get("user_text") if isinstance(turn, Mapping) else None
-            task_label = " ".join(user_text.split())[:160] if isinstance(user_text, str) else None
+            task_label = task_activity.turn_of(store, execution.execution_id).label
             items.append({
                 "kind": "execution", "id": execution.execution_id,
                 "execution_id": execution.execution_id, "session_id": execution.session_id,
                 "parent_execution_id": parents.get(execution.execution_id),
+                "scheduled_task_id": scheduled.get(execution.execution_id),
                 "task_label": task_label,
                 "label": (snapshot.get("display") or {}).get("label") or "execution",
                 "status": execution.status.value,
@@ -131,7 +150,7 @@ def register(app):
                     "snapshot_status_version": execution.status_version,
                 },
             })
-        from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+        from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
         branches = conversation_activity_branches(items, conversation_session_id=session_id)
         return JSONResponse({"items": items, "branches": branches, "now": time.time()},
                             headers={"Cache-Control": "no-store"})
@@ -188,7 +207,7 @@ def register(app):
             update.update({"execution": execution_data, "event_cursor": cursor})
         emit_ws_frame({**update, "data": update})
         if has_public_snapshot:
-            from openprogram.runtime.execution.public import execution_update_frame
+            from openprogram.runtime.execution.projections.public import execution_update_frame
             emit_ws_frame(execution_update_frame(execution_data, cursor))
         from openprogram.interfaces.server import server as _s
         if has_public_snapshot and execution_data.get("status") in {"cancelling", "cancelled"}:
@@ -298,8 +317,8 @@ def register(app):
         supplied project or session identifiers.
         """
         from openprogram.runtime.execution import default_store
-        from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
-        from openprogram.runtime.execution.effects import EffectStore
+        from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
+        from openprogram.runtime.execution.recovery.effects import EffectStore
         from openprogram.runtime.execution.revision_public import project_draft_state
         from openprogram.runtime.execution.revisions import RevisionControlService
         from openprogram.runtime.execution.waits import DurableWaitStore

@@ -52,14 +52,13 @@ class FakeUi:
         self.codes_shown.append((user_code, verification_uri))
 
 
-def test_login_driver_keeps_stable_id_and_applies_user_label(monkeypatch):
+def test_login_driver_records_identity_and_applies_user_label(monkeypatch):
     from openprogram.models.auth.login.login_driver import run_login
     from openprogram.models.auth.types import Credential, CredentialData
 
     async def fake_run(self, ui):
         return Credential(
             provider_id="openai-codex",
-            account_id="account-2",
             kind="oauth",
             payload=CredentialData(kind="oauth", auth_value="access"),
             metadata={"email": "person@example.com"},
@@ -67,26 +66,17 @@ def test_login_driver_keeps_stable_id_and_applies_user_label(monkeypatch):
 
     monkeypatch.setattr(PkceLoginMethod, "run", fake_run)
 
-    cred = asyncio.run(
-        run_login(
-            "openai-codex",
-            "account-2",
-            "pkce_oauth",
-            FakeUi(),
-            label="Personal 工作",
-        )
-    )
+    cred = asyncio.run(run_login("openai-codex", "pkce_oauth", FakeUi(), label="Personal 工作", source="cli"))
 
-    assert cred.account_id == "account-2"
-    assert cred.metadata["label"] == "Personal 工作"
-    assert cred.metadata["email"] == "person@example.com"
+    assert cred.label == "Personal 工作"
+    assert cred.identity["email"] == "person@example.com"
+    assert cred.source == "cli"
 
 
-def test_existing_oauth_account_derives_label_from_id_token():
+def test_a_sign_in_reads_its_identity_from_the_id_token():
     import base64
 
-    from openprogram.models.auth.account.account_labels import account_identity
-    from openprogram.models.auth.account.account_labels import effective_account_label
+    from openprogram.models.auth.account.account_labels import account_identity, identity_of
     from openprogram.models.auth.types import Credential, CredentialData
 
     claims = base64.urlsafe_b64encode(
@@ -94,7 +84,6 @@ def test_existing_oauth_account_derives_label_from_id_token():
     ).rstrip(b"=").decode()
     cred = Credential(
         provider_id="openai-codex",
-        account_id="account-2",
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -104,7 +93,8 @@ def test_existing_oauth_account_derives_label_from_id_token():
     )
 
     assert account_identity(cred) == ("legacy@example.com", "Legacy User")
-    assert effective_account_label(cred, "account-2") == "legacy@example.com"
+    assert identity_of(cred) == {"email": "legacy@example.com", "name": "Legacy User"}
+    assert cred.display_label() != ""
 
 
 # ---- ApiKeyPasteMethod ----------------------------------------------------
@@ -228,7 +218,7 @@ def test_normalize_expires_empty_is_zero():
 
 # ---- CliImportMethod: link mode ------------------------------------------
 
-def test_cli_import_link_mode_creates_delegated_payload(tmp_path: Path):
+def test_cli_import_link_mode_creates_an_imported_login(tmp_path: Path):
     store = tmp_path / "codex" / "auth.json"
     store.parent.mkdir(parents=True)
     store.write_text(json.dumps({
@@ -250,8 +240,8 @@ def test_cli_import_link_mode_creates_delegated_payload(tmp_path: Path):
     )
     m = CliImportMethod("openai-codex", cfg)
     cred = asyncio.run(m.run(FakeUi()))
-    assert cred.kind == "cli_delegated"
-    assert cred.payload.kind == "cli_delegated"
+    assert cred.kind == "import"
+    assert cred.payload.kind == "import"
     assert cred.payload.data["store_path"] == str(store)
     assert cred.metadata["account_id"] == "acc_1"
     assert cred.read_only is True

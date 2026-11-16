@@ -159,11 +159,11 @@ def test_explicit_dirs_use_the_same_parser_and_rule(tmp_path):
 
 
 def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
-    """context.components (chat turns) and Runtime._skills_block (inside an
+    """context.prompt_assembly.components (chat turns) and Runtime._skills_block (inside an
     agentic function) go through the one loader and the one renderer."""
     _write_skill(sources["remote_cache"], "summarize", "summarize a document")
     from openprogram.runtime.agent.runtime import Runtime
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     rt = Runtime.__new__(Runtime)
     rt._skills_config = True
@@ -177,7 +177,7 @@ def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
 def test_disabled_skills_drop_out_of_the_chat_listing(sources):
     _write_skill(sources["remote_cache"], "summarize", "summarize a document")
     _write_skill(sources["project"], "deploy", "ship it")
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
 
     block = components._build_skills({"skills": {"disabled": ["summarize"]}})
     assert "<name>deploy</name>" in block

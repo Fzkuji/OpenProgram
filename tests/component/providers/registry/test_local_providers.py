@@ -56,7 +56,6 @@ def local_server(monkeypatch):
     monkeypatch.setattr(storage, '_read_providers_cfg', lambda: {'ollama': {'base_url':base}})
     monkeypatch.setattr('openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store', lambda *a: None)
     monkeypatch.setattr('openprogram.models.providers.settings.env_api_keys.resolve_provider_key', lambda *a: None)
-    monkeypatch.setattr('openprogram.models.auth.usage.acquire_pooled', lambda *a: None)
     requests.payload = payload
     yield base, requests
     server.shutdown()
@@ -165,22 +164,25 @@ def test_connectivity_rejects_invalid_inference_response(local_server, payload):
     assert not result.ok
 
 
-def test_vision_capability_and_configured_address_reach_public_stream(local_server, monkeypatch):
+def test_vision_capability_and_configured_address_reach_public_stream(local_server, monkeypatch, tmp_path):
     import asyncio
-    from openprogram.models.auth.resolver import ResolvedConnection
     from openprogram.models.providers.catalog.enabled_models import _build_model_from_row
     from openprogram.models.providers.settings.storage import _normalize_spec_row
     from openprogram.models.providers.streaming.stream import stream_simple
     from openprogram.models.providers.types import Context, ImageContent, SimpleStreamOptions, UserMessage
-    conn = ResolvedConnection(kind="api_key", auth_value="local-account-key", base_url="http://127.0.0.1:1/v1", headers={})
-    monkeypatch.setattr("openprogram.models.auth.usage.acquire_pooled", lambda *a: (conn, "default", "test-id"))
-    monkeypatch.setattr("openprogram.models.auth.usage.record_call_success", lambda *a, **k: None)
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+    from openprogram.models.auth.types import Credential, CredentialData
+    store = AuthStore(root=tmp_path / "state")
+    set_store_for_testing(store)
+    store.add_credential(Credential(provider_id="ollama", kind="api_key", payload=CredentialData(
+        kind="api_key", auth_value="local-account-key", base_url="http://127.0.0.1:1/v1")))
     spec = _normalize_spec_row({"id":"local-test", "name":"Vision", "api":"openai-completions", "vision":True})
     model = _build_model_from_row(spec, "ollama", {"default":{"api":"openai-completions", "base_url":local_server[0]+"/v1"}})
     assert model.input == ["text", "image"]
     async def collect():
         return [event async for event in stream_simple(model, Context(messages=[UserMessage(content=[ImageContent(data="aGVsbG8=", mime_type="image/png")], timestamp=1)]), SimpleStreamOptions(max_tokens=8))]
     events = asyncio.run(collect())
+    set_store_for_testing(None)
     assert events[-1].type == "done", events[-1]
     _, headers, body = local_server[1][-1]
     assert headers["Authorization"] == "Bearer local-account-key"
@@ -191,10 +193,9 @@ def test_public_cloud_stream_still_requires_provider_credentials(local_server, m
     import asyncio
     from openprogram.models.providers.streaming.stream import stream_simple
     from openprogram.models.providers.types import Context, Model
-    from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+    from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
 
-    monkeypatch.setenv("OPENAI_API_KEY", "unrelated-cloud-secret")
-    monkeypatch.setattr("openprogram.models.auth.usage.stored_but_unusable", lambda *a: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     model = Model(id="cloud-test", name="Cloud", provider="openai", api="openai-completions", base_url=local_server[0]+"/v1")
 
     async def collect():

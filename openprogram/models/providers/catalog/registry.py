@@ -229,20 +229,11 @@ def check_providers() -> dict:
 
 
 def http_api_key_for(entry: dict) -> str | None:
-    """Resolve the API key for a ``model_namespace`` PROVIDERS entry.
-
-    Anthropic goes through the unified resolver — a plain api-key OR a
-    subscription OAuth token (``sk-ant-oat``, from a Claude Code login
-    adopted into the AuthStore); the wire switches to Bearer + Claude
-    Code beta headers for OAuth tokens. The other pools take api-key-
-    shaped credentials only (an OAuth token in a Bearer header 401s).
-    """
-    pool = entry["credential"]
-    if pool == "anthropic":
-        from openprogram.models.auth.resolver import resolve_api_key_sync
-        return resolve_api_key_sync(pool)
+    """The key a request of a ``model_namespace`` PROVIDERS entry would use
+    now, or ``None`` (API-key shaped credentials only; Anthropic takes API
+    keys only, AGENTS.md)."""
     from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-    return resolve_provider_key(pool)
+    return resolve_provider_key(entry["credential"])
 
 
 __all__ = [

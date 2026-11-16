@@ -82,7 +82,11 @@ monkeypatch.
 - CLI TypeScript: the existing Vitest suite, with typecheck and build.
 - Desktop: existing VM/fake-Electron component checks, `npm run check`.
 
-Group Web Node tests by feature under `apps/web/tests/`. The test runner recursively
+Group Web Node tests by feature under `apps/web/tests/`, and inside a feature by the
+source folder they exercise (`chat/messages/bubbles/`, `browser/pip/`, `files/documents/`);
+a test that spans those groups stays directly in the feature folder. Desktop checks follow
+`apps/desktop/main` (`windows/`, `web-views/`, `self-update/`, `terminal/`, `worker/`) and
+CLI tests are grouped as `startup/`, `input/`, `rendering/`, `repl/`, `commands/`. The test runner recursively
 collects every `*.test.mjs` file in deterministic order; helper and browser-entry files
 are not collected as tests.
 

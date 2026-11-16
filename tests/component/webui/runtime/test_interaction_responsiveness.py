@@ -9,7 +9,7 @@ import threading
 import pytest
 
 from openprogram.state.store.session.graph.builder import build_session_graph
-from openprogram.runtime.conversation.session_config import SessionRunConfig
+from openprogram.runtime.conversation.session_settings.session_config import SessionRunConfig
 from openprogram.interfaces.server.ws_actions.chat import _persist_attachments_async
 from openprogram.interfaces.server.ws_actions.session import _session_io
 from openprogram.interfaces.server.ws_actions.session import handle_load_session
@@ -169,15 +169,15 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         "s": {"id": "s", "messages": [], "head_id": None},
     })
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_config.load_session_run_config",
+        "openprogram.runtime.conversation.session_settings.session_config.load_session_run_config",
         lambda _sid: SessionRunConfig(),
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_config.project_defaults",
+        "openprogram.runtime.conversation.session_settings.session_config.project_defaults",
         lambda _sid: {},
     )
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_config.permission_from_config",
+        "openprogram.runtime.conversation.session_settings.session_config.permission_from_config",
         lambda _cfg, default=None: default or "ask",
     )
     monkeypatch.setattr(

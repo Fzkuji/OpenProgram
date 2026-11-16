@@ -3,8 +3,10 @@
 The rows read the payload of ``GET /api/providers/status``
 (:func:`openprogram.models.usage.provider_status.build_status`): health,
 quota (a 20-cell bar per window, as Codex's ``/status`` draws it), 30-day
-spend, tokens, cache share and default model. ``--json`` prints the payload
-itself; ``--refresh`` reads the quota endpoints now.
+spend, tokens, cache share and default model. A company connected in more
+than one way (``family`` in the payload) is one line with its best state,
+its ways indented under it. ``--json`` prints the payload itself;
+``--refresh`` reads the quota endpoints now.
 
 The table fits the terminal: a bar gives up cells (down to
 :data:`MIN_BAR_CELLS`) and then its reset time moves to a line of its own.
@@ -146,29 +148,63 @@ def spend_text(spend: dict) -> str:
     return f"30d {money} · {_tokens(spend['total_tokens'])} tok{cache}"
 
 
+#: Best first: a company's line shows the state of its best way.
+_BEST = ("ready", "unknown", "rate_limited", "signed_out", "no_credit", "invalid_key",
+         "not_configured", "not_running")
+
+
+def _words(health: dict, now: float) -> str:
+    state = health["state"]
+    words = _STATE_WORDS.get(state, state)
+    until = _clock(health.get("until"), now) if state == "rate_limited" else ""
+    return words + (f" · until {until}" if until else "")
+
+
+def companies(providers: list[dict]) -> list[list[dict]]:
+    """The providers grouped by company (``family``), each group where its first way is listed."""
+    groups: dict[str, list[dict]] = {}
+    for provider in providers:
+        groups.setdefault(provider.get("family") or provider["id"], []).append(provider)
+    return list(groups.values())
+
+
 def render(payload: dict, *, now: Optional[float] = None, columns: Optional[int] = None) -> str:
-    """The one-screen table of every connected provider, ``columns`` wide when given."""
+    """The one-screen table of every connected provider, ``columns`` wide when given.
+
+    A company with two or more ways connected is one line (its name and its
+    best way's state), with each way indented under it by its title."""
     now = time.time() if now is None else now
     providers = payload.get("providers") or []
     if not providers:
         return ("No connected providers.\n"
                 "Add one: openprogram providers login <provider>   (list them: openprogram providers available)")
-    width = max(len(p["label"]) for p in providers)
+
+    def ways(group: list[dict]) -> list[tuple[int, str, dict]]:
+        """(indent, name, provider) of each line under a company, or of a lone provider."""
+        if len(group) == 1:
+            return [(0, group[0]["label"], group[0])]
+        return [(2, (p.get("way_label") or {}).get("title") or p["label"], p) for p in group]
+
+    groups = companies(providers)
+    width = max([indent + len(name) for g in groups for indent, name, _p in ways(g)]
+                + [len(g[0].get("family_label") or g[0]["label"]) for g in groups if len(g) > 1])
     out: list[str] = []
-    for provider in providers:
-        health = provider["health"]
-        state = health["state"]
-        words = _STATE_WORDS.get(state, state)
-        until = _clock(health.get("until"), now) if state == "rate_limited" else ""
-        if until:
-            words += f" · until {until}"
-        head = f"{_DOT.get(state, '·')} {provider['label']:<{width}}  {words}"
-        model = provider.get("default_model")
-        out.append(head + (f"  ·  {model}" if model else ""))
-        pad = " " * (width + 4)
-        for line in quota_lines(provider["quota"], now, columns - len(pad) if columns else None):
-            out.append(pad + line)
-        out.append(pad + spend_text(provider["spend"]))
+    for group in groups:
+        if len(group) > 1:
+            best = min(group, key=lambda p: _BEST.index(p["health"]["state"])
+                       if p["health"]["state"] in _BEST else len(_BEST))
+            name = group[0].get("family_label") or group[0]["label"]
+            out.append(f"{_DOT.get(best['health']['state'], '·')} {name:<{width}}  {_words(best['health'], now)}")
+        for indent, name, provider in ways(group):
+            health = provider["health"]
+            lead = " " * indent + _DOT.get(health["state"], "·")
+            head = f"{lead} {name:<{width - indent}}  {_words(health, now)}"
+            model = provider.get("default_model")
+            out.append(head + (f"  ·  {model}" if model else ""))
+            pad = " " * (width + 4)
+            for line in quota_lines(provider["quota"], now, columns - len(pad) if columns else None):
+                out.append(pad + line)
+            out.append(pad + spend_text(provider["spend"]))
     checked = [p["quota"].get("fetched_at") for p in providers if p["quota"].get("fetched_at")]
     out.append("")
     out.append(f"Updated {_ago(payload.get('generated_at'), now)} · quota checked "
@@ -217,4 +253,4 @@ def cmd_overview(refresh: bool, as_json: bool) -> int:
     return 0
 
 
-__all__ = ["bar", "cmd_overview", "quota_lines", "render", "spend_text"]
+__all__ = ["bar", "cmd_overview", "companies", "quota_lines", "render", "spend_text"]

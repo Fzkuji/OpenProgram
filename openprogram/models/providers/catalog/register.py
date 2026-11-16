@@ -23,11 +23,11 @@ class _StreamFnProvider:
         self._stream_simple = stream_simple_fn
         self.supports_idempotency_key = supports_idempotency_key
         # The request builder adds the provider's own server-side web search
-        # tool when ``web_search=True`` (docs/reference/design/providers/web-search.html).
+        # tool when ``web_search=True`` (docs/reference/design/providers/requests/web-search.html).
         self.supports_web_search = supports_web_search
         # The adapter reads every attempt under its own idle bound, inside its
         # retry loop, so the stream chokepoint does not bound it again
-        # (utils/stream_idle.py).
+        # (utils/streams/stream_idle.py).
         self.bounds_own_stream_idle = bounds_own_stream_idle
 
     def stream(self, model, context, options=None):

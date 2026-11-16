@@ -32,7 +32,7 @@ def test_goal_accounting_that_could_not_land_does_not_fail_the_settlement(monkey
     import openprogram.programs.tools.planning.goal as goals
     from openprogram.programs._host import services
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import execution_hooks
+    from openprogram.runtime.conversation.layer_registrations import execution_hooks
     closed = []
     browser = SimpleNamespace(tabs=SimpleNamespace(close_run_tabs_soon=closed.append))
     monkeypatch.setattr(services, "lookup", lambda name: browser if name == "browser" else None)
@@ -229,8 +229,9 @@ def _restart(monkeypatch, *, running_branch=None, goal=None, own_branch="branch-
     run on ``running_branch``; what ``start_recovery_turn`` answers."""
     import openprogram.programs.tools.planning.goal as goals
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import production_driver, restart_turn
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.turn_admission import restart_turn
+    from openprogram.runtime.execution.recovery import restart
     from openprogram.runtime.execution.model import ExecutionStatus
 
     interrupted = SimpleNamespace(
@@ -260,7 +261,7 @@ def _restart(monkeypatch, *, running_branch=None, goal=None, own_branch="branch-
     monkeypatch.setattr(chat, "locked", lambda _session_id, **_kw: nullcontext())
     monkeypatch.setattr(goals, "load_goal", lambda _session_id: goal)
     monkeypatch.setattr(restart, "window_seconds", lambda: 3600)
-    monkeypatch.setattr("openprogram.runtime.execution.chat_recovery.recovery_state",
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.chat_recovery.recovery_state",
                         lambda _store, _execution, **_kw: {"can_start_new_turn": True})
     event = SimpleNamespace(sequence=7, payload={
         "expected_version": 5, "interrupted_at": time.time() - 1, "resume_before": None})

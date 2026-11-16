@@ -1,8 +1,10 @@
-/** Provider account management through the shared account and login endpoints. */
+/** A provider's credentials in the TUI: the same ordered list of keys and
+ *  signed-in accounts as Settings → LLM Providers → Credentials, through the
+ *  shared /credentials and /login endpoints. */
 import React from 'react';
 import { Picker, PickerItem } from '../../../components/Picker.js';
 import { LineInput } from '../../../components/LineInput.js';
-import { makeAccountsClient } from '../../../utils/providerAccounts.js';
+import { addMethods, isKey, makeCredentialsClient, statusWord } from '../../../utils/providerAccounts.js';
 import { ProviderLoginFlow } from './providerLoginFlow.js';
 import type { PickerCtx } from '../pickerRouter.js';
 
@@ -16,11 +18,13 @@ export type AccountKind =
   | 'acct_login';
 
 const ADD = '__add__';
-const DEACTIVATE = '__deactivate__';
-const ROTATE = '__rotate__';
+const STRATEGY = '__strategy__';
 
-const stableId = (account: { id?: string; name: string }): string => account.id || account.name;
-const displayLabel = (account: { label?: string; name: string }): string => account.label || account.name;
+const STRATEGY_LABEL: Record<string, string> = {
+  in_order: 'in order',
+  evenly: 'evenly',
+  least_used: 'least used first',
+};
 
 export function buildProviderAccountsPicker(
   ctx: PickerCtx,
@@ -35,15 +39,15 @@ export function buildProviderAccountsPicker(
     setPickerKind,
   } = ctx;
 
-  const client = makeAccountsClient(provider);
-  const active = state.active;
-  const activeAccount = state.accounts.find((account) => stableId(account) === active);
-  const activeLabel = activeAccount ? displayLabel(activeAccount) : active;
-  const methods = state.login_methods ?? [];
+  const client = makeCredentialsClient(provider);
+  const rows = state.credentials;
+  const methods = addMethods(state);
+  const signIns = rows.length > 0 && rows.every((row) => !isKey(row));
+  const noun = signIns ? 'account' : 'key';
 
   const refresh = async () => {
     try {
-      setAccountsState(await client.fetchAccounts());
+      setAccountsState(await client.fetch());
     } catch {
       /* leave the last-known list in place on a transient failure */
     }
@@ -53,43 +57,30 @@ export function buildProviderAccountsPicker(
     methods.find((m) => m.id === id)?.label ?? `Sign in (${id})`;
 
   if (kind === 'acct_list') {
-    const items: PickerItem<string>[] = [];
-    for (const a of state.accounts) {
-      const id = stableId(a);
-      const label = displayLabel(a);
-      const tag = id === active ? '→ ' : '  ';
-      const email = a.email && a.email !== label ? `   ${a.email}` : '';
-      const keys = a.count && a.count > 1 ? `   (${a.count} keys)` : '';
+    const items: PickerItem<string>[] = rows.map((row) => {
+      const tail = row.env_var ? `$${row.env_var}` : row.key_tail ? `····${row.key_tail}` : row.identity.plan ?? '';
+      return {
+        label: `${row.id === state.active ? '→ ' : '  '}${row.display_label}${tail ? `   ${tail}` : ''}`,
+        description: row.id === state.active ? `in use · ${statusWord(row)}` : statusWord(row),
+        value: `acct:${row.id}`,
+      };
+    });
+    if (rows.length > 1 && !signIns && state.strategies.length) {
       items.push({
-        label: `${tag}${label}${email}${keys}`,
-        description: id === active ? 'active' : undefined,
-        value: `acct:${id}`,
-      });
-    }
-    if (state.accounts.length > 1) {
-      items.push({
-        label: `⟳ Rotation: ${state.rotation ? 'on' : 'off'}`,
-        description: state.rotation ? `rotating across accounts (${state.strategy ?? 'fill_first'})` : 'use the active account only',
-        value: ROTATE,
+        label: `⟳ Order: ${STRATEGY_LABEL[state.strategy] ?? state.strategy}`,
+        description: 'choose how requests spread across the keys',
+        value: STRATEGY,
       });
     }
     items.push({
-      label: '＋ Add account',
-      description: 'sign in to add another account',
+      label: signIns ? '＋ Sign in with another account' : `＋ Add ${noun}`,
+      description: methods.length > 1 ? 'paste a key or sign in' : methods[0]?.label,
       value: ADD,
     });
-    if (active) {
-      items.push({
-        label: '✕ Deactivate — fall back to the default account',
-        value: DEACTIVATE,
-      });
-    }
 
-    const title = active
-      ? `${provider} accounts — active: ${activeLabel}`
-      : state.accounts.length
-        ? `${provider} accounts — none active`
-        : `${provider} accounts — none yet`;
+    const title = rows.length
+      ? `${provider} credentials — used ${STRATEGY_LABEL[state.strategy] ?? 'in order'}`
+      : `${provider} credentials — none yet`;
 
     return (
       <Picker
@@ -101,23 +92,17 @@ export function buildProviderAccountsPicker(
             setPickerKind('acct_login_name');
             return;
           }
-          if (it.value === DEACTIVATE) {
+          if (it.value === STRATEGY) {
+            const all = state.strategies;
+            const next = all[(all.indexOf(state.strategy) + 1) % all.length];
             void (async () => {
-              await client.useAccount('');
+              await client.setStrategy(next);
               await refresh();
+              pushSystem(`${provider} credentials are now used ${STRATEGY_LABEL[next] ?? next}.`);
             })();
             return;
           }
-          if (it.value === ROTATE) {
-            void (async () => {
-              await client.setRotation(!state.rotation, state.strategy);
-              await refresh();
-              pushSystem(`Rotation ${!state.rotation ? 'on' : 'off'} for ${provider}.`);
-            })();
-            return;
-          }
-          const name = it.value.slice('acct:'.length);
-          setAccountSelected(name);
+          setAccountSelected(it.value.slice('acct:'.length));
           setPickerKind('acct_action');
         }}
         onCancel={() => setPickerKind(null)}
@@ -127,23 +112,23 @@ export function buildProviderAccountsPicker(
 
   if (kind === 'acct_action') {
     const sel = accountSelected ?? '';
-    const selectedLabel = displayLabel(
-      state.accounts.find((account) => stableId(account) === sel) ?? { name: sel },
-    );
-    const isActive = sel === active;
+    const index = rows.findIndex((row) => row.id === sel);
+    const row = rows[index];
+    const name = row?.display_label ?? sel;
     const items: PickerItem<string>[] = [
-      isActive
-        ? { label: 'Deactivate', description: 'fall back to the default account', value: 'deactivate' }
-        : { label: 'Activate', description: 'run this provider on this account', value: 'activate' },
-      { label: 'Validate', description: 'check this account against the provider', value: 'validate' },
-      { label: 'Reveal key', description: 'print the full API key', value: 'reveal' },
-      { label: 'Rename', value: 'rename' },
-      { label: 'Remove', value: 'remove' },
+      { label: 'Check now', description: 'ask the provider whether it works', value: 'check' },
+      ...(row?.env_var ? [] : [{ label: 'Rename', value: 'rename' }]),
+      row && !row.enabled
+        ? { label: 'Use again', value: 'enable' }
+        : { label: "Don't use for now", description: 'keep it, but skip it until turned back on', value: 'disable' },
+      ...(index > 0 ? [{ label: 'Move up', value: 'up' }] : []),
+      ...(index >= 0 && index < rows.length - 1 ? [{ label: 'Move down', value: 'down' }] : []),
+      ...(row?.env_var ? [] : [{ label: 'Remove', description: 'delete it from this machine', value: 'remove' }]),
       { label: '← Back', value: 'back' },
     ];
     return (
       <Picker
-        title={`Account "${selectedLabel}"`}
+        title={`${row && isKey(row) ? 'Key' : 'Account'} "${name}"`}
         items={items}
         onSelect={(it) => {
           if (it.value === 'rename') {
@@ -154,28 +139,30 @@ export function buildProviderAccountsPicker(
             setPickerKind('acct_list');
             return;
           }
-          if (it.value === 'validate') {
-            pushSystem(`Validating "${sel}"…`);
+          if (it.value === 'check') {
+            pushSystem(`Checking "${name}"…`);
             void (async () => {
-              const r = await client.validateAccount(sel);
-              pushSystem(r.ok ? `"${selectedLabel}": ${r.status}${r.detail ? ` — ${r.detail}` : ''}` : `Validate failed: ${r.error ?? 'unknown'}`);
-            })();
-            return;
-          }
-          if (it.value === 'reveal') {
-            void (async () => {
-              const r = await client.revealKey(sel);
-              pushSystem(r.ok ? `"${selectedLabel}" key:\n${r.value}` : (r.error ?? 'no key on this account'));
+              const r = await client.check(sel);
+              pushSystem(r.error
+                ? `Check failed: ${r.error}`
+                : `"${name}": ${r.check?.result ?? 'checked'}${r.check?.message ? ` — ${r.check.message}` : ''}`);
+              await refresh();
             })();
             return;
           }
           void (async () => {
-            if (it.value === 'activate') await client.useAccount(sel);
-            else if (it.value === 'deactivate') await client.useAccount('');
-            else if (it.value === 'remove') {
-              await client.removeAccount(sel);
-              pushSystem(`Removed account "${selectedLabel}".`);
+            let r: { error?: string } = {};
+            if (it.value === 'enable' || it.value === 'disable') r = await client.setEnabled(sel, it.value === 'enable');
+            else if (it.value === 'up' || it.value === 'down') {
+              const order = rows.map((x) => x.id);
+              const to = it.value === 'up' ? index - 1 : index + 1;
+              [order[index], order[to]] = [order[to], order[index]];
+              r = await client.reorder(order);
+            } else if (it.value === 'remove') {
+              r = await client.remove(sel);
+              if (!r.error) pushSystem(`Removed "${name}".`);
             }
+            if (r.error) pushSystem(r.error);
             await refresh();
             setPickerKind('acct_list');
           })();
@@ -187,13 +174,11 @@ export function buildProviderAccountsPicker(
 
   if (kind === 'acct_rename') {
     const sel = accountSelected ?? '';
-    const currentLabel = displayLabel(
-      state.accounts.find((account) => stableId(account) === sel) ?? { name: sel },
-    );
+    const currentLabel = rows.find((row) => row.id === sel)?.display_label ?? sel;
     return (
       <LineInput
         label={`Rename "${currentLabel}"`}
-        hint="Type a new name for this account."
+        hint="Type a new name."
         initial={currentLabel}
         onSubmit={(value) => {
           const nv = value.trim();
@@ -202,8 +187,8 @@ export function buildProviderAccountsPicker(
             return;
           }
           void (async () => {
-            const r = await client.renameAccount(sel, nv);
-            if (r.ok) {
+            const r = await client.rename(sel, nv);
+            if (!r.error) {
               setAccountSelected(sel);
               await refresh();
               setPickerKind('acct_list');
@@ -220,8 +205,8 @@ export function buildProviderAccountsPicker(
   if (kind === 'acct_login_name') {
     return (
       <LineInput
-        label={`Add a ${provider} account`}
-        hint="Optional label (e.g. Work). Leave blank to use the signed-in identity."
+        label={`Add a ${provider} ${noun}`}
+        hint="Optional name (e.g. Work). Leave blank to name it by its account or last four characters."
         onSubmit={(value) => {
           const name = value.trim();
           const m0 = methods[0]?.id ?? 'api_key';
@@ -243,7 +228,7 @@ export function buildProviderAccountsPicker(
     }));
     return (
       <Picker
-        title={`Sign in to ${provider}`}
+        title={`Add to ${provider}`}
         items={items}
         onSelect={(it) => {
           setAccountLogin({ name: accountLogin?.name ?? '', method: it.value });

@@ -80,7 +80,7 @@ class CommandsOperations:
         this exception is admitted; a resource claimant later creates the
         attempt that consumes the one provider decision.
         """
-        from ..job_input import JobAgentInputV1
+        from ..admission_input.job_input import JobAgentInputV1
         raw_input = self.get_job_agent_input(execution_id)
         if raw_input is None:
             raise InvalidCommand("invalid_state", "initial step requires a Job execution")

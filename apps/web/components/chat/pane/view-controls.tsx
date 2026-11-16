@@ -31,7 +31,7 @@ import { copyConversation } from "@/lib/chat/copy-conversation";
  * the swap is a `display` change with no load.
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   DropdownMenu,
@@ -75,7 +75,8 @@ import {
   type TranscriptView,
 } from "@/lib/prefs/transcript-view";
 
-export function ViewControls() {
+// Memoized: the shell redraws on every tab and route change, and this takes no part in those.
+export const ViewControls = memo(function ViewControls() {
   const { t, text, locale } = useTranslation();
   const activeId = useCenterTabs((s) => s.activeId);
   const tab = useCenterTabs((s) => s.tabs.find((x) => x.id === s.activeId));
@@ -315,4 +316,4 @@ export function ViewControls() {
     </div>
     </>
   );
-}
+});

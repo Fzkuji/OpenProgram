@@ -291,6 +291,19 @@ class _PackageFinder:
 
 
 _finder = _PackageFinder()
+# The package ``openprogram programs check`` is examining in this process,
+# by name. It imports from its working copy: a load pass leaves it alone, so
+# its checked version (which may be the broken one being repaired) is never
+# imported in its place.
+_under_check: dict[str, Path] = {}
+
+
+def examine_working_copy(directory: Path) -> None:
+    """Import ``directory``'s package from the working copy in this process."""
+    with _lock:
+        _under_check[directory.name] = directory
+        _finder.packages[directory.name] = directory
+        _install_finder()
 
 
 def _install_finder() -> None:
@@ -688,10 +701,10 @@ def load_user_packages(root: Path | None = None) -> dict[str, PackageStatus]:
         add_workflow_root(root)
         add_workflow_root(_cache_root(root))
         _install_finder()
-        found = _candidates(root)
+        found = {name: path for name, path in _candidates(root).items() if name not in _under_check}
         _migrate_checked_refs(root, found)
         for name in list(_status):
-            if name not in found:
+            if name not in found and name not in _under_check:
                 _unregister(name)
                 _evict(name)
                 _finder.packages.pop(name, None)

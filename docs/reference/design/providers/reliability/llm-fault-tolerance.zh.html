@@ -33,9 +33,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部件</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">utils/timeouts.py</code></th><td>唯一的超时来源，带上下文缩放</td></tr>
-<tr><th scope="row"><code translate="no">utils/http_client.py</code></th><td>按系统设置 keepalive。httpx 没有 Happy Eyeballs，强制 IPv4 绑定 IPv4 源地址。<code translate="no">get_shared_async_client</code> 按循环区分，Codex 跨轮复用 TLS。代理走 httpx <code translate="no">proxy=</code>。</td></tr>
-<tr><th scope="row"><code translate="no">utils/rate_limit.py</code></th><td>解析 <code translate="no">x-ratelimit-*</code>、<code translate="no">anthropic-ratelimit-*</code>；额度低时 Codex 警告</td></tr>
+<tr><th scope="row"><code translate="no">utils/http_transport/timeouts.py</code></th><td>唯一的超时来源，带上下文缩放</td></tr>
+<tr><th scope="row"><code translate="no">utils/http_transport/http_client.py</code></th><td>按系统设置 keepalive。httpx 没有 Happy Eyeballs，强制 IPv4 绑定 IPv4 源地址。<code translate="no">get_shared_async_client</code> 按循环区分，Codex 跨轮复用 TLS。代理走 httpx <code translate="no">proxy=</code>。</td></tr>
+<tr><th scope="row"><code translate="no">utils/http_transport/rate_limit.py</code></th><td>解析 <code translate="no">x-ratelimit-*</code>、<code translate="no">anthropic-ratelimit-*</code>；额度低时 Codex 警告</td></tr>
 <tr><th scope="row"><code translate="no">retry_after_beyond_cap</code></th><td>流重试和 <code translate="no">Runtime.exec</code> 共用的规则</td></tr>
 <tr><th scope="row">部分恢复，<code translate="no">openai_codex.py</code></th><td>有内容后的临时断开让本轮收尾；永久失败仍失败</td></tr>
 <tr><th scope="row">openai-completions 重试</th><td><code translate="no">EventStart</code> 后、内容前：可重试的 <code translate="no">APIError</code>（含 xAI 无状态码的 <code translate="no">Internal error during token generation</code>）在同模型重开。其余由外层处理器记录冷却并重新抛出。</td></tr>
@@ -44,7 +44,7 @@
 </table>
 
 <h2 id="failover">故障转移</h2>
-<p><code translate="no">utils/failover.py</code> 和 <code translate="no">stream_with_failover</code> 在内容前遇到值得转移的失败时逐个尝试回退模型，转发事件并去掉重复的 <code translate="no">start</code>。</p>
+<p><code translate="no">utils/failures/failover.py</code> 和 <code translate="no">stream_with_failover</code> 在内容前遇到值得转移的失败时逐个尝试回退模型，转发事件并去掉重复的 <code translate="no">start</code>。</p>
 <table class="stack">
 <thead><tr><th scope="col"><code translate="no">model_fallback.mode</code></th><th scope="col">尝试</th><th scope="col">跨提供商</th></tr></thead>
 <tbody>
@@ -73,7 +73,6 @@
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>1800</td><td>等待网络；0 关闭</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>3</td><td><code translate="no">Runtime.exec</code> 次数</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td>0</td><td><code translate="no">exec</code> 期限；0 为无</td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_ANTHROPIC_MAX_RETRIES</code></th><td>3</td><td>Anthropic SDK 重试</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></th><td>1</td><td>死连接检测</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPIDLE_S</code>、<code translate="no">_KEEPINTVL_S</code>、<code translate="no">_KEEPCNT</code></th><td>30、10、3</td><td>探测时序</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td>0</td><td>IPv4 源地址，用于 IPv6 损坏的 VPN</td></tr>
@@ -128,8 +127,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>分类器、重试和退避、超时、共享客户端、keepalive、IPv4 开关、限流头解析、可选故障转移，Codex、OpenAI Responses 和 completions 的内容前重试。Anthropic 用 SDK 重试，3 次。部分恢复：仅 Codex。</td></tr>
-<tr><th scope="row">有意关闭</th><td>单账号池的按调用冷却：冷却唯一凭据会把用户锁在外面。轮换（<code translate="no">auth/pool.py</code>）在凭据多于一个时自动启用。</td></tr>
+<tr><th scope="row">已实现</th><td>分类器、重试和退避、超时、共享客户端、keepalive、IPv4 开关、限流头解析、可选故障转移，Codex、OpenAI Responses 和 completions 的内容前重试。各 SDK 自己的重试关闭（<code translate="no">max_retries=0</code>），由凭据层重试和换 key。部分恢复：仅 Codex。</td></tr>
+<tr><th scope="row">凭据</th><td>每个请求都经过 <code translate="no">auth/selection.py</code>：被限流或被拒的凭据暂停，换下一个。只有一个凭据时也照样冷却；请求带提示最多等 60 秒，否则报错并说明何时恢复。</td></tr>
 <tr><th scope="row">未实现</th><td>按请求的 OAuth 钩子：Codex 已按调用解析并刷新 bearer。</td></tr>
 </tbody>
 </table>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import ipaddress
 import math
 import os
@@ -984,7 +986,7 @@ def _observe(
     error: BaseException | None = None,
 ) -> None:
     url = request.url
-    try:
+    with contextlib.suppress(Exception):  # an observer never fails the request it watches
         observer(ObservedRequest(
             consumer=consumer,
             method=request.method,
@@ -993,8 +995,6 @@ def _observe(
             status=status,
             error=type(error).__name__ if error is not None else None,
         ))
-    except Exception:  # an observer never fails the request it watches
-        pass
 
 
 class _ManagedTransportBase:

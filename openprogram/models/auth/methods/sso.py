@@ -60,12 +60,9 @@ class SsoStubMethod(LoginMethod):
         self,
         provider_id: str,
         config: SsoConfig | None = None,
-        *,
-        account_id: str = "default",
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config or SsoConfig()
-        self._account_id = account_id
 
     async def run(self, ui: LoginUi) -> Credential:
         raise NotImplementedError(

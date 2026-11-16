@@ -2,8 +2,8 @@
 from types import SimpleNamespace
 
 from openprogram.runtime.agent.turn_request import TurnRequest, set_turn_request, reset_turn_request
-from openprogram.runtime.conversation import session_model
-from openprogram.runtime.permissions.lifecycle import current_permission_request
+from openprogram.runtime.conversation.session_settings import session_model
+from openprogram.runtime.permissions.approvals.lifecycle import current_permission_request
 
 
 def test_nested_model_uses_admitted_model_not_page(monkeypatch):
@@ -17,7 +17,7 @@ def test_nested_model_uses_admitted_model_not_page(monkeypatch):
 
 
 def test_live_permission_refresh_names_owning_branch(monkeypatch):
-    import openprogram.runtime.permissions.lifecycle as lifecycle
+    import openprogram.runtime.permissions.approvals.lifecycle as lifecycle
     import openprogram.runtime.permissions.rule as rule
     seen = []
     def state(sid, **kwargs):
@@ -76,7 +76,7 @@ def test_durable_child_inherits_parent_not_selected_branch(monkeypatch):
 
 def test_copy_inactive_branch_uses_its_agent_config(tmp_path, monkeypatch):
     from openprogram.state.store.session.session_store import SessionStore
-    from openprogram.runtime.context.branch_session import branch_session
+    from openprogram.runtime.context.session_dag.branch_session import branch_session
     from tests.unit.runtime.test_branch_session import _seed
     store = SessionStore(tmp_path / 'sessions')
     monkeypatch.setattr('openprogram.runtime.context.session_db.default_db', lambda: store)
@@ -97,7 +97,7 @@ def test_copy_inactive_branch_uses_its_agent_config(tmp_path, monkeypatch):
 
 
 def test_delivery_to_existing_sibling_uses_destination_settings(monkeypatch):
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     row = {'active_branch_id': 'a', 'model_override': 'a', 'provider_override': 'p',
            'branch_refs': {'b': {'head_id': 'tip-b', 'config': {'provider_override': 'p', 'model_override': 'b'}}}}
     monkeypatch.setattr('openprogram.runtime.context.session_db.default_db',
@@ -141,7 +141,7 @@ def test_copy_running_branch_keeps_selected_settings(store, monkeypatch):
     from tests.unit.dag.test_shared_workspace_rewind import _checkout_server
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.routes.chat_branches import post_chat_branch_session
-    from openprogram.runtime.context.branch_session import branch_session, BranchSessionError
+    from openprogram.runtime.context.session_dag.branch_session import branch_session, BranchSessionError
     import pytest
     _checkout_server(monkeypatch, store)
     session = Session(store, 's'); session.turn_edits(); session.turn_edits()
@@ -206,7 +206,7 @@ def test_turn_binding_uses_owning_sandbox_choice(store, monkeypatch, enabled, ot
     from openprogram.runtime.conversation.turn_runtime.turn_context import TurnBindings
     import openprogram.host.sandbox as sandbox
     _checkout_server(monkeypatch, store)
-    monkeypatch.setattr('openprogram.runtime.conversation.session_config.project_defaults', lambda _: {})
+    monkeypatch.setattr('openprogram.runtime.conversation.session_settings.session_config.project_defaults', lambda _: {})
     session = Session(store, 's'); session.turn_edits()
     if enabled is not None:
         store.update_session('s', sandbox_enabled=enabled)
@@ -241,7 +241,7 @@ def test_admitted_sandbox_inherit_is_not_reread_from_branch(store, monkeypatch):
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
     from openprogram.runtime.conversation.turn_runtime.turn_context import TurnBindings
     import openprogram.host.sandbox as sandbox
-    monkeypatch.setattr('openprogram.runtime.conversation.session_config.project_defaults', lambda _: {})
+    monkeypatch.setattr('openprogram.runtime.conversation.session_settings.session_config.project_defaults', lambda _: {})
     session = Session(store, 's'); session.turn_edits()
     adapter = object.__new__(CanonicalAgentAdapter)
     adapter.admit_payload = lambda **kwargs: kwargs['payload']
@@ -264,7 +264,7 @@ def test_admitted_sandbox_inherit_is_not_reread_from_branch(store, monkeypatch):
 def test_conversation_with_no_branch_recorded_runs_on_its_own_settings(monkeypatch):
     """A scheduled task's first run lands in a conversation no branch was recorded for."""
     import pytest
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     from openprogram.state.store.session.branch_config import BranchConfigConflict, config_for_branch
     row = {'id': 'cron-1', 'head_id': None, 'sandbox_enabled': False, 'thinking_effort': 'low'}
     monkeypatch.setattr('openprogram.runtime.context.session_db.default_db',

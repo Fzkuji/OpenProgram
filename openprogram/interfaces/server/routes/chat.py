@@ -20,7 +20,7 @@ import uuid
 import os
 
 from fastapi.responses import JSONResponse
-from openprogram.runtime.conversation.workdir import project_workdir_for
+from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
 from openprogram.state.paths import get_default_workdir
 
 _log = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ _FUNCTION_BODY_CONTROL_KEYS = {
 
 
 def _resolve_work_dir(session_id: str | None = None) -> str:
-    from openprogram.runtime.conversation.workdir import bound_project_execution_blocked
+    from openprogram.runtime.conversation.session_settings.workdir import bound_project_execution_blocked
     blocked = bound_project_execution_blocked(session_id or "")
     if blocked:
         raise RuntimeError(f"project location unavailable: {blocked}")
@@ -417,7 +417,7 @@ def run_agent_method_call(
     # Reject a missing or replaced bound folder before reserving a run or
     # appending any function nodes. Independent worktrees/default sessions
     # continue through the normal resolver.
-    from openprogram.runtime.conversation.workdir import bound_project_execution_blocked
+    from openprogram.runtime.conversation.session_settings.workdir import bound_project_execution_blocked
     blocked = bound_project_execution_blocked(session_id)
     if blocked:
         return {

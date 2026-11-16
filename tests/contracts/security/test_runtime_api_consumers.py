@@ -33,9 +33,15 @@ def _isolated_models_dev_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(
         models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
     )
+    with models_dev._cache_lock:
+        saved = dict(models_dev._cache)
     _reset_models_dev_cache(models_dev)
     yield models_dev
-    _reset_models_dev_cache(models_dev)
+    # The next test gets the catalogue it had: an emptied one would start a
+    # background refresh on its first read.
+    with models_dev._cache_lock:
+        models_dev._cache.clear()
+        models_dev._cache.update(saved)
 
 
 class _Response:

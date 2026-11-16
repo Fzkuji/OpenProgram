@@ -1,0 +1,645 @@
+"""Backend session/branch consistency: the in-memory mirror must never
+outlive the store write that moved HEAD.
+
+``openprogram/interfaces/server/server.py`` keeps a per-session mirror in
+``_sessions[sid]`` (``head_id`` + ``messages``) and ``_save_session``
+flushes it straight back into the store. So any path that moves HEAD in
+the store but forgets the mirror is not merely stale — the next save
+actively REVERTS the move. ``_set_active_head`` is the one correct way
+to move HEAD; these tests lock that every mutating path uses it, and
+that branch mutations are refused while a run is in flight.
+
+Covered:
+  1. rewind syncs the mirror (else _save_session undoes the rewind)
+  2. attach/delete refresh the cached branch + mirror
+  3. delete / attach / merge / rewind reject during a run; checkout does not
+  4. no dispatcher event is silently dropped by the chat event chain
+  5. reconcile_interrupted_runs clears a stuck session-row status
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+
+from openprogram.state.store.session.session_store import SessionStore
+
+
+class FakeWS:
+    """Collects the frames a handler sends."""
+
+    def __init__(self):
+        self.frames: list[dict] = []
+
+    async def send_text(self, text: str) -> None:
+        self.frames.append(json.loads(text))
+
+    def of_type(self, t: str) -> list[dict]:
+        return [f["data"] for f in self.frames if f.get("type") == t]
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    s = SessionStore(tmp_path / "sessions-git")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: s)
+    import openprogram.state.store.session.session_store as ss_mod
+    monkeypatch.setattr(ss_mod.shared, "_default_store", s)
+    # The test HOME is shared by the whole run; executions other tests left
+    # for the same session ids must not reach reconciliation here.
+    from openprogram.runtime.execution.store.store import ExecutionStore
+    executions = ExecutionStore(tmp_path / "executions.db")
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: executions)
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def srv(monkeypatch):
+    """The real server module with its global state isolated per test."""
+    from openprogram.interfaces.server import server as _s
+    monkeypatch.setattr(_s, "_sessions", {})
+    from openprogram.interfaces.server.server_runtime.run_slots import BranchSlots, SelectedSlots
+    table: dict = {}
+    monkeypatch.setattr(_s, "_run_slots", table)
+    monkeypatch.setattr(_s, "_running_tasks", SelectedSlots(table))
+    monkeypatch.setattr(_s, "_branch_running_tasks", BranchSlots(table))
+    monkeypatch.setattr(_s, "_msg_cache", type(_s._msg_cache)())
+    monkeypatch.setattr(_s, "refresh_context_stats", lambda *a, **k: None)
+    monkeypatch.setattr(_s, "_broadcast", lambda *a, **k: None)
+    # _is_run_active also reads the runtime state module and the process-wide
+    # execution store, which other tests on this worker share; a test that
+    # needs an active run says so.
+    monkeypatch.setattr(_s, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(_s, "_is_selected_run_active", lambda _sid: False)
+    return _s
+
+
+def _two_turns(store: SessionStore, sid: str = "s1") -> list[str]:
+    """u1 -> a1 -> u2 -> a2, head at a2. Returns the ids in order."""
+    store.create_session(sid, "main", title="t")
+    ids = []
+    prev = ""
+    for i, role in enumerate(["user", "assistant", "user", "assistant"]):
+        mid = f"m{i}"
+        store.append_message(sid, {
+            "id": mid, "role": role, "content": f"c{i}",
+            "predecessor": prev, "agent_id": "main",
+        })
+        prev = mid
+        ids.append(mid)
+    store.set_head(sid, ids[-1])
+    return ids
+
+
+def _last_turn_edited_a_file(store: SessionStore, ids: list[str], sid: str = "s1") -> None:
+    """The last reply changed a file, so an earlier point of the conversation has other files."""
+    from pathlib import Path
+    from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+
+    path = Path(store._session_dir(sid)).parent / f"{sid}-workspace.py"
+    path.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(sid))
+    journal.backup_before_edit(ids[-1], str(path))
+    path.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(ids[-1], str(path), operation="edit")
+
+
+# ---- 1. rewind must sync the in-memory mirror -------------------------
+
+def test_rewind_syncs_mirror_so_save_session_cannot_revert_it(
+    store, srv, monkeypatch,
+):
+    """THE defect: rewind_to wrote the store head directly, leaving
+    _sessions[sid]["head_id"] on the rewound node. _save_session then
+    flushed that stale head back and silently undid the rewind."""
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+
+    ids = _two_turns(store)
+    srv._sessions["s1"] = {
+        "id": "s1", "head_id": ids[-1], "messages": [{"id": i} for i in ids],
+    }
+
+    # rewind to the second user turn (m2) -> head lands on m1
+    monkeypatch.setattr(
+        "openprogram.runtime.conversation.rewinds.rewind.rewind_to",
+        lambda sid, tid, **_kwargs: {
+            "session_id": sid, "target_msg_id": tid, "user_text": "c2",
+            "turns_reverted": 1, "nodes_rewound": 2,
+            "total_restored_paths": [], "new_head_id": ids[1],
+            "head_changed": True, "status": "committed", "errors": [],
+        },
+    )
+    ws = FakeWS()
+    _run(chat_actions.handle_rewind(
+        ws, {
+            "session_id": "s1", "target_msg_id": ids[2],
+            "phase": "apply", "idempotency_key": "rewind-test",
+            "plan_hash": "sha256:test",
+        }))
+
+    assert ws.of_type("rewind_result")[0]["errors"] == []
+    # The mirror followed the rewind...
+    assert srv._sessions["s1"]["head_id"] == ids[1]
+    # ...so a save flushes the REWOUND head, not the pre-rewind one.
+    assert store.get_session("s1")["head_id"] == ids[1]
+
+
+def test_rewind_to_returns_new_head_for_mirror_sync(store):
+    """rewind_to must report where it left HEAD — without this the webui
+    caller has nothing to write into its mirror."""
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
+
+    ids = _two_turns(store)
+    out = rewind_to("s1", ids[2])
+    assert "new_head_id" in out
+    assert out["new_head_id"] == store.get_session("s1")["head_id"]
+
+
+def test_rewind_ws_defaults_to_read_only_plan(srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(
+        "openprogram.runtime.conversation.rewinds.rewind.plan_rewind",
+        lambda sid, target, **_kwargs: {
+            "status": "ready", "phase": "plan", "session_id": sid,
+            "target_msg_id": target, "plan_hash": "sha256:plan",
+            "idempotency_key": "request-key", "head_changed": False,
+        },
+    )
+    monkeypatch.setattr(
+        "openprogram.runtime.conversation.rewinds.rewind.rewind_to",
+        lambda *_args, **_kwargs: pytest.fail("plan request applied files"),
+    )
+
+    ws = FakeWS()
+    _run(chat_actions.handle_rewind(
+        ws, {"session_id": "s1", "target_msg_id": "u2"},
+    ))
+
+    result = ws.of_type("rewind_result")[0]
+    assert result["status"] == "ready"
+    assert result["phase"] == "plan"
+    assert result["plan_hash"] == "sha256:plan"
+
+
+def test_rewind_ws_apply_requires_plan_identity(srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    ws = FakeWS()
+    _run(chat_actions.handle_rewind(ws, {
+        "session_id": "s1", "target_msg_id": "u2", "phase": "apply",
+    }))
+
+    result = ws.of_type("rewind_result")[0]
+    assert result["status"] == "error"
+    assert "idempotency_key and plan_hash" in result["error"]
+
+
+def test_set_active_head_refreshes_messages_mirror(store, srv):
+    """_set_active_head is the shared primitive; it must refresh
+    conv["messages"] too, since _save_session flushes that list."""
+    ids = _two_turns(store)
+    srv._sessions["s1"] = {
+        "id": "s1", "head_id": ids[-1], "messages": [{"id": i} for i in ids],
+    }
+    srv._set_active_head("s1", ids[1])
+    got = [m.get("id") for m in srv._sessions["s1"]["messages"]]
+    assert got == ids[:2], "messages must follow the new head"
+
+
+def test_conversation_checkout_shares_files_without_alignment(store, srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+    from openprogram.runtime.conversation.rewinds.rewind_marks import take_rewind_note
+    ids = _two_turns(store)
+    _last_turn_edited_a_file(store, ids)
+    ws = FakeWS()
+    _run(branch_actions.handle_checkout_branch(ws, {"session_id": "s1", "head_msg_id": ids[1]}))
+    assert ws.of_type("branch_checked_out")[0]["ok"] is True
+    assert store.get_session("s1")["workspace_alignment"]["status"] == "aligned"
+    assert "files were not restored" in take_rewind_note("s1")
+
+
+def test_checkout_head_race_keeps_head_and_alignment_unchanged(
+    store, srv, monkeypatch,
+):
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(store, "compare_and_set_head", lambda *_args, **_kwargs: False)
+    ws = FakeWS()
+
+    _run(branch_actions.handle_checkout_branch(ws, {
+        "session_id": "s1", "head_msg_id": ids[1],
+    }))
+
+    result = ws.of_type("branch_checked_out")[0]
+    assert result["ok"] is False
+    assert result["error"] == "conversation head changed during checkout"
+    assert store.get_session("s1")["head_id"] == ids[-1]
+    assert "workspace_alignment" not in store.get_session("s1")
+
+
+def test_legacy_keep_current_files_still_works_after_more_messages(store, srv):
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+    ids = _two_turns(store)
+    store.update_session("s1", workspace_alignment={"status": "mismatch", "target_head_id": ids[1]})
+    ws = FakeWS()
+    _run(branch_actions.handle_resolve_workspace_alignment(ws, {"session_id": "s1", "decision": "keep_current_files"}))
+    assert ws.of_type("workspace_alignment_resolved")[0]["ok"] is True
+    assert store.get_session("s1")["head_id"] == ids[-1]
+
+
+# ---- 2. attach / delete must refresh cache + mirror --------------------
+
+def test_attach_branch_invalidates_message_cache(store, srv):
+    """The attach row lands in the DAG, so the cached branch list taken
+    before it is stale. The attach handler previously left that cache
+    (and the conv mirror) untouched, so readers kept the pre-attach view
+    until a refresh."""
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    # A second branch off m1 to attach.
+    store.append_message("s1", {
+        "id": "b1", "role": "assistant", "content": "side",
+        "predecessor": ids[1], "agent_id": "main",
+    })
+    store.set_head("s1", ids[-1])
+    srv._sessions["s1"] = {"id": "s1", "head_id": ids[-1], "messages": []}
+    # Warm the cache so we can prove the attach drops it.
+    srv._get_messages("s1")
+    assert "s1" in srv._msg_cache
+
+    ws = FakeWS()
+    _run(branch_actions.handle_attach_branch(ws, {
+        "session_id": "s1", "target_head_msg_id": "b1",
+    }))
+    res = ws.of_type("attach_branch_result")[0]
+    assert res["ok"], res.get("error")
+    assert "s1" not in srv._msg_cache, "attach must invalidate the cache"
+    # The mirror was re-read from the store rather than left empty, so a
+    # later _save_session can't flush a blank transcript over the branch.
+    assert [m.get("id") for m in srv._sessions["s1"]["messages"]] == ids
+    # HEAD is unchanged by an attach.
+    assert store.get_session("s1")["head_id"] == ids[-1]
+    # The attach row itself hangs off HEAD as a child (it is not on the
+    # HEAD->root path, so get_branch correctly omits it); the chat panel
+    # gets it from the transcript publisher.
+    assert any(m.get("id") == res["attach_node_id"]
+               for m in store.get_messages("s1"))
+
+
+def test_manual_cross_session_attach_has_no_spawn_marker(store, srv):
+    """A user-authored cross-session embed is not an agent spawn."""
+    from openprogram.state.store.session.graph.builder import build_session_graph
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    source_ids = _two_turns(store, "source")
+    anchor_ids = _two_turns(store, "anchor")
+    ws = FakeWS()
+    _run(branch_actions.handle_attach_branch(ws, {
+        "session_id": "source",
+        "target_head_msg_id": source_ids[-1],
+        "anchor_session_id": "anchor",
+        "anchor_head_msg_id": anchor_ids[-1],
+    }))
+    result = ws.of_type("attach_branch_result")[0]
+    assert result["ok"], result.get("error")
+
+    graph = build_session_graph("anchor", anchor_ids[-1])
+    anchor_row = next(row for row in graph if row["id"] == anchor_ids[-1])
+    assert "spawn_out" not in anchor_row
+
+
+def test_delete_branch_drops_deleted_rows_from_mirror(store, srv):
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    # An edit of the second question forks at the first reply, so the
+    # second turn is a branch of its own.
+    _edit_second_question(store)
+    srv._sessions["s1"] = {
+        "id": "s1", "head_id": ids[-1], "messages": [{"id": i} for i in ids],
+    }
+    ws = FakeWS()
+    _run(branch_actions.handle_delete_branch(
+        ws, {"session_id": "s1", "head_msg_id": ids[2]}))
+    res = ws.of_type("branch_deleted")[0]
+    assert res["ok"], res.get("error")
+    assert res["new_head"] == "m2b"
+    mirror_ids = {m.get("id") for m in srv._sessions["s1"]["messages"]}
+    assert ids[2] not in mirror_ids and ids[3] not in mirror_ids
+
+
+def _edit_second_question(store: SessionStore, sid: str = "s1") -> None:
+    store.append_message(sid, {"id": "m2b", "role": "user", "content": "edited",
+                               "predecessor": "m1", "agent_id": "main"})
+
+
+# ---- 3. run-active protection on every branch mutation -----------------
+
+@pytest.mark.parametrize("action,cmd,frame,errkey", [
+    ("delete_branch", {"head_msg_id": "m3"}, "branch_deleted", "error"),
+    ("attach_branch", {"target_head_msg_id": "m1"},
+     "attach_branch_result", "error"),
+])
+def test_branch_actions_refuse_while_run_active(
+    store, srv, monkeypatch, action, cmd, frame, errkey,
+):
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    _two_turns(store)
+    _edit_second_question(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: True)
+    monkeypatch.setattr(srv, "_is_selected_run_active", lambda sid: True)
+    ws = FakeWS()
+    _run(branch_actions.ACTIONS[action](ws, {"session_id": "s1", **cmd}))
+    data = ws.of_type(frame)[0]
+    assert data.get(errkey), f"{action} must report an error while running"
+    # The refusal names what runs: a reply on the selected branch.
+    assert data.get("code") == "run_active"
+
+
+def test_merge_refuses_while_run_active(store, srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import merge as merge_actions
+
+    _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: True)
+    ws = FakeWS()
+    _run(merge_actions.handle_merge_branches(ws, {
+        "session_id": "s1", "sub_sessions": ["s2"],
+    }))
+    data = ws.of_type("merge_branches_result")[0]
+    assert data["failed"] and "run is currently active" in data["error"]
+
+
+def test_merge_refuses_when_a_peer_is_running(store, srv, monkeypatch):
+    """The guard covers peers, not just the target — a merge consumes the
+    peer branches too."""
+    from openprogram.interfaces.server.ws_actions import merge as merge_actions
+
+    _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: sid == "peer")
+    ws = FakeWS()
+    _run(merge_actions.handle_merge_branches(ws, {
+        "session_id": "s1", "peers": [{"session_id": "peer"}],
+    }))
+    data = ws.of_type("merge_branches_result")[0]
+    assert data["failed"] and data.get("code") == "run_active"
+
+
+def test_checkout_goes_ahead_while_a_run_is_active(store, srv, monkeypatch):
+    """Switching is a view change; a running turn never refuses it."""
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: True)
+    monkeypatch.setattr(srv, "_is_selected_run_active", lambda sid: True)
+    ws = FakeWS()
+    _run(branch_actions.handle_checkout_branch(ws, {"session_id": "s1", "head_msg_id": ids[1]}))
+    data = ws.of_type("branch_checked_out")[0]
+    assert data["ok"] and data.get("active_branch_id")
+    assert store.get_session("s1")["head_id"] == ids[1]
+
+
+def test_rewind_refuses_while_run_active(store, srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: True)
+    ws = FakeWS()
+    monkeypatch.setattr(srv, "reserve_operation", lambda *args, **kwargs: {
+        "code": "run_active", "kind": "reply", "error": srv.RUN_ACTIVE_ERROR})
+    _run(chat_actions.handle_rewind(
+        ws, {"session_id": "s1", "target_msg_id": ids[2], "phase": "apply"}))
+    data = ws.of_type("rewind_result")[0]
+    assert data.get("code") == "run_active"
+    # HEAD untouched.
+    assert store.get_session("s1")["head_id"] == ids[-1]
+
+
+def test_branch_actions_still_work_when_no_run_active(store, srv, monkeypatch):
+    """The guard must not block the normal path."""
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: False)
+    ws = FakeWS()
+    _run(branch_actions.handle_checkout_branch(
+        ws, {"session_id": "s1", "head_msg_id": ids[1]}))
+    assert ws.of_type("branch_checked_out")[0]["ok"]
+    assert store.get_session("s1")["head_id"] == ids[1]
+
+
+# ---- 4. no dispatcher event is silently dropped ------------------------
+
+@pytest.mark.parametrize("evt_type", [
+    "compaction_started", "compaction_failed", "compaction_finished",
+    "some_future_event_nobody_whitelisted",
+])
+def test_chat_event_chain_forwards_every_envelope(monkeypatch, evt_type):
+    """An event chain with a whitelist drops every envelope missing from
+    it — the user saw the context ring move with no explanation. The chat
+    turn's event sink forwards every envelope it does not consume."""
+    import types
+    from openprogram.interfaces.server.ws_actions.chat.turn import _agent_event_sink
+
+    forwarded: list[dict] = []
+    server = types.SimpleNamespace(_broadcast_envelope=forwarded.append,
+                                   _slot_location=lambda *_args: None)
+    sink = _agent_event_sink(server, "s1", "m1", {})
+    envelope = {"type": "chat_response", "data": {"type": evt_type}}
+    sink(envelope)
+    assert forwarded == [envelope]
+
+
+# ---- 5. worker restart must clear a stuck session-row status -----------
+
+def test_reconcile_clears_stuck_session_row_status(store, monkeypatch):
+    """A SIGKILLed worker never clears sessions.status, so the row stays
+    "running" and the chat container is pinned run-active forever."""
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", status="running")
+    assert store.get_session("s1")["status"] == "running"
+
+    _exec_dag.reconcile_interrupted_runs()
+    assert store.get_session("s1")["status"] != "running"
+
+
+def test_reconcile_leaves_idle_sessions_alone(store):
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", status="idle")
+    _exec_dag.reconcile_interrupted_runs()
+    assert store.get_session("s1")["status"] == "idle"
+
+
+def test_reconcile_finishes_a_durable_cancellation_intent(store):
+    """A restart after cancel intent must finish cancelled, not interrupted."""
+    from openprogram.state.store.session.nodes import Call, ROLE_CODE
+    from openprogram.state.store import SessionNodeWriter
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    ids = _two_turns(store)
+    SessionNodeWriter(store, "s1").append(Call(
+        id="execution-cancelling",
+        role=ROLE_CODE,
+        name="cancellation_probe",
+        output="partial output",
+        caller=ids[-1],
+        metadata={
+            "status": "cancelling",
+            "reason_code": "cancel.user",
+            "execution_kind": "agent_method",
+        },
+    ))
+    store.update_session("s1", status="cancelling")
+
+    fixed = _exec_dag.reconcile_interrupted_runs()
+
+    node = next(
+        node for node in store.get_nodes("s1")
+        if node.id == "execution-cancelling"
+    )
+    assert fixed == 2
+    assert node.metadata["status"] == "cancelled"
+    assert node.metadata["reason_code"] == "cancel.user"
+    assert node.output == "partial output"
+    assert store.get_session("s1")["status"] == "cancelled"
+
+
+def test_reconcile_settles_zombie_goal_state(store):
+    """An executing Goal becomes explicitly recoverable after restart."""
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={
+        "text": "x", "status": "active", "turns_used": 3,
+    })
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "paused_recoverable"
+    assert goal["recoverable"] is True
+    assert "worker restarted" in goal["last_reason"]
+
+
+def test_reconcile_settles_waiting_user_zombie_goal(store):
+    """A durable async question remains answerable across worker restart."""
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={
+        "text": "x", "status": "waiting_user",
+        "last_question": "A or B?",
+    })
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "waiting_user"
+    assert goal["last_question"] == "A or B?"
+
+
+def test_reconcile_leaves_terminal_goal_alone(store):
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={"text": "x", "status": "achieved"})
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "achieved"
+    assert "last_reason" not in goal
+
+
+def test_interrupted_exec_tree_keeps_the_restart_reason():
+    from openprogram.state.store.session.nodes import Call, ROLE_CODE
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    node = Call(
+        role=ROLE_CODE,
+        name="agentic_workflow",
+        output="[interrupted] worker restarted mid-turn",
+        metadata={
+            "status": "interrupted",
+            "error": "Worker restarted before this turn finished",
+        },
+    )
+
+    tree = _exec_dag._exec_tnode(node, {})
+    assert tree["status"] == "interrupted"
+    assert tree["error"] == "Worker restarted before this turn finished"
+
+
+# ---- 6. failures are diagnosable, never silent -------------------------
+
+def test_attach_failure_reports_error_and_logs(store, srv, monkeypatch):
+    logged: list[str] = []
+    monkeypatch.setattr(srv, "_log", lambda m: logged.append(m))
+    from openprogram.interfaces.server.ws_actions import branch as branch_actions
+
+    _two_turns(store)
+    ws = FakeWS()
+    # Attaching a branch onto itself is rejected.
+    head = store.get_session("s1")["head_id"]
+    _run(branch_actions.handle_attach_branch(ws, {
+        "session_id": "s1", "target_head_msg_id": head,
+    }))
+    data = ws.of_type("attach_branch_result")[0]
+    assert not data["ok"] and data["error"]
+    assert any("attach_branch] FAILED" in m for m in logged)
+
+
+def test_merge_failure_is_logged(store, srv, monkeypatch):
+    logged: list[str] = []
+    monkeypatch.setattr(srv, "_log", lambda m: logged.append(m))
+    from openprogram.interfaces.server.ws_actions import merge as merge_actions
+
+    ws = FakeWS()
+    _run(merge_actions.handle_merge_branches(ws, {"session_id": "s1"}))
+    data = ws.of_type("merge_branches_result")[0]
+    assert data["failed"]
+    assert any("merge_branches] FAILED" in m for m in logged)
+
+
+def test_delete_nodes_splices_and_undo_restores(store, srv):
+    from openprogram.interfaces.server.ws_actions import dag_nodes
+
+    ids = _two_turns(store)
+    srv._sessions["s1"] = {
+        "id": "s1", "head_id": ids[-1], "messages": [{"id": i} for i in ids],
+    }
+    ws = FakeWS()
+    _run(dag_nodes.handle_delete_nodes(ws, {"session_id": "s1", "node_ids": [ids[1]]}))
+    res = ws.of_type("nodes_deleted")[0]
+    assert res["ok"], res.get("error")
+    assert [m["id"] for m in store.get_branch("s1")] == [ids[0], ids[2], ids[3]]
+    assert ids[1] not in {m.get("id") for m in srv._sessions["s1"]["messages"]}
+    _run(dag_nodes.handle_restore_deleted_nodes(
+        ws, {"session_id": "s1", "op_id": res["op_id"]}))
+    assert ws.of_type("nodes_restored")[0]["ok"]
+    assert [m["id"] for m in store.get_branch("s1")] == ids
+
+
+def test_delete_nodes_refuses_while_run_active(store, srv, monkeypatch):
+    from openprogram.interfaces.server.ws_actions import dag_nodes
+
+    ids = _two_turns(store)
+    # The delete touches the selected branch, where a turn runs: only the
+    # branches it touches are held, and the refusal names the busy one.
+    monkeypatch.setattr(srv, "_is_run_active", lambda sid: True)
+    monkeypatch.setattr(srv, "_is_selected_run_active", lambda sid: True)
+    ws = FakeWS()
+    _run(dag_nodes.handle_delete_nodes(ws, {"session_id": "s1", "node_ids": [ids[1]]}))
+    data = ws.of_type("nodes_deleted")[0]
+    assert not data["ok"] and "is running" in data["error"]
+    assert data["blocking"]["selected"] is True
+    assert store.message_exists("s1", ids[1])

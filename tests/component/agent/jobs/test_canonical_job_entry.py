@@ -300,7 +300,7 @@ def test_cross_process_cancel_wins_natural_completion_race(
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
     from openprogram.runtime.execution import CommandStatus, default_store as default_execution_store
     from openprogram.models.usage.ledger import UsageLedger
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from tests.support.waiting import wait_until
 
     entered = threading.Event()
@@ -385,7 +385,7 @@ def test_cross_process_cancel_escalates_to_exact_owner_termination(
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.models.usage.ledger import UsageLedger
     from tests.support.waiting import wait_until
 
@@ -552,7 +552,7 @@ def test_failed_termination_keeps_live_owner_until_exact_recovery(
     """A failed terminate callback cannot publish a terminal projection."""
     import openprogram.runtime.jobs.runner as runner_module
     from openprogram.runtime.jobs.runner import JobRunner
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
     from openprogram.runtime.execution import TerminationReceipt
     from openprogram.models.usage.ledger import UsageLedger
@@ -765,7 +765,7 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
     import openprogram.runtime.jobs.runner as runner_module
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
     from openprogram.models.usage.ledger import UsageLedger
     from tests.support.waiting import wait_until
@@ -822,7 +822,7 @@ def _hold_owner_after_canonical_complete(tmp_path, monkeypatch):
     import openprogram.runtime.jobs.runner as runner_module
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.models.usage.ledger import UsageLedger
     from tests.support.waiting import wait_until
 

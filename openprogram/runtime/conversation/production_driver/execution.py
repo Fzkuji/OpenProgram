@@ -7,7 +7,7 @@ import time
 from openprogram.runtime.conversation.production_driver import shared
 from openprogram.runtime.execution.attempts import AttemptRecord, AttemptStatus
 from openprogram.runtime.execution.model import CommandKind, CommandStatus
-from openprogram.runtime.execution.runtime_contract import canonical_json_bytes
+from openprogram.runtime.execution.admission_input.runtime_contract import canonical_json_bytes
 
 # How long a resumed attempt waits for the attempt it replaced to leave.
 _PREDECESSOR_EXIT_SECONDS = 30.0
@@ -333,9 +333,9 @@ class ExecutionOperations:
                     ),
                 )
                 if isinstance(result, shared.Mapping) and result.get("function_suspended"):
-                    from openprogram.runtime.execution.checkpoints import CheckpointFragment
+                    from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
                     from openprogram.runtime.agent.durable_steps import default_policy
-                    from openprogram.runtime.execution.restart import window_seconds
+                    from openprogram.runtime.execution.recovery.restart import window_seconds
                     service = self._control_service()
                     current = self.executions.get_execution(attempt.execution_id)
                     commands = self.executions.list_commands(attempt.execution_id, kinds=(CommandKind.PAUSE,), statuses=(CommandStatus.APPLYING,))
@@ -415,7 +415,7 @@ class ExecutionOperations:
         manifest: shared.Mapping[str, shared.Any],
     ):
         """Suspend a forced local GUI entry before its subprocess is spawned."""
-        from openprogram.runtime.execution.checkpoints import CheckpointFragment
+        from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 
         execution = self.executions.get_execution(attempt.execution_id)
         if execution is None:

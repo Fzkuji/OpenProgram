@@ -46,7 +46,7 @@ warn() { printf "${c_yellow}  !!${c_reset} %s\n" "$*" >&2; }
 die()  { printf "${c_red}ERROR${c_reset} %s\n" "$*" >&2; exit 1; }
 
 OS="$(uname -s)"
-REPO_URL="https://github.com/FuzzyKuji/OpenProgram.git"
+REPO_URL="https://github.com/Fzkuji/OpenProgram.git"
 
 # Every /dev/tty prompt reads with this timeout so an agent driving the default
 # command inside a pty (and never answering) can't hang forever — on expiry we

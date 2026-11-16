@@ -233,7 +233,7 @@ def convert_messages(model: "Model", context: "Context") -> list[dict[str, Any]]
 def _merge_adjacent_user_turns(contents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One user turn for two that follow each other with no model turn between.
 
-    A reply stopped before it said anything is not sent (``context.render``),
+    A reply stopped before it said anything is not sent (``context.session_dag.render``),
     so the person's next message follows the one it answered; Gemini wants
     the roles to alternate. Parts keep their order; a turn holding function
     responses is left as it is.

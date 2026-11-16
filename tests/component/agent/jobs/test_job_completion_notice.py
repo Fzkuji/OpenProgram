@@ -56,7 +56,7 @@ def store(tmp_path, monkeypatch):
 
 def test_background_agent_reports_back_once_with_only_its_report(store, monkeypatch):
     from openprogram.runtime.jobs import get_runner, JobStatus, notices
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, write_attach_placeholder_for_spawn
 
     from openprogram.runtime.jobs.types import mint_job_id
     # As agent() writes it: the card names its Job from the start.
@@ -129,7 +129,7 @@ def test_background_agent_reports_back_once_with_only_its_report(store, monkeypa
 
     # The caller's line holds the card, not the child's transcript; the card
     # is one whose prompt text stays as written (render._attach_report).
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
     rows = rendered_history(store, "p1", head_id=attach_id)
     assert "TOOL NOISE" not in repr(rows)
     card = next(row for row in rows if row.get("id") == attach_id)

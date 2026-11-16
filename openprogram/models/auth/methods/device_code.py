@@ -61,12 +61,10 @@ class DeviceCodeMethod(LoginMethod):
         provider_id: str,
         config: DeviceCodeConfig,
         *,
-        account_id: str = "default",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._account_id = account_id
         self._metadata = dict(metadata or {})
 
     async def run(self, ui: LoginUi) -> Credential:
@@ -143,7 +141,6 @@ class DeviceCodeMethod(LoginMethod):
                     expires_at_ms = int(time.time() * 1000) + int(tokens["expires_in"]) * 1000
                     return Credential(
                         provider_id=self.provider_id,
-                        account_id=self._account_id,
                         kind="device_code",
                         payload=CredentialData(
                             kind="device_code",
@@ -156,7 +153,7 @@ class DeviceCodeMethod(LoginMethod):
                                           if k not in ("access_token", "refresh_token", "expires_in")},
                             },
                         ),
-                        source=f"{self.method_id}:{self.provider_id}",
+                        source="web",
                         metadata=self._metadata,
                     )
                 # Standard device-flow errors come back as HTTP 400 JSON

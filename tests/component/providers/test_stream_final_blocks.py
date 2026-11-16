@@ -21,7 +21,7 @@ from openprogram.models.providers.types import (
     ThinkingContent,
     UserMessage,
 )
-from openprogram.models.providers.utils.event_stream import AssistantMessageEventStream
+from openprogram.models.providers.utils.streams.event_stream import AssistantMessageEventStream
 
 
 def _model() -> Model:

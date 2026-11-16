@@ -17,7 +17,7 @@ import time
 
 from openprogram.operations.self_update.store import SelfUpdateStore
 from openprogram.operations.self_update.types import TERMINAL_PHASES, UpdatePhase
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 
 class LaunchError(RuntimeError):

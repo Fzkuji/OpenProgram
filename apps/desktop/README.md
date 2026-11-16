@@ -10,7 +10,7 @@ Electron shell around the OpenProgram web UI, with native browser tabs
 Loads `http://127.0.0.1:$OPENPROGRAM_WEB_PORT/chat` (default port 18100). If the
 worker is not reachable it spawns `openprogram worker start`, shows a waiting page
 and probes `/healthz` every second until the worker answers. While an installer
-(`install-app.sh`, `scripts/refresh-local-app.sh`) holds the lock next to the
+(`install-app.sh`, `scripts/local-instances/refresh-local-app.sh`) holds the lock next to the
 bundle, `/Applications/.openprogram-app-install.lock`, the backend is down because
 it is being replaced: the page says the App is updating and no worker is started
 from the half-installed runtime.
@@ -27,7 +27,8 @@ Override the startup URL entirely with `OPENPROGRAM_DESKTOP_URL=http://... npm r
   through `start(context)`. `shell/` must keep working with every version whose
   `shell_compat` falls within `shell/compat.json`.
 - `scripts/` holds build steps (packaging, install, the `afterPack` hook).
-- `tests/` holds the `npm run check` suite; run one with `npm run check:<name>`.
+- `tests/` holds the `npm run check` suite, grouped like `main/` (`windows/`,
+  `web-views/`, `self-update/`, `terminal/`, `worker/`); run one with `npm run check:<name>`.
 - `build/icon.icns` is maintained by hand from `build/AppIcon.icon`: nothing
   generates it, so export it again whenever the `.icon` source changes
   (`npm run icon:check` checks the source, not that the two match).

@@ -161,7 +161,7 @@ def test_only_a_read_only_process_hands_over_its_own_rows(monkeypatch):
     ({"principal_id": "someone-else"}, False),
 ])
 def test_a_scheduled_runs_sub_agent_takes_only_its_owners_policy(monkeypatch, change, inherits):
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.jobs.runner import admission, shared
     from openprogram.runtime.permissions.authority import local_owner_authority
 

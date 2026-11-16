@@ -71,7 +71,7 @@ def _runner(h):
 def test_orderly_restart_preserves_default_intent_and_explicit_deadline(
     real_agent_chat, monkeypatch, elapsed, window
 ):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,
@@ -138,7 +138,7 @@ def test_orderly_restart_preserves_default_intent_and_explicit_deadline(
 def test_abandoned_safe_checkpoint_resumes_without_repeating_provider(
     real_agent_chat, monkeypatch, with_goal
 ):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,
@@ -164,7 +164,7 @@ def test_abandoned_safe_checkpoint_resumes_without_repeating_provider(
     assert recovered[0].execution.status.value == "paused"
     assert h.tools.calls == []
     if with_goal:
-        from openprogram.runtime.execution.dag import reconcile_interrupted_runs
+        from openprogram.runtime.execution.projections.dag import reconcile_interrupted_runs
         reconcile_interrupted_runs()
         assert goals.load_goal(h.session_id)["status"] == "active"
     restart.reconcile(_runner(h))
@@ -185,7 +185,7 @@ def test_abandoned_safe_checkpoint_resumes_without_repeating_provider(
 def test_job_restart_reacquires_resources_and_completes(
     real_agent_chat, tmp_path, monkeypatch, crash
 ):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
     from openprogram.models.usage.ledger import UsageLedger
@@ -279,7 +279,7 @@ def test_job_restart_reacquires_resources_and_completes(
 def test_explicit_user_control_is_not_automatically_resumed(
     real_agent_chat, action, expected
 ):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.agent.execution.test_agent_continuation_real import _command
     from tests.component.providers.scripted_provider import ScriptedText
 
@@ -302,7 +302,7 @@ def test_explicit_user_control_is_not_automatically_resumed(
 
 
 def test_an_interrupted_tool_is_not_run_again(real_agent_chat):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import ScriptedToolCall
 
     h = real_agent_chat
@@ -324,7 +324,7 @@ def test_an_interrupted_tool_is_not_run_again(real_agent_chat):
 
 
 def test_disabled_restart_window_does_not_request_pause(real_agent_chat, monkeypatch):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,
@@ -354,7 +354,7 @@ def test_disabled_restart_window_does_not_request_pause(real_agent_chat, monkeyp
 
 
 def test_second_interruption_before_first_new_effect(real_agent_chat):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,
@@ -404,7 +404,7 @@ def test_second_interruption_before_first_new_effect(real_agent_chat):
 
 
 def test_shutdown_pause_race_with_completed_action(real_agent_chat, monkeypatch):
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,
@@ -467,7 +467,7 @@ def test_restart_resume_skips_stuck_turns_and_yields_to_newer_ones(
     """A turn stuck awaiting reconciliation does not hold the conversation, but a
     turn the user started after the interruption means they moved on."""
     from contextlib import closing
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from tests.component.providers.scripted_provider import (
         ScriptedToolCall,
         ScriptedText,

@@ -1,48 +1,25 @@
-"""REST + SSE routes for auth v2.
+"""REST + SSE routes for credential diagnostics, adoption and live events.
 
-Responsibilities:
+  * ``POST /doctor`` — the credential health report
+  * ``POST /adopt_all`` / ``POST /discover`` — sign-ins other CLIs hold on
+    this machine (Codex, Qwen, GitHub), adopted or only previewed
+  * ``GET /aliases`` — the provider alias table
+  * ``GET /events`` — :class:`AuthEvent` broadcasts as Server-Sent Events
 
-  * surface the list of accounts and pools so the Settings UI can render
-  * accept add/remove of credentials with uniform payload shapes (the UI
-    doesn't need to know CredentialKind internals — it submits a
-    ``type`` discriminator and we build the right dataclass)
-  * expose a *discover* endpoint that runs every registered source
-    without writing to the store, so the UI can show "we found Claude
-    Code / Codex / env var tokens — adopt them?" and let the user opt in
-    per credential
-  * stream :class:`AuthEvent` broadcasts via Server-Sent Events so the UI
-    can render "token refreshed", "re-login required" toasts in
-    real-time
-
-All secret material is masked on read (``sk-abc…123`` style) — full
-secrets never leave the server unencrypted. The UI has no need for the
-raw value; API calls read through :mod:`auth.resolver`.
-
-A single ``APIRouter`` is exposed; :func:`create_app` in :mod:`server`
-does ``app.include_router(auth_router)``. Keeping the routes in their
-own module prevents ``server.py`` from growing past 3k lines and keeps
-the auth concerns testable against a minimal FastAPI instance.
+A provider's list itself is served by ``provider_credentials.py``
+(``/api/providers/{id}/credentials``). Secrets are masked on every read.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 
-from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-from openprogram.models.auth.account.accounts import get_account_manager
 from openprogram.models.auth.store import get_store
-from openprogram.models.auth.types import (
-    AuthConfigError,
-    AuthEvent,
-    Credential,
-    CredentialData,
-    CredentialPool,
-)
+from openprogram.models.auth.types import AuthEvent, Credential
 
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -89,9 +66,9 @@ def _payload_preview(cred: Credential) -> dict[str, Any]:
             "has_refresh_token": bool(payload.data.get("refresh_token")),
             "expires_at_ms": payload.data.get("expires_at_ms", 0),
         }
-    if payload.kind == "cli_delegated":
+    if payload.kind == "import":
         return {
-            "type": "cli_delegated",
+            "type": "import",
             "store_path": payload.data.get("store_path"),
             "access_key_path": payload.data.get("access_key_path"),
         }
@@ -108,243 +85,16 @@ def _payload_preview(cred: Credential) -> dict[str, Any]:
 
 def _credential_view(cred: Credential) -> dict[str, Any]:
     return {
-        "credential_id": cred.credential_id,
+        "id": cred.id,
         "kind": cred.kind,
         "provider_id": cred.provider_id,
-        "account_id": cred.account_id,
+        "label": cred.display_label(),
+        "identity": dict(cred.identity),
         "status": cred.status,
         "source": cred.source,
-        "metadata": cred.metadata,
-        "created_at_ms": cred.created_at_ms,
-        "updated_at_ms": cred.updated_at_ms,
-        "cooldown_until_ms": cred.cooldown_until_ms,
-        "last_used_at_ms": cred.last_used_at_ms,
-        "use_count": cred.use_count,
-        "last_error": cred.last_error,
         "read_only": cred.read_only,
         "payload": _payload_preview(cred),
     }
-
-
-def _pool_view(pool: CredentialPool) -> dict[str, Any]:
-    return {
-        "provider_id": pool.provider_id,
-        "account_id": pool.account_id,
-        "strategy": pool.strategy,
-        "fallback_chain": [list(t) for t in pool.fallback_chain],
-        "credentials": [_credential_view(c) for c in pool.credentials],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Request bodies
-# ---------------------------------------------------------------------------
-
-class CreateAccountBody(BaseModel):
-    name: str
-    display_name: str = ""
-    description: str = ""
-
-
-class AddCredentialBody(BaseModel):
-    """Uniform credential-creation shape.
-
-    ``type`` drives which payload we build. Validation of required
-    fields happens here so endpoints return a 400 with a clear message
-    rather than a 500 from the dataclass constructor."""
-
-    type: str = Field(..., description="api_key | oauth | credential_process")
-    api_key: Optional[str] = None
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    expires_at_ms: Optional[int] = None
-    client_id: Optional[str] = None
-    # credential_process: helper argv plus how to read its stdout. Defaults
-    # mirror CredentialProcessConfig so a command-only body still behaves.
-    command: Optional[list[str]] = None
-    parses: str = "json"
-    json_key_path: Optional[list[str]] = None
-    cache_seconds: int = 300
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Accounts
-# ---------------------------------------------------------------------------
-
-@router.get("/accounts")
-def list_accounts() -> dict[str, Any]:
-    pm = get_account_manager()
-    return {
-        "accounts": [
-            {
-                "name": p.name,
-                "display_name": p.display_name,
-                "description": p.description,
-                "created_at_ms": p.created_at_ms,
-                "root": str(p.root),
-            }
-            for p in pm.list_accounts()
-        ],
-        "default": DEFAULT_ACCOUNT_NAME,
-    }
-
-
-@router.post("/accounts")
-def create_account(body: CreateAccountBody) -> dict[str, Any]:
-    pm = get_account_manager()
-    try:
-        account = pm.create_account(
-            body.name,
-            display_name=body.display_name,
-            description=body.description,
-        )
-    except AuthConfigError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {
-        "name": account.name,
-        "display_name": account.display_name,
-        "description": account.description,
-        "root": str(account.root),
-    }
-
-
-@router.delete("/accounts/{name}")
-def delete_account(name: str) -> dict[str, Any]:
-    pm = get_account_manager()
-    try:
-        pm.delete_account(name)
-    except AuthConfigError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"deleted": name}
-
-
-# ---------------------------------------------------------------------------
-# Pools + credentials
-# ---------------------------------------------------------------------------
-
-@router.get("/pools")
-def list_pools(account: Optional[str] = None) -> dict[str, Any]:
-    """List pools, optionally filtered by account.
-
-    Returns masked previews — no raw secrets. Use this to drive the
-    Settings > Providers pane in the UI."""
-    store = get_store()
-    pools = store.list_pools()
-    if account:
-        pools = [p for p in pools if p.account_id == account]
-    return {"pools": [_pool_view(p) for p in pools]}
-
-
-@router.get("/pools/{provider_id}/{account_id}")
-def get_pool(provider_id: str, account_id: str) -> dict[str, Any]:
-    store = get_store()
-    pool = store.find_pool(provider_id, account_id)
-    if pool is None:
-        raise HTTPException(status_code=404, detail="pool not found")
-    return _pool_view(pool)
-
-
-@router.post("/pools/{provider_id}/{account_id}/credentials")
-def add_credential(
-    provider_id: str,
-    account_id: str,
-    body: AddCredentialBody,
-) -> dict[str, Any]:
-    store = get_store()
-    try:
-        cred = _build_credential(provider_id, account_id, body)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    store.add_credential(cred)
-    return _credential_view(cred)
-
-
-@router.delete("/pools/{provider_id}/{account_id}/credentials/{credential_id}")
-def remove_credential(
-    provider_id: str,
-    account_id: str,
-    credential_id: str,
-) -> dict[str, Any]:
-    store = get_store()
-    # Capture pre-state so we can tell 404 from no-op.
-    pool = store.find_pool(provider_id, account_id)
-    if pool is None or not any(c.credential_id == credential_id for c in pool.credentials):
-        raise HTTPException(status_code=404, detail="credential not found")
-    store.remove_credential(provider_id, account_id, credential_id)
-    return {"removed": credential_id}
-
-
-def _build_credential(
-    provider_id: str,
-    account_id: str,
-    body: AddCredentialBody,
-) -> Credential:
-    """Validate-and-construct a :class:`Credential` from a UI payload.
-
-    We accept only the types the UI can reasonably ask for directly —
-    ``api_key``, ``oauth``, ``credential_process``. ``cli_delegated``
-    comes from the discovery flow, not manual creation;
-    ``device_code`` / ``sso`` come from dedicated login flows."""
-    kind = body.type
-    if kind == "api_key":
-        if not body.api_key:
-            raise ValueError("api_key is required for type=api_key")
-        return Credential(
-            provider_id=provider_id,
-            account_id=account_id,
-            kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value=body.api_key.strip()),
-            source="webui_paste",
-            metadata=dict(body.metadata),
-        )
-    if kind == "oauth":
-        if not body.access_token:
-            raise ValueError("access_token is required for type=oauth")
-        return Credential(
-            provider_id=provider_id,
-            account_id=account_id,
-            kind="oauth",
-            payload=CredentialData(
-                kind="oauth",
-                auth_value=body.access_token.strip(),
-                data={
-                    "refresh_token": (body.refresh_token or "").strip(),
-                    "expires_at_ms": body.expires_at_ms or 0,
-                    "client_id": (body.client_id or "").strip(),
-                },
-            ),
-            source="webui_paste",
-            metadata=dict(body.metadata),
-        )
-    if kind == "credential_process":
-        if not body.command:
-            raise ValueError("command is required for type=credential_process")
-        if body.parses not in ("json", "text"):
-            raise ValueError("parses must be 'json' or 'text'")
-        return Credential(
-            provider_id=provider_id,
-            account_id=account_id,
-            kind="credential_process",
-            payload=CredentialData(
-                kind="credential_process",
-                data={
-                    "command": list(body.command),
-                    "parses": body.parses,
-                    "json_key_path": list(body.json_key_path or []),
-                    "cache_seconds": body.cache_seconds,
-                },
-            ),
-            source="webui_paste",
-            metadata=dict(body.metadata),
-        )
-    if kind == "sso":
-        raise ValueError(
-            "enterprise SSO is not implemented — kind='sso' credentials "
-            "cannot be created or used. Open an issue naming your IdP "
-            "(Okta / Azure AD / Auth0 / …) if you need it."
-        )
-    raise ValueError(f"unsupported type: {kind!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -364,17 +114,16 @@ def run_doctor_route() -> dict[str, Any]:
 
 
 @router.post("/adopt_all")
-def adopt_all_route(account: Optional[str] = None) -> dict[str, Any]:
+def adopt_all_route() -> dict[str, Any]:
     """Batch-adopt every credential discover() finds.
 
     Server-side equivalent of ``providers adopt --all``. Idempotent —
-    existing credentials (keyed by source label) are skipped. Returns a
+    a credential already held is skipped. Returns a
     structured report with per-adoption events so the UI can render a
     toast per success.
     """
     from openprogram.models.auth.adoption import run_adopt_all
-    target_account = account or DEFAULT_ACCOUNT_NAME
-    return run_adopt_all(target_account)
+    return run_adopt_all()
 
 
 @router.get("/aliases")
@@ -394,25 +143,10 @@ def discover_credentials() -> dict[str, Any]:
     the full lifecycle before the user commits. Writing discovered
     credentials into the store is a separate :func:`adopt` call — this
     endpoint is read-only."""
-    from openprogram.models.auth.sources import (
-        CodexCliSource,
-        EnvApiKeySource,
-        GhCliSource,
-        QwenCliSource,
-    )
-    from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
+    from openprogram.models.auth.adoption import _sources
 
-    pm = get_account_manager()
-    default_account = pm.get_account(DEFAULT_ACCOUNT_NAME)
-    account_root = default_account.root
-
-    sources = [
-        CodexCliSource(),
-        QwenCliSource(),
-        GhCliSource(),
-    ]
-    for provider_id, env_var in PROVIDER_ENV_VARS.items():
-        sources.append(EnvApiKeySource(provider_id=provider_id, env_var=env_var))
+    sources = _sources()
+    account_root = get_store().root
 
     found: list[dict[str, Any]] = []
     for src in sources:
@@ -464,7 +198,7 @@ def _wire_store_listener() -> None:
     Idempotent: runs once per process even if :func:`create_app` is
     called multiple times (as in tests). The listener uses
     ``call_soon_threadsafe`` because stores emit from whichever thread
-    called :meth:`put_pool` / :meth:`add_credential` — that's often a
+    called :meth:`put` / :meth:`add_credential` — that's often a
     threadpool worker rather than the SSE endpoint's loop.
     """
     global _wired
@@ -511,7 +245,6 @@ def _event_to_json(event: AuthEvent) -> str:
     return json.dumps({
         "type": event.type.value,
         "provider_id": event.provider_id,
-        "account_id": event.account_id,
         "credential_id": event.credential_id,
         "detail": event.detail,
         "timestamp_ms": event.timestamp_ms,

@@ -79,7 +79,7 @@
 <tr><th scope="row">Row while streaming</th><td><code translate="no">stream_tap</code> reads its blocks. The separator is part of the appended <code translate="no">output_tail</code>, so the log only adds to the text and a cold fold equals the live row.</td></tr>
 <tr><th scope="row">Clients that add up deltas</th><td>The text frame that opens a passage carries <code translate="no">separator</code>; <code translate="no">stream_text</code> puts it before the delta. The page, channels, the OpenAI-compatible stream, <code translate="no">--print</code> partial messages and ACP use it.</td></tr>
 <tr><th scope="row">Transcript rows</th><td>A row with no <code translate="no">content</code>, and a failed row, read <code translate="no">reply_text</code> of its blocks.</td></tr>
-<tr><th scope="row">Next model request</th><td>The blocks, one response at a time (<code translate="no">context/render.py</code>). The separator is in no block, so the provider is sent what it wrote.</td></tr>
+<tr><th scope="row">Next model request</th><td>The blocks, one response at a time (<code translate="no">context/session_dag/render.py</code>). The separator is in no block, so the provider is sent what it wrote.</td></tr>
 </tbody>
 </table>
 

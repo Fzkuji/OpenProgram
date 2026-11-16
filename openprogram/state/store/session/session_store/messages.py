@@ -34,8 +34,8 @@ class MessagesOperations:
         ``write_history`` (so the stamp lands in the persisted node).
         """
         try:
-            from .. import spill as _spill
-            from ..spill import spill_if_large, large_dir_for
+            from ..files import spill as _spill
+            from ..files.spill import spill_if_large, large_dir_for
             text = node.output
             # Cheap guard first: the overwhelming majority of nodes are
             # small, and this runs on every single append. Without it

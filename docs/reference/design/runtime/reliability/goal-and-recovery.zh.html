@@ -236,7 +236,7 @@
 <thead><tr><th scope="col">转换</th><th scope="col">用户看到</th><th scope="col">执行</th></tr></thead>
 <tbody>
 <tr><th scope="row">运行中 → 重启 → 恢复中或排队</th><td>无需点恢复；障碍显示原因、操作和重试。恢复按钮只用于用户暂停的工作。</td><td>每个工作项一个轮次；不盲目重发</td></tr>
-<tr><th scope="row">Todo 5/5 → verifying</th><td>“5/5 · 验收中”，不是“完成”</td><td>验收后才显示“Goal 已完成”</td></tr>
+<tr><th scope="row">步骤 5/5 → 验收中</th><td>“5/5 · 验收中”，不是“完成”</td><td>验收后才显示“Goal 已完成”</td></tr>
 <tr><th scope="row"><code translate="no">active</code> → 暂停</th><td>自动续跑停止；“仍在停止”单独显示</td><td>阻止准入，取消当前运行，不撤销任何内容</td></tr>
 <tr><th scope="row">未完成 → 结束 → <code translate="no">cancelled</code></th><td>“Goal 已结束”，并显示遗留进程或未知项</td><td>无需对账；旧运行不再触发续跑</td></tr>
 <tr><th scope="row">待处理操作 → 检查、查询、确认</th><td>确切调用、输入摘要、时间、可用检查</td><td>有风险的重试需当前用户授权；模型和页面内容不能代答</td></tr>
@@ -303,9 +303,9 @@
 <table class="stack">
 <thead><tr><th scope="col"><code translate="no">openprogram/</code> 下</th><th scope="col">行为</th><th scope="col">边界</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">runtime/execution/startup.py</code>、<code translate="no">control/recovery.py</code></th><td>所有者检查、规范和等待回执恢复、投影重投</td><td>未确认副作用可使执行进入 <code translate="no">reconciliation_required</code>；操作对账与会话能否继续分开</td></tr>
-<tr><th scope="row"><code translate="no">runtime/execution/restart.py</code></th><td>暂停意图、去重命令、资源准入。只有同一会话的存活轮次才会阻止续跑。之后开始的轮次取代它（定时任务的运行除外，它在自己的分支上）：意图以 <code translate="no">superseded</code> 结算，执行保持暂停，等待显式继续。</td><td>不过期不等于授权重放未解决副作用</td></tr>
-<tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code>、<code translate="no">runtime/execution/dag.py</code></th><td>Goal 不因停机或投影修复而暂停。完成通知在执行结束前持久化。</td><td>没有来源记录的旧记录保留显式恢复</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/recovery/startup.py</code>、<code translate="no">control/recovery.py</code></th><td>所有者检查、规范和等待回执恢复、投影重投</td><td>未确认副作用可使执行进入 <code translate="no">reconciliation_required</code>；操作对账与会话能否继续分开</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/recovery/restart.py</code></th><td>暂停意图、去重命令、资源准入。只有同一会话的存活轮次才会阻止续跑。之后开始的轮次取代它（定时任务的运行除外，它在自己的分支上）：意图以 <code translate="no">superseded</code> 结算，执行保持暂停，等待显式继续。</td><td>不过期不等于授权重放未解决副作用</td></tr>
+<tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code>、<code translate="no">runtime/execution/projections/dag.py</code></th><td>Goal 不因停机或投影修复而暂停。完成通知在执行结束前持久化。</td><td>没有来源记录的旧记录保留显式恢复</td></tr>
 <tr><th scope="row"><code translate="no">runtime/jobs/runner/recovery.py</code>、<code translate="no">execution/control/waits.py</code></th><td>Job 恢复、延迟收件箱、持久答案、去重续跑</td><td>保存的 Job 不等于已恢复的子 Agent；部分聊天重启路径不含 spawn 和 merge</td></tr>
 <tr><th scope="row"><code translate="no">runtime/execution/waits.py</code></th><td>持久等待；生产者消失时取消实时等待</td><td>保留过期问题并重新确认</td></tr>
 <tr><th scope="row"><code translate="no">models/usage/context.py</code>、<code translate="no">event.py</code></th><td>归属和账本</td><td>归属和键在请求前固定；缺失不等于零</td></tr>

@@ -1,6 +1,6 @@
 // Rules of the transcript model, checked against the source. No scan has an
 // allowlist: code that breaks a rule fails the test. The server's rules live in
-// tests/unit/webui/test_transcript_contracts.py.
+// tests/unit/webui/transcript/test_transcript_contracts.py.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";

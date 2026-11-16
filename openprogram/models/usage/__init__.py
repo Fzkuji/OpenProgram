@@ -9,7 +9,7 @@ Public API:
   register_usage_hook(fn)         subscribe to events (budget/alerting)
   prefix_fingerprint.expect_break announce a prompt-cache break made on purpose
 
-See docs/design/usage-metering.md.
+See docs/reference/design/providers/usage-metering.html.
 """
 from __future__ import annotations
 

@@ -24,9 +24,9 @@ from openprogram.models.providers.types import (
     ToolCall,
     UserMessage,
 )
-from openprogram.models.providers.utils.errors import ExecInterrupt
-from openprogram.models.providers.utils.event_stream import EventStream
-from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+from openprogram.models.providers.utils.streams.event_stream import EventStream
+from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
 
 
 REPEATED_SEGMENT = (

@@ -1,6 +1,6 @@
 """A provider's own stated refusal is one warning line; anything else keeps its traceback."""
 
-from openprogram.models.providers.utils.errors import (
+from openprogram.models.providers.utils.failures.errors import (
     ErrorReason,
     LLMError,
     failure_cause,

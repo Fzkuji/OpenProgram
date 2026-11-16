@@ -131,6 +131,7 @@
 <li>Streaming, completed and restored messages use the same <code translate="no">ExecutionStrip</code>, <code translate="no">ThinkingStep</code> and <code translate="no">FunctionStep</code>; completion never switches to a boxed table.</li>
 <li>Without ordered blocks, stored thinking and tool records are shown in stored order. Missing interleaving is not reconstructed and no tool record is invented. Results, errors, identifiers and full-output references stay.</li>
 <li>Functions started by an Agent reply belong only to that reply's timeline. Only user-invoked functions are independent runtime messages.</li>
+<li>Work the agent named with a task is drawn as a <a href="task-blocks.html">task block</a>: its steps one indent in, and under a step the reader opens the same step rows, one indent further. A reply that names no task is unchanged.</li>
 </ul>
 
 <h2 id="manual-function-runs">Manual function runs</h2>
@@ -320,7 +321,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Scope</th><th scope="col">Location</th><th scope="col">Excluded</th></tr></thead>
 <tbody>
-<tr><th scope="row">Mutations and recovery</th><td><code translate="no">programs/tools/files/</code>, <code translate="no">state/store/snapshot/checkpoint/</code>, turn finalize, <code translate="no">runtime/conversation/revert.py</code></td><td>Bash directory watchers, changing user Git, inferring a turn from disk</td></tr>
+<tr><th scope="row">Mutations and recovery</th><td><code translate="no">programs/tools/files/</code>, <code translate="no">state/store/snapshot/checkpoint/</code>, turn finalize, <code translate="no">runtime/conversation/rewinds/revert.py</code></td><td>Bash directory watchers, changing user Git, inferring a turn from disk</td></tr>
 <tr><th scope="row">Review protocol</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>, message metadata, Git helpers</td><td>Unbounded strings, approximate fallback</td></tr>
 <tr><th scope="row">Review tab</th><td><code translate="no">center-tab-ids.ts</code>, <code translate="no">center-tabs-store.ts</code>, <code translate="no">center-tab-groups.ts</code>, <code translate="no">components/center-tabs/review/</code></td><td>New windows, modals, a third pane</td></tr>
 <tr><th scope="row">Chat card</th><td><code translate="no">turn-files-chips.tsx</code>, <code translate="no">turn-files-card.css</code></td><td>Inline diff, file-row arrows, hover action groups</td></tr>

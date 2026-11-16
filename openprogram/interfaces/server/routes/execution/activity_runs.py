@@ -1,6 +1,8 @@
 """Read-only run listing and per-run events for Activity's second level."""
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -13,7 +15,7 @@ _NO_STORE = {"Cache-Control": "no-store"}
 
 def _may_read(request: Request, session_id: str) -> bool:
     from openprogram.runtime.execution.authorization import ExecutionAuthorizationError, authorize_session_action
-    from openprogram.runtime.execution.public import project_id_for_session
+    from openprogram.runtime.execution.projections.public import project_id_for_session
 
     actor, bound_session = lifecycle._actor_and_session(request)
     if bound_session is not None and bound_session != session_id:
@@ -28,9 +30,9 @@ def _may_read(request: Request, session_id: str) -> bool:
 
 
 def _execution_reads(store, session_id: str):
-    from openprogram.runtime.execution.activity_runs import ExecutionReads, RunExecution
+    from openprogram.runtime.execution.projections.activity_runs import ExecutionReads, RunExecution
     from openprogram.runtime.execution.attempts import AttemptStore
-    from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
+    from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
 
     anchors = {item.execution_id: item for item in store.list_inputs_for_session(session_id)}
     executions = []
@@ -75,7 +77,7 @@ def _chart_page(session_id: str, reads, head: str | None, offset: int, limit: in
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.conversation import topics
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.activity_runs import ChartReads, asks_on_branch, list_runs
+    from openprogram.runtime.execution.projections.activity_runs import ChartReads, asks_on_branch, list_runs
 
     database = default_db()
 
@@ -109,7 +111,7 @@ def register(app) -> None:
     ):
         from openprogram.runtime.context.session_db import default_db
         from openprogram.runtime.execution import default_store
-        from openprogram.runtime.execution.activity_runs import list_runs, list_task_runs
+        from openprogram.runtime.execution.projections.activity_runs import list_runs, list_task_runs
 
         if not _may_read(request, session_id):
             return JSONResponse(_NOT_FOUND, status_code=404)
@@ -135,6 +137,26 @@ def register(app) -> None:
             return JSONResponse(_NOT_FOUND, status_code=404)
         return JSONResponse(page, headers=_NO_STORE)
 
+    @app.get("/api/session/{session_id}/activity/tasks/{task_id}")
+    def activity_task(session_id: str, task_id: str, request: Request, filter: str = "all",
+                      offset: int = 0, limit: int = 20):
+        """One scheduled task's runs for its page: how many, how many did not
+        finish or told the reader, the last 24 outcomes, what they cost, and a
+        page of runs newest first (``filter``: all, unfinished, notified)."""
+        from openprogram.runtime.scheduler import service, task_activity
+
+        from .conversation_work import task_belongs_to_session
+
+        if not _may_read(request, session_id):
+            return JSONResponse(_NOT_FOUND, status_code=404)
+        task = next((item for item in service.list_tasks() if str(item.get("id")) == task_id), None)
+        if task is None or not task_belongs_to_session(task, session_id) or filter not in task_activity.FILTERS:
+            return JSONResponse(_NOT_FOUND, status_code=404)
+        runs = task_activity.read_runs(session_id).get(task_id, [])
+        body = task_activity.page(runs, kind=filter, offset=max(offset, 0), limit=max(1, min(limit, MAX_PAGE)),
+                                  costs=task_activity.read_costs(session_id) if runs else {})
+        return JSONResponse({"task_id": task_id, **body}, headers=_NO_STORE)
+
     @app.get("/api/session/{session_id}/activity/roster")
     def activity_roster(session_id: str, request: Request):
         """What the overview's Agents rows add to the executions: each
@@ -150,17 +172,15 @@ def register(app) -> None:
         facts = hooks.registered("agent_roster_facts")
         body = {"agents": {}, "outgoing": []}
         if facts is not None:
-            try:
+            with contextlib.suppress(Exception):  # noqa: BLE001 - the rows still show without their facts
                 body = facts.roster(session_id, _conversation_jobs(default_store(), session_id))
-            except Exception:  # noqa: BLE001 - the rows still show without their facts
-                pass
         return JSONResponse(body, headers=_NO_STORE)
 
     @app.get("/api/session/{session_id}/activity/runs/{run_id}/events")
     def activity_run_events(session_id: str, run_id: str, request: Request):
         from openprogram.runtime.context.session_db import default_db
         from openprogram.runtime.execution import default_store
-        from openprogram.runtime.execution.activity_runs import run_events
+        from openprogram.runtime.execution.projections.activity_runs import run_events
 
         if not _may_read(request, session_id):
             return JSONResponse(_NOT_FOUND, status_code=404)

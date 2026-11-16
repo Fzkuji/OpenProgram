@@ -204,35 +204,16 @@ def test_delete_custom_provider_no_broadcast_on_failure(providers_client, monkey
     assert not any(f.get("type") == "agent_settings_changed" for f in frames)
 
 
-# ---- 6. custom-provider accounts add_mode=api_key -----------------------
+# ---- 6. a custom provider takes a pasted key ---------------------------
 
-def test_custom_provider_api_key_env_synthesized(monkeypatch):
-    """_api_key_env returns a non-empty synthesized env for a custom
-    provider (env_vars_for gives nothing), so _generic_summary flips
-    add_mode to api_key and the web form shows the key-paste box."""
-    from openprogram.interfaces.server.routes.identity import accounts as _acc
+def test_a_custom_provider_offers_the_key_paste_box(monkeypatch):
+    """A provider with no entry of its own (a custom one) is connected with
+    an API key, so the web's add form shows the key-paste box."""
+    from openprogram.models.auth.login.login_method_registry import default_method, login_method_payload
 
-    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.env_vars_for",
-                        lambda p: [])
     monkeypatch.setattr(
         "openprogram.models.providers.settings.storage._is_custom_provider",
         lambda p: True,
     )
-    monkeypatch.setattr(
-        "openprogram.models.providers.catalog.metadata.synthesized_env_var",
-        lambda p: "OPENPROGRAM_CUSTOM_MINE_KEY",
-    )
-    env = _acc._api_key_env("mine")
-    assert env == "OPENPROGRAM_CUSTOM_MINE_KEY"
-    assert env != ""
-
-
-def test_non_custom_provider_no_synthesized_env(monkeypatch):
-    from openprogram.interfaces.server.routes.identity import accounts as _acc
-    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.env_vars_for",
-                        lambda p: [])
-    monkeypatch.setattr(
-        "openprogram.models.providers.settings.storage._is_custom_provider",
-        lambda p: False,
-    )
-    assert _acc._api_key_env("some-builtin") == ""
+    assert default_method("mine") == "api_key"
+    assert [m["id"] for m in login_method_payload("mine")] == ["api_key"]

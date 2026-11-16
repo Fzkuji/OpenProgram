@@ -8,7 +8,7 @@ from openprogram.runtime.agent.runtime.shared import (
     _current_call_model, _current_effort, _current_loop_opts,
     _current_tool_policy, _current_tools,
 )
-from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
 
 
 def test_async_request_options_are_bound_and_restored():

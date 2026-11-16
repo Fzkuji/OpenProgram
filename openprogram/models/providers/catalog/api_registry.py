@@ -47,7 +47,7 @@ class ApiProviderSnapshot:
     supports_idempotency_key: bool = False
     # The adapter adds the provider's own server-side web search tool when a
     # request sets ``web_search=True`` (see
-    # docs/reference/design/providers/web-search.html). Keyword-only so
+    # docs/reference/design/providers/requests/web-search.html). Keyword-only so
     # positional constructions elsewhere keep working.
     supports_web_search: bool = field(default=False, kw_only=True)
 

@@ -61,13 +61,14 @@ function wsSend(payload: unknown): void {
 
 /** 高度过渡容器：grid 0fr↔1fr 动画，展开向下推、收起平滑抽走。
  *  关闭动画结束后卸载子树，折叠状态不付渲染成本。 */
-function Collapse({ open, restored, children }: {
+export function Collapse({ open, children }: {
   open: boolean;
-  /** Opened earlier and mounting again: it appears open, with no animation. */
-  restored?: boolean;
   children: React.ReactNode;
 }) {
-  const [shown, setShown] = useState(!!restored && open);
+  // Mounted open, it is drawn open: the transition plays for a change of
+  // `open`, not each time the row mounts (a conversation opened again, a
+  // recycled row scrolled back), where it would grow the row after layout.
+  const [shown, setShown] = useState(open);
   const [mounted, setMounted] = useState(open);
   useEffect(() => {
     if (open) {
@@ -165,7 +166,7 @@ export function ExecutionStrip({
         ) : null}
         <ChevronRight className="tl-chev" size={14} aria-hidden="true" />
       </button>
-      <Collapse open={open} restored={chosen === true}>
+      <Collapse open={open}>
         <div className="tl-body">{children}</div>
         {after}
       </Collapse>
@@ -393,12 +394,12 @@ export function StepRow({
         </span>
       </div>
       {inlineBody ? (
-        <Collapse open={expanded} restored={chosen === true}>
+        <Collapse open={expanded}>
           <div className="tl-step-body">{inlineBody}</div>
         </Collapse>
       ) : null}
       {subSteps ? (
-        <Collapse open={kidsOpen} restored={chosen === true}>
+        <Collapse open={kidsOpen}>
           <div className="tl-sub">{subSteps}</div>
         </Collapse>
       ) : null}
@@ -459,7 +460,9 @@ function parseParams(input?: string): Record<string, unknown> | undefined {
   try {
     const v = JSON.parse(input);
     if (v && typeof v === "object" && !Array.isArray(v)) {
-      return v as Record<string, unknown>;
+      // The runtime's task progress, not the tool's own argument.
+      const { task_progress: _progress, ...params } = v as Record<string, unknown>;
+      return params;
     }
     return { input: v };
   } catch {

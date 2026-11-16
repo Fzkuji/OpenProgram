@@ -23,12 +23,12 @@ from .model import (
     RunRecord,
 )
 from .attempts import AttemptRecord, AttemptStatus, AttemptStore
-from .checkpoints import (
+from .recovery.checkpoints import (
     CheckpointFragment,
     CheckpointManifest,
     ExecutionCheckpointStore,
 )
-from .effects import (
+from .recovery.effects import (
     EffectClassification,
     EffectRecord,
     EffectStatus,
@@ -63,8 +63,8 @@ from .event_effects import (
     stop_event_effects,
     wake_event_effects,
 )
-from .startup import StartupRecoveryResult, recover_execution_startup
-from .resource_saga import ResourceSaga, recover_resource_saga
+from .recovery.startup import StartupRecoveryResult, recover_execution_startup
+from .recovery.resource_saga import ResourceSaga, recover_resource_saga
 from .revisions import (
     RevisionApproval,
     RevisionArtifact,

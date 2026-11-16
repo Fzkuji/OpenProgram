@@ -57,7 +57,7 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, e
         _wait(lambda: h.store.get_execution(ex.execution_id).status.value == "paused")
         h.tools.implementation_variant = "changed"
         updates.transition("su_test", UpdatePhase.ABORTED)
-        from openprogram.runtime.execution import restart as policy
+        from openprogram.runtime.execution.recovery import restart as policy
         monkeypatch.setattr(policy, "window_seconds", lambda: 7200)
         stopped = updates.load("su_test").state.updated_at
         monkeypatch.setattr(policy, "time", lambda: stopped + elapsed)

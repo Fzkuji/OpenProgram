@@ -203,7 +203,7 @@ def _load_cache():
 
 
 def _save_cache():
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     try:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(_CACHE_FILE, json.dumps({'version': 1, 'samples': list(_CACHE.items())}))

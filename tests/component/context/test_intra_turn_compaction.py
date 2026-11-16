@@ -8,7 +8,7 @@ import pytest
 from openprogram.runtime.agent.loop import agent_loop
 from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
 from openprogram.models.providers.types import AgentTool, AgentToolResult
-from openprogram.runtime.context.tokens import estimate_history_tokens
+from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
 from openprogram.models.providers.types import (
     AssistantMessage,
     EventDone,
@@ -158,7 +158,7 @@ def test_one_user_message_multiple_tool_rounds(monkeypatch):
     # The turn keeps each result as the model read it: the payload bounded to
     # its share of the window (measured by weight, not characters), never
     # the summary that replaced it in a later request.
-    from openprogram.state.store.session.spill import WINDOW_SHARE
+    from openprogram.state.store.session.files.spill import WINDOW_SHARE
     from openprogram.state.store.session.weight import weight
 
     kept = [m.content[0].text for m in raw if m.role == "toolResult"]
@@ -324,7 +324,7 @@ def test_fallback_resolves_its_own_default_output_cap(monkeypatch, requested, ex
         ),
     )
     monkeypatch.setattr(
-        "openprogram.models.providers.utils.failover.resolve_fallback_models",
+        "openprogram.models.providers.utils.failures.failover.resolve_fallback_models",
         lambda model: [fallback],
     )
     monkeypatch.setattr(
@@ -387,7 +387,7 @@ def test_fallback_rechecks_actual_model_window(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "openprogram.models.providers.utils.failover.resolve_fallback_models",
+        "openprogram.models.providers.utils.failures.failover.resolve_fallback_models",
         lambda model: [fallback],
     )
     import importlib

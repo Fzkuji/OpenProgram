@@ -22,7 +22,7 @@ from openprogram.models.providers.types import (
     ToolResultMessage,
     UserMessage,
 )
-from openprogram.models.providers.utils import body_cap, request_repair
+from openprogram.models.providers.utils.failures import body_cap, request_repair
 
 IMAGE = "A" * 100_000
 

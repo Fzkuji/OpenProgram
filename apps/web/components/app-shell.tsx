@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useRouter, usePathname } from "next/navigation";
@@ -130,8 +130,9 @@ const LONE_PANE = { left: "0px", top: "0px", width: "100%", height: "100%" };
  * non-split counterpart, and its existence is what lets the Composer drop
  * every "no scope → read the focused global slice" fallback. `__new__` stands
  * in before any chat exists — the same placeholder key the draft maps use.
+ * Memoized: a shell redraw (a tab or route change) is not a composer change.
  */
-function FocusedComposer() {
+const FocusedComposer = memo(function FocusedComposer() {
   const sid = useSessionStore(
     (s) => s.activeChatKey ?? s.currentSessionId ?? "__new__",
   );
@@ -140,7 +141,7 @@ function FocusedComposer() {
       <Composer />
     </SessionScopeProvider>
   );
-}
+});
 
 function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");

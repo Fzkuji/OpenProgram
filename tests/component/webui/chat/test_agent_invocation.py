@@ -114,7 +114,7 @@ def test_selected_saved_agent_controls_first_turn_not_global_defaults(invocation
 
 
 def test_trial_snapshot_survives_restart_and_cannot_rebind(invocation):
-    from openprogram.runtime.conversation.session_config import load_agent_session_binding
+    from openprogram.runtime.conversation.session_settings.session_config import load_agent_session_binding
     h = invocation
     before = h.manager.get('research').to_dict()
     draft = {'model': {'provider': 'openai', 'id': 'gpt-4o-mini'},
@@ -217,7 +217,7 @@ def test_trial_chat_reaches_provider_with_draft_prompt_model_and_no_tools(invoca
 
 
 def test_cleared_trial_cannot_be_converted_to_writable_saved_agent(invocation):
-    from openprogram.runtime.conversation.session_config import load_agent_session_binding
+    from openprogram.runtime.conversation.session_settings.session_config import load_agent_session_binding
     h = invocation
     h.send(agent_id='research', agent_trial=True, agent_config={'system_prompt': 'TRIAL'})
     # A cleared/reconstructed transcript must not erase its persistent mode.

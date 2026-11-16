@@ -150,7 +150,7 @@ def test_subagent_list_json_is_a_list_of_canonical_views(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
-    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_list
+    from openprogram.interfaces.cli.commands.conversations.subagent import _cmd_subagent_list
 
     assert _cmd_subagent_list("session-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == [_view()]
@@ -161,7 +161,7 @@ def test_subagent_show_json_is_the_canonical_view(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
-    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
+    from openprogram.interfaces.cli.commands.conversations.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == _view()
@@ -187,7 +187,7 @@ def test_execution_control_sends_canonical_command_and_cursor(
             "event_cursor": canonical["event_cursor"],
         }
 
-    from openprogram.interfaces.cli.commands import execution
+    from openprogram.interfaces.cli.commands.conversations import execution
 
     monkeypatch.setattr(execution, "_worker_request", worker_request)
     assert execution._cmd_execution_control(
@@ -218,7 +218,7 @@ def test_subagent_human_view_shows_canonical_resource_payload(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
-    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
+    from openprogram.interfaces.cli.commands.conversations.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     output = capsys.readouterr().out
@@ -242,7 +242,7 @@ def test_subagent_human_view_treats_missing_resource_as_unmetered(
 
     runner = LegacyRunner(_view())
     monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
-    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
+    from openprogram.interfaces.cli.commands.conversations.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     assert "Resource state: untracked" in capsys.readouterr().out

@@ -76,7 +76,7 @@ class _TypingIndicator:
         self._started = False
 
     def start(self) -> None:
-        from openprogram.interfaces.channels._transport import TYPING_REFRESH_SECONDS
+        from openprogram.interfaces.channels.delivery._transport import TYPING_REFRESH_SECONDS
         interval = TYPING_REFRESH_SECONDS.get(self.platform)
         if not interval:
             return
@@ -86,7 +86,7 @@ class _TypingIndicator:
         self._thread.start()
 
     def _run(self, interval: float) -> None:
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         where = {"thread_id": self.thread_id} if self.thread_id else {}
         while not self._stop.is_set():
             try:
@@ -106,7 +106,7 @@ class _TypingIndicator:
         if self._thread is not None:
             self._thread.join(timeout=5)
         if self._started:
-            from openprogram.interfaces.channels import _transport
+            from openprogram.interfaces.channels.delivery import _transport
             try:
                 _transport.stop_typing(self.platform, self.account_id, self.target)
             except Exception:  # noqa: BLE001
@@ -292,7 +292,7 @@ class Channel(abc.ABC):
         排队号在这里、adapter 的收消息顺序上领, 线程起来之后再领就晚了.
         命令 (/answer 等) 不排队: 一轮停在提问上时前面的消息都在等它.
         """
-        from openprogram.interfaces.channels import _room
+        from openprogram.interfaces.channels.inbound import _room
 
         ticket = None
         if not _room.command_verb(ch_msg.text):
@@ -318,7 +318,7 @@ class Channel(abc.ABC):
                 ticket.leave()
 
     def _dispatch_and_reply(self, ch_msg, ticket=None) -> None:
-        from openprogram.interfaces.channels import _room
+        from openprogram.interfaces.channels.inbound import _room
 
         peer_id = self.peer_id_for(ch_msg)
         snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
@@ -337,7 +337,7 @@ class Channel(abc.ABC):
         # 配对确认只能走本机 CLI/webui (_access 模块 docstring), 这里
         # 只可能发配对码回执, 绝不放行. 群里不配对: 不在名单上的人什么
         # 反应都没有 (id 记进日志, 主人要加人时能查到).
-        from openprogram.interfaces.channels import _access
+        from openprogram.interfaces.channels.inbound import _access
         stable_sender_id = ch_msg.user_id or (
             ch_msg.chat_id if ch_msg.is_dm else ""
         )
@@ -410,7 +410,7 @@ class Channel(abc.ABC):
         user_text = ch_msg.text
         turn_attachments: list[dict] = []
         if ch_msg.attachments:
-            from openprogram.interfaces.channels import _attachments
+            from openprogram.interfaces.channels.inbound import _attachments
             failed: list[dict] = []
             saved = _attachments.download_inbound(
                 self.platform_id, self.account_id, ch_msg.attachments,
@@ -445,7 +445,7 @@ class Channel(abc.ABC):
 
         if not verb and not ambient:
             self._ack(ch_msg)
-        from openprogram.interfaces.channels._conversation import dispatch_inbound
+        from openprogram.interfaces.channels.inbound._conversation import dispatch_inbound
         typing = _TypingIndicator(self.platform_id, self.account_id, peer_id,
                                   ch_msg.thread_id or "")
         if not verb and not ambient:
@@ -492,17 +492,17 @@ class Channel(abc.ABC):
     def _room_command(self, verb: str, ch_msg, peer_id: str,
                       room_key: tuple[str, str, str], in_room: bool) -> str:
         """/new · /reset · /activation · /memory · /stop · /help — 回执文本."""
-        from openprogram.interfaces.channels import _room
+        from openprogram.interfaces.channels.inbound import _room
         if verb == "/help":
             return _room.HELP_TEXT
         if verb == "/stop":
-            from openprogram.interfaces.channels._conversation import stop_current_work
+            from openprogram.interfaces.channels.inbound._conversation import stop_current_work
             return stop_current_work(
                 channel=self.platform_id, account_id=self.account_id,
                 peer_kind=ch_msg.chat_type, peer_id=peer_id,
             )
         if verb in ("/new", "/reset"):
-            from openprogram.interfaces.channels._conversation import (
+            from openprogram.interfaces.channels.inbound._conversation import (
                 BUSY_REPLY, start_new_conversation,
             )
             receipt = start_new_conversation(
@@ -535,7 +535,7 @@ class Channel(abc.ABC):
 
     def _memory_command(self, chat_id: str, arg: str) -> str:
         """/memory on|read|off — 这个群的轮次能否读写主人的记忆."""
-        from openprogram.interfaces.channels import _room
+        from openprogram.interfaces.channels.inbound import _room
         labels = {"on": "按 agent 的记忆设置读写",
                   "read": "只读记忆，不写入",
                   "off": "不读也不写记忆"}
@@ -552,7 +552,7 @@ class Channel(abc.ABC):
         """账号开了 ``ack_reaction`` 时给接手的消息加一个 👀."""
         if not ch_msg.message_id:
             return
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         from openprogram.interfaces.channels.accounts import get_settings
         if get_settings(self.platform_id, self.account_id).get(
                 "ack_reaction", "off") != "on":
@@ -594,7 +594,7 @@ class Channel(abc.ABC):
                        thread_id: Optional[str] = None):
         """跟 :meth:`send_text` 一样但返回完整 :class:`SendResult`.
         ``thread_id`` 发进 thread (见 :func:`._transport.post_message`)."""
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         if thread_id:
             return _transport.post_message(
                 self.platform_id, self.account_id, target, text,
@@ -618,7 +618,7 @@ class Channel(abc.ABC):
         走 :func:`._transport.post_file`. 平台不支持时返回
         ``not_supported`` — 调用方自行降级 (e.g. 改发带路径的文本).
         """
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         if thread_id:
             return _transport.post_file(
                 self.platform_id, self.account_id, target, path, caption,
@@ -642,7 +642,7 @@ class Channel(abc.ABC):
 
     def edit_text_full(self, handle: MessageHandle, new_text: str):
         """跟 :meth:`edit_text` 一样但返回完整 :class:`SendResult`."""
-        from openprogram.interfaces.channels._transport import SendResult
+        from openprogram.interfaces.channels.delivery._transport import SendResult
         if not handle.editable:
             return SendResult.fail(
                 "not_supported",
@@ -654,7 +654,7 @@ class Channel(abc.ABC):
                 f"cross-platform edit refused: handle.platform={handle.platform!r} "
                 f"vs adapter.platform_id={self.platform_id!r}",
             )
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         return _transport.patch_message(
             handle.platform, handle.account_id,
             handle.target, handle.message_id, new_text,

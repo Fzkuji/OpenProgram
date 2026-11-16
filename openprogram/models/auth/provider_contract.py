@@ -8,8 +8,7 @@ Four things every adapter does:
 
 1. Export a ``PROVIDER_ID`` string matching the registry key.
 2. Call :func:`register_provider_config` at import time so
-   :class:`CredentialProvider` knows about the provider (refresh fn, fallback
-   chain, cooldowns). The adapter chooses what to pass.
+   :class:`CredentialProvider` knows about the provider (refresh fn, view). The adapter chooses what to pass.
 3. Optionally provide an ``import_from_<source>`` function that reads
    an external credential store (the vendor CLI's auth.json, an env
    var, a keyring entry) and returns a :class:`Credential` the store
@@ -57,9 +56,7 @@ class ProviderAuthContract(Protocol):
 
     PROVIDER_ID: str
 
-    def import_from_external(
-        self, *, account_id: str = "default",
-    ) -> Optional[Credential]:
+    def import_from_external(self) -> Optional[Credential]:
         ...
 
 

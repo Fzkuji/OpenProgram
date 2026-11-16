@@ -101,7 +101,7 @@ def parent_turn(tmp_path, monkeypatch):
         return "task_fake"
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", fake_async)
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn_async", fake_async)
     s.async_calls = calls
 
     yield s

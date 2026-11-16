@@ -15,7 +15,7 @@ from openprogram.runtime.agent.call_state import _current_runtime
 @pytest.mark.parametrize("selection", ["override", "session", "snapshot", "profile"])
 def test_tool_runtime_uses_chat_model(tmp_path, monkeypatch, selection):
     from openprogram.runtime.conversation import turn_runtime as dispatcher
-    from openprogram.runtime.conversation import session_model
+    from openprogram.runtime.conversation.session_settings import session_model
     from openprogram.runtime.agent.runtime import factory as registry
 
     db = SessionDB(tmp_path / "sessions")
@@ -113,7 +113,7 @@ def selected_turn(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("OPENPROGRAM_CONFIG_DIR", str(tmp_path / ".openprogram"))
     from openprogram.runtime.conversation import turn_runtime as dispatcher
-    from openprogram.runtime.conversation import session_model
+    from openprogram.runtime.conversation.session_settings import session_model
     from openprogram.runtime.context.session_db import SessionDB
     from openprogram.runtime.agent.turn_request import TurnRequest
 
@@ -223,7 +223,7 @@ def test_gui_public_wrapper_propagates_selected_runtime_to_subprocess(
     selected = SimpleNamespace(provider_id="selected", model="selected:chat-model")
     monkeypatch.setattr(registry, "create_runtime", lambda **kw: selected)
     monkeypatch.setattr(
-        "openprogram.runtime.execution.dag.live_progress", lambda *_a, **_kw: nullcontext()
+        "openprogram.runtime.execution.projections.dag.live_progress", lambda *_a, **_kw: nullcontext()
     )
     monkeypatch.setattr(
         "openprogram.runtime.execution.default_store",

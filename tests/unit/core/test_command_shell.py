@@ -14,7 +14,7 @@ import pytest
 from openprogram.host._platform import command_shell
 from openprogram.host._platform.command_shell import ShellProfile
 from openprogram.host.backend import local
-from openprogram.runtime.context import components
+from openprogram.runtime.context.prompt_assembly import components
 
 POWERSHELL = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 PWSH = r"C:\Program Files\PowerShell\7\pwsh.exe"

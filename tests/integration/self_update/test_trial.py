@@ -34,7 +34,7 @@ def _seed_live_state(state: Path) -> None:
         "providers": {"openai": {"enabled": True, "api_key": SECRET}},
         "execution": {"auto_resume_window_seconds": -1},
     }), encoding="utf-8")
-    from openprogram.state.store.session.session_log import encode_record
+    from openprogram.state.store.session.files.session_log import encode_record
 
     chat = state / "projects" / "default" / "chats" / "seeded"
     chat.mkdir(parents=True)

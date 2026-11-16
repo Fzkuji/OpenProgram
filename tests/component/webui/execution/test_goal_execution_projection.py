@@ -6,7 +6,7 @@ import pytest
 
 from openprogram.state.store.session.nodes import Call, ROLE_CODE, ROLE_LLM
 from openprogram.state.store import SessionNodeWriter, SessionStore
-from openprogram.runtime.execution.dag import build_exec_dag_by_id
+from openprogram.runtime.execution.projections.dag import build_exec_dag_by_id
 
 
 @pytest.mark.parametrize("reply", ["验收完成", [{"type": "text", "text": "完成"}], ""])

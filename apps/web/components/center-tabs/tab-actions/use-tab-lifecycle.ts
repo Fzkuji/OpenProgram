@@ -28,6 +28,7 @@ import {
   dropDraftChannelChoice,
 } from "@/lib/runtime-bridge/actions/draft-channel-choice";
 import { pushPath } from "@/lib/nav/shallow-nav";
+import { navigate } from "@/lib/nav/navigate";
 import { cancelTabRouteNavigation, navigateTabRoute } from "@/lib/tabs/navigation/route";
 import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import { shortcutForKey, tabForShortcut, type TabShortcut } from "@/lib/tabs/navigation/tab-shortcuts";
@@ -274,22 +275,42 @@ export function useTabLifecycle({
     e.stopPropagation();
     cancelDrag();
     const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
-    if (!(await flushFileDocumentsBeforeClose(fileTabs))) {
-      showToast(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"), { tone: "error" });
-      return;
-    }
-    try {
-      const closing = new Set([...tabsToClose.map(tab => tab.id), ...closingInstances.current.keys()]);
-      const fileKey = (tab: CenterTab) => tab.kind === "file" && tab.path && (tab.projectId || tab.fileSessionId)
-        ? tab.readOnly ? `attachment:${tab.fileSessionId}:${tab.path}` : `project:${tab.projectId}:${tab.path}`
-        : null;
-      for (const tab of fileTabs) {
-        const key = fileKey(tab);
-        if (!key || useCenterTabs.getState().tabs.some(owner => !closing.has(owner.id) && fileKey(owner) === key)) continue;
-        const controller = documentControllers.get(key);
-        await controller?.close();
+    const closing = new Set([...tabsToClose.map(tab => tab.id), ...closingInstances.current.keys()]);
+    const fileKey = (tab: CenterTab) => tab.kind === "file" && tab.path && (tab.projectId || tab.fileSessionId)
+      ? tab.readOnly ? `attachment:${tab.fileSessionId}:${tab.path}` : `project:${tab.projectId}:${tab.path}`
+      : null;
+    // The documents only these tabs show; closing them releases the documents.
+    const owned = (key: string) => useCenterTabs.getState().tabs.some(owner => !closing.has(owner.id) && fileKey(owner) === key);
+    const released = fileTabs.flatMap((tab) => {
+      const key = fileKey(tab);
+      if (!key || owned(key)) return [];
+      const controller = documentControllers.get(key);
+      return controller ? [{ key, controller }] : [];
+    });
+    const release = async (background: boolean) => {
+      if (!(await flushFileDocumentsBeforeClose(fileTabs))) return false;
+      try {
+        for (const { key, controller } of released) {
+          // Reopened while the tab was going: the new tab keeps the document.
+          if (background && owned(key)) continue;
+          await controller.close();
+        }
+        return true;
+      } catch {
+        return false;
       }
-    } catch {
+    };
+    // Edits not yet saved, a native editor that may still hold input, or a
+    // project document whose state is not loaded (its draft may be unsaved)
+    // are saved before the tab goes, so a failed save keeps it open. Any
+    // other document is released after its tab has gone: the save, editor
+    // and network round trips never hold the close.
+    const unloaded = fileTabs.some((tab) => {
+      const key = fileKey(tab);
+      return Boolean(key && !tab.readOnly && !owned(key) && !documentControllers.has(key));
+    });
+    const saveFirst = unloaded || released.some(({ controller }) => !controller.canReplacePreview());
+    if (saveFirst && !(await release(false))) {
       showToast(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"), { tone: "error" });
       return;
     }
@@ -316,8 +337,8 @@ export function useTabLifecycle({
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
     // A pane closed out of a split that stays open has no exit in the strip
-    // (the split's tab stays as it is) and the canvas plays its close, so it
-    // goes at once: waiting for a strip animation left the click dead.
+    // (the split's tab stays as it is), so it goes at once, and the panes
+    // beside it take its room in the same frame.
     const { groups } = useCenterTabs.getState();
     const closingIds = new Set(ready.map(tab => tab.id));
     const leavesSplit = (tab: CenterTab) =>
@@ -330,6 +351,11 @@ export function useTabLifecycle({
       for (const tab of animated) next.add(tab.id);
       return next;
     });
+    if (!saveFirst && fileTabs.length) {
+      void release(true).then((saved) => {
+        if (!saved) showToast(text("Unable to save this document.", "无法保存此文件。"), { tone: "error" });
+      });
+    }
   }
 
   const onTabsCloseRef = useRef(onTabsClose);
@@ -391,7 +417,7 @@ export function useTabLifecycle({
       if (tab) onTabClickRef.current(tab);
     };
     window.addEventListener("op-activate-center-tab", onActivateTab);
-    // New chat and tab switching. The desktop App's menu accelerators send
+    // New chat, tab switching and Settings. The desktop App's menu accelerators send
     // them as op-tab-shortcut (they work while a web page has focus too); a
     // browser gets them from the keyboard where it lets the page have them.
     const runShortcut = (shortcut: TabShortcut) => {
@@ -401,6 +427,10 @@ export function useTabLifecycle({
       }
       if (shortcut.action === "reopen-tab") {
         reopenClosedTab();
+        return;
+      }
+      if (shortcut.action === "open-settings") {
+        navigate("/settings/general");
         return;
       }
       const id = tabForShortcut(useCenterTabs.getState(), shortcut);

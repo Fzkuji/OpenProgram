@@ -1724,10 +1724,9 @@ function registerWebTabIpc() {
     win.setPosition(Math.round(x + dx), Math.round(y + dy));
   });
   // A snapshot of one region of this window's own page, given in CSS pixels.
-  // Only a window's main page may ask, and only for itself. By default it is
-  // a small JPEG for the window overview; `full` keeps the display
-  // resolution, for a pane that animates out as a still image.
-  ipcMain.handle("window:capture-region", async (event, rect, options) => {
+  // Only a window's main page may ask, and only for itself. It is a small
+  // JPEG for the window overview.
+  ipcMain.handle("window:capture-region", async (event, rect) => {
     const ctx = contextForSender(event);
     if (!ctx || event.sender !== ctx.win.webContents) return null;
     const values = [rect?.x, rect?.y, rect?.width, rect?.height];
@@ -1741,7 +1740,6 @@ function registerWebTabIpc() {
         height: Math.round(rect.height * zoom),
       });
       if (!image || image.isEmpty()) return null;
-      if (options?.full === true) return `data:image/jpeg;base64,${image.toJPEG(92).toString("base64")}`;
       const width = Math.min(image.getSize().width, 720);
       return `data:image/jpeg;base64,${image.resize({ width, quality: "good" }).toJPEG(82).toString("base64")}`;
     } catch (_error) {
@@ -1881,12 +1879,14 @@ function goBackMenuItem() {
   return { label: "Go back to a previous version", click: () => void shellContext.openRecovery("menu") };
 }
 
-function applicationMenu() {
+function applicationMenu(settingsItem) {
   return {
     label: INSTANCE.name,
     submenu: [
       { role: "about", label: `About ${INSTANCE.name}` },
       ...(shellContext?.openRecovery ? [goBackMenuItem()] : []),
+      { type: "separator" },
+      settingsItem,
       { type: "separator" },
       { role: "services" },
       { type: "separator" },
@@ -1919,8 +1919,9 @@ function buildMenu() {
     accelerator: `CmdOrCtrl+${i + 1}`,
     click: shortcut({ action: "select-tab", index: i + 1 }),
   }));
+  const settingsItem = { label: isMac ? "Settings…" : "Settings", accelerator: "CmdOrCtrl+,", click: shortcut({ action: "open-settings" }) };
   const template = [
-    ...(isMac ? [applicationMenu()] : []),
+    ...(isMac ? [applicationMenu(settingsItem)] : []),
     {
       label: "File",
       submenu: [
@@ -1931,7 +1932,8 @@ function buildMenu() {
         { label: "Reopen Closed Tab", accelerator: "Shift+CmdOrCtrl+T", click: shortcut({ action: "reopen-tab" }) },
         { type: "separator" },
         { role: "close", accelerator: "Shift+CmdOrCtrl+W" },
-        // Windows and Linux have no application menu to put this in.
+        // Windows and Linux have no application menu: Settings sits here.
+        ...(!isMac ? [{ type: "separator" }, settingsItem] : []),
         ...(!isMac && shellContext?.openRecovery ? [{ type: "separator" }, goBackMenuItem()] : []),
       ],
     },

@@ -232,7 +232,7 @@ def test_each_branch_keeps_its_own_board_and_a_fork_starts_from_a_copy(board):
     assert shared.load("s", "main") == [{"id": "1", "content": "main task"}]
     assert shared.load("s", "fork2") == [{"id": "1", "content": "fork task"}]
     assert shared.load("s", "other") == []
-    assert json.loads(doc.text)["version"] == 3
+    assert json.loads(doc.text)["version"] == 4
 
 
 def test_an_older_single_board_is_the_selected_branchs(board):
@@ -258,7 +258,7 @@ def test_a_goal_saved_before_goals_had_a_branch_belongs_to_the_selected_one(monk
 # ---------------------------------------------------------------- headless fork
 
 def test_a_retry_or_edit_starts_a_sibling_branch_and_a_retry_without_reply_reruns():
-    from openprogram.runtime.conversation.branch_fork import ForkError, plan_fork
+    from openprogram.runtime.conversation.turn_admission.branch_fork import ForkError, plan_fork
     messages = [{"id": "u1", "role": "user", "content": "hi", "predecessor": None},
                 {"id": "a1", "role": "assistant", "predecessor": "u1"},
                 {"id": "u2", "role": "user", "content": "again", "predecessor": "a1"}]
@@ -308,8 +308,8 @@ def test_a_read_baseline_comes_from_the_branchs_own_history(monkeypatch, tmp_pat
 # ---------------------------------------------------------------- B1 drift
 
 def test_a_turn_runs_on_its_agents_model_as_it_is_now_and_finds_the_last_turns(monkeypatch):
-    from openprogram.runtime.conversation import branch_config as freeze
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import branch_config as freeze
+    from openprogram.runtime.conversation.session_settings import session_config
     monkeypatch.setattr(session_config, "_agent_settings", lambda agent: {"model": f"p/{agent}"})
     monkeypatch.setattr(session_config, "_global_settings", lambda _name: "p/global")
     assert freeze._effective_model({"model_override": "x/y"}, {"model_override": "request"}) == ("x/y", "branch")

@@ -3,7 +3,7 @@ import { isMacPlatform } from "@/lib/shortcut-keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Equal, FileText, Globe, LayoutGrid, Maximize2, MessageSquare, Minus, SquareDashed, Undo2, X, Save } from "lucide-react";
 import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
-import { captureCanvasTransition, prepareCanvasFold } from "@/lib/tabs/canvas/canvas-transition";
+import { captureCanvasTransition } from "@/lib/tabs/canvas/canvas-transition";
 import { findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { canvasCssGeometry, canvasGeometry, canvasViewport, leaves, presetLayout, insertPane, removePane, equalize, resizeSplit, snapResize, tilePane, mapNode, type CanvasLayout, type CanvasPreset, type CanvasTile, type LayoutNode } from "@/lib/tabs/canvas/canvas-layout";
 import { smallCanvasPanes, useCenterBodySize } from "@/lib/tabs/canvas/center-body-size";
@@ -129,16 +129,11 @@ export function CanvasControls({ layout, targetId }: { layout: CanvasLayout; tar
   const remember = () => rememberCanvas(historyKeys, layout);
   const focus = (paneId: string) => update({ ...layout, focusedPaneId: paneId });
   const zoom = (paneId: string) => { captureCanvasTransition(); update({ ...layout, focusedPaneId: paneId, zoomedPaneId: layout.zoomedPaneId === paneId ? undefined : paneId }); };
-  /** Take a pane off the canvas; its tab folds back up into the strip. */
+  /** Take a pane off the canvas; its tab goes back to the strip. Like a
+   *  window closing, it is gone in the click's frame and the panes beside
+   *  it take the room at once: no animation holds the change. */
   const close = (paneId: string) => {
-    const content = all.find(p => p.id === paneId)?.content;
-    const commit = () => {
-      captureCanvasTransition(content ? { [content]: "minimize" } : {});
-      remember(); update({ ...layout, zoomedPaneId: undefined, root: removePane(layout.root, paneId) });
-    };
-    // The fold draws a still of the pane, taken before it leaves the canvas.
-    const still = content ? prepareCanvasFold(content) : null;
-    if (still) void still.then(commit); else commit();
+    remember(); update({ ...layout, zoomedPaneId: undefined, root: removePane(layout.root, paneId) });
   };
   const split = (side: "right" | "bottom") => { remember(); const next = insertPane(layout.root, layout.focusedPaneId, side, null); update({ root: next.root, focusedPaneId: next.paneId }); };
   const tile = (paneId: string, to: CanvasTile | "fill") => {
@@ -176,13 +171,10 @@ export function CanvasControls({ layout, targetId }: { layout: CanvasLayout; tar
   const pin = () => { window.clearTimeout(hoverTimer.current); if (menu?.hover) setMenu({ ...menu, hover: false }); };
   /** Run a window button only for a real click: not the tail of a drag. */
   const pressed = (run: () => void) => (e: React.MouseEvent) => { const current = press.current; press.current = null; if (e.detail > 0 && current?.moved) return; run(); };
-  /** Red: close the tab itself, through the strip's own close (it saves files first). */
+  /** Red: close the tab itself, through the strip's own close. */
   const closeTab = (paneId: string, tabId: string | null) => {
     closeMenu();
     if (!tabId) { close(paneId); return; }
-    // The strip's close may ask to save first; the capture plays once the
-    // tab is really gone, or lapses.
-    captureCanvasTransition({ [tabId]: "close" });
     window.dispatchEvent(new CustomEvent("op-close-center-tabs", { detail: { tabIds: [tabId] } }));
   };
   /** Green: leave the split and open the tab on its own, like the top-edge drop. */

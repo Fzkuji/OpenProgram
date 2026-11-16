@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.interfaces.cli.commands.doctor import _cmd_doctor_credentials
+from openprogram.interfaces.cli.commands.maintenance.doctor import _cmd_doctor_credentials
 from openprogram.models.auth.credentials import (
     _private_atomic_write,
     _read_private_bytes,

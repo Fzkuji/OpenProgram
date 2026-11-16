@@ -35,7 +35,7 @@ async def handle_set_working_dirs(ws, cmd: dict):
         # 存 expanduser 后的绝对路径字符串（不 realpath——用户看到自己选的
         # 路径，归一化交给 check_path_safety 消费端）。
         dirs.append(str(expanded))
-    from openprogram.runtime.conversation.session_config import save_session_run_config
+    from openprogram.runtime.conversation.session_settings.session_config import save_session_run_config
     # Written under the conversation's lock: off the event loop.
     await run_for_conversation(session_id, 
         lambda: save_session_run_config(session_id, additional_working_dirs=dirs))
@@ -48,14 +48,14 @@ def _inherited_sandbox(session_id: str) -> bool:
     """The Sandbox a branch has when it does not set one: its project's,
     else the configured default (``FALLBACK_ORDER``)."""
     from openprogram.host.sandbox import ui_state
-    from openprogram.runtime.conversation.session_config import SessionRunConfig, sandbox_override_from_config
+    from openprogram.runtime.conversation.session_settings.session_config import SessionRunConfig, sandbox_override_from_config
     return bool(ui_state(sandbox_override_from_config(SessionRunConfig(), session_id)).get("sandbox"))
 
 
 def _sandbox_row(session_id: str, cmd: dict, requested, writes: bool):
     """``(row, override, branch_id)`` of the branch a Sandbox read or write
     names, after writing it; raises ``BranchConfigConflict``."""
-    from openprogram.runtime.conversation.session_config import _config_from_row
+    from openprogram.runtime.conversation.session_settings.session_config import _config_from_row
     from openprogram.interfaces.server.branch_settings import write_branch_settings
     from openprogram.state.store.session.branch_config import config_for_branch
     from openprogram.runtime.context.session_db import default_db

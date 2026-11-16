@@ -4,7 +4,7 @@
 
 ## Overview
 
-See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
+See ``docs/reference/design/integrations/extensions/skills-and-plugins.html`` section 2 for the design.
 
 ## Files in this directory
 
@@ -13,4 +13,4 @@ See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
 - **`tool.py`** — Built-in SkillTool
 - **`watcher.py`** — Skill directory watcher
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

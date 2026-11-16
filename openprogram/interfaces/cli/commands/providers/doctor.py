@@ -17,19 +17,15 @@ def _cmd_doctor(as_json: bool) -> int:
     if as_json:
         print(json.dumps(report, indent=2))
     else:
-        _print_doctor_report(
-            report["pools_checked"],
-            report["accounts_checked"],
-            findings,
-        )
+        _print_doctor_report(report["pools_checked"], findings)
 
     has_error = any(f["level"] == "ERROR" for f in findings)
     return 1 if has_error else 0
 
 
 
-def _print_doctor_report(pools_count: int, accounts_count: int, findings) -> None:
-    print(f"Checked {pools_count} pool(s) across {accounts_count} account(s).\n")
+def _print_doctor_report(providers_count: int, findings) -> None:
+    print(f"Checked {providers_count} provider(s).\n")
     if not findings:
         print("✓ All checks passed.")
         return

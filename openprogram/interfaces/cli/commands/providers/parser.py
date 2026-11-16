@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 
-from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
+from .keys import add_key_arguments, build_keys_parser
 
 
 def build_parser(sub: argparse._SubParsersAction) -> None:
@@ -12,8 +12,8 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     Per docs/design/cli/naming.md, commands have the shape
     ``<noun> [<noun> ...] <verb>``. This function is called with the
     ``providers`` subparser as its parent, so the verbs land as
-    ``providers login``, ``providers list``, etc. ``accounts`` is the
-    only nested noun (`providers accounts list` / `create` / `delete`).
+    ``providers login``, ``providers list``, etc. ``keys`` is the only
+    nested noun (``providers keys <provider> list`` / ``add`` / ...).
 
     Expected use from :func:`openprogram.interfaces.cli.application.main`::
 
@@ -24,30 +24,17 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     """
     auth_sub = sub
 
-    # login
-    p_login = auth_sub.add_parser("login", help="Log into a provider")
+    # keys — a provider's ordered list of keys and sign-ins
+    build_keys_parser(auth_sub)
+
+    # login — the same as `keys <provider> add`
+    p_login = auth_sub.add_parser(
+        "login", help="Add a key or sign in to a provider (same as `keys PROVIDER add`)")
     p_login.add_argument("provider", help="Provider id (e.g. openai-codex, anthropic)")
-    p_login.add_argument("--account", default=DEFAULT_ACCOUNT_NAME,
-                         help=f"Account (default: {DEFAULT_ACCOUNT_NAME})")
-    p_login.add_argument("--method", default=None,
-                         help="Advanced: force a specific login method. Omit it "
-                              "and the right one for the provider is picked "
-                              "automatically.")
-    p_login.add_argument("--api-key", default=None, dest="api_key",
-                         help="Supply the API key non-interactively (scripts / "
-                              "agents). Implies --method api_key; skips the "
-                              "prompt. WARNING: visible in shell history and "
-                              "`ps` — prefer --api-key-stdin or an env var.")
-    p_login.add_argument("--api-key-stdin", action="store_true", dest="api_key_stdin",
-                         help="Read the API key from stdin (until EOF), non-"
-                              "interactively. Implies --method api_key. e.g. "
-                              "`printf %%s \"$KEY\" | openprogram providers login "
-                              "minimax-cn --api-key-stdin`.")
+    add_key_arguments(p_login)
 
     # list
-    p_list = auth_sub.add_parser("list", help="List pools per account")
-    p_list.add_argument("--account", default=None,
-                        help="Filter to one account (default: all)")
+    p_list = auth_sub.add_parser("list", help="List every provider's keys and sign-ins")
     p_list.add_argument("--json", action="store_true", help="Output JSON")
 
     # available — browse/search the full provider catalogue
@@ -83,40 +70,29 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     p_adopt = auth_sub.add_parser("adopt",
         help="Adopt a discovered credential into the store")
     p_adopt.add_argument("source_id", nargs="?", default=None,
-        help="Source id from `discover` output (e.g. codex_cli, "
-             "env:OPENAI_API_KEY). Omit when using --all.")
-    p_adopt.add_argument("--account", default=DEFAULT_ACCOUNT_NAME,
-                         help=f"Target account (default: {DEFAULT_ACCOUNT_NAME})")
+        help="Source id from `discover` output (codex_cli, qwen_cli, gh_cli). "
+             "Omit when using --all.")
     p_adopt.add_argument("--all", dest="adopt_all", action="store_true",
-                         help="Adopt every credential discover() finds. "
-                              "Skips pools that already contain the same credential_id.")
+                         help="Adopt every sign-in discover finds; ones already added are skipped")
 
     # logout
-    p_logout = auth_sub.add_parser("logout", help="Remove credentials for a provider")
+    p_logout = auth_sub.add_parser("logout", help="Remove every stored key and sign-in of a provider")
     p_logout.add_argument("provider", help="Provider id to log out of")
-    p_logout.add_argument("--account", default=DEFAULT_ACCOUNT_NAME, help="Account to remove credentials from")
     p_logout.add_argument("--yes", action="store_true", help="Skip confirmation")
 
     # status
     p_status = auth_sub.add_parser(
         "status",
         help="Every connected provider's health, quota and 30-day spend; "
-             "with PROVIDER, that provider's current credential",
+             "with PROVIDER, that provider's keys and sign-ins",
     )
     p_status.add_argument("provider", nargs="?", default=None,
-                          help="Provider id to check one credential (omit for every provider)")
-    p_status.add_argument("--account", default=DEFAULT_ACCOUNT_NAME, help="Account to check")
+                          help="Provider id to show one provider (omit for every provider)")
     p_status.add_argument("--refresh", action="store_true",
                           help="Read each provider's quota endpoint now instead of using values "
                                "under ten minutes old")
     p_status.add_argument("--json", action="store_true",
                           help="Output the same JSON as GET /api/providers/status")
-
-    # use — pick which account (account) a provider runs on
-    p_use = auth_sub.add_parser("use", help="Set which account (account) a provider runs on")
-    p_use.add_argument("provider", help="Provider id")
-    p_use.add_argument("account", nargs="?", default="",
-                       help="Account to activate; omit to clear back to the default")
 
     # doctor — diagnostic report over every pool
     p_doctor = auth_sub.add_parser(
@@ -134,22 +110,3 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
         "aliases", help="List provider short-name aliases",
     )
     p_aliases.add_argument("--json", action="store_true", help="Output JSON")
-
-    # migrate — one-shot rewrite of old-format credential JSON
-    auth_sub.add_parser(
-        "migrate", help="Migrate stored credentials to the current format",
-    )
-
-    # accounts (plural noun, per CLI naming convention — see
-    # docs/design/cli/naming.md). Verbs follow: list/create/delete.
-    p_accounts = auth_sub.add_parser("accounts", help="Account management")
-    acct_sub = p_accounts.add_subparsers(dest="accounts_cmd", metavar="verb")
-    acct_sub.add_parser("list", help="List accounts")
-    pc = acct_sub.add_parser("create", help="Create an account")
-    pc.add_argument("name", help="New account name")
-    pc.add_argument("--display-name", default="", help="Human-readable label for the account")
-    pc.add_argument("--description", default="", help="Optional description for the account")
-    pd = acct_sub.add_parser("delete", help="Delete an account")
-    pd.add_argument("name", help="Account name to delete")
-    pd.add_argument("--yes", action="store_true", help="Skip confirmation")
-

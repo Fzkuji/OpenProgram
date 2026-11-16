@@ -50,7 +50,7 @@ openprogram config set agent.output_style lab-notes</code></pre>
 <details>
 <summary>Where the text lands</summary>
 <ul>
-<li>A registered context component (<code translate="no">output_style</code>, layer L0), entering through the assembler in <code translate="no">openprogram/runtime/context/components.py</code>, not a user message.</li>
+<li>A registered context component (<code translate="no">output_style</code>, layer L0), entering through the assembler in <code translate="no">openprogram/runtime/context/prompt_assembly/components.py</code>, not a user message.</li>
 <li>After identity and tool-use guidance, before the agent's inline system prompt, so the agent's instructions win a conflict.</li>
 <li><code translate="no">default</code> is empty and empty components are dropped: the prompt is byte-for-byte the one built with no component.</li>
 </ul>

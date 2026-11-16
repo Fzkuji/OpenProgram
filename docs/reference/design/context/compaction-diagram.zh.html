@@ -23,7 +23,7 @@
 <tr><th scope="row">范围</th><td>只处理工具结果，不处理用户或助手消息</td></tr>
 <tr><th scope="row">阈值</th><td><code translate="no">spill.result_cap()</code>：权重 10,000（或模型的 <code translate="no">tool_output_weight</code>），不超过窗口的 30%；在结果生成时只截一次。旧结果从不老化，一直完整保留到自动压缩</td></tr>
 <tr><th scope="row">方法</th><td>在换行处保留头尾约 60/40，完整文字存进文件，并写明要读的行号</td></tr>
-<tr><th scope="row">代码</th><td><code translate="no">agent/loop/tool_dispatch.py</code> 的 <code translate="no">_as_stored</code>、<code translate="no">state/store/session/spill.py</code> 的 <code translate="no">bound_text</code></td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">agent/loop/tool_dispatch.py</code> 的 <code translate="no">_as_stored</code>、<code translate="no">state/store/session/files/spill.py</code> 的 <code translate="no">bound_text</code></td></tr>
 </tbody>
 </table>
 </details>

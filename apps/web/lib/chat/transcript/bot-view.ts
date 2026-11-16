@@ -23,7 +23,7 @@ const INTERNAL_SOURCES = new Set([
 ]);
 
 /** What a restart stores as the text of a reply cut before it wrote any
- *  (runtime/execution/dag.py). */
+ *  (runtime/execution/projections/dag.py). */
 const RESTART_MARKER = "[interrupted] worker restarted mid-turn";
 
 /** ``msg`` with only what the Agent wrote left in its content. A failed turn

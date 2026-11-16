@@ -49,7 +49,7 @@ from openprogram.runtime.conversation.model_tools import (
     resolve_model as _resolve_model,
 )
 from openprogram.models.providers.structured_output import JsonSchemaOutput
-from openprogram.models.providers.utils.http_client import shutdown_loop_clients as _shutdown_loop_clients
+from openprogram.models.providers.utils.http_transport.http_client import shutdown_loop_clients as _shutdown_loop_clients
 
 logger = logging.getLogger(__name__)
 _log = logger
@@ -674,7 +674,7 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
     if sess is None:
         raise ValueError(f"Unknown conversation {session_id!r}")
     head_id = sess.get("head_id")
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
     history = rendered_history(db, session_id, head_id)
     if len(history) < 4:
         # Tell the user instead of silently doing nothing — a manual
@@ -690,7 +690,7 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
         return {"summary": "", "covered_count": 0, "message_count": len(history),
                 "summary_id": ""}
 
-    from openprogram.runtime.conversation.session_model import ensure_session_chat_model
+    from openprogram.runtime.conversation.session_settings.session_model import ensure_session_chat_model
 
     profile = _load_agent_profile(agent_id)
     # Summarise on the model the conversation's turns run on: the branch's

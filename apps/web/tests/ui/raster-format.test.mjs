@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { inspectRasterBytes, validateRasterInput, validateRasterDecoded, assertEncodedRaster, MAX_RASTER_BYTES } from "../../lib/documents/raster-format.ts";
-const fixture = (name) => new Uint8Array(readFileSync(new URL(`../../../../tests/e2e/web/fixtures/raster/${name}`, import.meta.url)));
+const fixture = (name) => new Uint8Array(readFileSync(new URL(`../../../../tests/e2e/web/files/fixtures/raster/${name}`, import.meta.url)));
 
 test("real static formats expose bounded dimensions before browser allocation", () => {
   for (const [ext,format] of [["png","png"],["jpg","jpeg"],["webp","webp"]]) {

@@ -37,13 +37,13 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">合并引擎</th><td><code translate="no">openprogram/runtime/conversation/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
+<tr><th scope="row">合并引擎</th><td><code translate="no">openprogram/runtime/conversation/peer_agents/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
 <tr><th scope="row">WebSocket 动作</th><td><code translate="no">openprogram/interfaces/server/ws_actions/merge.py</code></td></tr>
 <tr><th scope="row">斜杠命令</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/slash_actions.py</code></td></tr>
 <tr><th scope="row">attach 解析</th><td><code translate="no">openprogram/state/store/session/graph/branches.py</code> <code translate="no">_attach_info</code></td></tr>
 <tr><th scope="row">DAG 边和形状</th><td><code translate="no">apps/web/lib/runtime-bridge/dag/render/edges.ts</code>、<code translate="no">shapes.ts</code></td></tr>
 <tr><th scope="row">合并节点泳道</th><td><code translate="no">openprogram/state/store/session/graph/layout/lane.py</code></td></tr>
-<tr><th scope="row">检查图</th><td><code translate="no">scripts/dag_dump.py</code></td></tr>
+<tr><th scope="row">检查图</th><td><code translate="no">scripts/maintenance/dag_dump.py</code></td></tr>
 </tbody>
 </table>
 </details>
@@ -55,6 +55,7 @@
 <tbody>
 <tr><th scope="row">切换到已有分支</th><td>什么都不建；视图和 head 移到那条分支的末端</td><td>总是允许</td></tr>
 <tr><th scope="row">从旧位置重新开始：编辑后重发、重试、在图里选中一条消息后发送</th><td>在原分支旁新建一条分支，有自己的记录（新消息的 <code translate="no">branch_identity</code>）。两条都保留，都能运行。重试一条从没得到回复的提问时，改为重跑那条提问</td><td>其他分支运行时可从任意位置开始；选中分支自己的轮次在跑时等待</td></tr>
+<tr><th scope="row">接着自己分支继续的轮次：一条消息、Goal 续跑、后台命令结束通知、子代理返回</th><td>什么都不建，不管选中的是哪条分支。它的消息接在自己分支的末端，那条分支的记录跟着走（选中时用 <code translate="no">follow_line</code>；没选中时提问用 <code translate="no">point_branch</code>、回复用 <code translate="no">carry_branch</code>，head 和选中的分支不动）。一个轮次结束时，如果后面的轮次已经接在它的回复下面，head 留在后面那一轮（<code translate="no">behind_selected_tip</code>）</td><td>总是允许；同一分支上的两个运行时轮次在这条线上前后相接</td></tr>
 <tr><th scope="row">回退</th><td>什么都不建。就地撤回当前分支的尾部：分支 id、名字、设置和用量不变；末端退到所选提问之前，那条提问回到输入框</td><td>那条分支在运行时拒绝；改动文件的回退在任一分支运行时拒绝</td></tr>
 </tbody>
 </table>
@@ -69,6 +70,14 @@
 </ul>
 <p>回退的撤销和重做把这些节点移出、移回列表。切换到被撤回的末端会被拒绝，并提示用撤销。以前的回退留下了额外分支的会话保持原样，不做迁移。文件恢复见 <a href="../operations/file-management.zh.html#shared-workspace-contract">文件管理</a>。</p>
 
+<p>只有指明了更早位置（<code translate="no">branch_from</code>）的消息才会建分支。有些会话保存于“未选中分支上的每个运行时轮次都被记成一条分支”的时候，这些记录保留，不做迁移。</p>
+<ul>
+<li>分支列表给它们打上 <code translate="no">runtime_started</code> 标记：分支自己那一段里的每条提问都是运行时写的，或者这一段只有在当时头部发的报告（<code translate="no">report_…</code>）。</li>
+<li>自己那一段的提问全部来自调度器的，和任务自己的分支一样标为 <code translate="no">scheduled_task</code>：它的运行属于那个任务。</li>
+<li>Activity 面板不给它们单独一行。</li>
+<li>它们的 Goal 在下一次续跑时接到上一轮所在的那条线上。</li>
+</ul>
+
 <p class="note">同类产品都把回退当成从当前这条线上去掉最近的轮次，而不是开一条新线。Claude Code 的 <code translate="no">/rewind</code> 就地截断对话，会话不变，提问还给输入框；分叉是另一个复制会话的命令。Codex 记一条带轮数的 <code translate="no">ThreadRolledBack</code>；这些轮次留在 rollout 文件里，离开历史，也不能作为分叉锚点。</p>
 <p class="note">撤回列表相当于 Codex 的回滚标记，另外保留了会话内的撤销，两家都没有。重新开始仍是单独的操作，所以回退不会让人丢掉原来的内容，撤回也不会多出一个版本。</p>
 
@@ -77,6 +86,7 @@
 <p>在一条分支上开始的工作，在用户选中别的分支后仍作用于原分支：</p>
 <ul>
 <li>Goal 记下它开始时所在的分支（<code translate="no">branch_id</code>）。它的签到和验证继续并读取那条分支；其他分支上的轮次既拿不到它的说明，也不计入它。此前保存的 Goal 跟随选中分支。</li>
+<li>Goal 留在上一轮所在的线上（<code translate="no">follow_last_turn</code>，每次续跑前核对）。上一轮的回复不在它那条分支的线上时（用户从旧位置重新开始了那一轮），Goal 改用线上有这条回复的分支，优先选中的那条；任务和步骤一起带过去（<code translate="no">carry_board</code>）。</li>
 <li><code translate="no">/merge</code> 和 <code translate="no">merge_branches</code> 把回复写到开始时的分支（<code translate="no">target_branch_id</code>），只有那条分支仍被选中时才移动 head。</li>
 <li>为忙碌会话排队的 <code translate="no">send_message</code> 从它指向的那条分支的末端继续。</li>
 </ul>

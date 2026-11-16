@@ -99,7 +99,7 @@ def test_job_binds_worktree_in_worker(
     seen: dict = {}
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         from openprogram.state.worktree.context import current_worktree_path
         seen["worktree_path"] = current_worktree_path()
         return AgentTurnResult(head_id="head_done", final_text="done",
@@ -142,7 +142,7 @@ def test_job_cancel_discards_worktree(
     can_release = threading.Event()
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         started.set()
         # Poll for cancel up to ~3s
         for _ in range(150):
@@ -199,7 +199,7 @@ def test_job_complete_leaves_worktree_alone(
     wt = mgr.create_worktree(str(repo), label="completewt")
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         return AgentTurnResult(head_id="head_ok", final_text="ok",
                                failed=False, error=None)
 

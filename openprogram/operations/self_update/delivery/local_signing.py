@@ -61,7 +61,7 @@ def fingerprint(certificate: bytes) -> str:
 
 
 STABLE_IDENTIFIER = "ai.openprogram.desktop"
-# The development App (scripts/install-dev-app.sh) shares the identity but
+# The development App (scripts/local-instances/install-dev-app.sh) shares the identity but
 # carries no runtime: its worker runs from ~/.openprogram-dev/runtime. Only
 # the command line opts into it; the updater signs stable Apps alone.
 DEVELOPMENT_IDENTIFIER = "ai.openprogram.desktop.dev"

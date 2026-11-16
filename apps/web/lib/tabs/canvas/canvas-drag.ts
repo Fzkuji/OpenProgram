@@ -80,7 +80,7 @@ export function commitCanvasDrop(drop: CanvasDrop, sourceIds: string[]): boolean
   // from its side as the window gives up the room.
   const live = !overviewOpen();
   const dock = () => {
-    if (live) captureCanvasTransition({}, { [sourceId]: drop.side as "left" | "right" | "top" | "bottom" });
+    if (live) captureCanvasTransition({ [sourceId]: drop.side as "left" | "right" | "top" | "bottom" });
     rememberCanvas([drop.targetId, ...sourceIds, ...(group ? [group.id, ...group.memberIds] : [])], layout);
     useCenterTabs.getState().dockCanvas(sourceIds, drop.targetId, drop.paneId, drop.side);
   };

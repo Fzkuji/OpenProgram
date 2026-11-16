@@ -214,6 +214,12 @@ def agent_scope(owner, *, request=False):
                 parent_call_id=link.id,
             )
             parent_writer.update(link.id, metadata={"child_session_id": child_id})
+            # The child's calls spend the conversation's credential (its
+            # pin and binding), not one chosen for the child alone.
+            from openprogram.models.usage.context import current_usage_context, usage_scope
+            stack.enter_context(usage_scope(
+                parent_session_id=current_usage_context().parent_session_id
+                or parent_writer.session_id))
             from openprogram.state.store import _current_turn_id
             from openprogram.state.store.snapshot.checkpoint.helpers import _checkpoint_owner
             if _checkpoint_owner.get() is None:

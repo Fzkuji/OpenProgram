@@ -70,7 +70,7 @@ def test_canonical_child_job_inherits_goal_and_settles_once(tmp_path, monkeypatc
     from openprogram.programs.tools.planning.goal import chat
     from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentAdapter
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
     from openprogram.models.usage import ledger, recorder

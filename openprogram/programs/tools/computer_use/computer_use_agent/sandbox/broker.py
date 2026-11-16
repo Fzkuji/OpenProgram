@@ -19,9 +19,9 @@ from typing import Callable, Mapping
 import uuid
 
 from openprogram.runtime.execution.attempts import AttemptStore, AttemptStatus
-from openprogram.runtime.execution.effects import EffectClassification, EffectConflict, EffectStatus, EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectConflict, EffectStatus, EffectStore
 from openprogram.runtime.execution.model import ExecutionStatus
-from openprogram.runtime.execution.state_blobs import ExecutionStateBlobStore
+from openprogram.runtime.execution.recovery.state_blobs import ExecutionStateBlobStore
 from openprogram.runtime.execution.store import MAX_AGENT_STATE_BLOB_BYTES
 from openprogram.programs import ToolReturn
 

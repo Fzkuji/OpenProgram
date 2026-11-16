@@ -99,7 +99,7 @@ class TurnBindings:
     ) -> "TurnBindings":
         self = cls()
         self._req_session_id = req.session_id
-        from openprogram.runtime.conversation.session_config import (
+        from openprogram.runtime.conversation.session_settings.session_config import (
             SessionRunConfig, load_session_run_config, resolve_branch_settings,
             sandbox_override_from_config,
         )
@@ -218,7 +218,7 @@ class TurnBindings:
                 # session's bound (non-default) project path. Resolved fresh
                 # every turn, so a mid-chat set_session_project takes effect
                 # on the next turn without moving the session repo.
-                from openprogram.runtime.conversation.workdir import project_workdir_for
+                from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
                 _proj_wd = project_workdir_for(req.session_id)
                 if _proj_wd is not None:
                     self._worktree_token = _set_wt(str(_proj_wd))
@@ -281,7 +281,7 @@ class TurnBindings:
         try:
             from openprogram.runtime.agent.runtime.factory import create_runtime as _create_rt
             from openprogram.runtime.conversation import turn_runtime as dispatcher
-            from openprogram.runtime.conversation.session_model import (
+            from openprogram.runtime.conversation.session_settings.session_model import (
                 ensure_session_chat_model, read_session_chat_model, override_string,
             )
 

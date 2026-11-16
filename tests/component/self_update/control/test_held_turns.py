@@ -155,7 +155,7 @@ def test_a_turn_that_keeps_failing_moves_aside_and_the_owner_hears(store, answer
 
 
 def test_a_stop_of_the_worker_mid_replay_leaves_the_turn(store, answered_nothing) -> None:
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     _held_and_open(store)
 

@@ -16,7 +16,7 @@ import threading
 
 import pytest
 
-from openprogram.runtime.conversation import inbox
+from openprogram.runtime.conversation.peer_agents import inbox
 from openprogram.programs.tools.agents.send_message.send_message.send_message import (
     _send_message_impl,
 )
@@ -84,7 +84,7 @@ def _capture_async(monkeypatch):
         return "task_fake"
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", fake_async)
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn_async", fake_async)
     return calls
 
 
@@ -127,7 +127,7 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
     def boom(**kw):
         raise RuntimeError("runner down")
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", boom)
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn_async", boom)
     assert inbox.drain("t1") == 0
     assert inbox.pending_count("t1") == 1
 

@@ -239,7 +239,7 @@ def _free_code(agent_tool, req, args) -> str | None:
         return "APP_GRANT_FREE"
     if req.source in {"cron", "scheduler"} and name in identity.SCHEDULED_MEMORY_TOOLS:
         return "SCHEDULED_MEMORY"
-    from openprogram.runtime.permissions.classifier import safe_call
+    from openprogram.runtime.permissions.auto_mode.classifier import safe_call
     if safe_call(name, args):
         return "SAFE_TOOL"
     return None
@@ -264,7 +264,7 @@ def _mode_decision(agent_tool, req, args) -> Decision:
         return _allow("mode", "SAFE_EDIT")
     if mode == "auto":
         if name in _APP_GRANT_TOOLS:
-            from openprogram.runtime.permissions import app_grants
+            from openprogram.runtime.permissions.auto_mode import app_grants
             if app_grants.held(req, name, args):
                 return _allow("mode", "AUTO_APP_GRANT")
         return Decision("auto", "AUTO_CLASSIFY", "mode")

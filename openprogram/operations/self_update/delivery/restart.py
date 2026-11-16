@@ -105,7 +105,7 @@ def _service(runner, execution_id):
 def _pause(store, record, runner):
     from openprogram.runtime.execution.model import ExecutionStatus
     from openprogram.runtime.execution.process_owner import owned_by_another_process
-    from openprogram.runtime.execution.restart import is_check_in
+    from openprogram.runtime.execution.recovery.restart import is_check_in
 
     executions = runner._execution_store
     with store._locked():
@@ -162,7 +162,7 @@ def _pause(store, record, runner):
 
 def continuation_allowed(store, record):
     """Honor the persisted restart policy; caller holds the update lock."""
-    from openprogram.runtime.execution import restart as policy
+    from openprogram.runtime.execution.recovery import restart as policy
 
     path = store.root / record.request.update_id / "restart-window.json"
     window = _optional(path)

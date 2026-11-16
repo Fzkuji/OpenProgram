@@ -21,7 +21,7 @@ import {
 } from "../actions/draft-channel-choice";
 import { runtimeState, getSocket, type TreeEntry } from "../state";
 import { updateSessionGoal } from "../actions/goal-state";
-import { useTodoStore } from "@/lib/chat/transcript/todo-plan";
+import { useTaskStore } from "@/lib/chat/transcript/task-blocks";
 import { setWelcomeVisible } from "../helpers";
 import {
   refreshStatusSource,
@@ -476,8 +476,9 @@ export function loadSessionData(data: LegacyConv): void {
   const id = data.id as string;
   if (Array.isArray(data.running_branches)) {
     const running = data.running_branches;
+    const runSeq = data.run_seq;
     void import("@/lib/chat/run/other-branch-runs").then(({ useOtherBranchRuns }) => {
-      useOtherBranchRuns.getState().seed(id, running);
+      useOtherBranchRuns.getState().seed(id, running, runSeq);
     });
   }
   const loadedSettings = data.settings as Record<string, unknown> | undefined;
@@ -509,7 +510,7 @@ export function loadSessionData(data: LegacyConv): void {
     if (loaded.goal !== undefined) updateSessionGoal(id, loaded.goal);
   } catch { /* defensive */ }
   const loadedPlans = (data as { todo_plans?: unknown }).todo_plans;
-  if (Array.isArray(loadedPlans)) useTodoStore.getState().setPlans(id, loadedPlans);
+  if (Array.isArray(loadedPlans)) useTaskStore.getState().setAll(id, loadedPlans);
   // 清 transcript skeleton — 不能只在 currentSessionId 分支里清:
   // 回包晚到、用户已切走时, loading 态若还指着这个 id 也要释放。
   const st = useSessionStore.getState();

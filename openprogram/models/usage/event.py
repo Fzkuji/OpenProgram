@@ -2,7 +2,7 @@
 
 A UsageEvent is the unit the metering subsystem records and aggregates:
 who made the call (session / agent / call_kind), against which model,
-how many tokens, at what cost, when. See docs/design/usage-metering.md.
+how many tokens, at what cost, when. See docs/reference/design/providers/usage-metering.html.
 
 The schema is deliberately FLAT (cost fields not nested) so the SQLite
 ledger can column-ize it and ``SUM(cost_total)`` without JSON parsing.
@@ -62,10 +62,12 @@ class UsageEvent(BaseModel):
     execution_id: Optional[str] = None
     tokens_known: bool = True
 
-    # model
+    # model, and the provider credential that answered (its id in the
+    # provider's list; models/auth/selection.py)
     provider: str = ""
     api: Optional[str] = None
     model_id: str = ""
+    credential_id: Optional[str] = None
 
     # Token subtotals; tokens_known distinguishes an absent report from zero.
     input_tokens: int = 0

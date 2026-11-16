@@ -116,7 +116,7 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
     head = args.split()[0].lower()
     if args.lower() == "help":
         return {"text": (
-            "/goal | /goal status — show objective, usage, limits and todos\n"
+            "/goal | /goal status — show objective, usage, limits and steps\n"
             "/goal pause | resume | verify | clear | stop (retry saved stop)\n/goal edit <objective>\n"
             "/goal budget max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5\n"
             "Zero removes a limit."
@@ -158,7 +158,7 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
         from . import chat
         chat.resume(session_id)
         return {"text": "Resuming Goal in this conversation.",
-                "send_text": "Continue the active Goal and its todo plan."}
+                "send_text": "Continue the active Goal and its open task."}
     if head == "edit":
         prompt = args[len(args.split()[0]):].strip()
         try:

@@ -31,7 +31,7 @@ def test_provider_options_follow_dispatch_candidate_capabilities(
 ):
     agent_loop = importlib.import_module("openprogram.runtime.agent.loop")
     provider_stream = importlib.import_module("openprogram.models.providers.streaming.stream")
-    failover_utils = importlib.import_module("openprogram.models.providers.utils.failover")
+    failover_utils = importlib.import_module("openprogram.models.providers.utils.failures.failover")
     api_registry = importlib.import_module("openprogram.models.providers.catalog.api_registry")
 
     primary = Model(

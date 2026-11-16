@@ -250,7 +250,7 @@ def _isolated_worktree(session_id: str, label: str, job_id: str):
     worker happened to start (a checkout of OpenProgram itself, under a
     test run). Returns ``(worktree, error_text)``."""
     import subprocess
-    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
     from openprogram.state.paths import configured_workdir
     from openprogram.state.worktree.context import current_worktree_path
     from openprogram.state.worktree.manager import WorktreeError, get_manager
@@ -530,7 +530,7 @@ def _agent_impl(
         # Background path: submit and return the execution id. The runner is
         # responsible for state transitions and attach card updates.
         try:
-            from openprogram.runtime.conversation.sub_agent_run import (
+            from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
                 run_agent_turn_async,
                 write_attach_placeholder_for_spawn,
             )
@@ -621,7 +621,7 @@ def _agent_impl(
     _tool_call_id = current_tool_call_id()
     accepted: dict[str, object] = {}
     try:
-        from openprogram.runtime.conversation.sub_agent_run import (
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
             AgentTurnResult,
             run_agent_turn,
             write_attach_placeholder_for_spawn,

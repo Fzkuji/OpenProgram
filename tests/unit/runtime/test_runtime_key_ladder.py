@@ -1,10 +1,9 @@
-"""The HTTP API-key providers must resolve keys from the AuthStore.
+"""The HTTP API-key providers build a runtime when the provider has a
+credential, and fail with guidance when it has none.
 
-The retired per-provider Runtime shells historically did a bare
-``os.environ.get(...)`` in ``__init__``. Keys live in the AuthStore only
-now (settings UI / `openprogram providers login`), so a "pure Settings"
-user must get a working runtime from ``create_runtime``, and env vars
-must stay inert.
+The key a request sends is chosen per request from the provider's list
+(``models/auth/selection.py``), so the runtime holds no key of its own
+unless the caller passes one.
 """
 from __future__ import annotations
 
@@ -74,11 +73,12 @@ def _store_returns(monkeypatch, value):
 
 @pytest.mark.parametrize("provider,namespace", _HTTP_PROVIDERS)
 def test_settings_only_key_constructs_the_runtime(monkeypatch, provider, namespace):
-    """Key in the AuthStore, zero env vars → construction succeeds."""
+    """A stored key, zero env vars → construction succeeds; the key is
+    chosen when a request goes out."""
     _store_returns(monkeypatch, "sk-store-key")
     rt = create_runtime(provider=provider)
     assert rt is not None
-    assert rt.api_key == "sk-store-key"
+    assert rt.api_key is None
     assert rt.provider_id == namespace
 
 
@@ -91,10 +91,12 @@ def test_no_store_key_raises_with_guidance(monkeypatch, provider, namespace):
 
 
 @pytest.mark.parametrize("provider,namespace", _HTTP_PROVIDERS)
-def test_env_var_alone_does_not_construct(monkeypatch, provider, namespace):
-    """Env keys are inert — store empty + env set must still raise."""
+def test_an_environment_key_alone_constructs_the_runtime(monkeypatch, provider, namespace):
+    """A key in the provider's environment variable is a row of its list
+    (``models/auth/store.py``), so it builds the runtime like a stored key."""
     _store_returns(monkeypatch, None)
     for var in _ENV_VARS:
         monkeypatch.setenv(var, "sk-env-key")
-    with pytest.raises(ValueError):
-        create_runtime(provider=provider)
+    rt = create_runtime(provider=provider)
+    assert rt.api_key is None
+    assert rt.provider_id == namespace

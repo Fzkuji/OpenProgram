@@ -307,7 +307,7 @@
     "en": "Transcript rendering",
     "zh": "会话记录渲染"
   },
-  "reference/design/community-discoverability.html": {
+  "reference/design/repository/community-discoverability.html": {
     "en": "Community discovery",
     "zh": "社区检索"
   },
@@ -367,19 +367,19 @@
     "en": "Windows support",
     "zh": "Windows 支持"
   },
-  "reference/design/docs-site.html": {
+  "reference/design/docs-site/overview.html": {
     "en": "Documentation site",
     "zh": "文档站"
   },
-  "reference/design/documentation-gaps.html": {
+  "reference/design/plans/documentation-gaps.html": {
     "en": "Documentation gaps",
     "zh": "文档差异"
   },
-  "reference/design/engineering-backlog.html": {
+  "reference/design/plans/engineering-backlog.html": {
     "en": "Engineering backlog",
     "zh": "工程待办"
   },
-  "reference/design/error-handling.html": {
+  "reference/design/repository/error-handling.html": {
     "en": "Error handling",
     "zh": "错误处理"
   },
@@ -399,15 +399,15 @@
     "en": "Reference comparison",
     "zh": "参考对比"
   },
-  "reference/design/feature-matrix.html": {
+  "reference/design/framework-comparison/feature-matrix.html": {
     "en": "Feature matrix",
     "zh": "功能矩阵"
   },
-  "reference/design/framework-comparison.html": {
+  "reference/design/framework-comparison/overview.html": {
     "en": "Framework comparison",
     "zh": "框架对比"
   },
-  "reference/design/framework-capability-differences.html": {
+  "reference/design/framework-comparison/capability-differences.html": {
     "en": "Capability differences",
     "zh": "能力差异"
   },
@@ -431,7 +431,7 @@
     "en": "Function calling",
     "zh": "函数调用"
   },
-  "reference/design/implementation-status.html": {
+  "reference/design/plans/implementation-status.html": {
     "en": "Implementation index",
     "zh": "实现索引"
   },
@@ -443,7 +443,7 @@
     "en": "Editor integration",
     "zh": "编辑器集成"
   },
-  "reference/design/integrations/extension-management.html": {
+  "reference/design/integrations/extensions/extension-management.html": {
     "en": "Extension management",
     "zh": "扩展管理"
   },
@@ -451,11 +451,11 @@
     "en": "Harness standard",
     "zh": "运行环境规范"
   },
-  "reference/design/integrations/mcp-integration.html": {
+  "reference/design/integrations/extensions/mcp-integration.html": {
     "en": "MCP tools",
     "zh": "MCP 工具"
   },
-  "reference/design/integrations/mcp-server.html": {
+  "reference/design/integrations/extensions/mcp-server.html": {
     "en": "MCP server",
     "zh": "MCP 服务端"
   },
@@ -463,47 +463,47 @@
     "en": "OpenAI-compatible endpoint",
     "zh": "OpenAI 兼容端点"
   },
-  "reference/design/integrations/skills-and-plugins.html": {
+  "reference/design/integrations/extensions/skills-and-plugins.html": {
     "en": "Skills and plugins",
     "zh": "技能与插件"
   },
-  "reference/design/integrations/computer-and-browser-use.html": {
+  "reference/design/integrations/computer-use/computer-and-browser-use.html": {
     "en": "Computer and browser use",
     "zh": "操控电脑与浏览器"
   },
-  "reference/design/integrations/computer-use-approval.html": {
+  "reference/design/integrations/computer-use/approval.html": {
     "en": "Screen approval",
     "zh": "屏幕审批"
   },
-  "reference/design/integrations/computer-use-app-target.html": {
+  "reference/design/integrations/computer-use/app-target.html": {
     "en": "Application target",
     "zh": "应用目标"
   },
-  "reference/design/integrations/computer-use-macos.html": {
+  "reference/design/integrations/computer-use/macos.html": {
     "en": "macOS delivery",
     "zh": "macOS 投递"
   },
-  "reference/design/integrations/working-behind-the-user.html": {
+  "reference/design/integrations/computer-use/working-behind-the-user.html": {
     "en": "Working behind the user",
     "zh": "不打扰用户"
   },
-  "reference/design/integrations/computer-use-linux-windows.html": {
+  "reference/design/integrations/computer-use/linux-windows.html": {
     "en": "Linux and Windows backends",
     "zh": "非 macOS 后端"
   },
-  "reference/design/integrations/computer-use-interface.html": {
+  "reference/design/integrations/computer-use/interface.html": {
     "en": "Computer use interface",
     "zh": "操控电脑的界面"
   },
-  "reference/design/integrations/browser-application.html": {
+  "reference/design/integrations/browser/application.html": {
     "en": "Browser application",
     "zh": "浏览器应用"
   },
-  "reference/design/integrations/browser-tab-driver.html": {
+  "reference/design/integrations/browser/tab-driver.html": {
     "en": "Browser tab driver",
     "zh": "浏览器标签页驱动"
   },
-  "reference/design/integrations/browser-tab-actions.html": {
+  "reference/design/integrations/browser/tab-actions.html": {
     "en": "Browser tab actions",
     "zh": "浏览器标签页动作"
   },
@@ -655,19 +655,19 @@
     "en": "Credential storage",
     "zh": "凭据存储"
   },
-  "reference/design/providers/bailian-model-catalog.html": {
+  "reference/design/providers/models/bailian-model-catalog.html": {
     "en": "Bailian catalog",
     "zh": "百炼模型目录"
   },
-  "reference/design/providers/custom-openai-compatible-provider.html": {
+  "reference/design/providers/models/custom-openai-compatible-provider.html": {
     "en": "OpenAI compatibility",
     "zh": "OpenAI 兼容"
   },
-  "reference/design/providers/json-schema-structured-output.html": {
+  "reference/design/providers/requests/json-schema-structured-output.html": {
     "en": "Structured output",
     "zh": "结构化输出"
   },
-  "reference/design/providers/metadata-load-diagnostics.html": {
+  "reference/design/providers/models/metadata-load-diagnostics.html": {
     "en": "Metadata diagnostics",
     "zh": "元数据诊断"
   },
@@ -683,11 +683,11 @@
     "en": "Thinking effort",
     "zh": "推理强度"
   },
-  "reference/design/providers/network-proxy.html": {
+  "reference/design/providers/requests/network-proxy.html": {
     "en": "Network proxy",
     "zh": "网络代理"
   },
-  "reference/design/providers/record-replay.html": {
+  "reference/design/providers/requests/record-replay.html": {
     "en": "Recording and replay",
     "zh": "录制与回放"
   },
@@ -707,19 +707,19 @@
     "en": "Fault tolerance",
     "zh": "容错"
   },
-  "reference/design/providers/request-build.html": {
+  "reference/design/providers/requests/request-build.html": {
     "en": "Request construction",
     "zh": "请求构建"
   },
-  "reference/design/providers/responses-reasoning-replay.html": {
+  "reference/design/providers/requests/responses-reasoning-replay.html": {
     "en": "Reasoning replay",
     "zh": "推理记录回放"
   },
-  "reference/design/repository-structure-implementation.html": {
+  "reference/design/repository/structure-implementation.html": {
     "en": "Repository migration",
     "zh": "仓库迁移"
   },
-  "reference/design/repository-structure.html": {
+  "reference/design/repository/structure.html": {
     "en": "Repository structure",
     "zh": "仓库结构"
   },
@@ -767,7 +767,7 @@
     "en": "Tool settings",
     "zh": "工具设置"
   },
-  "reference/design/runtime/execution/agentic-llm-streaming.html": {
+  "reference/design/runtime/agent/agentic-llm-streaming.html": {
     "en": "Nested LLM streaming",
     "zh": "嵌套 LLM 流式"
   },
@@ -815,11 +815,11 @@
     "en": "Tool result storage",
     "zh": "工具结果存储"
   },
-  "reference/design/runtime/execution/agent-action-lifecycle.html": {
+  "reference/design/runtime/agent/agent-action-lifecycle.html": {
     "en": "Action lifecycle",
     "zh": "操作生命周期"
   },
-  "reference/design/runtime/execution/agent-call-flow.html": {
+  "reference/design/runtime/agent/agent-call-flow.html": {
     "en": "Call flow",
     "zh": "调用流程"
   },
@@ -827,7 +827,7 @@
     "en": "Worktrees",
     "zh": "工作树"
   },
-  "reference/design/runtime/execution/agentic-self-recursion.html": {
+  "reference/design/runtime/agent/agentic-self-recursion.html": {
     "en": "Recursion guard",
     "zh": "递归保护"
   },
@@ -843,7 +843,7 @@
     "en": "Dispatcher structure",
     "zh": "调度器结构"
   },
-  "reference/design/runtime/execution/next-step-decision.html": {
+  "reference/design/runtime/agent/next-step-decision.html": {
     "en": "Next-step decisions",
     "zh": "下一步决策"
   },
@@ -855,7 +855,7 @@
     "en": "Group reports",
     "zh": "小组报告"
   },
-  "reference/design/runtime/execution/llm-and-agent.html": {
+  "reference/design/runtime/agent/llm-and-agent.html": {
     "en": "Execution unification",
     "zh": "执行统一方案"
   },
@@ -1003,11 +1003,11 @@
     "en": "Dependency security",
     "zh": "依赖安全"
   },
-  "reference/design/site-discoverability-performance.html": {
+  "reference/design/docs-site/discoverability-performance.html": {
     "en": "Site discovery",
     "zh": "站点检索"
   },
-  "reference/design/site-indexnow-discovery.html": {
+  "reference/design/docs-site/indexnow-discovery.html": {
     "en": "IndexNow discovery",
     "zh": "IndexNow 检索"
   },
@@ -1231,7 +1231,7 @@
     "en": "Window state",
     "zh": "窗口状态"
   },
-  "reference/design/usage-metering.html": {
+  "reference/design/providers/usage-metering.html": {
     "en": "Usage metering",
     "zh": "用量统计"
   },

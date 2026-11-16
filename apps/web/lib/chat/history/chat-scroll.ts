@@ -1,133 +1,3 @@
-export const CHAT_SCROLL_STORAGE_KEY = "chatScrollByKey";
-
-interface StorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-}
-
-interface ScrollAreaLike {
-  scrollTop: number;
-}
-
-interface ResolveChatScrollOptions {
-  keyChanged: boolean;
-  seedChanged: boolean;
-  saved: number | null;
-  scrollHeight: number;
-  currentTop: number;
-  /** Was the view already parked at the bottom before this turn landed?
-   *  A reader who has scrolled up keeps their place; only someone already
-   *  following the tail gets carried along. */
-  atBottom?: boolean;
-  /** True when the new row is the user's own message. Sending is an
-   *  explicit "take me to the conversation" gesture, so it follows even
-   *  from far up the history — unlike an agent row arriving on its own. */
-  ownTurn?: boolean;
-}
-
-export const CHAT_READING_POSITION_TTL_MS = 60 * 60 * 1000;
-// This scopes reading positions to a document; it is not a security token.
-const runtimeId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-type SavedChatScroll = { top: number; atBottom: boolean; savedAt: number; runtimeId: string };
-
-function isRecent(position: SavedChatScroll | undefined): boolean {
-  if (!position || position.runtimeId !== runtimeId) return false;
-  const age = Date.now() - position.savedAt;
-  return age >= 0 && age < CHAT_READING_POSITION_TTL_MS;
-}
-
-function readMap(storage: StorageLike): Record<string, SavedChatScroll> {
-  try {
-    const parsed = JSON.parse(storage.getItem(CHAT_SCROLL_STORAGE_KEY) || "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const positions: Record<string, SavedChatScroll> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-        positions[key] = { top: value, atBottom: false, savedAt: 0, runtimeId: "" };
-      } else if (value && typeof value === "object" && "top" in value
-        && typeof value.top === "number" && Number.isFinite(value.top) && value.top >= 0) {
-        positions[key] = {
-          top: value.top, atBottom: "atBottom" in value && value.atBottom === true,
-          savedAt: "savedAt" in value && typeof value.savedAt === "number" ? value.savedAt : 0,
-          runtimeId: "runtimeId" in value && typeof value.runtimeId === "string" ? value.runtimeId : "",
-        };
-      }
-    }
-    return positions;
-  } catch {
-    return {};
-  }
-}
-
-export function readChatScroll(
-  storage: StorageLike,
-  chatKey: string,
-): number | null {
-  const position = readMap(storage)[chatKey];
-  return isRecent(position) ? position.top : null;
-}
-
-/** Latest-follow intent is distinct from a fixed reading offset. */
-export function readChatFollowLatest(storage: StorageLike, chatKey: string): boolean {
-  const position = readMap(storage)[chatKey];
-  return isRecent(position) && position.atBottom;
-}
-
-export function writeChatScroll(
-  storage: StorageLike,
-  chatKey: string,
-  scrollTop: number,
-  atBottom?: boolean,
-): void {
-  if (!chatKey || !Number.isFinite(scrollTop)) return;
-  try {
-    const positions = readMap(storage);
-    const top = Math.max(0, scrollTop);
-    const previous = positions[chatKey];
-    positions[chatKey] = {
-      top, savedAt: Date.now(), runtimeId,
-      atBottom: atBottom ?? (previous?.top === top && previous.atBottom),
-    };
-    storage.setItem(CHAT_SCROLL_STORAGE_KEY, JSON.stringify(positions));
-  } catch {
-    /* Session storage can be unavailable in hardened browser contexts. */
-  }
-}
-
-/** Where the transcript should sit after this render.
- *
- *  Switching chats restores that chat's saved place (bottom if new).
- *  A new turn follows the tail only when the reader was already there,
- *  or when the turn is their own — being yanked to the bottom while
- *  reading back through history is the thing this avoids. `atBottom`
- *  defaults to true so a caller that doesn't track it keeps the old
- *  always-follow behaviour rather than silently freezing the view. */
-export function resolveChatScrollTop({
-  keyChanged,
-  seedChanged,
-  saved,
-  scrollHeight,
-  currentTop,
-  atBottom = true,
-  ownTurn = false,
-}: ResolveChatScrollOptions): number {
-  if (keyChanged) return saved ?? scrollHeight;
-  if (seedChanged && (atBottom || ownTurn)) return scrollHeight;
-  return currentTop;
-}
-
-export function restoreChatScrollIfCurrent(
-  area: ScrollAreaLike,
-  expectedChatKey: string,
-  activeChatKey: string | null,
-  scrollTop: number,
-): boolean {
-  if (expectedChatKey !== activeChatKey) return false;
-  area.scrollTop = scrollTop;
-  return true;
-}
-
-
 export interface ScrollMetrics {
   scrollHeight: number;
   scrollTop: number;
@@ -138,25 +8,17 @@ export function remainingScroll(area: ScrollMetrics): number {
   return area.scrollHeight - area.scrollTop - area.clientHeight;
 }
 
-/** Extra pixels on top of the transcript pad. Subpixel / rubber-band. */
-export const CHAT_AT_BOTTOM_EPSILON = 8;
+/** Remaining scroll at or under this is the bottom itself: the view follows
+ *  only from here, so a reader who stops short of the bottom is never pulled
+ *  the rest of the way. It allows for fractional scroll positions. */
+export const AT_LATEST_PX = 2;
 
-/** Slack that still counts as "at the latest".
- *
- *  The transcript pad (`max(25vh, composer + 24)`) is larger than the
- *  composer. At remaining=0 the last bubble sits well above the input.
- *  It tucks under the composer after you scroll `pad - composer`
- *  pixels. Using the full pad as slack hid Jump to latest until you
- *  had scrolled an extra ~25vh past that.
- */
-export function chatAtBottomSlack(
-  paddingBottom: number,
-  composerHeight = 0,
-): number {
-  const pad = Number.isFinite(paddingBottom) ? Math.max(0, paddingBottom) : 0;
-  const cover = Number.isFinite(composerHeight) ? Math.max(0, composerHeight) : 0;
-  return Math.max(0, pad - cover) + CHAT_AT_BOTTOM_EPSILON;
-}
+/** Jump to latest is hidden within this distance of the latest. It decides
+ *  the button only, never where the view sits. */
+export const JUMP_HIDE_DISTANCE_PX = 70;
+
+/** Jump to latest shows only once the reader is this far above the latest. */
+export const JUMP_SHOW_DISTANCE_PX = 240;
 
 /** A scroll event leaves the latest only when the reader moved up.
  *  Content that grows or re-wraps beneath a reader parked at the latest
@@ -166,28 +28,58 @@ export function scrolledAwayFromLatest(previousTop: number, top: number): boolea
   return top < previousTop - 1;
 }
 
-export function isChatAtBottom(
-  area: ScrollMetrics,
-  paddingBottom: number,
-  composerHeight = 0,
+/** Whether the view follows the latest after a scroll event. The reader
+ *  moving up stops it; reaching the bottom itself starts it again. */
+export function followAfterScroll(state: {
+  following: boolean;
+  latestWindow: boolean;
+  remaining: number;
+  movedUp: boolean;
+}): boolean {
+  if (!state.latestWindow) return false;
+  if (state.remaining <= AT_LATEST_PX) return true;
+  return state.following && !state.movedUp;
+}
+
+/** Whether the view follows the latest after the content changed height.
+ *  Growth alone never stops it, and content that shrank to leave the view
+ *  at the latest starts it. Growth the reader caused (a block opened by a
+ *  click, a held pointer) is left where it is, and stops following once it
+ *  has put the latest a clear distance below. */
+export function followAfterGrowth(state: {
+  following: boolean;
+  latestWindow: boolean;
+  remaining: number;
+  readerActive: boolean;
+}): boolean {
+  if (!state.latestWindow) return false;
+  if (state.remaining <= AT_LATEST_PX) return true;
+  if (!state.following) return false;
+  return !(state.readerActive && state.remaining > JUMP_SHOW_DISTANCE_PX);
+}
+
+/** Whether Jump to latest is drawn. Never while the view follows or sits
+ *  at the latest; between the two distances it keeps what it had, so it
+ *  neither appears on a small move nor blinks at one edge. */
+export function jumpVisible(
+  was: boolean,
+  state: { following: boolean; hasNewer: boolean; remaining: number },
 ): boolean {
-  return remainingScroll(area) <= chatAtBottomSlack(paddingBottom, composerHeight);
+  if (state.hasNewer) return true;
+  if (state.following || state.remaining <= JUMP_HIDE_DISTANCE_PX) return false;
+  if (state.remaining > JUMP_SHOW_DISTANCE_PX) return true;
+  return was;
 }
 
-export function readBottomPadding(el: Element | null): number {
-  if (!el || typeof getComputedStyle !== "function") return 0;
-  const n = parseFloat(getComputedStyle(el).paddingBottom);
-  return Number.isFinite(n) ? n : 0;
-}
+/** A seek started outside the scroll area (the Goal chip sits in the
+ *  composer). The area hears a click or a wheel inside it and stops pulling
+ *  the view to the latest; a seek from elsewhere says so with this event,
+ *  or its smooth scroll is undone on the first frame. It bubbles from the
+ *  element being scrolled to. */
+export const CHAT_READER_SEEK_EVENT = "chat-reader-seek";
 
-export function readComposerHeight(): number {
-  if (typeof getComputedStyle !== "function") return 0;
-  const n = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue(
-      "--main-composer-height",
-    ),
-  );
-  return Number.isFinite(n) ? n : 0;
+export function announceReaderSeek(target: Element): void {
+  target.dispatchEvent(new Event(CHAT_READER_SEEK_EVENT, { bubbles: true }));
 }
 
 /** Same settle window as the left message rail. */
@@ -260,12 +152,44 @@ export function whenAreaScrollSettles(
 export interface AnimateJumpOptions {
   getTarget?: () => number;
   reducedMotion?: boolean;
+  /** Frame scheduler and clock; tests pass their own. */
+  requestFrame?: (cb: (time: number) => void) => number;
+  cancelFrame?: (id: number) => void;
+  now?: () => number;
+}
+
+/** Length of the Jump to latest ride, whatever the distance. Chromium's
+ *  own smooth scroll grows with distance (up to ~1.5 s) and could not be
+ *  timed; a fixed ride driven here can. */
+export const JUMP_RIDE_MS = 480;
+
+/** A ride starts at most this many screens above the latest: a longer
+ *  distance hops to there first, so each frame moves a readable amount. */
+export const JUMP_RIDE_MAX_SCREENS = 1.5;
+
+/** Sine ease-in-out: the gentlest peak speed (pi/2 of the average) of
+ *  the common curves, so the middle frames stay readable. */
+export function easeInOutSine(t: number): number {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return -(Math.cos(Math.PI * t) - 1) / 2;
+}
+
+/** Where a ride starts: the reader's top, or at most
+ *  JUMP_RIDE_MAX_SCREENS screens away from the target. */
+export function jumpRideStart(top: number, target: number, clientHeight: number): number {
+  const lead = Math.max(1, clientHeight) * JUMP_RIDE_MAX_SCREENS;
+  if (target - top > lead) return target - lead;
+  if (top - target > lead) return target + lead;
+  return top;
 }
 
 /**
- * Native smooth scroll to the padding edge. At settle or watchdog timeout,
- * recompute the target and apply one instant correction. Cancel stops
- * browser motion and skips that correction.
+ * Ride to the latest over JUMP_RIDE_MS, one scrollTop write per frame.
+ * Every frame reads the target again, so a reply that grows or a page
+ * that arrives during the ride is absorbed and the ride ends on the
+ * current latest with no correction jump. Cancel stops at the current
+ * frame and skips onDone.
  */
 export function animateJumpToLatest(
   area: HTMLElement,
@@ -279,25 +203,43 @@ export function animateJumpToLatest(
     onDone?.();
     return () => {};
   }
-  const to = getTarget();
-  if (Math.abs(area.scrollTop - to) <= JUMP_PLACEMENT_TOLERANCE_PX) {
+  const first = getTarget();
+  if (Math.abs(area.scrollTop - first) <= JUMP_PLACEMENT_TOLERANCE_PX) {
     placeAtLatest(area, getTarget);
     onDone?.();
     return () => {};
   }
+  const requestFrame = options?.requestFrame
+    ?? ((cb: (time: number) => void) => globalThis.requestAnimationFrame(cb));
+  const cancelFrame = options?.cancelFrame
+    ?? ((id: number) => globalThis.cancelAnimationFrame(id));
+  const now = options?.now ?? (() => performance.now());
+  // Any native smooth scroll still running would fight the frames.
+  stopAreaScroll(area);
+  const startTop = jumpRideStart(area.scrollTop, first, area.clientHeight);
+  if (startTop !== area.scrollTop) area.scrollTop = startTop;
+  const t0 = now();
   let finished = false;
-  const finish = () => {
+  let frameId = 0;
+  const step = () => {
     if (finished) return;
-    finished = true;
-    placeAtLatest(area, getTarget);
-    onDone?.();
+    const t = Math.min(1, (now() - t0) / JUMP_RIDE_MS);
+    const target = getTarget();
+    if (t < 1) {
+      area.scrollTop = startTop + (target - startTop) * easeInOutSine(t);
+    } else {
+      finished = true;
+      area.scrollTop = target;
+      onDone?.();
+      return;
+    }
+    frameId = requestFrame(step);
   };
-  const cancelSettle = whenAreaScrollSettles(area, finish);
-  area.scrollTo({ top: to, behavior: "smooth" });
+  frameId = requestFrame(step);
   return () => {
     if (finished) return;
     finished = true;
-    cancelSettle();
+    cancelFrame(frameId);
   };
 }
 
@@ -481,30 +423,4 @@ export const COMPOSER_TUCK_SHIFT_EVENT = "composer-tuck-shift";
 export function visibleComposerHeight(root: HTMLElement): number {
   const shift = parseFloat(root.style?.getPropertyValue(COMPOSER_TUCK_SHIFT_VAR) ?? "");
   return Math.max(0, root.offsetHeight - (Number.isFinite(shift) ? shift : 0));
-}
-
-/** Main overlay is `--main-composer-height`. Peer overlay is the composer root. */
-export function readComposerOverlay(
-  area: HTMLElement | null,
-  composerRoot?: HTMLElement | null,
-): number {
-  if (composerRoot && composerRoot.isConnected) {
-    const node = composerRoot.offsetHeight > 0
-      ? composerRoot
-      : composerRoot.firstElementChild;
-    const h = node && typeof (node as HTMLElement).offsetHeight === "number"
-      ? visibleComposerHeight(node as HTMLElement)
-      : 0;
-    return Number.isFinite(h) && h > 0 ? h : 0;
-  }
-  if (area) {
-    const peer = area.closest(".peer-session-pane")?.querySelector(
-      ".peer-session-composer-host > *",
-    );
-    if (peer instanceof HTMLElement) {
-      const h = visibleComposerHeight(peer);
-      if (Number.isFinite(h) && h > 0) return h;
-    }
-  }
-  return readComposerHeight();
 }

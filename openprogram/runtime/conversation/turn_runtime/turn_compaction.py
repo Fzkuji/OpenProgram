@@ -64,7 +64,7 @@ class TurnCompaction:
 
     def over_threshold(self, messages: list) -> bool:
         """Whether a request with ``messages`` passes the automatic threshold."""
-        from openprogram.runtime.context.tokens import real_context_window
+        from openprogram.runtime.context.token_accounting.tokens import real_context_window
         budgets = getattr(self.engine, "budgets", None)
         if budgets is None:
             return False
@@ -99,7 +99,7 @@ class TurnCompaction:
             return None
         if not getattr(result, "summary_id", None):
             return None
-        from openprogram.runtime.context.persistence import rendered_history
+        from openprogram.runtime.context.compaction.persistence import rendered_history
         prep = self.engine.prepare(
             agent=self.agent_profile,
             session=self.db.get_session(self.req.session_id) or {},

@@ -122,8 +122,8 @@ def persist_agent_invocation(session_id: str, invocation: dict, conv: dict,
 
 def request_agent_invocation(session_id: str, invocation: dict | None) -> dict:
     """Build only runtime-owned fields; never forward arbitrary renderer keys."""
-    from openprogram.runtime.conversation.session_config import load_agent_session_binding
-    from openprogram.runtime.conversation.session_model import override_string, read_session_chat_model
+    from openprogram.runtime.conversation.session_settings.session_config import load_agent_session_binding
+    from openprogram.runtime.conversation.session_settings.session_model import override_string, read_session_chat_model
 
     binding = load_agent_session_binding(session_id)
     if invocation is not None:

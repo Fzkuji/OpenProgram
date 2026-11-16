@@ -43,7 +43,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 <table class="stack">
 <thead><tr><th scope="col">参数</th><th scope="col">默认值</th><th scope="col">含义</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>；<code translate="no">None</code> 从凭据库解析。<code translate="no">anthropic</code> 解析不到时抛 <code translate="no">ValueError</code>。</td></tr>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>；给定的 key 原样发送。<code translate="no">None</code> 让每次请求从 provider 的 key 和登录列表中选择，被限流或被拒时换下一个；一个都没有时抛 <code translate="no">ValueError</code>。</td></tr>
 <tr><th scope="row"><code translate="no">model</code></th><td>见上表</td><td>provider 命名空间下的 id（<code translate="no">anthropic</code>、<code translate="no">openai</code>、<code translate="no">google</code>）</td></tr>
 <tr><th scope="row"><code translate="no">max_retries</code></th><td><code translate="no">OPENPROGRAM_MAX_RETRIES</code>，否则 6</td><td>转给基础 <code translate="no">Runtime</code> 的重试额度</td></tr>
 </tbody>

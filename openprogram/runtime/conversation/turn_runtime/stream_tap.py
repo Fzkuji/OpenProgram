@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from openprogram.runtime.conversation.event_parsing import STORED_DETAILS_KEY, STORED_MEDIA_KEY, STORED_RESULT_KEY
 from openprogram.state.reply_text import opening_separator, reply_text
+from openprogram.state import task_blocks
 from openprogram.state.attachments import markers_as_names
 
 if TYPE_CHECKING:
@@ -70,6 +71,9 @@ class StreamTap:
     callback: Callable[[dict], None]
     flush: Callable[[], None]
     blocks: list[dict]
+    # What the reply belonged to before its first task call
+    # (``state.task_blocks``): ``{"task", "step"}`` or None.
+    initial: dict | None = None
 
     def __call__(self, env: dict) -> None:
         self.callback(env)
@@ -81,9 +85,28 @@ def final_blocks(tap: StreamTap, ordered: list[dict], cancel_event) -> list[dict
     The loop's ordered blocks win: on a Stop they hold every response that
     ended, signed as it was, and the cut one's text marked ``partial``
     (``loop_runner._keep_stopped_response``). The tap's trace stands in
-    when they hold nothing.
+    when they hold nothing. Either way each block is stamped with the task
+    and step it belongs to, from the task calls the tap saw
+    (``state.task_blocks``).
     """
-    return ordered or tap.blocks
+    chosen = ordered or tap.blocks
+    task_blocks.stamp(chosen, task_blocks.effects_of(tap.blocks), tap.initial)
+    return chosen
+
+
+def _starting_owner(req: "TurnRequest") -> dict | None:
+    """The task a reply continues from its first block: the open task of
+    the Goal this turn works for (``todo.shared.turn_owner``)."""
+    if getattr(req, "goal_verification", None):
+        return None
+    try:
+        from openprogram.programs.tools.planning.goal import chat as goal_chat
+        from openprogram.programs.tools.planning.todo import shared as tasks
+        goal = goal_chat.current_identity() or getattr(req, "goal_context", None)
+        return tasks.turn_owner(req.session_id, tasks.scope_of(req), goal, getattr(req, "branch_id", None))
+    except Exception:
+        _log.debug("task of the turn not read for session %s", req.session_id, exc_info=True)
+        return None
 
 
 def make_stream_tap(
@@ -121,7 +144,21 @@ def make_stream_tap(
             extra = json.loads(extra)
         except (ValueError, TypeError):
             extra = {}
-    blocks: list[dict] = [dict(b) for b in extra.get("blocks", [])] if isinstance(extra, dict) else []
+    if not isinstance(extra, dict):
+        extra = {}
+    blocks: list[dict] = [dict(b) for b in extra.get("blocks", [])]
+    # A resumed execution keeps what its reply started with; a new one asks.
+    if "task_initial" not in extra and not blocks:
+        started_with = _starting_owner(req)
+        if started_with:
+            extra["task_initial"] = started_with
+    initial: dict | None = task_blocks.clean_effect(extra.get("task_initial"))
+    if initial is not None and not initial.get("task"):
+        initial = None
+    # What the next block belongs to: ``{"task", "step"}`` or empty.
+    owner: dict = task_blocks.owner_after(blocks, initial)
+    # The task whose segment for this reply starts with its first real call.
+    segment_due: list = [initial["task"]] if initial else []
     for block in blocks:
         if block.get("type") == "tool" and block.get("tool_call_id"):
             _tool_args_by_id[block["tool_call_id"]] = block
@@ -199,7 +236,37 @@ def make_stream_tap(
                 changed = True
         if changed:
             _changed(max(count - 1, 0))
+        owner.clear()
+        owner.update(task_blocks.owner_after(blocks, initial))
         return changed
+
+    def _start_segment(tool: str | None) -> None:
+        """The first real call of a reply that continues a task begins the
+        reply's segment of it."""
+        if not segment_due or tool in task_blocks.TASK_TOOLS or owner.get("task") != segment_due[0]:
+            return
+        task_id = segment_due.pop()
+        try:
+            from openprogram.programs.tools.planning.todo import shared as tasks
+            tasks.open_turn_segment(req.session_id, assistant_msg_id, task_id, scope=tasks.scope_of(req, assistant_msg_id),
+                                    branch_id=getattr(req, "branch_id", None))
+        except Exception:
+            _log.debug("task segment not started for session %s", req.session_id, exc_info=True)
+
+    def _apply_effect(index: int, effect) -> None:
+        """A task call returned: it and every block after it change owner."""
+        effect = task_blocks.clean_effect(effect)
+        if effect is None:
+            return
+        blocks[index]["task_effect"] = effect
+        first = task_blocks.stamp(blocks, task_blocks.effects_of(blocks), initial)
+        if first is not None:
+            _changed(first)
+        owner.clear()
+        owner.update(task_blocks.owner_after(blocks, initial))
+        if segment_due and effect.get("task") == segment_due[0]:
+            # The call wrote the segment itself.
+            segment_due.clear()
 
     def flush(*, quiet: bool = False) -> None:
         nonlocal dirty
@@ -213,7 +280,7 @@ def make_stream_tap(
             fields = {
                 "output": output,
                 "metadata": {**_memory_stamp(req), "extra": json.dumps({
-                    **(extra if isinstance(extra, dict) else {}),
+                    **extra,
                     "blocks": blocks, "stream_seq": stream_seq,
                 }, default=str)},
             }
@@ -295,7 +362,7 @@ def make_stream_tap(
                         offset = utf16_length(blocks[-1]["text"])
                     else:
                         offset = 0
-                        blocks.append({"type": etype, "text": ""})
+                        blocks.append({"type": etype, "text": "", **owner})
                     if etype == "text" and delta and not blocks[-1]["text"]:
                         # The first text of a passage after a tool call,
                         # reasoning or a steering message: a client that
@@ -310,6 +377,7 @@ def make_stream_tap(
                         item_id=block_item_id(blocks, len(blocks) - 1),
                         item_index=len(blocks) - 1,
                         offset=offset,
+                        **{key: blocks[-1][key] for key in ("task", "step") if blocks[-1].get(key)},
                     )
                 elif etype == "tool_use":
                     tid = evt.get("tool_call_id")
@@ -318,11 +386,15 @@ def make_stream_tap(
                             "type": "tool", "tool": evt.get("tool"),
                             "tool_call_id": tid,
                             "input": evt.get("input"), "result": None,
-                            "is_error": False,
+                            "is_error": False, **owner,
                         }
                         if evt.get("provider_executed"):
                             card["provider_executed"] = True
                         blocks.append(card)
+                        if evt.get("task_effect") is not None:
+                            # Its ``task_progress`` moved the reply before it ran.
+                            _apply_effect(len(blocks) - 1, evt["task_effect"])
+                        _start_segment(evt.get("tool"))
                 else:
                     for index in range(len(blocks) - 1, -1, -1):
                         block = blocks[index]
@@ -340,6 +412,9 @@ def make_stream_tap(
                                 block["provider_executed"] = True
                                 if evt.get("input"):
                                     block["input"] = evt.get("input")
+                            stored_details = evt.get(STORED_DETAILS_KEY)
+                            if isinstance(stored_details, dict) and "task" in stored_details:
+                                _apply_effect(index, stored_details["task"])
                             break
                     else:
                         if evt.get("provider_executed"):
@@ -350,7 +425,7 @@ def make_stream_tap(
                                 "input": evt.get("input"),
                                 "result": evt.get("result"),
                                 "is_error": bool(evt.get("is_error")),
-                                "outcome": evt.get("outcome"),
+                                "outcome": evt.get("outcome"), **owner,
                             })
                 if etype in {"tool_use", "tool_result"} and not evt.get("provider_executed"):
                     # Local tools run after a response ended; the next one starts here.
@@ -437,4 +512,4 @@ def make_stream_tap(
                 req.session_id, exc_info=True,
             )
 
-    return StreamTap(_on_event_persist, flush, blocks)
+    return StreamTap(_on_event_persist, flush, blocks, initial)

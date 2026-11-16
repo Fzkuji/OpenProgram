@@ -3,7 +3,7 @@ import contextvars
 from types import SimpleNamespace
 
 from openprogram.runtime.agent import turn_request
-from openprogram.runtime.conversation import plan_mode
+from openprogram.runtime.conversation.session_settings import plan_mode
 
 
 def test_the_bound_turn_request_stands_in_for_the_turn_start_variable(monkeypatch):

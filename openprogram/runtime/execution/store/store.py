@@ -93,9 +93,9 @@ class ExecutionStore(StateBlobsOperations, ProjectionsOperations, CommandsOperat
         starting on files that are being restored."""
         self.tables.ensure_session(session_id)
         from openprogram.state.paths import get_state_dir
-        from openprogram.state.store.session.migration import session_hold_active
+        from openprogram.state.store.session.files.migration import session_hold_active
         from openprogram.state.store.session.operations import wait_for_workspace
-        from openprogram.state.store.session.session_lock import session_interprocess_lock
+        from openprogram.state.store.session.files.session_lock import session_interprocess_lock
 
         if not wait_for_workspace(session_id):
             raise ExecutionConflict(
@@ -321,7 +321,7 @@ class ExecutionStore(StateBlobsOperations, ProjectionsOperations, CommandsOperat
                         raise ExecutionConflict("admission_key_conflict", "Continuation key has different immutable input")
                     return existing
             if recovery_from is not None:
-                from ..chat_recovery import recovery_state
+                from ..recovery.chat_recovery import recovery_state
                 previous = self._require_execution(connection, recovery_from[0])
                 if previous.session_id != session_id or previous.status_version != recovery_from[1]:
                     raise ExecutionConflict("stale_version", "Interrupted source changed before admission")

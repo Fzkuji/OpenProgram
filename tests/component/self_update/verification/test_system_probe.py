@@ -28,7 +28,7 @@ def live(tmp_path, monkeypatch):
     from openprogram.interfaces.server.routes.settings import misc
     from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     from openprogram.operations.diagnostics import checks as doctor
-    from tests.component.providers.adapters import test_web_owner_auth_listener as listener
+    from tests.component.webui.owner_auth import test_web_owner_auth_listener as listener
 
     profile = tmp_path / "profile"
     port = listener._free_port()

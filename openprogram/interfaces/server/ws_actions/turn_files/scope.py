@@ -470,7 +470,7 @@ def _history_eligibility(session_id: str, turn_id: str) -> dict:
 
     journal = CheckpointStore(session_dir)
     ownership = {"status": "ready", "owned_turn_ids": [], "blockers": [], "linked": []}
-    from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
+    from openprogram.runtime.conversation.rewinds.history_ownership import owned_change_set_closure
 
     ownership = owned_change_set_closure(session_id, [turn_id])
     if ownership["status"] != "ready":
@@ -533,7 +533,7 @@ def _turn_scope(
     if turn_id not in index.nodes_by_id:
         return {"status": "error", "error": f"unknown turn {turn_id!r}"}
     root = _project_root(session_id)
-    from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
+    from openprogram.runtime.conversation.rewinds.history_ownership import owned_change_set_closure
 
     ownership = owned_change_set_closure(session_id, [turn_id])
     producer_ids = [turn_id] + ownership["owned_turn_ids"]
@@ -683,7 +683,7 @@ def _branch_scope(
         node for node in reversed(_active_nodes(index))
         if node.role == "llm" and not (node.metadata or {}).get("reverted")
     ]
-    from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
+    from openprogram.runtime.conversation.rewinds.history_ownership import owned_change_set_closure
 
     ownership = owned_change_set_closure(
         session_id, [node.id for node in active_llm],

@@ -1,21 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { confirmAction } from "@/components/ui/confirm-dialog";
+import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { ManageEmptyState } from "@/components/ui/manage-page";
 import { Switch } from "@/components/ui/switch";
 import { HoverTip } from "@/components/ui/tooltip";
+import { SettingsHeading } from "@/components/settings/settings-ui";
 import { useTranslation } from "@/lib/i18n";
 import type { ProviderStatus, ProviderUsage } from "@/lib/settings/provider-status.generated";
 import { settingsSend } from "@/lib/settings/settings-request";
 import { cn } from "@/lib/utils";
 
+import { BaseUrl } from "./auth/base-url";
 import { Connectivity } from "./auth/connectivity";
 import { CliInfo, SetupHint } from "./auth/setup-hint";
-import { KeysPanel } from "./detail/keys-panel";
+import { credentialUrl, readCredentials } from "./detail/credential-model";
+import { CredentialsSection, type CredentialFix } from "./detail/credentials-section";
 import { UsagePanel } from "./detail/usage-panel";
 import { ProviderIcon } from "./icons/provider-icon";
 import { ModelList } from "./model-list";
@@ -25,11 +31,12 @@ import styles from "./status/status.module.css";
 import type { Model, Provider } from "./types";
 
 /** One provider's page (design §5): back to the list, its name, health,
- *  when its status was read and Refresh, the on switch; usage beside the
- *  keys; the models table; Remove provider at the foot. */
+ *  when its status was read and Refresh, the on switch; its credentials;
+ *  usage; the models table; Remove provider at the foot. */
 export function Detail({
   provider,
   status = null,
+  fix = null,
   onBack,
   onRefresh,
   onToggle,
@@ -38,6 +45,8 @@ export function Detail({
 }: {
   provider: Provider;
   status?: ProviderStatus | null;
+  /** The fix a card sent here (Sign in again, Replace key). */
+  fix?: CredentialFix | null;
   onBack?: () => void;
   onRefresh?: () => void | Promise<void>;
   onToggle: (enabled: boolean) => void;
@@ -138,21 +147,20 @@ export function Detail({
     if (!(await confirmAction({
       title: text(`Remove ${provider.label}?`, `移除 ${provider.label}？`),
       description: provider.custom
-        ? text("The provider and its models are deleted.", "这个 Provider 和它的模型会被删除。")
+        ? text("The provider and its models are deleted.", "这个服务商和它的模型会被删除。")
         : text("Its saved keys and sign-ins are deleted from this computer and it is switched off.", "这台电脑上保存的密钥和登录信息会被删除，并停用它。"),
       confirmLabel: text("Remove", "移除"),
       destructive: true,
     }))) return;
-    const failure = text("Could not remove this provider.", "无法移除这个 Provider。");
+    const failure = text("Could not remove this provider.", "无法移除这个服务商。");
     const id = encodeURIComponent(provider.id);
     if (provider.custom) {
       if ((await settingsSend(`/api/providers/custom/${id}`, { method: "DELETE", failure })) === null) return;
     } else {
       try {
-        const r = await fetch(`/api/providers/${id}/accounts`);
-        const d = r.ok ? await r.json() : { accounts: [] };
-        for (const a of (d.accounts ?? []) as { id: string }[]) {
-          if ((await settingsSend(`/api/providers/${id}/accounts/remove`, { body: { id: a.id }, failure })) === null) return;
+        const list = await readCredentials(provider.id);
+        for (const c of list.credentials.filter((row) => !row.env_var)) {
+          if ((await settingsSend(credentialUrl(provider.id, c.id), { method: "DELETE", failure })) === null) return;
         }
       } catch { /* nothing saved to remove */ }
       if ((await settingsSend(`/api/providers/${id}/toggle`, { body: { enabled: false }, failure })) === null) return;
@@ -173,9 +181,15 @@ export function Detail({
   return (
     <div className={styles.detail}>
       {onBack ? (
-        <button type="button" className={styles.crumb} onClick={onBack}>
-          <ArrowLeft size={14} aria-hidden="true" />{text("LLM Providers", "LLM Providers")}
-        </button>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><button type="button" onClick={onBack}>{text("LLM Providers", "LLM 服务商")}</button></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem><BreadcrumbPage>{provider.label}</BreadcrumbPage></BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       ) : null}
       <div className="flex flex-wrap items-center gap-[12px]">
         <ProviderIcon id={provider.id} size={32} />
@@ -192,22 +206,33 @@ export function Detail({
             </Button>
           </HoverTip>
         ) : null}
-        <Switch checked={provider.enabled} onCheckedChange={onToggle} aria-label={text("Enable this provider", "启用这个 Provider")} />
+        <Switch checked={provider.enabled} onCheckedChange={onToggle} aria-label={text("Enable this provider", "启用这个服务商")} />
       </div>
 
-      {provider.setup_hint ? <SetupHint key={`${provider.id}:setup`} hint={provider.setup_hint} configured={!!provider.configured} /> : null}
+      {/* How to connect, until the provider has a credential: the list says the rest. */}
+      {provider.setup_hint && (provider.local || !provider.configured) ? (
+        <SetupHint key={`${provider.id}:setup`} hint={provider.setup_hint} configured={!!provider.configured} local={!!provider.local} />
+      ) : null}
 
-      <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] items-start gap-[16px] @max-[760px]:grid-cols-1">
-        <UsagePanel key={`${provider.id}:usage`} providerId={provider.id} status={status} />
-        {hasKeys ? <KeysPanel key={`${provider.id}:keys`} provider={provider} status={status} onChanged={changed} /> : null}
-      </div>
+      {hasKeys ? (
+        <CredentialsSection key={`${provider.id}:credentials`} provider={provider} consoleUrl={status?.console_url ?? null} fix={fix} onChanged={changed} />
+      ) : null}
+
+      {provider.api_key_env || provider.local ? (
+        <section className="flex flex-col gap-3" aria-label={text("Endpoint", "接口地址")}>
+          <SettingsHeading title={text("Endpoint", "接口地址")} />
+          <BaseUrl key={`${provider.id}:base-url`} provider={provider} onChanged={changed} />
+        </section>
+      ) : null}
+
+      <UsagePanel key={`${provider.id}:usage`} providerId={provider.id} status={status} />
 
       {provider.local ? <Connectivity key={`${provider.id}:check`} providerId={provider.id} local /> : null}
 
       {(provider.custom || provider.local) && provider.kind !== "cli" ? (
-        <section className={styles.panel} aria-label={text("Add model by id", "手动添加模型")}>
-          <div className={styles.panelHead}>{text("Add model by id", "手动添加模型")}</div>
-          <div className="flex gap-[10px] items-center">
+        <section className="flex flex-col gap-3" aria-label={text("Add model by id", "手动添加模型")}>
+          <SettingsHeading title={text("Add model by id", "手动添加模型")} />
+          <Field orientation="horizontal" data-invalid={manualError ? true : undefined}>
             <Input placeholder={text("model id (e.g. my-model)", "模型 id（如 my-model）")} aria-label={text("Model id", "模型 id")} value={manualId}
               onChange={(e) => setManualId(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void addManualModel(); }} />
             {provider.local ? (
@@ -223,35 +248,29 @@ export function Detail({
             <Button onClick={() => void addManualModel()} disabled={!manualId.trim() || manualBusy}>
               {manualBusy ? text("Adding…", "添加中…") : text("Add", "添加")}
             </Button>
-          </div>
-          {manualError ? <div className={cn(styles.line, styles.bad)} role="alert">{manualError}</div> : null}
+          </Field>
+          {manualError ? <FieldError role="alert">{manualError}</FieldError> : null}
         </section>
       ) : null}
 
       {provider.kind === "cli" ? (
         <CliInfo provider={provider} />
       ) : modelsState === "loading" ? null : modelsState === "failed" ? (
-        <div className="flex items-center justify-between gap-[10px]">
-          <span className={cn(styles.xs, styles.muted)}>{text("Could not load the model list.", "无法加载模型列表。")}</span>
-          <Button variant="elevated" size="sm" onClick={() => void reloadModels()}>{text("Retry", "重试")}</Button>
-        </div>
+        <ManageEmptyState compact title={text("Could not load the model list.", "无法加载模型列表。")}
+          action={<Button variant="elevated" size="sm" onClick={() => void reloadModels()}>{text("Retry", "重试")}</Button>} />
       ) : models.length > 0 ? (
         <ModelList key={`${provider.id}:models`} provider={provider} models={models} spend={spend} included={included || !!status?.spend.included} defaultModel={status?.default_model ?? null} onReload={changed} />
       ) : (
-        <section className={styles.panel} aria-label={text("Models", "模型")}>
-          <div className={styles.panelHead}>
-            <span>{text("Models", "模型")}</span>
-            <span className={cn(styles.xs, styles.muted)}>{text("None yet", "还没有")}</span>
-            <span className="flex-1" />
-            {fetchStatus ? <span className={cn(styles.xs, styles.muted)} role="status">{fetchStatus}</span> : null}
-            {provider.supports_fetch ? <Button size="sm" onClick={() => void fetchModels()}>{text("Fetch models", "获取模型")}</Button> : null}
-          </div>
+        <section className="flex flex-col gap-3" aria-label={text("Models", "模型")}>
+          <SettingsHeading title={text("Models", "模型")} />
+          <ManageEmptyState compact title={text("No models yet", "还没有模型")} description={fetchStatus ?? undefined}
+            action={provider.supports_fetch ? <Button size="sm" onClick={() => void fetchModels()}>{text("Fetch models", "获取模型")}</Button> : undefined} />
         </section>
       )}
 
       <div className="flex justify-end">
-        <Button variant="ghost" size="sm" className="text-[var(--danger-soft)]" onClick={() => void removeProvider()}>
-          {text("Remove provider", "移除 Provider")}
+        <Button variant="destructive" size="sm" onClick={() => void removeProvider()}>
+          {text("Remove provider", "移除服务商")}
         </Button>
       </div>
     </div>

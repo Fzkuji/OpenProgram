@@ -28,7 +28,7 @@ _READ_ONLY_TOOLS = frozenset({
     "read", "glob", "grep", "list", "lsp_definition", "lsp_diagnostics", "lsp_references",
     "semble_search", "semble_find_related", "read_conversation", "read_mcp_resource",
     "list_mcp_resources", "list_mcp_prompts", "get_mcp_prompt", "list_agents", "list_jobs",
-    "job_output", "todo_list", "get_goal", "help",
+    "job_output", "task_list", "get_goal", "help",
 })
 _FILE_EDIT_TOOLS = frozenset({"write", "edit"})
 
@@ -199,7 +199,7 @@ class JournalState:
         ``round_start`` as the live turn marks it (``turn_runtime.loop_runner``).
         A resumed turn is stored with these cards, and the next turn renders
         its earlier responses from the marks the way they were sent
-        (``context/render.py``), so the cached prefix holds.
+        (``context/session_dag/render.py``), so the cached prefix holds.
         """
         blocks: list[dict[str, Any]] = []
         for decision in self.decisions:

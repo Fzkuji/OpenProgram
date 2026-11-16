@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from openprogram.runtime.permissions.authority import local_owner_authority
 from openprogram.state.store.session.nodes import Call
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.control import RuntimeControlService
 from openprogram.runtime.execution.driver import DriverAck, DriverBinding, DriverRegistry
 from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus

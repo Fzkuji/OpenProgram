@@ -3,7 +3,7 @@
 <h1>Publishing source to GitHub</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="Three lines. dev takes every commit made with git commit, in the main checkout or a worktree, and feeds the development instance on port 18200. stable shares dev's history; openprogram dev promote alone fast-forwards it to a dev commit, and it runs the stable App on port 18100. main has its own history: scripts/publish-github.sh alone adds one commit per version, holding a stable tree on top of the previous version. GitHub carries main for source installs, CI and release tags. No dev commit is an ancestor of main and the lines never merge.">
+<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="Three lines. dev takes every commit made with git commit, in the main checkout or a worktree, and feeds the development instance on port 18200. stable shares dev's history; openprogram dev promote alone fast-forwards it to a dev commit, and it runs the stable App on port 18100. main has its own history: scripts/publishing/publish-github.sh alone adds one commit per version, holding a stable tree on top of the previous version. GitHub carries main for source installs, CI and release tags. No dev commit is an ancestor of main and the lines never merge.">
   <defs>
     <marker id="p-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
   </defs>
@@ -26,7 +26,7 @@
   <circle class="gate" cx="272" cy="158" r="5"/><circle class="gate" cx="368" cy="158" r="5"/><circle class="gate" cx="464" cy="158" r="5"/>
 
   <line class="ln-acc" x1="464" y1="166" x2="464" y2="290" marker-end="url(#p-a)"/>
-  <text class="t-cmd mid" translate="no" x="340" y="232">scripts/publish-github.sh</text>
+  <text class="t-cmd mid" translate="no" x="340" y="232">scripts/publishing/publish-github.sh</text>
   <text class="t-soft mid" x="340" y="252">Squash the tree into one commit</text>
 
   <text class="t-big" translate="no" x="0" y="304">main</text>
@@ -40,7 +40,7 @@
   <li><strong translate="no">dev</strong><small>Every commit, by <code translate="no">git commit</code> in the main checkout or a worktree</small><small>Development instance, port 18200</small></li>
   <li class="via"><code translate="no">openprogram dev promote</code></li>
   <li><strong translate="no">stable</strong><small>Fast-forwarded to dev commits; same history as <code translate="no">dev</code></small><small>Stable App, port 18100</small></li>
-  <li class="via"><code translate="no">scripts/publish-github.sh</code></li>
+  <li class="via"><code translate="no">scripts/publishing/publish-github.sh</code></li>
   <li class="flow-end"><strong translate="no">main</strong><small>One squashed commit per version, its own history</small><small>GitHub: source installs, CI, release tags</small></li>
 </ol>
 </figure>
@@ -51,11 +51,11 @@
 <p>Locally there are exactly these three. A worktree branch is merged into <code translate="no">dev</code> and deleted, or deleted when abandoned. One worth keeping goes under <code translate="no">refs/archive/</code>, which no command lists as a branch and nothing pushes.</p>
 
 <h2 id="publishing-a-version">Publishing a version</h2>
-<pre><code translate="no">scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
-scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
+<pre><code translate="no">scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
+scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
 python scripts/release/release-version.py set 1.3.0
-scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
-scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
@@ -114,20 +114,22 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 </details>
 
 <h2 id="publishing-identity">Publishing identity</h2>
-<p>Everything on GitHub is signed by one account: <code translate="no">FuzzyKuji</code>, <code translate="no">9404270+FuzzyKuji@users.noreply.github.com</code>, repository <code translate="no">FuzzyKuji/OpenProgram</code>. The script sets it on each version commit whatever identity the checkout commits with, and refuses to push a <code translate="no">main</code> holding any other. Author lines in <code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code> and the README licence line name the same account.</p>
+<p>The repository is <code translate="no">Fzkuji/OpenProgram</code>, the project's first repository: <code translate="no">main</code> carries its history up to 0.9.8 and then one commit per version from 1.0.0.</p>
+<p>Each version commit is signed <code translate="no">FzKuji</code>, <code translate="no">fzkuji@gmail.com</code>, the signature of the earlier history; the script sets it whatever identity the checkout commits with and refuses to upload a version holding any other. Only the part of <code translate="no">main</code> GitHub does not have yet is checked, since the earlier history has many authors.</p>
+<p>Versions 1.0.0 to 1.3.0 were built in <code translate="no">FuzzyKuji/OpenProgram</code>, where their installers stay. Download links, the installer scripts and the App's update check read releases from there until a version is released from <code translate="no">Fzkuji/OpenProgram</code>; source links already point at <code translate="no">Fzkuji/OpenProgram</code>. Author lines in <code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code> and the README licence line keep the name the 1.x versions shipped with.</p>
 
 <h2 id="retired-accounts">Retired accounts</h2>
-<p>The project once published under GitHub accounts it no longer has. Nothing published names them: no author, link, example, fixture or note.</p>
+<p>The project once published under a GitHub account it no longer has. Nothing published names it: no author, link, example, fixture or note.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Where</th><th scope="col">Check</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">scripts/retired_accounts.py</code></th><td>Holds each login, address and id only as the SHA-256 of its lowercase form, so the guard names none. Text is compared token by token; tokens are also split at <code translate="no">/ @ + . _ -</code> and percent-encoding (also double), HTML entities and <code translate="no">\u</code>/<code translate="no">\x</code> escapes are decoded, so a login inside a URL, an address or a file name is found; the main login is found inside longer words too, like <code translate="no">git grep -i</code></td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/retired_accounts.py</code></th><td>Holds each login, address and id only as the SHA-256 of its lowercase form, so the guard names none. Text is compared token by token; tokens are also split at <code translate="no">/ @ + . _ -</code> and percent-encoding (also double), HTML entities and <code translate="no">\u</code>/<code translate="no">\x</code> escapes are decoded, so a login inside a URL, an address or a file name is found</td></tr>
 <tr><th scope="row"><code translate="no">tests/unit/config/test_no_retired_accounts.py</code></th><td>Fails when any tracked text file, or a tracked path, names one</td></tr>
-<tr><th scope="row"><code translate="no">scripts/publish-github.sh</code></th><td>Scans the source commit's tree, read from the object store rather than the checkout, the summary and the history of <code translate="no">main</code></td></tr>
-<tr><th scope="row"><code translate="no">scripts/update_readme_contributors.py</code></th><td>Never lists a retired login in the README contributor block</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/publish-github.sh</code></th><td>Scans the source commit's tree, read from the object store rather than the checkout, the summary and the part of <code translate="no">main</code> being uploaded</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/update_readme_contributors.py</code></th><td>Never lists a retired login in the README contributor block</td></tr>
 </tbody>
 </table>
-<p>GitHub carries versions from 1.0.0 onward. <code translate="no">.github/release-notes/</code> holds notes for those versions only, and the 1.0.0 notes link to no earlier version.</p>
+<p><code translate="no">.github/release-notes/</code> holds notes for those versions only, and the 1.0.0 notes link to no earlier version.</p>
 
 <h2 id="website">The website</h2>
 <p>The landing page and the documentation are published to <code translate="no">FuzzyKuji/openprogram-site</code> by the docs-pages workflow and served by GitHub Pages at <code translate="no">https://fuzzykuji.github.io/openprogram-site/</code>, documentation under <code translate="no">docs/</code>. The address is one setting: <code translate="no">SITE_URL</code> in <code translate="no">openprogram/operations/project_site.py</code>.</p>
@@ -146,7 +148,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <h2 id="what-a-release-builds">What a release builds</h2>
 <p>The Release workflow runs on the pushed tag. Every platform leg is independent.</p>
 <p>A tag never moves, so a release can be rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. When both pass, <code translate="no">scripts/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit; without <code translate="no">--source</code>, a promotion made in between would become a new, unrehearsed version.</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit; without <code translate="no">--source</code>, a promotion made in between would become a new, unrehearsed version.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
@@ -197,7 +199,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <tr><th scope="row">Where the App looks</th><td>Its own version's release, then <code translate="no">releases/latest/download/</code>, which serves a build that has no release of its own while the pin is unchanged. Both copies are held to the pinned size and SHA-256</td></tr>
 <tr><th scope="row">Why not only the newest release</th><td>A fixed name on the newest release breaks every installed version the day a release changes the pack; a copy in each release keeps each version installable for as long as its release exists</td></tr>
 <tr><th scope="row">No release has it</th><td>The install answers <code translate="no">office_release_missing</code>: a version before 1.3.0 is told to update to 1.3.0 or newer, any other to update to the newest version. A retry is not offered as the fix</td></tr>
-<tr><th scope="row">Where a release gets it</th><td>It cannot be rebuilt in CI: the licensed fonts and the pinned editor build are the owner's inputs (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>). The <code translate="no">office</code> job downloads the newest published release's copy, or else the one on the tag's draft release, and checks its bytes</td></tr>
+<tr><th scope="row">Where a release gets it</th><td>It cannot be rebuilt in CI: the licensed fonts and the pinned editor build are the owner's inputs (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>). The <code translate="no">office</code> job downloads the newest published release's copy, or else the one on the tag's draft release, and checks its bytes</td></tr>
 <tr><th scope="row">First release to carry it</th><td><code translate="no">publish-github.sh --tag vX.Y.Z --office-archive /path/to/OfficeAssets-….zip</code> checks the file and, before anything moves, puts it on the tag's draft release (<code translate="no">office-archive.py seed</code>). Every later release carries the previous one's copy with no upload by hand</td></tr>
 <tr><th scope="row">Neither copy exists</th><td>The <code translate="no">office</code> job fails with the file name, size, SHA-256 and the seed command. Every build waits for it, so nothing is built or published</td></tr>
 <tr><th scope="row">After publishing</th><td>The check on the public latest release also requires exactly one copy of the archive</td></tr>
@@ -208,12 +210,12 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <h3 id="rebuilding-the-office-archive">Rebuilding the archive</h3>
 <p>On the owner's machine, from a <code translate="no">dev</code> checkout. The <code translate="no">pack</code> step makes the same zip from the same prepared pack. An installed copy is a prepared pack: when <code translate="no">~/.openprogram/cache/office/&lt;source&gt;-&lt;patch&gt;/versions/&lt;manifest&gt;</code> validates against the pins in <code translate="no">office_editor/assets.py</code>, copy it out and go straight to the <code translate="no">pack</code> step; nothing is built or downloaded.</p>
 <ol>
-<li>Gather the inputs the <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a> names: a git checkout of <code translate="no">agentbridges-ai/onlyoffice-browser</code> at <code translate="no">d15d12b6945be4d8b0f3aa1806120e740d2950ee</code> (package 0.3.34); the licensed font input and the font pack made from it with <code translate="no">font-generation.mjs</code> and Document Server 9.3.0's generator, whose manifest digest must equal <code translate="no">OFFICE_FONT_MANIFEST_DIGEST</code> in <code translate="no">office_editor/assets.py</code>; npm registry access for <code translate="no">npm ci</code>.</li>
+<li>Gather the inputs the <a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a> names: a git checkout of <code translate="no">agentbridges-ai/onlyoffice-browser</code> at <code translate="no">d15d12b6945be4d8b0f3aa1806120e740d2950ee</code> (package 0.3.34); the licensed font input and the font pack made from it with <code translate="no">font-generation.mjs</code> and Document Server 9.3.0's generator, whose manifest digest must equal <code translate="no">OFFICE_FONT_MANIFEST_DIGEST</code> in <code translate="no">office_editor/assets.py</code>; npm registry access for <code translate="no">npm ci</code>.</li>
 <li>Set <code translate="no">OFFICE_LOCK_SHA256</code> in <code translate="no">office_editor/assets.py</code> to the SHA-256 of <code translate="no">scripts/release/office/package-lock.json</code>, the reviewed lock <code translate="no">prepare.py</code> builds with; the pack's last validation refuses any other lock.</li>
 <li><code translate="no">python scripts/release/office/prepare.py --source … --font-pack … --font-input … --output /path/to/prepared-office</code></li>
 <li><code translate="no">python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out</code> writes the zip and pins its name, size and SHA-256 in <code translate="no">install.py</code> and the download limit in <code translate="no">safe_http.py</code>.</li>
 <li>Run the affected tests, commit on <code translate="no">dev</code>, deploy and promote.</li>
-<li><code translate="no">scripts/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>, then the same without <code translate="no">--dry-run</code>.</li>
+<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>, then the same without <code translate="no">--dry-run</code>.</li>
 </ol>
 
 <h2 id="the-guards">The guards</h2>
@@ -241,7 +243,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td><code translate="no">scripts/publish-github.sh</code> with dry run, <code translate="no">--no-push</code>, <code translate="no">--tag</code>, credential scan, retired-account scan, publishing-identity check and <code translate="no">refs/publish/last</code>; both guards; the rules in <code translate="no">AGENTS.md</code>; the Release workflow's independent legs; the Office archive in every release and the App's download from its own release</td></tr>
+<tr><th scope="row">Implemented</th><td><code translate="no">scripts/publishing/publish-github.sh</code> with dry run, <code translate="no">--no-push</code>, <code translate="no">--tag</code>, credential scan, retired-account scan, publishing-identity check and <code translate="no">refs/publish/last</code>; both guards; the rules in <code translate="no">AGENTS.md</code>; the Release workflow's independent legs; the Office archive in every release and the App's download from its own release</td></tr>
 <tr><th scope="row">Not yet run</th><td>A complete Release run. The one run so far, for v1.1.0, published the macOS and Linux Apps and every command-line runtime; the Windows installer was built and left out, because the Windows update files failed. The 1.2.0 rehearsal ran once: the publish job's check named the three Apps that did not pass (both macOS legs at signing, Windows at its App smoke). The Windows install smoke workflow has not run</td></tr>
 <tr><th scope="row">Website not republished</th><td>The site still serves the build from before the address became a setting: its links point to <code translate="no">/docs/</code> at the host root, and pages added since, such as the download page, are missing until the docs-pages workflow runs again. The social card picture still shows <code translate="no">openprogram.io</code></td></tr>
 <tr><th scope="row">Waiting for 1.3.0</th><td>No release carries the Office archive yet. The pinned file, <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code>, is <a href="#rebuilding-the-office-archive">packed</a> from the installed pack and kept on the owner's machine at <code translate="no">~/OpenProgram-release/office/</code>; 1.3.0 is tagged with <code translate="no">--office-archive</code> pointing at it</td></tr>

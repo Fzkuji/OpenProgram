@@ -75,6 +75,35 @@ def goal_branch_tip(session_id: str, goal: dict | None) -> str | None:
     return ref.get("head_id") if isinstance(ref, dict) and ref.get("status") != "aborted" else None
 
 
+def follow_last_turn(store, session_id: str, goal: dict, previous_execution_id: str) -> dict:
+    """Keep the Goal on the branch its last turn was written on.
+
+    The Goal's turns continue one line. When the reply of its last turn is
+    not on the line of the branch the Goal names (the person's retry or
+    edit moved that turn onto a new branch; a conversation saved while each
+    runtime turn was recorded as a branch of its own), the Goal takes the
+    branch whose line holds that reply, the selected one first, and its
+    tasks and steps go with it. With the reply on its own line, or on no
+    recorded one, the Goal stays where it is.
+    """
+    branch = goal.get("branch_id")
+    source = store.get_execution_input(previous_execution_id)
+    reply = getattr(source, "assistant_message_id", None)
+    if not branch or not reply:
+        return goal
+    try:
+        holder = goals._db().branch_holding(session_id, reply, prefer=branch)
+    except Exception:
+        logging.getLogger(__name__).warning("Goal branch not checked in %s", session_id, exc_info=True)
+        return goal
+    if not holder or holder == branch:
+        return goal
+    from openprogram.programs.tools.planning.todo import shared
+    shared.carry_board(session_id, branch, holder)
+    goal["branch_id"] = holder
+    return publish(session_id, goal)
+
+
 class _Queue:
     """Threads of this process waiting for one session's Goal lock."""
 
@@ -239,7 +268,7 @@ IDLE_WARNING = (
 def continuation_policy() -> dict:
     """Completion provenance; canonical control remains the ownership authority."""
     from openprogram.runtime.execution.process_owner import current_process_owner
-    from openprogram.runtime.execution.restart import window_seconds
+    from openprogram.runtime.execution.recovery.restart import window_seconds
     return {"process": current_process_owner(), "window_seconds": window_seconds()}
 
 
@@ -253,8 +282,9 @@ STANDING_GOAL_NOTE = (
 
 def continuation_prompt(goal: dict) -> str:
     """The user text of an automatic continuation turn."""
-    prompt = ("Continue the active Goal. Inspect the current todo plan and actual results, "
-              "then do the remaining work or verify completion.")
+    prompt = ("Continue the active Goal. Look at the open task's steps and the actual results, "
+              "then do the remaining work or verify completion. Move the task on with "
+              "task_progress {\"step\": N} on your next real tool call.")
     if goal.get("origin") == "always_on":
         prompt += "\n\n" + STANDING_GOAL_NOTE
     if int(goal.get("idle_turns") or 0):
@@ -322,9 +352,65 @@ def todos(session_id: str, goal: dict) -> list[dict]:
             and item.get("goal_revision") == goal.get("revision")]
 
 
+#: Statuses of a step that no longer stands between the Goal and its end.
+SETTLED = ("completed", "dropped")
+
+
+def unfinished_todos(session_id: str, goal: dict) -> list[dict]:
+    """The Goal's steps still to do; a dropped step is not one."""
+    return [item for item in todos(session_id, goal) if item.get("status") not in SETTLED]
+
+
 def project_todos(session_id: str, goal: dict) -> list[dict]:
     return [{"text": item["subject"], "done": item["status"] == "completed"}
-            for item in todos(session_id, goal)]
+            for item in todos(session_id, goal) if item.get("status") != "dropped"]
+
+
+def tasks(session_id: str, goal: dict) -> list[dict]:
+    """The tasks started under this Goal revision, oldest first."""
+    from openprogram.programs.tools.planning.todo import shared
+    return [task for task in shared.load_tasks(session_id, goal.get("branch_id"))
+            if task.get("goal_id") == goal.get("goal_id")
+            and task.get("goal_revision") == goal.get("revision")]
+
+
+def progress(session_id: str, goal: dict) -> dict | None:
+    """Where the Goal's latest task stands, for the Goal chip: the task,
+    the step in progress (None when there is none) and its place among the
+    counted steps (``on``), the steps done and counted, and the reply
+    holding the task's latest block. None when the Goal has no task."""
+    from openprogram.programs.tools.planning.todo import shared
+    own = tasks(session_id, goal)
+    if not own:
+        return None
+    task = own[-1]
+    steps = shared.steps_of(shared.load(session_id, goal.get("branch_id")), str(task.get("id")))
+    kept = shared.counted(steps)
+    running = shared.current_step(steps) if task.get("status") == "open" else None
+    segment = next((plan for plan in reversed(shared.load_plans(session_id, goal.get("branch_id")))
+                    if plan.get("plan_id") == task.get("id")), None)
+    return {
+        "task": task.get("id"), "title": task.get("title") or "",
+        "step": running.get("subject") if running is not None else None,
+        "on": kept.index(running) + 1 if running is not None else None,
+        "done": sum(1 for step in kept if step.get("status") == "completed"), "total": len(kept),
+        "anchor": segment.get("anchor_id") if segment is not None else None,
+    }
+
+
+def _project_plan(session_id: str, goal: dict) -> bool:
+    """Write the Goal's checklist and progress from the board; whether
+    either changed."""
+    checklist = project_todos(session_id, goal)
+    current = progress(session_id, goal)
+    if checklist == goal.get("checklist") and current == goal.get("progress"):
+        return False
+    goal["checklist"] = checklist
+    if current is None:
+        goal.pop("progress", None)
+    else:
+        goal["progress"] = current
+    return True
 
 
 _refresh_waiting: set[str] = set()  # sessions with a usage refresh in line
@@ -366,9 +452,7 @@ def refresh_todos(session_id: str) -> None:
     goal = goals.load_goal(session_id)
     if not goal or goal.get("execution_mode") != "chat":
         return
-    checklist = project_todos(session_id, goal)
-    if checklist != goal.get("checklist"):
-        goal["checklist"] = checklist
+    if _project_plan(session_id, goal):
         publish(session_id, goal)
 
 
@@ -384,8 +468,8 @@ def update(session_id: str, status: str, *, expected: dict | None) -> dict:
         raise goals.GoalConflictError("Goal is no longer active")
     if status not in {"complete", "blocked"}:
         raise ValueError("update_goal accepts complete or blocked")
-    if status == "complete" and any(item.get("status") != "completed" for item in todos(session_id, goal)):
-        raise ValueError("Goal has unfinished todo items; verify and finish them first")
+    if status == "complete" and unfinished_todos(session_id, goal):
+        raise ValueError("Goal has unfinished task steps; finish them, or drop the ones that no longer apply, first")
     if status == "blocked" and int(goal.get("run_turns") or 0) < 2:
         raise ValueError("Recheck the same blocker over at least three Goal turns before marking blocked")
     goals.accumulate_goal_usage(session_id, goal)
@@ -523,17 +607,17 @@ def goal_note(session_id: str, branch_id: str | None,
             "</goal-reminder>"), disclosure, False
 
 
-#: Turns without a todo tool call, and since the last reminder, before the
-#: todo list is shown again (Claude Code's ``TODO_REMINDER_CONFIG``).
+#: Turns without a task tool call, and since the last reminder, before the
+#: Goal's steps are shown again (Claude Code's ``TODO_REMINDER_CONFIG``).
 TODO_REMINDER_TURNS = 10
 
 
 def todo_reminder(session_id: str, branch_id: str | None,
                   turns_since_use: int | None, turns_since_reminder: int | None) -> str:
-    """The Goal's todo list, when the model has not used a todo tool for
+    """The Goal's steps, when the model has not used a task tool for
     :data:`TODO_REMINDER_TURNS` turns and was not reminded in as many;
-    "" otherwise. The model sees the list in its todo tools' results, so it
-    is not repeated every turn."""
+    "" otherwise. The model sees the steps in its task tools' results, so
+    they are not repeated every turn."""
     if turns_since_use is None or turns_since_use < TODO_REMINDER_TURNS:
         return ""
     if turns_since_reminder is not None and turns_since_reminder < TODO_REMINDER_TURNS:
@@ -545,8 +629,9 @@ def todo_reminder(session_id: str, branch_id: str | None,
     if not items:
         return ""
     lines = [f"- [{item.get('status')}] {item.get('subject')}" for item in items]
-    return ("<todo-reminder>\nThe todo tools have not been used for a while. "
-            "This is the Goal's current todo list; update it with todo_update if it is out of date.\n"
+    return ("<todo-reminder>\nThe task tools have not been used for a while. "
+            "These are the Goal's steps; if they are out of date, put task_progress {\"step\": N} "
+            "on your next real tool call, or drop what no longer applies with task_step.\n"
             + "\n".join(lines) + "\n</todo-reminder>")
 
 
@@ -563,10 +648,13 @@ def instructions(session_id: str, branch_id: str | None = None) -> str:
         + json.dumps({"objective": goal["text"], "identity": identity(goal),
                       "budget": goal.get("budget"), "usage": goal.get("usage"),
                       "verification_feedback": goal.get("last_reason")}, ensure_ascii=False)
-        + "\nUse todo_list, todo_create and todo_update to plan meaningful multi-step work "
-        "and keep the plan current. Do the work yourself using normal tools. "
+        + "\nKeep this Goal's meaningful multi-step work in a task: open it with task_progress "
+        "{\"task\": title, \"steps\": [...], \"step\": 1} on the first real tool call of the work, "
+        "writing every step you can foresee, and give {\"step\": N} on each later call of the task. Add later steps to the same task with task_step(add=[...]) and drop "
+        "steps that no longer apply; the task continues over turns. "
+        "Do the work yourself using normal tools. "
         "Do not shrink the objective to completed work. "
-        "A completed todo list alone does not prove the objective is achieved. "
+        "A task with every step done alone does not prove the objective is achieved. "
         "Before calling update_goal(status='complete'), derive every requirement from the "
         "objective and user instructions and inspect current authoritative evidence for each. "
         "Missing, partial or indirect evidence means keep working. "
@@ -695,7 +783,7 @@ def admit(entry, **kwargs):
             require_candidate(sid, request, admission_key=key)
         if goals.budget_exhausted(goal):
             raise goals.GoalConflictError("Goal budget is exhausted")
-        from openprogram.runtime.execution.foreground import active_foreground_task
+        from openprogram.runtime.execution.projections.foreground import active_foreground_task
         # The Goal's own branch: a turn running on another branch of the
         # conversation neither holds the Goal's turn back nor is held by it.
         foreground = active_foreground_task(entry.store, sid, selected_branch=goal.get("branch_id"))
@@ -750,6 +838,17 @@ def charge_daily_budget(session_id: str, goal: dict, execution_id: str) -> None:
     publish(session_id, goal)
 
 
+#: Same text as the panel's Pause (``command.py``).
+USER_PAUSE_REASON = "Goal paused by the user."
+
+
+def stopped_by_user(execution) -> bool:
+    """The person pressed Stop on this turn."""
+    from openprogram.runtime.execution.model import ExecutionStatus
+    from openprogram.runtime.execution.run_control.stop_reasons import USER
+    return execution.status == ExecutionStatus.CANCELLED and execution.reason_code == USER
+
+
 def after_terminal(store, execution):
     """Account a committed terminal turn and request at most one next chat."""
     from openprogram.runtime.execution.model import ExecutionStatus
@@ -796,7 +895,7 @@ def after_terminal(store, execution):
             goals.checkpoint_active_elapsed(goal, stop=True)
             goal["run_turns"] = int(goal.get("run_turns") or 0) + 1
             goal["accounted_execution_id"] = execution.execution_id
-            goal["checklist"] = project_todos(sid, goal)
+            _project_plan(sid, goal)
             if execution.status == ExecutionStatus.COMPLETED:
                 goal.pop("automatic_resumes", None)
                 goal.pop("failure", None)
@@ -804,8 +903,14 @@ def after_terminal(store, execution):
                 # Only an automatic turn can spin; a user turn starts the count over.
                 goal["idle_turns"] = int(goal.get("idle_turns") or 0) + 1 if idle_turn else 0
             if execution.status != ExecutionStatus.COMPLETED and goal.get("status") == "active" and not stale_revision:
-                goal.update(status="paused_recoverable", phase="paused", pause_reason="execution_failed",
-                            last_reason=execution.reason_code or execution.status.value)
+                if stopped_by_user(execution):
+                    # Stop is the person pausing the Goal, like the panel's
+                    # Pause: no wake or failure retry takes it up again.
+                    goal.update(status="paused_recoverable", phase="paused", pause_reason="user",
+                                last_reason=USER_PAUSE_REASON)
+                else:
+                    goal.update(status="paused_recoverable", phase="paused", pause_reason="execution_failed",
+                                last_reason=execution.reason_code or execution.status.value)
                 # What stopped the turn decides whether the Goal goes on by
                 # itself (``continue_after_failure``).
                 goal["failure"] = failure
@@ -1211,7 +1316,7 @@ def resume_unattended(session_id: str) -> dict:
 def _continuation_ready(store, session_id: str, previous_execution_id: str, expected: dict) -> bool:
     """Keep shutdown deferrals in the existing durable finish notification."""
     from openprogram.runtime.conversation.run_control import is_worker_stopping
-    from openprogram.runtime.execution import restart
+    from openprogram.runtime.execution.recovery import restart
     from openprogram.runtime.execution.process_owner import current_process_owner
 
     with locked(session_id):
@@ -1288,6 +1393,30 @@ def _yield_to_user(store, previous_execution_id: str, expected: dict, session_id
     return True
 
 
+def _hold_run_slot(session_id: str, owner: str, admission, branch_id: str | None, queued) -> bool:
+    """Take the run slot of the Goal's branch for an admitted Goal turn,
+    waiting for the turn before it (or a background-command notice) to give
+    it back. While it holds the slot every client shows the conversation as
+    running and its Stop names this turn, and no other turn starts on the
+    branch. ``False`` when the turn is no longer queued or the Worker is
+    stopping: it must not run, and holds nothing. ``owner`` is the turn's
+    user message id, which its terminal frame marks the slot by
+    (``run_slot.finishing``)."""
+    from openprogram.runtime.conversation.run_control import is_worker_stopping, run_slot
+
+    return run_slot.hold_admitted(
+        session_id, owner, execution_id=admission.execution_id,
+        status_version=getattr(admission, "status_version", 0), branch_id=branch_id,
+        runner=threading.current_thread(),
+        still_wanted=lambda: not is_worker_stopping() and queued())
+
+
+def _free_run_slot(session_id: str, owner: str, admission) -> None:
+    from openprogram.runtime.conversation.run_control import run_slot
+
+    run_slot.finish(session_id, owner, execution_id=admission.execution_id)
+
+
 def start_next(store, previous_execution_id: str, *, expected: dict):
     """Use the original trusted chat envelope; never elevate its authority."""
     import asyncio
@@ -1307,10 +1436,25 @@ def start_next(store, previous_execution_id: str, *, expected: dict):
     key = "goal:" + json.dumps([previous_execution_id, expected], sort_keys=True)
     from . import verification
     with locked(sid):
-        goal = goals.load_goal(sid)
+        goal = follow_last_turn(store, sid, goals.load_goal(sid), previous_execution_id)
         request, key = verification.continuation(goal, request, key)
     msg_id = store.admission_execution_id(sid, key) + "_user"
     prompt = continuation_prompt(goal)
+    claimed: list[str] = []
+    # A repeated start of the same continuation re-validates the admission
+    # already made, whose text is fixed: only a first start takes notices.
+    first_start = (goal or {}).get("execution_id") != msg_id[:-len("_user")]
+    if first_start and not request.get("goal_verification"):
+        # Background commands that ended while the Goal ran: the sweep never
+        # finds the conversation idle between Goal turns, so they come here.
+        from openprogram.runtime.conversation import process_notices
+        try:
+            claimed, notices = process_notices.claim_for_turn(sid)
+        except Exception:
+            logging.getLogger(__name__).warning("exit notices for %s left to the sweep", sid, exc_info=True)
+            claimed, notices = [], ""
+        if notices:
+            prompt += "\n\n" + notices
     request.update(user_text=request["user_text"] if request.get("goal_verification") else prompt,
                    user_msg_id=msg_id, user_already_persisted=False,
                    history_override=None, attachments=None, spawn_caller=None,
@@ -1330,19 +1474,30 @@ def start_next(store, previous_execution_id: str, *, expected: dict):
             config_snapshot_ref=source.config_snapshot_ref,
             admission_key=key,
         )
-    except ContinuationSuperseded:
-        return
+    except BaseException as exc:
+        if claimed:
+            from openprogram.runtime.conversation import process_notices
+            process_notices.release_claim(claimed)
+        if isinstance(exc, ContinuationSuperseded):
+            return
+        raise
     def activate():
         from openprogram.runtime.execution.model import ExecutionStatus
-        current = store.get_execution(admission.execution_id)
-        if current.status is not ExecutionStatus.QUEUED or current.current_attempt_id:
+
+        def queued() -> bool:
+            current = store.get_execution(admission.execution_id)
+            return (current is not None and current.status is ExecutionStatus.QUEUED
+                    and not current.current_attempt_id)
+
+        if not _hold_run_slot(sid, request["user_msg_id"], admission, request.get("branch_id"), queued):
             return
         try:
             asyncio.run(adapter.activate(admission))
         except Exception:
-            current = store.get_execution(admission.execution_id)
-            if current.status is ExecutionStatus.QUEUED and current.current_attempt_id is None:
+            if queued():
                 adapter.fail_admission(admission, reason_code="goal_activation_failed")
+        finally:
+            _free_run_slot(sid, request["user_msg_id"], admission)
     try:
         threading.Thread(target=activate, daemon=True, name="goal-chat").start()
     except Exception:
@@ -1357,11 +1512,20 @@ def start_from_controls(session_id: str, *, source: str = "web") -> dict:
     from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-    from openprogram.runtime.conversation.session_config import conversation_permission, load_session_run_config, tools_override_from_config
+    from openprogram.runtime.conversation.session_settings.session_config import conversation_permission, load_session_run_config, tools_override_from_config
     from openprogram.runtime.events import emit_ws_frame
     goal = goals.load_goal(session_id)
     if not goal or goal.get("status") != "active":
         raise ValueError("No active Goal")
+    if goal.get("execution_id"):
+        # The Goal continues after its last turn's reply, on the branch that holds it.
+        try:
+            from openprogram.runtime.execution import default_store
+            with locked(session_id):
+                goal = follow_last_turn(default_store(), session_id,
+                                        goals.load_goal(session_id) or goal, goal["execution_id"])
+        except Exception:
+            logging.getLogger(__name__).debug("Goal branch of %s not followed", session_id, exc_info=True)
     # A Goal runs on the branch it was started on, whichever is selected.
     session = goals._db().get_session(session_id) or {}
     branch_id = goal.get("branch_id") if goal_branch_tip(session_id, goal) else None
@@ -1390,10 +1554,22 @@ def start_from_controls(session_id: str, *, source: str = "web") -> dict:
     admission = adapter.admit(request, trusted_actor=authority, user_message_id=msg_id,
                               assistant_message_id=f"{msg_id}_reply", config_snapshot_ref=f"session:{session_id}")
     def activate():
+        from openprogram.runtime.execution import default_store
+        from openprogram.runtime.execution.model import ExecutionStatus
+
+        def queued() -> bool:
+            current = default_store().get_execution(admission.execution_id)
+            return (current is None or (current.status is ExecutionStatus.QUEUED
+                                        and not current.current_attempt_id))
+
+        if not _hold_run_slot(session_id, msg_id, admission, branch_id, queued):
+            return
         try:
             asyncio.run(adapter.activate(admission))
         except Exception:
             adapter.fail_admission(admission, reason_code="goal_activation_failed")
+        finally:
+            _free_run_slot(session_id, msg_id, admission)
     try:
         threading.Thread(target=activate, name="goal-chat", daemon=True).start()
     except Exception:

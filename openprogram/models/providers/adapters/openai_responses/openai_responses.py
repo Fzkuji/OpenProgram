@@ -20,7 +20,7 @@ from openprogram.models.providers.shared.openai_responses import (
 )
 from openprogram.models.providers.shared.validate_modalities import validate_input_modalities
 from openprogram.models.providers.shared.simple_options import build_base_options
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 if TYPE_CHECKING:
     from openprogram.models.providers.types import Context, Model, SimpleStreamOptions
@@ -44,7 +44,6 @@ def stream_openai_responses(
                 "The OpenAI SDK is missing; reinstall the complete OpenProgram release."
             )
 
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         from openprogram.models.providers.types import AssistantMessage
 
         # AssistantMessage object, NOT a dict — process_responses_stream
@@ -53,12 +52,10 @@ def stream_openai_responses(
         output = AssistantMessage.empty(model)
 
         try:
-            from openprogram.models.auth import usage as _auth_usage
-            _pooled = _auth_usage.acquire_pooled(model.provider)
-            _conn = _pooled[0] if _pooled else None
-
-            api_key = opts.get("api_key") or (_conn.auth_value if _conn else None) \
-                or resolve_provider_key(model.provider) or ""
+            # The credential chosen by the credential layer every adapter is
+            # wrapped in (``models/auth/selection.py``).
+            _conn = opts.get("credential")
+            api_key = opts.get("api_key") or ""
             conn_base_url = _conn.base_url if _conn and _conn.base_url else None
             conn_headers = _conn.headers if _conn else {}
             client = _create_client(
@@ -85,7 +82,7 @@ def stream_openai_responses(
             observe_headers(
                 model.provider, api_key,
                 getattr(getattr(openai_stream, "response", None), "headers", None),
-                account=_pooled[2] if _pooled else None,
+                account=_conn.credential_id if _conn else None,
             )
 
             await process_responses_stream(
@@ -139,16 +136,10 @@ def stream_simple_openai_responses(
     options: "SimpleStreamOptions | None" = None,
 ) -> EventStream:
     """Simple interface for OpenAI Responses API streaming."""
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-
-    api_key = (getattr(options, "api_key", None) if options else None) or resolve_provider_key(model.provider)
+    api_key = getattr(options, "api_key", None) if options else None
     if not api_key:
-        from openprogram.models.auth import usage as _auth_usage
-        pooled = _auth_usage.acquire_pooled(model.provider)
-        conn = pooled[0] if pooled else None
-        api_key = conn.auth_value if conn else None
-    if not api_key:
-        raise ValueError(f"No API key for provider: {model.provider}")
+        raise ValueError(f"No API key for provider {model.provider}; add one with: "
+                         f"openprogram providers keys {model.provider} add")
 
     base = build_base_options(model, options, api_key)
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
@@ -214,19 +205,15 @@ def _create_client(
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
 
-    # OpenAI SDK has its own exponential-backoff retry for 429 /
-    # 5xx / connection errors. Default is 2; we raise to 3 to match
-    # our other HTTP providers' stream-level retry budget. Override
-    # via ``OPENPROGRAM_OPENAI_MAX_RETRIES`` (also picked up by the
-    # Azure and copilot endpoints that share this client factory).
-    sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
-    from ...streaming.budget import provider_sdk_retries
-    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
+    # The SDK's own retries are off: the credential layer
+    # (``models/auth/selection.py``) and the stream's re-send see every
+    # failure once.
+    sdk_max_retries = 0
 
     # Shared hardened httpx client: unified proxy semantics + keepalive,
     # one connection pool per event loop (the SDK never closes
     # externally-supplied clients).
-    from ...utils.http_client import get_shared_async_client
+    from ...utils.http_transport.http_client import get_shared_async_client
 
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
 
@@ -296,7 +283,7 @@ def _build_params(
     tool_list: list[dict[str, Any]] = (
         convert_responses_tools(tools, model.api, model.id) if tools else []
     )
-    # Provider-side web search (docs/reference/design/providers/web-search.html):
+    # Provider-side web search (docs/reference/design/providers/requests/web-search.html):
     # the model runs the search on OpenAI's side and the stream reports it as
     # web_search_call items, which the shared processor turns into
     # ServerToolUse blocks.

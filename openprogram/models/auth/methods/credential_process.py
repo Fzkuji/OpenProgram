@@ -78,12 +78,10 @@ class CredentialProcessMethod(LoginMethod):
         provider_id: str,
         config: CredentialProcessConfig,
         *,
-        account_id: str = "default",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._account_id = account_id
         self._metadata = dict(metadata or {})
 
     async def run(self, ui: LoginUi) -> Credential:
@@ -101,7 +99,6 @@ class CredentialProcessMethod(LoginMethod):
 
         return Credential(
             provider_id=self.provider_id,
-            account_id=self._account_id,
             kind="credential_process",
             payload=CredentialData(
                 kind="credential_process",
@@ -112,7 +109,7 @@ class CredentialProcessMethod(LoginMethod):
                     "cache_seconds": self._cfg.cache_seconds,
                 },
             ),
-            source=f"{self.method_id}:{self.provider_id}",
+            source="cli",
             metadata=self._metadata,
         )
 

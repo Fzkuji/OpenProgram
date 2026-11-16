@@ -6,7 +6,7 @@ Latin text to a token). The estimate is not a tokenizer's count; it is a
 pure function of the text, the same on every installation, and additive:
 ``weight(a + b) == weight(a) + weight(b)``. That makes it usable for
 deciding where to cut a text, which a sampled or tokenizer-dependent
-count is not (``runtime.context.tokens`` gives a different answer with and
+count is not (``runtime.context.token_accounting.tokens`` gives a different answer with and
 without ``tiktoken``, and classifies a whole text by a sample).
 
 Measured in quarters internally, so sums are exact integers.

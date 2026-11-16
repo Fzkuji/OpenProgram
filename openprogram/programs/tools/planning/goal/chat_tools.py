@@ -11,7 +11,7 @@ def _session():
 
 
 @function(name="create_goal", toolset=["core"], unsafe_in=["wechat", "telegram"],
-          description="Create a persistent objective for this chat only when explicitly requested. Continue working in this chat and plan with the todo tools. Do not infer a Goal from ordinary requests. Specify token_budget only when requested. Fails if an unfinished goal exists.")
+          description="Create a persistent objective for this chat only when explicitly requested. Continue working in this chat and keep multi-step work in a task (task_start). Do not infer a Goal from ordinary requests. Specify token_budget only when requested. Fails if an unfinished goal exists.")
 def create_goal(objective: str, token_budget: int | None = None) -> dict:
     return _create_goal_impl(objective, token_budget)
 
@@ -31,17 +31,18 @@ def _create_goal_impl(objective: str, token_budget: int | None = None) -> dict:
 
 
 @function(name="get_goal", toolset=["core"],
-          description="Read the current chat Goal, its status, cumulative usage and associated todo plan.")
+          description="Read the current chat Goal, its status, cumulative usage and its tasks with their steps.")
 def get_goal() -> dict:
     import openprogram.programs.tools.planning.goal as goals
     from . import chat
     sid = _session()
     goal = goals.load_goal(sid)
-    return {"goal": goal, "todos": chat.todos(sid, goal) if goal else []}
+    return {"goal": goal, "tasks": chat.tasks(sid, goal) if goal else [],
+            "todos": chat.todos(sid, goal) if goal else []}
 
 
 @function(name="update_goal", toolset=["core"], unsafe_in=["wechat", "telegram"],
-          description="Submit a completion candidate only after checking every requirement against actual evidence and finishing the todo plan. This does not mark the Goal achieved: a separate read-only verification turn must pass. Mark blocked only after the SAME blocker recurs across at least three consecutive Goal turns with no independent work available. Never shrink the objective. Budget exhaustion is not completion. User pause/resume and budget changes use the Goal controls.")
+          description="Submit a completion candidate only after checking every requirement against actual evidence and finishing or dropping every task step. This does not mark the Goal achieved: a separate read-only verification turn must pass. Mark blocked only after the SAME blocker recurs across at least three consecutive Goal turns with no independent work available. Never shrink the objective. Budget exhaustion is not completion. User pause/resume and budget changes use the Goal controls.")
 def update_goal(status: str) -> dict:
     from . import chat
     return chat.update(_session(), status, expected=chat.current_identity())

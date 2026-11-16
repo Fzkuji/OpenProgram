@@ -23,15 +23,16 @@ from openprogram.runtime.conversation.production_driver import AgentProductionDr
 from openprogram.runtime.conversation.turn_runtime.types import TurnResult
 from openprogram.runtime import execution as execution_package
 from openprogram.host._platform.processes import process_start_token
-from openprogram.runtime.execution import hooks, process_owner, restart
+from openprogram.runtime.execution import hooks, process_owner
+from openprogram.runtime.execution.recovery import restart
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.control import RuntimeControlService
 from openprogram.runtime.execution.driver import DriverRegistry
-from openprogram.runtime.execution.effects import EffectClassification, EffectStatus, EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectStatus, EffectStore
 from openprogram.runtime.execution.event_effects import ExecutionEventEffects
 from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus
-from openprogram.runtime.execution.runtime_contract import RuntimeContractError
+from openprogram.runtime.execution.admission_input.runtime_contract import RuntimeContractError
 from openprogram.runtime.execution.store import ExecutionStore
 from openprogram.runtime.execution.store import run_tables
 from openprogram.runtime.scheduler import run_finish, service as scheduler_service, task_branch, task_runs, time_limits
@@ -353,7 +354,7 @@ def test_any_execution_that_ends_has_its_run_pages_closed(monkeypatch):
     """Stopped by the user, failed or cut off: the terminal settlement closes what the run opened."""
     from openprogram.programs._host import services
     from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.conversation import execution_hooks
+    from openprogram.runtime.conversation.layer_registrations import execution_hooks
     closed = []
     browser = SimpleNamespace(tabs=SimpleNamespace(close_run_tabs_soon=closed.append))
     monkeypatch.setattr(services, "lookup", lambda name: browser if name == "browser" else None)
@@ -620,7 +621,7 @@ def test_a_check_in_that_died_before_a_safe_point_is_not_started_over(world, tmp
 
 
 def test_a_migrated_handoff_waits_while_the_restart_settles_its_conversation(world, tmp_path, monkeypatch):
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
     from openprogram.runtime.conversation.always_on import handoff_migration
     from openprogram.runtime.execution import store as execution_store
     driver, active, store = _ran_turn(tmp_path, scheduled_task=None, source="web")
@@ -773,7 +774,7 @@ def test_an_ordinary_turn_is_nobodys_scheduled_run(world, tmp_path):
 
 
 def test_the_worker_continues_a_turn_with_the_same_finish():
-    from openprogram.runtime.conversation import execution_hooks
+    from openprogram.runtime.conversation.layer_registrations import execution_hooks
 
     activate = execution_hooks._agent_activator(ExecutionStore.__new__(ExecutionStore), None)
     assert activate.__self__.run_ended is execution_hooks._run_ended
@@ -1286,7 +1287,7 @@ def test_a_run_whose_own_process_exited_ends_at_the_next_tick(world, tmp_path, m
     """Killed with its process, well inside its limit: it ends as a failed run, its
     pages close, and nothing is left paused for a restart to continue."""
     from openprogram.runtime.execution import process_owner
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
 
     driver, active, store = _ran_turn(tmp_path, speaker=SCHEDULER)
     _limits_see(driver, store, monkeypatch)
@@ -1341,7 +1342,7 @@ def test_a_run_whose_own_process_exited_stops_the_command_it_was_waiting_on(worl
     the one the run was waiting on stops with the ending, one it had left in the
     background goes on, and another run's command is not touched."""
     from openprogram.runtime.execution import process_owner
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
 
     driver, active, store = _ran_turn(tmp_path, speaker=SCHEDULER)
     _limits_see(driver, store, monkeypatch)
@@ -1357,7 +1358,7 @@ def test_a_run_whose_own_process_exited_stops_the_command_it_was_waiting_on(worl
 
 def test_a_run_stopped_by_the_user_whose_process_then_died_ends_stopped(world, tmp_path, monkeypatch):
     from openprogram.runtime.execution import process_owner
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
 
     driver, active, store = _ran_turn(tmp_path, speaker=SCHEDULER)
     _limits_see(driver, store, monkeypatch)
@@ -1375,7 +1376,7 @@ def test_a_run_stopped_by_the_user_whose_process_then_died_ends_stopped(world, t
 def test_a_worker_that_is_stopping_leaves_an_exited_run_to_the_next_one(world, tmp_path, monkeypatch):
     from openprogram.runtime.conversation import run_control
     from openprogram.runtime.execution import process_owner
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
 
     driver, active, store = _ran_turn(tmp_path, speaker=SCHEDULER)
     _limits_see(driver, store, monkeypatch)

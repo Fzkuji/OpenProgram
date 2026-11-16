@@ -66,7 +66,7 @@ from openprogram.runtime.conversation.turn_runtime.loop_runner import (
 # Approval gate — used by the "ask" permission flow
 # ---------------------------------------------------------------------------
 
-from openprogram.runtime.conversation import plan_mode as _plan_mode
+from openprogram.runtime.conversation.session_settings import plan_mode as _plan_mode
 from openprogram.runtime.conversation.run_control import run_slot as _run_slot
 
 
@@ -139,7 +139,7 @@ def _drain_send_message_inbox(session_id: str) -> None:
     normal delivery path (run_agent_turn_async → auto-followup back to
     the sender). Best-effort."""
     try:
-        from openprogram.runtime.conversation.inbox import drain
+        from openprogram.runtime.conversation.peer_agents.inbox import drain
         drain(session_id)
     except Exception:
         _log.debug(
@@ -246,7 +246,7 @@ def execute_continuation(
     from openprogram.runtime.conversation.turn_runtime.turn_writer import (
         TurnWriter, mark_session_finished,
     )
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
 
     req = continuation.request
     on_event = on_event or _noop
@@ -320,6 +320,7 @@ def execute_continuation(
     final_text, attached_files = turn_attachments(
         final_text, tool_calls, req, _turn_started_at(db, req.session_id, user_msg_id))
 
+    _close_task_at_turn_end(req, assistant_msg_id, cancel_event)
     assistant_msg, _blocks, tool_calls, usage = persist_assistant_message(
         db=db,
         req=req,
@@ -350,7 +351,8 @@ def execute_continuation(
         head_id=writer.head_for_finalize(assistant_msg_id),
     )
     if req.advance_head and not getattr(req, "background", False):
-        mark_session_finished(db, req.session_id, quiet=bool(getattr(req, "quiet_finish", False)))
+        mark_session_finished(db, req.session_id, quiet=bool(getattr(req, "quiet_finish", False)),
+                              own_msg_id=user_msg_id)
     # A turn resumed after an approval (self_update prepare's own card among
     # them) ends here, not in _process_turn_once.
     if turn_committed:
@@ -387,12 +389,26 @@ def _turn_started_at(db, session_id: str, user_msg_id: str) -> float | None:
         return None
 
 
+def _close_task_at_turn_end(req, assistant_msg_id: str, cancel_event) -> None:
+    """Close or carry the open task (``todo.shared.close_at_turn_end``),
+    unless the reply was stopped."""
+    if cancel_event is not None and cancel_event.is_set():
+        return
+    try:
+        from openprogram.programs.tools.planning.todo import shared as _tasks
+        _tasks.close_at_turn_end(req.session_id, assistant_msg_id, scope=_tasks.scope_of(req, assistant_msg_id),
+                                 branch_id=getattr(req, "branch_id", None))
+    except Exception:
+        # The reply is whole without it; the task stays open for the next turn.
+        _log.debug("task not closed at the end of the turn", exc_info=True)
+
+
 def _bind_usage_branch(db, session_id: str, branch_id: str | None = None) -> None:
     """Name the branch the turn runs on in the usage context, once its user
     message is stored: the prompt-cache check compares a request with the
     last one on its own branch (``models/usage/prefix_fingerprint.py``) and
     the usage tracker files the turn's occupancy under it
-    (``context/usage.py``). The branch is the one frozen at admission; the
+    (``context/token_accounting/usage.py``). The branch is the one frozen at admission; the
     selected branch only for a request admitted without one."""
     try:
         from dataclasses import replace as _replace
@@ -613,7 +629,7 @@ def _run_turn_once(
             and db.message_exists(req.session_id, user_msg_id)
         )
         if restart_existing:
-            from openprogram.runtime.context.persistence import rendered_history
+            from openprogram.runtime.context.compaction.persistence import rendered_history
             session = db.get_session(req.session_id)
             history = rendered_history(db, req.session_id, head_id=user_msg_id) or []
             req.user_already_persisted = True
@@ -767,6 +783,10 @@ def _run_turn_once(
     from openprogram.programs.tools.interaction.send_file import turn_attachments
     final_text, attached_files = turn_attachments(final_text, tool_calls, req, started_at)
 
+    # 4c. A reply that ended normally closes the task it worked on. A
+    #     stopped, paused or failed one leaves the task as it stood.
+    _close_task_at_turn_end(req, assistant_msg_id, cancel_event)
+
     # 5. Persist the assistant message (phase 5) — extracted to
     #    persistence.py (dispatcher-split step 5). Returns the
     #    possibly-rewritten usage + filtered tool_calls + ordered
@@ -808,7 +828,7 @@ def _run_turn_once(
     _fin_profile = None
     _fin_ctx_win = None
     try:
-        from openprogram.runtime.context.tokens import real_context_window as _rcw
+        from openprogram.runtime.context.token_accounting.tokens import real_context_window as _rcw
         from copy import deepcopy
         _fin_profile = (
             deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
@@ -844,7 +864,8 @@ def _run_turn_once(
     session_finished = False
     try:
         if not beside_conversation(req):
-            mark_session_finished(db, req.session_id, quiet=bool(getattr(req, "quiet_finish", False)))
+            mark_session_finished(db, req.session_id, quiet=bool(getattr(req, "quiet_finish", False)),
+                                  own_msg_id=user_msg_id)
         session_finished = True
     except Exception:
         # A stuck "running" status is visible in the UI, so log it.

@@ -92,8 +92,8 @@ def _post_rewind(session_id, plan, key):
 
 
 def test_the_same_rewind_twice_returns_one_result(world, tmp_path, monkeypatch):
-    from openprogram.runtime.conversation import rewind
-    from openprogram.runtime.conversation.rewind import plan_rewind
+    from openprogram.runtime.conversation.rewinds import rewind
+    from openprogram.runtime.conversation.rewinds.rewind import plan_rewind
 
     session_id = "s-repeat-rewind"
     target = _three_turns(world, tmp_path, session_id)
@@ -151,7 +151,7 @@ def test_the_same_revert_twice_returns_one_result(world, tmp_path, monkeypatch):
     journal.backup_before_edit(turn_id, str(target))
     target.write_text("after\n", encoding="utf-8")
     journal.commit_after_edit(turn_id, str(target), operation="edit")
-    from openprogram.runtime.conversation import revert
+    from openprogram.runtime.conversation.rewinds import revert
 
     # Paused holding the run slot, before the store's own locks.
     entered, release = _pause_first(monkeypatch, revert, "revert_turn")

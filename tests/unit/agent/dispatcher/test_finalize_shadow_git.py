@@ -231,7 +231,7 @@ def test_no_project_no_workdir_uses_common_ancestor(store, tmp_path):
                return_value=None), \
          patch("openprogram.state.worktree.context.current_worktree_path",
                return_value=None), \
-         patch("openprogram.runtime.conversation.workdir.project_workdir_for",
+         patch("openprogram.runtime.conversation.session_settings.workdir.project_workdir_for",
                return_value=None):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
 

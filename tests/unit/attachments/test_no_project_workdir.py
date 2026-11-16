@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.state import attachments as att
-from openprogram.state.store.session.session_log import SessionLog
+from openprogram.state.store.session.files.session_log import SessionLog
 
 
 SID = "local_s1"

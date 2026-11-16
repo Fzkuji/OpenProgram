@@ -99,7 +99,7 @@ def test_recorded_clones_move_into_the_programs_directory(home):
 def test_moved_clones_are_listed_from_the_programs_directory(home, monkeypatch):
     import sys
 
-    from openprogram.interfaces.cli.commands.programs import program_rows
+    from openprogram.interfaces.cli.commands.capabilities.programs import program_rows
     from openprogram.programs._host import registry, source_loader
 
     program_directory.migrate_user_directory(log=lambda *a: None)

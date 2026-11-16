@@ -63,7 +63,7 @@ def _seed_three_turns(
 
 
 def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-fold", target)
@@ -88,7 +88,7 @@ def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
 def test_file_apply_failure_rolls_back_and_does_not_move_head(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
 
     first = tmp_path / "work" / "first.py"
     assistants, journal = _seed_three_turns(store, "s-apply-fail", first)
@@ -123,7 +123,7 @@ def test_file_apply_failure_rolls_back_and_does_not_move_head(
 def test_stale_folded_plan_writes_no_planned_file_and_keeps_head(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     assistants, journal = _seed_three_turns(store, "s-stale", target)
@@ -206,7 +206,7 @@ def test_head_compare_and_set_rejects_stale_source(store, tmp_path):
 
 
 def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_path):
-    from openprogram.runtime.conversation.rewind import list_rewind_points, rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points, rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-sibling", target)
@@ -239,7 +239,7 @@ def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_pat
 
 
 def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch):
-    from openprogram.runtime.conversation.rewind import plan_rewind, rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import plan_rewind, rewind_to
 
     parent = tmp_path / "work" / "safe"
     target = parent / "same.py"
@@ -278,7 +278,7 @@ def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch
 def test_head_meta_write_failure_keeps_memory_and_files_at_source(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.runtime.conversation.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     assistants, _journal = _seed_three_turns(store, "s-meta-fail", target)
@@ -436,7 +436,7 @@ def test_recovery_scope_isolated_by_store_identity(tmp_path, monkeypatch):
 
 
 def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
-    from openprogram.runtime.conversation.rewind import plan_rewind, rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind import plan_rewind, rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-idempotent", target)

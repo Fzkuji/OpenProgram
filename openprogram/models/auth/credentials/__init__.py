@@ -27,6 +27,7 @@ from .io import (
     _read_private_bytes,
     _revision,
     private_file_revision,
+    tighten_private_directory,
 )
 from .redaction import is_redacted_value
 from .io import os as os
@@ -55,4 +56,5 @@ __all__ = [
     "preserve_local_secret_bytes",
     "private_file_revision",
     "repair_credentials",
+    "tighten_private_directory",
 ]

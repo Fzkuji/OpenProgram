@@ -226,17 +226,17 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>时间、注册表锁、快照、延迟 flush、merged heads 和 store 锁</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_node_writer.py</code></th><td>每次追加一个 activity 时间，元数据和索引共用</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_index_consistency.py</code></th><td>排序、快照和并发写入的公共回归</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_lock.py</code></th><td>会话锁：进程锁、flock 持有记录、有界等待</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_stress.py</code></th><td>多线程操作同一会话；卡住的会话返回错误</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_processes.py</code></th><td>两个进程操作同一会话；持有者被杀；缓存失效的撤销</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_index_consistency.py</code></th><td>排序、快照和并发写入的公共回归</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/files/session_lock.py</code></th><td>会话锁：进程锁、flock 持有记录、有界等待</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_lock_stress.py</code></th><td>多线程操作同一会话；卡住的会话返回错误</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_session_lock_processes.py</code></th><td>两个进程操作同一会话；持有者被杀；缓存失效的撤销</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/</code>、<code translate="no">openprogram/interfaces/server/routes/</code></th><td>处理器的存储工作放在工作线程</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/session_lifecycle.py</code></th><td>槽位准入等锁；<code translate="no">conversation_locked</code> 与 <code translate="no">run_active</code> 分开</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/conversation_work.py</code></th><td>会话的通道，在通道自己的线程池里</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/execution/control/</code></th><td>控制命令的存储工作放在执行的通道里（<code translate="no">off_loop</code>）</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/_conversation.py</code>、<code translate="no">openprogram/runtime/conversation/owner_turn.py</code></th><td>拿不到锁：房间事件跳过，渠道消息不送达，唤醒重试</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/inbound/_conversation.py</code>、<code translate="no">openprogram/runtime/conversation/turn_admission/owner_turn.py</code></th><td>拿不到锁：房间事件跳过，渠道消息不送达，唤醒重试</td></tr>
 <tr><th scope="row"><code translate="no">tests/component/webui/chat/test_conversation_lock_off_loop.py</code></th><td>每个处理器在被占会话下的循环心跳；停止；四十个等待者；慢锁被准入；拿不到锁报告为锁住</td></tr>
-<tr><th scope="row"><code translate="no">tests/component/store/test_conversation_work.py</code></th><td>通道宽度与顺序、取消、上下文、已持锁、fork、默认线程池占满</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/session/test_conversation_work.py</code></th><td>通道宽度与顺序、取消、上下文、已持锁、fork、默认线程池占满</td></tr>
 </tbody>
 </table>
 <p>还没进通道的：不属于单个会话的处理器（设置、目录、录音）的存储工作仍经 <code translate="no">asyncio.to_thread</code> 在循环的默认线程池执行，不在循环上但没有上限；Job 的等待恢复调度在调用方的循环上调用。</p>

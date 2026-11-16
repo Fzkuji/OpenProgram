@@ -328,7 +328,7 @@ class RecoveryOperations:
         except Exception:
             shared._log.exception("failed to list deferred job admissions")
             return
-        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.conversation.peer_agents import inbox
         for job_id, session_id in deferred:
             job = shared._store_load(session_id, job_id)
             intent = job.deferred_inbox if job is not None else None
@@ -422,7 +422,7 @@ class RecoveryOperations:
                 reconcile(self)
                 from openprogram.operations.self_update.control.continuation import reconcile as continue_updates
                 continue_updates(self)
-                from openprogram.runtime.execution.restart import reconcile as resume_interrupted
+                from openprogram.runtime.execution.recovery.restart import reconcile as resume_interrupted
                 resume_interrupted(self)
                 from openprogram.operations.self_update.control.recovery import stop_parked_stages
                 stop_parked_stages(self)

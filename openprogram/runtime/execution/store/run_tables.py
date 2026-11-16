@@ -215,7 +215,7 @@ class SessionRunLog(RunLogFiles):
 
     def session_gone(self, session_id: str) -> bool:
         """A deleted conversation: its record of the deletion outlives its log."""
-        from openprogram.state.store.session.placement import is_deleted
+        from openprogram.state.store.session.files.placement import is_deleted
 
         return is_deleted(self._sessions().root_path, session_id)
 

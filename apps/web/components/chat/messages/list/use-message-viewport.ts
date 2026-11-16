@@ -14,7 +14,11 @@ const ROW_SELECTOR = ":scope > .msg-slot, :scope > .message, :scope > div[style*
 
 /** Measured viewport with extra mounted content for large scroll deltas. */
 export function useMessageViewport(chatKey: string | null, rowCount: number, paintRows: boolean, areaRef?: RefObject<HTMLElement>) {
-  const [view, setView] = useState({ top: 0, h: 800, overscan: 1600 });
+  const [measured, setView] = useState({ key: chatKey, top: 0, h: 800, overscan: 1600 });
+  // The first render of a conversation has no measurement of its own, only
+  // the one left by the conversation shown before. It opens at the end, so
+  // that is where its rows are mounted (decideLiveRows reads Infinity so).
+  const view = measured.key === chatKey ? measured : { ...measured, top: Infinity };
   const measureGate = useRef(false);
   const [, setMeasureGen] = useState(0);
   const notifyMeasured = useCallback(() => {
@@ -29,8 +33,8 @@ export function useMessageViewport(chatKey: string | null, rowCount: number, pai
     if (!paintRows) return;
     const area = areaRef?.current ?? document.getElementById("chatArea");
     if (!area) return;
-    const next = { top: area.scrollTop, h: area.clientHeight, overscan: 1600 };
-    setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
+    const next = { key: chatKey, top: area.scrollTop, h: area.clientHeight, overscan: 1600 };
+    setView((prev) => (prev.key === next.key && prev.top === next.top && prev.h === next.h ? prev : next));
   }, [chatKey, rowCount, paintRows, areaRef]);
   useEffect(() => {
     if (!paintRows) return;
@@ -95,9 +99,9 @@ export function useMessageViewport(chatKey: string | null, rowCount: number, pai
     // overscan covers that, so the rows re-render once at rest
     // (settleWidth) rather than on every frame of the move.
     const syncView = () => setView(prev => {
-      const next = {top: area.scrollTop, h: area.clientHeight,
-        overscan: Math.min(12000, Math.max(1600, Math.abs(area.scrollTop-prev.top)*3))};
-      if (prev.top===next.top && prev.h===next.h) return prev;
+      const next = {key: chatKey, top: area.scrollTop, h: area.clientHeight,
+        overscan: prev.key===chatKey ? Math.min(12000, Math.max(1600, Math.abs(area.scrollTop-prev.top)*3)) : 1600};
+      if (prev.key===next.key && prev.top===next.top && prev.h===next.h) return prev;
       if (canvasPanesMoving() && Math.abs(next.top-prev.top) < MOVE_SLACK && Math.abs(next.h-prev.h) < MOVE_SLACK) return prev;
       return next;
     });

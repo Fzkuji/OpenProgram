@@ -19,6 +19,7 @@ TOP_LEVEL_DIRECTORIES = {
     "scripts",
     "website",
     "tests",
+    "translations",
 }
 
 TOP_LEVEL_FILES = {
@@ -30,22 +31,13 @@ TOP_LEVEL_FILES = {
     "package-lock.json",
     "package.json",
     "README.md",
-    "README.de.md",
-    "README.es.md",
-    "README.fr.md",
-    "README.ja.md",
-    "README.ko.md",
-    "README.pt-BR.md",
-    "README.ru.md",
-    "README.zh-Hant.md",
-    "README.zh.md",
     "pyproject.toml",
     "setup.py",
     "uv.lock",
 }
 
 MAINTENANCE_TOOL_PATHS = (
-    "scripts/dag_dump.py",
+    "scripts/maintenance/dag_dump.py",
     "scripts/docs_site/__init__.py",
     "scripts/docs_site/build.py",
 )
@@ -294,7 +286,7 @@ def test_programs_route_uses_the_programs_workspace_component() -> None:
 
 
 def test_generated_package_readmes_are_current() -> None:
-    generator = runpy.run_path(str(ROOT / "scripts/gen_dir_readmes.py"))
+    generator = runpy.run_path(str(ROOT / "scripts/generators/gen_dir_readmes.py"))
     render = generator["_readme_for"]
     marker = "Auto-generated from `__init__.py`"
     stale = []
@@ -321,7 +313,7 @@ def test_user_docs_do_not_advertise_removed_bundled_skills() -> None:
         ROOT / "openprogram/extensions/skills/loader.py",
         *sorted((ROOT / "openprogram/runtime/agent/runtime").glob("*.py")),
         ROOT / "openprogram/interfaces/cli/parser.py",
-        ROOT / "openprogram/interfaces/cli/commands/skills.py",
+        ROOT / "openprogram/interfaces/cli/commands/capabilities/skills.py",
         ROOT / "openprogram/interfaces/server/routes/catalog/functions.py",
         ROOT / "openprogram/interfaces/server/routes/catalog/skills.py",
     ]

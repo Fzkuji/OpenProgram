@@ -10,9 +10,9 @@ from dataclasses import replace
 
 import pytest
 
-from openprogram.interfaces.channels import _room
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _room
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel, _TypingIndicator
 
 
@@ -28,7 +28,7 @@ def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def _paired(_tmp_state):
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
     for platform in ("faketg", "telegram"):
         for sender in ("701", "702", "703"):
             _access.approve_user(platform, "acct1", sender)
@@ -67,7 +67,7 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         return None
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", fake_dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", fake_dispatch)
     return calls
 
 
@@ -176,7 +176,7 @@ def test_new_starts_a_fresh_conversation_and_drops_pending(
 ) -> None:
     seen: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.start_new_conversation",
+        "openprogram.interfaces.channels.inbound._conversation.start_new_conversation",
         lambda **kw: seen.append(kw) or "fresh")
     _mention_mode()
     ch = _FakeChannel()
@@ -245,9 +245,9 @@ def test_typing_runs_for_the_turn_and_is_cancelled(
         started.set()
         return SendResult.success("")
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.send_typing", send)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.send_typing", send)
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.stop_typing",
+        "openprogram.interfaces.channels.delivery._transport.stop_typing",
         lambda p, a, t: events.append(f"stop {t}") or SendResult.success(""))
     typing = _TypingIndicator("wechat", "acct1", "user-1")
     typing.start()
@@ -261,10 +261,10 @@ def test_typing_gives_up_quietly_where_unsupported(
 ) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.send_typing",
+        "openprogram.interfaces.channels.delivery._transport.send_typing",
         lambda *a: calls.append("t") or SendResult.fail("not_supported", "x"))
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.stop_typing",
+        "openprogram.interfaces.channels.delivery._transport.stop_typing",
         lambda *a: calls.append("stop") or SendResult.success(""))
     typing = _TypingIndicator("wechat", "acct1", "user-1")
     typing.start()
@@ -288,9 +288,9 @@ def test_typing_follows_the_thread_the_message_came_from(
     def dispatch(**kw):
         assert started.wait(30)
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.send_typing", send)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.send_typing", send)
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", dispatch)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", dispatch)
 
     class _Tg(_FakeChannel):
         platform_id = "telegram"
@@ -305,13 +305,13 @@ def test_ack_reaction_follows_the_account_setting(
     from openprogram.interfaces.channels.accounts import set_setting
     reactions: list[tuple] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.add_reaction",
+        "openprogram.interfaces.channels.delivery._transport.add_reaction",
         lambda *a: reactions.append(a) or SendResult.success(""))
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.send_typing",
+        "openprogram.interfaces.channels.delivery._transport.send_typing",
         lambda *a: SendResult.fail("not_supported", "x"))
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.start_new_conversation",
+        "openprogram.interfaces.channels.inbound._conversation.start_new_conversation",
         lambda **kw: "fresh")
 
     class _Tg(_FakeChannel):
@@ -333,9 +333,9 @@ def test_ambient_room_turns_unaddressed_messages_into_quiet_room_events(
 ) -> None:
     from openprogram.interfaces.channels.accounts import set_setting
     touched: list[str] = []
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.add_reaction",
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.add_reaction",
                         lambda *a: touched.append("ack") or SendResult.success(""))
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.send_typing",
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.send_typing",
                         lambda *a: touched.append("typing") or SendResult.success(""))
 
     class _Tg(_FakeChannel):
@@ -405,7 +405,7 @@ def test_busy_ambient_event_stays_as_room_history(
         return None
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", busy)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", busy)
     key = ("faketg", "acct1", "room-1")
     _room.clear_pending(key)
     _room.set_activation("faketg", "acct1", "room-1", "ambient")

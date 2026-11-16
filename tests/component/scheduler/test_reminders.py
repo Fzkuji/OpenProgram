@@ -146,7 +146,7 @@ def _patch_delivery(monkeypatch, session, result=None):
         kw["on_done"](result or SimpleNamespace(final_text="Done stretching."))
         done.set()
         return "exec-1"
-    import openprogram.runtime.conversation.owner_turn as owner_turn
+    import openprogram.runtime.conversation.turn_admission.owner_turn as owner_turn
     monkeypatch.setattr(owner_turn, "start_owner_turn", start)
     import openprogram.runtime.conversation.run_control as run_control
     monkeypatch.setattr(run_control, "is_turn_running", lambda _sid: False)
@@ -322,7 +322,7 @@ def test_macos_notification_comes_from_the_app_bundle_when_there_is_one(monkeypa
 
 
 def test_a_waking_reminders_turn_is_marked_as_nobody_typing_it(monkeypatch):
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
     from openprogram.runtime.scheduler import reminders
 
     seen = {}
@@ -380,9 +380,9 @@ def test_windows_without_windows_powershell_posts_nothing(monkeypatch, _no_syste
 def test_a_wake_whose_conversation_stays_locked_tries_again_when_it_is_free(monkeypatch):
     """A long load or a move holding the conversation is not a turn running:
     the wake keeps trying within its wait instead of failing."""
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
     from openprogram.runtime.conversation import run_control
-    from openprogram.state.store.session.session_lock import SessionLockTimeout
+    from openprogram.state.store.session.files.session_lock import SessionLockTimeout
 
     attempts = []
 

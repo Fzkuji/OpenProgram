@@ -23,8 +23,8 @@ import hashlib
 import json
 import inspect
 
-from openprogram.runtime.context.budget import BudgetAllocator, DEFAULT_OUTPUT_RESERVE
-from openprogram.runtime.context.tokens import _text_tokens, estimate_history_tokens, real_context_window
+from openprogram.runtime.context.token_accounting.budget import BudgetAllocator, DEFAULT_OUTPUT_RESERVE
+from openprogram.runtime.context.token_accounting.tokens import _text_tokens, estimate_history_tokens, real_context_window
 from openprogram.models.providers.types import (
     AssistantMessage, Context, SimpleStreamOptions, TextContent, ThinkingContent, ToolCall,
 )

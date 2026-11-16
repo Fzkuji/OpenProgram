@@ -754,7 +754,7 @@ def make(
     """
     runtime = _resolve_runtime(runtime)
     menu, value_table = _normalize_options(options)
-    from openprogram.models.providers.utils import deadline as _dl
+    from openprogram.models.providers.utils.http_transport import deadline as _dl
     remain = _dl.remaining()
     timeout_s = None if remain is None else (remain if remain > 0 else 1e-9)
     reply = runtime.exec(content=[

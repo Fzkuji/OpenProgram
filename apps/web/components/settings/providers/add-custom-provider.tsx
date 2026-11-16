@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { FieldDescription, FieldError, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 import styles from "./provider-pane.module.css";
@@ -60,7 +61,7 @@ export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: 
         body: JSON.stringify({ label: label.trim(), base_url: baseUrl.trim(), local }),
       });
       if (!d.ok) {
-        setError(d.error || text("Failed to create provider", "创建 Provider 失败"));
+        setError(d.error || text("Failed to create provider", "创建服务商失败"));
         return;
       }
       const newId = d.id as string;
@@ -81,7 +82,7 @@ export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: 
         onClick={() => setOpen(true)}
       >
         <Plus />
-        {text("Add custom provider", "添加自定义 Provider")}
+        {text("Add custom provider", "添加自定义服务商")}
       </Button>
     );
   }
@@ -91,9 +92,7 @@ export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: 
 
   return (
     <div className={styles.addCustomForm}>
-      <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600 }}>
-        {text("Add custom provider", "添加自定义 Provider")}
-      </div>
+      <FieldTitle>{text("Add custom provider", "添加自定义服务商")}</FieldTitle>
       <Input
         placeholder={text("Name (e.g. Frontier Intelligence)", "名称（如 Frontier Intelligence）")}
         value={label}
@@ -101,20 +100,11 @@ export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: 
         autoFocus
       />
       {derivedId && (
-        <div
-          style={{
-            fontSize: "var(--fs-2xs)",
-            color: "var(--muted-foreground)",
-            marginTop: -2,
-            // A pasted API key has no break points — without this the
-            // one-word "id" line stretches the grid and the whole sidebar.
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        // A pasted API key has no break points: truncate keeps the one-word
+        // "id" line from stretching the grid and the whole sidebar.
+        <FieldDescription className="-mt-0.5 truncate">
           {text("id: ", "id：")}{derivedId}
-        </div>
+        </FieldDescription>
       )}
       <Input
         placeholder={text("Base URL (e.g. https://api.example.com)", "Base URL（如 https://api.example.com）")}
@@ -122,8 +112,8 @@ export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: 
         onChange={(e) => setBaseUrl(e.target.value)}
       />
       <label className="flex items-center gap-2 text-fs-xs"><Checkbox checked={local} onCheckedChange={(checked) => setLocal(checked === true)} />{text("Local server (API key optional)", "本地服务（API key 可选）")}</label>
-      {error && <div style={{ fontSize: "var(--fs-2xs)", color: "var(--destructive)" }}>{error}</div>}
-      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+      {error && <FieldError>{error}</FieldError>}
+      <div className="flex justify-end gap-1.5">
         <Button variant="ghost" onClick={() => { reset(); onCancel?.(); }} disabled={busy}>
           {text("Cancel", "取消")}
         </Button>

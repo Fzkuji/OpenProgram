@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.models.providers.utils.errors import LLMError
+from openprogram.models.providers.utils.failures.errors import LLMError
 from openprogram.operations.self_update.control.turn_check import _classify
 from openprogram.runtime.conversation.model_tools import _raise_model_unavailable
 

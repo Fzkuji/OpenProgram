@@ -1,7 +1,7 @@
 "use client";
 import { requestSessionLoad } from "@/lib/runtime-bridge/session/session-load";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { usePendingRunFunction } from "@/lib/execution/use-pending-run-function";
@@ -144,7 +144,8 @@ function stripLegacyChatChrome(host: HTMLElement) {
   }
 }
 
-export function PageShell({ page }: { page: Page }) {
+// Memoized: the shell redraws on every tab and route change, and this takes no part in those.
+export const PageShell = memo(function PageShell({ page }: { page: Page }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -309,4 +310,4 @@ export function PageShell({ page }: { page: Page }) {
   }
 
   return <div ref={hostRef} style={{ display: "contents" }} />;
-}
+});

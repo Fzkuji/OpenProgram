@@ -1,0 +1,583 @@
+<title>Feature matrix</title>
+<meta name="description" content="160 user-callable features checked across OpenProgram and 12 reference columns, with scores, candidates and evidence.">
+<h1>Feature matrix</h1>
+
+<p>160 user-callable or configurable features, in OpenProgram and 12 reference columns, for scoping future work. Each cell records what the listed version confirms. Not an implementation specification, quality ranking or marketing. <a href="overview.html">Framework comparison</a> covers mechanisms (execution, state, context, permissions); the two counts do not add up.</p>
+
+<h2 id="three">Open before design</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Confirmed</th><th scope="col">Not confirmed or not covered</th></tr></thead>
+<tbody>
+<tr><th scope="row">Git workflows</th><td>Read-only commit-message generation; worktree from a PR number or GitHub URL; worktree-isolated execution; <code translate="no">.worktreeinclude</code> sync; shadow git</td><td>Diff security review; default commit, push and PR entry; PR or Issue comment triggers; AI authorship attribution; non-git version control</td></tr>
+<tr><th scope="row">Recoverable deletion</th><td>Local Agent subprocesses bound to a session and turn: <code translate="no">PATH</code>, <code translate="no">PYTHONPATH</code>, <code translate="no">NODE_OPTIONS</code> cover common shell, Python and Node deletion APIs. <code translate="no">openprogram trash list</code> and <code translate="no">restore</code> work on recorded entries.</td><td>Cron and background tasks without session or turn context; Docker and SSH backends; absolute-path system commands; direct syscalls; <code translate="no">find -delete</code> and other bypasses. The list is not a full deletion audit; the mechanism is not a security sandbox.</td></tr>
+<tr><th scope="row">External control</th><td>ACP v1 server (<code translate="no">openprogram acp</code>); authenticated stdio MCP server (<code translate="no">openprogram mcp serve</code>) on existing tool registration and permission mapping</td><td>OpenAI-compatible endpoints; official remote-control SDK; inbound webhooks. Local FastAPI and WebSocket actions carry no versioned compatibility guarantee.</td></tr>
+</tbody>
+</table>
+<p class="note">No usage or effort data, so neither priority nor cost follows from this table.</p>
+<details>
+<summary>Sources</summary>
+<p><code translate="no">runtime/commands/commit_message.py</code> · <code translate="no">host/sandbox/recoverable_delete.py</code> · <code translate="no">interfaces/cli/commands/maintenance/trash.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">tests/component/agent/security/test_recoverable_delete.py</code> · <code translate="no">tests/component/webui/runtime/test_diagnostic_mcp_route_contracts.py</code> · <code translate="no">tests/component/programs/mcp/test_acp_server.py</code></p>
+</details>
+
+<h2 id="matrix">Complete table</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mark</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">●</th><td>Sufficient evidence to confirm</td></tr>
+<tr><th scope="row">◐</th><td>Confirmed only for some scenarios or interfaces</td></tr>
+<tr><th scope="row">○</th><td>Implemented, but disabled by default or gated</td></tr>
+<tr><th scope="row">·</th><td>Unconfirmed in the listed versions and evidence; does not mean absent</td></tr>
+</tbody>
+</table>
+<details>
+<summary>01 Editor integration 9 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Official IDE extension or plugin <details><summary>Evidence</summary>We have no proprietary IDE extension. Editors connect through openprogram acp; ACP-native editors such as Zed need no extension. This row counts proprietary plugins only. claude /ide · codex app-server drives the VS Code extension · buddy --ide</details></th><td>·</td><td>● claude, codex, opencode, cc internal, cx internal, gm internal, buddy · ◐ hermes</td></tr>
+<tr><th scope="row">IDE-driven through ACP <details><summary>Evidence</summary>openprogram acp speaks ACP v1 over stdio through <code translate="no">interfaces/acp/server.py</code>: initialize negotiation, session new/load, streaming prompt turns with tool_call reports, cancel, and permission requests forwarded to existing approval. <a href="../../../interfaces/acp.html">ACP</a> provides Zed agent_servers configuration. openclaw acp · opencode acp · hermes acp · buddy --acp · gm internal --experimental-acp</details></th><td>●</td><td>● openclaw, opencode, hermes, buddy · ○ gm internal</td></tr>
+<tr><th scope="row">LSP diagnostics and symbol navigation <details><summary>Evidence</summary>Our host/lsp/ JSON-RPC stdio client supplies lsp_diagnostics/lsp_references/lsp_definition in the core toolset. Python uses pyright, TS uses typescript-language-server; missing binaries produce installation guidance. Two languages are covered, versus about 25 in Hermes. claude ENABLE_LSP_TOOL</details></th><td>●</td><td>○ claude, opencode, cc internal, buddy · ● hermes</td></tr>
+<tr><th scope="row">Editor selections and open files in context <details><summary>Evidence</summary>Our <code translate="no">interfaces/acp/server.py</code> fully converts resource/resource_link in ACP prompts: selections/open files enter path-fenced context, with persisted path mentions. Protocol and persistence tests cover this. Proprietary IDE extensions are a separate row. codex /ide · opencode extension · gm internal IDE companion</details></th><td>●</td><td>● claude, codex, opencode, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Inline completion <details><summary>Evidence</summary>buddy product.json productFeatures.InlineCompletions</details></th><td>·</td><td>● buddy</td></tr>
+<tr><th scope="row">Inline chat, CodeLens, and status-bar actions <details><summary>Evidence</summary>buddy InlineChat / CodeLens / StatusBar / CodeAction / FloatShortcut</details></th><td>·</td><td>● buddy</td></tr>
+<tr><th scope="row">Automatic terminal-shortcut configuration <details><summary>Evidence</summary>claude /terminal-setup · buddy /terminal-setup covers over ten terminals</details></th><td>·</td><td>● claude, cc internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">Browser control <details><summary>Evidence</summary>Our core browser tool provides 28 actions through both the default registry and deferred catalog; release runtime installs Chromium. openclaw dedicated Chrome profile · hermes five backends · codex chrome@openai-bundled</details></th><td>●</td><td>○ claude, cc internal, gm internal · ● codex, openclaw, hermes, cx internal</td></tr>
+<tr><th scope="row">Desktop GUI control <details><summary>Evidence</summary>Our built-in computer_use_agent tool operates application windows in the background (Accessibility on macOS, AT-SPI on Linux, UI Automation on Windows) and a VM over the OSWorld HTTP API, pointing by element index or screenshot pixels; there is no visual grounding by description, so this remains partial. codex computer-use@openai-bundled · buddy ComputerUse disabled by default · openclaw peekaboo</details></th><td>◐</td><td>● codex, openclaw, cx internal · ○ gm internal, buddy</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>02 Sessions and history 17 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resume the last session <details><summary>Evidence</summary>Various --resume / -c commands</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, weclaw, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Branch or fork sessions <details><summary>Evidence</summary>codex fork · OpenClaw Control UI fork/rewind/branch · opencode --fork · buddy /fork</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">Multiple histories within one session <details><summary>Evidence</summary>Our <code translate="no">runtime/context/git/dag.py</code> head pointer · OpenClaw transcript branch · pi-mono /tree session tree; not equivalent to an independent worktree per branch</details></th><td>●</td><td>◐ claude, cc internal, buddy · ● openclaw, pi-mono</td></tr>
+<tr><th scope="row">Store the session itself in a git repository <details><summary>Evidence</summary>At the snapshot: one repository per session. History JSON nodes can be created, have output/metadata filled, or be deleted under a lock. Current head and optional branch refs in meta.json use CAS; title/archive use locked atomic replacement. Other implementations mainly use JSONL or SQLite. Current code keeps one append-only log per session instead.</details></th><td>●</td><td>None confirmed</td></tr>
+<tr><th scope="row">Manual context compaction <details><summary>Evidence</summary>Various /compact commands; our Web action and TUI /compact both call dispatcher.trigger_compaction</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Automatic compaction at a threshold <details><summary>Evidence</summary>Our <code translate="no">runtime/context/engine.py</code> defaults to 0.80; <code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code> automatically compacts over-threshold context before the turn runs</details></th><td>●</td><td>● claude, openclaw, opencode, hermes, pi-mono, cc internal, gm internal, buddy · ◐ codex, cx internal</td></tr>
+<tr><th scope="row">Rewind history and restore files <details><summary>Evidence</summary>Our <code translate="no">runtime/conversation/rewinds/rewind.py</code> · claude /rewind · buddy /rewind Beta · hermes checkpoints disabled by default</details></th><td>●</td><td>● claude, opencode, cc internal, gm internal, buddy · ○ codex, hermes, cx internal · ◐ pi-mono</td></tr>
+<tr><th scope="row">Export a session to a file <details><summary>Evidence</summary>Our CLI and REST export the active branch of a specified session as Markdown or self-contained HTML, redacting content and tool data by default through <code translate="no">state/store/session/reading/export.py</code>. pi-mono /export · openclaw /export-trajectory · opencode export --sanitize</details></th><td>●</td><td>● claude, openclaw, opencode, hermes, pi-mono, cc internal, gm internal, buddy · ◐ codex, cx internal</td></tr>
+<tr><th scope="row">Generate a public sharing link <details><summary>Evidence</summary>opencode /share to opncd.ai · pi-mono /share to GitHub gist</details></th><td>·</td><td>● claude, opencode, pi-mono, cc internal</td></tr>
+<tr><th scope="row">Full-text session search <details><summary>Evidence</summary>Our <code translate="no">state/store/session/reading/search.py</code> uses ripgrep on sessions/*/history/*.json; without rg it scans individual files in Python and bounds result count · OpenClaw per-agent SQLite transcript FTS · hermes session_search FTS5</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal · ◐ codex, cx internal</td></tr>
+<tr><th scope="row">Archive sessions <details><summary>Evidence</summary>openprogram sessions archive/unarchive calls session_db.set_archived through <code translate="no">interfaces/cli/commands/conversations/sessions.py::_cmd_session_archive</code>; list --archived/--all provide views. Archiving hides sessions from the default list but does not guarantee permanent retention: startup age/capacity cleanup may still remove old archives. codex archive/unarchive · OpenClaw sessions archive · OpenCode session archive</details></th><td>●</td><td>● codex, openclaw, opencode, cx internal</td></tr>
+<tr><th scope="row">Background or detached sessions <details><summary>Evidence</summary>buddy --bg with codebuddy ps/logs/attach/kill · hermes /background</details></th><td>◐</td><td>● claude, openclaw, opencode, hermes, cc internal, buddy · ◐ codex, cx internal</td></tr>
+<tr><th scope="row">Move a running session to another device or client <details><summary>Evidence</summary>claude /teleport · codex --remote · OpenClaw paired devices/cloud workers · opencode attach · buddy --remote-control</details></th><td>·</td><td>● claude, codex, openclaw, opencode, cc internal, cx internal, buddy · ○ gm internal</td></tr>
+<tr><th scope="row">Cross-channel takeover of the same session <details><summary>Evidence</summary>Our TUI /attach uses attach_session to bind a channel/account/peer to an existing session and explicitly returns the replaced binding · openclaw /dock · hermes /handoff</details></th><td>●</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Steer a running turn <details><summary>Evidence</summary>Our Web/TUI expose steer. <code translate="no">interfaces/server/ws_actions/runtime.py</code> submits instructions to the dispatcher; loop_runner injects and persists them at message boundaries. Web falls back to ordinary queued messages on not_running; TUI only reports failure. Tests cover admission, persistence, final sweep, and Web ACK fallback. openclaw /steer · hermes /steer · pi-mono Enter queues and Alt+Enter follows up</details></th><td>●</td><td>● openclaw, hermes, pi-mono</td></tr>
+<tr><th scope="row">Context-usage visualization <details><summary>Evidence</summary>Our Web /api/sessions/{id}/context shows token categories through shared session_stats. TUI /context currently sends an unregistered action and cannot show statistics, so only some interfaces are confirmed. OpenClaw Control UI provides a context meter</details></th><td>◐</td><td>● claude, codex, openclaw, cc internal, cx internal, buddy · ◐ hermes, pi-mono</td></tr>
+<tr><th scope="row">Temporary side sessions outside main history <details><summary>Evidence</summary>codex /side and /btw · openclaw /btw · hermes /background</details></th><td>·</td><td>● codex, openclaw, hermes, cx internal</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>03 Code understanding 10 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Semantic or vector code search <details><summary>Evidence</summary>Our semble_search/semble_find_related are registered core/research tools. Release runtime installs the search extra and verifies semble, making them directly available. Source-only development checkouts must install the extra themselves. openclaw QMD indexes arbitrary directories</details></th><td>●</td><td>● openclaw · ◐ buddy</td></tr>
+<tr><th scope="row">Read-only exploration subagent <details><summary>Evidence</summary>opencode explore · claude Explore · gm internal codebase_investigator · buddy code-explorer</details></th><td>◐</td><td>● claude, opencode, cc internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">External dependency/documentation research agent <details><summary>Evidence</summary>Official OpenCode agent documentation lists Scout, but stable v1.18.25 source defines only General and Explore as built-in non-hidden subagents, not Scout; marked unconfirmed according to the stable-source boundary</details></th><td>·</td><td>None confirmed</td></tr>
+<tr><th scope="row">Register external directories or repositories as named context <details><summary>Evidence</summary>opencode references through @aliases</details></th><td>·</td><td>● opencode</td></tr>
+<tr><th scope="row">Generate project instruction files <details><summary>Evidence</summary>Our TUI /init synchronously creates generic AGENTS.md, SOUL.md, and USER.md templates, preserving existing files and reporting created/skipped individually; it does not analyze project code. claude /init · buddy /init</details></th><td>◐</td><td>● claude, codex, opencode, cc internal, cx internal, buddy · ◐ openclaw</td></tr>
+<tr><th scope="row">Read project instructions in other agents’ formats <details><summary>Evidence</summary>opencode reads CLAUDE.md and .claude/skills · buddy reads AGENTS.md when CODEBUDDY.md is absent</details></th><td>◐</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Read existing conversation history as context <details><summary>Evidence</summary>Our read_conversation · openclaw sessions_history · hermes session_search</details></th><td>●</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Built-in deep-research workflow <details><summary>Evidence</summary>buddy builtin/workflows/deep-research.workflow.js uses five parallel branches and three voting-based validations</details></th><td>·</td><td>◐ openclaw · ● buddy</td></tr>
+<tr><th scope="row">Answer product questions from its own documentation <details><summary>Evidence</summary>claude claude-code-guide subagent · gm internal get_internal_docs · openclaw docs command</details></th><td>·</td><td>● claude, openclaw, cc internal, gm internal · ◐ buddy</td></tr>
+<tr><th scope="row">Image and PDF input <details><summary>Evidence</summary>Our Web/channels accept attachments. Images become ImageContent; PDFs are saved in the session workdir and read with pdf/read. The TUI now attaches images and PDFs by pasted or dragged path, clipboard and @path (moved since scoring)</details></th><td>◐</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy · ◐ weclaw</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>04 Version control 10 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Generate commit messages <details><summary>Evidence</summary>Our /commit-message reads staged or unstaged changes with GIT_OPTIONAL_LOCKS=0. Status is limited to 20,000 characters and total model input to 80,000. A tool-free model generates a candidate without committing. buddy GenerateCommitMessage · claude /commit</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal, buddy</td></tr>
+<tr><th scope="row">Commit, push, and create a PR <details><summary>Evidence</summary>OpenProgram does not bundle this default skill; commits and remote writes follow ordinary tool permissions and user authorization. Codex managed worktrees support commit, push, and open PR; buddy commit-push-pr allowedTools permits only gh pr create</details></th><td>·</td><td>● claude, codex, openclaw, hermes, cc internal, buddy</td></tr>
+<tr><th scope="row">PR or Issue comment-triggered bot <details><summary>Evidence</summary>Codex GitHub integration supports @codex task/review · opencode /oc mentions · buddy GitLab @codebuddy · gm internal @gemini-cli</details></th><td>·</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Create a worktree directly from a PR number or URL <details><summary>Evidence</summary>Our worktree_create pr parameter accepts a number, #number, or GitHub PR URL; WorktreeManager resolves the checkout ref · buddy -w #PR or PR URL supports GitHub/GitLab/CNB</details></th><td>●</td><td>● claude, cc internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Worktree-isolated execution <details><summary>Evidence</summary>Our <code translate="no">state/worktree/manager.py</code> · Claude Code and Codex managed worktrees · OpenClaw managed worktrees · OpenCode v1.18.25 has the core implementation but experimental HTTP routes · hermes -w · buddy isolation: worktree</details></th><td>●</td><td>● claude, codex, openclaw, pi-mono, cc internal, buddy · ○ opencode</td></tr>
+<tr><th scope="row">Synchronize local untracked files after worktree creation <details><summary>Evidence</summary>Our WorktreeManager calls sync_include_files after creation, using only repository-relative untracked paths from git ls-files --others and preserving their relative paths in the target. Claude Code, Codex, OpenClaw, Hermes, and Buddy support .worktreeinclude</details></th><td>●</td><td>● claude, codex, openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Shadow git without modifying user history <details><summary>Evidence</summary>Our state/store/shadow_git · opencode snapshot enabled by default · hermes checkpoints disabled by default</details></th><td>●</td><td>● claude, opencode, cc internal, buddy · ○ hermes, gm internal · ◐ pi-mono</td></tr>
+<tr><th scope="row">AI authorship in git history <details><summary>Evidence</summary>codex ext/git-attribution</details></th><td>·</td><td>● codex, cx internal</td></tr>
+<tr><th scope="row">Security review of the current diff <details><summary>Evidence</summary>buddy /security-review · claude /security-review</details></th><td>·</td><td>● claude, cc internal, buddy</td></tr>
+<tr><th scope="row">Non-git version control <details><summary>Evidence</summary>claude CLAUDE_CODE_PERFORCE_MODE · buddy WorktreeCreate hook supports SVN/Perforce</details></th><td>·</td><td>● claude, cc internal · ◐ buddy</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>05 Tasks and planning 11 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Todo-list tools <details><summary>Evidence</summary>Various todowrite / TaskCreate; pi-mono has only an example extension</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, cx internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">Plan mode <details><summary>Evidence</summary>Our enter_plan_mode · gm internal /plan is experimental</details></th><td>●</td><td>● claude, codex, opencode, cc internal, cx internal, buddy · ◐ hermes, pi-mono · ○ gm internal</td></tr>
+<tr><th scope="row">Goal-condition-driven autonomous loop <details><summary>Evidence</summary>Our <code translate="no">programs/tools/planning/goal/verification.py</code> runs an independent read-only verification turn · claude /goal · codex /goal · buddy /goal · hermes /goal</details></th><td>●</td><td>● claude, codex, hermes, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">Scheduled tasks <details><summary>Evidence</summary>Our Scheduler tools and REST API register one-shot, recurring, and monitor tasks. A resident worker executes agent prompts or controlled commands; scheduler-worker supports --once/--list. Codex Automations supports recurring background tasks</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Periodic proactive heartbeat <details><summary>Evidence</summary>OpenProgram removed the dedicated Commitments heartbeat. Scheduler monitors periodically run agent prompts but have no default main-session heartbeat semantics for channel delivery, silence, and importance filtering. Always-on Agents (runtime/conversation/always_on/) now wake on a schedule and report to chosen channels; this row is not yet re-scored for them. Openclaw heartbeat and cron are separate paths</details></th><td>◐</td><td>● openclaw</td></tr>
+<tr><th scope="row">Standing authorization for long-running autonomy <details><summary>Evidence</summary>openclaw standing orders with trigger and escalation rules</details></th><td>·</td><td>● openclaw</td></tr>
+<tr><th scope="row">One-shot, recurring, and monitor tasks linked to long-term memory <details><summary>Evidence</summary>OpenProgram Scheduler reuses signed execution specs, frozen sandbox policies, and the resident worker. Tasks can store workspace_id + memory_id and resolve the current Topic block only at execution. The Memory writer no longer infers Commitments; old commitments.jsonl receives a one-time migration only.</details></th><td>●</td><td>● openclaw</td></tr>
+<tr><th scope="row">Model-generated orchestration scripts for large-scale parallel tasks <details><summary>Evidence</summary>Our chat agent writes Workflow packages in ~/.openprogram/programs with its file tools; <code translate="no">openprogram programs check</code> tests and commits them, and their entries become tools. Workflows are plain Python, so parallelism is whatever the code does; there is no built-in large-scale parallel scheduler. buddy ultracode supports up to 1000 subagents with concurrency 16 · claude Dynamic Workflows · codex code mode disabled by default</details></th><td>◐</td><td>● claude, cc internal, buddy · ○ codex, cx internal</td></tr>
+<tr><th scope="row">Typed workflow runtime with approval checkpoints <details><summary>Evidence</summary>Our Agent method derives JSON schema from Python signatures. requires_approval enters fail-closed approval only when a function is an outer AgentTool. Workflow calls have completed-call checkpoint/replay but no cross-process resumable human-approval checkpoint or declarative workflow DAG. openclaw Lobster with llm-task</details></th><td>◐</td><td>● openclaw</td></tr>
+<tr><th scope="row">Structured questions to users <details><summary>Evidence</summary>Our ask_user_question · OpenClaw ask_user · buddy AskUserQuestion · opencode question · hermes clarify</details></th><td>●</td><td>● claude, openclaw, opencode, hermes, cc internal, buddy · ◐ codex, cx internal</td></tr>
+<tr><th scope="row">JSON-schema-constrained output <details><summary>Evidence</summary>Our Tasks 1–6@2fb471b3: strict local Runtime/Agent validation, at most one repair, verified native/hidden-tool/explicit-prompt negotiation, CLI/Web typed lifecycle, record/replay v2, and no-tool session titles. Subsequent trust-boundary fixes reject remote refs, direct local reference cycles, over-budget schemas, and EOF without a raw terminal · buddy --json-schema with StructuredOutput · opencode format: json_schema</details></th><td>●</td><td>● claude, opencode, cc internal, buddy · ◐ gm internal</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>06 Multi-agent 14 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Spawn subagents <details><summary>Evidence</summary>Our agent tool has three starting states · pi-mono has only an example extension · weclaw broadcasts messages to multiple external CLIs</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, cx internal, gm internal, buddy · ◐ pi-mono, weclaw</td></tr>
+<tr><th scope="row">Messaging between agents <details><summary>Evidence</summary>Our send_message · codex multi_agent_v1.send_message · buddy SendMessage</details></th><td>●</td><td>● claude, codex, openclaw, cc internal, cx internal, buddy · ◐ hermes</td></tr>
+<tr><th scope="row">Persistent inbox with bounded cross-session deduplication <details><summary>Evidence</summary>Our <code translate="no">runtime/conversation/peer_agents/inbox.py</code> uses a 60-second deduplication window and 50-entry limit · Claude also has a 50-entry cross-session inbox</details></th><td>●</td><td>● claude, cc internal</td></tr>
+<tr><th scope="row">Persistent task board <details><summary>Evidence</summary>OpenClaw Workboard bundled plugin disabled by default · hermes ~/.hermes/kanban.db with per-project boards and automatic decomposition</details></th><td>·</td><td>○ openclaw · ● hermes</td></tr>
+<tr><th scope="row">Agent teams: leader, members, and mailboxes <details><summary>Evidence</summary>buddy Agent Teams with @member completion and shared task lists · claude requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</details></th><td>·</td><td>○ claude, cc internal, buddy</td></tr>
+<tr><th scope="row">Interchangeable team execution backends <details><summary>Evidence</summary>Buddy supports in-process, separate-process, and tmux execution · claude teammateMode: iterm2</details></th><td>·</td><td>◐ claude, cc internal · ● buddy</td></tr>
+<tr><th scope="row">N-way merge of multiple branches <details><summary>Evidence</summary>Our <code translate="no">runtime/conversation/peer_agents/merge.py</code> and subagent merge</details></th><td>●</td><td>None confirmed</td></tr>
+<tr><th scope="row">Delegation mode: coordinator does not execute tasks directly <details><summary>Evidence</summary>buddy --permission-mode delegate restricts available tools to five</details></th><td>·</td><td>○ claude · ● cc internal, buddy</td></tr>
+<tr><th scope="row">Multi-model consensus or cross-review <details><summary>Evidence</summary>Our mixture_of_agents · claude /advisor · openclaw oracle skill</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal</td></tr>
+<tr><th scope="row">Subagent depth budget <details><summary>Evidence</summary>Our agent.max_spawn_depth defaults to 0, meaning no limit · Claude defaults to 3 · hermes max_spawn_depth</details></th><td>●</td><td>● claude, hermes, cc internal · ◐ buddy</td></tr>
+<tr><th scope="row">Concurrency and per-session total-spawn limits <details><summary>Evidence</summary>Our runtime/jobs/resource_governance/ applies per-session live/queued/total limits plus token, cost, and runtime limits, configured through state.settings and measured in the usage ledger · Claude concurrency 20 and 200 spawns per session · Hermes max_concurrent_children defaults to 3</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Resume subagents from persistent state <details><summary>Evidence</summary>Calling our agent(to=…) again continues an existing persistent branch. Every hand-off from the request to the result writes its intent before acting and is replayed by the next Worker: a busy target's inbox entry rides on the admitted Job, a held spawn is published once its submitter is gone, and an unsent result notice is replayed; tests/component/agent/jobs/test_subagent_handoff_crash.py kills the process at each window. Buddy uses agentId and agent-{id}.jsonl with a resume parameter on later calls</details></th><td>●</td><td>● buddy</td></tr>
+<tr><th scope="row">Function-call trees in the same session graph <details><summary>Evidence</summary>Our <code translate="no">runtime/agent/call_state.py</code> writes code nodes; <code translate="no">state/store/session/session_node_writer.py</code> and <code translate="no">state/store/session/nodes.py</code> unify caller/predecessor semantics</details></th><td>●</td><td>None confirmed</td></tr>
+<tr><th scope="row">Restrict subagent tools by remaining message budget <details><summary>Evidence</summary>Our <code translate="no">runtime/conversation/model_tools.py</code> reads the call-chain message budget while resolving tools; tests/unit/agent/jobs/test_spawn_caller_invariant.py verifies collaboration tools are removed when the budget is exhausted</details></th><td>●</td><td>None confirmed</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>07 Memory and knowledge 10 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Long-term memory across sessions <details><summary>Evidence</summary>Our state/memory/ · codex memories disabled by default · openclaw built-in SQLite with FTS5</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal, buddy · ○ codex, cx internal</td></tr>
+<tr><th scope="row">Background memory organization and consolidation <details><summary>Evidence</summary>Our 3 a.m. reorganization · claude Dream System · openclaw dreaming requires opt-in</details></th><td>●</td><td>● claude, codex, cc internal, cx internal · ○ openclaw · ◐ buddy</td></tr>
+<tr><th scope="row">Pluggable external memory services <details><summary>Evidence</summary>Hermes eight memory providers · openclaw honcho / lancedb / QMD</details></th><td>·</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Memory compiled as a browsable wiki <details><summary>Evidence</summary>openclaw memory-wiki with sources and claims</details></th><td>·</td><td>● openclaw</td></tr>
+<tr><th scope="row">Skills and progressive disclosure <details><summary>Evidence</summary>Various SKILL.md systems; ours merges remote-cache, plugin, user, and project sources with remote caching and progressive disclosure</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Skill marketplace or remote installation <details><summary>Evidence</summary>openclaw ClawHub · hermes Skills Hub with eight sources · pi-mono pi install npm/git</details></th><td>●</td><td>● claude, codex, openclaw, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Agents create their own skills <details><summary>Evidence</summary>claude skillify · hermes skill_manage · openclaw Skill Workshop disabled by default</details></th><td>·</td><td>● claude, hermes, cc internal · ○ openclaw</td></tr>
+<tr><th scope="row">Skill/plugin security scanning or trust levels <details><summary>Evidence</summary>Our <code translate="no">extensions/plugins/trust.py</code> persists three trust levels; the loader rejects untrusted plugins and Web management APIs permit review/changes. Content scanning and community-plugin subprocess isolation are not implemented. Hermes four trust levels and scanning · buddy SkillSecurityScan disabled by default</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal · ○ buddy</td></tr>
+<tr><th scope="row">Load skill bundles <details><summary>Evidence</summary>Hermes bundles load a group of skills through a slash command</details></th><td>·</td><td>● hermes</td></tr>
+<tr><th scope="row">Vendor knowledge-base integration <details><summary>Evidence</summary>Buddy knowledgeBases Tencent document source, referenceable with @</details></th><td>·</td><td>● buddy</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>08 Extensions 11 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Plugin system <details><summary>Evidence</summary>Various implementations; our openprogram/extensions/plugins supports pip/npm/git/path</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Plugin marketplace <details><summary>Evidence</summary>Our <code translate="no">extensions/plugins/marketplace.py</code> supports built-in catalogs and custom marketplaces; Web Marketplace browses and invokes plugin installation APIs</details></th><td>●</td><td>● claude, codex, openclaw, hermes, pi-mono, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">MCP client <details><summary>Evidence</summary>Our <code translate="no">extensions/mcp/client.py</code> covers the full lifecycle; pi-mono explicitly excludes MCP</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">MCP server for external programs <details><summary>Evidence</summary>openprogram mcp serve exposes list_tools/call_tool over stdio through <code translate="no">extensions/mcp/server/server.py</code>, with token authentication in auth.py and tool contracts/owner-paired mapping in service.py and contracts.py. Covered by <code translate="no">tests/unit/programs/mcp/test_mcp_server_{contracts,tools,security,cli}.py</code> and <code translate="no">tests/integration/programs/test_mcp_server.py</code>. claude mcp serve · Codex codex mcp-server remains but is deprecated in favor of App Server/SDK · openclaw mcp serve · hermes mcp serve</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal</td></tr>
+<tr><th scope="row">Interactive MCP HTML components <details><summary>Evidence</summary>buddy <code translate="no">dist/web-ui/sandbox_proxy.html</code>, io.modelcontextprotocol/ui specification</details></th><td>·</td><td>● buddy</td></tr>
+<tr><th scope="row">Event hooks <details><summary>Evidence</summary>Claude about 28 events · Buddy 26 · ours 34</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Hooks support LLM judgments or HTTP callbacks <details><summary>Evidence</summary>Buddy and Claude both support command, prompt, agent, and http actions</details></th><td>·</td><td>● claude, cc internal, buddy · ◐ hermes</td></tr>
+<tr><th scope="row">Register new tools in user-written code <details><summary>Evidence</summary>opencode .opencode/tools/*.ts · pi-mono registerTool · codex experimental dynamicTools</details></th><td>●</td><td>● claude, openclaw, opencode, hermes, pi-mono, cc internal · ○ codex, cx internal · ◐ gm internal, buddy</td></tr>
+<tr><th scope="row">Register custom model providers <details><summary>Evidence</summary>codex model_providers · opencode provider.npm · buddy models.json hot reload</details></th><td>●</td><td>◐ claude, cc internal · ● codex, openclaw, opencode, hermes, pi-mono, cx internal, buddy</td></tr>
+<tr><th scope="row">Migrate configuration/state from other agents <details><summary>Evidence</summary>Codex desktop/CLI import migrates Claude Code/Cursor setup and recent work · openclaw migrate-claude · hermes claw migrate</details></th><td>·</td><td>● claude, codex, openclaw, hermes, cc internal · ○ cx internal · ◐ gm internal, buddy</td></tr>
+<tr><th scope="row">Switch output style or personality <details><summary>Evidence</summary>Our <code translate="no">state/output_style.py</code> provides concise/explanatory/direct/detailed styles with user/project .md overrides. agent.output_style uses APPLY_LIVE in <code translate="no">state/settings.py</code>, taking effect immediately; the output_style component in <code translate="no">runtime/context/prompt_assembly/components.py</code> inserts style text into the system prompt. codex /personality · Hermes 14 personalities plus SOUL.md · Buddy three output styles</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal, buddy</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>09 Interfaces 12 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Terminal UI <details><summary>Evidence</summary>Our Ink and Rich implementations; weclaw has no terminal UI</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Web UI <details><summary>Evidence</summary>Our Next.js Web UI has chat, agents, workflows, sessions, settings, and other pages · Codex cloud Web · buddy --serve with xterm.js split views · gm internal /remote panel disabled by default</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, buddy · ○ gm internal</td></tr>
+<tr><th scope="row">Desktop app <details><summary>Evidence</summary>Our Electron app supports dragging tabs across windows · codex codex app · opencode Electron Beta</details></th><td>●</td><td>● claude, codex, openclaw, opencode, cc internal, cx internal</td></tr>
+<tr><th scope="row">Mobile app or PWA <details><summary>Evidence</summary>Our <code translate="no">apps/web/app/manifest.ts</code> with 192/512/maskable PNG icons enables standalone PWA installation · openclaw iOS/Android node apps · buddy manifest.webmanifest supports PWA installation and QR pairing</details></th><td>●</td><td>● claude, openclaw, cc internal, buddy · ○ codex, cx internal</td></tr>
+<tr><th scope="row">Chat-channel integration <details><summary>Evidence</summary>Ours has four · Claude Code includes Slack/Discord entries · Codex Slack integration depends on cloud account/workspace configuration · Openclaw 28 · Hermes 27 · Buddy six</details></th><td>●</td><td>◐ claude, codex, opencode, cc internal · ● openclaw, hermes, weclaw, buddy</td></tr>
+<tr><th scope="row">Voice input or output <details><summary>Evidence</summary>openclaw Swabble wake word and 14 TTS providers · Hermes hold Ctrl+B to talk; ours has only one working TTS provider, OpenAI</details></th><td>◐</td><td>● claude, openclaw, hermes, cc internal · ○ codex, cx internal · ◐ weclaw</td></tr>
+<tr><th scope="row">Incoming and outgoing phone calls <details><summary>Evidence</summary>openclaw voice-call uses Twilio, Telnyx, or Plivo, with DTMF support</details></th><td>·</td><td>● openclaw</td></tr>
+<tr><th scope="row">Theme switching <details><summary>Evidence</summary>Our Web settings persist multiple themes and auto; TUI /theme persists auto, dark/light, and dim variants. OpenClaw Control UI supports themes</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Vim mode <details><summary>Evidence</summary>Claude full modal engine with text objects · buddy /vim · codex /vim</details></th><td>·</td><td>● claude, codex, cc internal, cx internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">Fully remappable keyboard shortcuts <details><summary>Evidence</summary>Buddy keybindings.json has 16 contexts and key chords · Claude about 95 bindable actions · our TUI now reads action overrides from keybindings.json and lists them under ? (moved since scoring)</details></th><td>·</td><td>● claude, codex, opencode, pi-mono, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">Standalone binary without Node installation <details><summary>Evidence</summary>pi-mono bun build --compile · Buddy native installer and Homebrew tap · Weclaw uses Go</details></th><td>·</td><td>● claude, codex, opencode, pi-mono, weclaw, buddy</td></tr>
+<tr><th scope="row">Screen readers and accessibility <details><summary>Evidence</summary>claude --ax-screen-reader · gm internal --screen-reader</details></th><td>·</td><td>● claude, cc internal, gm internal</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>10 Integration and interoperability 13 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTTP API server <details><summary>Evidence</summary>Our resident worker provides owner-authenticated FastAPI, REST, SSE, and WebSocket. A stable versioned remote-control SDK is a separate row and does not affect HTTP-server status. opencode serve with OpenAPI · buddy --serve with Swagger and PTY APIs</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, weclaw, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">OpenAI-compatible endpoint <details><summary>Evidence</summary>openclaw /v1/chat/completions disabled by default · hermes /v1/chat/completions and /v1/responses</details></th><td>·</td><td>○ openclaw · ● hermes</td></tr>
+<tr><th scope="row">Official SDK for remote-control protocols <details><summary>Evidence</summary>Codex Python and TypeScript · opencode @opencode-ai/sdk · Buddy SDKs in two languages. OpenProgram’s local Python import API does not count as a remote-client SDK</details></th><td>·</td><td>● claude, codex, opencode, pi-mono, cc internal, cx internal, buddy · ◐ hermes</td></tr>
+<tr><th scope="row">CI integration <details><summary>Evidence</summary>Codex openai/codex-action@v1 · opencode GitHub Action · Buddy GitLab CI/CD component · claude /install-github-app</details></th><td>·</td><td>● claude, codex, opencode, hermes, cc internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Inbound webhook <details><summary>Evidence</summary>openclaw webhooks plugin connects Zapier/n8n · buddy /api/v1/webhooks with wecom and wechat-kf</details></th><td>·</td><td>○ claude, cc internal · ● openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Control running sessions from mobile <details><summary>Evidence</summary>buddy --remote-control with Cloudflare tunnels and QR pairing · codex remoteControl pairing</details></th><td>·</td><td>● claude, openclaw, cc internal, buddy · ○ codex, cx internal, gm internal</td></tr>
+<tr><th scope="row">Execute tasks in the cloud <details><summary>Evidence</summary>Codex cloud production service · OpenClaw cloud workers require explicit profiles · Claude cloud containers · Buddy sandbox e2b and Tencent Cloud CVM</details></th><td>·</td><td>● claude, codex, cc internal, buddy · ○ openclaw, cx internal</td></tr>
+<tr><th scope="row">Image generation <details><summary>Evidence</summary>Our core image_generate registers OpenAI, Gemini, and FAL backends, gated by available credentials and provider configuration; supports explicit/automatic selection and saving results. Openclaw ten backends · Hermes FAL with nine models · Buddy ImageGen gated by deployment profile</details></th><td>○</td><td>● codex, openclaw, hermes, cx internal · ◐ pi-mono · ○ buddy</td></tr>
+<tr><th scope="row">Video generation <details><summary>Evidence</summary>Openclaw 16 backends · buddy Hunyuan-Video-Art</details></th><td>·</td><td>● openclaw, hermes · ○ buddy</td></tr>
+<tr><th scope="row">Web search <details><summary>Evidence</summary>Openclaw 12 interchangeable providers · Hermes eight including self-hosted SearXNG</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal, gm internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Smart home and IoT <details><summary>Evidence</summary>openclaw openhue / sonoscli / camsnap · Hermes Home Assistant tools</details></th><td>·</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Attend meetings and produce minutes <details><summary>Evidence</summary>Openclaw Google Meet plugin and meeting-notes · Hermes Teams meetings</details></th><td>·</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Payment authorization card <details><summary>Evidence</summary>Buddy WeixinPayInterception pauses tasks for actual payment confirmation</details></th><td>·</td><td>○ buddy</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>11 Deployment and operations 15 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resident service and startup launch <details><summary>Evidence</summary>We write launchd plists and systemd units · claude server and self-hosted-runner</details></th><td>●</td><td>● claude, codex, openclaw, hermes, weclaw, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">Deployment documentation for multiple platforms <details><summary>Evidence</summary>Openclaw about 20 deployment targets including K8s and Fly.io · Buddy official Dev Container feature</details></th><td>·</td><td>● claude, openclaw, hermes, buddy · ◐ opencode, weclaw</td></tr>
+<tr><th scope="row">Multiple identities or tenants <details><summary>Evidence</summary>Our agents add defines named personalities. <code translate="no">interfaces/channels/inbound/_access.py</code> admits channel senders using eight-character pairing codes and stable sender IDs. <code translate="no">runtime/permissions/authority.py</code> grants owner/paired authority; paired gets only reply and memory.source.append. Channels share one agent and memory workspace without tenant isolation. Hermes profile create provides separate gateways/memory · Openclaw multiple agents per gateway</details></th><td>●</td><td>◐ claude, weclaw · ● openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Enforced enterprise-policy configuration <details><summary>Evidence</summary>codex configRequirements and MDM · opencode .mobileconfig · claude managed-settings.d</details></th><td>·</td><td>● claude, codex, opencode, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Usage and cost display <details><summary>Evidence</summary>Various implementations; our <code translate="no">models/usage/ledger.py</code> computes actual per-million-token pricing</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Credit quotas and purchase entry <details><summary>Evidence</summary>Buddy model-specific credit multipliers and recharge deep links · Opencode Zen and Go subscriptions</details></th><td>·</td><td>● claude, codex, opencode, hermes, buddy</td></tr>
+<tr><th scope="row">OpenTelemetry export <details><summary>Evidence</summary>Claude with Datadog and Perfetto · Buddy traces only, plus four default-off privacy switches · Openclaw plugin-based</details></th><td>·</td><td>● claude, codex, opencode, cx internal, buddy · ○ openclaw, gm internal · ◐ hermes, cc internal</td></tr>
+<tr><th scope="row">Self-update <details><summary>Evidence</summary>Various implementations; Weclaw replaces its own binary and clears macOS quarantine attributes</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, weclaw, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Isolated cold-start probe before upgrades <details><summary>Evidence</summary>Our <code translate="no">interfaces/cli/commands/updates/upgrade.py</code> checks /healthz and doctor on a temporary port before restart; post-restart validation failure only prints a manual rollback command, with no automatic rollback</details></th><td>●</td><td>None confirmed</td></tr>
+<tr><th scope="row">Health checks <details><summary>Evidence</summary>Our doctor checks environment, extensions, providers, MCP, cache, worker, and Runtime HTTP. TUI /doctor calls the same /api/doctor and shows individual results; backend tests fix the results/all_ok response shape. openclaw doctor · buddy doctor</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Shareable diagnostic bundle <details><summary>Evidence</summary>openprogram diagnostics uses <code translate="no">interfaces/cli/commands/maintenance/diagnostics.py::build_bundle</code> to zip version/config/credentials/environment and log tails. Redaction reuses <code translate="no">models/providers/recording/recording.py::remove_secret_values</code> plus substring key matching and GitHub/AWS/Google/JWT value patterns. Credential files are excluded; credentials.json records provider names/counts only. Covered by <code translate="no">tests/unit/config/test_diagnostics_command.py</code>. openclaw redacted diagnostics bundle · hermes debug share · codex doctor --json</details></th><td>●</td><td>◐ claude, cc internal · ● codex, openclaw, hermes, cx internal</td></tr>
+<tr><th scope="row">Back up and import application state <details><summary>Evidence</summary>Our <code translate="no">interfaces/cli/commands/maintenance/backup.py</code> provides backup create/list/restore/prune. INCLUDED explicitly allowlists memory, sessions, config.json, agents, skills, plugins, usage.db, etc. Credentials auth and mcp_tokens are excluded unless --include-credentials is passed, with a warning. Archives are written as tar.gz under &lt;state&gt;/backups/, first as .partial then renamed, with 0600 permissions. Read-back verification removes unreadable archives and reports errors. Restore has three safeguards: reject while worker/web runs, confirm unless --yes, and automatically save a pre-restore snapshot before overwriting. Extraction uses filter="data" plus per-member containment checks and skips all symlinks. Openclaw backup includes all state · Hermes backup and import</details></th><td>●</td><td>◐ claude, cc internal · ● openclaw, hermes</td></tr>
+<tr><th scope="row">Process prewarming to reduce startup latency <details><summary>Evidence</summary>Buddy cbc-prewarm uses Unix-socket notification. Its documentation reports startup falling from 3.7 seconds to about 1 ms; this page has not independently verified it</details></th><td>·</td><td>● buddy</td></tr>
+<tr><th scope="row">Multi-instance manager <details><summary>Evidence</summary>Buddy instances.json and web switching · Openclaw multiple gateways per machine</details></th><td>·</td><td>● openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Automatically start local model servers on demand <details><summary>Evidence</summary>Openclaw starts vLLM, llama.cpp, or MLX when selecting local models and stops idle services · codex --oss --local-provider</details></th><td>·</td><td>● codex, openclaw, cx internal · ◐ opencode, hermes, pi-mono</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>12 Security 15 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">OS-level sandbox <details><summary>Evidence</summary>Our <code translate="no">host/sandbox/__init__.py</code> uses Seatbelt, Linux bubblewrap, and Windows WSL2-to-bubblewrap delegation. sandbox.mode defaults to auto in <code translate="no">state/settings.py</code> and activates available backends. Bash, execute_code, cron workers, MCP stdio servers, and spawned agents share <code translate="no">host/backend/local.py</code> wrapping; _with_hard_floor keeps agentics directories unwritable under any configuration. Codex three platforms · Opencode Docker installation only</details></th><td>●</td><td>● claude, codex, openclaw, hermes, cc internal, cx internal, gm internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Interchangeable sandbox backends <details><summary>Evidence</summary>Hermes seven terminal backends including Modal and Daytona · Openclaw docker/ssh/OpenShell · Buddy container/e2b/CVM</details></th><td>●</td><td>◐ codex, cx internal · ● openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Multiple approval modes <details><summary>Evidence</summary>Our five approval modes plus owner/paired source authority in <code translate="no">runtime/permissions/authority.py</code> restrict channel tools and provide structured reason_code. Buddy eight modes · Claude six; Weclaw approves automatically</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, cc internal, cx internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">LLM-based automatic approval <details><summary>Evidence</summary>Our auto mode first applies fixed allow/deny sets; uncertain write/edit operations call <code translate="no">runtime/permissions/auto_mode/classifier.py</code>, rejecting on classification failure</details></th><td>●</td><td>● claude, codex, hermes, cc internal, cx internal, buddy</td></tr>
+<tr><th scope="row">Mandatory deny rules that bypass cannot override <details><summary>Evidence</summary>Our <code translate="no">runtime/permissions/approvals/approval.py</code> applies explicit deny/ask and force_ask before bypass short-circuiting. test_deny_rule_blocks_even_under_bypass covers deny · Hermes hardline · Buddy hard_deny</details></th><td>●</td><td>◐ claude, cc internal · ● hermes, buddy</td></tr>
+<tr><th scope="row">Redirect deletion to recoverable storage <details><summary>Evidence</summary>We inject shell/Python/Node shims into LocalBackend and execute_code with session/turn context; manifests support openprogram trash list/restore. Context-free cron/background tasks, Docker/SSH, and bypassable entries are uncovered</details></th><td>◐</td><td>● buddy</td></tr>
+<tr><th scope="row">Store credentials in the OS keychain <details><summary>Evidence</summary>Buddy uses Keychain, keyring, or Credential Manager · Codex optional keyring-store; ours uses plaintext files with mode 0600</details></th><td>·</td><td>● claude, cc internal, buddy · ○ codex, cx internal</td></tr>
+<tr><th scope="row">Retrieve secrets through an external command <details><summary>Evidence</summary>Our <code translate="no">models/auth/methods/credential_process.py</code> obtains tokens through external commands, with argv arrays and no shell interpolation, configurable 60-second timeout, and cache_seconds deduplication. Helper stderr is redacted through the diagnostics redactor before errors/logging and truncated to 200 characters. Pi-mono interprets !-prefixed values as shell commands · claude apiKeyHelper · openclaw SecretRef</details></th><td>●</td><td>● claude, openclaw, hermes, pi-mono, cc internal, buddy</td></tr>
+<tr><th scope="row">Prompt-injection scanning <details><summary>Evidence</summary>Hermes scans AGENTS.md and .cursorrules, plus Tirith pre-execution content scanning</details></th><td>·</td><td>● hermes</td></tr>
+<tr><th scope="row">Private-network access and SSRF protection <details><summary>Evidence</summary>Ours <code translate="no">be5eaa3c</code>: unified URL/IP policy, synchronous/asynchronous peer-constrained transport, per-hop redirect and credential-origin restrictions, response/decompression/timeout limits, consumer registry, SDK fail-closed disposition, owner-only exact exceptions, doctor, and runtime audit. Scope is Runtime-owned HTTP; browser navigation and arbitrary-code networking require separate acceptance. Hermes blocks RFC1918/cloud metadata · Openclaw optional forward proxy</details></th><td>◐</td><td>● openclaw, hermes</td></tr>
+<tr><th scope="row">Threat-model documentation or formal verification <details><summary>Evidence</summary>Our <code translate="no">ui/remote-web-access.html</code> defines five caller-threat classes and six security invariants for owner Web, but does not cover the entire product or provide formal verification. Openclaw MITRE ATLAS and machine-checked TLA+ models · Codex Bugcrowd disclosure</details></th><td>◐</td><td>◐ codex, hermes, cx internal · ● openclaw</td></tr>
+<tr><th scope="row">Compliance controls and external-model switches <details><summary>Evidence</summary>Three internal editions follow the Gongfeng repository’s “AI Coding IDE Security Controls” when enabling external models</details></th><td>·</td><td>● cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Silent audit reporting on every edit <details><summary>Evidence</summary>cc internal’s default plugin calls back on every Write/Edit and UserPromptSubmit; no switch was found</details></th><td>·</td><td>● cc internal · ◐ buddy</td></tr>
+<tr><th scope="row">Private or offline deployment profile <details><summary>Evidence</summary>Our standard macOS/Linux CLI and server runtime support self-hosting, LAN/VPN, SSH tunnels, and same-machine HTTPS proxies. This does not imply fully offline model calls. buddy product.selfhosted.json · Openclaw self-hosting · Hermes Docker Compose</details></th><td>●</td><td>● openclaw, hermes, buddy</td></tr>
+<tr><th scope="row">Remove user-question tools during unattended operation <details><summary>Evidence</summary>Our <code translate="no">runtime/permissions/attended.py</code> removes ask_user_question at the policy layer, preventing tasks from stopping to await input</details></th><td>●</td><td>None confirmed</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>13 Developer experience 13 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">OpenProgram</th><th scope="col">Confirmed elsewhere</th></tr></thead>
+<tbody>
+<tr><th scope="row">Live cost visibility <details><summary>Evidence</summary>Various implementations; ours remains in the bottom bar</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Debug switches and categorized logging <details><summary>Evidence</summary>claude --debug "api,hooks" · about 30 environment-variable switches in ours</details></th><td>●</td><td>● claude, codex, openclaw, opencode, hermes, pi-mono, cc internal, cx internal, gm internal, buddy</td></tr>
+<tr><th scope="row">Deterministic mock models driving complete agent loops <details><summary>Evidence</summary>Our <code translate="no">tests/component/providers/scripted_provider.py</code> scripts text, thinking, tool calls, errors, and multiple turns through the production provider registry and public stream entry · pi-mono faux provider</details></th><td>●</td><td>● pi-mono</td></tr>
+<tr><th scope="row">Request recording and replay <details><summary>Evidence</summary>Our openprogram recordings CLI (status/record/replay/off/list/show/delete/prune) and record_replay.mode/file configuration support concurrent cross-process recording and strictly offline replay without credential resolution · pi-mono HTTP/WebSocket recordings · buddy CODEBUDDY_RECORD_DIR / REPLAY_DIR</details></th><td>●</td><td>◐ codex, cx internal · ● pi-mono, buddy</td></tr>
+<tr><th scope="row">Export sessions as training examples <details><summary>Evidence</summary>Hermes batch processing generates trajectories · Pi-mono depends on external pi-share-hf</details></th><td>·</td><td>● hermes · ◐ pi-mono</td></tr>
+<tr><th scope="row">Built-in reinforcement-learning training pipeline <details><summary>Evidence</summary>Hermes Tinker-Atropos GRPO and LoRA</details></th><td>·</td><td>● hermes</td></tr>
+<tr><th scope="row">Usage insights report <details><summary>Evidence</summary>Buddy /insights generates HTML describing interaction habits and failure/interruption scenarios · claude /insights</details></th><td>·</td><td>● claude, hermes, cc internal, buddy · ◐ opencode</td></tr>
+<tr><th scope="row">Proportion of human-written versus machine-written code <details><summary>Evidence</summary>buddy CodeAdoptionRate</details></th><td>·</td><td>● buddy</td></tr>
+<tr><th scope="row">Model-independent diagnostic/recovery commands <details><summary>Evidence</summary>Our rescue has twelve probes · Openclaw crestodian provides configuration-free repair</details></th><td>●</td><td>● openclaw · ◐ hermes</td></tr>
+<tr><th scope="row">Switch providers within a session while preserving history compatibility <details><summary>Evidence</summary>Our Web/TUI can switch models within a session; <code translate="no">models/providers/shared/transform_messages.py</code> normalizes cross-protocol messages, with tests for cross-provider tool-call ID replay</details></th><td>●</td><td>● pi-mono</td></tr>
+<tr><th scope="row">Rotate multiple API keys <details><summary>Evidence</summary>Our <code translate="no">models/auth/store.py</code> keeps an ordered list of credentials per provider and <code translate="no">models/auth/selection.py</code> picks one per request, skips a cooling or spent one, and switches to the next on a refusal; every adapter sends through it</details></th><td>◐</td><td>● hermes</td></tr>
+<tr><th scope="row">Automatic model/provider fallback on failure <details><summary>Evidence</summary>Enabled by default in ours: fallback candidates are up to two other enabled models from the same provider. Switching occurs only for rate-limit/overload/service/timeout/network errors before content output. OPENPROGRAM_FALLBACK_MODELS explicitly selects a cross-provider sequence or disables fallback with off</details></th><td>●</td><td>● claude, openclaw, hermes, cc internal, gm internal, buddy · ◐ pi-mono</td></tr>
+<tr><th scope="row">Submit feedback and logs <details><summary>Evidence</summary>codex /feedback requests consent before including logs · buddy /feedback</details></th><td>·</td><td>● claude, codex, hermes, cc internal, cx internal, gm internal</td></tr>
+</tbody>
+</table>
+</details>
+<p class="note">pi-ai is protocol reference source, not a runnable product; its empty column shows the difference in audit units. Some samples wrap or reuse upstream CLIs, so the 13 columns are not 13 independent products.</p>
+
+<h3 id="cover">Coverage score</h3>
+<p>● counts 1; ◐ and ○ count 0.5. A weighted sum of confirmed status, not a measure of quality, stability, security, user value or market coverage.</p>
+<figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subject</th><th scope="col">Score</th></tr></thead>
+<tbody>
+<tr><th scope="row">buddy</th><td>103.0</td></tr>
+<tr><th scope="row">claude</th><td>96.5</td></tr>
+<tr><th scope="row">openclaw</th><td>94.0</td></tr>
+<tr><th scope="row">cc internal</th><td>94.0</td></tr>
+<tr><th scope="row">hermes</th><td>92.0</td></tr>
+<tr><th scope="row">Ours</th><td>92.0</td></tr>
+<tr><th scope="row">codex</th><td>73.5</td></tr>
+<tr><th scope="row">cx internal</th><td>64.0</td></tr>
+<tr><th scope="row">opencode</th><td>54.0</td></tr>
+<tr><th scope="row">gm internal</th><td>42.0</td></tr>
+<tr><th scope="row">pi-mono</th><td>38.0</td></tr>
+<tr><th scope="row">weclaw</th><td>8.5</td></tr>
+<tr><th scope="row">pi-ai</th><td>0</td></tr>
+</tbody>
+</table>
+</figure>
+<p class="note">Buddy's package records 74 feature switches, 47 tools, 16 bundled Agents, five deployment configurations, 26 hook events and several interface settings. A feature audit records user capabilities a mechanism audit misses; it does not establish higher implementation quality.</p>
+
+<h3 id="bycat">Confirmed share by category</h3>
+<p>Across ten references; pi-ai (no confirmed features) and weclaw (5%) are excluded for sparse evidence.</p>
+<figure>
+<table class="stack">
+<thead><tr><th scope="col">Category</th><th scope="col">Ours</th><th scope="col">Reference range</th></tr></thead>
+<tbody>
+<tr><th scope="row">Editor integration</th><td>50%</td><td>6%–78%, median 44%</td></tr>
+<tr><th scope="row">Sessions and history</th><td>76%</td><td>32%–82%, median 57%</td></tr>
+<tr><th scope="row">Code understanding</th><td>40%</td><td>25%–60%, median 45%</td></tr>
+<tr><th scope="row">Version control</th><td>50%</td><td>10%–90%, median 48%</td></tr>
+<tr><th scope="row">Tasks and planning</th><td>77%</td><td>9%–64%, median 43%</td></tr>
+<tr><th scope="row">Multi-agent</th><td>71%</td><td>4%–57%, median 23%</td></tr>
+<tr><th scope="row">Memory and knowledge</th><td>50%</td><td>10%–70%, median 48%</td></tr>
+<tr><th scope="row">Extensions</th><td>73%</td><td>36%–86%, median 80%</td></tr>
+<tr><th scope="row">Interfaces</th><td>54%</td><td>38%–88%, median 60%</td></tr>
+<tr><th scope="row">Integration and interoperability</th><td>19%</td><td>12%–73%, median 50%</td></tr>
+<tr><th scope="row">Deployment and operations</th><td>53%</td><td>17%–73%, median 57%</td></tr>
+<tr><th scope="row">Security</th><td>63%</td><td>10%–70%, median 37%</td></tr>
+<tr><th scope="row">Developer experience</th><td>58%</td><td>19%–65%, median 35%</td></tr>
+</tbody>
+</table>
+</figure>
+<div><p class="note">Multi-agent is 10.0/14 (71%) against cc internal 8.0/14 (57%). Tasks and planning is 8.5/11 (77%) against claude, openclaw, cc internal and buddy at 7.0/11 (64%). Sessions and history is 13.0/17 (76%) against openclaw 14.0/17 (82%). Largest gaps to the top reference: integration and interoperability, version control, interfaces.</p></div>
+
+<h2 id="gaps">59 features unconfirmed in OpenProgram</h2>
+<p>OpenProgram is · and at least one reference is not. Design candidates, not proven defects. Groups follow the product scope: one user, local machine, resident worker, general harness, own TUI, Web and desktop. Evidence is in the <a href="#matrix">complete table</a>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">Category</th><th scope="col">Confirmed references</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="3"><b class="g1">For further assessment</b> <span>32 features</span></td></tr>
+<tr><td class="name">Automatic terminal-shortcut configuration</td><td class="sz">Editor integration</td><td>Five including Claude, cc internal, and gm internal</td></tr>
+<tr><td class="name">Move a running session to another device or client</td><td class="sz">Sessions and history</td><td>Eight including Claude, Codex, Openclaw, and Opencode</td></tr>
+<tr><td class="name">Temporary side sessions outside main history</td><td class="sz">Sessions and history</td><td>Four including Codex, Openclaw, and Hermes</td></tr>
+<tr><td class="name">Register external directories or repositories as named context</td><td class="sz">Code understanding</td><td>opencode</td></tr>
+<tr><td class="name">Built-in deep-research workflow</td><td class="sz">Code understanding</td><td>Openclaw, Buddy</td></tr>
+<tr><td class="name">Answer product questions from its own documentation</td><td class="sz">Code understanding</td><td>Five including Claude, Openclaw, and cc internal</td></tr>
+<tr><td class="name">Security review of the current diff</td><td class="sz">Version control</td><td>Claude, cc internal, Buddy</td></tr>
+<tr><td class="name">Commit, push, and create a PR</td><td class="sz">Version control</td><td>Six including Claude, Codex, Openclaw, and Hermes</td></tr>
+<tr><td class="name">AI authorship in git history</td><td class="sz">Version control</td><td>Codex, cx internal</td></tr>
+<tr><td class="name">Standing authorization for long-running autonomy</td><td class="sz">Tasks and planning</td><td>openclaw</td></tr>
+<tr><td class="name">Persistent task board</td><td class="sz">Multi-agent</td><td>Openclaw (disabled by default), Hermes</td></tr>
+<tr><td class="name">Agent teams: leader, members, and mailboxes</td><td class="sz">Multi-agent</td><td>Claude, cc internal, Buddy</td></tr>
+<tr><td class="name">Delegation mode: coordinator does not execute tasks directly</td><td class="sz">Multi-agent</td><td>cc internal, Buddy</td></tr>
+<tr><td class="name">Memory compiled as a browsable wiki</td><td class="sz">Memory and knowledge</td><td>openclaw</td></tr>
+<tr><td class="name">Agents create their own skills</td><td class="sz">Memory and knowledge</td><td>Claude, Openclaw (disabled by default), Hermes, cc internal</td></tr>
+<tr><td class="name">Load skill bundles</td><td class="sz">Memory and knowledge</td><td>hermes</td></tr>
+<tr><td class="name">Interactive MCP HTML components</td><td class="sz">Extensions</td><td>buddy</td></tr>
+<tr><td class="name">Hooks support LLM judgments or HTTP callbacks</td><td class="sz">Extensions</td><td>Four including Claude, cc internal, and Buddy</td></tr>
+<tr><td class="name">Migrate configuration/state from other agents</td><td class="sz">Extensions</td><td>Eight including Claude, Codex, Openclaw, and Hermes</td></tr>
+<tr><td class="name">Vim mode</td><td class="sz">Interfaces</td><td>Seven including Claude, Codex, and cc internal</td></tr>
+<tr><td class="name">Fully remappable keyboard shortcuts</td><td class="sz">Interfaces</td><td>Seven including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Screen readers and accessibility</td><td class="sz">Interfaces</td><td>Claude, cc internal, gm internal</td></tr>
+<tr><td class="name">OpenAI-compatible endpoint</td><td class="sz">Integration and interoperability</td><td>hermes</td></tr>
+<tr><td class="name">Official SDK for remote-control protocols</td><td class="sz">Integration and interoperability</td><td>Eight including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Inbound webhook</td><td class="sz">Integration and interoperability</td><td>Five including Openclaw, Hermes, and Buddy</td></tr>
+<tr><td class="name">Control running sessions from mobile</td><td class="sz">Integration and interoperability</td><td>Seven including Claude, Openclaw, and cc internal</td></tr>
+<tr><td class="name">OpenTelemetry export</td><td class="sz">Deployment and operations</td><td>Nine including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Process prewarming to reduce startup latency</td><td class="sz">Deployment and operations</td><td>buddy</td></tr>
+<tr><td class="name">Automatically start local model servers on demand</td><td class="sz">Deployment and operations</td><td>Six including Codex, Openclaw, and cx internal</td></tr>
+<tr data-op-scope-id="os-credential-store" data-op-decision="do-not-implement"><td class="name">Store credentials in the OS keychain</td><td class="sz">Security</td><td>Five including Claude, cc internal, and Buddy</td></tr>
+<tr><td class="name">Prompt-injection scanning</td><td class="sz">Security</td><td>hermes</td></tr>
+<tr><td class="name">Usage insights report</td><td class="sz">Developer experience</td><td>Five including Claude, Hermes, and cc internal</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Outside the current product scope, 12 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">Category</th><th scope="col">Confirmed references</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="3"><b class="g2">Outside the current product scope</b> <span>12 features</span></td></tr>
+<tr><td class="name">Official IDE extension or plugin</td><td class="sz">Editor integration</td><td>Eight including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Generate a public sharing link</td><td class="sz">Sessions and history</td><td>Four including Claude, Opencode, and Pi-mono</td></tr>
+<tr><td class="name">PR or Issue comment-triggered bot</td><td class="sz">Version control</td><td>Eight including Claude, Codex, Openclaw, and Opencode</td></tr>
+<tr><td class="name">Interchangeable team execution backends</td><td class="sz">Multi-agent</td><td>buddy</td></tr>
+<tr><td class="name">Pluggable external memory services</td><td class="sz">Memory and knowledge</td><td>openclaw, hermes</td></tr>
+<tr><td class="name">Standalone binary without Node installation</td><td class="sz">Interfaces</td><td>Six including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">CI integration</td><td class="sz">Integration and interoperability</td><td>Seven including Claude, Codex, Opencode, and Hermes</td></tr>
+<tr><td class="name">Deployment documentation for multiple platforms</td><td class="sz">Deployment and operations</td><td>Six including Claude, Openclaw, and Hermes</td></tr>
+<tr><td class="name">Multi-instance manager</td><td class="sz">Deployment and operations</td><td>openclaw, hermes, buddy</td></tr>
+<tr><td class="name">Export sessions as training examples</td><td class="sz">Developer experience</td><td>hermes</td></tr>
+<tr><td class="name">Proportion of human-written versus machine-written code</td><td class="sz">Developer experience</td><td>buddy</td></tr>
+<tr><td class="name">Submit feedback and logs</td><td class="sz">Developer experience</td><td>Six including Claude, Codex, and Hermes</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Currently excluded, 15 features</summary>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">Category</th><th scope="col">Confirmed references</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="3"><b class="g0">Currently excluded</b> <span>15 features</span></td></tr>
+<tr><td class="name">Inline completion</td><td class="sz">Editor integration</td><td>buddy</td></tr>
+<tr><td class="name">Inline chat, CodeLens, and status-bar actions</td><td class="sz">Editor integration</td><td>buddy</td></tr>
+<tr><td class="name">Non-git version control</td><td class="sz">Version control</td><td>Claude, cc internal</td></tr>
+<tr><td class="name">Vendor knowledge-base integration</td><td class="sz">Memory and knowledge</td><td>buddy</td></tr>
+<tr><td class="name">Incoming and outgoing phone calls</td><td class="sz">Interfaces</td><td>openclaw</td></tr>
+<tr><td class="name">Execute tasks in the cloud</td><td class="sz">Integration and interoperability</td><td>Six including Claude, Codex, Openclaw, cc internal, and Buddy</td></tr>
+<tr><td class="name">Video generation</td><td class="sz">Integration and interoperability</td><td>openclaw, hermes</td></tr>
+<tr><td class="name">Smart home and IoT</td><td class="sz">Integration and interoperability</td><td>openclaw, hermes</td></tr>
+<tr><td class="name">Attend meetings and produce minutes</td><td class="sz">Integration and interoperability</td><td>openclaw, hermes</td></tr>
+<tr><td class="name">Payment authorization card</td><td class="sz">Integration and interoperability</td><td>buddy</td></tr>
+<tr><td class="name">Enforced enterprise-policy configuration</td><td class="sz">Deployment and operations</td><td>Seven including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Credit quotas and purchase entry</td><td class="sz">Deployment and operations</td><td>Five including Claude, Codex, and Opencode</td></tr>
+<tr><td class="name">Compliance controls and external-model switches</td><td class="sz">Security</td><td>Four including cc internal, cx internal, and gm internal</td></tr>
+<tr><td class="name">Silent audit reporting on every edit</td><td class="sz">Security</td><td>cc internal</td></tr>
+<tr><td class="name">Built-in reinforcement-learning training pipeline</td><td class="sz">Developer experience</td><td>hermes</td></tr>
+</tbody>
+</table>
+</details>
+<p class="note">OS credential storage is ruled out; the other 31 of the first group need individual scope decisions.</p>
+
+<h3 id="newfound">Features unlisted by mechanism audits</h3>
+<p>Earlier mechanism audits list 55 candidate differences. This inventory first listed 78: 15 overlap, 63 were unlisted. 59 remain after calibration. Audits by predefined mechanism miss user features, so both stay. New means undocumented here, not recently released, and not plan-worthy by default.</p>
+<details>
+<summary>The 78 by category</summary>
+<table class="stack">
+<thead><tr><th scope="col">Category</th><th scope="col">Earlier</th><th scope="col">New</th></tr></thead>
+<tbody>
+<tr><th scope="row">Integration and interoperability</th><td>2</td><td>9</td></tr>
+<tr><th scope="row">Security</th><td>2</td><td>5</td></tr>
+<tr><th scope="row">Developer experience</th><td>2</td><td>4</td></tr>
+<tr><th scope="row">Deployment and operations</th><td>2</td><td>6</td></tr>
+<tr><th scope="row">Version control</th><td>0</td><td>7</td></tr>
+<tr><th scope="row">Editor integration</th><td>2</td><td>3</td></tr>
+<tr><th scope="row">Interfaces</th><td>0</td><td>5</td></tr>
+<tr><th scope="row">Sessions and history</th><td>1</td><td>4</td></tr>
+<tr><th scope="row">Multi-agent</th><td>0</td><td>6</td></tr>
+<tr><th scope="row">Code understanding</th><td>0</td><td>4</td></tr>
+<tr><th scope="row">Tasks and planning</th><td>1</td><td>5</td></tr>
+<tr><th scope="row">Extensions</th><td>2</td><td>3</td></tr>
+<tr><th scope="row">Memory and knowledge</th><td>1</td><td>3</td></tr>
+</tbody>
+</table>
+<p class="note">Earlier sources: runtime/sandbox, agent-collab-comparison, memory-comparison, memory-adoption, speaker-identity, chat-attachments, context/comparison, extension-gating, framework-comparison.</p>
+</details>
+
+<h2 id="ours">6 features confirmed only in OpenProgram</h2>
+<p>OpenProgram is not · and all twelve others are. A difference in the listed evidence, not proof of uniqueness or a feature-count lead, and no substitute for compatibility, recovery or user-value acceptance.</p>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">Confirmed implementation</th><th scope="col">Other listed versions</th></tr></thead>
+<tbody>
+<tr><td class="name">Function-call trees in<br>the same session graph</td><td><code translate="no">Agent method</code>: during execution, every function-call layer becomes a code node in the session DAG, sharing caller and predecessor edges with user/model messages and tool results.</td><td>No equivalent implementation was confirmed in other listed versions. codex code mode uses model-generated JavaScript to call tools and is disabled by default; buddy ultracode generates parallel orchestration scripts; opencode and pi-mono records tool-call history, but this audit did not confirm nested function execution levels stored in the same session DAG.</td></tr>
+<tr><td class="name">Store the session itself<br>in a git repository</td><td>At the snapshot: one git repository per session, history nodes changed under a lock, head and branch refs by compare-and-swap, no mutable full-transcript snapshot. Current code keeps one append-only log per session instead (see the matrix row).</td><td>No equivalent was confirmed in other listed versions. Examined implementations mainly use JSONL or SQLite for sessions. Several also use git for project-file snapshots, but storing conversation content itself in a git repository was not confirmed.</td></tr>
+<tr><td class="name">N-way merge<br>of multiple branches</td><td>Multiple parallel branches can share a base and merge through <code translate="no">subagent merge</code> or the web <code translate="no">/merge</code> into one branch.</td><td>No N-way session-branch merge was confirmed elsewhere. Opencode and Codex can create sessions/threads; Pi-mono’s <code translate="no">/tree</code> can inject a discarded-branch summary at the current location, but has different semantics.</td></tr>
+<tr><td class="name">Restrict subagent tools<br>by remaining message budget</td><td>When spawning a subagent, remaining message budget determines its available tools instead of a fixed allowlist.</td><td>Other implementations restrict tools using different conditions: claude uses agentDepth to decide whether spawning tools are available; buddy uses per-agent tool allowlists; opencode uses <code translate="no">permission.task</code> glob rules.</td></tr>
+<tr><td class="name">Isolated cold-start probe<br>before upgrades</td><td>New code starts under a separate profile on a temporary port, polls <code translate="no">/healthz</code> and runs doctor. The existing instance restarts only after these checks pass. Post-restart version-validation failure prints a manual rollback command; <b>automatic rollback is not implemented</b>.</td><td>No equivalent isolated pre-restart cold-start probe was confirmed in other listed versions. Examined references mainly restart after downloading or replacing files.</td></tr>
+<tr><td class="name">Remove user-question tools<br>during unattended operation</td><td>A per-session switch controls whether the agent may request user input. In default unattended mode, policy removes <code translate="no">ask_user_question</code> from available tools, so tasks do not enter a state waiting for an answer.</td><td>No equivalent per-session removal during tool resolution was confirmed elsewhere. Weclaw automatically handles ACP permission requests, Hermes imposes approval timeouts, and Opencode offers permission-check bypass parameters; these are different mechanisms.</td></tr>
+</tbody>
+</table>
+
+<h2 id="plan">Design-reference sequence</h2>
+<p>Six provisional batches for design discussion, not approved plans; recheck status and estimate each before work starts. Ordered by irreversible risk, dependencies, protocol stability and definable acceptance.</p>
+<table class="stack">
+<thead><tr><th scope="col">Batch</th><th scope="col">Candidates</th><th scope="col">Minimum acceptance</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Irreversible operations and credentials: recoverable deletion on the remaining execution paths</td><td>Covered deletions reach recoverable storage; restore paths and distributed artifacts are tested; new paths keep sandbox fail-closed; secrets stay out of ordinary config and logs; external commands have argument constraints, timeouts and redaction.</td></tr>
+<tr><th scope="row">2</th><td>Deterministic loop tests: default redaction for recordings</td><td>Recordings redact by default; replay never touches the network; event-order and failure differences are traceable; recording formats are versioned.</td></tr>
+<tr><th scope="row">3</th><td>Git workflows: diff security review, default commit, push and PR entries</td><td>All remote writes need explicit authorization by default; dry run; uncommitted changes preserved; GitHub and GitLab adaptations tested; findings trace to the specific diff.</td></tr>
+<tr><th scope="row">4</th><td>External control: inbound webhooks, OpenAI-compatible endpoints, remote-control SDK</td><td>Authentication on by default; explicit tool permission, cancellation, progress and error semantics; external-client end-to-end tests pass; SDK wraps only stable protocols.</td></tr>
+<tr><th scope="row">5</th><td>Session operations: temporary side sessions</td><td>First needs persistence, cancellation, recovery and cross-interface semantics, then design approval.</td></tr>
+<tr><th scope="row">6</th><td>Interfaces and diagnostics: keyboard and screen-reader use first, then shortcut remapping, Vim, code-aware <code translate="no">/init</code>, usage insights</td><td>Major flows work by keyboard; screen readers get semantic labels; settings persist with clear scope. Each later item needs its own scope.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this order</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Batch</th><th scope="col">Reason and foundation</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Irreversible local changes and secret exposure come first. Explicit deny already precedes bypass in <code translate="no">runtime/permissions/approvals/approval.py</code>.</td></tr>
+<tr><th scope="row">2</th><td>Protocol, session and permission changes need a regression baseline. The scripted provider and <code translate="no">openprogram recordings</code> exist, including real <code translate="no">agent_loop</code> result reinsertion.</td></tr>
+<tr><th scope="row">3</th><td>Few dependencies, close to existing coding workflows. Local capabilities do not authorize remote writes.</td></tr>
+<tr><th scope="row">4</th><td>Protocol and security boundaries first, so clients do not invent conflicting behaviour. <code translate="no">openprogram acp</code> reuses <code translate="no">process_user_turn</code> and existing approval.</td></tr>
+<tr><th scope="row">5</th><td>Temporary side sessions change history visibility. Existing SessionStore and branching do not imply an arbitrary <code translate="no">/side</code> entry point.</td></tr>
+<tr><th scope="row">6</th><td>Accessibility is a basic requirement. Keybinding work first needs a cross-interface configuration model.</td></tr>
+</tbody>
+</table>
+</details>
+<table class="stack fixed">
+<thead><tr><th scope="col">Left out of the sequence</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Inline completion and chat, CodeLens, status-bar actions</th><td>Need long-term native IDE-plugin maintenance. <code translate="no">openprogram acp</code> covers an IDE that only invokes OpenProgram.</td></tr>
+<tr><th scope="row">Enterprise policy, silent audit reporting, credit purchases, organization-wide configuration</th><td>Assume multi-user governance or commercial billing, outside the single-user local scope. Reassess if users or deployment change.</td></tr>
+</tbody>
+</table>
+
+<h2 id="method">Scope, evidence and status</h2>
+<p>Mainly a static audit; not every subject received end-to-end acceptance. Baseline for OpenProgram: <code translate="no">integrated candidate@d91c3e66</code>; JSON Schema structured output is reviewed against Tasks 1–6@<code translate="no">2fb471b3</code> and Runtime URL SSRF against <code translate="no">be5eaa3c</code>. Claude Code, Codex, OpenClaw and OpenCode: official stable releases and matching documentation. Others: fixed local source, binaries or packages.</p>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Audits</th><th scope="col">Typical evidence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Feature-switch configuration</th><td>Confirms feature status and gating stages declared in structured configuration</td><td>Buddy product.json has 74 productFeatures · Codex features/src/lib.rs Stage levels · Claude about 70 tengu_ rollout gates</td></tr>
+<tr><th scope="row">Command inventory</th><td>Enumerates user-callable slash commands, CLI subcommands, and shortcut entries</td><td>Codex tui/src/slash_command.rs has 51 · Buddy slash-commands.md 42 · Openclaw about 55 top-level CLI commands</td></tr>
+<tr><th scope="row">Tool inventory</th><td>Confirms the model-callable tool set for a specified version</td><td>Buddy product.json tools[] has 47 · Hermes about 82 across 32 toolsets · Pi-mono seven, three disabled by default</td></tr>
+<tr><th scope="row">Bundled agent definitions</th><td>Confirms preset agents and their tool allowlists</td><td>Buddy agents[] has 16 · Claude Explore / Plan / claude-code-guide / verification · gm internal codebase_investigator</td></tr>
+<tr><th scope="row">README and help text</th><td>Confirms documented user-visible features; secondary evidence without implementation verification</td><td>Opencode 35 documentation pages · Hermes 48 feature pages · Openclaw about 350 documentation files</td></tr>
+<tr><th scope="row">UI entries</th><td>Confirms reachable menus, panels, settings categories, and extension contribution points</td><td>Buddy dist/web-ui/manifest.webmanifest and sandbox_proxy.html · Hermes panel-plugin SDK</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Strength</th><th scope="col">Evidence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Primary</th><td>Current implementation, reachable entry points, tests, actual command output</td></tr>
+<tr><th scope="row">Secondary</th><td>Structured configuration, command help, version-specific documentation</td></tr>
+<tr><th scope="row">Tertiary</th><td>Directory and filename clues</td></tr>
+</tbody>
+</table>
+<p class="note">Conflicts defer to the current executable version and implementation. Design documents without implementation do not confirm the OpenProgram column.</p>
+
+<h3 id="versions">Versions examined</h3>
+<table class="stack">
+<thead><tr><th scope="col">Subject</th><th scope="col">Evidence source</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">integrated candidate@d91c3e66</code>; JSON Schema uses <code translate="no">2fb471b3</code>; Runtime URL SSRF uses <code translate="no">be5eaa3c</code></td><td>Confirmed there: mid-run queuing and steer, owner/paired source authority and pairing admission, default local sandboxing, WebSocket lifecycle and error classification, session index and merged_heads, DAG persistence, cross-session Agent provenance, scheduler, structured-output retry budgets, provider diagnostics, record and offline replay, <code translate="no">credential_process</code>, SessionStore lock scope, credential-file hardening, resource governance, cross-channel <code translate="no">/attach</code>, PR worktree, <code translate="no">.worktreeinclude</code>, session archiving, backup, ACP, stdio MCP server, three LSP tools. Documentation changes alone are not feature evidence.</td></tr>
+<tr><th scope="row">claude-code</th><td><a href="https://github.com/anthropics/claude-code/releases/tag/v2.1.252">Official stable release <code translate="no">v2.1.252</code></a> and <a href="https://code.claude.com/docs/en/overview">official documentation</a></td><td>Current feature status follows official stable releases/documentation; reference source trees do not negate later public capabilities</td></tr>
+<tr><th scope="row">codex</th><td><a href="https://github.com/openai/codex/releases/tag/rust-v0.152.0">Official stable release <code translate="no">rust-v0.152.0</code></a> and <a href="https://learn.chatgpt.com/docs">official documentation</a></td><td>Cloud, worktrees, Automations, GitHub/Slack, import, and App Server/SDK count as public production capabilities. Explicitly experimental items use <code translate="no">○</code></td></tr>
+<tr><th scope="row">openclaw</th><td><a href="https://github.com/openclaw/openclaw/releases/tag/v2026.8.1">Official stable release <code translate="no">v2026.8.1</code></a> and <a href="https://docs.openclaw.ai/">official documentation</a></td><td>Session search/archive, cloud workers requiring explicit profiles, managed worktrees, Control UI, ask_user, and Workboard use version-matched documentation. Cloud workers and Workboard are opt-in, marked <code translate="no">○</code></td></tr>
+<tr><th scope="row">opencode</th><td><a href="https://github.com/anomalyco/opencode/releases/tag/v1.18.25">Official stable release <code translate="no">v1.18.25</code></a> and <a href="https://opencode.ai/docs/">official documentation</a></td><td>Stable source defines only General and Explore as built-in non-hidden subagents, while current official documentation lists Scout. This conflict follows the stable-source boundary and Scout is unconfirmed. Worktree core exists but routes remain experimental, marked <code translate="no">○</code></td></tr>
+<tr><th scope="row">hermes</th><td><code translate="no">references/hermes-agent@d952b377aa3d</code></td><td>Fixed local source version, not claimed to be the latest release; documented claims have not uniformly become end-to-end runtime verification</td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">references/pi-mono@3eb002766fff</code></td><td>As hermes</td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">references/weclaw@10711d0c6b7e</code></td><td>As hermes</td></tr>
+<tr><th scope="row">pi-ai</th><td>Protocol reference source, not a product</td><td>Ten files, 4,493 lines. README states the directory does not participate in builds or runtime imports; <code translate="no">src/utils/oauth/index.ts</code> three re-exported files are absent from this snapshot. This column records protocol source only, not product functionality</td></tr>
+<tr><th scope="row">Four Chinese implementations</th><td>Local npm packages: <code translate="no">claude-internal 1.1.9 / claude 2.1.154</code>, <code translate="no">Codex-internal 0.0.8</code>, <code translate="no">gemini-internal 1.9.0</code>, <code translate="no">codebuddy 2.109.3</code></td><td>cc internal and cx internal wrap upstream CLIs as launchers and are not independent samples. gm internal reuses substantial upstream content; Buddy is independently implemented</td></tr>
+<tr><th scope="row">Trae</th><td>Implementation unavailable</td><td>Not installed locally, with no verifiable implementation/version snapshot obtained; excluded from the matrix. The reference-column count remains twelve</td></tr>
+</tbody>
+</table>
+
+<h3 id="current-evidence">Current official evidence for the four main comparators</h3>
+<table class="stack">
+<thead><tr><th scope="col">Subject</th><th scope="col">Version</th><th scope="col">Official evidence changing matrix status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><a href="https://github.com/anthropics/claude-code/releases/tag/v2.1.252"><code translate="no">v2.1.252</code> release</a></td><td><a href="https://code.claude.com/docs/en/permissions">Six permission modes</a> · <a href="https://code.claude.com/docs/en/worktrees">Managed worktrees and <code translate="no">.worktreeinclude</code></a></td></tr>
+<tr><th scope="row">Codex</th><td><a href="https://github.com/openai/codex/releases/tag/rust-v0.152.0"><code translate="no">rust-v0.152.0</code> release</a></td><td><a href="https://learn.chatgpt.com/docs/environments/git-worktrees">worktree, <code translate="no">.worktreeinclude</code>, commit/push/PR</a> · <a href="https://learn.chatgpt.com/docs/cloud">Cloud and Web</a> · <a href="https://learn.chatgpt.com/docs/github-action">GitHub Action</a> · <a href="https://learn.chatgpt.com/docs/third-party/github">GitHub comment triggers</a> · <a href="https://learn.chatgpt.com/docs/third-party/slack">Slack</a> · <a href="https://learn.chatgpt.com/docs/automations">Automations</a> · <a href="https://learn.chatgpt.com/docs/import">import</a> · <a href="https://learn.chatgpt.com/docs/codex-sdk">App Server/SDK and MCP-server deprecation</a></td></tr>
+<tr><th scope="row">OpenClaw</th><td><a href="https://github.com/openclaw/openclaw/releases/tag/v2026.8.1"><code translate="no">v2026.8.1</code> release</a></td><td><a href="https://docs.openclaw.ai/concepts/session-search">Full-text search</a> · <a href="https://docs.openclaw.ai/cli/sessions">Archiving</a> · <a href="https://docs.openclaw.ai/gateway/cloud-sessions">paired devices</a> · <a href="https://docs.openclaw.ai/gateway/cloud-workers">Cloud workers requiring explicit profiles</a> · <a href="https://docs.openclaw.ai/concepts/managed-worktrees">Managed worktrees and <code translate="no">.worktreeinclude</code></a> · <a href="https://docs.openclaw.ai/web/control-ui">Fork/branch, context meter, and themes</a> · <a href="https://docs.openclaw.ai/concepts/session">per-agent SQLite</a> · <a href="https://docs.openclaw.ai/tools"><code translate="no">ask_user</code></a> · <a href="https://docs.openclaw.ai/plugins/workboard">Workboard disabled by default</a></td></tr>
+<tr><th scope="row">OpenCode</th><td><a href="https://github.com/anomalyco/opencode/releases/tag/v1.18.25"><code translate="no">v1.18.25</code> release</a></td><td><a href="https://github.com/anomalyco/opencode/blob/v1.18.25/packages/app/src/pages/session/session-archive.ts">Archive implementation</a> · <a href="https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/agent/agent.ts">Stable-release agent definitions</a> and <a href="https://opencode.ai/docs/agents/">Current agent documentation</a> Scout conflict · <a href="https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/worktree/index.ts">worktree core</a> · <a href="https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/server/routes/instance/httpapi/groups/experimental.ts#L908-L1158">Experimental worktree routes</a></td></tr>
+</tbody>
+</table>
+
+<h3 id="implementation-status">Implementation status</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Item</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Feature matrix, 92.0 score, 59 candidate differences, 6 version-evidence differences</th><td>Computed from this table; general baseline <code translate="no">integrated candidate@d91c3e66</code>, JSON Schema <code translate="no">2fb471b3</code>, Runtime URL SSRF <code translate="no">be5eaa3c</code>. Not re-scored for later code; rows that have moved say so in their evidence.</td></tr>
+<tr><th scope="row">◐ in the OpenProgram column</th><td>Confirmed only for some interfaces or input paths; limits are in the row evidence</td></tr>
+<tr><th scope="row">Scores, category shares, candidate counts</th><td>Computed from the matrix, with no quality or importance weights</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Related comparisons</summary>
+<ul>
+<li><a href="../framework-overview.html">Framework overview</a>: one conversation's internal execution</li>
+<li><a href="../runtime/security/sandbox-architecture.html">Sandboxing</a></li>
+<li><a href="../runtime/collaboration/agent-collab-comparison.html">Agent collaboration</a></li>
+<li><a href="../memory/comparison.html">Long-term memory</a> and <a href="../memory/adoption.html">adoption</a></li>
+<li><a href="../memory/speaker-identity.html">Multi-user conversation identity</a></li>
+<li><a href="../ui/chat/chat-attachments.html">Chat attachments</a></li>
+<li><a href="../context/comparison.html">Context components</a></li>
+<li><a href="../extension-gating/reference-comparison.html">Extension admission</a></li>
+</ul>
+</details>
+<p class="next"><a href="overview.html">Framework comparison</a></p>
+</html>

@@ -2,7 +2,7 @@
 
 The session's Search switch (and an explicit ``web_search=True`` runtime
 kwarg) is an *intent*. Per request it resolves against the API provider the
-request goes to (docs/reference/design/providers/web-search.html):
+request goes to (docs/reference/design/providers/requests/web-search.html):
 
 * the provider advertises ``supports_web_search`` → the request option
   ``web_search=True`` is set and the local ``web_search`` function tool is

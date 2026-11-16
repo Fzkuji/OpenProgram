@@ -74,7 +74,7 @@
 <tr><th scope="row">块 ID</th><td>其他段落、Timeline 和关系靠这个 ID 定位段落。写入器和整理器可以删除块，Git 留着它；记录编辑和设置页保存只能去掉它点名删除的 ID，或它删除的 Topic 里的 ID。段落可以改写、合并或移动。</td></tr>
 <tr><th scope="row">链接</th><td>跨 Topic 链接指向 <code translate="no">#^</code> 块 ID，没有悬空，所以删除仍被链接的块会被拒绝</td></tr>
 <tr><th scope="row">引用</th><td>按作者检查本次新增或改写的段落：自动写入器和整理器的段落必须引用本次执行、本批次的消息（<code translate="no">MISSING_SOURCE</code>、<code translate="no">SOURCE_NOT_ALLOWED</code>）；人的段落可以不引用，引用了就必须可引用</td></tr>
-<tr><th scope="row">外部文件</th><td><code translate="no">installed.json</code> 记为 <code translate="no">outside</code> 的文件，除了人自己保存，谁都不能改、移动、删除或链接进去（<code translate="no">OUTSIDE_FILE_READ_ONLY</code>，本次写入什么都不装）</td></tr>
+<tr><th scope="row">外部文件</th><td><code translate="no">installed.json</code> 记为 <code translate="no">outside</code> 的文件，除了人自己保存，谁都不能改、删除或链接进去；归档进文件夹时整个移动，字节不变（<code translate="no">OUTSIDE_FILE_READ_ONLY</code>，本次写入什么都不装）</td></tr>
 <tr><th scope="row">写入期间的外部改动</th><td>在写锁内，比较暂存之后磁盘上变过的每个文件：本次写入没碰的，从磁盘取进来原样安装，内容是什么都行。本次也改了的、游标，或者取进来后让我们的链接悬空的文件，报 <code translate="no">CONCURRENT_UPDATE</code>。检索缓存等暂存区不安装的文件不管。</td></tr>
 </tbody>
 </table>
@@ -343,7 +343,7 @@
 <thead><tr><th scope="col">主题</th><th scope="col">设计</th><th scope="col">跟随</th></tr></thead>
 <tbody>
 <tr><th scope="row">来源在哪检查</th><td>只在 <code translate="no">commit_edits</code>（<code translate="no">_check_block_references</code>）检查一次，对象是本次新增或改写的段落，按作者区分。parser 的严格形式只管结构</td><td>Grok Build（检查放在写入路径），Maka（来源是写入方的属性）</td></tr>
-<tr><th scope="row">外部文件</th><td>原位读取，从不改写：规范化、链接改写和整理器都跳过它，写入器改它会被拒，也没人能链接进去。人在设置里保存后，文件归我们（<code translate="no">runtime</code>），规范化给它的段落加 ID。我们的文件在别处被重排、ID 都在，仍归我们</td><td>Claude Code 和 Oh My Pi（原位读取，整理器不碰）；采纳人对我们文件的编辑跟随 Codex</td></tr>
+<tr><th scope="row">外部文件</th><td>原位读取，从不改写：规范化、链接改写和整理器都跳过它，写入器改它会被拒，也没人能链接进去。<a href="overview.html#filing">归档</a>可以把它整个移动：提交按哈希把新路径对上旧路径，来源不变，首次读到的日期跟着走。人在设置里保存后，文件归我们（<code translate="no">runtime</code>），规范化给它的段落加 ID。我们的文件在别处被重排、ID 都在，仍归我们</td><td>Claude Code 和 Oh My Pi（原位读取，整理器不碰）；采纳人对我们文件的编辑跟随 Codex</td></tr>
 <tr><th scope="row">坏文件</th><td>只影响它自己。没有修复 agent，也没有“放到一边”：解码失败的文件在“不是文本”里列一次</td><td>所有对手都不用模型修复；最接近 Grok Build</td></tr>
 <tr><th scope="row">标注</th><td>每个单元有 <code translate="no">origin</code>：<code translate="no">cited</code>、<code translate="no">person</code>（我们的文件，没有引用）或 <code translate="no">outside</code>。搜索结果用 <code translate="no">source: outside file</code> 或 <code translate="no">source: added by person</code> 代替 refs；编辑器在人写的段落旁放一个 Nova Badge，外部文件在标题旁放一个，文字本身说清楚，不用悬停提示</td><td>Maka（每条记出处），Codex（把来源类别告诉模型）</td></tr>
 <tr><th scope="row">地图</th><td>提示词里 agent 地图之后的“Other files”一节，由代码生成到运行目录（<code translate="no">outside-map.md</code>）：最多占 <code translate="no">GUIDE_MAX_BYTES</code> 的四分之一，其中四分之三给带标题的条目（frontmatter <code translate="no">name</code>、第一个标题），之后只列路径，最后一行“N more files are not listed”。只在安装后和 Worker 启动时重画；<code translate="no">MEMORY.md</code> 仍归 agent</td><td>Grok Build（代码生成清单、3/4 分配、只在会话边界重新生成）</td></tr>

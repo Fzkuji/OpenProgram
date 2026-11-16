@@ -79,7 +79,7 @@
 <tr><th scope="row">自己累加增量的客户端</th><td>开启一段文字的那个文字帧带 <code translate="no">separator</code>；<code translate="no">stream_text</code> 把它放在增量前面。页面、渠道、OpenAI 兼容接口的流、<code translate="no">--print</code> 的分段消息和 ACP 都用它。</td></tr>
 <tr><th scope="row">暂停后继续的回复</th><td>还是同一行。<code translate="no">loop_runner</code> 用暂停前显示过的整段轨迹给 <code translate="no">ReplyText</code> 打底，所以文字是这条回复的每一段，暂停后的第一段前面只有一个空行。</td></tr>
 <tr><th scope="row">对话记录的行</th><td>没有 <code translate="no">content</code> 的行和失败的行，读各块的 <code translate="no">reply_text</code>。</td></tr>
-<tr><th scope="row">下一次模型请求</th><td>按响应逐个发块（<code translate="no">context/render.py</code>）。分隔符不在任何块里，所以发回去的就是模型写的原文。</td></tr>
+<tr><th scope="row">下一次模型请求</th><td>按响应逐个发块（<code translate="no">context/session_dag/render.py</code>）。分隔符不在任何块里，所以发回去的就是模型写的原文。</td></tr>
 </tbody>
 </table>
 

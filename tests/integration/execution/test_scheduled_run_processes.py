@@ -17,7 +17,7 @@ _run = loop._run_loop_blocking
 
 def _turn(*, req, history, on_event, cancel_event, **_):
     if req.source == "scheduler" and req.user_text == "check":
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn
         from openprogram.runtime.permissions.authority import local_owner_authority
         result = run_agent_turn(req.session_id, "look around", req.agent_id, authority=local_owner_authority())
         reply = f"sub-agent said: {result.final_text or result.error}"
@@ -103,7 +103,7 @@ def session_directory():
 
 
 def run_rows(path):
-    from openprogram.state.store.session.session_log import RUN_ROWS_RECORD, read_log_file
+    from openprogram.state.store.session.files.session_log import RUN_ROWS_RECORD, read_log_file
     if not path.exists():
         return []
     return [line for record in read_log_file(path) if record.get("type") == RUN_ROWS_RECORD
@@ -209,7 +209,7 @@ def sub_agent(folder):
 
 def restart_leaves_turn(folder):
     from openprogram.runtime.execution import default_control_service, default_store
-    from openprogram.runtime.execution.restart import prepare_shutdown
+    from openprogram.runtime.execution.recovery.restart import prepare_shutdown
     from openprogram.runtime.jobs import get_runner
 
     lock = worker_lock()
@@ -263,7 +263,7 @@ def new_worker_follows_a_surviving_turn(folder):
 def leave_written_over(folder):
     """What the Worker used to do: pause a turn from a copy older than its end."""
     from openprogram.runtime.execution import default_control_service, default_store
-    from openprogram.state.store.session.session_log import RUN_ROWS_RECORD
+    from openprogram.state.store.session.files.session_log import RUN_ROWS_RECORD
 
     lock = worker_lock()
     new_session(folder)
@@ -351,7 +351,7 @@ def worker_continues_a_scheduled_run(folder):
     import fake_model  # noqa: F401
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.execution import default_control_service, default_store
-    from openprogram.runtime.execution.restart import reconcile
+    from openprogram.runtime.execution.recovery.restart import reconcile
     from openprogram.runtime.jobs import get_runner
     from openprogram.runtime.scheduler import task_runs
 

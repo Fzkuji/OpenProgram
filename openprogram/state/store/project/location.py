@@ -72,7 +72,7 @@ def refresh_project_location(project_id: str, *, roots=None, max_directories: in
             _migration_attempted.add(project_id)
         settled = False
         try:
-            from openprogram.state.store.session.migration import run_project_migration
+            from openprogram.state.store.session.files.migration import run_project_migration
             from openprogram.state.store.session.session_store import default_store
             result = run_project_migration(project_id, default_store(), timeout=2.0)
             if isinstance(result, dict) and any(
@@ -129,7 +129,7 @@ def refresh_project_location(project_id: str, *, roots=None, max_directories: in
 def _project_has_live_writers(project) -> bool:
     """Avoid repeating a bounded migration wait while its writers are live."""
     try:
-        from openprogram.state.store.session.migration import _live_jobs
+        from openprogram.state.store.session.files.migration import _live_jobs
         return any(_live_jobs(session_id) for session_id in
                    (getattr(project, "session_ids", []) or []))
     except Exception:

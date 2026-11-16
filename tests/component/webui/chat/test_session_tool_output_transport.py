@@ -237,10 +237,10 @@ def test_a_tree_too_wide_to_describe_loses_its_last_rows_and_never_an_ancestor()
     assert [row["id"] for row in kept] == [row["id"] for row in rows[: len(kept)]]
 
 
-def test_a_compaction_line_without_a_stamp_stays_among_the_chat_rows(
+def test_a_compaction_card_without_a_stamp_stays_among_the_chat_rows(
     session_with_tool_outputs,
 ):
-    from openprogram.runtime.context.persistence import default_persister
+    from openprogram.runtime.context.compaction.persistence import default_persister
 
     store, _ = session_with_tool_outputs
     _append_call_row(store, "tree-root", "assistant-1", "root output")
@@ -260,9 +260,9 @@ def test_a_compaction_line_without_a_stamp_stays_among_the_chat_rows(
 
     assert order == [
         "user-1", "assistant-1", "user-2", "assistant-2", order[4],
-        "user-3", "assistant-3", order[7], "user-4", "assistant-4",
+        "user-3", "assistant-3", "user-4", "assistant-4",
     ]
-    assert order[4].endswith("_card") and order[7].endswith("_ui")
+    assert order[4].endswith("_card")
 
 
 def test_session_load_sends_no_row_for_a_call_with_nothing_under_it(

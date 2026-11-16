@@ -6,7 +6,7 @@ import threading
 import time
 
 from openprogram.runtime.execution.attempts import AttemptStore
-from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.driver import DriverRegistry
 from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus
 from openprogram.runtime.execution.store import ExecutionStore
@@ -269,7 +269,7 @@ def test_reconciler_schedules_recovery_on_an_existing_event_loop():
 
 
 def test_startup_recovery_schedules_waits_on_an_existing_event_loop():
-    from openprogram.runtime.execution import startup
+    from openprogram.runtime.execution.recovery import startup
 
     recovered = asyncio.Event()
 

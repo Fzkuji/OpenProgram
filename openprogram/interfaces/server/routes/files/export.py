@@ -3,7 +3,7 @@
 ``GET /api/sessions/{session_id}/export?format=md|html`` returns the
 rendered session as an attachment. The rendering (DAG walk, tool-call
 grouping, secret scrubbing) all lives in
-``openprogram.state.store.session.export`` — this module only maps it onto a
+``openprogram.state.store.session.reading.export`` — this module only maps it onto a
 download response.
 
 Auth needs nothing here: ``OwnerAuthMiddleware`` guards every route that
@@ -31,7 +31,7 @@ def register(app):
     @app.get("/api/sessions/{session_id}/export")
     async def export_session_file(session_id: str, format: str = "md"):
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.state.store.session.export import FORMATS, export_session
+        from openprogram.state.store.session.reading.export import FORMATS, export_session
 
         if not _SAFE_ID.match(session_id):
             raise HTTPException(status_code=400, detail="invalid session id")

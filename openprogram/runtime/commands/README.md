@@ -40,4 +40,4 @@ See ``docs/reference/design/cli/slash-commands.html`` for the full design.
 - **`registry.py`** — Process-wide merge of every command source
 - **`template.py`** — Render a command body with user-supplied arguments and env
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

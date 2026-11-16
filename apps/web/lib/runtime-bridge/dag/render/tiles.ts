@@ -56,6 +56,7 @@ const NOW: Record<string, string> = {
   "Read conversation": "Reading conversation", Read: "Reading", Scheduled: "Scheduling",
   "Searched code": "Searching code", "Searched the web": "Searching the web",
   Searched: "Searching", Typed: "Typing", "Updated todos": "Updating todos",
+  "Updated task": "Updating task",
   "Used skill": "Using skill", "Waited for output": "Waiting for output", Wrote: "Writing",
 };
 

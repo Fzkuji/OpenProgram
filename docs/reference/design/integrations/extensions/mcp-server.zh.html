@@ -1,0 +1,186 @@
+<title>MCP 服务端</title>
+<meta name="description" content="带认证的 stdio MCP 服务端：工具、关卡、认证、取消、错误，以及和其他 Agent 框架的对比。">
+<h1>MCP 服务端</h1>
+
+<h2 id="tools">工具</h2>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">用途</th><th scope="col">能力</th><th scope="col">对宿主的副作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sessions_list</code></th><td>列出会话 id、标题、更新时间</td><td><code translate="no">reply</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">session_get</code></th><td>读取一个会话的活动分支</td><td><code translate="no">reply</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">prompt_send</code></th><td>向现有或新会话发提示并返回结果；相当于把 codex 的 <code translate="no">codex</code> 和 <code translate="no">codex-reply</code> 合成一个</td><td><code translate="no">reply</code></td><td>只追加会话</td></tr>
+<tr><th scope="row"><code translate="no">prompt_cancel</code></th><td>取消本连接发起的进行中提示</td><td><code translate="no">reply</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">tools_list</code></th><td>列出对此客户端暴露的 Runtime 工具及 schema</td><td><code translate="no">reply</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">tool_call</code></th><td>按名调用一个已暴露的 Runtime 工具</td><td>取决于工具</td><td>经过下面三道关卡</td></tr>
+</tbody>
+</table>
+<p class="note">不提供：工具注册、改写配置、读取凭据、直接的文件工具。读文件走 <code translate="no">tool_call</code>。同类：codex 两个工具，openclaw 九个，hermes 十个；暴露全部工具的做法被排除。</p>
+
+<h2 id="scope">每次 <code translate="no">tool_call</code> 的三道关卡</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 186" role="img" aria-label="启动令牌已通过校验的客户端发起 tool_call，依次经过三道关卡。白名单：mcp_server.exposed_tools，默认为空；失败时返回 JSON-RPC 错误，按未知工具处理。层级：paired 能力，永不交互；失败时返回 isError 并写明缺少的能力。审批：权限模式固定为 ask；无人审批时返回 isError 和固定原因。通过后工具运行，返回带类型、已脱敏的结果。">
+  <defs><marker id="mg-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker><marker id="mg-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">白名单</text>
+  <text class="t-soft" x="0" y="56">exposed_tools</text>
+  <text class="t-soft" x="0" y="76">默认为空</text>
+  <line class="ln" x1="96" y1="23" x2="164" y2="23" marker-end="url(#mg-a)"/>
+  <text class="t-big" x="176" y="30">层级</text>
+  <text class="t-soft" x="176" y="56">paired 能力</text>
+  <text class="t-soft" x="176" y="76">永不交互</text>
+  <line class="ln" x1="224" y1="23" x2="340" y2="23" marker-end="url(#mg-a)"/>
+  <text class="t-big" x="352" y="30">审批</text>
+  <text class="t-soft" x="352" y="56">模式固定为 ask</text>
+  <text class="t-soft" x="352" y="76">无人可审批</text>
+  <line class="ln" x1="444" y1="23" x2="516" y2="23" marker-end="url(#mg-a)"/>
+  <text class="t-big" x="528" y="30">运行</text>
+  <text class="t-soft" x="528" y="56">带类型、已脱敏</text>
+  <text class="t-soft" x="528" y="76">的结果</text>
+  <line class="ln-no" x1="30" y1="90" x2="30" y2="118" marker-end="url(#mg-n)"/>
+  <line class="ln-no" x1="206" y1="90" x2="206" y2="118" marker-end="url(#mg-n)"/>
+  <line class="ln-no" x1="382" y1="90" x2="382" y2="118" marker-end="url(#mg-n)"/>
+  <text class="t-no" x="0" y="142">JSON-RPC 错误，</text>
+  <text class="t-no" x="0" y="162">按未知工具</text>
+  <text class="t-no" x="176" y="142">isError，</text>
+  <text class="t-no" x="176" y="162">写明缺少的能力</text>
+  <text class="t-no" x="352" y="142">isError，固定</text>
+  <text class="t-no" x="352" y="162">原因，不等待</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>白名单</strong><small><code translate="no">mcp_server.exposed_tools</code>，默认为空</small><p class="refused">JSON-RPC 错误，按未知工具</p></li>
+  <li><strong>层级</strong><small>paired 能力，永不交互</small><p class="refused">isError，写明缺少的能力</p></li>
+  <li><strong>审批</strong><small>模式固定为 ask，无人可审批</small><p class="refused">isError，固定原因，不等待</p></li>
+  <li class="flow-end"><strong>运行</strong><small>带类型、已脱敏的结果</small></li>
+</ol>
+</figure>
+<p class="note">发现和执行各自计算 白名单 ∩ 实时注册表 ∩ paired 能力。身份限制最先生效：<code translate="no">source=mcp</code> 时，高风险工具、进程和 worktree 工具、根目录外写入一律拒绝，任何提问都不等待回答。</p>
+
+<h3 id="authority">请求来源</h3>
+<table class="stack">
+<thead><tr><th scope="col">请求来源</th><th scope="col">主体</th><th scope="col"><code translate="no">authority_tier</code></th><th scope="col">字段缺失</th></tr></thead>
+<tbody>
+<tr><th scope="row">已认证的本地 Web、CLI、TUI</th><td><code translate="no">principal_id=owner</code>，交互式</td><td><code translate="no">owner</code>，持有 <code translate="no">approval.request</code></td><td>入口必须显式构造；认证无效则拒绝</td></tr>
+<tr><th scope="row">已配对的频道账号</th><td>实例所有者；发言人单独存储</td><td><code translate="no">paired</code></td><td>无层级的消息被拒绝，不降级</td></tr>
+<tr><th scope="row">外部 MCP 客户端</th><td>实例所有者；客户端 id 单独存储，<code translate="no">speaker_kind=client</code>，非交互</td><td><code translate="no">paired</code> ∩ 白名单</td><td>拒绝连接</td></tr>
+<tr><th scope="row">continuation、子智能体</th><td>显式继承 owner</td><td>调用方层级，绝不提升</td><td>状态错误：拒绝</td></tr>
+<tr><th scope="row">Cron 触发</th><td>创建时由所有者批准</td><td>批准时固定的任务能力</td><td>触发时不按交互式重算</td></tr>
+</tbody>
+</table>
+<p class="note">层级来自 <code translate="no">TIER_CAPABILITIES</code>；缺失或未知层级拒绝一切。paired 持有 <code translate="no">reply</code>、<code translate="no">memory.read</code>、<code translate="no">memory.source.append</code>、<code translate="no">runtime.wait</code>。完整表格：<a href="../../runtime/security/sandbox-architecture.zh.html">沙箱设计</a>。</p>
+
+<h2 id="auth">认证和传输</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">令牌</th><td><code translate="no">openprogram mcp token create</code> 原子写入 <code translate="no">&lt;state_dir&gt;/mcp_server_token</code>（0600）并只打印一次。<code translate="no">serve</code> 从不生成令牌</td></tr>
+<tr><th scope="row">校验</th><td><code translate="no">openprogram mcp serve</code> 在读取任何消息前，以恒定时间比较 <code translate="no">OPENPROGRAM_MCP_TOKEN</code> 和文件。没有关闭开关</td></tr>
+<tr><th scope="row">失败</th><td>非零退出，stdout 为空，stderr 固定为 <code translate="no">Error: MCP server authentication failed</code></td></tr>
+<tr><th scope="row">保密</th><td>令牌不进入 JSON-RPC、日志、错误或会话内容</td></tr>
+<tr><th scope="row">客户端身份</th><td>凭据 SHA-256 的前 16 个小写十六进制字符。<code translate="no">initialize.clientInfo</code> 既不读取也不记录</td></tr>
+<tr><th scope="row">权限</th><td>固定 <code translate="no">paired</code>，绝不是 owner，和 Web owner 令牌相互独立</td></tr>
+<tr><th scope="row">传输</th><td>只有 stdio，继承启动进程的信任边界</td></tr>
+<tr><th scope="row">协议</th><td>锁定 <code translate="no">mcp</code> 1.30.0，协议 <code translate="no">2025-11-25</code>；由 SDK 协商版本，没有自定义握手字段</td></tr>
+<tr><th scope="row">Streamable HTTP</th><td>以后单独设计：需要 OAuth、Origin 校验和部署生命周期</td></tr>
+</tbody>
+</table>
+
+<h2 id="proto">取消、进度、错误</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">协议消息</th><th scope="col">映射到</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">notifications/cancelled</code></th><td>按 MCP 请求 id 找到会话和令牌；设置每轮 <code translate="no">CancelToken</code> 和工具的 <code translate="no">cancel</code> 事件；停止副作用；清理请求和提问；审计 <code translate="no">mcp.request.cancelled</code></td></tr>
+<tr><th scope="row"><code translate="no">notifications/progress</code></th><td>工具的 <code translate="no">on_update</code>，只在客户端提供 <code translate="no">progressToken</code> 时发送。工具开始和结束，每个请求内单调；没有 token 级流式</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">情况</th><th scope="col">响应</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">未知工具名</th><td>JSON-RPC 错误，方法层</td><td>协议失败</td></tr>
+<tr><th scope="row">参数不符合 schema</th><td>JSON-RPC 错误，invalid params</td><td>协议失败</td></tr>
+<tr><th scope="row">启动令牌缺失或错误</th><td>进入 MCP 生命周期前非零退出</td><td>认证先于读取 stdin</td></tr>
+<tr><th scope="row">工具不在白名单</th><td>JSON-RPC 错误，按未知工具</td><td>不透露未授权工具</td></tr>
+<tr><th scope="row">层级缺少能力</th><td><code translate="no">isError: true</code>，写明能力</td><td>工具存在，但此次不可用</td></tr>
+<tr><th scope="row">审批被拒或无法审批</th><td><code translate="no">isError: true</code>，固定关卡原因</td><td>没有所有者在场；不透传工具细节</td></tr>
+<tr><th scope="row">工具运行后失败</th><td><code translate="no">isError: true</code>，固定的脱敏正文和原因码</td><td>异常、堆栈、工具自述原因都不越过边界</td></tr>
+<tr><th scope="row">SDK 取消进行中的请求</th><td><code translate="no">ErrorData(code=0, message="Request cancelled", data=None)</code>，没有工具结果</td><td>响应归 SDK，可能先发出；处理函数在屏蔽的取消作用域里等到轮次停止、请求清除、审计写入后才返回</td></tr>
+<tr><th scope="row"><code translate="no">prompt_cancel</code></th><td>同一连接的活动轮次：<code translate="no">cancelled=true</code>；他人的或已结束：false</td><td>是包装工具，不是 SDK 通知</td></tr>
+</tbody>
+</table>
+
+<h2 id="surf">内部 Web 接口</h2>
+<table class="stack">
+<thead><tr><th scope="col">接口</th><th scope="col">位置</th><th scope="col">规模</th></tr></thead>
+<tbody>
+<tr><th scope="row">FastAPI 路由</th><td><code translate="no">openprogram/interfaces/server/server.py</code> 的 <code translate="no">create_app()</code>，路由在 <code translate="no">routes/</code></td><td>约 335 条</td></tr>
+<tr><th scope="row">WebSocket <code translate="no">/ws</code></th><td><code translate="no">_websocket_handler</code>，动作在 <code translate="no">ws_actions/</code></td><td>动作和事件无版本承诺</td></tr>
+<tr><th scope="row">工具注册表</th><td><code translate="no">openprogram/programs/_host/runtime.py</code> 的 <code translate="no">_registry</code></td><td>按工具名；开关 toolset、expose、defer</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">OwnerAuthMiddleware</code> 校验 Host 和 Origin、cookie 或 Bearer 凭据、CSRF、no-store，并在 accept 前认证 WebSocket，之后授予完整所有者权限。这既不是 MCP 客户端身份，也不是对外契约，所以 FastAPI 和 WebSocket 不作 MCP 传输，客户端也拿不到 Web owner 令牌。</p>
+
+<details id="ladder">
+<summary>权限决策和取消的内部机制</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">权限顺序</th><td><code translate="no">permission_decision</code>：身份限制，然后所有者规则（deny、plan 只读限制、ask、外发暂扣、allow），最后模式。默认模式 <code translate="no">bypass</code>；子智能体沿用父级模式。见<a href="../../runtime/security/permission-decision.zh.html">权限决策</a></td></tr>
+<tr><th scope="row">工具包装</th><td><code translate="no">wrap_with_approval</code> 返回 <code translate="no">execute</code> 已加关卡的工具副本，外部调用方无法绕过</td></tr>
+<tr><th scope="row"><code translate="no">CancelToken</code></th><td>每轮一个，绝不按会话（<code translate="no">runtime/execution/run_control/tokens.py</code>）。一轮结束后到达的停止不影响下一轮</td></tr>
+<tr><th scope="row">全局钩子</th><td><code translate="no">add_pre_invocation_hook</code>、<code translate="no">set_cancellation_check</code>：每个 Agent 方法入口和每次 <code translate="no">Runtime.exec</code> 都会中止</td></tr>
+<tr><th scope="row">统一入口</th><td>只接受规范的 <code translate="no">execution_id</code>，先持久化意图，再唤醒所有者和待答提问。ACP、MCP、Channels、Web 共用一个 Control Service</td></tr>
+<tr><th scope="row" id="sem"><code translate="no">is_error</code></th><td><code translate="no">AgentToolResult</code> 和 <code translate="no">AgentEventToolEnd</code> 的一等字段；Runtime、审批、Agent 循环、MCP 转换和缓存判定都读取它。<code translate="no">details</code> 只放 <code translate="no">reason_code</code>、<code translate="no">denied</code>、<code translate="no">timeout</code> 等诊断。<code translate="no">details["is_error"]</code> 只是输入兼容桥</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="nine">
+<summary>框架对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">MCP 服务端</th><th scope="col">ACP Agent 侧</th><th scope="col">入站 HTTP、webhook</th><th scope="col">客户端 SDK</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td><code translate="no">claude mcp serve</code></td><td>无</td><td>无公开文档</td><td>Agent SDK</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">codex mcp-server</code>，stdio，只有 codex 和 codex-reply</td><td>无；自有 app-server</td><td>app-server：stdio、WS、unix；令牌文件、SHA-256、JWT</td><td>TS <code translate="no">@openai/codex-sdk</code>、Python</td></tr>
+<tr><th scope="row">openclaw</th><td>三个 stdio 服务端，MCP-over-HTTP（bearer、回环）</td><td><code translate="no">openclaw acp</code>，经 Gateway</td><td>Gateway HTTP API、HMAC webhook 插件</td><td><code translate="no">@openclaw/sdk</code>（私有）</td></tr>
+<tr><th scope="row">opencode</th><td>无，只有客户端</td><td><code translate="no">opencode acp</code></td><td><code translate="no">opencode serve</code>，HTTP Basic；无密码时只警告</td><td><code translate="no">@opencode-ai/sdk</code>，由 OpenAPI 生成</td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">hermes mcp serve</code>，FastMCP stdio，十个工具</td><td><code translate="no">hermes acp</code>，ACP 注册表条目</td><td>HMAC webhook 适配器，bearer 的 OpenAI 兼容 API</td><td>无</td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>无</td><td>无</td><td>不适用：是 provider 库</td></tr>
+<tr><th scope="row">pi-mono</th><td>无；README 写明 "No MCP."</td><td>无</td><td>无；进程内 <code translate="no">pi.send()</code></td><td>只有嵌入用的包</td></tr>
+<tr><th scope="row">weclaw</th><td>无</td><td>只有 ACP 客户端，自动批准一切</td><td><code translate="no" data-claim="example">POST /api/send</code>，无认证</td><td>无</td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram mcp serve</code>，带认证 stdio，固定包装工具，白名单为空</td><td><code translate="no">openprogram acp</code>，stdio</td><td>内部 Web 路由，所有者认证</td><td>无；用标准 MCP SDK</td></tr>
+</tbody>
+</table>
+
+<h3 id="pat">协议做法</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">同类做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">推送审批</th><td>codex：执行和补丁审批用 <code translate="no">elicitation/create</code>，自定义字段 <code translate="no">threadId</code>、<code translate="no">codex_elicitation</code>、<code translate="no">codex_mcp_tool_call_id</code>、<code translate="no">codex_event_id</code>，返回 <code translate="no">ReviewDecision</code>。延迟低，要客户端支持 elicitation；载荷缺少 <code translate="no">ElicitResult</code> 的 action 和 content</td></tr>
+<tr><th scope="row">拉取审批</th><td>openclaw、hermes：<code translate="no">permissions_list_open</code> 和 <code translate="no">permissions_respond</code>，<code translate="no">allow-once</code>、<code translate="no">allow-always</code>、<code translate="no">deny</code>。通用客户端可用，代价是多一次往返和轮询。openclaw 还经 <code translate="no">claude/channel/permission</code> 推送</td></tr>
+<tr><th scope="row">取消</th><td>codex 在活动轮次注册表中查找轮次，<code translate="no">tasks/cancel</code> 报不支持。openclaw 把 <code translate="no">extra.signal</code> 传入 <code translate="no">callTool</code>。hermes 没有取消</td></tr>
+<tr><th scope="row">进度</th><td>codex 只记录 <code translate="no">notifications/progress</code>。调研的框架都不对外发标准进度</td></tr>
+<tr><th scope="row">错误</th><td>工具失败都返回 <code translate="no">{isError: true, content:[text]}</code>，协议失败用 JSON-RPC 错误。OpenProgram 采用这一区分</td></tr>
+<tr><th scope="row">排除</th><td>weclaw 的无认证发送和无条件批准 <code translate="no">session/request_permission</code>；opencode 未设 <code translate="no">OPENCODE_SERVER_PASSWORD</code> 时的无认证 <code translate="no">serve</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="ideal">不在范围内</h2>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">状态</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">ACP stdio 服务端</th><td>已有，不扩展：<code translate="no">openprogram acp</code>、<code translate="no">openprogram/interfaces/acp/server.py</code></td><td>所有者权限和交互式权限语义；MCP 令牌、白名单、工具不并入</td></tr>
+<tr><th scope="row">入站 webhook</th><td>未实现</td><td>到达时无所有者在场，和 cron 一样需要注册时固定的任务能力。最低控制（来自 hermes）：启动时校验的按路由 HMAC 密钥、限流、幂等缓存、读取前检查正文大小</td></tr>
+<tr><th scope="row">客户端 SDK</th><td>未实现</td><td>标准 MCP SDK 就是客户端库。真实集成证明这些工具太粗时才需要专用 SDK；只有两条路由有固定形状断言</td></tr>
+<tr><th scope="row">HTTP、SSE、OAuth、Web 路由、放宽 SDK 范围</th><td>未实现</td><td>对外接口保持带认证的 stdio 和这些工具</td></tr>
+</tbody>
+</table>
+
+<details id="status">
+<summary>测试</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">覆盖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/integration/programs/test_mcp_server.py</code></th><td>真实 <code translate="no">ClientSession</code> 连接真实 <code translate="no">openprogram mcp serve</code> 子进程；手写帧只补充 stdout 检查。握手前的令牌失败；<code translate="no">clientInfo</code> 不影响权限；固定工具列表；<code translate="no">tools_list</code> 等于交集；未知和未暴露工具；返回 <code translate="no">isError</code> 而不是挂起；SDK 取消后没有迟到结果、副作用停止、状态清理和审计；进度只在有令牌时按序到达；消费者有界退出并保留父级取消；并发；stdout 只有协议帧</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/webui/runtime/test_diagnostic_mcp_route_contracts.py</code></th><td>在不带中间件的裸 <code translate="no">FastAPI()</code> 上，精确断言 <code translate="no">/api/doctor</code>（<code translate="no">results</code>、<code translate="no">all_ok</code>）、<code translate="no">/api/mcp/servers</code>（15 个键）和缺失服务端的 404 形状</td></tr>
+</tbody>
+</table>
+</details>

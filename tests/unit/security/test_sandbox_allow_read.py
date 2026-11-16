@@ -157,7 +157,7 @@ def test_persist_allow_read_appends(monkeypatch):
 
 
 def test_system_prompt_forbids_relocating_secrets():
-    from openprogram.runtime.context.components import build_system_prompt
+    from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
     out = build_system_prompt({"id": "main", "name": "bot"})
     assert "never move or copy secrets" in out.lower()
 
@@ -234,3 +234,10 @@ def test_an_escalated_policy_lets_bash_start_anywhere(tmp_path, monkeypatch):
     assert validate_write_path(outside, cwd=str(workspace))
     with escalated_policy():
         assert validate_write_path(outside, cwd=str(workspace)) is None
+
+
+def test_the_credential_carry_over_backup_is_under_the_hard_floor():
+    from openprogram.models.auth.carry_over import BACKUP_DIR
+    from openprogram.models.auth.store import default_root
+    backup = default_root() / "auth" / BACKUP_DIR / "openai" / "default.json"
+    assert is_hard_floor_read(str(backup))

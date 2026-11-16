@@ -40,7 +40,7 @@ class _Engine:
 
 def _run(monkeypatch, engine, previous):
     monkeypatch.setattr(loop_runner, "_downshift_model", lambda _req, _profile: previous)
-    monkeypatch.setattr("openprogram.runtime.context.persistence.rendered_history",
+    monkeypatch.setattr("openprogram.runtime.context.compaction.persistence.rendered_history",
                         lambda *_a, **_k: [{"id": "x"}])
     db = SimpleNamespace(get_session=lambda _sid: {})
     req = SimpleNamespace(session_id="c", history_override=None, background=False)
@@ -51,7 +51,7 @@ def _run(monkeypatch, engine, previous):
 
 @pytest.fixture(autouse=True)
 def _windows(monkeypatch):
-    monkeypatch.setattr("openprogram.runtime.context.tokens.real_context_window",
+    monkeypatch.setattr("openprogram.runtime.context.token_accounting.tokens.real_context_window",
                         lambda model: getattr(model, "context_window", 0))
 
 

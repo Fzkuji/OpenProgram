@@ -8,8 +8,8 @@ import pytest
 
 from openprogram.runtime.permissions.authority import paired_channel_authority
 from openprogram.runtime.permissions.tool_authority import decide_tool_authority
-from openprogram.interfaces.channels import _active_turns
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _active_turns
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.programs.tools.interaction import chat_send as tool
 
 
@@ -17,7 +17,7 @@ from openprogram.programs.tools.interaction import chat_send as tool
 def posted(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
     out: list[tuple] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text: out.append(
             (platform, account_id, target, text)) or SendResult.success(""))
     return out
@@ -56,14 +56,14 @@ def test_a_turn_has_a_send_quota(session, posted) -> None:
 
 def test_a_failed_post_is_an_error(session, monkeypatch) -> None:
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda *a: SendResult.fail("rate_limit", "429"))
     assert tool._chat_send_impl("hi") == (
         "Error: the telegram message was not sent (rate_limit).")
 
 
 def test_a_paired_speaker_may_use_it_and_only_channels_see_it() -> None:
-    from openprogram.runtime.permissions.classifier import SAFE_AUTO_ALLOWLIST
+    from openprogram.runtime.permissions.auto_mode.classifier import SAFE_AUTO_ALLOWLIST
     auth = paired_channel_authority("telegram", "acct1", "701", "Ada")
     decision = decide_tool_authority(auth, "chat_send")
     assert decision.allowed and decision.capability == "reply"
@@ -72,11 +72,11 @@ def test_a_paired_speaker_may_use_it_and_only_channels_see_it() -> None:
 
 
 def test_only_the_asker_answers_in_a_group(monkeypatch) -> None:
-    from openprogram.interfaces.channels import _conversation as C
+    from openprogram.interfaces.channels.inbound import _conversation as C
     monkeypatch.setattr(C, "_route", lambda *a: ("main", "s1", "s1"))
     handled: list[str] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._question_commands.try_handle_question_command",
+        "openprogram.interfaces.channels.inbound._question_commands.try_handle_question_command",
         lambda text, key, actor: handled.append(text) or "✓ 已记录你的回答。")
     _active_turns.begin("s1", _active_turns.ActiveTurn(
         channel="telegram", account_id="acct1", peer_id="-100",
@@ -96,7 +96,7 @@ def test_only_the_asker_answers_in_a_group(monkeypatch) -> None:
 def test_posts_into_the_thread_the_turn_is_in(monkeypatch) -> None:
     calls: list[dict] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text, **kw: calls.append(kw)
         or SendResult.success(""))
     monkeypatch.setattr("openprogram.runtime.execution.run_control.get_current_session_id",
@@ -112,7 +112,7 @@ def test_posts_into_the_thread_the_turn_is_in(monkeypatch) -> None:
 
 
 def test_telegram_typing_stays_in_the_forum_topic(monkeypatch) -> None:
-    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels.delivery import _transport
     payloads: list[dict] = []
     monkeypatch.setattr(_transport._accounts, "load_credentials",
                         lambda *a: {"bot_token": "t"})
@@ -133,7 +133,7 @@ def test_typing_indicator_passes_its_thread(monkeypatch) -> None:
         seen.append(kw)
         return SendResult.fail("not_supported", "stop after one")
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.send_typing", send)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.send_typing", send)
     typing = _TypingIndicator("telegram", "acct1", "-100", "42")
     typing.start()
     typing.stop()
@@ -141,7 +141,7 @@ def test_typing_indicator_passes_its_thread(monkeypatch) -> None:
 
 
 def test_a_channel_turn_remembers_its_thread(monkeypatch) -> None:
-    from openprogram.interfaces.channels import _conversation
+    from openprogram.interfaces.channels.inbound import _conversation
     seen: list = []
     monkeypatch.setattr(_conversation, "_reserve_run_slot", lambda *a, **kw: True)
     monkeypatch.setattr(_conversation, "_run_turn_body",
@@ -157,12 +157,12 @@ def test_a_channel_turn_remembers_its_thread(monkeypatch) -> None:
 
 
 def _question_posts(monkeypatch) -> list[tuple]:
-    from openprogram.interfaces.channels import _question_bridge
+    from openprogram.interfaces.channels.inbound import _question_bridge
     posts: list[tuple] = []
     monkeypatch.setattr(_question_bridge, "_channel_target_for_session",
                         lambda session_id: ("telegram", "acct1", "first-peer"))
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text, **kw: posts.append((target, kw))
         or SendResult.success(""))
     return posts
@@ -170,7 +170,7 @@ def _question_posts(monkeypatch) -> list[tuple]:
 
 def _ask(session_id: str) -> None:
     from types import SimpleNamespace
-    from openprogram.interfaces.channels import _question_bridge
+    from openprogram.interfaces.channels.inbound import _question_bridge
     _question_bridge._on_question_asked(SimpleNamespace(
         payload={"session_id": session_id, "id": "q1", "prompt": "Which one?"}))
 

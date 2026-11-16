@@ -8,7 +8,7 @@
  *  anything less lets the page spring home. The overview is in the document
  *  under the page only while the page moves. */
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PagePull } from "./activity-page-types";
+import type { PagePull } from "./pages/activity-page-types";
 import { springTo, stillMotion, swipeTurns } from "./sideways";
 
 /** How far left the overview rests while covered, as a share of its width, and how much it dims. */

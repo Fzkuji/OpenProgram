@@ -24,7 +24,7 @@
 <tr><th scope="row"><code translate="no">/skill</code> allowlist</th><td><code translate="no">list[str]</code> plus the web_search overlay</td><td><code translate="no">agent_tools(names=[...])</code></td></tr>
 </tbody>
 </table>
-<p class="note">Callers: Web chat (<code translate="no">ws_actions/chat/turn.py</code>, <code translate="no">routes/chat_branches.py</code>), channels (<code translate="no">channels/_conversation.py</code>), goal chat (<code translate="no">programs/tools/planning/goal/chat.py</code>).</p>
+<p class="note">Callers: Web chat (<code translate="no">ws_actions/chat/turn.py</code>, <code translate="no">routes/chat_branches.py</code>), channels (<code translate="no">channels/inbound/_conversation.py</code>), goal chat (<code translate="no">programs/tools/planning/goal/chat.py</code>).</p>
 
 <h2 id="deferred-loading">Available is not resident</h2>
 <table class="stack">
@@ -61,8 +61,8 @@
 <tr><th scope="row">Discovery</th><td><code translate="no">tool_search</code> writes a load record on its result (<code translate="no">record_loads</code>), so the next provider request carries real schemas. A guide or an opened application names the tools and how to load them; it loads nothing. Schema as tool-result text alone is not enough for providers that accept only tools in the request array.</td></tr>
 <tr><th scope="row">Execution</th><td>Uses the turn's resolved, permission-wrapped tools, not a new registry lookup. Without discovery the array is stable; discovery may change the cached prefix.</td></tr>
 <tr><th scope="row">Checkpoints</th><td>A continuation needs no loaded names: the resumed request reads them from the messages it resumes with. The journal's old <code translate="no">loaded_deferred_tools</code> field is no longer written or read for loading. Tool-result text is never read as authorization or loading state.</td></tr>
-<tr><th scope="row">Catalog</th><td>A conversation's own turn sends it as the <code translate="no">turn_context</code> section <code translate="no">deferred_catalog</code> beside the user message: in full with no baseline, then only what was added or removed. A call with its own system prompt (an Agent method, <code translate="no">runtime.exec</code>) keeps it inline there (<code translate="no">_build_deferred_catalog</code> in <code translate="no">runtime/context/components.py</code>). Empty when nothing is deferred.</td></tr>
-<tr><th scope="row"><code translate="no">_estimate_one_tool</code></th><td>In <code translate="no">runtime/context/budget.py</code>. Resident: description, parameters and a small wrapper. Deferred: bare name plus a newline. The two errors point in opposite directions, so <code translate="no">test_budget.py</code> checks each half against a real tokenized payload, within 15%.</td></tr>
+<tr><th scope="row">Catalog</th><td>A conversation's own turn sends it as the <code translate="no">turn_context</code> section <code translate="no">deferred_catalog</code> beside the user message: in full with no baseline, then only what was added or removed. A call with its own system prompt (an Agent method, <code translate="no">runtime.exec</code>) keeps it inline there (<code translate="no">_build_deferred_catalog</code> in <code translate="no">runtime/context/prompt_assembly/components.py</code>). Empty when nothing is deferred.</td></tr>
+<tr><th scope="row"><code translate="no">_estimate_one_tool</code></th><td>In <code translate="no">runtime/context/token_accounting/budget.py</code>. Resident: description, parameters and a small wrapper. Deferred: bare name plus a newline. The two errors point in opposite directions, so <code translate="no">test_budget.py</code> checks each half against a real tokenized payload, within 15%.</td></tr>
 </tbody>
 </table>
 </details>
@@ -110,7 +110,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Carries</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">web_search</code> and <code translate="no">tools_override</code> on <code translate="no">SessionRunConfig</code>, save and load in git session meta (no schema change)</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_settings/session_config.py</code></th><td><code translate="no">web_search</code> and <code translate="no">tools_override</code> on <code translate="no">SessionRunConfig</code>, save and load in git session meta (no schema change)</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/ws_actions/chat/turn.py</code></th><td><code translate="no">tools_flag</code> starts <code translate="no">None</code>; a <code translate="no">/skill</code> sets it; a new Agent conversation clears both. Nothing expands here.</td></tr>
 <tr><th scope="row"><code translate="no">runtime/conversation/model_tools.py</code></th><td><code translate="no">_overlay_web_search</code> in the dict branch of <code translate="no">resolve_tools</code> (web_search is not in <code translate="no">DEFAULT_TOOLS</code>)</td></tr>
 <tr><th scope="row"><code translate="no">programs/_host/runtime.py</code></th><td>Deferred machinery above, <code translate="no">tool_search</code>, <code translate="no">deferred_catalog_text</code></td></tr>
@@ -121,10 +121,10 @@
 <thead class="sr"><tr><th scope="col">Test</th><th scope="col">Locks</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">tests/unit/programs/tools/test_tool_expansion_deterministic.py</code></th><td>Same intent expands element-wise equal</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config_tools_intent.py</code></th><td>No intent follows the Agent; web_search overlay added, removed, respecting <code translate="no">disabled</code>; <code translate="no">/skill</code> lists; cold-provider path</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>Round-trip: True reads True, a missing field reads None; enabling web_search leaves <code translate="no">tools_override</code> absent</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_tool_defer.py</code></th><td>Deferred tools out of the array and in the catalog and prompt; <code translate="no">tool_search</code> moves them and returns full schema; execution stays on permission-wrapped tools; checkpoint restore; never defers itself; idempotent</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_budget.py</code></th><td>Each half of tool pricing</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_config_tools_intent.py</code></th><td>No intent follows the Agent; web_search overlay added, removed, respecting <code translate="no">disabled</code>; <code translate="no">/skill</code> lists; cold-provider path</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_config.py</code></th><td>Round-trip: True reads True, a missing field reads None; enabling web_search leaves <code translate="no">tools_override</code> absent</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/system_prompt/test_tool_defer.py</code></th><td>Deferred tools out of the array and in the catalog and prompt; <code translate="no">tool_search</code> moves them and returns full schema; execution stays on permission-wrapped tools; checkpoint restore; never defers itself; idempotent</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/statistics/test_budget.py</code></th><td>Each half of tool pricing</td></tr>
 </tbody>
 </table>
 <p class="note">Also expected: new tools appear in automatic scope; two turns with unchanged intent show a cache hit; no client sends <code translate="no">tools</code> or <code translate="no">tools_profile</code>.</p>

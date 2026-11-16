@@ -187,7 +187,7 @@ def end_runs_of_exited_processes(session_id: str | None = None) -> list[str]:
     a Worker restart is the next Worker's to continue."""
     from openprogram.runtime.conversation.run_control import is_worker_stopping
     from openprogram.runtime.execution import default_store
-    from openprogram.state.store.session.session_log import is_main_writer
+    from openprogram.state.store.session.files.session_log import is_main_writer
 
     if not is_main_writer() or is_worker_stopping():
         return []

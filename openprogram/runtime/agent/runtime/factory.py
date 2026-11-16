@@ -170,15 +170,17 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         return cls(model=use_model, **kwargs)
 
     # Plain API-key HTTP provider: the base Runtime + the api_registry wire
-    # IS the runtime. Resolve the key up front so a missing credential fails
-    # here with guidance instead of at first exec.
+    # IS the runtime. A provider with no key at all fails here with
+    # guidance instead of at first exec. Only that a key exists is checked:
+    # one cooling down or out of quota is still the provider's key, and the
+    # credential layer chooses, waits or says why per request
+    # (models/auth/selection.py). A caller's own ``api_key`` is sent as given.
+    from openprogram.models.auth.resolver import has_key
     from openprogram.runtime.agent.runtime import Runtime
-    api_key = kwargs.pop("api_key", None) or _registry.http_api_key_for(entry)
-    if not api_key:
+    if not kwargs.get("api_key") and not has_key(entry["credential"]) \
+            and not _registry.http_api_key_for(entry):
         raise ValueError(entry["credential_error"])
-    return Runtime(
-        model=f"{entry['model_namespace']}:{use_model}", api_key=api_key, **kwargs
-    )
+    return Runtime(model=f"{entry['model_namespace']}:{use_model}", **kwargs)
 
 
 __all__ = ["create_runtime"]

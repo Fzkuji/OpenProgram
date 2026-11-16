@@ -78,6 +78,24 @@ def _codex(**health) -> dict:
         quota=dict(PAYLOAD["providers"][0]["quota"], limits=[weekly]))]}
 
 
+def test_a_company_connected_two_ways_is_one_line_with_its_ways_under_it():
+    def way(provider: dict, title: str, state: str) -> dict:
+        return dict(provider, family="openai", family_label="OpenAI",
+                    health={"state": state, "until": None, "detail": None},
+                    way_label={"title": title, "title_zh": title, "short": title, "short_zh": title})
+    codex, _router, api, mistral = PAYLOAD["providers"]
+    payload = {**PAYLOAD, "providers": [way(codex, "ChatGPT subscription", "rate_limited"), mistral,
+                                        way(api, "API · pay as you go", "ready")]}
+    lines = quota_status.render(payload, now=NOW + 30).splitlines()
+    # The company where its first way is listed, with its best way's state; each way under it.
+    assert lines[0].startswith("● OpenAI ") and lines[0].endswith("ready")
+    assert lines[1].startswith("  ◐ ChatGPT subscription") and "rate limited" in lines[1]
+    api_line = next(i for i, line in enumerate(lines) if line.startswith("  ● API · pay as you go"))
+    assert api_line < next(i for i, line in enumerate(lines) if line.startswith("· Mistral"))
+    # The state column lines up for the company, its ways and a lone provider.
+    assert len({line.index("ready") for line in (lines[0], lines[api_line])}) == 1
+
+
 def test_a_past_time_is_never_printed_as_a_coming_one():
     text = quota_status.render(_codex(until=NOW - 37 * 3600), now=NOW)
     assert text.splitlines()[0].rstrip().endswith("rate limited  ·  gpt-6.1-sol")

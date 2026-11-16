@@ -72,21 +72,20 @@ class ExampleAgent(Agent):
 <h2 id="mini-dag">DAG view</h2>
 <p>The right rail draws every node (user message, LLM call, code Call, attach) and edge. It scrolls with the chat, highlights the range in view, and clicking a node scrolls to its message. <a href="../reference/design/runtime/dag/rendering.html">Rendering rules</a>.</p>
 
-<h2 id="multi-account">Multiple accounts and key rotation</h2>
-<p>An account is a profile: an independent credential set for a provider. API-key providers hold a list of keys the same way.</p>
-<pre translate="no"><code>openprogram providers login openai --account work
-openprogram providers use openai work
-openprogram providers use openai                     # back to the default account
-openprogram providers list</code></pre>
-<p class="note">The same panel is in Web (Settings → LLM Providers) and TUI (<code translate="no">/login &lt;provider&gt;</code>, which completes OAuth, device code, CLI import or key paste in the terminal).</p>
+<h2 id="multi-account">Several keys per provider</h2>
+<p>Each provider holds an ordered list of API keys and sign-ins. Name them, reorder them, turn one off, or pin a conversation to one.</p>
+<pre translate="no"><code>openprogram providers keys openai add --name work
+openprogram providers keys openai list
+openprogram providers keys openai strategy evenly</code></pre>
+<p class="note">The same list is in Web (Settings → LLM Providers) and TUI (<code translate="no">/login &lt;provider&gt;</code>, which completes OAuth, device code, CLI import or key paste in the terminal).</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Key handling</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Add</th><td>Paste; validated first, then joins the list. Name each one</td></tr>
-<tr><th scope="row">Use</th><td>The active key is the one called. A key set through env or config is migrated in</td></tr>
-<tr><th scope="row">Rotation, optional, off by default</th><td>A failing key cools down while the next takes over</td></tr>
-<tr><th scope="row">Cooldown</th><td><code translate="no">429</code> about 1 to 5 minutes, <code translate="no">402</code> 24 hours for billing, <code translate="no">5xx</code> 30 seconds</td></tr>
-<tr><th scope="row">Strategy</th><td><code translate="no">in order</code>, <code translate="no">spread evenly</code>, <code translate="no">random</code>, <code translate="no">least used</code>, with ↑ ↓ priority</td></tr>
+<tr><th scope="row">Add</th><td>Paste; checked first, then joins the end of the list. A key in the provider's environment variable is listed too, read-only</td></tr>
+<tr><th scope="row">Use</th><td>A conversation keeps the key it started on; sub-agents and Goal turns use the same one</td></tr>
+<tr><th scope="row">Switch</th><td>Rate limited, out of quota or refused: the next usable key takes over, with a one-line notice</td></tr>
+<tr><th scope="row">Cooldown</th><td><code translate="no">429</code> the provider's Retry-After, else 1 minute doubling to 15; quota until its reset; <code translate="no">5xx</code> retried twice on the same key</td></tr>
+<tr><th scope="row">Strategy</th><td><code translate="no">in-order</code>, <code translate="no">evenly</code>, <code translate="no">least-used</code>; reorder with <code translate="no">move</code></td></tr>
 </tbody>
 </table>
 <p class="note"><a href="../reference/design/providers/auth/unified-account-management.html">Design and status</a>.</p>

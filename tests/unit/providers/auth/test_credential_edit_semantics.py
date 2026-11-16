@@ -99,7 +99,7 @@ def test_merge_auth_still_replaces_and_deletes_real_values() -> None:
 
 def test_mcp_cli_has_no_raw_file_editor() -> None:
     """The product must not hand the raw secret file to $EDITOR."""
-    from openprogram.interfaces.cli.commands import mcp as mcp_cmd
+    from openprogram.interfaces.cli.commands.capabilities import mcp as mcp_cmd
 
     assert not hasattr(mcp_cmd, "_cmd_mcp_edit")
 
@@ -107,7 +107,7 @@ def test_mcp_cli_has_no_raw_file_editor() -> None:
 def test_mcp_edit_verb_reports_the_structured_alternative(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from openprogram.interfaces.cli.commands.mcp import _cmd_mcp_edit_removed
+    from openprogram.interfaces.cli.commands.capabilities.mcp import _cmd_mcp_edit_removed
 
     code = _cmd_mcp_edit_removed()
 
@@ -116,16 +116,6 @@ def test_mcp_edit_verb_reports_the_structured_alternative(
     # Points at the structured replacements, not at the raw secret file.
     assert "openprogram mcp add" in error
     assert "mcp_servers.json" not in error
-
-
-def test_legacy_account_key_reveal_returns_stable_deprecation() -> None:
-    from openprogram.interfaces.server.routes.identity.accounts import reveal_deprecation_response
-
-    payload, status = reveal_deprecation_response()
-
-    assert status == 410
-    assert payload == {"error": "credential reveal is no longer supported"}
-    assert "value" not in payload
 
 
 # --- deletion truthfulness --------------------------------------------------
@@ -195,16 +185,16 @@ def test_deleting_a_credential_clears_the_runtime_token_cache(
     store = AuthStore(root=tmp_path / "auth")
     store.add_credential(
         Credential(
-            provider_id="openai", account_id="default", kind="api_key",
+            provider_id="openai", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-live"),
         )
     )
-    credential_process._token_cache[("openai/default", ("helper",), "raw", (), None)] = (
+    credential_process._token_cache[("openai/cred", ("helper",), "raw", (), None)] = (
         float("inf"),
         "cached-secret",
     )
 
-    store.delete_pool("openai", "default")
+    store.delete_provider("openai")
 
     assert credential_process._token_cache == {}
 
@@ -218,16 +208,16 @@ def test_removing_one_credential_clears_the_runtime_token_cache(
 
     store = AuthStore(root=tmp_path / "auth")
     cred = Credential(
-        provider_id="openai", account_id="default", kind="api_key",
+        provider_id="openai", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-live"),
     )
     store.add_credential(cred)
-    credential_process._token_cache[("openai/default", ("helper",), "raw", (), None)] = (
+    credential_process._token_cache[("openai/cred", ("helper",), "raw", (), None)] = (
         float("inf"),
         "cached-secret",
     )
 
-    store.remove_credential("openai", "default", cred.credential_id)
+    store.remove_credential("openai", cred.id)
 
     assert credential_process._token_cache == {}
 

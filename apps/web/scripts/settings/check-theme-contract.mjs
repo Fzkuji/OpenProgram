@@ -134,7 +134,7 @@ for (const token of ["--accent-orange", "--accent-fill", "--accent-orange-hover"
 }
 assert.match(themeConfig, /html\[data-theme="beige-dark"\]/);
 assert.match(themeConfig, /html\[data-theme="beige-light"\]/);
-// The General-section theme picker is a render test: tests/settings/theme-picker.test.mjs.
+// The General-section theme picker is a render test: tests/settings/appearance/theme-picker.test.mjs.
 
 const beigeLight = read("app/styles/themes/beige-light.css");
 const customLight = read("app/styles/themes/custom-light.css");

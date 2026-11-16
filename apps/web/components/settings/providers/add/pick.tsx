@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FieldDescription, FieldTitle } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
@@ -11,7 +13,6 @@ import type { DetectedEnvKey, DetectedPayload } from "@/lib/settings/provider-st
 
 import { ProviderIcon } from "../icons/provider-icon";
 import type { Provider } from "../types";
-import styles from "../status/status.module.css";
 import { choiceOf, type Choice } from "./data";
 
 /** A key found in the Worker's environment: its variable name and masked
@@ -28,11 +29,11 @@ export function EnvKeyRow({
 }) {
   const { text } = useTranslation();
   return (
-    <div className={styles.envRow} data-env={row.env_var}>
+    <div className="flex min-h-(--ui-button-h) min-w-0 items-center gap-2.5 text-fs-sm" data-env={row.env_var}>
       <ProviderIcon id={icon} size={20} />
-      <span>{label}</span>
-      <span className={styles.mono}>{row.env_var}</span>
-      <span className={`${styles.mono} ${styles.muted}`}>{row.masked}</span>
+      <span className="truncate">{label}</span>
+      <span className="truncate font-mono text-fs-xs text-text-secondary">{row.env_var}</span>
+      <span className="truncate font-mono text-fs-xs text-text-muted">{row.masked}</span>
       <span className="flex-1" />
       <Button size="xs" onClick={() => onUse(row)} disabled={usingEnv !== null}>
         {usingEnv === row.env_var ? text("Checking…", "检查中…") : text("Use", "使用")}
@@ -87,14 +88,14 @@ export function PickProvider({
       {query.trim() || all ? (
         <div className="flex flex-col gap-[1px] max-h-[280px] overflow-y-auto" role="list" aria-label={text("All providers", "全部服务商")}>
           {results.length === 0 ? (
-            <div className={`${styles.xs} ${styles.muted}`}>{text("No provider matches", "没有匹配的服务商")}</div>
+            <FieldDescription>{text("No provider matches", "没有匹配的服务商")}</FieldDescription>
           ) : results.map((p) => (
-            <button key={p.id} type="button" role="listitem" className={styles.resultRow} onClick={() => onPick(choiceOf(p, detected))}>
+            <Button key={p.id} variant="ghost" role="listitem" className="justify-start gap-2.5 font-normal text-text-primary" onClick={() => onPick(choiceOf(p, detected))}>
               <ProviderIcon id={p.id} size={20} />
-              <span>{p.label}</span>
+              <span className="truncate">{p.label}</span>
               <span className="flex-1" />
-              {p.configured ? <span className={`${styles.xs} ${styles.muted}`}>{text("Connected", "已接入")}</span> : null}
-            </button>
+              {p.configured ? <Badge variant="secondary">{text("Connected", "已接入")}</Badge> : null}
+            </Button>
           ))}
           {all && !query.trim() ? (
             <Button variant="ghost" size="sm" className="self-start" onClick={() => setAll(false)}>{text("Back to popular", "返回常用")}</Button>
@@ -104,14 +105,14 @@ export function PickProvider({
         <>
           {env.length > 0 ? (
             <>
-              <div className={styles.group}>{text("In your environment", "环境变量里已有")}</div>
+              <FieldTitle>{text("In your environment", "环境变量里已有")}</FieldTitle>
               {env.map((row) => <EnvKeyRow key={row.env_var} row={row} usingEnv={usingEnv} onUse={onUseEnv} />)}
             </>
           ) : null}
           {detected === null ? (
             detectedFailed ? (
               <div className="flex items-center gap-[8px]" role="alert">
-                <span className={`${styles.xs} ${styles.muted}`}>{text("Couldn't read the popular providers", "无法读取常用服务商")}</span>
+                <FieldDescription>{text("Couldn't read the popular providers", "无法读取常用服务商")}</FieldDescription>
                 {onRetry ? <Button variant="ghost" size="xs" onClick={onRetry}>{text("Retry", "重试")}</Button> : null}
               </div>
             ) : (
@@ -120,35 +121,35 @@ export function PickProvider({
           ) : null}
           {(detected?.popular.length ?? 0) > 0 ? (
             <>
-              <div className={styles.group}>{text("Popular", "常用")}</div>
+              <FieldTitle>{text("Popular", "常用")}</FieldTitle>
               <div className="grid grid-cols-4 gap-[6px]">
                 {detected!.popular.map((c) => (
-                  <button key={c.id} type="button" className={styles.tile} data-provider={c.id} onClick={() => onPick({ ...c, auth: c.id === "anthropic" ? "api_key" : c.auth })}>
+                  <Button key={c.id} variant="ghost" className="h-auto min-w-0 flex-col gap-1.5 px-1 pt-3 pb-2.5 text-fs-xs font-normal text-text-primary" data-provider={c.id} onClick={() => onPick({ ...c, auth: c.id === "anthropic" ? "api_key" : c.auth })}>
                     <ProviderIcon id={c.id} size={40} plate="brand" />
-                    <span>{c.label}</span>
-                    {c.connected ? <span className={styles.tileConnected}>{text("Connected", "已接入")}</span> : null}
-                  </button>
+                    <span className="max-w-full truncate">{c.label}</span>
+                    {c.connected ? <span className="text-fs-2xs text-(--success-soft)">{text("Connected", "已接入")}</span> : null}
+                  </Button>
                 ))}
               </div>
             </>
           ) : null}
-          <div className={styles.group}>{text("On this machine", "本机")}</div>
+          <FieldTitle>{text("On this machine", "本机")}</FieldTitle>
           <div className="grid grid-cols-4 gap-[6px]">
             {local.map((row) => {
               const p = byId.get(row.id);
               return (
-                <button key={row.id} type="button" className={styles.tile} data-provider={row.id}
+                <Button key={row.id} variant="ghost" className="h-auto min-w-0 flex-col gap-1.5 px-1 pt-3 pb-2.5 text-fs-xs font-normal text-text-primary" data-provider={row.id}
                   onClick={() => onPick({ id: row.id, label: row.label, auth: "local", console_url: null, env_var: null, variants: [] })}>
                   <ProviderIcon id={row.id} size={40} plate="brand" />
-                  <span>{p?.label ?? row.label}</span>
-                  {row.enabled ? <span className={styles.tileConnected}>{text("Connected", "已接入")}</span> : null}
-                </button>
+                  <span className="max-w-full truncate">{p?.label ?? row.label}</span>
+                  {row.enabled ? <span className="text-fs-2xs text-(--success-soft)">{text("Connected", "已接入")}</span> : null}
+                </Button>
               );
             })}
-            <button type="button" className={styles.tile} onClick={onCustom} data-provider="custom">
-              <span className={styles.plus}><Plus size={16} aria-hidden="true" /></span>
+            <Button variant="ghost" className="h-auto min-w-0 flex-col gap-1.5 px-1 pt-3 pb-2.5 text-fs-xs font-normal text-text-primary" onClick={onCustom} data-provider="custom">
+              <span className="inline-flex size-10 items-center justify-center rounded-lg bg-muted text-text-secondary"><Plus aria-hidden="true" /></span>
               <span>{text("Custom", "自定义")}</span>
-            </button>
+            </Button>
           </div>
           <Button variant="ghost" size="sm" className="self-start" onClick={() => setAll(true)}>
             {count ? text(`All providers (${count})`, `全部服务商（${count}）`) : text("All providers", "全部服务商")}

@@ -33,6 +33,10 @@ class Block(TypedDict, total=False):
     provider_executed: bool
     citations: list[Any]
     timestamp: float
+    # The task and the step a text, thinking or tool block belongs to
+    # (``state/task_blocks.py``); absent when it belongs to none.
+    task: str
+    step: str
 
 
 class Row(TypedDict, total=False):

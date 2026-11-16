@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.host._platform import filesystem
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 
 def test_filesystem_path_preserves_short_windows_paths(tmp_path: Path) -> None:

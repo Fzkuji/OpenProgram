@@ -70,8 +70,6 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/appearance")) return "appearance";
     if (pathname.startsWith("/settings/system")) return "system";
     if (pathname.startsWith("/settings/versions")) return "versions";
-    // Credential pools (/settings/auth) belong with LLM Providers.
-    if (pathname.startsWith("/settings/auth")) return "providers";
     if (pathname.startsWith("/settings/providers")) return "providers";
     return "general";
   })();

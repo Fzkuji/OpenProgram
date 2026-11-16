@@ -20,7 +20,7 @@ def _run(
     label: str | None,
     context: str,
 ) -> dict:
-    from openprogram.runtime.conversation.sub_agent_run import run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn
 
     branch_from = parent_msg_id if context == "inherit" else None
     result = run_agent_turn(

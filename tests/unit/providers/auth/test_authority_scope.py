@@ -242,7 +242,7 @@ def test_task_authority_fields_do_not_shift_existing_positional_arguments():
 
 def test_tier_denial_precedes_bypass_and_returns_structured_reason(authority_state):
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.models.providers.types import AgentTool, AgentToolResult
     from openprogram.models.providers.types import TextContent
 
@@ -286,7 +286,7 @@ def test_paired_memory_append_handshake_runs_without_local_approval(
     authority_state, monkeypatch, tool_name,
 ):
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.models.providers.types import AgentTool, AgentToolResult
 
     calls = []

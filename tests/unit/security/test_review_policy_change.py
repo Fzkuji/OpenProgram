@@ -7,7 +7,7 @@ from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.runtime.agent.turn_request import TurnRequest
 from openprogram.runtime.permissions import update_permission
 from openprogram.runtime.permissions.authority import local_owner_authority
-from openprogram.runtime.permissions.lifecycle import wrap_live_permission
+from openprogram.runtime.permissions.approvals.lifecycle import wrap_live_permission
 from openprogram.runtime.permissions.modes import PermissionRules
 from openprogram.state.store.session.session_store import SessionStore
 

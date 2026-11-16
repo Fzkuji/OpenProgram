@@ -37,7 +37,7 @@
 <tr><th scope="row">重新加载</th><td><code translate="no">session_loaded.data.settings</code></td><td>刷新或换客户端后恢复列表</td></tr>
 <tr><th scope="row">每轮</th><td><code translate="no">load_session_run_config</code> → <code translate="no">TurnRequest.additional_working_dirs</code></td><td></td></tr>
 <tr><th scope="row">围栏</th><td><code translate="no">runtime/permissions/identity.py</code> 的 <code translate="no">_path_is_safe</code> → <code translate="no">check_path_safety</code></td><td><code translate="no">[current_worktree_path() or getcwd(), *dirs]</code></td></tr>
-<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/components.py</code></td><td>列表非空才有这一行</td></tr>
+<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/prompt_assembly/components.py</code></td><td>列表非空才有这一行</td></tr>
 </tbody>
 </table>
 <p class="note">Dispatcher 每轮把真实 cwd 绑进 <code translate="no">current_worktree_path</code>，<code translate="no">getcwd</code> 只是兜底。</p>
@@ -69,10 +69,10 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">覆盖</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>往返、“None 表示不变”、<code translate="no">_as_str_list</code> 清洗</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_config.py</code></th><td>往返、“None 表示不变”、<code translate="no">_as_str_list</code> 清洗</td></tr>
 <tr><th scope="row"><code translate="no">tests/unit/security/test_permission_rules.py</code></th><td><code translate="no">_path_is_safe</code>：目录内、目录外、ContextVar cwd 内</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/webui/test_ws_working_dirs.py</code></th><td>合法写入和广播、整帧拒绝、<code translate="no">session_loaded</code> 往返</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_main_workdir.py</code></th><td>冻结、缺失目录解析、relocate 节点，以及冻结后编辑附加目录</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/webui/chat/test_ws_working_dirs.py</code></th><td>合法写入和广播、整帧拒绝、<code translate="no">session_loaded</code> 往返</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_main_workdir.py</code></th><td>冻结、缺失目录解析、relocate 节点，以及冻结后编辑附加目录</td></tr>
 </tbody>
 </table>
 </details>

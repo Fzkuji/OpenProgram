@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.runtime.conversation.workdir import (
+from openprogram.runtime.conversation.session_settings.workdir import (
     apply_default_workdir,
     project_workdir_for,
     session_workdir_for,

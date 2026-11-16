@@ -1,0 +1,80 @@
+<title>使用多个密钥</title>
+<meta name="description" content="给一个 Provider 添加多个 API 密钥或登录账号，决定使用顺序，把对话固定到其中一个，以及密钥停用时会怎样。">
+<meta name="covers" content="apps/web/components/settings/providers/detail/credentials-section.tsx apps/web/components/chat/top-bar/menus/provider-keys.tsx openprogram/interfaces/server/routes/identity/provider_credentials.py">
+<h1>使用多个密钥</h1>
+<p>一个 Provider 可以有多个 API 密钥或登录账号。它们组成一个列表，从上往下使用。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Provider 的列表有 Personal、Work 和 Old team key。对话使用 Personal。Personal 被限流后，下一次请求改用 Work，回复里显示一行：已换到 Work：Personal 触发了速率限制。Old team key 无效，被跳过。">
+  <defs><marker id="sk-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="20">Provider 的列表</text>
+  <rect class="tile" x="0" y="34" width="210" height="40" rx="8"/>
+  <text class="t-big" x="16" y="59">1  Personal</text>
+  <rect class="tile" x="0" y="84" width="210" height="40" rx="8"/>
+  <text class="t-big" x="16" y="109">2  Work</text>
+  <rect class="tile" x="0" y="134" width="210" height="40" rx="8"/>
+  <text class="t-no" x="16" y="159">3  Old team key</text>
+  <line class="ln" x1="222" y1="54" x2="330" y2="54" marker-end="url(#sk-a)"/>
+  <text class="t-big" x="342" y="59">对话</text>
+  <text class="t-soft" x="342" y="80">Personal 可用时一直用它</text>
+  <line class="ln-acc" x1="222" y1="104" x2="330" y2="104" marker-end="url(#sk-a)"/>
+  <text class="t-big" x="342" y="109">Personal 被限流</text>
+  <text class="t-soft" x="342" y="130">下一次请求改用 Work，回复里写着</text>
+  <text class="t-cmd" x="342" y="150">已换到 Work：Personal 触发了速率限制</text>
+  <text class="t-soft" x="342" y="176">无效的密钥会被跳过，直到被更换</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>列表：Personal、Work、Old team key</li>
+<li class="via">对话在 Personal 可用时一直用它</li>
+<li class="via">Personal 被限流：下一次请求改用 Work，回复里写着“已换到 Work：Personal 触发了速率限制”</li>
+<li class="flow-end">无效的密钥会被跳过，直到被更换</li>
+</ol>
+</figure>
+
+<h2 id="add">添加密钥</h2>
+<p>设置 → LLM Providers，在 Provider 卡片上（或它在公司卡片里的那一节）点<strong>添加密钥</strong>（Provider 还没有密钥时是实心按钮）；订阅服务点<strong>登录另一个账号</strong>。有多种连接方式的 Provider 会先列出这些方式，推荐的排在最上面。</p>
+<p>密钥保存前先向 Provider 检查，对话框会说明结果：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">结果</th><th scope="col">是否保存</th></tr></thead>
+<tbody>
+<tr><th scope="row">密钥可用 · 42 个模型</th><td>保存</td></tr>
+<tr><th scope="row">密钥可用 · 余额不足</th><td>保存，附带去充值页面的“充值”</td></tr>
+<tr><th scope="row">密钥已保存 · 未能验证</th><td>保存：Provider 接受了密钥，但没法证明它能应答</td></tr>
+<tr><th scope="row">无法连接 Provider</th><td>保存，附带“重试”</td></tr>
+<tr><th scope="row">密钥被拒绝</th><td>不保存：换一个密钥粘贴，或点“获取密钥”</td></tr>
+</tbody>
+</table>
+<p class="note">名称可以不填，不填时这一行显示“Key ····c41e”。密钥不会再显示，只显示最后四个字符。Worker 环境变量里的密钥单独占一行，显示变量名；把同一个密钥粘贴到这里也会保存，变量不在了照样能用，列表里只显示一次。</p>
+
+<h2 id="order">顺序和策略</h2>
+<p>有两个或更多密钥时，凭据区的列表上方可以选择：</p>
+<dl class="pairs">
+<dt>按顺序</dt><dd>用第一个可用的密钥，其余作为备用。默认选项。</dd>
+<dt>平均</dt><dd>新对话在可用的密钥之间轮流使用。</dd>
+<dt>最少使用</dt><dd>新对话使用今天用得最少的密钥。</dd>
+</dl>
+<p>按住行首的把手拖动，或在行的 ⋯ 菜单里选<strong>上移</strong> / <strong>下移</strong>。<strong>暂不使用</strong>保留密钥但跳过它，<strong>恢复使用</strong>让它回来。<strong>删除…</strong>是唯一需要确认的操作。</p>
+
+<h2 id="pin">把对话固定到一个密钥</h2>
+<p>输入框的模型菜单里，有两个或更多密钥的服务商在模型下面接着写<strong>这个对话使用 Personal</strong>，再列出<strong>自动（按顺序）</strong>和每个密钥的状态；选一个密钥，这个对话就固定用它，勾从自动移到那个密钥上。</p>
+<p class="note">现在无法应答的密钥不能选。其他对话仍按列表使用。</p>
+
+<h2 id="stops">密钥停用时</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">行上显示</th><th scope="col">会怎样，怎么处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">14:32 恢复</th><td>被限流：在那之前跳过，到时自动恢复使用</td></tr>
+<tr><th scope="row">额度用完</th><td>额度重置前跳过。Provider 卡片上的<strong>充值</strong>会打开这一行</td></tr>
+<tr><th scope="row">密钥无效</th><td>Provider 拒绝了它。<strong>更换</strong>把新密钥粘贴到同一行，名称和位置不变</td></tr>
+<tr><th scope="row">需要重新登录</th><td>登录已失效。<strong>重新登录</strong>更新同一行</td></tr>
+</tbody>
+</table>
+<p>所有密钥都在等待时，回复里写着“等待 Work，30 秒后恢复”。</p>
+
+<h2 id="terminal">在终端里</h2>
+<pre translate="no"><code>openprogram providers keys openai list
+openprogram providers keys openai add --name work
+openprogram providers keys openai move work --to 1
+openprogram providers keys openai strategy evenly</code></pre>
+<p class="note">终端界面里，<code translate="no">/login &lt;provider&gt;</code> 打开同一个列表：检查、重命名、暂不使用、移动、删除，或添加密钥和账号。</p>
+
+<p class="next"><a href="auth.html">认证</a> · <a href="providers.html">Provider</a></p>

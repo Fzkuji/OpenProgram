@@ -10,10 +10,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from openprogram.interfaces.channels import _session_routing as R
-from openprogram.interfaces.channels import _transport
-from openprogram.interfaces.channels._conversation import _BlockStreamer
-from openprogram.interfaces.channels._transport import SendResult, _classify_network_error
+from openprogram.interfaces.channels.inbound import _session_routing as R
+from openprogram.interfaces.channels.delivery import _transport
+from openprogram.interfaces.channels.inbound._conversation import _BlockStreamer
+from openprogram.interfaces.channels.delivery._transport import SendResult, _classify_network_error
 from openprogram.runtime import channel_link
 from openprogram.runtime.conversation.always_on import delivery, runtime, store, ticker
 from openprogram.state.store.session.session_store import SessionStore
@@ -108,7 +108,7 @@ def test_default_agent_keys_are_unchanged() -> None:
 def posted(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     out: list[str] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text: out.append(text)
         or SendResult.success(""))
     return out
@@ -171,7 +171,7 @@ def test_a_deleted_conversation_moves_the_peer_to_a_new_session(
 
 def test_session_deleted_reads_the_store_delete_mark(tmp_path) -> None:
     from openprogram.runtime.context import session_db
-    from openprogram.state.store.session.placement import record_delete_intent
+    from openprogram.state.store.session.files.placement import record_delete_intent
 
     root = tmp_path / "projects"
     root.mkdir()

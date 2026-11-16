@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _conversation as C
+from openprogram.interfaces.channels.inbound import _conversation as C
 from openprogram.interfaces.channels import accounts as _accounts
 from openprogram.interfaces.server.ws_actions.chat import conversation_channel as CC
 from openprogram.runtime.agent_registry import session_aliases as A
@@ -204,7 +204,7 @@ def test_chat_with_several_peers_loses_only_the_one_taken(env) -> None:
 
 
 def test_chat_left_with_another_peer_stops_naming_the_one_taken(env) -> None:
-    from openprogram.interfaces.channels._question_bridge import _channel_target_for_session
+    from openprogram.interfaces.channels.inbound._question_bridge import _channel_target_for_session
 
     server, db = env
     _telegram(server, "local_other", "carol")

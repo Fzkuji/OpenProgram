@@ -23,8 +23,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
-from openprogram.models.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.interfaces.server.routes.identity import accounts, providers
+from openprogram.models.auth.types import Credential, CredentialData
+from openprogram.interfaces.server.routes.identity import provider_credentials, providers
 from openprogram.interfaces.server.routes.settings import config
 
 
@@ -73,16 +73,9 @@ def _normalize_in_browser_code(cases: list[tuple[str, str]]) -> list[str | None]
 def secret_flow(tmp_path, monkeypatch):
     """Live route app whose credential probe always accepts."""
     from openprogram.state import config as user_config
-    from openprogram.models.auth.account import account_priority
-    from openprogram.models.auth.account import account_selection
-    from openprogram.models.auth import rotation
     from openprogram.models.listing import credentials
 
     monkeypatch.setattr(user_config, "get_config_path", lambda: tmp_path / "config.json")
-
-    sidecar_root = tmp_path / "sidecars"
-    for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "default_root", lambda: sidecar_root)
 
     for name in ("OPENAI_API_KEY", "TAVILY_API_KEY"):
         monkeypatch.delenv(name, raising=False)
@@ -97,43 +90,33 @@ def secret_flow(tmp_path, monkeypatch):
 
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
-    store.put_pool(
-        CredentialPool(
+    cred = store.add_credential(
+        Credential(
             provider_id="openai",
-            account_id="work",
-            credentials=[
-                Credential(
-                    provider_id="openai",
-                    account_id="work",
-                    kind="api_key",
-                    payload=CredentialData(
-                        kind="api_key", auth_value=_STORED_SECRET
-                    ),
-                )
-            ],
+            kind="api_key",
+            label="work",
+            payload=CredentialData(kind="api_key", auth_value=_STORED_SECRET),
         )
     )
 
     app = FastAPI()
     providers.register(app)
-    accounts.register(app)
+    provider_credentials.register(app)
     config.register(app)
     with TestClient(app, raise_server_exceptions=False) as client:
-        yield SimpleNamespace(client=client, store=store, user_config=user_config)
+        yield SimpleNamespace(client=client, store=store, user_config=user_config, cid=cred.id)
 
     set_store_for_testing(None)
 
 
 def _stored_secret(store: AuthStore) -> str:
-    pool = store.find_pool("openai", "work")
-    assert pool is not None
-    return pool.credentials[0].payload.auth_value
+    return store.get("openai").credentials[0].payload.auth_value
 
 
 def _displayed_mask(client: TestClient) -> str:
-    """The mask the account list actually hands the form."""
-    listing = client.get("/api/providers/openai/accounts").json()
-    return listing["accounts"][0]["masked_key"]
+    """The key as the credential list lets the form show it."""
+    listing = client.get("/api/providers/openai/credentials").json()
+    return "····" + listing["credentials"][0]["key_tail"]
 
 
 def test_empty_submission_never_reaches_the_backend(secret_flow):
@@ -183,8 +166,8 @@ def test_resubmitted_mask_is_refused_by_form_and_backend(secret_flow):
     assert _normalize_in_browser_code([(mask, mask)]) == [None]
 
     response = secret_flow.client.post(
-        "/api/providers/openai/accounts/work/update",
-        json={"api_key": mask, "validate": True},
+        f"/api/providers/openai/credentials/{secret_flow.cid}/replace",
+        json={"api_key": mask},
     )
 
     assert response.status_code == 400
@@ -209,8 +192,8 @@ def test_valid_replacement_rotates_and_retires_the_old_secret(secret_flow):
     assert _normalize_in_browser_code([(f"  {_NEW_SECRET}  ", mask)]) == [_NEW_SECRET]
 
     response = secret_flow.client.post(
-        "/api/providers/openai/accounts/work/update",
-        json={"api_key": _NEW_SECRET, "validate": True},
+        f"/api/providers/openai/credentials/{secret_flow.cid}/replace",
+        json={"api_key": _NEW_SECRET},
     )
 
     assert response.status_code == 200
@@ -218,7 +201,7 @@ def test_valid_replacement_rotates_and_retires_the_old_secret(secret_flow):
 
     # The retired secret is unreachable through every read path.
     for path in (
-        "/api/providers/openai/accounts",
+        "/api/providers/openai/credentials",
         "/api/config",
         "/api/config/key/OPENAI_API_KEY",
     ):
@@ -235,9 +218,8 @@ def test_no_read_path_returns_either_secret_in_plaintext(secret_flow, monkeypatc
         "/api/config/key/OPENAI_API_KEY",
         "/api/config/key/OPENAI_API_KEY?reveal=1",
         "/api/settings",
-        "/api/providers/openai/accounts",
+        "/api/providers/openai/credentials",
         "/api/providers/openai/config",
-        "/api/providers/openai/accounts/work/reveal",
         "/api/search-providers/list",
     ]
     for path in paths:

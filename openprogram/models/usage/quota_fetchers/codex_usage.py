@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from openprogram.models.providers.utils.rate_limit import CodexCredits, CodexRateLimits, CodexWindow
+from openprogram.models.providers.utils.http_transport.rate_limit import CodexCredits, CodexRateLimits, CodexWindow
 
 from ..quota import SOURCE_ENDPOINT, QuotaLimit, codex_limits
 

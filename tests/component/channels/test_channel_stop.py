@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _conversation, _room
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _conversation, _room
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 from openprogram.runtime.execution import AttemptStore, ExecutionStore
 from openprogram.runtime.execution.control import RuntimeControlService
@@ -28,11 +28,11 @@ def _state(tmp_path, monkeypatch: pytest.MonkeyPatch):
     state.mkdir(mode=0o700)
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation._route",
+        "openprogram.interfaces.channels.inbound._conversation._route",
         lambda channel, account_id, peer, *, rotate=True: ("main", SESSION, "base"),
     )
     _room.reset_state()
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
     _access.approve_user("faketg", "acct1", "701")
     yield
     _room.reset_state()

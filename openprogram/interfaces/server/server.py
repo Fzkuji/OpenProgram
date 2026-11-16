@@ -34,7 +34,7 @@ from openprogram.runtime.execution.run_control import (  # noqa: F401 -- server 
     reset_current_session_id as _reset_current_session_id,
 )
 from openprogram.host.cancellation import CancelledError as _CancelledError  # noqa: F401 -- server namespace, read as server.<name>
-from openprogram.runtime.execution.dag import reconcile_interrupted_runs
+from openprogram.runtime.execution.projections.dag import reconcile_interrupted_runs
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,7 @@ from .server_runtime.session_lifecycle import (  # noqa: F401 -- server namespac
     _stop_session_work,
     _get_or_create_session,
     _canonical_foreground_task,
+    _reported_run_task,
     _is_run_active,
     _is_selected_run_active,
     _side_branch_tasks,
@@ -917,11 +918,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.interfaces.server.routes.identity import provider_login as _routes_provider_login
     _routes_provider_login.register(app)
 
-    # Generic per-provider account management (/api/providers/{id}/accounts/*).
-    # Registered AFTER providers.py so its literal /claude-code/accounts routes
-    # match first; this module serves every other provider from the AuthStore.
-    from openprogram.interfaces.server.routes.identity import accounts as _routes_accounts
-    _routes_accounts.register(app)
+    # A provider's credentials (/api/providers/{id}/credentials*) and a
+    # conversation's pin (/api/sessions/{id}/credentials).
+    from openprogram.interfaces.server.routes.identity import provider_credentials as _routes_credentials
+    _routes_credentials.register(app)
 
     # /api/config GET/POST registered from routes.config
     from openprogram.interfaces.server.routes.settings import config as _routes_config

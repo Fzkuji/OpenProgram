@@ -7,8 +7,8 @@ import time
 from typing import Mapping
 from .. import hooks
 from ..attempts import AttemptConflict, AttemptStatus
-from .. import restart as restart_policy
-from ..restart import journal_head, publish_position
+from ..recovery import restart as restart_policy
+from ..recovery.restart import journal_head, publish_position
 from ..model import CommandKind, CommandStatus, ExecutionStatus, TERMINAL_EXECUTION_STATUSES, _json
 from ..store import ExecutionConflict
 
@@ -26,7 +26,7 @@ _OTHER_PROCESS_CHECK_SECONDS = 2.0
 class RecoveryOperations:
     def close_interrupted_chat(self, execution_id: str, *, expected_version: int):
         """Close only the dead frame. Unknown effects stay in the durable ledger."""
-        from ..chat_recovery import recovery_state
+        from ..recovery.chat_recovery import recovery_state
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
             if execution.status_version != expected_version:
@@ -157,7 +157,7 @@ class RecoveryOperations:
                     status=[CommandStatus.ACCEPTED.value, CommandStatus.APPLYING.value],
                 )
                 request = agent_input.get("turn_request" if is_job else "request", {})
-                from openprogram.runtime.execution.slash_actions import slash_action_of
+                from openprogram.runtime.execution.admission_input.slash_actions import slash_action_of
                 interaction = request.get("interaction") if isinstance(request, Mapping) else None
                 slash_action = slash_action_of(dict(request)) if isinstance(request, Mapping) else None
                 # A turn with no finished model decision has done nothing yet,
@@ -186,7 +186,7 @@ class RecoveryOperations:
                     command_kind = CommandKind.PAUSE
                     apply_command = True
             elif execution.status is ExecutionStatus.RUNNING:
-                from ..restart import crash_checkpoint
+                from ..recovery.restart import crash_checkpoint
                 restart_checkpoint = (None if unresolved or not continuable
                                       else crash_checkpoint(self, connection, execution, journal))
                 execution = self.executions._require_execution(connection, execution_id)
@@ -253,17 +253,17 @@ class RecoveryOperations:
                 clear_owner=True,
             )
             if restart_checkpoint is not None:
-                from ..restart import record_intent
+                from ..recovery.restart import record_intent
                 record_intent(self.executions, connection, recovered,
                               interrupted_at=restart_checkpoint[0], seconds=restart_checkpoint[1])
             elif restart_pending and recovered.status is ExecutionStatus.PAUSED:
-                from ..restart import record_intent
+                from ..recovery.restart import record_intent
                 prior = self.attempts._require(connection, execution.current_attempt_id)
                 record_intent(self.executions, connection, recovered,
                               interrupted_at=max(prior.updated_at, execution.updated_at),
                               seconds=restart_policy.window_seconds())
             elif restart_new_turn:
-                from ..restart import record_intent
+                from ..recovery.restart import record_intent
                 prior = self.attempts._require(connection, execution.current_attempt_id)
                 record_intent(self.executions, connection, recovered,
                               interrupted_at=max(prior.updated_at, execution.updated_at),
@@ -449,7 +449,7 @@ class RecoveryOperations:
                         if process_owner_may_be_alive(current.owner_lease):
                             continue
                         admission = self.executions.get_agent_turn_input(execution.execution_id)
-                        from openprogram.runtime.execution.slash_actions import slash_action_of
+                        from openprogram.runtime.execution.admission_input.slash_actions import slash_action_of
                         request = admission.get("request", {})
                         restart = (
                             admission.get("kind") == "chat"
@@ -462,7 +462,7 @@ class RecoveryOperations:
                             reason_code="restart_pending" if restart else "owner_lost_before_activation",
                         )
                         if restart:
-                            from ..restart import record_intent
+                            from ..recovery.restart import record_intent
                             record_intent(self.executions, connection, recovered,
                                           interrupted_at=current.updated_at, seconds=restart_policy.window_seconds())
                 except (AttemptConflict, ExecutionConflict):

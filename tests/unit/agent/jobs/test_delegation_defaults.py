@@ -364,7 +364,7 @@ def test_an_edit_outside_the_roster_breaks_nothing(monkeypatch):
 
 def test_explorer_runs_on_the_lightweight_helpers_model(monkeypatch):
     from openprogram.runtime.agent_registry import builtin_agents, manager
-    from openprogram.runtime.conversation import session_model
+    from openprogram.runtime.conversation.session_settings import session_model
     helper = _spec(id="utility", model=manager.AgentModelRef(provider="p", id="small"))
     explorer = _spec(id="explorer")
     rows = {"utility": helper, "explorer": explorer}
@@ -415,7 +415,7 @@ def test_a_forked_helper_sends_the_prompt_its_caller_recorded(monkeypatch):
         seen.append((session_id, head_id))
         return caller_prompt
 
-    monkeypatch.setattr("openprogram.runtime.context.system_prompt_node.latest_recorded_prompt", recorded)
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.system_prompt_node.latest_recorded_prompt", recorded)
     monkeypatch.setattr("openprogram.runtime.context.Context.turn_store", staticmethod(lambda sid: object()))
     req = SimpleNamespace(session_id="p1", branch_from="a1")
 

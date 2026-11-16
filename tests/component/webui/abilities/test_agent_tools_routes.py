@@ -265,7 +265,7 @@ def test_agent_duplicate_copies_configuration_without_sessions(tmp_path, monkeyp
     (project / "AGENTS.md").write_text("root rules", encoding="utf-8")
     (project / "pkg" / "AGENTS.md").write_text("pkg rules", encoding="utf-8")
     monkeypatch.setenv("OPENPROGRAM_WORKDIR", str(project / "pkg"))
-    from openprogram.runtime.context import agents_md as agents_md_module
+    from openprogram.runtime.context.prompt_assembly import agents_md as agents_md_module
     monkeypatch.setattr(agents_md_module, "global_path", lambda: tmp_path / "AGENTS.md")
     agents_md = client.get("/api/agents-md")
     assert agents_md.status_code == 200

@@ -5,7 +5,7 @@ WebSocket), is bounded three ways, whichever trips first:
 
 * no bytes at all for ``STREAM_IDLE_TIMEOUT_S`` — a dead connection;
 * no real data for ``STREAM_DATA_STALL_TIMEOUT_S`` — the stream idle bound
-  every streamed request is read under (``utils/stream_idle.py``): a stream
+  every streamed request is read under (``utils/streams/stream_idle.py``): a stream
   that stalls, or only sends keepalives;
 * the optional total ``STREAM_TOTAL_TIMEOUT_S`` and the caller's own
   deadline (``runtime.exec(timeout_s=…)``).
@@ -23,9 +23,9 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
-from openprogram.models.providers.utils.deadline import remaining as deadline_remaining
-from openprogram.models.providers.utils.stream_idle import StreamIdleTimeout
-from openprogram.models.providers.utils.timeouts import (
+from openprogram.models.providers.utils.http_transport.deadline import remaining as deadline_remaining
+from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
+from openprogram.models.providers.utils.http_transport.timeouts import (
     STREAM_DATA_STALL_TIMEOUT_S,
     STREAM_IDLE_TIMEOUT_S,
     STREAM_TOTAL_TIMEOUT_S,
@@ -68,7 +68,7 @@ class ReadBudget:
         try:
             while True:
                 if self._cancelled():
-                    from openprogram.models.providers.utils.errors import StreamAborted
+                    from openprogram.models.providers.utils.failures.errors import StreamAborted
 
                     raise StreamAborted("stream cancelled by caller signal")
                 now = time.monotonic()

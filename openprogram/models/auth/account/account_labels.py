@@ -1,4 +1,4 @@
-"""Stable account ids and human-readable account labels."""
+"""What a sign-in says about its account, and the label a credential is shown with."""
 from __future__ import annotations
 
 import base64
@@ -39,6 +39,40 @@ def _jwt_claims(token: object) -> dict:
         return {}
 
 
+_OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
+
+
+def token_identity(id_token: object) -> dict:
+    """``{"email", "plan"}`` an OpenID ``id_token`` names (empty values left
+    out). The plan is ChatGPT's ``chatgpt_plan_type`` claim, when there is one."""
+    claims = _jwt_claims(id_token)
+    out = {}
+    if claims.get("email"):
+        out["email"] = str(claims["email"]).strip()
+    openai = claims.get(_OPENAI_AUTH_CLAIM) if isinstance(claims.get(_OPENAI_AUTH_CLAIM), dict) else {}
+    plan = openai.get("chatgpt_plan_type") or claims.get(f"{_OPENAI_AUTH_CLAIM}.chatgpt_plan_type")
+    if plan:
+        out["plan"] = str(plan).strip()
+    return out
+
+
+def file_identity(path: object) -> dict:
+    """What another tool's sign-in file says about its account: the email
+    and plan in its ``id_token`` (``tokens.id_token`` for the Codex CLI,
+    ``id_token`` for the Gemini CLI). Empty when the file cannot be read."""
+    if not path:
+        return {}
+    from pathlib import Path
+    try:
+        data = json.loads(Path(str(path)).expanduser().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+    return token_identity(tokens.get("id_token") or data.get("id_token"))
+
+
 def account_identity(cred: Credential | None) -> tuple[str, str]:
     """Return ``(email, display_name)`` from non-secret OAuth identity data."""
     if cred is None:
@@ -69,38 +103,34 @@ def account_identity(cred: Credential | None) -> tuple[str, str]:
     return str(email).strip(), str(display_name).strip()
 
 
-def apply_account_label(cred: Credential, requested_label: str = "") -> Credential:
-    """Persist identity metadata and a label without changing ``account_id``."""
-    label = normalize_account_label(requested_label, allow_empty=True)
+def identity_of(cred: Credential) -> dict:
+    """``{"email", "name", ...}`` a sign-in carries, merged over what the
+    credential already records; empty values are left out."""
     email, display_name = account_identity(cred)
-    metadata = dict(cred.metadata or {})
+    identity = dict(cred.identity or {})
     if email:
-        metadata.setdefault("email", email)
+        identity.setdefault("email", email)
     if display_name:
-        metadata.setdefault("display_name", display_name)
+        identity.setdefault("name", display_name)
+    return {k: v for k, v in identity.items() if v}
+
+
+def apply_account_label(cred: Credential, requested_label: str = "") -> Credential:
+    """Record the sign-in's identity on ``cred`` and set its label when one
+    was asked for."""
+    label = normalize_account_label(requested_label, allow_empty=True)
+    cred.identity = identity_of(cred)
     if label:
-        metadata["label"] = label
-    elif not metadata.get("label"):
-        metadata["label"] = email or display_name or cred.account_id
-    cred.metadata = metadata
+        cred.label = label
     return cred
-
-
-def effective_account_label(cred: Credential | None, account_id: str) -> str:
-    metadata = (cred.metadata or {}) if cred else {}
-    stored = metadata.get("label") if isinstance(metadata, dict) else ""
-    try:
-        stored = normalize_account_label(stored, allow_empty=True)
-    except ValueError:
-        stored = ""
-    email, display_name = account_identity(cred)
-    return stored or email or display_name or account_id
 
 
 __all__ = [
     "MAX_ACCOUNT_LABEL_CHARS",
     "account_identity",
     "apply_account_label",
-    "effective_account_label",
+    "file_identity",
+    "identity_of",
     "normalize_account_label",
+    "token_identity",
 ]

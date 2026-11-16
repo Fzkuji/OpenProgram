@@ -63,7 +63,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>An external message arrived.<br><code translate="no">interfaces/channels/_conversation.py</code></td></tr>
+<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>An external message arrived.<br><code translate="no">interfaces/channels/inbound/_conversation.py</code></td></tr>
 <tr><th scope="row"><code translate="no">branch.message_sent</code><span class="arg">agent</span></th><td><code translate="no">{from, to}</code></td><td>A message went to another session branch.<br><code translate="no">programs/tools/agents/send_message/send_message/send_message.py, programs/tools/agents/agent/agent/agent.py</code></td></tr>
 <tr><th scope="row"><code translate="no">agents.listed</code><span class="arg">agent</span></th><td><code translate="no">{sessions, branches}</code></td><td><code translate="no">list_agents</code> enumerated targets.<br><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py</code></td></tr>
 <tr><th scope="row"><code translate="no">subagent.started</code><span class="arg">system</span></th><td><code translate="no">{job_id, label}</code></td><td>A background Agent job entered running.<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
@@ -110,7 +110,7 @@ remove = get_event_bus().subscribe_gate("tool.before", guard)</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Type</th><th scope="col">State</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">credential.cooldown</code>, <code translate="no">credential.rotated</code>, <code translate="no">credential.exhausted</code></th><td>Translated from AuthEvent by <code translate="no">bridges.py</code>, payload <code translate="no">{provider, profile, credential, detail}</code>. The bus tolerates them and warns once per type.</td></tr>
+<tr><th scope="row"><code translate="no">credential.cooldown</code>, <code translate="no">credential.rotated</code>, <code translate="no">credential.exhausted</code></th><td>Translated from AuthEvent by <code translate="no">bridges.py</code>, payload <code translate="no">{provider, credential, detail}</code>. The bus tolerates them and warns once per type.</td></tr>
 <tr><th scope="row"><code translate="no">proactive.inject</code>, <code translate="no">proactive.prepare_requested</code></th><td>Derived events of the proactive engine, which is not installed.</td></tr>
 <tr><th scope="row"><code translate="no">question.replied</code>, <code translate="no">question.rejected</code>, <code translate="no">programs:changed</code></th><td>Frame types inside <code translate="no">ws.frame</code>, not typed events. Spawns, attach cards, reports, notices, merges and deletions reach an open chat as <code translate="no">transcript_update</code>.</td></tr>
 </tbody>

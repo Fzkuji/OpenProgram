@@ -50,10 +50,10 @@ STOP_LOCK_WAIT_SECONDS = 5.0
 CHECK_IN_TOOLS = (
     "read", "grep", "glob", "list", "web_search", "web_fetch",
     "read_conversation", "list_agents", "memory_search", "memory_get",
-    "todo_list", "open_work", "get_goal",
+    "task_list", "open_work", "get_goal",
     "always_on_report", "always_on_schedule",
 )
-ACT_TOOLS = ("create_goal", "todo_create", "todo_update", "send_message")
+ACT_TOOLS = ("create_goal", "task_start", "task_step", "send_message")
 
 # Hours to the next wake when the Agent has no fixed interval. Each wake
 # with nothing from the user moves one step along; a message from the user
@@ -351,8 +351,8 @@ def check_in_prompt(config: dict, last_check_in: float | None, now: float, *,
         "themselves. Use read_conversation on the branch when the user asks about them.")
     if config.get("autonomy") == "act":
         lines.append(
-            "If a finding needs real work, you may create a Goal for it with create_goal and plan it "
-            "with the todo tools; it runs next under your normal permissions, without page scripts "
+            "If a finding needs real work, you may create a Goal for it with create_goal and plan its "
+            "steps with task_progress on your calls; it runs next under your normal permissions, without page scripts "
             "or destructive deletes. When another of the "
             "user's conversations owns that kind of work, send it there with send_message instead. "
             "A check-in cannot wait for approval: a call that needs one is refused, so propose it "
@@ -379,7 +379,7 @@ def _agent_check_in_running(agent_id: str) -> bool:
 
 def _nothing_to_check(session_id: str, config: dict, state: dict) -> bool:
     """A scheduled check-in would have nothing to look at: no standing goal,
-    no unfinished open work or todos, and no message since the last check-in."""
+    no unfinished open work or task steps, and no message since the last check-in."""
     if (config.get("goal") or "").strip():
         return False
     last = state.get("last_check_in_at")
@@ -390,7 +390,13 @@ def _nothing_to_check(session_id: str, config: dict, state: dict) -> bool:
         from openprogram.programs.tools.planning.todo import shared as todos
         if open_work.open_items(session_id):
             return False
-        if any(item.get("status") != "completed" for item in todos.load(session_id)):
+        # Steps of a closed task are nobody's to finish: a task that never
+        # advanced ends with its steps as they were, and a sub-agent's run
+        # that stopped leaves its own behind.
+        open_tasks = {str(task.get("id")) for task in todos.load_tasks(session_id)
+                      if task.get("status") == "open" and not task.get("scope")}
+        if any(str(item.get("plan") or "") in open_tasks and item.get("status") in todos.UNFINISHED
+               for item in todos.load(session_id)):
             return False
         return _last_message_at(session_id) <= last
     except Exception:  # noqa: BLE001 - when in doubt, look
@@ -500,7 +506,7 @@ def _execution_ended(execution_id: str) -> bool:
     from openprogram.programs.tools.planning.goal.chat import settled_at_turn_end
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.execution.model import TERMINAL_EXECUTION_STATUSES
-    from openprogram.runtime.execution.restart import is_check_in
+    from openprogram.runtime.execution.recovery.restart import is_check_in
     executions = default_store()
     execution = executions.get_execution(execution_id)
     if execution is None or is_check_in(executions, execution_id):
@@ -753,7 +759,7 @@ def _run_turn(session_id: str, agent_id: str, text: str, tools: list[str], model
     import asyncio
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-    from openprogram.runtime.conversation.session_config import load_session_run_config, resolved_permission_mode
+    from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config, resolved_permission_mode
     from openprogram.runtime.permissions.authority import local_owner_authority, runtime_authority
     from openprogram.runtime.permissions.rule import load_merged_rules
 
@@ -796,7 +802,7 @@ def _cut_off_by_restart(execution_id: str | None, result: Any) -> bool:
     Worker would count the check-in as running until it next starts.
     """
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.restart import stopped_by_a_restart
+    from openprogram.runtime.execution.recovery.restart import stopped_by_a_restart
     from openprogram.runtime.scheduler.run_finish import has_ended
 
     if has_ended(result, None):
@@ -875,7 +881,7 @@ def _cut_short_by(execution_id: str | None, error: str | None) -> str | None:
 def _failure_taxonomy(exc: Exception) -> tuple[str | None, bool | None]:
     """The provider failure class of an exception that left the turn."""
     try:
-        from openprogram.models.providers.utils.errors import taxonomy_fields
+        from openprogram.models.providers.utils.failures.errors import taxonomy_fields
         reason, retryable, _retry_after = taxonomy_fields(exc)
     except Exception:  # noqa: BLE001 - an unclassified failure still counts
         _log.debug("check-in failure not classified", exc_info=True)

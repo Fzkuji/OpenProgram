@@ -98,7 +98,7 @@
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row">代码</th><td><code translate="no">apps/desktop/main.js</code>、<code translate="no">apps/web/components/center-tabs/browser/web-tab-pane.tsx</code>、<code translate="no">apps/web/lib/browser/web-tab/web-tab-bounds.ts</code></td></tr>
-<tr><th scope="row"><code translate="no">apps/desktop/tests/check-webtab-zoom-bounds.js</code></th><td>100% 和约 109.5% 缩放、无效缩放、两个 IPC 入口、桌面回归</td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/tests/web-views/check-webtab-zoom-bounds.js</code></th><td>100% 和约 109.5% 缩放、无效缩放、两个 IPC 入口、桌面回归</td></tr>
 <tr><th scope="row"><code translate="no">check:web-split</code></th><td>按网页 body 做矩形相交：左侧菜单不影响右侧网页；对话框、菜单、listbox 和全屏背板逐窗格判断；零面积和边缘接触不隐藏。通用 <code translate="no">DialogOverlay</code>、权限确认、右键点击捕获层和局部拖放浮层经 <code translate="no">data-native-view-occluder</code> 进入同一检查。</td></tr>
 <tr><th scope="row">安装版 App，缩放约 109.5%</th><td>DOM body 与原生视口都是 <code translate="no">568×763</code> DIP；窗口改为 <code translate="no">1350×800</code> 后都是 <code translate="no">526×712</code> DIP。还要检查分屏和分屏比例变化。</td></tr>
 </tbody>

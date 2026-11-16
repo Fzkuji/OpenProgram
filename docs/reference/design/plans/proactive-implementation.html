@@ -9,7 +9,7 @@
 <thead><tr><th scope="col">Design role</th><th scope="col">Mechanism</th><th scope="col">Location</th></tr></thead>
 <tbody>
 <tr><th scope="row">Event fan-out</th><td><code translate="no">EventBus</code></td><td><code translate="no">runtime/events/bus.py</code></td></tr>
-<tr><th scope="row">Gate's <code translate="no">ask</code></th><td><code translate="no">wrap_with_approval</code>; a denial returns an <code translate="no">is_error</code> tool result</td><td><code translate="no">runtime/permissions/approval.py</code></td></tr>
+<tr><th scope="row">Gate's <code translate="no">ask</code></th><td><code translate="no">wrap_with_approval</code>; a denial returns an <code translate="no">is_error</code> tool result</td><td><code translate="no">runtime/permissions/approvals/approval.py</code></td></tr>
 <tr><th scope="row"><code translate="no">Prepare</code> background task</th><td><code translate="no">JobRunner.spawn_job</code></td><td><code translate="no">runtime/jobs/runner/</code></td></tr>
 <tr><th scope="row"><code translate="no">Inject</code> landing</th><td>Memory prefetch and steering messages</td><td><code translate="no">runtime/agent/loop/</code></td></tr>
 <tr><th scope="row">Causality, rewind, branching</th><td>Session DAG, nodes carry <code translate="no">parent_id</code> and caller</td><td><code translate="no">runtime/context/git/</code></td></tr>
@@ -27,7 +27,7 @@
 <tr><th scope="row"><code translate="no">tool.after</code></th><td><code translate="no">tool_dispatch.py</code>, after every call</td></tr>
 <tr><th scope="row"><code translate="no">subagent.started</code>, <code translate="no">subagent.ended</code></th><td><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
 <tr><th scope="row"><code translate="no">file.changed</code></th><td>After a successful write in <code translate="no">programs/tools/files/</code>: <code translate="no">write.py</code>, <code translate="no">edit.py</code>, <code translate="no">apply_patch.py</code>, <code translate="no">_remote.py</code></td></tr>
-<tr><th scope="row">External sources</th><td><code translate="no">runtime/context/engine.py</code> (compaction), <code translate="no">interfaces/channels/_conversation.py</code>, <code translate="no">state/memory/session_watcher.py</code>, web server skills and plugins routes; auth through <code translate="no">runtime/events/bridges.py</code>, installed idempotently at worker start</td></tr>
+<tr><th scope="row">External sources</th><td><code translate="no">runtime/context/engine.py</code> (compaction), <code translate="no">interfaces/channels/inbound/_conversation.py</code>, <code translate="no">state/memory/session_watcher.py</code>, web server skills and plugins routes; auth through <code translate="no">runtime/events/bridges.py</code>, installed idempotently at worker start</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">emit_ws_frame</code> carries web frames over the bus and <code translate="no">interfaces/server/server.py</code> forwards them, so the job runner, sub-agent run, worktree manager, functions watcher and channel broadcast do not import the web UI.</p>

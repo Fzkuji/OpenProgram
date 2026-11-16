@@ -39,7 +39,7 @@ def _run(
     base_peer: int | None,
     branch_id: str | None = None,
 ) -> dict:
-    from openprogram.runtime.conversation.merge import process_merge_turn
+    from openprogram.runtime.conversation.peer_agents.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id=target_session_id,
         sub_sessions=sub_sessions,
@@ -97,7 +97,7 @@ def _normalize_peers(raw) -> list[dict]:
 
 def _mirror_merge_head(_s, target_session_id: str, payload: dict) -> None:
     """Move the in-memory head to the merge reply while its branch is selected."""
-    from openprogram.runtime.conversation.merge import still_selected
+    from openprogram.runtime.conversation.peer_agents.merge import still_selected
     if still_selected(target_session_id, payload.get("branch_id")):
         _s._set_active_head(target_session_id, payload["target_assistant_id"])
 

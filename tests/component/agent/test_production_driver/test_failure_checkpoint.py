@@ -5,9 +5,9 @@ import asyncio
 
 from openprogram.runtime.agent.loop import _execute_tool_calls
 from openprogram.models.providers.types import AgentTool, AgentToolResult
-from openprogram.runtime.execution.effects import EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectStore
 from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 from ._support import _committed_tool_ids, _prepare_long_turn
 

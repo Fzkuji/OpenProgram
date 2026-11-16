@@ -81,15 +81,15 @@ Sync rule:
 
 ## README Figures
 
-The three concept figures in `README.md` and `README.zh.md` live in
+The three concept figures in `README.md` and `translations/README.zh.md` live in
 `docs/images/highlights/`: `00-agent-class`, `01-dag-context` and
 `02-self-evolving`, each as a dark `.svg` and a `-light.svg`. The READMEs pick one with `<picture>` and `prefers-color-scheme`.
 
 They are generated; do not edit the SVG files by hand. Change
-`scripts/readme_figures.py` and run:
+`scripts/generators/readme_figures.py` and run:
 
 ```bash
-python -m scripts.readme_figures
+python -m scripts.generators.readme_figures
 ```
 
 The script converts all text to outlines with fontTools (Instrument Sans and

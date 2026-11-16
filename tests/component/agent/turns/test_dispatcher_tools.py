@@ -33,7 +33,7 @@ import pytest
 
 from openprogram.runtime.conversation import turn_runtime as D
 from openprogram.runtime.agent import turn_request as agent_turn_request
-from openprogram.runtime.permissions import approval as permissions_approval
+from openprogram.runtime.permissions.approvals import approval as permissions_approval
 from openprogram.runtime.context.session_db import SessionDB
 from openprogram.models.providers.types import (
     AssistantMessage,
@@ -497,7 +497,7 @@ def test_next_turn_reads_a_tool_result_as_the_turn_that_ran_it_did(
     # it again uncached.
     from openprogram.models.providers.types import AgentToolResult
     from openprogram.state.store.session.weight import weight
-    from openprogram.state.store.session.spill import DEFAULT_TOOL_OUTPUT_WEIGHT
+    from openprogram.state.store.session.files.spill import DEFAULT_TOOL_OUTPUT_WEIGHT
 
     results_dir = tmp_path / "results"
     results_dir.mkdir()
@@ -581,8 +581,8 @@ def test_next_turn_reads_a_tool_result_as_the_turn_that_ran_it_did(
 
     # The context estimate counts the result the requests carry, not the
     # preview the reply's card keeps.
-    from openprogram.runtime.context import breakdown as breakdown_module
-    from openprogram.runtime.context import session_stats
+    from openprogram.runtime.context.token_accounting import breakdown as breakdown_module
+    from openprogram.runtime.context.token_accounting import session_stats
     counted: list = []
 
     def _capture(**kwargs):
@@ -789,7 +789,7 @@ def test_approval_denied_aborts_tool_before_execution(
 def test_self_update_prepare_forces_one_shot_approval_in_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.models.providers.types import AgentTool, AgentToolResult
     from openprogram.models.providers.types import TextContent
 
@@ -1271,7 +1271,7 @@ def test_resumed_turn_releases_its_prepared_update(monkeypatch, turn_committed):
     from openprogram.runtime.conversation import turn_runtime as T
     from openprogram.runtime.conversation.turn_runtime import finalize, persistence, turn_writer
     from openprogram.runtime.context import Context
-    from openprogram.runtime.context import persistence as context_persistence
+    from openprogram.runtime.context.compaction import persistence as context_persistence
     from openprogram.state.memory import policy
 
     class Store:
@@ -1293,7 +1293,7 @@ def test_resumed_turn_releases_its_prepared_update(monkeypatch, turn_committed):
     monkeypatch.setattr(T.TurnBindings, "bind",
                         classmethod(lambda cls, **kwargs: SimpleNamespace(release=lambda **kw: None)))
     monkeypatch.setattr(T, "make_stream_tap",
-                        lambda **kwargs: SimpleNamespace(flush=lambda: None, blocks=[]))
+                        lambda **kwargs: SimpleNamespace(flush=lambda: None, blocks=[], initial=None))
     monkeypatch.setattr(T, "_run_loop_blocking", lambda **kwargs: ("done", {}, []))
     monkeypatch.setattr(persistence, "persist_assistant_message",
                         lambda **kwargs: ({"id": "a1"}, [], [], {}))

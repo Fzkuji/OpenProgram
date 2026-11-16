@@ -134,7 +134,7 @@ ROUTE = {"session_id": "s1", "execution_id": "e-parent", "label": "scout"}
 
 
 def test_a_foreground_sub_agent_asks_on_its_callers_card_named(owner):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions.policy import can_approve, permission_decision
 
     request = _sub_agent_request(owner, asks_through=ROUTE)
@@ -147,7 +147,7 @@ def test_a_foreground_sub_agent_asks_on_its_callers_card_named(owner):
 
 
 def test_a_background_sub_agent_is_refused_at_once_with_what_to_do(owner):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions.policy import can_approve, permission_decision
 
     request = _sub_agent_request(owner)
@@ -196,7 +196,7 @@ def _child(**fields):
 
 
 def test_only_a_waited_on_sub_agent_of_a_person_asks_through_its_caller():
-    from openprogram.runtime.permissions.lifecycle import spawn_question_route
+    from openprogram.runtime.permissions.approvals.lifecycle import spawn_question_route
 
     person = _Inputs({"interaction": "interactive", "speaker_kind": "owner"})
     assert spawn_question_route(person, PARENT, _child(), SNAPSHOT) == {
@@ -253,7 +253,7 @@ class _Runner:
 
 
 def test_the_caller_waits_through_its_sub_agents_question(monkeypatch):
-    from openprogram.runtime.conversation import sub_agent_run
+    from openprogram.runtime.conversation.peer_agents import sub_agent_run
 
     monkeypatch.setattr(sub_agent_run, "ANSWER_POLL_S", 0)
     runner = _Runner(["asking", "asking", "asking", "running", "done"])
@@ -265,7 +265,7 @@ def test_the_caller_waits_through_its_sub_agents_question(monkeypatch):
 
 
 def test_a_pause_with_no_question_route_ends_the_wait():
-    from openprogram.runtime.conversation import sub_agent_run
+    from openprogram.runtime.conversation.peer_agents import sub_agent_run
 
     runner = _Runner(["asking"])
     runner._execution_store = SimpleNamespace(get_job_agent_input=lambda _id: {"turn_request": {}})
@@ -284,7 +284,7 @@ def test_a_sandbox_the_callers_project_turns_on_travels_with_the_snapshot(monkey
     from types import SimpleNamespace
 
     from openprogram.host.sandbox import MODE_WORKSPACE_WRITE
-    from openprogram.runtime.permissions import lifecycle
+    from openprogram.runtime.permissions.approvals import lifecycle
     from openprogram.state.store.project import project_store
 
     calls = []
@@ -303,7 +303,7 @@ def test_a_sandbox_the_callers_project_turns_on_travels_with_the_snapshot(monkey
 
 
 def test_a_forked_helpers_card_is_shown_in_its_callers_conversation():
-    from openprogram.runtime.permissions.approval import _asker_metadata
+    from openprogram.runtime.permissions.approvals.approval import _asker_metadata
     elsewhere = SimpleNamespace(source="agent_spawn", session_id="fork-target", asks_through=ROUTE)
     assert _asker_metadata(elsewhere)["asked_in_session"] == "s1"
     here = SimpleNamespace(source="agent_spawn", session_id="s1", asks_through=ROUTE)

@@ -48,6 +48,8 @@ export type EventCursor = {
 export type ExecutionSnapshot = {
   started_at?: number;
   task_label?: string | null;
+  /** The scheduled task whose schedule started this top-level run. */
+  scheduled_task_id?: string | null;
   view_parent_execution_id?: string | null;
   can_continue?: boolean;
   can_step?: boolean;

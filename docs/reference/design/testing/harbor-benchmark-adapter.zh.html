@@ -116,7 +116,7 @@
 <li><strong>agent 内不设费用上限</strong>（<code translate="no">--max-budget-usd</code>）：一道题因为钱花完而失败，是这个上限造成的结果，不是 harness 的。Codex 没有，FrontierHarness 只限墙钟时间；Harbor 对 Claude Code 和 mini-SWE-agent 的上限默认也不设。花费在 agent 外面由启动器的账本和 SIGINT 控制。</li>
 <li><strong>不另写一份实时转录</strong>：日志记录和账本本来就逐条写入；转录从它们派生，只生成一次，在退出时或事后。</li>
 </ul>
-<p class="note">oracle 冒烟、单任务和全量在本地 Docker 与 Runta 上的命令：<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/benchmarks/harbor_agent/README.md"><code translate="no">scripts/benchmarks/harbor_agent/README.md</code></a>.</p>
+<p class="note">oracle 冒烟、单任务和全量在本地 Docker 与 Runta 上的命令：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/benchmarks/harbor_agent/README.md"><code translate="no">scripts/benchmarks/harbor_agent/README.md</code></a>.</p>
 
 <h2 id="before-a-full-run">全量运行之前</h2>
 <table class="stack fixed">

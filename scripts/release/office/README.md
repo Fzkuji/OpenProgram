@@ -89,7 +89,7 @@ name. To build one:
    publish script puts it on the tag's draft release when GitHub has no copy:
 
    ```sh
-   scripts/publish-github.sh -m "summary" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip
+   scripts/publishing/publish-github.sh -m "summary" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip
    ```
 
    `python scripts/release/office-archive.py seed vX.Y.Z FILE` does the

@@ -121,8 +121,9 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(_recorder, "default_ledger", ledger)
     key_calls: list[str] = []
     monkeypatch.setattr(
-        stream_mod, "resolve_provider_key",
-        lambda provider: key_calls.append(provider) or "fake-key",
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: key_calls.append(model.provider)
+        or attempt(opts.model_copy(update={"api_key": "fake-key"})),
     )
 
     def build(*, limits=None, model=None, usage=None, fail_before_start=None):
@@ -221,7 +222,7 @@ def _bind_agent_provider(monkeypatch, provider):
         lambda _model: snapshot,
     )
     monkeypatch.setattr(
-        "openprogram.models.providers.utils.failover.resolve_fallback_models",
+        "openprogram.models.providers.utils.failures.failover.resolve_fallback_models",
         lambda _model: [],
     )
 
@@ -628,13 +629,10 @@ def test_credential_failure_releases_reserved_exposure(
     wired, monkeypatch, entry,
 ):
     """A pre-I/O failure must not consume a governed job's budget."""
-    import importlib
-
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
-    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        stream_mod, "resolve_provider_key",
-        lambda _provider: (_ for _ in ()).throw(RuntimeError("credential read failed")),
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: (_ for _ in ()).throw(RuntimeError("credential read failed")),
     )
 
     opts = SimpleStreamOptions(session_id="s1") if entry == "stream_simple" else StreamOptions(session_id="s1")

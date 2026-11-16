@@ -80,7 +80,7 @@ async def run(mode, folder, policy, store, control):
     if mode == "start":
         from openprogram.models.auth.store import get_store
         from openprogram.models.auth.types import Credential, CredentialData
-        get_store().add_credential(Credential(provider_id="openai", account_id="default", kind="api_key",
+        get_store().add_credential(Credential(provider_id="openai", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="isolated-test-placeholder", base_url=os.environ["FAKE_MODEL_URL"])))
         default_db().create_session("session", "main", work_dir=folder)
         adapter = CanonicalAgentAdapter()

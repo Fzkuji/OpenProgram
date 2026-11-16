@@ -79,7 +79,7 @@ def _bundle_texts(zip_path):
 
 def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
     """No planted credential appears verbatim anywhere in the zip."""
-    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
+    from openprogram.interfaces.cli.commands.maintenance.diagnostics import build_bundle
 
     _write_config(isolated_home)
     # A log line carrying a secret with no dict key to match on.
@@ -104,15 +104,15 @@ def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
 
 
 def test_credential_files_are_not_collected(isolated_home, tmp_path):
-    """The auth store is reported by name and count, never by content."""
-    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
+    """The auth store is reported by provider name, never by content."""
+    from openprogram.interfaces.cli.commands.maintenance.diagnostics import build_bundle
 
     _write_config(isolated_home)
     auth = isolated_home / ".openprogram" / "auth" / "anthropic"
     auth.mkdir(parents=True)
     payload = "sk-ant-oauth-CREDENTIALFILECONTENTS999"
-    (auth / "default.json").write_text(
-        json.dumps({"access_token": payload}), encoding="utf-8")
+    (auth / "credentials.json").write_text(
+        json.dumps({"credentials": [{"payload": {"auth_value": payload}}]}), encoding="utf-8")
 
     out = tmp_path / "bundle.zip"
     build_bundle(out)
@@ -122,11 +122,11 @@ def test_credential_files_are_not_collected(isolated_home, tmp_path):
         assert payload not in body, f"credential file content leaked into {name}"
 
     report = json.loads(texts["credentials.json"])
-    assert report["providers"] == {"anthropic": 1}
+    assert report["providers"] == ["anthropic"]
 
 
 def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
-    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
+    from openprogram.interfaces.cli.commands.maintenance.diagnostics import build_bundle
 
     _write_config(isolated_home)
     out = tmp_path / "bundle.zip"
@@ -155,7 +155,7 @@ def test_redact_text_leaves_ordinary_text_alone():
 
 
 def test_command_prints_contents_and_review_warning(isolated_home, tmp_path, capsys):
-    from openprogram.interfaces.cli.commands.diagnostics import _cmd_diagnostics
+    from openprogram.interfaces.cli.commands.maintenance.diagnostics import _cmd_diagnostics
 
     _write_config(isolated_home)
     out = tmp_path / "named.zip"

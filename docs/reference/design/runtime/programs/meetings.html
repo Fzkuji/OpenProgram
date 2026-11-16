@@ -50,7 +50,7 @@
 <tr><th scope="row">Application</th><td><code translate="no">openprogram/programs/applications/meeting/</code></td><td>The <code translate="no">meeting</code> service: storage, conversion, transcription queue, merge, summary</td></tr>
 <tr><th scope="row">Speech</th><td><code translate="no">openprogram/runtime/speech_link.py</code> → <code translate="no">openprogram/interfaces/speech/stt.py</code></td><td><code translate="no">transcribe_segments</code>: timed segments with the engine from Settings → Voice</td></tr>
 <tr><th scope="row">Speakers</th><td><code translate="no">meeting/diarize.py</code>, optional <code translate="no">sherpa-onnx</code></td><td>Labels system segments <code translate="no">others:&lt;n&gt;</code></td></tr>
-<tr><th scope="row">Summary</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code></td><td>One owner turn in a new conversation</td></tr>
+<tr><th scope="row">Summary</th><td><code translate="no">openprogram/runtime/conversation/turn_admission/owner_turn.py</code></td><td>One owner turn in a new conversation</td></tr>
 <tr><th scope="row">Window</th><td><code translate="no">apps/web/components/applications/windows/meeting-window.tsx</code></td><td>Start and Stop, live progress, past meetings with summary and transcript</td></tr>
 </tbody>
 </table>

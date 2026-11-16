@@ -53,6 +53,7 @@ import { noteJobStatus } from "@/lib/chat/transcript/sub-agent-transcripts";
 import { HISTORY_PROTOCOL, useSessionHistory } from "@/lib/chat/history/session-history";
 import { applyTranscriptUpdate, handleViewClosed, repairSessionViews } from "@/lib/runtime-bridge/session/transcript-updates";
 import { acceptRunFrame } from "@/lib/chat/decisions/run-seq";
+import { applyRunState, listedRunStates, unlistedRunning, type RunStateData } from "@/lib/chat/run/running-sessions";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/auth/owner-auth-bootstrap";
 import { recoverOwnerAuth } from "@/lib/net/auth/owner-auth-recovery";
 import { showToast } from "@/lib/format-utils/toast";
@@ -523,6 +524,22 @@ export function useWS(): void {
           window.dispatchEvent(new CustomEvent("op:provider-quota", { detail: d }));
           return true;
         }
+        case "provider.credentials.changed": {
+          // A provider's credential list changed (added, renamed, reordered,
+          // cooling, refused): its Credentials section, the card counts and
+          // the model menu's key row read it again.
+          const provider = typeof d?.provider === "string" ? d.provider : "";
+          const queryClient = getQueryClient();
+          queryClient?.invalidateQueries({ queryKey: ["provider-credentials", provider] });
+          window.dispatchEvent(new CustomEvent("op:provider-credentials-changed", { detail: { provider } }));
+          return true;
+        }
+        case "session.credentials.changed": {
+          // A conversation was pinned to a credential, or set back to automatic.
+          const sid = typeof d?.session_id === "string" ? d.session_id : "";
+          if (sid) getQueryClient()?.invalidateQueries({ queryKey: ["session-credentials", sid] });
+          return true;
+        }
         case "provider_models_changed": {
           const provider = typeof d?.provider === "string" ? d.provider : "";
           const queryClient = getQueryClient();
@@ -798,24 +815,23 @@ export function useWS(): void {
           }
           return true;
         case "run_state": {
-          const dd = d as
-            | {
-              session_id?: unknown;
-              run_active?: unknown;
-              run_task?: { msg_id?: string; execution_id?: string; status_version?: number; op_kind?: string; op_id?: string } | null;
-              run_seq?: unknown;
+          applyRunState(d as RunStateData | undefined);
+          return true;
+        }
+        case "running_sessions": {
+          // The answer to this connection's `get_running_sessions`
+          // (lib/chat/run/running-sessions.ts).
+          const listed = listedRunStates(d);
+          for (const state of listed) applyRunState(state);
+          void import("@/lib/chat/run/other-branch-runs").then(({ useOtherBranchRuns, sessionsWithBranchRun }) => {
+            const shown = [
+              ...Object.keys(useSessionStore.getState().runningTasks),
+              ...Object.keys(sessionsWithBranchRun(useOtherBranchRuns.getState().runs)),
+            ];
+            for (const sid of unlistedRunning(listed, shown, runtimeState.currentSessionId)) {
+              socket?.send(JSON.stringify({ action: "get_run_state", session_id: sid }));
             }
-            | undefined;
-          if (typeof dd?.session_id === "string" && dd.session_id
-            && acceptRunFrame(dd.session_id, dd.run_seq)) {
-            void import("@/lib/chat/send/send-queue").then((m) =>
-              m.reconcileAfterSessionLoad(
-                dd.session_id as string,
-                dd.run_active === true,
-                dd.run_task,
-              ),
-            );
-          }
+          });
           return true;
         }
         case "sessions_list":
@@ -900,13 +916,13 @@ export function useWS(): void {
           return true;
         }
         case "todos_update": {
-          // The todo board changed; `plans` places each plan under the
-          // turn that last changed it (lib/chat/transcript/todo-plan.ts).
+          // A task changed; `changed` holds its segment under the reply
+          // that changed it (lib/chat/transcript/task-blocks.ts).
           const sid = d?.session_id;
           if (typeof sid === "string" && sid) {
-            const plans = d?.plans;
-            void import("@/lib/chat/transcript/todo-plan").then(({ useTodoStore }) => {
-              useTodoStore.getState().setPlans(sid, plans);
+            const changed = d?.changed;
+            void import("@/lib/chat/transcript/task-blocks").then(({ useTaskStore }) => {
+              useTaskStore.getState().upsert(sid, changed);
             });
           }
           return true;
@@ -1066,6 +1082,9 @@ export function useWS(): void {
           action: "set_window_hidden", hidden: document.visibilityState === "hidden",
         }));
         socket?.send(JSON.stringify({ action: "list_sessions", history_version: HISTORY_PROTOCOL }));
+        // Turns already going announced themselves before this socket
+        // opened: ask which conversations run (the `running_sessions` case).
+        socket?.send(JSON.stringify({ action: "get_running_sessions" }));
         // Environment changes broadcast while disconnected were missed;
         // the reply lands in the `environments` case below.
         socket?.send(JSON.stringify({ action: "list_environments" }));

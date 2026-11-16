@@ -40,7 +40,7 @@ def _scheduled_permission_snapshot(job: shared.Job) -> dict[str, shared.Any] | N
     What it verified when it started that process says whose run this is, and
     the conversation's settings are where the run took its own policy from.
     """
-    from openprogram.runtime.conversation.session_config import conversation_permission
+    from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
     from openprogram.runtime.permissions.modes import VALID_PERMISSION
     from openprogram.state.authority import normalize_authority
 
@@ -136,7 +136,7 @@ class AdmissionOperations:
             if record is None:
                 raise RuntimeError(f"canonical execution identity conflict: {job.id}")
             return
-        from openprogram.runtime.permissions.lifecycle import spawn_permission_snapshot, spawn_question_route
+        from openprogram.runtime.permissions.approvals.lifecycle import spawn_permission_snapshot, spawn_question_route
         permission_snapshot = spawn_permission_snapshot(self._execution_store, parent, job)
         detached = _started_by_detached_turn()
         asks_through = None if detached else spawn_question_route(

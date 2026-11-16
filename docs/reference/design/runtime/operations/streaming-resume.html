@@ -18,7 +18,7 @@
 <thead><tr><th scope="col">Producer</th><th scope="col">Written by</th><th scope="col">Saved while running</th></tr></thead>
 <tbody>
 <tr><th scope="row">Assistant reply</th><td><code translate="no">turn_lifecycle.py</code>: empty <code translate="no">role="llm"</code> row with <code translate="no">status="running"</code>, <code translate="no">worker_id</code>, <code translate="no">started_at</code></td><td>Text and thinking blocks as they stream, through <code translate="no">stream_tap</code>'s quiet path (<code translate="no">update_stream_progress</code>, not fsynced) before each frame goes out; the full row at the end of the turn, partial output on cancel</td></tr>
-<tr><th scope="row">Agent method run</th><td>Placeholder <code translate="no">&lt;msg_id&gt;_reply</code></td><td>The poller in <code translate="no">execution/dag.py</code> writes <code translate="no">context_tree</code>, <code translate="no">status</code> and <code translate="no">last_update_at</code></td></tr>
+<tr><th scope="row">Agent method run</th><td>Placeholder <code translate="no">&lt;msg_id&gt;_reply</code></td><td>The poller in <code translate="no">execution/projections/dag.py</code> writes <code translate="no">context_tree</code>, <code translate="no">status</code> and <code translate="no">last_update_at</code></td></tr>
 <tr><th scope="row">Agent method called by the model</th><td><code translate="no">runtime_attach.py</code>: <code translate="no">display=runtime</code> row</td><td>Same tree</td></tr>
 <tr><th scope="row"><code translate="no">/task --async</code>, merge</th><td><code translate="no">slash_actions.py</code>: attach pointer</td><td>Job status on the card</td></tr>
 <tr><th scope="row">Sub-agent</th><td><code translate="no">sub_agent_run.py</code></td><td>Job status on the card</td></tr>
@@ -57,7 +57,7 @@
 <tr><th scope="row">Execution still active</th><td class="run">Left to the execution</td></tr>
 </tbody>
 </table>
-<p class="note">Continuing an execution after a restart is the job of <code translate="no">openprogram/runtime/execution/restart.py</code>, within <code translate="no">execution.auto_resume_window_seconds</code>.</p>
+<p class="note">Continuing an execution after a restart is the job of <code translate="no">openprogram/runtime/execution/recovery/restart.py</code>, within <code translate="no">execution.auto_resume_window_seconds</code>.</p>
 
 <h2 id="implementation-status">Implementation status</h2>
 <table class="stack fixed">

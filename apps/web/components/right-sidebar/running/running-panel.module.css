@@ -3,7 +3,6 @@
    what it slides over, with a hairline on the edge that leads; use-page-slide.ts
    writes where it is. */
 .page { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; min-height: 0; background: var(--color-sidebar); box-shadow: -1px 0 0 var(--border); }
-.notice { margin: 0; padding: 0 16px 12px; color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-sm)); }
 .error { margin: 8px; color: var(--accent-red); font-size: var(--right-panel-meta-size, var(--fs-sm)); }
 /* The view host already leaves 12px under the nav; the first label adds
    4px so it sits 16px below the nav like every other section label. */
@@ -78,3 +77,9 @@
 .finishedLabel { color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-xs)); }
 /* The group's total after its name. */
 .sum { color: var(--text-muted); }
+
+/* ---- A scheduled task's row: its last 24 runs, one cell each (task-row.tsx) ---- */
+.stripCell { display: block; height: 8px; border-radius: var(--radius-2xs); background: color-mix(in srgb, var(--accent-green) 70%, transparent); }
+.stripCell[data-tone="err"] { background: var(--accent-red); }
+.stripCell[data-tone="warn"] { background: var(--accent-yellow); }
+.stripCell[data-tone="run"] { background: var(--accent-blue); }

@@ -49,7 +49,7 @@ _TOOL_NAMES = {
     "glob": ["glob"], "grep": ["grep"], "ls": ["list"], "list": ["list"],
     "bash": ["bash"], "webfetch": ["web_fetch"], "web_fetch": ["web_fetch"],
     "websearch": ["web_search"], "web_search": ["web_search"],
-    "notebookedit": ["notebook_edit"], "todowrite": ["todo_create", "todo_update", "todo_list"],
+    "notebookedit": ["notebook_edit"], "todowrite": ["task_start", "task_step"],
     "task": ["agent"], "agent": ["agent"],
 }
 

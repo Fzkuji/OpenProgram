@@ -238,7 +238,7 @@
 </ul>
 </details>
 <details>
-<summary>本地 App 刷新：<code translate="no">scripts/refresh-local-app.sh</code></summary>
+<summary>本地 App 刷新：<code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
 <ul>
 <li>只安装 <code translate="no">refs/heads/stable</code>，晋升时安装要晋升的它的快进提交，健康后再移动 <code translate="no">stable</code>（<a href="dev-instance.zh.html#promoting-to-stable">晋升到稳定版</a>）。没有 <code translate="no">stable</code> 分支时，检出必须包含本地 <code translate="no">main</code> 和已拉取的 <code translate="no">origin/main</code>。</li>
 <li>先解析路径，斜杠、点路径和符号链接别名共用检查和锁。真正的自定义 App 保留自己的源码检查。</li>

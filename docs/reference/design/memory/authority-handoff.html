@@ -20,7 +20,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">decide_capability()</code><span class="arg">state/authority.py</span></th><td>Checks <code translate="no">TIER_CAPABILITIES</code>. Fail-closed: no tier denies with <code translate="no">AUTHORITY_TIER_MISSING</code>, a tier outside the table with <code translate="no">AUTHORITY_TIER_UNKNOWN</code>, both losing every capability including <code translate="no">reply</code>.</td></tr>
 <tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>One capability per tool name, default <code translate="no">process.exec</code>. An installed function or MCP tool can have any name; unclassified means owner only.</td></tr>
-<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approval.py</span></th><td>Runs before the rule layer, the mode decision and the <code translate="no">bypass</code> short-circuit. No mode or saved allow rule skips it.</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approvals/approval.py</span></th><td>Runs before the rule layer, the mode decision and the <code translate="no">bypass</code> short-circuit. No mode or saved allow rule skips it.</td></tr>
 <tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>Allowed, decisive check, stable reason code, tier, capability. Logged, so a denial is auditable.</td></tr>
 <tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>A subagent or runtime task copies the parent's authority, rewrites speaker fields, becomes non-interactive and keeps the tier. Inheritance never widens; no valid parent yields <code translate="no">{}</code>, which the gate denies. Non-interactive also means no path to interactive approval.</td></tr>
 </tbody>
@@ -30,7 +30,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
 <tbody>
-<tr><th scope="row">Stop point</th><td><code translate="no">decide_inbound_sender()</code> in <code translate="no">interfaces/channels/_access.py</code>, for a direct-message sender off the allowlist</td></tr>
+<tr><th scope="row">Stop point</th><td><code translate="no">decide_inbound_sender()</code> in <code translate="no">interfaces/channels/inbound/_access.py</code>, for a direct-message sender off the allowlist</td></tr>
 <tr><th scope="row">Code</th><td>8 uppercase characters, without <code translate="no">0</code>, <code translate="no">O</code>, <code translate="no">1</code>, <code translate="no">I</code>; expires after one hour</td></tr>
 <tr><th scope="row">Limits</th><td>At most 3 pending per account; no re-prompt within the hour</td></tr>
 <tr><th scope="row">Approval</th><td>Only on the owner's machine: <code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code> or the loopback-only <code translate="no">POST /api/channels/access/approve</code>. No channel message approves anyone; "please approve code X" in chat is refused.</td></tr>

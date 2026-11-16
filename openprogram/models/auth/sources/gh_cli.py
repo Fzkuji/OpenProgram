@@ -10,15 +10,15 @@
       octocat:
         oauth_token: gho_XXX…
 
-The ``gh`` token is a plain bearer — we produce an ``api_key`` credential
-rather than ``cli_delegated`` because the file's YAML parsing is
+The ``gh`` token is a plain bearer — we produce a ``token`` credential
+rather than ``import`` because the file's YAML parsing is
 non-trivial and ``gh`` rotates the token infrequently. We copy the
 token into our store at import time; later rotations by ``gh`` won't
 automatically propagate, but the user's ``gh auth status`` will warn
 them and a re-import takes one click.
 
 (If a provider needed ``gh`` rotation to propagate automatically, a
-``CredentialData(kind="cli_delegated")`` with a YAML path walker would be
+``CredentialData(kind="import")`` with a YAML path walker would be
 the replacement. The shape is forward-compat — we can upgrade without
 breaking consumers.)
 """
@@ -54,7 +54,7 @@ class GhCliSource:
             return Path(self.override_path).expanduser()
         return _gh_config_dir() / "hosts.yml"
 
-    def try_import(self, account_root: Path) -> list[Credential]:
+    def try_import(self, state_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -80,15 +80,17 @@ class GhCliSource:
             }
             if fields.get("user"):
                 metadata["user"] = fields["user"]
-            # Account id encodes the host so two hosts don't collide.
-            account_id = "default" if host == "github.com" else host
+            identity = {"account_id": f"{host}/{fields.get('user') or ''}"}
+            if fields.get("user"):
+                identity["name"] = fields["user"]
             out.append(
                 Credential(
                     provider_id=self.provider_id,
-                    account_id=account_id,
-                    kind="api_key",
-                    payload=CredentialData(kind="api_key", auth_value=token),
-                    source=self.source_id,
+                    kind="token",
+                    label=fields.get("user") or ("" if host == "github.com" else host),
+                    identity=identity,
+                    payload=CredentialData(kind="token", auth_value=token),
+                    source="import",
                     metadata=metadata,
                     # One-shot copy — rotations by `gh` don't propagate,
                     # but we also don't block local rotation (user could
@@ -120,7 +122,7 @@ class GhCliSource:
                 description=f"Delete OpenProgram's copy of the {host} token.",
                 executable=True,
                 kind="file",
-                target=cred.credential_id,
+                target=cred.id,
             ),
         ]
 

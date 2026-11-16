@@ -273,7 +273,7 @@ def tip_reply(session_id: str, tip_id: str) -> str:
 
 def _idle_watch_job(session_id: str, entry: dict[str, Any]) -> Optional[Job]:
     """The watch as a finished Job once its target is idle, else None."""
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.state.authority import normalize_authority
     target = str(entry.get("target_session_id") or "")
     tip = inbox._branch_tip(target, entry.get("target_head_id"))  # noqa: SLF001
@@ -320,7 +320,7 @@ def _relayed_job(session_id: str, entry: dict[str, Any]) -> tuple[bool, Optional
     message it passed on ended and each reply was answered by a turn of the
     conversation that passed it on; the job then carries that
     conversation's latest reply. ``job`` is None when nothing is told."""
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.runtime.jobs.store import load_job
     from openprogram.runtime.jobs.types import is_terminal
     from openprogram.state.authority import normalize_authority
@@ -641,7 +641,7 @@ def notice_text(jobs: list[Job]) -> str:
 def _seed() -> None:
     global _seeded
     from openprogram.state.store import default_store
-    from openprogram.state.store.session.placement import iter_session_dirs
+    from openprogram.state.store.session.files.placement import iter_session_dirs
     sessions = default_store()
     root = sessions.root_path
     if root.exists():
@@ -694,7 +694,7 @@ def sweep() -> None:
 def _sweep_all() -> None:
     sweep()
     # Messages queued for busy agents ride the same loop (agent/inbox.py).
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     inbox.sweep()
 
 

@@ -10,7 +10,7 @@ from openprogram.programs import (
     apply_default_deferral, agent_tools, as_resident, note_request_loaded,
     split_tools_for_dispatch,
 )
-from openprogram.runtime.context.breakdown import compute_call_breakdown
+from openprogram.runtime.context.token_accounting.breakdown import compute_call_breakdown
 
 # 实测（o200k_base）：defer 后常驻 21 工具 ≈4.6k token（描述+schema 都算），
 # 全量 59 工具若都常驻 ≈13k。断言"缩小到不足全常驻的一半"而不是钉死绝对值，

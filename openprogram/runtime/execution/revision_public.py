@@ -76,7 +76,7 @@ def _git_head(path: Path) -> str | None:
 
 def server_project_binding(store: ExecutionStore, execution: Any) -> dict[str, str]:
     """Build the exact immutable revision binding; client fields never enter."""
-    from .public import project_id_for_session
+    from .projections.public import project_id_for_session
 
     project_id = project_id_for_session(execution.session_id)
     project_path: Path | None = None

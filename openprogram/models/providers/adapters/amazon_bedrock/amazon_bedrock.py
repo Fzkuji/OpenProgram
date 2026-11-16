@@ -18,8 +18,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from openprogram.models.providers.catalog.models import calculate_cost
-from openprogram.models.providers.utils.event_stream import EventStream
-from openprogram.models.providers.utils.json_parse import parse_streaming_json
+from openprogram.models.providers.utils.streams.event_stream import EventStream
+from openprogram.models.providers.utils.streams.json_parse import parse_streaming_json
 from openprogram.models.providers.utils.sanitize_unicode import sanitize_surrogates
 from openprogram.models.providers.shared.validate_modalities import validate_input_modalities
 
@@ -207,7 +207,7 @@ def stream_bedrock(
                     # Caller cancel (Stop button) — polled per event; raising
                     # closes the boto3 event stream.
                     if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
-                        from openprogram.models.providers.utils.errors import StreamAborted
+                        from openprogram.models.providers.utils.failures.errors import StreamAborted
                         raise StreamAborted("stream cancelled by caller signal")
                     if "messageStart" in item:
                         ev_stream.push({"type": "start", "partial": output})

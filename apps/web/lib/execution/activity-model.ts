@@ -99,7 +99,7 @@ export function activityModel(
     }
     const run: ActivityRun = {
       root, tree, calls: runCalls, programs: runPrograms, issues,
-      active: tree.some(item => LIVE.has(item.status)) || runPrograms.some(processIsActive)
+      active: tree.some(item => LIVE.has(item.status)) || runPrograms.some(program => processIsActive(program) && program.status !== "unknown")
         || runCalls.some(call => call.status === "running"),
       runningCall: runCalls.filter(call => call.status === "running").at(-1) ?? null,
       at: startedAt(root),

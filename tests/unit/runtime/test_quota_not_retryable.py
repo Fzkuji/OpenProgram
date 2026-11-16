@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.models.providers.utils.errors import ErrorReason, classify_error
-from openprogram.models.providers.utils.stream_retry import is_retryable_status
+from openprogram.models.providers.utils.failures.errors import ErrorReason, classify_error
+from openprogram.models.providers.utils.streams.stream_retry import is_retryable_status
 
 
 # Verbatim from a real codex 429 (the body that prompted this).
@@ -91,8 +91,8 @@ _BLOCK_PAGE = ('<html>\n  <head>\n    <meta name="viewport" content="width=devic
 
 def test_a_web_page_for_403_is_a_network_block_not_the_account():
     """The API answers in JSON; a page comes from the network edge in front of it."""
-    from openprogram.models.providers.utils.errors import ErrorReason, classify_error, web_page_text
-    from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+    from openprogram.models.providers.utils.failures.errors import ErrorReason, classify_error, web_page_text
+    from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
     error = ProviderStreamError(f"HTTP 403: {_BLOCK_PAGE}", http_status=403, error_text=_BLOCK_PAGE)
     assert str(error) == ("HTTP 403: Unable to load site If you are using a VPN, try turning it off. "

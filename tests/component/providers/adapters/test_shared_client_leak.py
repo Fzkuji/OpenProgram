@@ -17,7 +17,7 @@ import threading
 
 import pytest
 
-from openprogram.models.providers.utils import http_client as hc
+from openprogram.models.providers.utils.http_transport import http_client as hc
 from openprogram.host.security.url_policy import OwnerURLException
 
 

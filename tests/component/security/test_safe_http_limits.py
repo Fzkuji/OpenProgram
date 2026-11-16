@@ -910,8 +910,8 @@ async def _empty_async():
 
 @pytest.mark.parametrize('explicit_limit', [None, 1800.0])
 def test_provider_stream_has_no_default_total_duration_limit(monkeypatch, explicit_limit):
-    from openprogram.models.providers.utils import timeouts
-    from openprogram.models.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_transport import timeouts
+    from openprogram.models.providers.utils.http_transport.http_client import build_async_client
     if explicit_limit is not None:
         monkeypatch.setattr(timeouts, 'STREAM_TOTAL_TIMEOUT_S', explicit_limit)
     now = [0.0]
@@ -947,7 +947,7 @@ def test_provider_stream_has_no_default_total_duration_limit(monkeypatch, explic
 
 @pytest.mark.parametrize('asynchronous', [False, True])
 def test_google_provider_uses_unbounded_stream_duration(monkeypatch, asynchronous):
-    from openprogram.models.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_transport.http_client import build_google_http_options
     options = build_google_http_options('https://public.test')
     now = [0.0]
     monkeypatch.setattr(safe_http, 'monotonic', lambda: now[0])

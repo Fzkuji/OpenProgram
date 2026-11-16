@@ -89,7 +89,7 @@ def estimate_input_upper_bound(context, options, model=None, *, media_within_win
     option_payload = (
         options.model_dump(
             mode="json",
-            exclude={"api_key", "signal", "on_payload", "headers", "session_id"},
+            exclude={"api_key", "credential", "signal", "on_payload", "headers", "session_id"},
             exclude_none=True,
         )
         if options is not None and callable(getattr(options, "model_dump", None))

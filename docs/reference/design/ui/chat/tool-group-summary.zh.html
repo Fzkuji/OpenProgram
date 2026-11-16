@@ -29,7 +29,8 @@
 <tr><th scope="row">子代理 <code translate="no">agent task send_message mixture_of_agents</code></th><td>运行了子代理 Reviewer</td><td>运行了 2 个子代理</td><td>正在运行子代理 Reviewer…</td></tr>
 <tr><th scope="row">对等会话 <code translate="no">send_message</code> 发往另一个会话</th><td>给另一个会话发了消息</td><td>每个会话只计一次</td><td>正在给另一个会话发消息…</td></tr>
 <tr><th scope="row">图片 <code translate="no">image_generate</code>、<code translate="no">image_analyze</code></th><td>生成了 1 张图片；分析了 1 张图片</td><td>生成了 2 张图片；分析了 2 张图片</td><td>正在生成图片…；正在分析图片…</td></tr>
-<tr><th scope="row">待办 <code translate="no">todo_*</code></th><td>更新了待办</td><td>更新了待办</td><td>正在更新待办…</td></tr>
+<tr><th scope="row">任务 <code translate="no">task_start</code>、<code translate="no">task_step</code>、<code translate="no">task_list</code></th><td>不出短语</td><td>不出短语；只含任务调用的一行不画</td><td>没有。任务由<a href="task-blocks.zh.html">任务块</a>显示。</td></tr>
+<tr><th scope="row">保存的待办调用 <code translate="no">todo_*</code></th><td>更新了待办，清单没有画成块时</td><td>更新了待办</td><td>没有</td></tr>
 <tr><th scope="row">提问 <code translate="no">ask_user_question</code></th><td>提了 1 个问题</td><td>提了 2 个问题</td><td>正在提问…</td></tr>
 <tr><th scope="row">记忆 <code translate="no">memory_*</code></th><td>读写了记忆</td><td>读写了记忆</td><td>正在读写记忆…</td></tr>
 <tr><th scope="row">程序、技能</th><td>运行了程序 deploy；使用了技能 pdf</td><td>运行了 2 个程序</td><td>正在运行程序 deploy…</td></tr>
@@ -99,7 +100,7 @@
 <tr><th scope="row"><code translate="no">execution-strip.tsx</code></th><td><code translate="no">label: string | ToolGroupSummary</code>。纯字符串（workflow 卡片、调试面板）不带提示和徽标。</td></tr>
 <tr><th scope="row"><code translate="no">LegacyRuntimeTrace</code></th><td>没有有序 blocks 的记录：每次调用变成以函数命名的 block。旧子代理条只传派生标签。</td></tr>
 <tr><th scope="row"><code translate="no">execution-strip.css</code></th><td><code translate="no">.tl-label</code>、<code translate="no">.tl-fail</code>、<code translate="no">.tl-diff</code>、<code translate="no">.tl-chev</code></td></tr>
-<tr><th scope="row"><code translate="no">tool-group-summary.test.mjs</code></th><td><code translate="no">apps/web/tests/chat/messages/</code>：语法、单复数、顺序、时态、失败、徽标来源、补丁解析、限长 diff</td></tr>
+<tr><th scope="row"><code translate="no">tool-group-summary.test.mjs</code></th><td><code translate="no">apps/web/tests/chat/messages/execution/</code>：语法、单复数、顺序、时态、失败、徽标来源、补丁解析、限长 diff</td></tr>
 </tbody>
 </table>
 </details>

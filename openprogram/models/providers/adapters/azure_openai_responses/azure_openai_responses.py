@@ -19,7 +19,7 @@ from openprogram.models.providers.shared.openai_responses import (
 )
 from openprogram.models.providers.shared.validate_modalities import validate_input_modalities
 from openprogram.models.providers.shared.simple_options import build_base_options
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 if TYPE_CHECKING:
     from openprogram.models.providers.types import Context, Model, SimpleStreamOptions
@@ -52,8 +52,7 @@ def stream_azure_openai_responses(
         output = AssistantMessage.empty(model, api="azure-openai-responses")
 
         try:
-            from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
+            api_key = opts.get("api_key") or ""
             if not api_key:
                 raise ValueError("Azure OpenAI API key is required.")
 
@@ -116,8 +115,7 @@ def stream_simple_azure_openai_responses(
     options: "SimpleStreamOptions | None" = None,
 ) -> EventStream:
     """Simple interface for Azure OpenAI Responses API streaming."""
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-    api_key = (getattr(options, "api_key", None) if options else None) or resolve_provider_key(model.provider)
+    api_key = getattr(options, "api_key", None) if options else None
     if not api_key:
         raise ValueError(f"No API key for provider: {model.provider}")
 
@@ -179,17 +177,16 @@ def _resolve_azure_config(model: "Model", opts: dict[str, Any]) -> tuple[str, st
 
 def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
     from openai import AsyncAzureOpenAI
-    from openprogram.models.providers.utils.http_client import get_shared_async_client
+    from openprogram.models.providers.utils.http_transport.http_client import get_shared_async_client
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
 
     base_url, api_version = _resolve_azure_config(model, opts)
     configured_origin = normalize_origin(base_url)
     headers = {**(getattr(model, "headers", None) or {}), **(opts.get("headers") or {})}
-    # Share retry budget knob with the regular openai provider —
-    # both use the same OpenAI Python SDK, same retry semantics.
-    sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
-    from ...streaming.budget import provider_sdk_retries
-    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
+    # The SDK's own retries are off: the credential layer
+    # (``models/auth/selection.py``) and the stream's re-send see every
+    # failure once.
+    sdk_max_retries = 0
     return AsyncAzureOpenAI(
         api_key=api_key,
         api_version=api_version,

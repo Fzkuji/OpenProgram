@@ -48,7 +48,7 @@ def boundary(tmp_path, monkeypatch):
 
 
 def execute(req, tool_name, args):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.models.providers.types import AgentTool, AgentToolResult
 
     calls = []

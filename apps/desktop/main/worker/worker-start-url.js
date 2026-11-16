@@ -15,7 +15,7 @@ function ownerAuthTokenFromStartUrl(startUrl) {
 }
 
 // `web auth-url` exits with this when this account has no worker but
-// something else listens on the port (openprogram/interfaces/cli/commands/web.py).
+// something else listens on the port (openprogram/interfaces/cli/commands/services/web.py).
 const EXIT_PORT_HELD = 3;
 
 /**

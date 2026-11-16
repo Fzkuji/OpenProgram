@@ -37,7 +37,7 @@ def executables(executable_pool: ExecutablePool):
 
 
 def test_local_app_refresh_detaches_before_stopping_worker() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     detach_at = refresh.index('start_new_session=True')
@@ -51,8 +51,8 @@ def test_local_app_refresh_detaches_before_stopping_worker() -> None:
 
 
 def test_local_app_refresh_reuses_a_matching_dev_build() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8")
-    dev = (ROOT / "scripts" / "refresh-dev-instance.sh").read_text(encoding="utf-8")
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(encoding="utf-8")
+    dev = (ROOT / "scripts" / "local-instances" / "refresh-dev-instance.sh").read_text(encoding="utf-8")
     # Reused only when the dev build recorded this exact revision.
     assert '"$(cat "$prebuilt_dir/revision" 2>/dev/null)" = "$build_revision"' in refresh
     reuse = refresh.index('if test -n "$prebuilt_wheel"; then')
@@ -65,7 +65,7 @@ def test_local_app_refresh_reuses_a_matching_dev_build() -> None:
 
 
 def test_local_app_refresh_reopens_app_after_quit() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     open_at = refresh.index('open -a "$app_path"')
@@ -85,7 +85,7 @@ def test_local_app_refresh_reopens_app_after_quit() -> None:
 
 
 def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     install = refresh.index('"$staged_python" -I -m pip install')
@@ -103,7 +103,7 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
 
 
 def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     hydrate = refresh.index('hydrate_wheel_dependencies "$staged_python"')
@@ -116,7 +116,7 @@ def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
 
 
 def test_local_app_refresh_probes_node_after_relocation() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     assert 'node_candidates+=("$runtime_root/bin/node")' in refresh
@@ -126,7 +126,7 @@ def test_local_app_refresh_probes_node_after_relocation() -> None:
 
 
 def test_local_app_refresh_bundles_no_programs() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     assert "stage-program-source.py" not in refresh
@@ -143,7 +143,7 @@ def test_local_app_refresh_bundles_no_programs() -> None:
 
 
 def test_local_app_refresh_installs_the_app_icon_before_signing() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     stage = refresh.index('cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"')
@@ -154,7 +154,7 @@ def test_local_app_refresh_installs_the_app_icon_before_signing() -> None:
 
 
 def test_local_app_refresh_removes_stale_package_layout_before_install() -> None:
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
 
@@ -295,7 +295,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
         f"{installed_version}"
     ) in result.stderr
 
-    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     gate = refresh.index("--require-source-match")
@@ -336,13 +336,14 @@ def _prepare_local_refresh_fixture(
     release_scripts = scripts / "release"
     desktop = repo / "apps" / "desktop"
     release_scripts.mkdir(parents=True)
+    (scripts / "local-instances").mkdir()
     desktop.mkdir(parents=True)
     (desktop / "scripts").mkdir()
     (desktop / "scripts/install-app.sh").write_bytes(
         (ROOT / "apps/desktop/scripts/install-app.sh").read_bytes()
     )
-    (scripts / "refresh-local-app.sh").write_text(
-        (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
+    (scripts / "local-instances" / "refresh-local-app.sh").write_text(
+        (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     # This fixture exercises version/lock ordering without native signing.
@@ -510,7 +511,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     local_python = Path(env["OPENPROGRAM_LOCAL_PYTHON"])
     mutation_log = Path(env["MUTATION_LOG"])
     result = subprocess.run(
-        ["bash", str(scripts / "refresh-local-app.sh")],
+        ["bash", str(scripts / "local-instances" / "refresh-local-app.sh")],
         check=False,
         env=env,
         capture_output=True,
@@ -543,7 +544,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     bad_node = subprocess.run(
-        ["bash", str(scripts / "refresh-local-app.sh")],
+        ["bash", str(scripts / "local-instances" / "refresh-local-app.sh")],
         env=env | {"NODE_PROBE_FAIL": "1"},
         capture_output=True, text=True, timeout=SCRIPT_TIMEOUT,
     )
@@ -560,7 +561,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:
         blocked = subprocess.run(
-            ["bash", str(scripts / "refresh-local-app.sh")],
+            ["bash", str(scripts / "local-instances" / "refresh-local-app.sh")],
             check=False,
             env=env,
             capture_output=True,
@@ -593,7 +594,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "SIGNAL_READY": str(signal_ready),
     }
     interrupted = subprocess.Popen(
-        ["bash", str(scripts / "refresh-local-app.sh")],
+        ["bash", str(scripts / "local-instances" / "refresh-local-app.sh")],
         env=signal_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -651,7 +652,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "CLEANUP_READY": str(cleanup_ready),
     }
     cleanup_interrupted = subprocess.Popen(
-        ["bash", str(scripts / "refresh-local-app.sh")],
+        ["bash", str(scripts / "local-instances" / "refresh-local-app.sh")],
         env=cleanup_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -689,7 +690,7 @@ def test_default_local_refresh_requires_committed_source_before_mutation(
     tmp_path: Path, executables: ExecutablePool, change: str, target_alias: str,
 ) -> None:
     repo, app, env = _prepare_local_refresh_fixture(tmp_path, executables)
-    script = repo / "scripts/refresh-local-app.sh"
+    script = repo / "scripts/local-instances/refresh-local-app.sh"
     # Remap only the canonical App path in the copied public script. No real
     # Applications path or worker is used, and no production bypass is added.
     default_app = tmp_path / "default.app" if target_alias == "custom" else app
@@ -945,7 +946,7 @@ def test_local_refresh_completion_preserves_failure_and_restores_the_previous_ve
     tmp_path: Path, executables: ExecutablePool, case: str, service: bool,
 ) -> None:
     repo, app, env = _prepare_completion_refresh_fixture(tmp_path, executables, service=service)
-    script = repo / "scripts/refresh-local-app.sh"
+    script = repo / "scripts/local-instances/refresh-local-app.sh"
     breaks, expected, outcome = COMPLETION_CASES[case]
     env.update(breaks)
     if "HEALTH_AFTER" in breaks and breaks["HEALTH_AFTER"] == "999999":
@@ -1010,7 +1011,7 @@ def _prepare_promotion_refresh_fixture(tmp_path: Path, executables: ExecutablePo
     """A refresh run by `openprogram dev promote`: a real Git repository whose
     `stable` is one commit behind the checked-out commit to promote."""
     repo, app, env = _prepare_completion_refresh_fixture(tmp_path, executables, service=True)
-    script = repo / "scripts/refresh-local-app.sh"
+    script = repo / "scripts/local-instances/refresh-local-app.sh"
     # Remap only the canonical App path in the copied public script.
     script.write_text(script.read_text().replace('"/Applications/OpenProgram.app"', f'"{app}"'))
     (tmp_path / "fake-bin/git").unlink()
@@ -1179,7 +1180,7 @@ def test_local_refresh_preserves_cleanup_error_without_masking_primary(
         'exec /bin/rm "$@"\n',
     )
     result = subprocess.run(
-        ["bash", str(repo / "scripts/refresh-local-app.sh")], env=env,
+        ["bash", str(repo / "scripts/local-instances/refresh-local-app.sh")], env=env,
         capture_output=True, text=True, timeout=SCRIPT_TIMEOUT,
     )
     assert result.returncode == (primary or 47), result.stdout + result.stderr

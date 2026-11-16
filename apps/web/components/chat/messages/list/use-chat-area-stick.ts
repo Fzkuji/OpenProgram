@@ -2,36 +2,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
   animateJumpToLatest,
-  CHAT_READING_POSITION_TTL_MS,
-  isChatAtBottom,
+  followAfterGrowth,
+  followAfterScroll,
   isProvisionalSessionBind,
+  jumpVisible,
   lastSettledTakeLatest,
   latestScrollTop,
   noteTakeLatest,
   peekTakeLatest,
-  readBottomPadding,
-  readChatScroll,
-  readChatFollowLatest,
-  readComposerOverlay,
-  resolveChatScrollTop,
   relocateTakeLatest,
+  remainingScroll,
   retainTakeLatestViewport,
   settleTakeLatest,
   snapToLatest,
   subscribeTakeLatest,
-  writeChatScroll,
   scrolledAwayFromLatest,
+  CHAT_READER_SEEK_EVENT,
 } from "@/lib/chat/history/chat-scroll";
 import { typesetMath } from "@/lib/runtime-bridge/dom/markdown-render";
 import { useSessionHistory } from "@/lib/chat/history/session-history";
 import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session/session-history-loader";
 import { useSessionStore } from "@/lib/session-store";
-import { saveHistoryAnchor, setFollowLock } from "@/lib/chat/history/history-viewport";
+import { setFollowLock } from "@/lib/chat/history/history-viewport";
 
-const GROWTH_SUPPRESS_MS = 600;
+/** How long after the reader's own input growth is left unpinned. */
+const READER_INPUT_MS = 600;
 const SCROLL_KEYS = new Set([
   "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Spacebar",
 ]);
+const SCROLL_UP_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
 
 type FollowKind = "send" | "jump";
 
@@ -54,14 +53,12 @@ export function useChatAreaStick(
     sessionId: string | null;
     areaRef: RefObject<HTMLElement | null>;
     columnRef: RefObject<HTMLElement | null>;
-    composerRootRef?: RefObject<HTMLElement | null>;
   },
 ) {
   const focusedId = useSessionStore((s) => s.currentSessionId);
   const sessionId = (options ? options.sessionId : focusedId) ?? chatKey;
   const areaRef = options?.areaRef;
   const columnRef = options?.columnRef;
-  const composerRootRef = options?.composerRootRef;
   const hasNewer = useSessionHistory((s) => !!(sessionId && s.pages[sessionId]?.after));
   const historyLoading = useSessionHistory((s) => !!(sessionId && s.pages[sessionId]?.loading));
   const welcomeVisible = useSessionStore((s) => s.welcomeVisible);
@@ -83,12 +80,13 @@ export function useChatAreaStick(
   const opRef = useRef<FollowOp | null>(null);
   const [noteTick, setNoteTick] = useState(0);
   const [detached, setDetached] = useState(false);
+  const [showJump, setShowJump] = useState(false);
 
-  const atLatestWindow = useCallback(() => {
-    if (!sessionId) return true;
-    const page = useSessionHistory.getState().pages[sessionId];
-    return !page?.after && !page?.loading;
-  }, [sessionId]);
+
+  /** The reader's own input is recent or still held: growth is theirs. */
+  const readerActive = useCallback(() =>
+    pointerArmedRef.current
+    || performance.now() - lastPointerRef.current <= READER_INPUT_MS, []);
 
   const appliedOf = useCallback((key: string | null) =>
     (key && lastAppliedByKeyRef.current[key]) || 0, []);
@@ -104,6 +102,17 @@ export function useChatAreaStick(
     && op.scrollerKey === activeKeyRef.current
     && (sessionId == null || op.sessionId === sessionId), [sessionId]);
 
+  // The window holds the newest page and no send or Jump is waiting for a
+  // verified one. A page loading at either end does not change that: older
+  // rows arriving above a reader at the latest are not the reader leaving.
+  const atLatestWindow = useCallback(() => {
+    if (pendingJumpRef.current) return false;
+    const op = opRef.current;
+    if (op?.awaitingLatest && opCurrent(op)) return false;
+    if (!sessionId) return true;
+    return !useSessionHistory.getState().pages[sessionId]?.after;
+  }, [sessionId, opCurrent]);
+
   const markProgrammatic = useCallback(() => {
     programmaticRef.current = true;
     queueMicrotask(() => {
@@ -115,11 +124,28 @@ export function useChatAreaStick(
     markProgrammatic();
     snapToLatest(area);
     scrollTopRef.current = area.scrollTop;
-    const key = activeKeyRef.current;
-    if (key && !area.hasAttribute("data-self-update-verification")) {
-      writeChatScroll(window.sessionStorage, key, area.scrollTop, true);
-    }
   }, [markProgrammatic]);
+
+  /** Publish the follow state and the button from it. */
+  const publish = useCallback((area: HTMLElement) => {
+    if (jumpingRef.current) {
+      // The button stays until the ride finishes.
+      stuckRef.current = true;
+      return;
+    }
+    const op = opRef.current;
+    if (op?.awaitingLatest && opCurrent(op)) {
+      // Waiting for the newest page: not following yet, button as it was.
+      stuckRef.current = false;
+      setDetached(true);
+      return;
+    }
+    const following = stuckRef.current;
+    const hasNewer = !atLatestWindow();
+    const remaining = remainingScroll(area);
+    setDetached(!following);
+    setShowJump((was) => jumpVisible(was, { following, hasNewer, remaining }));
+  }, [atLatestWindow, opCurrent]);
 
   const stopJump = () => {
     const cancel = cancelJumpRef.current;
@@ -149,29 +175,6 @@ export function useChatAreaStick(
     const msgs = columnRef ? columnRef.current : document.getElementById("chatMessages");
     if (!area || !msgs) return;
 
-    const overlay = () => readComposerOverlay(area, composerRootRef?.current ?? null);
-
-    const syncDetached = () => {
-      const latest = atLatestWindow();
-      const atBottom = latest && isChatAtBottom(area, readBottomPadding(msgs), overlay());
-      if (jumpingRef.current) {
-        // Stay visible until the ease-in-out ride finishes.
-        stuckRef.current = true;
-        return atBottom;
-      }
-      const pendingSend = opRef.current?.kind === "send"
-        && opCurrent(opRef.current)
-        && opRef.current.awaitingLatest;
-      if (pendingSend) {
-        stuckRef.current = false;
-        setDetached(true);
-        return false;
-      }
-      stuckRef.current = atBottom;
-      setDetached((was) => (was === !atBottom ? was : !atBottom));
-      return atBottom;
-    };
-
     const cancelPending = () => {
       const op = opRef.current;
       interactionRef.current += 1;
@@ -191,24 +194,26 @@ export function useChatAreaStick(
 
     const onScroll = () => {
       if (area.clientHeight <= 0) return;
-      if (pointerArmedRef.current && !programmaticRef.current) {
+      const programmatic = programmaticRef.current;
+      if (pointerArmedRef.current && !programmatic) {
         cancelPending();
       }
-      if (
-        stuckRef.current
-        && !jumpingRef.current
-        && atLatestWindow()
-        && !scrolledAwayFromLatest(scrollTopRef.current, area.scrollTop)
-        && performance.now() - lastPointerRef.current > GROWTH_SUPPRESS_MS
-      ) {
-        applySnap(area);
+      const movedUp = !programmatic
+        && scrolledAwayFromLatest(scrollTopRef.current, area.scrollTop);
+      // A view taken up to a message (rail, search hit, parent return) is
+      // not pulled back by the late snap of an earlier placement.
+      if (movedUp && opRef.current) opRef.current.nextResizeArmed = false;
+      if (!jumpingRef.current) {
+        stuckRef.current = followAfterScroll({
+          following: stuckRef.current,
+          latestWindow: atLatestWindow(),
+          remaining: remainingScroll(area),
+          movedUp,
+        });
+        if (stuckRef.current && !movedUp && !readerActive()) applySnap(area);
       }
-      const atBottom = syncDetached();
+      publish(area);
       scrollTopRef.current = area.scrollTop;
-      const key = activeKeyRef.current;
-      if (key && !area.hasAttribute("data-self-update-verification")) {
-        writeChatScroll(window.sessionStorage, key, area.scrollTop, atBottom);
-      }
     };
 
     const pin = () => {
@@ -216,7 +221,7 @@ export function useChatAreaStick(
       if (area.clientHeight <= 0) return;
       const op = opRef.current;
       if (jumpingRef.current) {
-        syncDetached();
+        publish(area);
         return;
       }
       if (op && opCurrent(op) && op.nextResizeArmed && atLatestWindow()) {
@@ -226,21 +231,20 @@ export function useChatAreaStick(
           settleTakeLatest(op.sessionId, op.scrollerKey, op.generation);
           setApplied(op.scrollerKey, op.generation);
           stuckRef.current = true;
-          setDetached(false);
           opRef.current = { ...op, nextResizeArmed: false, welcomeArmed: op.welcomeArmed };
         }
-        syncDetached();
+        publish(area);
         return;
       }
-      if (
-        stuckRef.current
-        && atLatestWindow()
-        && !jumpingRef.current
-        && performance.now() - lastPointerRef.current > GROWTH_SUPPRESS_MS
-      ) {
-        applySnap(area);
-      }
-      syncDetached();
+      const active = readerActive();
+      stuckRef.current = followAfterGrowth({
+        following: stuckRef.current,
+        latestWindow: atLatestWindow(),
+        remaining: remainingScroll(area),
+        readerActive: active,
+      });
+      if (stuckRef.current && !active) applySnap(area);
+      publish(area);
     };
 
     const onPointerDown = () => {
@@ -249,19 +253,28 @@ export function useChatAreaStick(
       if (jumpingRef.current || pendingJumpRef.current) {
         cancelPending();
         stuckRef.current = false;
-        setDetached(true);
+        publish(area);
       }
     };
     const onPointerUp = () => {
       pointerArmedRef.current = false;
     };
-    const onWheel = () => {
+    // Only input that moves the view up is the reader leaving the latest.
+    // A finger resting on the trackpad, or inertia after reaching the end,
+    // sends wheel events that are neither.
+    const onWheel = (event: Event) => {
+      const delta = (event as WheelEvent).deltaY;
+      if (!delta) return;
+      if (delta < 0) lastPointerRef.current = performance.now();
+      cancelPending();
+    };
+    const onSeek = () => {
       lastPointerRef.current = performance.now();
       cancelPending();
     };
     const onKey = (event: KeyboardEvent) => {
       if (!SCROLL_KEYS.has(event.key)) return;
-      lastPointerRef.current = performance.now();
+      if (SCROLL_UP_KEYS.has(event.key)) lastPointerRef.current = performance.now();
       cancelPending();
     };
 
@@ -270,9 +283,17 @@ export function useChatAreaStick(
     area.addEventListener("pointerup", onPointerUp, { passive: true });
     area.addEventListener("pointercancel", onPointerUp, { passive: true });
     area.addEventListener("wheel", onWheel, { passive: true });
+    // A seek started outside the area is the reader moving, like a wheel up.
+    area.addEventListener(CHAT_READER_SEEK_EVENT, onSeek);
     area.addEventListener("keydown", onKey);
+    // The border box: a taller composer grows only the column's bottom
+    // padding (its reserve), which leaves the content box as it was.
     const ro = new ResizeObserver(pin);
-    ro.observe(msgs);
+    ro.observe(msgs, { box: "border-box" });
+    // The area too: a window made only shorter changes its clientHeight
+    // but neither the column's box nor scrollTop, so nothing else would
+    // run pin and the latest would slide under the composer.
+    ro.observe(area);
     return () => {
       // A new key's layout effect may already own a follow operation. Old
       // listener cleanup must not cancel that incoming viewport operation.
@@ -290,39 +311,11 @@ export function useChatAreaStick(
       area.removeEventListener("pointerup", onPointerUp);
       area.removeEventListener("pointercancel", onPointerUp);
       area.removeEventListener("wheel", onWheel);
+      area.removeEventListener(CHAT_READER_SEEK_EVENT, onSeek);
       area.removeEventListener("keydown", onKey);
       ro.disconnect();
     };
-  }, [paintRows, chatKey, sessionId, areaRef, columnRef, composerRootRef, applySnap, atLatestWindow, opCurrent, setApplied]);
-
-  // Save departure before the shared DOM is reused by another conversation.
-  useLayoutEffect(() => {
-    if (!paintRows || !chatKey) return;
-    const area = areaRef ? areaRef.current : document.getElementById("chatArea");
-    return () => {
-      if (area?.hasAttribute("data-self-update-verification")) return;
-      writeChatScroll(window.sessionStorage, chatKey, scrollTopRef.current, stuckRef.current);
-    };
-  }, [chatKey, paintRows, areaRef]);
-
-  useEffect(() => {
-    if (!paintRows || !chatKey || !sessionId) return;
-    let blurredAt: number | null = null;
-    const onBlur = () => { blurredAt ??= Date.now(); };
-    const onFocus = () => {
-      const elapsed = blurredAt == null ? 0 : Date.now() - blurredAt;
-      blurredAt = null;
-      if (elapsed < CHAT_READING_POSITION_TTL_MS) return;
-      saveHistoryAnchor(sessionId, null);
-      noteTakeLatest({ sessionId, scrollerKey: chatKey, turnSeed: "" });
-    };
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [chatKey, sessionId, paintRows]);
+  }, [paintRows, chatKey, sessionId, areaRef, columnRef, applySnap, atLatestWindow, opCurrent, publish, readerActive, setApplied]);
 
   useLayoutEffect(() => {
     const area = areaRef ? areaRef.current : document.getElementById("chatArea");
@@ -368,18 +361,21 @@ export function useChatAreaStick(
     previousKeyRef.current = chatKey;
     previousSidRef.current = sid ?? null;
 
-    const saved = (keyChanged || becameVisible) && chatKey
-      ? readChatScroll(window.sessionStorage, chatKey)
-      : null;
-
-    const followedLatest = !!chatKey && readChatFollowLatest(window.sessionStorage, chatKey);
+    // Opening, switching to or showing a conversation again lands on the
+    // latest and follows it through delayed layout. A reader taken to one
+    // message (link, search hit, rail, parent return) moves up from there,
+    // which stops the following like any other move up.
+    const arriving = keyChanged || becameVisible;
     let note = sid && chatKey ? peekTakeLatest(sid, chatKey) : null;
-    if ((keyChanged || becameVisible) && (saved == null || followedLatest) && sid && chatKey) {
-      // Restore latest-follow intent through delayed layout; detached readers
-      // keep their saved pixels and history anchors.
-      saveHistoryAnchor(sid, null);
+    if (arriving && sid && chatKey) {
       note = noteTakeLatest({ sessionId: sid, scrollerKey: chatKey, turnSeed: newTurnSeed ?? "" });
       lastPointerRef.current = -Infinity;
+      pointerArmedRef.current = false;
+    }
+    if (arriving) {
+      stuckRef.current = true;
+      setDetached(false);
+      setShowJump(false);
     }
     const settled = sid && chatKey ? lastSettledTakeLatest(sid, chatKey) : 0;
     if (chatKey) setApplied(chatKey, settled);
@@ -390,37 +386,6 @@ export function useChatAreaStick(
       && note.generation > appliedOf(chatKey)
     );
 
-    if (keyChanged && !takeLatest) {
-      area.scrollTop = resolveChatScrollTop({
-        keyChanged: true,
-        seedChanged: false,
-        saved,
-        scrollHeight: area.scrollHeight,
-        currentTop: saved ?? scrollTopRef.current,
-        atBottom: stuckRef.current,
-        ownTurn: false,
-      });
-      if (typeof area.scrollTop === "number" && saved == null) {
-        markProgrammatic();
-        snapToLatest(area);
-      } else {
-        markProgrammatic();
-      }
-      scrollTopRef.current = area.scrollTop;
-    } else if (!takeLatest && becameVisible && !keyChanged && saved != null) {
-      markProgrammatic();
-      area.scrollTop = saved;
-      scrollTopRef.current = area.scrollTop;
-    }
-    if ((keyChanged || becameVisible) && !takeLatest) {
-      stuckRef.current = !history?.after && isChatAtBottom(
-        area,
-        readBottomPadding(columnRef?.current ?? document.getElementById("chatMessages")),
-        readComposerOverlay(area, composerRootRef?.current ?? null),
-      );
-      setDetached(!stuckRef.current);
-    }
-
     if (jumpingRef.current && history?.after) {
       pendingJumpRef.current = false;
       interactionRef.current += 1;
@@ -429,7 +394,7 @@ export function useChatAreaStick(
       jumpingRef.current = false;
       if (chatKey) setFollowLock(chatKey, false);
       stuckRef.current = false;
-      setDetached(true);
+      publish(area);
     }
 
     if (takeLatest && note && sid && chatKey) {
@@ -498,7 +463,9 @@ export function useChatAreaStick(
             setFollowLock(chatKey, false);
             opRef.current = null;
             stuckRef.current = false;
-            setDetached(true);
+            const shown = areaRef ? areaRef.current : document.getElementById("chatArea");
+            if (shown) publish(shown);
+            else setDetached(true);
             return;
           }
           const live = areaRef ? areaRef.current : document.getElementById("chatArea");
@@ -524,6 +491,7 @@ export function useChatAreaStick(
             awaitingLatest: false,
           };
           setDetached(false);
+          setShowJump(false);
         })();
       } else {
         stuckRef.current = true;
@@ -542,22 +510,22 @@ export function useChatAreaStick(
           awaitingLatest: false,
         };
         setDetached(false);
+        setShowJump(false);
       }
     } else if (!jumpingRef.current && !keyChanged) {
-      // New rows commit before ResizeObserver runs. Preserve latest intent
-      // across that height change instead of treating it as user detachment.
-      if (stuckRef.current && atLatestWindow()
-          && performance.now() - lastPointerRef.current > GROWTH_SUPPRESS_MS) {
-        applySnap(area);
-      }
-      stuckRef.current = !hasNewer && isChatAtBottom(
-        area,
-        readBottomPadding(columnRef?.current ?? document.getElementById("chatMessages")),
-        readComposerOverlay(area, composerRootRef?.current ?? null),
-      );
-      setDetached(!stuckRef.current);
+      // Rows commit before ResizeObserver runs: a new row, or a page of
+      // older ones above. That is growth, never the reader leaving.
+      const active = readerActive();
+      stuckRef.current = followAfterGrowth({
+        following: stuckRef.current,
+        latestWindow: !hasNewer && atLatestWindow(),
+        remaining: remainingScroll(area),
+        readerActive: active,
+      });
+      if (stuckRef.current && !active) applySnap(area);
+      publish(area);
     }
-  }, [chatKey, newTurnSeed, paintRows, hasNewer, historyLoading, sessionId, areaRef, columnRef, composerRootRef, noteTick, applySnap, appliedOf, atLatestWindow, markProgrammatic, opCurrent, setApplied]);
+  }, [chatKey, newTurnSeed, paintRows, hasNewer, historyLoading, sessionId, areaRef, noteTick, applySnap, appliedOf, atLatestWindow, opCurrent, publish, readerActive, setApplied]);
 
   useEffect(() => {
     if (areaRef) return;
@@ -574,6 +542,7 @@ export function useChatAreaStick(
       applySnap(area);
       stuckRef.current = true;
       setDetached(false);
+      setShowJump(false);
     };
     tryWelcome();
     const mount = document.getElementById("welcome-mount");
@@ -613,7 +582,6 @@ export function useChatAreaStick(
           }
         }
         if (!isCurrent()) return;
-        saveHistoryAnchor(sid, null);
       }
       const area = areaRef ? areaRef.current : document.getElementById("chatArea");
       if (!area || !isCurrent()) return;
@@ -641,6 +609,7 @@ export function useChatAreaStick(
           jumpingRef.current = false;
           stuckRef.current = true;
           setDetached(false);
+          setShowJump(false);
           if (sid && key) {
             setApplied(key, generation);
             const note = peekTakeLatest(sid, key);
@@ -658,5 +627,7 @@ export function useChatAreaStick(
     }
   }, [sessionId, areaRef, setApplied]);
 
-  return { detached, jumpToLatest };
+  // `detached`: the view no longer follows the latest. `showJump`: the
+  // reader is far enough above it for the button.
+  return { detached, showJump, jumpToLatest };
 }

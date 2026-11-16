@@ -1,0 +1,208 @@
+<title>任务块</title>
+<meta name="description" content="一条回复把一段工作收进一个有名字、可折叠的任务块：它的步骤、每一步做的工作，做完后的一行结果。">
+<h1>任务块</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 330" aria-label="一条回复里有两个任务块。第一个已经做完，收成一行：名字、结果、步数和耗时。第二个正在运行并展开：标题显示进度 1/3，名字下面是用途，三个步骤缩进一层，排在一条轨上。第一步是点开的，它的工具行再缩进一层；其余步骤在等待。回答的文字在两个块之外。">
+<text class="t-soft" x="20" y="28">开头的一句话，不在任何块里</text>
+<rect class="tile" x="20" y="44" width="640" height="34" rx="8"/>
+<text x="36" y="66">✓ 折叠 agent 列表</text>
+<text class="t-soft" x="170" y="66">— 已结束的收成一行 · 5 步 · 4 分钟</text>
+<text class="t-soft" x="20" y="104">两个任务之间的话，始终可见</text>
+<rect class="tile" x="20" y="120" width="640" height="170" rx="8"/>
+<text x="36" y="144">◌ 更新设计页</text>
+<text class="t-soft" x="140" y="144">· 1/3 · 20 秒</text>
+<text class="t-soft" x="58" y="166">两种语言的页面都写清代码在做什么</text>
+<line class="ln-faint" x1="64" y1="196" x2="64" y2="254"/>
+<text class="t-note" x="58" y="190">◌ 改英文页</text>
+<text class="t-soft" x="644" y="190" text-anchor="end">点开的步骤</text>
+<text class="t-cmd" x="80" y="212">⌕ 正在读取 activity-panel.html</text>
+<text class="t-soft" x="58" y="236">○ 改中文页</text>
+<text class="t-soft" x="58" y="260">○ 跑文档检查</text>
+<text class="t-soft" x="20" y="316">最终回答，不在任何块里</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>开头的一句话，不在任何块里</li>
+<li>做完的块，一行：名字、结果、5 步、4 分钟</li>
+<li>两个任务之间的话</li>
+<li>运行中的块，展开：标题 1/3，名字下面是用途；缩进一层是三个步骤；第一步是点开的，它的工具行再缩进一层</li>
+<li class="flow-end">最终回答，不在任何块里</li>
+</ol>
+</figure>
+
+<p>任务块是回复里一段有名字的工作。agent 用每次工具调用自带的 <code translate="no">task_progress</code> 参数说明这次调用在任务里的位置，所以报告进度不多花一轮模型往返；哪些工作属于它由运行时决定，回复结束时由运行时收尾。</p>
+
+<h2>组成</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">形状</th><td>回复列里的一段。不画边框卡片。状态画在标题的状态图标上。</td></tr>
+<tr><th scope="row">层级</th><td>三层，只靠缩进区分，每层差一个单位：标题；步骤；一个步骤的工作。单位是标题图标加它后面的间距，所以每一层的节点都对齐上一层的文字。字号和粗细不区分层级：任务名、它下面那一行说明、每个步骤和步骤的备注都是同一个字号，即工具组摘要的字号，进行中的步骤也一样。</td></tr>
+<tr><th scope="row">标题</th><td>状态图标、任务名、进度、耗时、<span class="nb">+N −M</span> 标记、箭头。行高 28px，字号与工具组摘要相同。运行中，进度是进行中步骤的位置（<span class="nb">3/5</span>：正在第三步）；停下或带到下一轮时是已完成的步数。任务没有步骤、或没推进过就结束时不显示。</td></tr>
+<tr><th scope="row">窄列</th><td>任务名最后才被截断：先缩短结果和当前步骤，列宽不到 480px 时标题里不显示耗时和标记。</td></tr>
+<tr><th scope="row">用途</th><td>名字下面一行淡色的文字，说明这个块是做什么的</td></tr>
+<tr><th scope="row">步骤</th><td>缩进一层，每个步骤一行，节点排在一条从第一步连到最后一步的轨上。状态靠节点和文字颜色表示。已完成：对勾、标题、淡色的半句结果。当前：转圈和现在时的摘要。等待：空心圆。放弃：划线，不计数。</td></tr>
+<tr><th scope="row">一个步骤的工作</th><td>默认收起，进行中的步骤也一样，读者点这一步才展开，再点一次收起。展开后是现有的步骤行（工具调用、思考、子 agent 行）和这一步里说的话，再缩进一层，不另画轨。Normal、Thinking、Verbose 在这里照常生效。</td></tr>
+<tr><th scope="row">没有步骤</th><td>只给名字也能开一个块；工作平铺在它下面。一次都没推进就结束的任务画法相同，步骤只作提纲：不替它勾任何一步，也不显示 <span class="nb">N/N</span>。它还在运行时处于第一步，工作算在这一步下。</td></tr>
+<tr><th scope="row">块外</th><td>开工前的那句话、两个任务之间的话、最终回答。始终可见。</td></tr>
+<tr><th scope="row">小工作</th><td>没有块。回复和没有任务时一样：摘要行和文字。</td></tr>
+</tbody>
+</table>
+
+<h2>状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">画法</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td>展开到名字、用途和步骤；每个步骤一行，工作收起</td></tr>
+<tr><th scope="row">运行中，手动收起</th><td>一行：名字、当前步骤、<span class="nb">3/5</span>、耗时</td></tr>
+<tr><th scope="row">做完</th><td>原地收成一行：名字、结果、步数、改动量、耗时。没有写结果时用确定性的摘要；从不根据文字去猜。</td></tr>
+<tr><th scope="row">停止、失败、中断</th><td>保持展开，带现有的“已停止”“已中断”或失败标签和 <span class="nb">3/5</span>。停在的那一步在节点上显示状态；等待的步骤仍是等待。标签只在块上：回复里它后面的内容不再带一次。耗时算到回复结束；不知道回复何时结束就不显示。</td></tr>
+<tr><th scope="row">等用户处理</th><td>仍是运行中：展开，没有标签。图标和名字不再动，回复继续后恢复。</td></tr>
+<tr><th scope="row">停止后继续</th><td>新回复里一个同名的段，从那里第一次 <code translate="no">task_step</code> 调用开始</td></tr>
+<tr><th scope="row">同一条回复里的第二个任务</th><td>前一个块收起。没做完的写“停在 3/5”，不打勾，它未完成的步骤被放弃。</td></tr>
+<tr><th scope="row">跨多轮的 Goal</th><td>一个任务跨多轮。每条回复只画自己那一段；前几轮完成的步骤是一行“前 5 步已完成”，点它跳过去。</td></tr>
+<tr><th scope="row">子 agent</th><td>它现有的那一行在派它的步骤下面。它运行期间块保持展开。它自己的任务块只在它自己的对话里显示。它开的任务只属于那一次运行：同一个 agent 的两次运行不共用任务。</td></tr>
+<tr><th scope="row">重新打开的对话</th><td>归属从保存的调用所在的位置得出，与实时一致</td></tr>
+<tr><th scope="row">保存着待办清单的对话</th><td>一份清单是一个收起的块，名为“待办”，带计数，画在最早有它的那条已加载回复的第一次待办调用处。放不下的清单仍是摘要行里的“updated todos”。不改写任何数据。</td></tr>
+<tr><th scope="row">压缩之后</th><td>开着的任务（标题、步骤、当前步骤）再交给模型一次</td></tr>
+<tr><th scope="row">手动展开或收起</th><td>块：优先于它自动的展开和收起。步骤：只能这样展开；工作流进来、这一步做完，都保持读者的选择。两者都按回复记在本浏览器里，保留最近 500 次选择。Enter 和空格切换；左方向键收起，右方向键展开。</td></tr>
+</tbody>
+</table>
+
+<h2>工具</h2>
+<p>每次调用上一个参数，它说不了的交给两个工具。一个任务是待办存储里的一份清单，一个步骤是一条待办，所以 Goal 验收和子 agent 勾父任务的步骤读的是同一份数据。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">task_progress</code><span class="arg"><code translate="no">task?, steps?, step?, result?</code></span></th><td>回合提供任务工具时，模型能调用的每个工具（包括 MCP 工具）都多一个可选参数。它说明这次调用的位置：<code translate="no">step</code> 是这次调用所做步骤的序号。<code translate="no">task</code> 不是任何开着的任务的标题时，按 <code translate="no">steps</code> 开一个新任务。<code translate="no">step</code> 变化时，进行中的步骤完成，<code translate="no">result</code> 留在它上面。原样再发一次什么都不变。超过最后一步的序号让最后一步继续进行。</td></tr>
+<tr><th scope="row"><code translate="no">task_start</code><span class="arg"><code translate="no">title, purpose?, steps?</code></span></th><td>标题是不超过 40 个字符的名词短语；目的是一句话；步骤是 1 到 7 个短语，一次写全。第一步立即开始。已经开着的块先被关掉。</td></tr>
+<tr><th scope="row"><code translate="no">task_step</code><span class="arg"><code translate="no">next?, step?, add?, drop?, result?, outcome?</code></span></th><td><code translate="no">next</code> 完成当前步骤并开始下一步，不需要 id。<code translate="no">step</code> 跳着做。<code translate="no">add</code> 追加，<code translate="no">drop</code> 标为放弃。<code translate="no">result</code> 给刚完成的步骤留半句话。<code translate="no">outcome</code> 带着结果结束任务；还没做的步骤被放弃。没有开着的任务时返回一句提示，不是错误。没有自己任务的子 agent 用 <code translate="no">step=N</code> 勾掉派它来的那个任务的第 N 步。</td></tr>
+<tr><th scope="row"><code translate="no">task_list</code></th><td>只读：任务和它们的步骤。按需加载，不常驻。</td></tr>
+<tr><th scope="row">各自发给谁</th><td><code translate="no">task_start</code> 常驻：规则写在它的说明里。<code translate="no">task_step</code> 按需加载，用于目的、追加或放弃步骤、结果。加载器、任务工具和结构化输出的提交工具不带 <code translate="no">task_progress</code>；自己的参数里已有同名属性的工具保留自己的。</td></tr>
+<tr><th scope="row">写在说明里的规则</th><td>进度挂在真实调用上，从不单独占一个响应；不为收尾发最后一次调用。计划不在文字里重复。三个步骤或十几次调用才值得开任务；一条回复里没有、一个或两个。被改方向时，放弃步骤或另开任务。</td></tr>
+<tr><th scope="row">结果</th><td>任务工具的结果是一行说明任务到哪了。真实调用的结果是它自己的；只有它的 <code translate="no">task_progress</code> 没能生效时才补一句。</td></tr>
+</tbody>
+</table>
+
+<h2>运行时决定的事</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">归属只看位置</th><td>回复的块按顺序读。一次任务调用，或 <code translate="no">task_progress</code> 推动了任务的一次调用，是分界：它自己和它之后的每个块属于它设定的任务和步骤。每个文字、思考和工具块都盖上 <code translate="no">task</code> 和 <code translate="no">step</code>。保存下来的块在流式中、结束后、重新读回时给出同一个答案。</td></tr>
+<tr><th scope="row">块到它最后一次真实调用为止</th><td>排在任务最后一次非任务工具调用之后的带戳文字画在块外。两个任务之间的话和最终回答因此始终可见，不需要模型标记。段还没收尾时，这次调用之后的思考也算这一步的工作：一步的工作从一开始就在步骤里，停止时块下面也不会多出一行。</td></tr>
+<tr><th scope="row">进度在调用运行前生效</th><td>分发器在校验参数前取出 <code translate="no">task_progress</code>，先让它生效，再运行调用，所以这次调用的卡片一开始就在它的步骤下，工具、MCP 服务器和插件都看不到这个参数。卡片和历史保留模型写下的原样调用，之后的请求发出同样的字节。</td></tr>
+<tr><th scope="row">只生效一次</th><td>暂停后再次分发的调用只生效一次：记在任务上的是这次调用的出现（所在回复、位置和 id），不是单独的 id，因为 Gemini 每次回复的调用 id 都一样。</td></tr>
+<tr><th scope="row">进度不往回走</th><td>已完成或已放弃的步骤不会被重新拿起：同一批并行调用里写给前一步、却排在推进之后运行的调用，不改变任务的位置。</td></tr>
+<tr><th scope="row">参数在组装工具列表时加上</th><td>由一处给发出的每个工具加上，每次请求都一样，缓存的前缀不变。严格模式的提供方收到的是多一个可为空的属性。工具自己的定义和它的加载记录不动。</td></tr>
+<tr><th scope="row">一条回复开头不属于任何任务</th><td>例外是开着的任务所属 Goal 的那一轮：它从第一个块起继续这个任务，它的段从第一次真实调用开始。</td></tr>
+<tr><th scope="row">正常结束会收尾</th><td>只有勾掉它就能结束任务时，才替模型完成进行中的步骤：任务推进过、后面没有等待的步骤、不属于任何 Goal。Goal 的一轮在模型不再调用工具时就结束，所以它的步骤保持进行中，留给下一轮。没有剩下的：任务做完。从未推进且不属于任何 Goal：做完，不勾任何步骤。其余情况任务保持打开，步骤仍是进行中，这一段带到下一轮。</td></tr>
+<tr><th scope="row">子 agent 的一次运行自己收尾</th><td>任务按这次运行的回复区分。一次运行没有下一轮：正常结束时还有步骤没做的任务按被顶掉收尾，未完成的步骤被放弃，不勾任何步骤。</td></tr>
+<tr><th scope="row">停止、暂停、失败不收尾</th><td>段仍然写着运行中；由回复自己的状态画成已停止、失败或已中断。这个状态没有第二份副本，不会与回复不一致。</td></tr>
+<tr><th scope="row">被顶掉的任务放弃未完成的步骤</th><td>按正常结束的规则，勾掉进行中的步骤就能结束任务时，先勾掉它。否则 Goal 会一直等没人再勾的步骤。段里保留步骤被顶掉那一刻的样子，Goal 验收仍把放弃的步骤列给验收者。</td></tr>
+<tr><th scope="row">段可以晚于它的块到达</th><td>任务还没有段的块按不属于任何任务来画，段到了再归入。</td></tr>
+</tbody>
+</table>
+
+<h2>界面的其他位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">回复下方</th><td>没有东西：任务只以它的块出现</td></tr>
+<tr><th scope="row">工具组摘要</th><td>任务调用不出短语；只含任务调用的一行不画</td></tr>
+<tr><th scope="row">Goal 芯片</th><td>写“当前步骤 · 3/5”：进行中步骤的位置，与块标题里的数字相同。点一下滚到打开的块，只有用户自己收起过才展开它，所以自动展开的块在任务结束时照常收起。块已经在视口里、或不在页面上时，点击打开 Goal 详情，详情没有别的入口。放弃的步骤不计入总数。</td></tr>
+<tr><th scope="row">从芯片跳转</th><td>芯片在滚动区之外，所以跳转时要告诉滚动区是读者在移动。否则停在最新处的视图第一帧就被拉回去。</td></tr>
+<tr><th scope="row">Activity 面板</th><td>不加任务分组</td></tr>
+<tr><th scope="row">消息导航</th><td>有任务的那一轮刻度宽 14px；它的预览列出任务标题和步骤范围，点一条跳到那个块。标题下面是最后一次调用之后的回答，不是某一步里说的话。只有一条消息的对话，回复里有两个任务块时也显示导航，Goal 就是这样。</td></tr>
+<tr><th scope="row">终端</th><td>不嵌套：任务调用在自己那一行下面画标题、<span class="nb">3/5</span> 和步骤</td></tr>
+<tr><th scope="row">渠道</th><td>不提供任务工具；文字照原样发出</td></tr>
+</tbody>
+</table>
+
+<h2>依据</h2>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">计划或任务工具</th><th scope="col">清单显示在哪</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><code translate="no" data-claim="example">TaskCreate</code>、<code translate="no" data-claim="example">TaskUpdate</code>；更早是 <code translate="no" data-claim="example">TodoWrite</code>，单独一次调用带整份清单。只在 Opus 4.7、Sonnet 4.6、Haiku 4.5 及更早的模型上默认提供；其他模型上不提供，除非主动开启。</td><td>对话之外的任务列表视图，Ctrl+T 切换，一次五个任务；压缩后保留</td><td><a href="https://code.claude.com/docs/en/tools-reference#task-tool-availability">Tools reference</a>、<a href="https://code.claude.com/docs/en/interactive-mode#task-list">Task list</a></td></tr>
+<tr><th scope="row">Codex CLI</th><td><code translate="no" data-claim="example">update_plan</code>：单独一次调用，带可选的说明和整份步骤清单，每步一个状态；最多一步进行中；结果只有 "Plan updated"；Plan 模式下拒绝</td><td>未核实</td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/plan_spec.rs">plan_spec.rs</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/plan.rs">plan.rs</a></td></tr>
+<tr><th scope="row">OpenCode</th><td>内置工具页没有列待办工具</td><td>未核实</td><td><a href="https://opencode.ai/docs/tools/">Tools</a></td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no" data-claim="example">todo_list</code>，用于三步以上的任务；一项可以指定父项成为子任务</td><td>缩进的树</td><td><a href="https://hermes-agent.nousresearch.com/docs/reference/tools-reference">Tools reference</a></td></tr>
+<tr><th scope="row">GitHub Copilot CLI</th><td>Plan 模式在写代码前先写实现计划；文档没有提到进度清单</td><td>文档未提</td><td><a href="https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli">About Copilot CLI</a></td></tr>
+<tr><th scope="row">Pi</th><td>不带 plan 模式和子 agent；这类功能来自扩展包</td><td>没有内置</td><td><a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md">README</a></td></tr>
+<tr><th scope="row">mini-SWE-agent</th><td>只有 bash，线性历史</td><td>没有</td><td><a href="https://github.com/SWE-agent/mini-swe-agent/blob/main/README.md">README</a></td></tr>
+<tr><th scope="row">Cline</th><td>v3.30 里每个工具都有可选的 <code translate="no" data-claim="example">task_progress</code> 参数，带整份清单，要求经常更新。现在的源码只为读旧任务保留它，建在它上面的 Focus Chain 列为已弃用。</td><td>对话里的一份清单</td><td><a href="https://github.com/cline/cline/blob/v3.30.0/src/core/prompts/system-prompt/components/task_progress.ts">task_progress.ts</a>（v3.30.0）、<a href="https://docs.cline.bot/resources/deprecations">Deprecations</a></td></tr>
+</tbody>
+</table>
+<p class="note">没有考察：Oh My Pi、ZCode、KimiCode、Alma、MiniMax Code、Maka、DeepSeek Harness、Grok Build、Exo、Antigravity CLI。范围是 frontierharness.org/live 上的那一组。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">工作挂在它的步骤下</th><td>上面没有一个框架把调用和它服务的步骤连起来；对话旁边的清单说的是计划了什么，不是为它做了什么。回复下面一份做完的清单没有话可说，也不会再被读到。</td></tr>
+<tr><th scope="row">一个任务一个块，原地收起</th><td>很长的回复只剩几行；每一行仍能展开到它背后的全部内容</td></tr>
+<tr><th scope="row">步骤点开才展开</th><td>读者靠步骤，也就是 agent 定下的目标，跟进一个任务；一步背后的调用只在要核对时才看。自己展开的步骤会让搜索和读取占满整个块，把后面的步骤挤出视野。</td></tr>
+<tr><th scope="row">缩进表示层级</th><td>步骤的节点和任务名的节点对齐时，一个步骤看起来像第二个任务；更粗或更大的步骤看起来像标题。每层缩进一格，像 Hermes Agent 画子任务那样，一眼就是一棵树，不需要另一套字号。</td></tr>
+<tr><th scope="row">保留工具</th><td>Claude Code 在较新的模型上不提供任务工具，Pi 完全没有。这里 Goal 靠这份数据跨轮继续，所以保留，约定小到几乎不占成本。</td></tr>
+<tr><th scope="row">进度挂在真实调用上</th><td>Claude Code 和 Codex 用单独的调用报告进度。在 <code translate="no">openai-codex/gpt-6-luna</code> 上，不管说明怎么写，这种调用都单独发出，每次多一轮模型往返（见下表）。Cline 把清单放在每次工具调用上；这里保留这个形状，做成一个可选参数，由运行时在工具运行前取出。</td></tr>
+<tr><th scope="row">参数是状态，不是变化</th><td>给它 <code translate="no">{start}</code> 和 <code translate="no">{next}</code> 这种变化时，模型在每次调用上重发开头那一条，从不往下走，每个块都停在第一步。给它步骤序号时，它每次重复这个状态，而重复的状态什么都不改。</td></tr>
+<tr><th scope="row">不用调用来收尾</th><td>回复结束时收尾，新任务开始时收掉前一个，两者都只在没有等待的步骤时才勾掉最后一步。回复进行中不靠猜测勾掉任何步骤。没写结果的完成块显示确定的摘要，从不从回答里摘。</td></tr>
+<tr><th scope="row"><code translate="no">task_step</code> 按需加载</th><td>常驻时，一半的回复里它仍被单独发出，和 <code translate="no">task_progress</code> 里同一次步骤变化重复。只有它能做的事（放弃步骤、结果）很少用到。</td></tr>
+<tr><th scope="row">步骤一次写全</th><td>Codex 的 <code translate="no" data-claim="example">update_plan</code> 一次调用带整份计划；一次只能写一条时，模型每次只计划一步</td></tr>
+<tr><th scope="row">运行时收尾</th><td>模型忘了最后一次勾选，正常结束后也不会留下半截的块</td></tr>
+<tr><th scope="row">不画边框卡片</th><td>状态画在图标上，不画在框上，和图节点一样；一条回复里几个带框的盒子看起来像几个独立的窗口</td></tr>
+</tbody>
+</table>
+
+<p>同一个四到五步的任务（跑测试、修两个 bug、加一个测试、再跑一次、给三个函数写文档）在 <code translate="no">openai-codex/gpt-6-luna</code> 低档下各跑六次，用同一份代码的 print 模式，分别不带和带 <code translate="no">task_progress</code>：</p>
+<table class="stack">
+<thead><tr><th scope="col">六次合计</th><th scope="col">只有任务调用</th><th scope="col">带 <code translate="no">task_progress</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">模型响应</th><td>99（每次 14 到 20）</td><td>79（每次 11 到 15）</td></tr>
+<tr><th scope="row">只含任务调用的响应</th><td>31：每次任务调用都单独发出</td><td>7：每个任务开头的 <code translate="no">task_start</code>，外加一次重复发送</td></tr>
+<tr><th scope="row">带这个参数的真实调用</th><td>没有</td><td>73 次中 73 次</td></tr>
+<tr><th scope="row">由它完成的步骤变化</th><td>没有：25 次 <code translate="no">task_step</code> 调用</td><td>19 次中 19 次</td></tr>
+<tr><th scope="row">步骤与实际工作对得上的块</th><td>6 个中 6 个</td><td>6 个中 6 个</td></tr>
+</tbody>
+</table>
+
+<h2>限制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">后果</th></tr></thead>
+<tbody>
+<tr><th scope="row">归属跟着模型给的步骤序号走</th><td>从不改 <code translate="no">step</code> 的模型得到一个平铺的块：提纲，下面是全部工作。跳过的步骤保持等待，回复结束后任务仍开着。<code translate="no">task_step</code> 调用排在同一响应的真实调用之后时，那次调用算在上一步。</td></tr>
+<tr><th scope="row">开任务仍多一个响应</th><td>模型在第一次真实调用前先单独调用 <code translate="no">task_start</code> 开任务。改成按需加载后，它先搜索再单独调用，变成两个响应，所以它保持常驻。</td></tr>
+<tr><th scope="row">文字的戳在流式中是定死的</th><td>在任务调用返回前建好的文字块保留最初的归属，到回复落定才更正；工具块立即更正</td></tr>
+<tr><th scope="row">每个分支 500 段</th><td>超过后最早的回复重新把工作平铺画出；内容不丢</td></tr>
+<tr><th scope="row">在待办清单上开始的 Goal</th><td>它没做完的待办不属于任何任务，也没有工具能勾掉；编辑 Goal 会开一个不含它们的新修订</td></tr>
+<tr><th scope="row">块内的文字随块折叠</th><td>只有块外的文字和最终回答始终可见</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p>已实现：工具、戳、段、回复里的块、Goal 芯片、消息导航、终端里的清单，以及压缩后交还给模型的内容。存储怎么保存见<a href="todo-list.zh.html">任务存储</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">未完成</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">其他模型线</th><td>只在 <code translate="no">openai-codex/gpt-6-luna</code> 上测过；本来就把任务调用和真实调用同批发出的模型收益更小</td></tr>
+<tr><th scope="row">终端</th><td>它的清单从任务工具调用画出，所以由 <code translate="no">task_progress</code> 打开或推进的任务在那里不显示</td></tr>
+<tr><th scope="row">上线后测量</th><td>各模型线上开任务的回复占比、每个任务的调用数、从不推进的任务占比</td></tr>
+<tr><th scope="row">子 agent 勾父任务的步骤</th><td>单元测试覆盖；还没有用真实的子 agent 跑过</td></tr>
+<tr><th scope="row">没有流式事件的回复</th><td>它的块不盖戳；画出来和没有任务的回复一样</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>代码</summary>
+<ul>
+<li><code translate="no">openprogram/programs/tools/planning/todo/</code>（<code translate="no">task_start</code>、<code translate="no">task_step</code>、<code translate="no">task_list</code>、<code translate="no">shared.py</code>、<code translate="no">progress.py</code>）</li>
+<li><code translate="no">openprogram/runtime/agent/loop/streaming.py</code>、<code translate="no">tool_dispatch.py</code></li>
+<li><code translate="no">openprogram/state/task_blocks.py</code></li>
+<li><code translate="no">openprogram/runtime/conversation/turn_runtime/stream_tap.py</code></li>
+<li><code translate="no">apps/web/lib/chat/transcript/task-blocks.ts</code></li>
+<li><code translate="no">apps/web/components/chat/messages/execution/task-block.tsx</code></li>
+<li><code translate="no">apps/web/lib/prefs/task-block-open.ts</code></li>
+<li><code translate="no">apps/web/components/chat/badges/goal-chip.tsx</code></li>
+<li><code translate="no">apps/cli/src/components/tools/toolView.ts</code></li>
+</ul>
+</details>
+
+<p class="next"><a href="todo-list.zh.html">任务存储</a></p>

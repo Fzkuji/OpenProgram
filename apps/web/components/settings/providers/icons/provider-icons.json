@@ -51,6 +51,10 @@
     "file": "azure-color.svg",
     "mono": false
   },
+  "azure-cognitive-services": {
+    "file": "azure-color.svg",
+    "mono": false
+  },
   "azure-openai-responses": {
     "file": "azure-color.svg",
     "mono": false
@@ -146,6 +150,16 @@
   "io-net": {
     "file": "ionet.svg",
     "mono": true
+  },
+  "kimi-code-plan-cn": {
+    "file": "kimi-color.svg",
+    "mono": false,
+    "plate": "dark"
+  },
+  "kimi-code-plan-global": {
+    "file": "kimi-color.svg",
+    "mono": false,
+    "plate": "dark"
   },
   "kimi-coding": {
     "file": "kimi-color.svg",
@@ -254,6 +268,10 @@
     "file": "perplexity-color.svg",
     "mono": false
   },
+  "perplexity-agent": {
+    "file": "perplexity-color.svg",
+    "mono": false
+  },
   "poe": {
     "file": "poe-color.svg",
     "mono": false
@@ -282,6 +300,14 @@
     "file": "stepfun-color.svg",
     "mono": false
   },
+  "stepfun-ai-step-plan": {
+    "file": "stepfun-color.svg",
+    "mono": false
+  },
+  "stepfun-step-plan": {
+    "file": "stepfun-color.svg",
+    "mono": false
+  },
   "submodel": {
     "file": "submodel-color.svg",
     "mono": false
@@ -291,6 +317,10 @@
     "mono": false
   },
   "tencent-token-plan": {
+    "file": "tencent-color.svg",
+    "mono": false
+  },
+  "tencent-tokenhub": {
     "file": "tencent-color.svg",
     "mono": false
   },
@@ -336,6 +366,22 @@
   },
   "xai-subscription": {
     "file": "grok.svg",
+    "mono": true
+  },
+  "xiaomi": {
+    "file": "xiaomimimo.svg",
+    "mono": true
+  },
+  "xiaomi-token-plan-ams": {
+    "file": "xiaomimimo.svg",
+    "mono": true
+  },
+  "xiaomi-token-plan-cn": {
+    "file": "xiaomimimo.svg",
+    "mono": true
+  },
+  "xiaomi-token-plan-sgp": {
+    "file": "xiaomimimo.svg",
     "mono": true
   },
   "zai": {

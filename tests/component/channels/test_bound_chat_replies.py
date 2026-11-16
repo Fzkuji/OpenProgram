@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.interfaces.channels import _conversation as C
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _conversation as C
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.runtime.context.session_db import SessionDB
 from openprogram.runtime.conversation import bound_reply as B
 from openprogram.runtime.conversation import turn_runtime as D
@@ -44,7 +44,7 @@ def world(tmp_db: SessionDB, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         posted.append((platform, account_id, target, text))
         return result["value"]
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.post_message", _post)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.post_message", _post)
     monkeypatch.setattr("openprogram.interfaces.channels.accounts.owner_peer_id",
                         lambda channel, account_id: "owner-1" if channel == "wechat" else "")
     frames: list[dict] = []
@@ -116,7 +116,7 @@ def test_a_picked_wechat_chat_without_alias_sends_to_the_account_owner(world):
 def test_an_always_on_wake_in_a_bound_chat_sends_its_reply(world):
     """The real always-on path: an owner turn admitted by
     ``start_owner_turn`` and run through the canonical activation."""
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn
 
     db, posted, _, _ = world
     _bound_chat(db, "local_always_on", alias_peer="peer-9")
@@ -463,7 +463,7 @@ def test_a_reply_that_cannot_open_is_reported_once(world, monkeypatch, caplog):
 
 
 def test_an_app_turn_uploads_only_what_its_send_file_call_recorded(world, tmp_path, monkeypatch):
-    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels.delivery import _transport
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.state import attachments as att
 
@@ -525,7 +525,7 @@ def test_an_inbound_reply_flattens_at_every_exit_only_for_an_always_on_agent(
     world, stub_routing, monkeypatch, exit_path, always_on, expected,
 ):
     from openprogram.runtime.agent_registry import session_aliases
-    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels.delivery import _transport
 
     db, posted, _, result = world
     result["value"] = SendResult.success("m1")

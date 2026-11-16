@@ -116,36 +116,6 @@ FETCH_MODELS_PROVIDERS = frozenset({
 })
 
 
-ENV_API_KEYS: dict[str, str | None] = {
-    **{pid: pid.upper() + "_API_KEY" for pid in LOCAL_PROVIDERS},
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "google": "GOOGLE_GENERATIVE_AI_API_KEY",
-    "gemini-subscription": None,  # uses OAuth via gemini CLI
-    "azure-openai-responses": "AZURE_OPENAI_API_KEY",
-    "amazon-bedrock": None,  # AWS credentials chain
-    "openrouter": "OPENROUTER_API_KEY",
-    "groq": "GROQ_API_KEY",
-    "cerebras": "CEREBRAS_API_KEY",
-    "mistral": "MISTRAL_API_KEY",
-    "minimax": "MINIMAX_API_KEY",
-    "minimax-cn": "MINIMAX_API_KEY",
-    # Token Plan (subscription) shares the region account's key — same as the
-    # plain-API sibling above. Pin here too so the listing's api_key_env /
-    # base resolution don't depend on the models.dev catalogue being reachable.
-    "minimax-coding-plan": "MINIMAX_API_KEY",
-    "minimax-cn-coding-plan": "MINIMAX_API_KEY",
-    "huggingface": "HF_TOKEN",
-    "github-copilot": None,  # OAuth
-    "kimi-coding": "MOONSHOT_API_KEY",
-    "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
-    "opencode": None,
-    "opencode-go": "OPENCODE_API_KEY",
-    "openai-codex": None,  # OAuth via ~/.codex/auth.json
-    "xai-subscription": None,  # SuperGrok / X Premium+ OAuth
-    "deepseek": "DEEPSEEK_API_KEY",
-    "atlascloud": "ATLASCLOUD_API_KEY",
-}
 
 
 # Manual override for the ``api`` (wire / stream-function id) a
@@ -212,14 +182,17 @@ def label_for(provider_id: str) -> str:
 
 
 def env_var_for(provider_id: str) -> str | None:
-    """Env var name holding the API key for ``provider_id``. Same
-    override-first semantics as ``label_for`` — manual ``ENV_API_KEYS``
-    entry wins, otherwise models.dev's first
-    ``env[]`` entry, otherwise ``None``."""
-    if provider_id in ENV_API_KEYS:
-        return ENV_API_KEYS[provider_id]
-    md = _models_dev_info(provider_id)
-    return md.get("env_var")
+    """The variable that holds ``provider_id``'s key: the first one the
+    provider's connection entry names (``auth/login/login_method_registry.py``),
+    which falls back to the catalogue (models.dev); ``None`` when there is none."""
+    from openprogram.models.auth.login.login_method_registry import env_vars
+    names = env_vars(provider_id)
+    return names[0] if names else None
+
+
+def catalogue_env_var(provider_id: str) -> str | None:
+    """The key variable models.dev names for ``provider_id``, or ``None``."""
+    return _models_dev_info(provider_id).get("env_var")
 
 
 def synthesized_env_var(provider_id: str) -> str:

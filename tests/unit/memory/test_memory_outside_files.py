@@ -1,8 +1,9 @@
 """Files written outside OpenProgram, and paragraphs that cite nothing.
 
 Whatever a Topic file holds is memory and is found by search. A file
-another tool wrote is read where it lies and never rewritten, moved or
-linked into by a writer or the organizer; a person's own note may cite
+another tool wrote is never rewritten or linked into by a writer or the
+organizer (filing it into a folder moves it whole, see
+``test_memory_filing``); a person's own note may cite
 nothing, a writer's paragraph must. Whether a paragraph cites is checked
 where a write commits, by who wrote it, not by the parser.
 """

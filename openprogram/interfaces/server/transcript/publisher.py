@@ -20,7 +20,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
-from openprogram.state.store.session import session_log
+from openprogram.state.store.session.files import session_log
 
 from . import turn_index
 from .navigation import SINGLE
@@ -76,6 +76,9 @@ class _Sent:
     items: dict[str, dict[str, int]] = field(default_factory=dict)
     derived: dict[str, tuple] = field(default_factory=dict)
     order: dict[str, list[str]] = field(default_factory=dict)
+    # Each ended row as it last went out whole: a write that changes nothing
+    # a holder draws (a patch to stored fields no row shows) sends nothing.
+    whole: dict[str, int] = field(default_factory=dict)
     navigation: dict[str, tuple] | None = None
 
 
@@ -573,7 +576,10 @@ class TranscriptPublisher:
             if owner not in by_id:
                 continue
             at, row = by_id[owner]
-            if targets.get(owner, _Change()).put or not is_open_status(row.get("status")):
+            put = targets.get(owner, _Change()).put
+            if put or not is_open_status(row.get("status")):
+                if not put and sent.whole.get(owner) == _crc(row):
+                    continue
                 whole.add(owner)
                 out.append({
                     "kind": "row_upsert", "turnId": turn_id,
@@ -594,9 +600,10 @@ class TranscriptPublisher:
     def _record_whole(sent: _Sent, row: dict) -> None:
         """A row went out whole: later differences of an open row start from it."""
         row_id = row["id"]
-        for kept in (sent.blocks, sent.fields, sent.items):
+        for kept in (sent.blocks, sent.fields, sent.items, sent.whole):
             kept.pop(row_id, None)
         if not is_open_status(row.get("status")):
+            sent.whole[row_id] = _crc(row)
             return
         sent.blocks[row_id] = {
             index: _crc(block) for index, block in enumerate(row.get("blocks") or [])

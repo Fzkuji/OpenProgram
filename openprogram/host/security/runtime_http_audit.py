@@ -161,7 +161,7 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
-        path="interfaces/cli/commands/plugins.py",
+        path="interfaces/cli/commands/capabilities/plugins.py",
         boundary_owner="owner-control-plane",
         reason="owner CLI applies plugin changes on the challenge-verified backend without redirects or proxy inheritance",
         kinds=frozenset({"httpx.Client"}),
@@ -199,7 +199,7 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"socket.connect"}),
     ),
     BoundaryExclusion(
-        path="interfaces/cli/commands/rescue.py",
+        path="interfaces/cli/commands/maintenance/rescue.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
@@ -268,8 +268,8 @@ _MANAGED_FACTORY_NAMES = frozenset(
         "openprogram.host.security.safe_http.safe_async_client",
         "openprogram.host.security.safe_http.configured_safe_client",
         "openprogram.host.security.safe_http.configured_safe_async_client",
-        "openprogram.models.providers.utils.http_client.get_shared_async_client",
-        "utils.http_client.get_shared_async_client",
+        "openprogram.models.providers.utils.http_transport.http_client.get_shared_async_client",
+        "utils.http_transport.http_client.get_shared_async_client",
     }
 )
 _MANAGED_CONSUMER_CALL_NAMES = frozenset(
@@ -895,8 +895,8 @@ class _HTTPVisitor(ast.NodeVisitor):
                     return self._constant_string(keyword.value)
             return None
         if name in {
-            "openprogram.models.providers.utils.http_client.build_google_http_options",
-            "utils.http_client.build_google_http_options",
+            "openprogram.models.providers.utils.http_transport.http_client.build_google_http_options",
+            "utils.http_transport.http_client.build_google_http_options",
         }:
             return "provider.google.sdk"
         if (

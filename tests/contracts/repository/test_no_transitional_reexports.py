@@ -36,11 +36,11 @@ MOVED: dict[str, tuple[str, ...]] = {
         "TurnRequest", "PermissionMode", "INHERIT_PARENT",
         "_wrap_with_approval", "_await_user_approval",
     ),
-    "openprogram.runtime.conversation.turn_request_context": (
+    "openprogram.runtime.conversation.turn_admission.turn_request_context": (
         "current_turn_request", "get_turn_request", "set_turn_request",
         "reset_turn_request", "inner_turn_request",
     ),
-    "openprogram.runtime.conversation.session_config": (
+    "openprogram.runtime.conversation.session_settings.session_config": (
         "VALID_PERMISSION", "_PERMISSION_BY_LOWER",
     ),
     "openprogram.runtime.agent.call_state": ("default_expose", "_VALID_EXPOSE"),
@@ -59,7 +59,7 @@ MOVED: dict[str, tuple[str, ...]] = {
         "save_commit", "load_commit", "load_latest_commit", "load_commit_for_head",
         "list_commits",
     ),
-    "openprogram.runtime.conversation.rewind": ("recover_all_rewinds",),
+    "openprogram.runtime.conversation.rewinds.rewind": ("recover_all_rewinds",),
     "openprogram.runtime.jobs.resource_governance": (
         "RequestReservation", "plan_request_reservation",
     ),

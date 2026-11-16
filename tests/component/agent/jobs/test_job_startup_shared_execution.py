@@ -52,14 +52,14 @@ def test_job_runner_recovers_foreground_agent_without_job_projection(
 
     # Recover ownership at startup, then use the initialized runner
     # reconciliation entry without starting a provider thread.
-    from tests.component.execution.test_restart_continuation import _StartupDriver
+    from tests.component.execution.control.test_restart_continuation import _StartupDriver
     _StartupDriver.activations = []
     with monkeypatch.context() as startup_patch:
         startup_patch.setattr("openprogram.runtime.conversation.production_driver.AgentProductionDriver", _StartupDriver)
         runner = JobRunner(max_workers=1, governor=ResourceGovernor(
             UsageLedger(tmp_path / "usage.sqlite3"),
         ))
-        from openprogram.runtime.execution.restart import reconcile
+        from openprogram.runtime.execution.recovery.restart import reconcile
         reconcile(runner)
     try:
         recovered = store.get_execution(execution.execution_id)

@@ -65,11 +65,7 @@ assert.deepEqual(unhandled, [], `preload channels with no ipcMain handler:\n  ${
 // Known dead listeners, each with why it is tolerated. An entry must still be
 // dead: once the main process sends it again, or the preload drops it, the
 // entry goes.
-const DEAD_LISTENERS = {
-  // Main stopped sending it; the web side's subscribeBrowserHumanInput is a
-  // no-op kept for older bridge consumers. The preload's onHumanInput can go.
-  "webtab:human-input": "main/preload.js",
-};
+const DEAD_LISTENERS = {};
 for (const [name, file] of Object.entries(DEAD_LISTENERS)) {
   assert.equal(listened.get(name), file, `${name} is no longer listened to; drop it from DEAD_LISTENERS`);
   assert.equal(sentByMain.has(name), false, `${name} is sent again; drop it from DEAD_LISTENERS`);

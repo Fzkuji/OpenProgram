@@ -15,7 +15,7 @@ def _candidates(monkeypatch, *, session=(None, None), last=None, models=None):
     """Route candidate lookup to fakes; ``models`` maps "provider/id" → model."""
     models = models if models is not None else {}
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_model.read_session_chat_model", lambda _sid: session,
+        "openprogram.runtime.conversation.session_settings.session_model.read_session_chat_model", lambda _sid: session,
     )
     monkeypatch.setattr("openprogram.models.providers.catalog.last_used.read_last_used_model", lambda: last)
 
@@ -33,7 +33,7 @@ def _any_model(monkeypatch):
 
 @pytest.mark.parametrize("safe", [True, False, "true", "false", 1, 0, None, [], {}])
 def test_classifier_only_accepts_json_boolean_true(monkeypatch, safe):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
 
     _any_model(monkeypatch)
 
@@ -49,7 +49,7 @@ def test_classifier_only_accepts_json_boolean_true(monkeypatch, safe):
 
 
 def test_classifier_runs_on_the_conversation_model(monkeypatch):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
 
     sol, flash = object(), object()
     _candidates(
@@ -70,7 +70,7 @@ def test_classifier_runs_on_the_conversation_model(monkeypatch):
 
 
 def test_classifier_falls_back_to_last_used_model(monkeypatch):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
 
     sol, flash = object(), object()
     _candidates(
@@ -93,7 +93,7 @@ def test_classifier_falls_back_to_last_used_model(monkeypatch):
 
 
 def test_classifier_without_any_model_blocks(monkeypatch):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
 
     _candidates(monkeypatch)
     verdict = asyncio.run(auto_classify_tool("write", {"path": "example.txt"}))
@@ -103,15 +103,15 @@ def test_classifier_without_any_model_blocks(monkeypatch):
 def test_safe_auto_allowlist_names_real_tools():
     """A renamed tool must not silently fall out of the allowlist."""
     from openprogram import programs
-    from openprogram.runtime.permissions.classifier import SAFE_AUTO_ALLOWLIST
+    from openprogram.runtime.permissions.auto_mode.classifier import SAFE_AUTO_ALLOWLIST
 
     registered = set(programs.list_registered_agent_tools())
     assert sorted(SAFE_AUTO_ALLOWLIST - registered) == []
-    assert {"todo_create", "todo_list", "todo_update"} <= SAFE_AUTO_ALLOWLIST
+    assert {"task_start", "task_step", "task_list"} <= SAFE_AUTO_ALLOWLIST
 
 
 def test_classifier_checks_complete_arguments(monkeypatch):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
     _any_model(monkeypatch)
     command = "echo " + "x" * 1200 + "; rm -rf /important"
 
@@ -124,7 +124,7 @@ def test_classifier_checks_complete_arguments(monkeypatch):
 
 
 def test_classifier_never_approves_partial_oversized_input(monkeypatch):
-    from openprogram.runtime.permissions.classifier import auto_classify_tool
+    from openprogram.runtime.permissions.auto_mode.classifier import auto_classify_tool
     calls = []
     _any_model(monkeypatch)
 
@@ -141,7 +141,7 @@ def test_classifier_never_approves_partial_oversized_input(monkeypatch):
 def test_attaching_a_file_to_the_reply_needs_no_review_and_is_not_a_network_send():
     """Auto mode once sent send_file to the classifier, which denied a deck
     as exfiltration; the model then only pasted paths for the rest of the chat."""
-    from openprogram.runtime.permissions.classifier import safe_call
+    from openprogram.runtime.permissions.auto_mode.classifier import safe_call
     from openprogram.runtime.permissions.tool_authority import capability_for_tool, decide_tool_authority
 
     assert safe_call("send_file", {"path": "/abs/plan.pptx"})

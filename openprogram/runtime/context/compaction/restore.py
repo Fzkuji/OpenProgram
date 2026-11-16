@@ -6,7 +6,8 @@ summary node so every later request sends the same bytes:
 
 - the plan the user approved last on this chain (Claude Code's plan
   attachment), cut to ``PLAN_TOKENS`` with a note saying so;
-- the todo board, whole (Kimi Code, Hermes);
+- the open task: title, purpose, steps and the current step (Kimi Code
+  and Hermes restore their todo board);
 - the background jobs still running, one line each (Claude Code);
 - the paths of files read and changed, never their contents, added to the
   previous summary's lists (Pi's cumulative file tracking).
@@ -36,7 +37,7 @@ RESTORED_FILES = "restored_files"
 
 
 def _tokens(text: str) -> int:
-    from openprogram.runtime.context.tokens import _text_tokens
+    from openprogram.runtime.context.token_accounting.tokens import _text_tokens
     return _text_tokens(text)
 
 
@@ -59,7 +60,7 @@ def _chain_calls(graph: Any, head_id: Optional[str]) -> list:
     without the ones a rewind retracted."""
     if not head_id or head_id not in graph.nodes:
         return []
-    from openprogram.runtime.context.nodes import render_path
+    from openprogram.runtime.context.session_dag.nodes import render_path
     gone = set(getattr(graph, "retracted", ()) or ())
     return [graph.nodes[nid] for nid in render_path(graph, head_id)
             if nid not in gone and graph.nodes[nid].is_code()]
@@ -119,7 +120,7 @@ def file_lists(calls: Iterable, covers: Iterable[str], previous: Optional[dict])
 def _previous_files(graph: Any, covers: Iterable[str]) -> Optional[dict]:
     """The path lists of the summary this one absorbs: the newest summary
     whose turns this one covers too."""
-    from openprogram.runtime.context.nodes import summary_covers_ids
+    from openprogram.runtime.context.session_dag.nodes import summary_covers_ids
     covered = set(covers)
     best = None
     for node in graph.nodes.values():
@@ -130,15 +131,28 @@ def _previous_files(graph: Any, covers: Iterable[str]) -> Optional[dict]:
     return (best.metadata or {}).get(RESTORED_FILES) if best is not None else None
 
 
-def _todo_lines(session_id: str) -> list[str]:
+def _task_lines(session_id: str) -> list[str]:
+    """The task the running agent has open: its title, purpose, numbered
+    steps with status and result, and the step in progress. Tasks already
+    closed are in the summary, not here."""
     from openprogram.programs.tools.planning.todo import shared as todo
-    lines = []
-    for item in todo.load(session_id):
-        if not isinstance(item, dict):
-            continue
-        text = str(item.get("subject") or item.get("content") or "").strip()
-        if text:
-            lines.append(f"- [{item.get('status') or 'pending'}] {item.get('id') or ''} {text}".replace("  ", " "))
+    task = todo.open_task(todo.load_tasks(session_id), todo.current_scope())
+    if task is None:
+        return []
+    lines = [str(task.get("title") or "").strip()]
+    if task.get("purpose"):
+        lines.append(str(task["purpose"]).strip())
+    steps = todo.steps_of(todo.load(session_id), str(task.get("id")))
+    current = None
+    for number, step in enumerate(steps, 1):
+        line = f"- [{step.get('status') or 'pending'}] {number} {str(step.get('subject') or '').strip()}"
+        if step.get("result"):
+            line += f" — {step['result']}"
+        lines.append(line)
+        if step.get("status") == "in_progress":
+            current = number
+    if current is not None:
+        lines.append(f"Current step: {current}")
     return lines
 
 
@@ -169,9 +183,9 @@ def restored(session_id: str, graph: Any, head_id: Optional[str],
         if left:
             kept += f"\n[Plan cut here: {left} more characters are in the approved plan.]"
         parts.append("## Approved plan\n" + kept)
-    todos = _safely(_todo_lines, session_id)
-    if todos:
-        parts.append("## Todo list\n" + "\n".join(todos))
+    task = _safely(_task_lines, session_id)
+    if task:
+        parts.append("## Open task\n" + "\n".join(task))
     jobs = _safely(_job_lines, session_id)
     if jobs:
         parts.append("## Background jobs still running\n" + "\n".join(jobs))

@@ -206,8 +206,9 @@ def _next_worker(world, then: Callable[[], Any] | None = None) -> dict[str, Any]
     def body() -> dict[str, Any]:
         from openprogram.runtime.context.session_db import default_db
         from openprogram.runtime.conversation.always_on import runtime, store, ticker
-        from openprogram.runtime.execution import default_control_service, default_store, restart
-        from openprogram.runtime.execution.startup import recover_execution_startup
+        from openprogram.runtime.execution import default_control_service, default_store
+        from openprogram.runtime.execution.recovery import restart
+        from openprogram.runtime.execution.recovery.startup import recover_execution_startup
 
         sid = world.session_id
         executions = default_store()
@@ -313,7 +314,8 @@ def test_killed_after_the_turn_was_admitted_the_turn_and_the_check_in_both_close
 def _dying_restart(world, die: Callable[[Any], None]) -> None:
     """A shutdown request reaches a turn holding a model call, and the Worker dies at ``die``."""
     def request_shutdown(_call: int) -> None:
-        from openprogram.runtime.execution import default_control_service, default_store, restart
+        from openprogram.runtime.execution import default_control_service, default_store
+        from openprogram.runtime.execution.recovery import restart
 
         runner = SimpleNamespace(_execution_store=default_store(), _execution_control=default_control_service())
         die(restart)

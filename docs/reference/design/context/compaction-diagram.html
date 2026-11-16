@@ -23,7 +23,7 @@
 <tr><th scope="row">Scope</th><td>Tool results only, not user or assistant messages</td></tr>
 <tr><th scope="row">Threshold</th><td><code translate="no">spill.result_cap()</code>: a weight of 10,000 (or the model's <code translate="no">tool_output_weight</code>), at most 30% of the window; applied once, when the result is made. Old results are never aged: they stay whole until Auto-Compact</td></tr>
 <tr><th scope="row">Method</th><td>Keeps head and tail about 60/40 on line breaks, keeps the whole text in a file and names the lines to read</td></tr>
-<tr><th scope="row">Code</th><td><code translate="no">agent/loop/tool_dispatch.py</code> <code translate="no">_as_stored</code>, <code translate="no">state/store/session/spill.py</code> <code translate="no">bound_text</code></td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">agent/loop/tool_dispatch.py</code> <code translate="no">_as_stored</code>, <code translate="no">state/store/session/files/spill.py</code> <code translate="no">bound_text</code></td></tr>
 </tbody>
 </table>
 </details>

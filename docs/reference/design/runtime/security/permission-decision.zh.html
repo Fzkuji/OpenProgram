@@ -48,7 +48,7 @@
 
 <details>
 <summary>格式错误的调用与 Pages</summary>
-<p>格式错误的调用不会到达判定。<code translate="no">openprogram/programs/_authoring/prechecks.py</code> 的 <code translate="no">call_problem(name, args)</code> 合并 <code translate="no">guides.missing_required</code>（<code translate="no">GUIDE_REQUIRED</code>）和 <code translate="no">prechecks.problem</code>（<code translate="no">INVALID_ARGUMENTS</code>）；<code translate="no">permissions/approval.py</code> 最先调用它：</p>
+<p>格式错误的调用不会到达判定。<code translate="no">openprogram/programs/_authoring/prechecks.py</code> 的 <code translate="no">call_problem(name, args)</code> 合并 <code translate="no">guides.missing_required</code>（<code translate="no">GUIDE_REQUIRED</code>）和 <code translate="no">prechecks.problem</code>（<code translate="no">INVALID_ARGUMENTS</code>）；<code translate="no">permissions/approvals/approval.py</code> 最先调用它：</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">调用方</th><th scope="col">有问题时</th></tr></thead>
 <tbody>

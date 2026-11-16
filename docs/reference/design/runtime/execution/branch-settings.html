@@ -24,7 +24,7 @@
 <li>A new conversation and an Agent switch write no model, so an edit of the Agent's model reaches the next turn.</li>
 <li>Admission records the model in <code translate="no">turn_settings</code>. When the Agent changed it since the last turn on that line, the user message carries <code translate="no">model_change</code>, the page shows a one-line note and the cache-break report names <code translate="no">model_switch</code>.</li>
 <li>A move to a model with a smaller window compacts first, with the old model.</li>
-<li><code translate="no">scripts/migrate_branch_follow_agent.py</code> clears models and web-search switches that only copied the Agent's. It is a dry run by default and writes a backup before it changes anything.</li>
+<li><code translate="no">scripts/maintenance/migrate_branch_follow_agent.py</code> clears models and web-search switches that only copied the Agent's. It is a dry run by default and writes a backup before it changes anything.</li>
 </ul>
 
 <h2 id="writes">Writing a setting</h2>

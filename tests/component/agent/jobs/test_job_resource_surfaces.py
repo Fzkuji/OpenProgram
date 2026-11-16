@@ -171,7 +171,7 @@ def test_runtime_snapshot_uses_the_nested_resource_projection(monkeypatch):
         })
 
     monkeypatch.setattr(
-        "openprogram.runtime.execution.public.execution_snapshot", fake_snapshot,
+        "openprogram.runtime.execution.projections.public.execution_snapshot", fake_snapshot,
     )
     snapshot, _cursor = runtime._public_execution_snapshot(execution)
     assert snapshot["resource"] == resource

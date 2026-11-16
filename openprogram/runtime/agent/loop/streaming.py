@@ -1,6 +1,8 @@
 """One provider response: stream the assistant message, steer preemption and provider failover."""
 from __future__ import annotations
 
+import contextlib
+
 import asyncio
 import inspect
 import time
@@ -12,8 +14,8 @@ from openprogram.models.providers.types import (
     Context,
     Tool,
 )
-from openprogram.models.providers.utils.errors import ExecInterrupt
-from openprogram.models.providers.utils.event_stream import EventStream, leave_unwinding
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+from openprogram.models.providers.utils.streams.event_stream import EventStream, leave_unwinding
 
 from openprogram.runtime.events import emit_safe
 from openprogram.runtime.agent.loop.types import (
@@ -83,12 +85,10 @@ def _steered_partial(partial: AssistantMessage, sent: dict[int, int] | None = No
                 continue
             # Streaming bookkeeping, not part of any content block.
             block = {key: value for key, value in block.items() if key not in ("index", "partial_json")}
-            try:
+            with contextlib.suppress(Exception):
                 block = AssistantMessage.model_validate(
                     {**message.model_dump(exclude={"content"}), "content": [block]},
                 ).content[0]
-            except Exception:
-                pass
         elif getattr(block, "type", None) == "toolCall":
             continue
         kept.append(block if sent is None else _cut_to_sent(block, sent.get(index, 0)))
@@ -111,7 +111,7 @@ def _cut_to_sent(block: Any, length: int) -> Any:
 
 async def _cancel_response_stream(response_stream: Any, iterator: Any, *, cleanup_timeout: float | None = None) -> None:
     """Stop a discarded provider response before starting its recovery."""
-    from openprogram.models.providers.utils.event_stream import close_stream
+    from openprogram.models.providers.utils.streams.event_stream import close_stream
     await close_stream(response_stream, iterator, timeout=cleanup_timeout)
 
 
@@ -153,7 +153,7 @@ async def _stream_assistant_response(
 
     Every credential picked for the call sticks to the conversation
     (``config.session_id``), so a rotating key pool keeps the vendor's
-    prompt cache warm (``openprogram.models.auth.pool``).
+    prompt cache warm (``openprogram.models.auth.selection``).
     """
     from openprogram.models.auth.context import conversation_affinity
 
@@ -228,10 +228,10 @@ async def _stream_in_conversation(
         anchored = context._prefetch_anchor = (_latest_user_text(llm_messages), prefetch_block)
         if context.current_date is None:
             # The date the turn was sent on, fixed for all its requests.
-            from openprogram.runtime.context.components import current_date_note
+            from openprogram.runtime.context.prompt_assembly.components import current_date_note
 
             context.current_date = current_date_note() if getattr(config, "dated", False) else ""
-    from openprogram.runtime.context.render import turn_block
+    from openprogram.runtime.context.session_dag.render import turn_block
 
     prefetch_block = turn_block(prefetch_block, context.run_note, context.current_date, context.turn_notes)
     sys_prompt = context.system_prompt or None
@@ -271,10 +271,14 @@ async def _stream_in_conversation(
         _loaded,
         loaded_records(llm_messages),
     )
+    # Every tool of a turn that offers the task tools takes ``task_progress``
+    # (todo/progress.py): progress rides on a real call, not a round trip.
+    from openprogram.programs.tools.planning.todo import progress as _task_progress
+    _provider_tools = _task_progress.annotate(_provider_tools, context.tools)
     _note_tool_loaded(config, llm_messages)
     try:
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.runtime.context.tool_snapshot_node import record_tool_snapshot
+        from openprogram.runtime.context.prompt_assembly.tool_snapshot_node import record_tool_snapshot
 
         record_tool_snapshot(default_db(), config.session_id, list(context.tools or []),
                              epoch=_epoch.as_json())
@@ -333,7 +337,7 @@ async def _stream_in_conversation(
         fn = snapshot_stream
         try:
             from openprogram.models.providers.catalog.api_registry import resolve_api_provider_snapshot
-            from openprogram.models.providers.utils.failover import (
+            from openprogram.models.providers.utils.failures.failover import (
                 resolve_fallback_models,
                 failover_stream_fn,
             )
@@ -494,8 +498,8 @@ async def _stream_in_conversation(
 
     # Estimate the dispatched request, before its in-flight assistant/tool
     # messages are coalesced into the persisted conversation graph.
-    from openprogram.runtime.context.budget import default_allocator
-    from openprogram.runtime.context.tokens import real_context_window
+    from openprogram.runtime.context.token_accounting.budget import default_allocator
+    from openprogram.runtime.context.token_accounting.tokens import real_context_window
     request_input_estimate = default_allocator.allocate(
         context_window=real_context_window(config.model),
         system_prompt=llm_context.system_prompt or "",
@@ -552,7 +556,7 @@ async def _stream_in_conversation(
     _record_job_activity("operation_start")
     from openprogram.runtime.agent.loop.provider_lifecycle import provider_response
 
-    from openprogram.models.providers.utils.recovery import current_recovery
+    from openprogram.models.providers.utils.failures.recovery import current_recovery
     recovery = current_recovery.get()
     receipt = recovery.started(
         provider=config.model.provider, model=config.model.id,

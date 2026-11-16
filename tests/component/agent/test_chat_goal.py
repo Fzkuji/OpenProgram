@@ -37,7 +37,7 @@ def test_completed_chat_continues_once_with_original_authority(runtime, monkeypa
     from openprogram.runtime.agent.turn_request import TurnRequest
     goals, chat, store = runtime
     # Disabling restart recovery must not disable live, same-process turns.
-    monkeypatch.setattr("openprogram.runtime.execution.restart.window_seconds", lambda: 0)
+    monkeypatch.setattr("openprogram.runtime.execution.recovery.restart.window_seconds", lambda: 0)
     calls = []
     finished = threading.Event()
     real_notify = chat.after_terminal
@@ -237,7 +237,8 @@ def test_an_always_on_stop_reports_a_held_goal_lock(runtime, monkeypatch):
 def test_shutdown_completion_is_durable_and_replays_goal_once(runtime, monkeypatch, action, abrupt, creation):
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.execution import restart, AttemptStore
+    from openprogram.runtime.execution.recovery import restart
+    from openprogram.runtime.execution import AttemptStore
     from openprogram.runtime.execution.control import RuntimeControlService
     from openprogram.runtime.execution.driver import DriverRegistry
 
@@ -372,6 +373,60 @@ def test_automatic_turns_without_tools_stop_after_one_warning(runtime, monkeypat
     assert goal["pause_reason"] == "idle"
     assert goal["status"] in goals.RESUMABLE_STATUSES
     assert chat.resume("goal-chat")["idle_turns"] == 0
+
+
+def test_a_background_exit_during_a_goal_reaches_its_next_turn(runtime, monkeypatch, tmp_path):
+    """A running Goal registers its next turn before the last one ends, so the
+    conversation is never idle for the notice sweep; the next Goal turn
+    carries the notice instead, once."""
+    from openprogram.host.processes.store import ProcessStore
+    from openprogram.runtime.conversation import process_notices
+    goals, chat, store = runtime
+    processes = ProcessStore(tmp_path / "processes.db")
+    monkeypatch.setattr(process_notices, "ProcessStore", lambda: processes)
+    other = processes.create(session_id="another", execution_id=None, tool_call_id=None,
+                             command="sleep 1", cwd="/work", backend_id="local")
+    processes.update(other["id"], status="exited", exit_code=0, ended_at=other["started_at"] + 1,
+                     background=True)
+    calls = []
+
+    def runner(*, request, cancel_event):
+        calls.append(request)
+        if len(calls) == 1:
+            record = processes.create(session_id="goal-chat", execution_id=None, tool_call_id=None,
+                                      command="npm run build", cwd="/work", backend_id="local")
+            processes.append_output(record["id"], b"compiled 12 files\n")
+            processes.update(record["id"], status="exited", exit_code=0,
+                             ended_at=record["started_at"] + 25, background=True)
+        if len(calls) >= 3:
+            goals.apply_goal_action(request.session_id, "pause")
+        return SimpleNamespace(failed=False)
+
+    monkeypatch.setattr(chat, "used_tools", lambda _store, eid: True)
+    _, done = _start_goal_chat(goals, chat, monkeypatch, runner,
+                               until=lambda goal: goal["status"] != "active")
+    assert done.wait(30), goals.load_goal("goal-chat")
+    assert len(calls) == 3
+    assert "A command you left running in the background has ended." in calls[1].user_text
+    assert "npm run build" in calls[1].user_text and "compiled 12 files" in calls[1].user_text
+    assert calls[1].user_text.startswith("Continue the active Goal.")
+    assert "npm run build" not in calls[2].user_text, "a notice is delivered once"
+    assert [r["session_id"] for r in processes.unreported_exits()] == ["another"]
+
+
+def test_a_released_claim_goes_back_to_the_sweep(tmp_path):
+    from openprogram.host.processes.store import ProcessStore
+    from openprogram.runtime.conversation import process_notices
+    processes = ProcessStore(tmp_path / "processes.db")
+    record = processes.create(session_id="goal-chat", execution_id=None, tool_call_id=None,
+                              command="make", cwd="/work", backend_id="local")
+    processes.update(record["id"], status="exited", exit_code=2, ended_at=record["started_at"] + 3,
+                     background=True)
+    ids, text = process_notices.claim_for_turn("goal-chat", processes)
+    assert ids == [record["id"]] and "exited with code 2" in text
+    assert processes.unreported_exits() == []
+    process_notices.release_claim(ids, processes)
+    assert [r["id"] for r in processes.unreported_exits()] == [record["id"]]
 
 
 def test_a_turn_with_tool_calls_resets_the_idle_count(runtime, monkeypatch):

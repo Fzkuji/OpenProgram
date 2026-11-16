@@ -155,7 +155,7 @@ operations = {'summarize': summarize}
             assert current['status'] == expected, current
             if expected == 'completed':
                 assert current['result'] == 'fixture summary'
-                from openprogram.state.store.session.session_log import SessionLog
+                from openprogram.state.store.session.files.session_log import SessionLog
                 session = tmp_path / '.openprogram' / 'programs' / '.runtime' / 'runs' / 'default' / 'chats' / run_id
                 assert SessionLog(session).list_history(), 'model calls must retain their framework trace'
             else:

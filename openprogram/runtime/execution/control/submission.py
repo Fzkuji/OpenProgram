@@ -213,7 +213,7 @@ def _resolve_request_target(cmd: dict, raw_actor: dict, actor: dict | None,
     from openprogram.state.authority import has_capability
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.execution.authorization import authorize_session_action
-    from openprogram.runtime.execution.public import project_id_for_session
+    from openprogram.runtime.execution.projections.public import project_id_for_session
 
     session_id = cmd.get("session_id")
     placeholder = {"execution_id": "", "status_version": None}
@@ -262,7 +262,7 @@ def authorize_execution_target(
 ) -> Any:
     """Authorize one exact target without exposing cross-scope existence."""
     from openprogram.runtime.execution.authorization import authorize_execution_action
-    from openprogram.runtime.execution.public import project_id_for_session
+    from openprogram.runtime.execution.projections.public import project_id_for_session
 
     if bound_session is not None and bound_session != execution.session_id:
         from openprogram.runtime.execution.authorization import ExecutionAuthorizationError

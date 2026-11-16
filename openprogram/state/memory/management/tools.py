@@ -7,8 +7,39 @@ import re
 from pathlib import Path
 from typing import Any
 
+from . import filing
 from .guidance import repair_guidance
 from .workspace import MemoryWorkspace
+
+MOVE_DESCRIPTION = (
+    "File Topic notes into folders: move each `from` path to its `to` path, "
+    "all in one call. Paths are workspace-relative and under topics/, such "
+    "as topics/career/acme-interview.md to "
+    "topics/career/companies/acme/interview.md. Missing folders are created "
+    "and emptied ones removed. No byte of a moved file changes; the Runtime "
+    "rewrites the links and the MEMORY.md paths that pointed at the old "
+    "location. This is the way to regroup notes; it also works on files "
+    "marked read-only."
+)
+MOVE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "moves": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                },
+                "required": ["from", "to"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["moves"],
+    "additionalProperties": False,
+}
 
 
 def management_tools(
@@ -72,7 +103,11 @@ def management_tools(
             return output
         problem = workspace.check_edits(getattr(workspace, "turn_baseline", None))
         if problem is None:
-            return output
+            misfiled = filing.advice(
+                workspace.stage_dir / "topics",
+                Path(*relative.parts[1:]).as_posix(),
+            ) if len(relative.parts) > 1 else ""
+            return f"{output}\n\n{misfiled}" if misfiled else output
         advice = repair_guidance(problem)
         return (
             f"{output}\n\nThe edit is saved, but the topic files fail the "
@@ -226,6 +261,36 @@ def management_tools(
 
         return _result("Edit", arguments, operation)
 
+    @tool("Move", MOVE_DESCRIPTION, MOVE_SCHEMA)
+    async def move_files(arguments: dict[str, Any]) -> dict[str, Any]:
+        def operation() -> str:
+            moved = filing.stage_moves(
+                workspace.stage_dir / "topics", arguments.get("moves"),
+            )
+            if not moved:
+                return "Nothing to move."
+            output = "Moved:\n" + "\n".join(
+                f"{source} -> {target}" for source, target in moved
+            )
+            problem = workspace.check_edits(
+                getattr(workspace, "turn_baseline", None)
+            )
+            if problem is not None:
+                advice = repair_guidance(problem)
+                output += (
+                    "\n\nThe files are moved, but the topic files fail the "
+                    f"memory checks as they stand:\n{problem}"
+                    + (f"\n\n{advice}" if advice else "")
+                )
+            left = filing.problems(workspace.stage_dir / "topics")
+            if left:
+                output += "\n\nFiling problems still open:\n" + "\n".join(
+                    f"- {line}" for line in left
+                )
+            return output
+
+        return _result("Move", arguments, operation)
+
     @tool(
         "Glob",
         "List files matching a glob inside the managed memory workspace.",
@@ -307,6 +372,7 @@ def management_tools(
         read_file,
         write_file,
         edit_file,
+        move_files,
         grep_files,
         glob_files,
     ]
@@ -329,6 +395,14 @@ TOOLS = [
                 "properties": {"command": {"type": "string"}},
                 "required": ["command"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "Move",
+            "description": MOVE_DESCRIPTION,
+            "parameters": MOVE_SCHEMA,
         },
     },
     *[

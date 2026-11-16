@@ -73,7 +73,7 @@ def _checkout_branch(_s, cmd: dict, session_id: str, head_msg_id: str):
             err = f"unknown message {head_msg_id!r}"
         else:
             alignment = {"status": "aligned", "decision": "shared_workspace"}
-            from openprogram.runtime.conversation.rewind_marks import forget_read_baselines
+            from openprogram.runtime.conversation.rewinds.rewind_marks import forget_read_baselines
             # Every branch works on the same current files, not a historical copy.
             switched = _s.switch_branch(
                 session_id, head_msg_id,
@@ -620,7 +620,7 @@ def run_branch_session(session_id: str | None, msg_id: str | None,
     omitted. On success the session list is broadcast so every sidebar
     shows the new row at once.
     """
-    from openprogram.runtime.context.branch_session import (
+    from openprogram.runtime.context.session_dag.branch_session import (
         BranchSessionError, branch_session, copy_tip,
     )
 

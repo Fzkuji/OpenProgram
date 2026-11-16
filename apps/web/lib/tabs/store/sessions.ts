@@ -123,6 +123,8 @@ export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get:
             sessionHistory: { ...history, entries }
           };
         }));
+        // Every send is acknowledged; only a draft's first one changes a tab.
+        if (tabs.every((tab, index) => tab === s.tabs[index])) return s;
         return commitCenterTabsState(s, { tabs });
       }),
 

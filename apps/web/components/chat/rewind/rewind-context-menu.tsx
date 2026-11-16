@@ -35,13 +35,17 @@ export function RewindContextMenu({ msg, sessionId, enabled, children }: {
   const forkCause = useForkDisabled(sessionId, msg.id);
   const forkReason = forkCause ? forkDisabledReason(forkCause, text) : undefined;
   const inConversation = useSessionStore(s => Boolean(sessionId && s.messageOrder?.[sessionId]?.includes(msg.id)));
-  if (!enabled || !sessionId || !isRewindable(msg) || !inConversation) return children;
+  // The message is wrapped the same way whether or not it has a menu yet:
+  // a send gets its menu when the server acknowledges it, and a wrapper
+  // that appeared then would mount the bubble a second time. Until then
+  // the trigger is off and the browser's own menu shows.
+  const offered = enabled && !!sessionId && isRewindable(msg) && inConversation;
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild onContextMenuCapture={keepNativeMenuForSelection}>
+      <ContextMenuTrigger asChild disabled={!offered} onContextMenuCapture={keepNativeMenuForSelection}>
         {children}
       </ContextMenuTrigger>
-      <ContextMenuContent>
+      {!offered ? null : <ContextMenuContent>
         {cause || !allowed ? null : (
           <ContextMenuItem className={ITEM_TWO_LINE} onSelect={() => void requestRewind(sessionId, msg.id, msg.content ?? "")}>
             <MenuOptionContent
@@ -60,7 +64,7 @@ export function RewindContextMenu({ msg, sessionId, enabled, children }: {
             description={forkReason ?? text("Starts a new conversation, keeps this one", "开启新对话，保留这段对话")}
           />
         </ContextMenuItem>
-      </ContextMenuContent>
+      </ContextMenuContent>}
     </ContextMenu>
   );
 }

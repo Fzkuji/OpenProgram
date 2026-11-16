@@ -352,7 +352,9 @@ def _call_setup(self, fn, sig, args, kwargs, stack):
         prev = current_usage_context()
         token = _current.set(UsageContext(
             call_kind="exec", call_label=fn.__name__, session_id=prev.session_id,
-            parent_session_id=prev.parent_session_id, agent_id=prev.agent_id))
+            parent_session_id=prev.parent_session_id, agent_id=prev.agent_id,
+            goal_id=prev.goal_id, goal_revision=prev.goal_revision,
+            goal_run_id=prev.goal_run_id, goal_session_id=prev.goal_session_id))
         stack.callback(_current.reset, token)
     except Exception:
         # Usage metering is optional: without it the call is simply not

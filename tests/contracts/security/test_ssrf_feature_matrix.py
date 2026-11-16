@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_feature_matrix import MatrixError, check_matrix
+from scripts.checks.check_feature_matrix import MatrixError, check_matrix
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MATRIX = ROOT / "docs/reference/design/feature-matrix.html"
+MATRIX = ROOT / "docs/reference/design/framework-comparison/feature-matrix.html"
 
 
 @pytest.fixture(params=["", ".zh"])

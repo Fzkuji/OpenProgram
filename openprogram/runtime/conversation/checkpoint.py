@@ -18,7 +18,7 @@ from openprogram.models.providers.types import (
 from openprogram.runtime.execution.agent_journal import (
     INTERRUPTED_TOOL_TEXT, JournalState, interrupted_outcome, load_journal,
 )
-from openprogram.runtime.execution.runtime_contract import (
+from openprogram.runtime.execution.admission_input.runtime_contract import (
     RUNTIME_CONTRACT_VERSION,
     RuntimeContractError,
     contract_sha256,
@@ -27,7 +27,7 @@ from openprogram.runtime.execution.runtime_contract import (
 )
 
 if TYPE_CHECKING:
-    from openprogram.runtime.execution.checkpoints import CheckpointManifest
+    from openprogram.runtime.execution.recovery.checkpoints import CheckpointManifest
     from openprogram.runtime.execution.store import ExecutionStore
     from openprogram.runtime.agent.turn_request import TurnRequest
 
@@ -140,7 +140,7 @@ def runtime_contract_snapshot(
             "additional_working_dirs", "_execution_revision_id",
         )
     }
-    from openprogram.runtime.conversation.workdir import runtime_location_for
+    from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
     request_semantics["execution_location"] = runtime_location_for(
         getattr(request, "session_id", ""),
     )

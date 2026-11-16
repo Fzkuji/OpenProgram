@@ -47,10 +47,16 @@ def _reset_cache(tmp_path, monkeypatch):
         "_start_background_refresh",
         lambda: scheduled.append(md._refresh_cache),
     )
+    with md._cache_lock:
+        saved = dict(md._cache)
     _reset_mem_cache()
     yield scheduled
     scheduled.clear()
-    _reset_mem_cache()
+    # The next test gets the catalogue it had: an emptied one would start a
+    # background refresh on its first read.
+    with md._cache_lock:
+        md._cache.clear()
+        md._cache.update(saved)
 
 
 class _Resp:

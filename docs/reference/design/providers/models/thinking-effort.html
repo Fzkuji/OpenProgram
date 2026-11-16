@@ -25,7 +25,7 @@
 <h2 id="data-flow">From picker to request</h2>
 <ol>
 <li><code translate="no">get_thinking_config_for_model</code> (<code translate="no">interfaces/server/thinking_effort.py</code>) builds the options from the model's <code translate="no">thinking_levels</code>.</li>
-<li><code translate="no">_normalize_thinking</code> (<code translate="no">runtime/conversation/session_config.py</code>) checks the choice against <code translate="no">VALID_THINKING</code>; it is stored per conversation branch. New branches inherit once; switching restores that branch’s choice.</li>
+<li><code translate="no">_normalize_thinking</code> (<code translate="no">runtime/conversation/session_settings/session_config.py</code>) checks the choice against <code translate="no">VALID_THINKING</code>; it is stored per conversation branch. New branches inherit once; switching restores that branch’s choice.</li>
 <li><code translate="no">reasoning_from_config</code> hands it to the turn as <code translate="no">SimpleStreamOptions.reasoning</code>, kept inside the model's levels by <code translate="no">normalize_reasoning_level</code> (below).</li>
 <li>The provider's <code translate="no">stream_simple()</code> calls <code translate="no">translate_reasoning(provider, model, level)</code> and writes the answer into its request field, for example <code translate="no">{"output_config": {"effort": "high"}}</code>.</li>
 </ol>
@@ -120,7 +120,7 @@
 <tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>The one derivation entry</td></tr>
 <tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch enrichment</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>Levels from capabilities</td></tr>
-<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>, <code translate="no">reasoning_from_config</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_settings/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>, <code translate="no">reasoning_from_config</code></td></tr>
 </tbody>
 </table>
 </details>

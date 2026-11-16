@@ -52,7 +52,7 @@ def test_a_source_checkout_starts_no_check(monkeypatch):
 
 
 def test_harness_dependencies_stay_out_of_a_managed_install(monkeypatch, tmp_path):
-    from openprogram.interfaces.cli.commands import programs
+    from openprogram.interfaces.cli.commands.capabilities import programs
     from openprogram.programs._host import sources
 
     (tmp_path / "requirements.txt").write_text("example\n")
@@ -69,7 +69,7 @@ def test_harness_dependencies_stay_out_of_a_managed_install(monkeypatch, tmp_pat
 
 
 def test_a_source_checkout_installs_dependencies_as_before(monkeypatch, tmp_path):
-    from openprogram.interfaces.cli.commands import programs
+    from openprogram.interfaces.cli.commands.capabilities import programs
 
     (tmp_path / "requirements.txt").write_text("example\n")
     commands = []

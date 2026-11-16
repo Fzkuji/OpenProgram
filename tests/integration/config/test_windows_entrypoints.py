@@ -16,7 +16,7 @@ def test_dispatcher_import_does_not_require_unix_fcntl():
          """import builtins
 original_import = builtins.__import__
 def platform_import(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == 'fcntl' and (globals or {}).get('__name__') == 'openprogram.runtime.permissions.file_state':
+    if name == 'fcntl' and (globals or {}).get('__name__') == 'openprogram.runtime.permissions.approvals.file_state':
         raise ModuleNotFoundError("No module named 'fcntl'")
     return original_import(name, globals, locals, fromlist, level)
 builtins.__import__ = platform_import

@@ -28,7 +28,7 @@
 <tr><th scope="row"><code translate="no">channels/</code>, <code translate="no">bindings.json</code></th><td>Channel accounts and session bindings</td></tr>
 <tr><th scope="row"><code translate="no">skills/</code>, <code translate="no">skills.json</code>, <code translate="no">plugins/</code>, <code translate="no">marketplaces.json</code></th><td>Skills and plugins</td></tr>
 <tr><th scope="row"><code translate="no">mcp_servers.json</code>, <code translate="no">models/</code>, <code translate="no">commands/</code></th><td>MCP servers, model overrides, custom commands</td></tr>
-<tr><th scope="row"><code translate="no">owner.json</code>, <code translate="no">profiles/</code>, <code translate="no">worktrees.json</code>, <code translate="no">usage.db</code></th><td>Ownership, account metadata, worktrees, usage history</td></tr>
+<tr><th scope="row"><code translate="no">owner.json</code>, <code translate="no">worktrees.json</code>, <code translate="no">usage.db</code></th><td>Ownership, worktrees, usage history</td></tr>
 <tr><th scope="row"><code translate="no">programs/</code>, <code translate="no">workflow_archives/</code>, <code translate="no">recordings/</code></th><td>Installed and your own programs, archived Workflows, recorded demonstrations</td></tr>
 <tr><th scope="row"><code translate="no">scheduler/</code>, <code translate="no">always_on/</code>, <code translate="no">memory-spaces/</code></th><td>Scheduled jobs, always-on agents, memory kept per agent</td></tr>
 <tr><th scope="row"><code translate="no">meetings/</code>, <code translate="no">project-file-history/</code>, <code translate="no">imports/</code></th><td>Meetings, earlier document versions, which outside sessions were imported</td></tr>
@@ -42,7 +42,7 @@
 <li><code translate="no">cache/</code>, <code translate="no">tool_results/</code>, <code translate="no">browser-states/</code>, <code translate="no">chrome-profile/</code>, <code translate="no">trash/</code>, <code translate="no">shadow-git/</code>, <code translate="no">logs/</code></li>
 <li><code translate="no">*.log</code>, <code translate="no">*.lock</code>, <code translate="no">*.pid</code>, <code translate="no">*.port</code>, <code translate="no">*.sock</code>, recovery copies of state files, the Web token</li>
 <li>Credential-writer temporaries such as <code translate="no">.env.tmp</code> and <code translate="no">*.json.tmp</code></li>
-<li>Credential-account <code translate="no">profiles/*/home/</code> trees; only <code translate="no">metadata.json</code> and the registered <code translate="no">.env</code> and AuthStore paths are eligible</li>
+<li><code translate="no">profiles/</code>, the folder the old per-account sign-ins used; nothing reads it now</li>
 <li><code translate="no">node_modules/</code> anywhere; symlinks, skipped rather than followed</li>
 </ul>
 </details>

@@ -49,7 +49,7 @@ assert.match(tabsCss, /\.compoundTab:has\(\.compoundTarget:focus-visible\)\s*\{[
 // streaming token: the list selects only the last row's role, and the
 // transcript never unloads history behind a virtualizer.
 assert.doesNotMatch(messageList, /useSessionStore\(\(s\) => s\.messagesById\)/, "MessageList must not subscribe to the whole messagesById map");
-assert.match(messageList, /s\.messagesById\[lastId\]\?\.role/);
+assert.match(messageList, /selectRow\(viewKey, lastId\)\(s\)\?\.role/);
 for (const file of [messageList, messageRail]) {
   assert.doesNotMatch(file, /react-virtuoso|react-window|@tanstack\/react-virtual/, "the transcript must not use a virtual list");
 }
@@ -57,7 +57,7 @@ for (const file of [messageList, messageRail]) {
 // ── Tooltips only on controls: message actions and the edit box use
 // HoverTip, never a native title; the context panel uses the shared menu frame.
 const messageActions = source("components/chat/messages/bubbles/message-actions.tsx");
-assert.match(messageActions, /<HoverTip label=\{<TipBody title=\{title\} \/>\}>/);
+assert.match(messageActions, /<HoverTip label=\{[^\n]*<TipBody title=\{title\}/);
 assert.doesNotMatch(messageActions, /<(?:button|Button)\b[^>]*\stitle=\{/, "message actions must not use native title tooltips");
 assert.doesNotMatch(source("components/chat/messages/editing/message-editor.tsx"), /<(?:button|Button)\b[^>]*\stitle=\{/, "the edit box must not use native title tooltips");
 assert.match(source("components/chat/badges/context-breakdown-panel.tsx"), /cn\(MENU_PANEL, "context-breakdown-panel w-\[320px\]"\)/);
@@ -71,7 +71,7 @@ assert.match(chatCss.slice(chatCss.indexOf(".message-content code {"), chatCss.i
 // ── Timestamps and actions appear together on hover or keyboard focus,
 // always on touch; the footer sits one reply gap below the body.
 assert.match(chatCss, /\.message-actions\s*\{[^}]*opacity:\s*0/s);
-assert.match(chatCss, /\.message:hover \.message-actions,\s*\.attach-card:hover \.message-actions,\s*\.message-actions:focus-within\s*\{[^}]*opacity:\s*1/s);
+assert.match(chatCss, /\.message:hover \.message-actions,\s*\.attach-card:hover \.message-actions,\s*\.message-actions:focus-within(?:,\s*[^,{]+)*\s*\{[^}]*opacity:\s*1/s);
 assert.doesNotMatch(chatCss, /\.message \.message-actions-footer \.message-actions\s*\{[^}]*opacity:\s*1/s);
 assert.match(chatCss, /@media\s*\(hover:\s*none\)[\s\S]*\.message \.message-actions,[\s\S]*\.attach-card \.message-actions[\s\S]*opacity:\s*1/);
 assert.match(executionCss, /@media\s*\(hover:\s*none\)[\s\S]*\.runtime-card-host \.message-actions,[\s\S]*\.tl-step-act[\s\S]*opacity:\s*1/);

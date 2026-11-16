@@ -121,7 +121,7 @@
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contract</th></tr></thead>
 <tbody>
 <tr><th scope="row">Entry</th><td><code translate="no">npm --prefix apps/desktop run dist</code> builds one complete temporary App, verifies it with the packaged-runtime smoke and replaces only <code translate="no">/Applications/OpenProgram.app</code></td></tr>
-<tr><th scope="row">Refresh versions</th><td><code translate="no">scripts/refresh-local-app.sh</code> requires bundle, runtime manifest, Python metadata, Python source and Desktop source versions to match, except an upgrade to a newer source</td></tr>
+<tr><th scope="row">Refresh versions</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> requires bundle, runtime manifest, Python metadata, Python source and Desktop source versions to match, except an upgrade to a newer source</td></tr>
 <tr><th scope="row">Downgrade</th><td><code translate="no">install-app.sh</code> rejects an older candidate before locking and again on the staged copy, before worker shutdown or file changes. Numeric segments compare as arbitrary-precision decimals; no override, no prerelease ordering.</td></tr>
 <tr><th scope="row">Invalid App at the path</th><td>Preserved and rejected, never treated as absent</td></tr>
 <tr><th scope="row">Failed activation</th><td>The old App's only copy is kept; a failure after Launch Services registration restores and re-registers it, keeping the original error</td></tr>

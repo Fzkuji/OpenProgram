@@ -97,7 +97,7 @@ def test_continuation_rejects_changed_owner(
 
 @pytest.mark.parametrize("elapsed,enabled", [(7201, True), (60, False)])
 def test_origin_followup_obeys_restart_window(tmp_path, monkeypatch, store_fixture, fake_worker, elapsed, enabled):
-    from openprogram.runtime.execution import restart as policy
+    from openprogram.runtime.execution.recovery import restart as policy
     from openprogram.operations.self_update.control.continuation import reconcile
     from openprogram.runtime.jobs.runner import JobRunner
 

@@ -5,15 +5,15 @@
 <p>The right sidebar's Activity covers one conversation. What a run waits on is never a group: it is the row it concerns, with a red count on its glyph's corner. The one exception is Waiting for you, the reports left for the reader across conversations. Messages are never rows.</p>
 
 <h2 id="overview">Overview</h2>
-<p>These groups, in this order. Agents is always shown; every other group, header included, is shown only when it has something in it. Only Waiting for you carries a count in its header; Agents adds what its helpers cost. Hovering a group shows its <code translate="no">SectionHeader</code> chevron; clicking the header folds it (per-browser, <code translate="no">lib/prefs/activity-view.ts</code>).</p>
+<p>These groups, in this order. Agents is always shown; every other group, header included, is shown only when it has something in it. Only Waiting for you carries a count in its header; Agents adds what its helpers and its scheduled tasks' runs cost. Hovering a group shows its <code translate="no">SectionHeader</code> chevron; clicking the header folds it (per-browser, <code translate="no">lib/prefs/activity-view.ts</code>).</p>
 <table class="stack">
 <thead><tr><th scope="col">Group</th><th scope="col">Rows</th><th scope="col">Status line</th></tr></thead>
 <tbody>
 <tr><th scope="row">Waiting for you</th><td>Reports from every always-on conversation still waiting for the reader (<code translate="no">lib/agents/pending-inbox</code>). Each opens its conversation.</td><td>"Finding · &lt;Agent&gt; · &lt;time&gt;"</td></tr>
-<tr><th scope="row">Agents</th><td>The main agent, always listed, with the <a href="#agent-roster">helpers it started</a> under it: a conversation whose turns left no execution record still has it, at rest with the conversation's last activity, and its page reads the runs from the transcript. With more than one branch, one equal row per branch. While the Agent is <a href="../../runtime/always-on-agents.html">always on</a>, the checked-out branch's row has a second line with its next wake.</td><td>Running (call or "Waiting for a sub-agent", time, blue); "Failed · &lt;time&gt;" (red); else its last message time. With its helpers folded: "· 3 active sub-agents". A branch in its own <a href="../../runtime/execution/agent-worktree.html">worktree</a> adds a "Worktree" tag and "3 files in worktree"</td></tr>
-<tr><th scope="row">Programs and commands</th><td>Running shell calls, shell calls cut short with their run, every background program. Running first, then newest; 20 at a time. <code translate="no">agent</code> calls never appear.</td><td>"Command · Running · 12 s"; "Command · Interrupted · Yesterday" (muted); "45 / 100 samples · 3.4/s"; "Completed · 10 / 10 epochs · 4 min 5 s"; "Failed at 62 / 200 · exit 1"</td></tr>
+<tr><th scope="row">Agents</th><td>The main agent, always listed, with the <a href="#agent-roster">helpers it started</a> under it: a conversation whose turns left no execution record still has it, at rest with the conversation's last activity, and its page reads the runs from the transcript. With more than one branch, <a href="#agent-branches">a row per live branch</a>. Then <a href="#task-rows">one row per scheduled task</a> that runs a prompt.</td><td>Running (call or "Waiting for a sub-agent", time, blue); "Failed · &lt;time&gt;" (red); else its last message time, or, while the Agent is <a href="../../runtime/always-on-agents.html">always on</a>, "Always-on · next wake 02:31". Busy, the always-on line goes under the status. A branch in its own <a href="../../runtime/execution/agent-worktree.html">worktree</a> adds a "Worktree" tag and "3 files in worktree". A task: "178 runs · 9 didn't finish · last 23:00" over a strip of its last 24 runs</td></tr>
+<tr><th scope="row">Programs and commands</th><td>Shell calls and background programs running now, and the programs that failed; <a href="#programs-listed">one that finished leaves</a>. Running first, then newest; 20 at a time. <code translate="no">agent</code> calls never appear.</td><td>"Command · Running · 12 s"; "45 / 100 samples · 3.4/s"; "Exited · exit 1"; "Failed at 62 / 200 · exit 1"</td></tr>
 <tr><th scope="row">Open work</th><td><a href="../../../../capabilities/agents.html#open-work">Open items</a>, one row each; done items leave</td><td>"Open · &lt;time&gt;"</td></tr>
-<tr><th scope="row">Scheduled tasks</th><td>Scheduler tasks, reminders and webhooks set from this conversation (the task's <code translate="no">session_id</code> or its signed spec's), newest first</td><td>"Webhook · when called"; "Recurring · 0 9 * * 1-5 · when its check changes"</td></tr>
+<tr><th scope="row">Scheduled tasks</th><td>Reminders and commands scheduled from this conversation (the task's <code translate="no">session_id</code> or its signed spec's), newest first: what the Scheduler does at a time without an agent. A task that runs a prompt is an agent and is <a href="#task-rows">listed in Agents</a> only.</td><td>"Reminder · Nov 20, 9:00 AM"; "Recurring · 0 9 * * 1-5 · when its check changes"</td></tr>
 </tbody>
 </table>
 <p class="note">Statuses: Running, Completed, Failed, Cancelled, Interrupted, Waiting for your answer, Waiting for approval. A row at rest shows only its time. Calls and programs are placed only after executions are read, so they never flash as unowned; unlisted ones count as the main agent's.</p>
@@ -25,23 +25,39 @@
 <tbody>
 <tr><th scope="row">Header</th><td>"Agents · $0.14": what the helpers cost together, known prices only. Stop all shows while a helper is going and cancels each topmost one; the stop reaches what it started.</td></tr>
 <tr><th scope="row">Row</th><td>Avatar, name, status badge, the cost of its subtree at the right edge; hovering shows its cost, tokens and tool calls. A row too narrow for all of them drops the cost first, then shortens the name. Indented 16 for each level under the agent. Clicking shows its conversation in the chat, as its card's Switch does.</td></tr>
-<tr><th scope="row">Badges</th><td>Running (filled, pulsing dot); Needs approval, Needs input and Stalled (outlined, yellow dot); Failed (red); Waiting (queued for a free slot) and Idle (outlined, muted). What runs or waits on the reader comes from the executions and the chat's open cards at once; stalled, queued and stopped by a limit come from the roster read.</td></tr>
-<tr><th scope="row">Listed</th><td>A helper that is going, needs the reader or failed. A finished one stays only while a helper under it is listed.</td></tr>
+<tr><th scope="row">Badges</th><td>Running (filled, pulsing dot); Needs approval, Needs input and Stalled (a yellow dot and the words, no outline, as a row's status line says them); Failed (red); Waiting (queued for a free slot) and Idle (outlined, muted). What runs or waits on the reader comes from the executions and the chat's open cards at once; stalled, queued and stopped by a limit come from the roster read.</td></tr>
+<tr><th scope="row">Listed</th><td>A helper that is going, needs the reader or failed. A finished one stays only while a helper under it is listed. A helper a scheduled run started is its task's and is listed on the task's page, except one that needs the reader: that one is listed here, right under the main agent, since the reader acts on it from this conversation.</td></tr>
 <tr><th scope="row">"N finished"</th><td>The last row. It opens in place to the finished helpers, 50 at a time, each with Idle and its cost.</td></tr>
 <tr><th scope="row">"→ Name"</th><td>A message sent to another agent and not answered yet, Waiting until the other side starts on it. Clicking opens that conversation.</td></tr>
-<tr><th scope="row">Folding</th><td>The chevron after the agent's name, or Left and Right on its row, folds its helpers; Left on a helper folds the group and moves the focus to the agent's row. A row reached with the keyboard takes the hover fill. Folded, the row says how many helpers are still going and keeps its red count. Kept per conversation and agent in this browser (<code translate="no">foldedAgents</code> in <code translate="no">lib/prefs/activity-view.ts</code>).</td></tr>
+<tr><th scope="row">Chevron</th><td>The agent's row has one chevron, on the right, and it opens the agent's page; the helpers are not folded away, since with the scheduled runs on their task's page the list under an agent is short. Left on a helper moves the focus to the agent's row. A row reached with the keyboard takes the hover fill.</td></tr>
 <tr><th scope="row">Height</th><td>The roster scrolls inside 360 pixels, so the groups below keep their place</td></tr>
 <tr><th scope="row">Read</th><td><code translate="no">GET /api/session/{id}/activity/roster</code> while the panel shows: on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, at most once a second, and every 30 seconds</td></tr>
 </tbody>
 </table>
 </details>
 
-<details>
+<details id="agent-branches">
+<summary>Branches in Agents</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Branch</th><th scope="col">In the list</th></tr></thead>
+<tbody>
+<tr><th scope="row">Checked out</th><td>Its own row, tagged "Current"</td></tr>
+<tr><th scope="row">Something going, waiting on the reader or failed, itself or a helper</th><td>Its own row</td></tr>
+<tr><th scope="row">At rest</th><td>One "N other branches" row for all of them, the same quiet row as "N finished"; it opens in place</td></tr>
+<tr><th scope="row">Opened by the runtime (<a href="../../runtime/dag/branch-collaboration.html#three-operations"><code translate="no">runtime_started</code></a>)</th><td>No row: it is not a branch the reader made. Its runs count as the checked-out branch's. With no other branch left, the conversation is the one "Main agent". Reports an always-on Agent or a task posted where the head stood, and left behind when the reader moved on, are such a part too: no prompt, only <code translate="no">report_…</code> messages.</td></tr>
+<tr><th scope="row">Written by a schedule (<code translate="no">scheduled_task</code>)</th><td>No row: its runs are <a href="#task-rows">its task's</a>. A task's branch record says so, and so does a line whose own part holds only prompts the scheduler wrote, which covers the tips older runs left behind when they were cut off. Never the checked-out branch.</td></tr>
+</tbody>
+</table>
+<p class="note">A Goal's turns in a conversation saved with one branch record per runtime turn listed as a column of same-named agents. The list is for what the reader can act on, so a branch gets a row for the same reasons a helper does.</p>
+</details>
+
+<details id="programs-listed">
 <summary>Programs in the list</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Title</th><td>The bash call's <code translate="no">description</code>, else the script or module it runs, past setup steps such as <code translate="no">cd</code> and <code translate="no">mkdir</code>. The command sits under it in monospace.</td></tr>
+<tr><th scope="row">Listed</th><td>The same rule as the <a href="#agent-roster">helpers</a>: what is going, and what failed (status failed, or exited with a code other than 0). A program that completed, was stopped, was cut short or lost its supervisor leaves the list, and so does a shell call once it returns or is cut short. No "N finished" row: the chat keeps every command and its output. With nothing listed the group is not shown.</td></tr>
 <tr><th scope="row">Running, amount known</th><td>Progress over a thin bar, time left at its end ("16s left")</td></tr>
 <tr><th scope="row">Running, no amount</th><td>How long it has run and its last output line, over a sweeping bar</td></tr>
 <tr><th scope="row">Retention</th><td>Record and output stay for a day after it ends (<code translate="no">RETENTION_SECONDS</code>, <code translate="no">openprogram/host/processes/store.py</code>), or a day after the last heartbeat for "Status unknown". The worker's process sweep then deletes it and any exit notice still due.</td></tr>
@@ -58,14 +74,74 @@
 <tr><th scope="row">Row</th><td>The branch's name, a ghost in its lane colour, a Current tag on the checked-out one. No run listed: the branch's own time.</td></tr>
 <tr><th scope="row">Unowned</th><td>Unlisted calls and programs, and calls that started no sub-agent, count as the checked-out branch's</td></tr>
 <tr><th scope="row">Page</th><td>The Agent page for that branch, with Switch to this branch (the Branches panel's checkout) when not current</td></tr>
-<tr><th scope="row">Excluded</th><td>An older session's inline sub-agent turns: their tip, whose chain starts at a spawn root, comes marked <code translate="no">sub_agent</code> from <code translate="no">build_branches_payload</code> and is left out</td></tr>
+<tr><th scope="row">Excluded</th><td>An older session's inline sub-agent turns: their tip, whose chain starts at a spawn root, comes marked <code translate="no">sub_agent</code> from <code translate="no">build_branches_payload</code> and is left out. A run a schedule started (<code translate="no">scheduled_task_id</code> on its execution) and everything under it are its task's, whichever branch holds them.</td></tr>
 </tbody>
 </table>
 </details>
 
 <details>
 <summary>Reading always-on, open work and scheduled tasks</summary>
-<p>One read, <code translate="no">GET /api/sessions/{id}/work</code>, when the panel opens, on <code translate="no">always_on_update</code>, <code translate="no">always_on_report</code> and <code translate="no">open_work_update</code> frames, on focus, and every 30 seconds for Scheduler tasks, which publish no event.</p>
+<p>One read, <code translate="no">GET /api/sessions/{id}/work</code>, when the panel opens, on <code translate="no">always_on_update</code>, <code translate="no">always_on_report</code> and <code translate="no">open_work_update</code> frames, on focus, and every 30 seconds for Scheduler tasks, which publish no event. Each task carries its <code translate="no">summary</code>: runs, unfinished, notified, when the last began, and the last 24 outcomes.</p>
+</details>
+
+<details id="task-rows" open>
+<summary>Scheduled tasks in Agents</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Row</th><td>The calendar glyph, the task's title, "178 runs · 9 didn't finish · last 23:00" (the clock within the last day, else the day; "· Paused" when it is), and under it a strip of its last 24 runs, oldest on the left, one cell each. One chevron, on the right; the row opens the task's page.</td></tr>
+<tr><th scope="row">Strip</th><td>Green when it worked (nothing new, or the reader was told), red when it failed, yellow when it was stopped, cut off or could not check, blue while it runs. The theme's accent colours, nothing else.</td></tr>
+<tr><th scope="row">Page</th><td>Back and the title on one line over a hairline; "Every hour · 178 runs · $26.31"; a filter, All, Unfinished · 7 and Notified (the kit's Tabs). Under the runs, Open in Scheduler and the task itself (prompt, notes, created, id).</td></tr>
+<tr><th scope="row">Runs</th><td>By day ("Yesterday · Nov 15", "Nov 10"), one line each: a dot, when it began, how long it took, and on the right <a href="#task-outcomes">its outcome</a>. 30 at first, "Show 50 earlier" for more.</td></tr>
+<tr><th scope="row">An opened run</th><td>A run that failed, was stopped, was cut off or could not check opens in place to one sentence of why ("The agent runner stopped with an error after 3 h 28 min.") and the helpers it started, each opening its conversation. A run that could not check gives its own reason, in the task's language.</td></tr>
+<tr><th scope="row">A run's name</th><td>Never an id: a run is its task's title and when it began</td></tr>
+</tbody>
+</table>
+<table class="stack fixed" id="task-outcomes">
+<thead><tr><th scope="col">Outcome</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing new (<code translate="no">quiet</code>)</th><td>It finished and had nothing to say; nobody was told</td></tr>
+<tr><th scope="row">Notified</th><td>It finished with something new, and the reader got it as a message</td></tr>
+<tr><th scope="row">Couldn't check (<code translate="no">unable</code>)</th><td>It finished but answered <code translate="no">[could not check]</code> and why. It counts toward the failure notice, not toward unfinished.</td></tr>
+<tr><th scope="row">Failed</th><td>Its execution failed</td></tr>
+<tr><th scope="row">Stopped</th><td>Cancelled: by the reader, or at its time limit</td></tr>
+<tr><th scope="row">Interrupted</th><td>Cut off by a restart and could not go on</td></tr>
+<tr><th scope="row">Running, Waiting for you</th><td>Still going, or paused on the reader</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Fact</th><th scope="col">Where it comes from</th></tr></thead>
+<tbody>
+<tr><th scope="row">Which task</th><td>A run's stored turn names its task (<code translate="no">scheduled_task</code>, source <code translate="no">scheduler</code>). A turn saved before turns named it takes the task of its line: a task's runs follow each other on one line, so its later runs, its branch record and its branch entry name the task for the older ones (<code translate="no">task_activity.run_tasks</code>). <code translate="no">GET /api/session/{id}/executions</code> sends it as <code translate="no">scheduled_task_id</code> on each top-level run.</td></tr>
+<tr><th scope="row">Outcome</th><td>The task's record (<code translate="no">task_runs</code>, its last 20) where it has the run; else the execution's status and its reply, judged the way <code translate="no">run_finish</code> judges a run as it ends. A run that ended is judged once and kept.</td></tr>
+<tr><th scope="row">Why</th><td>From the run's <code translate="no">reason_code</code> and how long it ran, in English and Chinese: <code translate="no">agent_runner_error</code>, <code translate="no">time_limit</code>, <code translate="no">owner_lost_before_checkpoint</code>, <code translate="no">unfinished_before_session_logs</code>, <code translate="no">scheduled_run_start_failed</code>, else a plain "failed", "stopped" or "cut off after …"</td></tr>
+<tr><th scope="row">Cost</th><td>The provider calls charged to the run's execution and to its helpers' Jobs. Calls saved before calls carried their execution go to the run that was going in the conversation when they were made.</td></tr>
+<tr><th scope="row">Page read</th><td><code translate="no">GET /api/session/{id}/activity/tasks/{task}?filter=all|unfinished|notified&amp;offset=&amp;limit=</code>: the counts, the last 24, the cost and one page. On a conversation with 177 runs it answers in about 26 ms once the conversation is in memory; the first read of a conversation not yet loaded takes about 0.6 s. It is read on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and every 30 seconds; a refresh replaces the newest rows by id.</td></tr>
+</tbody>
+</table>
+<p>Why one row: a task that runs every hour has hundreds of runs, and a row per run, or per line its runs left, buries the agents the reader works with. Peers, as the <a href="../../runtime/always-on-agents.html">always-on design</a> compares them, list a task once and keep its history on its own page:</p>
+<ul>
+<li>Claude Code lists routines.</li>
+<li>Codex lists its automations.</li>
+<li>DeepSeek Harness has a tasks page with each task's delivery records.</li>
+</ul>
+<p>The row here adds how the last day went, as one strip; the history stays on the task's page, paged and filtered to what did not finish.</p>
+<p class="note">Kept apart from Scheduled tasks on purpose: that group holds what the Scheduler does without an agent, so a task is never in both places.</p>
+</details>
+
+<details id="reading-overview">
+<summary>Reading the overview</summary>
+<p>The overview draws what it last read of the conversation at once and reads again behind it; a new read replaces rows in place and says nothing.</p>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">First open</th><td>Agents is open from the start: the checked-out branch's main agent, at rest with the conversation's last activity. The read adds the other branches, helpers and calls in place.</td></tr>
+<tr><th scope="row">Coming back</th><td>Each of the four reads (executions, programs and calls, roster, work) is kept per conversation for the life of the page (<code translate="no">lib/execution/activity-reads.ts</code>) and drawn in the first frame, on the tab or after switching conversations. Executions and roster are not read again while fresh: under 30 seconds old, the socket open throughout, and no <code translate="no">op:execution-update</code> or <code translate="no">op:job-status</code> since the read began. Work is always read, since Scheduler tasks publish no event.</td></tr>
+<tr><th scope="row">While shown</th><td>Executions are read on those events, at most once a second, and every 30 seconds. A failed read is tried again after 2, 4, 8 … seconds, up to 30.</td></tr>
+<tr><th scope="row">Failure</th><td>Nothing is said while there is something to show. Runs that were never read and keep failing for 5 seconds put "Could not read this conversation's runs." with Retry under Agents.</td></tr>
+<tr><th scope="row">Server</th><td><code translate="no">GET /api/session/{id}/executions</code> reads each session's Jobs once per request (<code translate="no">jobs.store.session_jobs_reader</code>) and looks every row's Job up in it, the helpers' usage included; a foreground turn, which has no Job, costs no lookup. The conversation's folder comes from the location index, parsed again only when its file changes. A conversation with 203 runs answers in about 0.2 seconds instead of 4 to 6, and three at once no longer queue on the conversation's lock for 18 seconds.</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="branches-runs-and-waits">Branches, runs and waits</h2>
@@ -76,8 +152,8 @@
 <tr><th scope="row">Branch</th><td>Each execution belongs to one: a sub-agent's, covering everything under it that no deeper sub-agent owns; otherwise the main agent's</td></tr>
 <tr><th scope="row">Run</th><td>One message and all done for it, normally one top-level execution holding child executions, unreturned function calls and managed programs in its tree. Older runs exist only as messages. A row in its Agent page, never in the overview.</td></tr>
 <tr><th scope="row">Waits for the reader</th><td>Only a run paused on a question or approval (the model's <code translate="no">issues</code> filtered to paused executions)</td></tr>
-<tr><th scope="row">Interrupted</th><td>A call or run cut short by a restart. Muted history, nothing to do.</td></tr>
-<tr><th scope="row">Status unknown</th><td>A program whose supervisor is gone. Muted history, nothing to do.</td></tr>
+<tr><th scope="row">Interrupted</th><td>A call or run cut short by a restart. History, nothing to do: not listed in the overview.</td></tr>
+<tr><th scope="row">Status unknown</th><td>A program whose supervisor is gone. History, nothing to do: not listed in the overview, and its agent does not read Running because of it.</td></tr>
 <tr><th scope="row">Ended</th><td>An execution whose only missing records are model responses (<code translate="no">provider_response_incomplete</code>)</td></tr>
 </tbody>
 </table>
@@ -111,7 +187,7 @@
 <tr><th scope="row">Call</th><td>Title from its description, state, task or command, its output once it returned. Cut short: Interrupted.</td></tr>
 <tr><th scope="row">Program</th><td>Titled like its row, with a bar and its progress in words, or when it ran, how long and its exit code. Stop program while running, then against a time axis Progress, Command, Output (open by itself) and Technical details. Read every second while open.</td></tr>
 <tr><th scope="row">Open work</th><td>Item, state, Mark done (Reopen once done), Remove (which returns to the overview), what the list is for, note, created date. No time axis.</td></tr>
-<tr><th scope="row">Scheduled task</th><td>Title and schedule, Open in Scheduler, a Task row holding its prompt, command, notes, created date, id, a webhook's address and key behind Copy (the key is never shown) and the watched command, then its recent runs from the task's record as in an Agent page</td></tr>
+<tr><th scope="row">Scheduled task</th><td>A task that runs a prompt: <a href="#task-rows">its runs page</a>. A reminder or command: title and schedule, Open in Scheduler, a Task row holding its prompt, command, notes, created date, id, a webhook's address and key behind Copy (the key is never shown) and the watched command, then its recent runs from the task's record as in an Agent page</td></tr>
 <tr><th scope="row">Always-on</th><td>Opened from the Next wake block on top of the chart. Open: Wake now, what always-on means, Agent, standing goal, Goal, wake schedule, check-in model, last wake and its cost, today's spending, next wake; reports that never reached the chat; what it was told about reports, each opening to Delete.</td></tr>
 <tr><th scope="row">Report</th><td>A run whose message id starts <code translate="no">report_</code>, ticked rather than barred. While the always-on record holds it: body, kind, links, delivery results, Don't report things like this. Older ones show the message.</td></tr>
 </tbody>
@@ -271,7 +347,7 @@
 
 <details>
 <summary>Code</summary>
-<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>, <code translate="no">apps/web/lib/execution/agent-roster.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>, <code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>, <code translate="no">apps/web/lib/execution/activity-model.ts</code>, <code translate="no">apps/web/lib/prefs/activity-view.ts</code>, <code translate="no">apps/web/lib/chat/conversation-work.ts</code>, <code translate="no">openprogram/runtime/execution/activity_calls.py</code>, <code translate="no">openprogram/runtime/execution/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
+<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>, <code translate="no">apps/web/lib/execution/agent-roster.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/activity-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/activity-page-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/activity-page-geometry.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/activity-run-wording.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/runs/run-list.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/runs/run-insides.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/runs/sub-agent-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/runs/execution-controls.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/program-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/command-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/scheduled-task-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/task-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/task-runs-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/runs/use-task-runs.ts</code>, <code translate="no">apps/web/lib/net/execution/task-runs-client.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/open-work-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/pages/always-on-row.tsx</code>, <code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>, <code translate="no">apps/web/lib/execution/activity-model.ts</code>, <code translate="no">apps/web/lib/prefs/activity-view.ts</code>, <code translate="no">apps/web/lib/chat/conversation-work.ts</code>, <code translate="no">apps/web/lib/execution/activity-reads.ts</code>, <code translate="no">apps/web/lib/execution/use-execution-debugger.ts</code>, <code translate="no">apps/web/lib/execution/use-managed-processes.ts</code>, <code translate="no">openprogram/interfaces/server/routes/execution/lifecycle.py</code>, <code translate="no">openprogram/runtime/jobs/store.py</code>, <code translate="no">openprogram/runtime/execution/projections/activity_calls.py</code>, <code translate="no">openprogram/runtime/execution/projections/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code>, <code translate="no">openprogram/runtime/scheduler/task_activity.py</code>, <code translate="no">openprogram/state/store/session/graph/branches.py</code></p>
 </details>
 
 <p class="next"><a href="../visual-system/indicator-dots.html">Status dots</a> · <a href="sub-agent-row.html">A sub-agent's own conversation</a></p>

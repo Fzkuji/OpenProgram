@@ -29,28 +29,91 @@ export interface Provider {
    * Native login methods (OAuth / device-code / import-from-CLI) the web can
    * drive for this provider, excluding plain api_key (the ApiKey field handles
    * that). Present only for providers with a real native flow; absent/empty for
-   * key-only providers. Drives the <ProviderLogin/> "Sign in" panel. Source of
-   * truth: openprogram/models/auth/login/login_method_registry.py.
+   * key-only providers. Drives the <ProviderLogin/> choice list; the first is
+   * the recommended way. Source of truth:
+   * openprogram/models/auth/login/login_method_registry.py.
    */
-  login_methods?: { id: string; label: string }[];
+  login_methods?: LoginMethod[];
 }
 
-/** Masked-only account projection returned by the provider account API. */
-export interface ProviderAccountView {
+/** One way to sign in: its title and one-line description in English and
+ *  Chinese, and for an import, the credential file it reads. */
+export interface LoginMethod {
   id: string;
   label: string;
-  /** Compatibility alias for older backends; new code displays label. */
-  name: string;
-  email?: string;
-  kind?: string;
-  status?: string;
-  is_active: boolean;
-  /** The account requests fall back to while nothing is pinned; it stays
-   *  in use until another account is chosen, so it has no off switch. */
-  is_fallback?: boolean;
-  enabled?: boolean;
-  has_value: boolean;
-  masked_key: string;
+  label_zh: string;
+  description: string;
+  description_zh: string;
+  path?: string;
+}
+
+/** A credential's state (openprogram/models/auth/selection.py ``state_of``);
+ *  ``not_set_up`` for a key of a provider that has no address here, ``no_file``
+ *  for an imported sign-in whose file is not there (manage.credential_row). */
+export type CredentialStatus = "ready" | "cooling" | "quota" | "invalid_key" | "needs_login" | "not_set_up" | "no_file";
+
+/** How a provider's credentials take turns. */
+export type CredentialStrategy = "in_order" | "evenly" | "least_used";
+
+/** One credential of a provider as GET /api/providers/{p}/credentials lists
+ *  it (openprogram/models/auth/manage.py): never its secret, only the last
+ *  four characters of a key. */
+export interface CredentialRow {
+  id: string;
+  label: string;
+  /** The server's name (English): the label, else the email, else "Key ····tail".
+   *  The page names a row with `credentialName`, in the reader's language. */
+  display_label: string;
+  /** What a sign-in of the provider is called ("ChatGPT"). */
+  signin_name?: string;
+  kind: string;
+  /** web | cli | import | env */
+  source: string;
+  identity: { email?: string; plan?: string; org?: string; name?: string };
+  key_tail: string;
+  /** Set for a key read from the environment, which is shown, never stored. */
+  env_var: string | null;
+  read_only: boolean;
+  enabled: boolean;
+  status: CredentialStatus;
+  /** When a cooling or spent credential is used again (epoch seconds). */
+  cooldown_until: number | null;
+  blocked_models: Record<string, number>;
+  last_error: { at?: number; code?: string; message?: string } | null;
+  last_used_at: number | null;
+  use_count: number;
+  created_at: number | null;
+  /** Calls and cost since local midnight. */
+  today?: { calls: number; cost_usd: number };
+  /** The quota limits this credential last reported. */
+  limits?: import("@/lib/settings/provider-status.generated").QuotaLimitWire[];
+}
+
+/** A provider's ordered credential list and how to add to it. */
+export interface CredentialList {
+  provider: string;
+  strategy: CredentialStrategy;
+  strategies: CredentialStrategy[];
+  /** The credential a new conversation would use now. */
+  active: string | null;
+  auth: {
+    methods: LoginMethod[];
+    env_vars: string[];
+    check: string | null;
+    keys_url: string | null;
+    billing_url: string | null;
+    signin_name?: string;
+  };
+  /** False when the provider has no address here (a custom provider removed from the config). */
+  set_up?: boolean;
+  credentials: CredentialRow[];
+}
+
+/** A conversation's credential per provider: the one it is bound to (kept
+ *  while it works) and the one it is pinned to by hand. */
+export interface SessionCredentials {
+  binding: Record<string, string>;
+  pin: Record<string, string>;
 }
 
 export interface Model {

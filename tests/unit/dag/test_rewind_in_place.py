@@ -7,7 +7,7 @@ explicit fork are the operations that open a new branch.
 from types import SimpleNamespace
 
 from tests.unit.dag.test_rewind_modes import Session, store, _append, _apply  # noqa: F401
-from openprogram.runtime.conversation.rewind_marks import undo_rewind
+from openprogram.runtime.conversation.rewinds.rewind_marks import undo_rewind
 
 
 def _record(store, sid="s"):
@@ -55,7 +55,7 @@ def _summary(store, sid, node_id, covers, predecessor):
 
 
 def test_a_summary_of_retracted_turns_is_retracted_and_the_one_before_applies(store):
-    from openprogram.runtime.context.nodes import active_summary_for_chain
+    from openprogram.runtime.context.session_dag.nodes import active_summary_for_chain
     from openprogram.state.store import SessionNodeWriter
 
     session = Session(store, "s")

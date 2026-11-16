@@ -1,6 +1,6 @@
 """Auth-acquisition tests for GeminiCLIRuntime.
 
-Mirrors tests/unit/providers/adapters/test_openai_codex_runtime_auth.py — we exercise the
+Mirrors tests/unit/providers/adapters/openai_codex/test_openai_codex_runtime_auth.py — we exercise the
 narrow auth helpers without instantiating a full Runtime (which needs a
 live HTTP stack). The Gemini CLI's OAuth file is redirected to tmp_path
 so import_from_gemini_cli never reads the developer's real file.
@@ -15,12 +15,7 @@ import pytest
 
 from openprogram.models.auth.credential_provider import CredentialProvider
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
-from openprogram.models.auth.types import (
-    AuthConfigError,
-    Credential,
-    CredentialData,
-    CredentialPool,
-)
+from openprogram.models.auth.types import AuthConfigError, Credential, CredentialData
 from openprogram.models.providers.adapters.google_gemini_cli import auth_adapter
 from openprogram.models.providers.adapters.google_gemini_cli.credentials import (
     access_token_for,
@@ -57,34 +52,33 @@ def test_ensure_credential_imports_from_gemini_cli_file_when_pool_absent(isolate
     _write_creds(creds_path, access="ya29.fromfile")
     mgr = CredentialProvider(store=store)
 
-    cred = ensure_credential(mgr, "default")
-    assert cred.kind == "cli_delegated"
+    cred = ensure_credential(mgr)
+    assert cred.kind == "import"
     assert access_token_for(cred) == "ya29.fromfile"
     # Pool created — a second acquire returns the same credential without
     # re-importing the file.
-    assert store.find_pool(auth_adapter.PROVIDER_ID, "default") is not None
-    cred2 = ensure_credential(mgr, "default")
-    assert cred2.credential_id == cred.credential_id
+    assert len(store.get(auth_adapter.PROVIDER_ID).credentials) == 1
+    cred2 = ensure_credential(mgr)
+    assert cred2.id == cred.id
 
 
 def test_ensure_credential_raises_when_no_pool_and_no_file(isolated):
     store, *_ = isolated
     mgr = CredentialProvider(store=store)
     with pytest.raises(AuthConfigError, match="gemini auth login"):
-        ensure_credential(mgr, "default")
+        ensure_credential(mgr)
 
 
-def test_access_token_reads_live_file_for_cli_delegated(isolated):
-    """cli_delegated credentials point at the CLI's on-disk JSON, so a
+def test_access_token_reads_live_file_for_an_imported_login(isolated):
+    """An imported login points at the CLI's on-disk JSON, so a
     token rotation on disk must propagate without us re-importing."""
     _store, _tmp, creds_path = isolated
     _write_creds(creds_path, access="ya29.original")
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        account_id="default",
-        kind="cli_delegated",
+        kind="import",
         payload=CredentialData(
-            kind="cli_delegated",
+            kind="import",
             data={
                 "store_path": str(creds_path),
                 "access_key_path": ["access_token"],
@@ -103,7 +97,6 @@ def test_access_token_reads_live_file_for_cli_delegated(isolated):
 def test_access_token_reads_oauth_payload_directly():
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="ya29.oauth_direct",
@@ -117,30 +110,26 @@ def test_access_token_reads_oauth_payload_directly():
     assert access_token_for(cred) == "ya29.oauth_direct"
 
 
-def test_profile_isolation(isolated):
+def test_the_first_enabled_login_is_used(isolated):
     store, _tmp, creds_path = isolated
 
-    def seed(account_id: str, token: str) -> None:
-        store.put_pool(CredentialPool(
+    def seed(token: str) -> Credential:
+        return store.add_credential(Credential(
             provider_id=auth_adapter.PROVIDER_ID,
-            account_id=account_id,
-            credentials=[Credential(
-                provider_id=auth_adapter.PROVIDER_ID,
-                account_id=account_id,
-                kind="oauth",
-                payload=CredentialData(
-                    kind="oauth", auth_value=token,
-                    data={
-                        "refresh_token": "R",
-                        "expires_at_ms": int(time.time() * 1000) + 3600_000,
-                        "client_id": "fake",
-                    },
-                ),
-            )],
+            kind="oauth",
+            payload=CredentialData(
+                kind="oauth", auth_value=token,
+                data={
+                    "refresh_token": "R",
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": "fake",
+                },
+            ),
         ))
 
-    seed("personal", "ya29.personal")
-    seed("work", "ya29.work")
+    personal = seed("ya29.personal")
+    seed("ya29.work")
     mgr = CredentialProvider(store=store)
-    assert access_token_for(ensure_credential(mgr, "personal")) == "ya29.personal"
-    assert access_token_for(ensure_credential(mgr, "work")) == "ya29.work"
+    assert access_token_for(ensure_credential(mgr)) == "ya29.personal"
+    store.update(auth_adapter.PROVIDER_ID, personal.id, lambda c: setattr(c, "enabled", False))
+    assert access_token_for(ensure_credential(mgr)) == "ya29.work"

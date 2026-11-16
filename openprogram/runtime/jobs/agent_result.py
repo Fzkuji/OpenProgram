@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import time
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from openprogram.runtime.jobs.types import Job, JobStatus
 
@@ -89,19 +89,22 @@ def _tool_calls(job: Job) -> Optional[int]:
         return None
 
 
-def subtree_job_ids(job: Job) -> list[str]:
+def subtree_job_ids(job: Job, *, jobs_in: Optional[Callable[[str], list[Job]]] = None) -> list[str]:
     """``job`` and every helper started under it (``parent_job_id``) in the
     conversations the tree runs in (a helper forked into a conversation none
     of them runs in is not found). Tool calls stay the helper's own; tokens
-    and cost are the subtree's, since a helper's helpers spend on its task."""
+    and cost are the subtree's, since a helper's helpers spend on its task.
+    ``jobs_in`` lists a session's Jobs; a caller projecting many Jobs passes
+    one ``store.session_jobs_reader`` so each session is read once."""
     found = [job.id]
     try:
-        from openprogram.runtime.jobs.store import list_jobs
+        if jobs_in is None:
+            from openprogram.runtime.jobs.store import list_jobs as jobs_in
         # Each helper is stored in the conversation it runs in; its own
         # helpers are looked for there and in the conversation it started in.
         sessions, frontier, seen = {job.parent_session_id}, {job.id}, {job.id}
         while frontier:
-            children = [j for sid in sorted(sessions) for j in list_jobs(sid)
+            children = [j for sid in sorted(sessions) for j in jobs_in(sid)
                         if j.parent_job_id in frontier and j.id not in seen]
             frontier = {j.id for j in children}
             seen |= frontier

@@ -234,7 +234,7 @@ def test_install_docs_cover_what_stops_a_new_user() -> None:
 
 def test_every_readme_gives_the_working_install_fallback() -> None:
     fallback = "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh"
-    readmes = sorted(ROOT.glob("README*.md"))
+    readmes = sorted([ROOT / "README.md", *(ROOT / "translations").glob("README.*.md")])
     assert len(readmes) == 10
     for path in readmes:
         contents = path.read_text(encoding="utf-8")
@@ -337,7 +337,7 @@ def test_public_docs_describe_one_release_product_runtime() -> None:
         ROOT / "docs" / "start" / "GETTING_STARTED.zh.html",
         ROOT / "docs" / "start" / "faq.html",
         ROOT / "docs" / "start" / "faq.zh.html",
-        ROOT / "docs" / "reference" / "design" / "feature-matrix.html",
+        ROOT / "docs" / "reference" / "design" / "framework-comparison" / "feature-matrix.html",
     ]
     forbidden = (
         "openprogram programs install gui",
@@ -385,9 +385,9 @@ def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
     ]
     internal_python_installers = {
         ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "browser.py",
-        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "plugins.py",
-        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "programs.py",
-        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "upgrade.py",
+        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "capabilities" / "plugins.py",
+        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "capabilities" / "programs.py",
+        ROOT / "openprogram" / "interfaces" / "cli" / "commands" / "updates" / "upgrade.py",
         ROOT / "openprogram" / "interfaces" / "cli" / "setup_sections" / "sections.py",
         ROOT / "openprogram" / "programs" / "_host" / "sources.py",
         ROOT / "openprogram" / "programs" / "_host" / "registry.py",

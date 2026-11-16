@@ -31,7 +31,7 @@ def _event_log_path(ev) -> Path:
         sid = str(sid)
         sessions_root = base / "projects"
         try:
-            from openprogram.state.store.session.placement import is_deleted
+            from openprogram.state.store.session.files.placement import is_deleted
             if is_deleted(sessions_root, sid):
                 return base / "logs" / "events.jsonl"
         except Exception:
@@ -54,7 +54,7 @@ def _event_log_path(ev) -> Path:
         # was created under another profile, without constructing another
         # SessionStore; then look in every project's chats folder.
         try:
-            from openprogram.state.store.session.placement import LOCATIONS_FILE, iter_session_dirs, rooted_location
+            from openprogram.state.store.session.files.placement import LOCATIONS_FILE, iter_session_dirs, rooted_location
             locations_path = sessions_root / LOCATIONS_FILE
             try:
                 locations = json.loads(locations_path.read_text(encoding="utf-8"))
@@ -87,7 +87,7 @@ def log_event(ev, gate: dict | None = None) -> None:
         sid = ev.metadata.get("session") if isinstance(ev.metadata, dict) else None
         lock = nullcontext()
         if sid:
-            from openprogram.state.store.session.session_lock import session_interprocess_lock
+            from openprogram.state.store.session.files.session_lock import session_interprocess_lock
             lock = session_interprocess_lock(str(sid), reentrant=True)
         # Keep the session lock across path validation and mkdir. This makes
         # deletion publish its tombstone before the logger can create files.

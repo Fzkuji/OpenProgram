@@ -20,9 +20,9 @@ OpenProgram 每个 turn 喂给 LLM 的内容由这个包决定：对话历史怎
 
 ## 0. 数据底座（DAG）
 
-### 0.1 节点模型 `nodes.py`
+### 0.1 节点模型 `session_dag/nodes.py`
 
-节点 schema（`Call`、`Graph`、role 常量）由会话存储持有，定义在 `openprogram/state/store/session/nodes.py`；本目录的 `nodes.py` 只放基于它的上下文计算（`render_context`、spine、fold history 等）。
+节点 schema（`Call`、`Graph`、role 常量）由会话存储持有，定义在 `openprogram/state/store/session/nodes.py`；本目录的 `session_dag/nodes.py` 只放基于它的上下文计算（`render_context`、spine、fold history 等）。
 
 **只有一种节点类型 `Call`**：
 
@@ -55,7 +55,7 @@ role="code"   ─ 一次函数调用    input  = arguments dict
 ```
 
 **DAG 上的"边"有三套**（权威定义见
-[`docs/reference/design/runtime/dag/overview.html`](https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/reference/design/runtime/dag/overview.html)
+[`docs/reference/design/runtime/dag/overview.html`](https://github.com/Fzkuji/OpenProgram/blob/main/docs/reference/design/runtime/dag/overview.html)
 §3，本文其余段落里出现的旧名 `called_by` 一律读作 `caller`）：
 
 ```
@@ -177,10 +177,10 @@ message dict ↔ Call 的双向映射在这一层：
 
 **`Runtime.exec`**（`agent/runtime.py`）：
 - `store = _store.get()`；为 `None` 时退化成普通 LLM 调用，完全不碰 DAG
-- 装了 store：从 `_call_id` 拿当前 frame 节点 → `compute_reads(...)` 算出本次要读哪些节点 → `render.py::render_dag_messages` 渲染成 messages → 调 provider
+- 装了 store：从 `_call_id` 拿当前 frame 节点 → `compute_reads(...)` 算出本次要读哪些节点 → `session_dag/render.py::render_dag_messages` 渲染成 messages → 调 provider
 - 成功后 append 一个 `Call(role=llm, name=model, output=reply, called_by=_call_id.get())` 到 store；顶层（无 frame）时 `called_by=""`
 
-**`compute_reads(graph, head_seq, frame_entry_seq, render_range)`**（在 `nodes.py`）—— 纯函数，按 DAG 结构算下一次 LLM 调用要读哪些节点：
+**`compute_reads(graph, head_seq, frame_entry_seq, render_range)`**（在 `session_dag/nodes.py`）—— 纯函数，按 DAG 结构算下一次 LLM 调用要读哪些节点：
 
 ```
 顶层聊天                       seq ≤ head_seq 的所有节点，按 seq 升序
@@ -214,7 +214,7 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
 
 ## 1. 系统提示装配
 
-文件：`components.py::build_system_prompt(agent)`
+文件：`prompt_assembly/components.py::build_system_prompt(agent)`
 
 把 5 类信息按固定顺序拼成一段，包在 `── Agent prompt ──` 和 `── End of agent prompt ──` 之间，模型一眼能看到边界。
 
@@ -234,14 +234,14 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
 
 - 接受 AgentSpec 对象或 dict，内部用 `_attr(obj, name, default)` 统一访问，webui 传 profile dict、CLI 传 AgentSpec 都能用
 - 任何一层抛异常都被吞掉，最差情况退化到只返回 `agent.system_prompt`，绝不让系统提示装配失败拖崩整个 turn
-- AGENTS.md 由 `openprogram.runtime.context.agents_md` 读取；工作目录以下的 AGENTS.md 在文件工具触及时附在工具结果后（每会话一次）
+- AGENTS.md 由 `openprogram.runtime.context.prompt_assembly.agents_md` 读取；工作目录以下的 AGENTS.md 在文件工具触及时附在工具结果后（每会话一次）
 - Skill 索引限 20 条，超出显示 `... (+N more)`，避免 skill 多的 agent 把 system prompt 撑爆
 
-**注册的段落**：`components.py` 按层（L0/L1/L2）和 `order` 装配所有 `register(ContextComponent(...))` 注册的段落。本包只注册不依赖会话功能的段落；会话包导入时由 `conversation/context_registration.py` 注册 `open_work` 段（L1，order 35：本会话还欠用户的事），并通过 `session_stats.set_agent_profile_loader()` 提供 `/context` 拆分读取 Agent 配置的方式。`context` 不导入 `conversation`。
+**注册的段落**：`prompt_assembly/components.py` 按层（L0/L1/L2）和 `order` 装配所有 `register(ContextComponent(...))` 注册的段落。本包只注册不依赖会话功能的段落；会话包导入时由 `conversation/layer_registrations/context_registration.py` 注册 `open_work` 段（L1，order 35：本会话还欠用户的事），并通过 `session_stats.set_agent_profile_loader()` 提供 `/context` 拆分读取 Agent 配置的方式。`context` 不导入 `conversation`。
 
 ## 2. Token 预算
 
-三个文件分工（文本的可加权重在 `state/store/session/weight.py`：中日韩和全角记 1，其余记 0.25，用来决定截断点，存储层的 `spill.py` 也用它）：
+`token_accounting/` 里三个文件分工（文本的可加权重在 `state/store/session/weight.py`：中日韩和全角记 1，其余记 0.25，用来决定截断点，存储层的 `spill.py` 也用它）：
 
 ```
 tokens.py        估算单条消息和整段历史的 token 数；提供 real_context_window
@@ -582,7 +582,7 @@ Per-agent engine override      有            无            有         有
 
 ```
 ─── 数据底座（DAG） ─────────────────────────────────────────
-nodes.py           基于 state/store/session/nodes.py 的 helpers (last_user_message /
+session_dag/nodes.py  基于 state/store/session/nodes.py 的 helpers (last_user_message /
                     linear_back_to / branch_terminals / branch_internal /
                     fold_history / render_context)
 storage.py         GraphStore：SQLite 三表（sessions/nodes/nodes_fts），
@@ -590,21 +590,21 @@ storage.py         GraphStore：SQLite 三表（sessions/nodes/nodes_fts），
 session.py         DagSession + DagSessionManager：一个 SQLite 文件多 session
 session_db.py      DagSessionDB：跟老 SessionDB 同 API 的适配器（chat msg ↔ Call 映射）
 runtime.py         DagRuntime：provider_call wrapper，exec → 写 llm-role Call
-render.py          render_dag_messages：把 reads 节点列表渲染成 provider messages
+session_dag/render.py  render_dag_messages：把 reads 节点列表渲染成 provider messages
 chat.py            chat_turn：LLM↔tool 循环 + parse_tool_call
 
 ─── 上下文编排 ─────────────────────────────────────────────
 __init__.py        公开 API：default_engine / resolve_engine_for / TurnPrep / CompactResult / ...
 types.py           编排 dataclass：UsageState / BudgetAllocation / TurnPrep / CompactResult
-tokens.py          token 估算 + real_context_window + CJK 比例
-usage.py           UsageTracker：provider usage 缓存 + hybrid 估算
-budget.py          BudgetAllocator：context_window → 四段切分
+token_accounting/tokens.py  token 估算 + real_context_window + CJK 比例
+token_accounting/usage.py   UsageTracker：provider usage 缓存 + hybrid 估算
+token_accounting/budget.py  BudgetAllocator：context_window → 四段切分
 aging.py           TurnAger：三闸门 + 保护前 N 的 tool_result redact
 prompts.py         SYSTEM / FRESH / UPDATE 三个 summariser 提示
 summarize.py       Summarizer：找切点 + LLM 调用 + structural 兜底
-persistence.py     Persister：写 compactionSummary 节点 + re-parent kept tail
+compaction/persistence.py   Persister：写 compactionSummary 节点 + re-parent kept tail
 engine.py          ContextEngine ABC + DefaultContextEngine + 注册表
-components.py      系统提示段落注册表与装配（其他包可注册段落）
+prompt_assembly/components.py  系统提示段落注册表与装配（其他包可注册段落）
 scope.py           调用核心写、Context 读的任务局部状态（_call_id、workflow 调用点）
 ```
 

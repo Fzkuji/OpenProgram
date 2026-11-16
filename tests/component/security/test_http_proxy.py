@@ -1,13 +1,13 @@
 """Proxy resolution rules — pins the invariants in
-docs/reference/design/providers/network-proxy.html."""
+docs/reference/design/providers/requests/network-proxy.html."""
 
 import asyncio
 import ipaddress
 
 import pytest
 
-from openprogram.models.providers.utils.http_client import build_async_client
-from openprogram.models.providers.utils.http_proxy import get_proxy_mounts
+from openprogram.models.providers.utils.http_transport.http_client import build_async_client
+from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts
 
 _PROXY_VARS = (
     "HTTP_PROXY", "http_proxy",
@@ -219,7 +219,7 @@ def test_system_proxy_routes_official_provider(proxy_env):
 
 
 def test_shared_client_replaced_when_proxy_route_changes(proxy_env):
-    from openprogram.models.providers.utils.http_client import get_shared_async_client, aclose_current_loop_clients
+    from openprogram.models.providers.utils.http_transport.http_client import get_shared_async_client, aclose_current_loop_clients
     async def exercise():
         try:
             proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")

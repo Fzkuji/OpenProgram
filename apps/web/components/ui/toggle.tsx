@@ -15,10 +15,14 @@ const toggleVariants = cva(
         // The app's raised face, as on Button: no border, the composer
         // shadow pair, an accent ring when on.
         elevated: "bg-bg-input shadow-raised hover:bg-bg-input hover:shadow-raised-hover aria-pressed:bg-bg-input data-[state=on]:bg-bg-input aria-pressed:ring-[1.5px] aria-pressed:ring-primary data-[state=on]:ring-[1.5px] data-[state=on]:ring-primary",
+        // One choice of a few on a muted track (ToggleGroup draws the
+        // track): the chosen one is the raised face, the rest plain text.
+        segmented: "bg-transparent text-text-secondary hover:bg-transparent hover:text-text-bright data-[state=on]:bg-bg-input data-[state=on]:text-text-bright data-[state=on]:shadow-raised",
       },
       size: {
         default:
           "h-(--ui-button-h) min-w-(--ui-button-h) px-[10px] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        xs: "h-(--ui-button-h-xs) min-w-(--ui-button-h-xs) rounded-sm px-2 text-fs-xs [&_svg:not([class*='size-'])]:size-3",
         sm: "h-(--ui-button-h-sm) min-w-(--ui-button-h-sm) px-[10px] text-fs-sm has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-(--ui-button-h-lg) min-w-(--ui-button-h-lg) px-[10px] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
       },

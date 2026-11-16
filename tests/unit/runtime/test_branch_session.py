@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from openprogram.runtime.context.branch_session import (
+from openprogram.runtime.context.session_dag.branch_session import (
     BranchSessionError,
     RUN_CONFIG_FIELDS,
     branch_session,
@@ -154,7 +154,7 @@ def test_lineage_title_and_run_config(store):
     # The auto-titler may still rename it later, but not on its first turn.
     assert row.get("_auto_titled") is True and not row.get("_user_titled")
 
-    from openprogram.runtime.conversation.session_config import (
+    from openprogram.runtime.conversation.session_settings.session_config import (
         load_session_run_config, tools_override_from_config,
     )
     assert tools_override_from_config(load_session_run_config(new)) == \

@@ -1,4 +1,4 @@
-"""context.nodes.render_context — pure-function helper that picks the
+"""context.session_dag.nodes.render_context — pure-function helper that picks the
 ids that should go into the next LLM call's ``reads``.
 
 Tests build small graphs manually and assert the algorithm's behavior
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
-from openprogram.runtime.context.nodes import render_context
+from openprogram.runtime.context.session_dag.nodes import render_context
 
 
 def _spine_tip(g: Graph) -> str | None:

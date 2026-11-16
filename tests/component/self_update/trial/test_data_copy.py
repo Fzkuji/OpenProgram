@@ -13,7 +13,7 @@ import pytest
 from openprogram.operations.self_update.trial import data_copy
 from openprogram.operations.self_update.trial.fake_model import MODEL_ID, PROVIDER_ID
 from openprogram.runtime.execution._schema import TABLES
-from openprogram.state.store.session.session_log import SessionLog, encode_record, read_log_file
+from openprogram.state.store.session.files.session_log import SessionLog, encode_record, read_log_file
 
 SECRET = "sk-live-secret"
 MODEL_URL = "http://127.0.0.1:9/v1"
@@ -273,7 +273,7 @@ def test_queued_jobs_and_live_processes_end_in_the_copy(live, tmp_path):
     target = tmp_path / "copy"
     report = data_copy.copy_state(live, target, model_base_url=MODEL_URL)
     assert report.sanitized["jobs"] == 1 and report.sanitized["processes"] == 1
-    from openprogram.state.store.session.session_state_file import read_files
+    from openprogram.state.store.session.files.session_state_file import read_files
 
     jobs = json.loads(read_files(target / "projects/default/chats" / CHAT)["jobs.json"])["jobs"]
     assert jobs["a"]["status"] == "cancelled" and jobs["b"]["status"] == "completed"

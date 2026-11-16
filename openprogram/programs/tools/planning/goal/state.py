@@ -368,10 +368,13 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
             "schema_version", "execution_mode", "goal_id", "run_id", "revision", "version",
-            "text", "checklist", "status", "phase", "budget", "usage", "execution_id",
+            "text", "checklist", "progress", "status", "phase", "budget", "usage", "execution_id",
             "recoverable", "pause_reason", "stop_requested", "last_reason",
             "created_at", "updated_at", "end_records")},
     }
+    if payload["goal"]["progress"] is None:
+        # A Goal without a task has no progress to show.
+        del payload["goal"]["progress"]
     from .presentation import goal_message
     payload["goal"]["verification_message"] = goal_message(goal)
     if on_event is not None:

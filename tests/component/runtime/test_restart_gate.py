@@ -9,7 +9,7 @@ import pytest
 
 from openprogram.operations.self_update.control import maintenance
 from openprogram.runtime import execution as execution_package
-from openprogram.runtime.execution import restart
+from openprogram.runtime.execution.recovery import restart
 from openprogram.runtime.execution.agent_journal import ToolStep, interrupted_outcome
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.control import RuntimeControlService

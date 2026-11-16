@@ -165,7 +165,7 @@ NO_MODEL_CONFIGURED = (
 
 
 def _raise_model_unavailable(requested) -> None:
-    from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+    from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
     if requested:
         msg = (
             f"Model {requested!r} is not available. It may have been "

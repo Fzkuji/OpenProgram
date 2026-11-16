@@ -5,7 +5,7 @@ import pytest
 
 from openprogram.runtime.permissions.authority import local_owner_authority
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 from openprogram.runtime.permissions.modes import PermissionRules
 from openprogram.runtime.permissions.policy import permission_decision
 from openprogram.runtime.permissions import recovery as lookup
@@ -13,7 +13,7 @@ from openprogram.models.providers.types import AgentTool, AgentToolResult, TextC
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.control import RuntimeControlService
 from openprogram.runtime.execution.driver import DriverRegistry
-from openprogram.runtime.execution.effects import EffectClassification, EffectStatus, EffectStore
+from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectStatus, EffectStore
 from openprogram.runtime.execution.store import ExecutionStore
 
 

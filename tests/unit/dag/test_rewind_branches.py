@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.conversation.rewind import list_rewind_points, plan_rewind, rewind_to
+from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points, plan_rewind, rewind_to
 from openprogram.state.store.session.session_store import SessionStore
 from openprogram.state.store.snapshot.checkpoint import CheckpointStore, PromptCheckpoints
 from openprogram.state.store.snapshot.checkpoint.helpers import (
@@ -288,7 +288,7 @@ def test_a_file_tool_records_in_the_checkpoint_of_the_turn_it_runs_in(store, wor
 def _owning(monkeypatch, *turns):
     """The rewind's turns own these background turns."""
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.history_ownership.owned_change_set_closure",
+        "openprogram.runtime.conversation.rewinds.history_ownership.owned_change_set_closure",
         lambda _sid, _turns: {
             "status": "ready", "owned_turn_ids": list(turns), "blockers": [], "linked": [],
         },

@@ -38,7 +38,7 @@ def identified_process():
 
 
 def current_process_owner():
-    from openprogram.state.store.session.session_log import is_main_writer
+    from openprogram.state.store.session.files.session_log import is_main_writer
 
     owner = {"instance": _this_instance()}
     if not is_main_writer():

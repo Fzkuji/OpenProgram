@@ -1,5 +1,5 @@
 // A conversation with an always-on Agent draws only what was said. Rows
-// carry the rowKind the server names (tests/component/webui/chat/test_transcript_reads.py
+// carry the rowKind the server names (tests/component/webui/transcript/test_transcript_reads.py
 // holds the report fields a read sends).
 import assert from "node:assert/strict";
 import { test } from "node:test";

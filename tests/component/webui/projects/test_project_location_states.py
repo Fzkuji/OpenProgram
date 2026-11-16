@@ -172,7 +172,7 @@ def test_relocate_folds_a_missing_project_into_the_folders_project(tmp_path, mon
 
 
 def test_execute_refuses_bound_missing_project(tmp_path, monkeypatch):
-    from openprogram.runtime.conversation.workdir import bound_project_execution_blocked
+    from openprogram.runtime.conversation.session_settings.workdir import bound_project_execution_blocked
 
     store = _store(tmp_path, monkeypatch)
     folder = tmp_path / "paper"

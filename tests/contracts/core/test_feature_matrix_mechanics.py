@@ -9,12 +9,12 @@ import sys
 
 import pytest
 
-from scripts.check_feature_matrix import MatrixError, check_matrix
+from scripts.checks.check_feature_matrix import MatrixError, check_matrix
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MATRIX = ROOT / "docs/reference/design/feature-matrix.html"
-FRAMEWORK_COMPARISON = ROOT / "docs/reference/design/framework-comparison.html"
+MATRIX = ROOT / "docs/reference/design/framework-comparison/feature-matrix.html"
+FRAMEWORK_COMPARISON = ROOT / "docs/reference/design/framework-comparison/overview.html"
 
 
 @pytest.fixture(params=["", ".zh"])
@@ -168,7 +168,7 @@ def test_feature_matrix_checker_rejects_published_drift(
         check_matrix(candidate)
 
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/check_feature_matrix.py"), str(candidate)],
+        [sys.executable, str(ROOT / "scripts/checks/check_feature_matrix.py"), str(candidate)],
         cwd=ROOT,
         capture_output=True,
         check=False,
@@ -220,7 +220,7 @@ def test_framework_documents_publish_the_current_event_count() -> None:
     assert f"ours {count}" in matrix.casefold()
     assert comparison.count(f"{count} events") == 2
     chinese_matrix = MATRIX.with_name("feature-matrix.zh.html").read_text(encoding="utf-8")
-    chinese_comparison = FRAMEWORK_COMPARISON.with_name("framework-comparison.zh.html").read_text(encoding="utf-8")
+    chinese_comparison = FRAMEWORK_COMPARISON.with_name("overview.zh.html").read_text(encoding="utf-8")
     assert f"我们 {count} 个" in chinese_matrix
     assert chinese_comparison.count(f"{count}事件") + chinese_comparison.count(f"{count} 个事件") == 2
 

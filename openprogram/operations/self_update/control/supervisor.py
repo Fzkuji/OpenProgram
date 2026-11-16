@@ -35,7 +35,7 @@ from openprogram.operations.self_update.types import (
     UpdateRecord,
     _validate_update_id,
 )
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -296,7 +296,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         _validate_candidate_snapshot,
         _validate_registered_worktree,
     )
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     from openprogram.state.worktree.manager import get_manager
 
     record = _record

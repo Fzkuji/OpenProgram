@@ -7,4 +7,4 @@
 - **`stt.py`** — Speech to text for the composer's voice input
 - **`tts.py`** — Text-to-speech playback for CLI chat replies
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

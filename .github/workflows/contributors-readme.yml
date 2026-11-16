@@ -19,11 +19,11 @@ jobs:
       - name: Refresh contributor avatars
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/update_readme_contributors.py
+        run: python3 scripts/publishing/update_readme_contributors.py
       - name: Commit if the list changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README*.md
+          git add README.md translations
           git diff --cached --quiet || git commit -m "Update README contributor avatars."
           git push

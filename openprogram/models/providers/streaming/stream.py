@@ -12,14 +12,13 @@ from typing import AsyncGenerator, Awaitable, Callable
 
 from ..catalog.api_registry import get_api_provider
 from .budget import BudgetedRequest
-from ..utils import request_repair
+from ..utils.failures import request_repair
 from .first_token import FirstToken
 from .resend import Resend, reached_provider
-from ..utils.stream_idle import bounds_own_stream_idle, event_idle_timeout_s, idle_bounded
+from ..utils.streams.stream_idle import bounds_own_stream_idle, event_idle_timeout_s, idle_bounded
 from openprogram.models.usage.prefix_fingerprint import check_request, settle_check
 from openprogram.models.usage.request import RequestReceipt
 from ..recording.capture import RequestSlot, bind_slot
-from ..settings.env_api_keys import resolve_provider_key
 from ..types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -43,7 +42,7 @@ def _job_operation_deadline():
         current_job_operation_timeout,
         record_current_job_activity,
     )
-    from openprogram.models.providers.utils.deadline import (
+    from openprogram.models.providers.utils.http_transport.deadline import (
         get_deadline,
         reset_deadline,
         set_deadline,
@@ -114,13 +113,6 @@ async def stream_simple_with_provider(
                 key_result = await key_result
             if key_result:
                 opts = opts.model_copy(update={"api_key": key_result})
-
-        # Auto-resolve API key if not set. resolve_provider_key reads the
-        # AuthStore (the single key source — no env vars, no config.json).
-        if not opts.api_key and getattr(provider, "requires_credentials", True):
-            opts = opts.model_copy(
-                update={"api_key": resolve_provider_key(model.provider)},
-            )
     except BaseException:
         if budget is not None:
             budget.release()
@@ -178,12 +170,6 @@ async def stream(
                 opts = budget.clamp(opts, model)
             if receipt is not None:
                 opts = receipt.clamp(opts, model)
-
-            # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
-            if not opts.api_key and getattr(provider, "requires_credentials", True):
-                opts = opts.model_copy(
-                    update={"api_key": resolve_provider_key(model.provider)},
-                )
         except BaseException:
             if budget is not None:
                 budget.release()
@@ -245,6 +231,8 @@ async def _delivered(stream_fn, provider, model: Model, context, opts, budget, r
     reply's usage, and the usage event records it.
     """
     governed = budget is not None or receipt is not None
+    if getattr(provider, "requires_credentials", True):
+        stream_fn = _credentialed(stream_fn)
     resend = Resend(model, opts, governed=governed)
     idle_s = _idle_bound(provider)
     started = False
@@ -301,6 +289,21 @@ async def _delivered(stream_fn, provider, model: Model, context, opts, budget, r
             await resend.wait(wait_s)
 
 
+def _credentialed(stream_fn):
+    """``stream_fn`` sent through the provider's credentials: which key a
+    request uses, and what a refusal, a limit or a spent quota does to it,
+    is decided in one place for every adapter
+    (``models/auth/selection.py``). A request whose options already carry a
+    key (a caller's own) is sent with that key."""
+    from openprogram.models.auth.selection import with_credential
+
+    def call(model, context, opts):
+        if opts.api_key:
+            return stream_fn(model, context, opts)
+        return with_credential(model, opts, lambda chosen: stream_fn(model, context, chosen))
+    return call
+
+
 def _event_kind(event) -> str | None:
     return event.get("type") if isinstance(event, dict) else getattr(event, "type", None)
 
@@ -350,7 +353,7 @@ async def _metered(stream_fn, model: Model, context, opts, budget, receipt=None,
     Once ``start`` succeeds, any failure or cancellation conservatively keeps
     exposure held because the request may already have reached the provider.
 
-    ``idle_s`` bounds the wait for each event (``utils/stream_idle.py``): a
+    ``idle_s`` bounds the wait for each event (``utils/streams/stream_idle.py``): a
     reply silent that long ends with ``StreamIdleTimeout``, a transport error
     the caller's retry policy re-sends, and the stalled provider stream is
     closed first.
@@ -381,7 +384,7 @@ async def _metered(stream_fn, model: Model, context, opts, budget, receipt=None,
             yield event
     except BaseException:
         import asyncio
-        from ..utils.event_stream import close_stream
+        from ..utils.streams.event_stream import close_stream
         task = asyncio.current_task()
         stopping = bool(task and task.cancelling()) or bool(opts.signal and opts.signal.is_set())
         await close_stream(events, timeout=0.5 if stopping else None)

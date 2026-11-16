@@ -95,7 +95,7 @@ def _set_active_head(
         from openprogram.runtime.context.session_db import default_db
         db = default_db()
         from openprogram.state.store.session.rewind_view import checkout_meta
-        from openprogram.runtime.conversation.rewind_marks import forget_read_baselines
+        from openprogram.runtime.conversation.rewinds.rewind_marks import forget_read_baselines
         from openprogram.state.store.session.branch_config import snapshot
         source_session = db.get_session(session_id) or {}
         source = source_session.get("head_id")
@@ -191,11 +191,8 @@ def _emit_running_task_event(
         if cleared_msg_id and task and task.get("msg_id") != cleared_msg_id:
             task = None
         else:
-            slot = task
-            task = state._canonical_foreground_task(session_id) or task
-            if slot and task is not slot and slot.get("msg_id") == task.get("msg_id"):
-                task = {**task, **{key: slot[key] for key in ("op_id", "op_kind", "op_version")
-                                   if key in slot}}
+            from .session_lifecycle import _reported_run_task
+            task = _reported_run_task(session_id, task)
         if task:
             from .session_lifecycle import operation_identity
             identity = operation_identity(task)

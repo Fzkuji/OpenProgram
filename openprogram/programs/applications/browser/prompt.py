@@ -2,7 +2,7 @@
 
 Registered by the application's ``setup`` as an L2 (this-call) section;
 the turn passes its surface context and whether its browser tools are on
-(:func:`openprogram.runtime.context.components.build_turn_sections`).
+(:func:`openprogram.runtime.context.prompt_assembly.components.build_turn_sections`).
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def render_for_model(
 
 def pages_section(_agent) -> str:
     """The section for the current call, from its turn inputs."""
-    from openprogram.runtime.context.components import turn_inputs
+    from openprogram.runtime.context.prompt_assembly.components import turn_inputs
 
     turn = turn_inputs()
     return render_for_model(

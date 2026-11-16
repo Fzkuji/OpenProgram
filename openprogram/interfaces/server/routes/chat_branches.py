@@ -92,7 +92,7 @@ def _fork_user_turn_and_run(
         msgs = _db_for_retry().get_messages(session_id)
         # Which message the new turn sends is decided in the runtime, so
         # every surface (``--print`` too) forks the same way.
-        from openprogram.runtime.conversation.branch_fork import ForkError, plan_fork
+        from openprogram.runtime.conversation.turn_admission.branch_fork import ForkError, plan_fork
         from openprogram.runtime.permissions.authority import local_owner_authority
         try:
             plan = plan_fork(msgs, pivot_id, new_content, authority=local_owner_authority())
@@ -116,12 +116,12 @@ def _fork_user_turn_and_run(
     try:
         from openprogram.runtime.permissions.authority import local_owner_authority
         from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-        from openprogram.runtime.conversation.turn_input import build_turn_request
+        from openprogram.runtime.conversation.turn_admission.turn_input import build_turn_request
 
         adapter = CanonicalAgentAdapter(
             event_sink=lambda env: _srv._broadcast(json.dumps(env, default=str)),
         )
-        from openprogram.runtime.conversation.session_config import load_session_run_config
+        from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config
 
         dispatch_attachments = None
         if attachments:
@@ -133,14 +133,14 @@ def _fork_user_turn_and_run(
             if dispatch_attachments:
                 # Kept so later requests send them again, after the text
                 # (``store.session.media``).
-                from openprogram.state.store.session.media import records_for_attachments
+                from openprogram.state.store.session.files.media import records_for_attachments
                 media = records_for_attachments(
                     _db_for_retry()._session_dir(session_id), dispatch_attachments, 1)  # noqa: SLF001
                 if media:
                     new_user["media"] = media
         elif new_content is None and new_user.get("media"):
             # A retry sends the pictures its message sent.
-            from openprogram.state.store.session.media import attachments_from_records
+            from openprogram.state.store.session.files.media import attachments_from_records
             dispatch_attachments = attachments_from_records(
                 new_user["media"], _db_for_retry()._session_dir(session_id)) or None  # noqa: SLF001
         authority = local_owner_authority()
@@ -307,7 +307,7 @@ def _rewind_plan(session_id: str, msg_id: str, mode: str) -> dict:
     """The dry run behind the Rewind dialog. Writes nothing, and leaves crash
     recovery alone while a run owns the session."""
     from openprogram.interfaces.server import server as _srv
-    from openprogram.runtime.conversation.rewind import plan_rewind
+    from openprogram.runtime.conversation.rewinds.rewind import plan_rewind
 
     plan = plan_rewind(
         session_id, msg_id, mode=mode, recover=not _srv._is_run_active(session_id),
@@ -348,8 +348,8 @@ def _apply_rewind(
     """Do exactly the confirmed plan on the current branch; recovery history
     is not exposed as a sibling when the user continues."""
     from openprogram.interfaces.server import server as _srv
-    from openprogram.runtime.conversation.rewind import rewind_to
-    from openprogram.runtime.conversation.rewind_marks import list_rewind_marks
+    from openprogram.runtime.conversation.rewinds.rewind import rewind_to
+    from openprogram.runtime.conversation.rewinds.rewind_marks import list_rewind_marks
 
     def apply() -> dict:
         result = rewind_to(
@@ -378,7 +378,7 @@ def _apply_rewind(
 
 def _switch_rewind(session_id: str, edge_id, expected_head_id, undo: bool) -> dict:
     from openprogram.interfaces.server import server as _srv
-    from openprogram.runtime.conversation.rewind_marks import redo_rewind, undo_rewind
+    from openprogram.runtime.conversation.rewinds.rewind_marks import redo_rewind, undo_rewind
 
     def apply() -> dict:
         result = (undo_rewind if undo else redo_rewind)(
@@ -409,7 +409,7 @@ async def post_chat_rewind_plan(body: dict = None):
 async def post_chat_rewind_points(body: dict = None):
     """Every message the conversation can rewind to, newest first."""
     from openprogram.interfaces.server import server as _srv
-    from openprogram.runtime.conversation.rewind import list_rewind_points
+    from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points
 
     session_id = (body or {}).get("session_id")
     if not session_id:
@@ -424,7 +424,7 @@ async def post_chat_rewind_points(body: dict = None):
 @router.post("/api/chat/rewind_marks")
 async def post_chat_rewind_marks(body: dict = None):
     """Rewound here / Rewind undone rows for the transcript at the current HEAD."""
-    from openprogram.runtime.conversation.rewind_marks import list_rewind_marks
+    from openprogram.runtime.conversation.rewinds.rewind_marks import list_rewind_marks
 
     session_id = (body or {}).get("session_id")
     if not session_id:

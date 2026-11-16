@@ -1,12 +1,12 @@
 """Unit tests for provider key resolution in
 ``openprogram/models/providers/settings/env_api_keys.py``.
 
-LLM provider keys live in the AuthStore ONLY (settings UI "add a key" /
-``openprogram providers login <provider> --api-key``). Environment variables
-and config.json are never consulted. The single exception is the
-Bedrock/Vertex cloud-credential chain (AWS SigV4 / GCP ADC) — no bearer
-key exists for those, so a satisfied chain yields the
-``"<authenticated>"`` sentinel.
+A provider's keys are its credentials: the keys added in Settings or with
+``openprogram providers keys <provider> add``, and a read-only row for each of
+the provider's own environment variables that is set. config.json is never
+consulted. Bedrock/Vertex authenticate through the cloud SDK's chain (AWS
+SigV4 / GCP ADC), so a satisfied chain yields the ``"<authenticated>"``
+sentinel.
 """
 from __future__ import annotations
 
@@ -23,7 +23,9 @@ _VERTEX = [
     "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
     "GOOGLE_APPLICATION_CREDENTIALS",
 ]
-_ALL_KEY_NAMES = sorted({n for names in ek._PROVIDER_ENV_VARS.values() for n in names})
+def _all_key_names() -> list[str]:
+    from openprogram.models.auth.login.login_method_registry import env_vars, listed_providers
+    return sorted({n for p in listed_providers() for n in env_vars(p)} | {"ANTHROPIC_OAUTH_TOKEN"})
 
 
 @pytest.fixture(autouse=True)
@@ -40,8 +42,8 @@ def _no_auth_store(monkeypatch):
 
 @pytest.fixture
 def env(monkeypatch):
-    """Clear every key-shaped env name we know — proves they are inert."""
-    for n in _ALL_KEY_NAMES + _AWS + _VERTEX:
+    """Clear every key variable a provider reads."""
+    for n in _all_key_names() + _AWS + _VERTEX:
         monkeypatch.delenv(n, raising=False)
     return monkeypatch
 
@@ -57,7 +59,7 @@ def test_env_vars_for(monkeypatch):
         lambda _provider_id: {},
     )
     assert ek.env_vars_for("google") == ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]
-    assert ek.env_vars_for("anthropic") == ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+    assert ek.env_vars_for("anthropic") == ["ANTHROPIC_API_KEY"]
     assert ek.env_vars_for("minimax-cn") == ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
     assert ek.env_vars_for("kimi-coding") == ["KIMI_API_KEY", "MOONSHOT_API_KEY"]
     assert ek.env_vars_for("deepseek") == ["DEEPSEEK_API_KEY"]
@@ -65,7 +67,7 @@ def test_env_vars_for(monkeypatch):
     assert ek.env_vars_for("totally-unknown") == []
 
 
-# resolve_provider_key: AuthStore is the only key source
+# resolve_provider_key: the provider's credentials
 
 def test_store_key_resolves(env, monkeypatch):
     import openprogram.models.auth.resolver as _resolver
@@ -77,14 +79,26 @@ def test_store_key_resolves(env, monkeypatch):
     assert ek.resolve_provider_key("openrouter") is None
 
 
-def test_env_vars_are_inert(env):
-    # A key sitting in the environment must NOT resolve — people repoint
-    # vars like ANTHROPIC_API_KEY at other services (e.g. to run DeepSeek
-    # inside Claude Code), so reading them produces wrong-provider keys.
-    env.setenv("DEEPSEEK_API_KEY", "envkey")
-    env.setenv("ANTHROPIC_API_KEY", "envkey2")
-    env.setenv("ANTHROPIC_OAUTH_TOKEN", "oauth")
-    assert ek.resolve_provider_key("deepseek") is None
+@pytest.fixture
+def real_store(tmp_path, monkeypatch):
+    """The real resolver over an empty store (the autouse stub undone)."""
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+    monkeypatch.undo()
+    for n in _all_key_names() + _AWS + _VERTEX:
+        monkeypatch.delenv(n, raising=False)
+    set_store_for_testing(AuthStore(root=tmp_path / "state"))
+    yield monkeypatch
+    set_store_for_testing(None)
+
+
+def test_a_set_variable_is_one_of_the_provider_keys(real_store):
+    real_store.setenv("DEEPSEEK_API_KEY", "sk-env-key-00001")
+    assert ek.resolve_provider_key("deepseek") == "sk-env-key-00001"
+    assert ek.is_configured("deepseek") is True
+
+
+def test_a_sign_in_token_variable_is_not_an_anthropic_key(real_store):
+    real_store.setenv("ANTHROPIC_OAUTH_TOKEN", "oauth")
     assert ek.resolve_provider_key("anthropic") is None
 
 
@@ -104,12 +118,7 @@ def test_is_configured_follows_the_store(env, monkeypatch):
     assert ek.is_configured("deepseek") is True
 
 
-def test_is_configured_ignores_env(env):
-    env.setenv("DEEPSEEK_API_KEY", "k")
-    assert ek.is_configured("deepseek") is False
-
-
-# Bedrock / Vertex cloud-credential chains (the one sanctioned env use)
+# Bedrock / Vertex cloud-credential chains
 
 def test_bedrock_sentinel(env):
     assert ek.resolve_provider_key("amazon-bedrock") is None
@@ -136,8 +145,8 @@ def test_vertex_needs_project_location_and_adc(env, tmp_path):
     ("GOOGLE_API_KEY", "google"),
     ("GOOGLE_GENERATIVE_AI_API_KEY", "google"),
     ("ANTHROPIC_API_KEY", "anthropic"),
-    ("ANTHROPIC_OAUTH_TOKEN", "anthropic"),
-    ("KIMI_API_KEY", "kimi-coding"),
+    ("ANTHROPIC_OAUTH_TOKEN", None),
+    ("KIMI_API_KEY", "kimi"),
     ("OPENROUTER_API_KEY", "openrouter"),
     ("BRAVE_API_KEY", None),
     ("TOTALLY_UNKNOWN", None),

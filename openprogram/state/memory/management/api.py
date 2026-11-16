@@ -5,7 +5,7 @@ from typing import Any
 
 from .config import MemoryConfig, load_memory_config
 from .agent import _run_agent, render_conversation
-from ..prompts import ORGANIZE_MEMORY, WRITE_MEMORY
+from ..prompts import ORGANIZE_MEMORY, REGROUP_MEMORY, WRITE_MEMORY
 
 
 def render_writer_task(
@@ -73,5 +73,38 @@ def organize_topics(
         task=ORGANIZE_MEMORY.format(topic_paths="\n".join(paths)),
         usage_logger=usage_logger,
         config=config,
+        allowed_new_source_refs=set(),
+    )
+
+
+def regroup_topics(
+    memory_dir: str | Path,
+    *,
+    agent: Any,
+    directory: str,
+    usage_logger: Any | None = None,
+    config: MemoryConfig | None = None,
+) -> list[dict[str, Any]]:
+    """File the notes that sit directly in ``directory`` (workspace
+    relative, such as ``topics/career``) into folders that follow meaning.
+
+    The agent decides which note is about which thing; the Move tool does
+    the moving. Files written outside OpenProgram are on the list: a move
+    changes no byte of them.
+    """
+    from . import filing
+
+    paths = filing.run_notes(Path(memory_dir) / "topics", directory)
+    if not paths:
+        return []
+    return _run_agent(
+        memory_dir,
+        agent=agent,
+        task=REGROUP_MEMORY.format(
+            directory=directory, count=len(paths), topic_paths="\n".join(paths),
+        ),
+        usage_logger=usage_logger,
+        config=config or load_memory_config(),
+        stage="regroup",
         allowed_new_source_refs=set(),
     )

@@ -142,7 +142,7 @@ def worker_stopping() -> bool:
 
 def raise_if_worker_stopping() -> None:
     if worker_stopping():
-        from openprogram.models.providers.utils.errors import ExecInterrupt
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
         raise ExecInterrupt("worker_stopping")
 
 

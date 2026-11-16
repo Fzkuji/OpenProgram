@@ -14,7 +14,7 @@ plan-file workflow.
 from __future__ import annotations
 
 from openprogram.programs._host.runtime import function
-from openprogram.runtime.conversation import plan_mode as _pm
+from openprogram.runtime.conversation.session_settings import plan_mode as _pm
 
 
 _DESCRIPTION = """Send your finished plan to the user for a decision. This call is the approval request, so do not also ask for approval in your reply.

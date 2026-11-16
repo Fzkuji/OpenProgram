@@ -87,7 +87,7 @@ class ProvidersOperations:
         if get_turn_request() is None:
             return agent_tools
         try:
-            from openprogram.runtime.permissions.approval import wrap_with_approval
+            from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 
             req = inner_turn_request("program")
             if req is None:
@@ -117,7 +117,7 @@ class ProvidersOperations:
         # retrying, but a provider can remain silent after opening a stream.
         # Bound the whole coroutine as well so Runtime.exec(timeout_s=...) is
         # a real wall-clock limit rather than only a retry-boundary check.
-        from openprogram.models.providers.utils.deadline import remaining
+        from openprogram.models.providers.utils.http_transport.deadline import remaining
 
         time_left = remaining()
         if time_left is not None:
@@ -422,8 +422,8 @@ class ProvidersOperations:
         self._pending_tool_names = []
         self._pending_system_prompt = ""
         try:
-            from openprogram.runtime.context.breakdown import compute_call_breakdown
-            from openprogram.runtime.context.tokens import real_context_window
+            from openprogram.runtime.context.token_accounting.breakdown import compute_call_breakdown
+            from openprogram.runtime.context.token_accounting.tokens import real_context_window
 
             _hist_for_bd = list(history) + [current]
             self._pending_breakdown = compute_call_breakdown(
@@ -467,7 +467,7 @@ class ProvidersOperations:
                     try:
                         check_cancelled()
                     except _CE:
-                        from openprogram.models.providers.utils.errors import ExecInterrupt
+                        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
                         raise ExecInterrupt("cancelled") from None
                 # A new trailing tool-result round permits the next normal
                 # Agent turn. Credit it once: retries see the same call ids
@@ -484,7 +484,7 @@ class ProvidersOperations:
                     model_call_budget["remaining"] += 1
                 # Transport retries have their own allowance on the shared
                 # recovery state; a reconnect must not spend an answer attempt.
-                from openprogram.models.providers.utils.recovery import current_recovery
+                from openprogram.models.providers.utils.failures.recovery import current_recovery
                 recovery = current_recovery.get()
                 if recovery is not None:
                     seen = model_call_budget.get("transport_reserves_seen", 0)
@@ -1095,7 +1095,7 @@ class ProvidersOperations:
                 and not final.error_transport_exhausted
             )
             if not inferred_unknown and (final.error_retryable is not None or final.error_reason is not None):
-                from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+                from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
 
                 error = LLMError(
                     message=message,

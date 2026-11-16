@@ -506,7 +506,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
         "timestamp": 1.0, "predecessor": None,
     })
     tmp_db.set_head("c1", "uExt")
-    from openprogram.runtime.conversation.turn_lifecycle import insert_placeholder
+    from openprogram.runtime.conversation.turn_admission.turn_lifecycle import insert_placeholder
     assert insert_placeholder(
         tmp_db, "c1", "uExt_reply", "uExt", "web",
     )

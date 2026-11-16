@@ -130,7 +130,7 @@ def provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             id=MODEL_ID, name="fake", api=API, provider=PROVIDER,
             base_url="http://acp-session.invalid"))
         monkeypatch.setattr(
-            "openprogram.runtime.conversation.session_model.new_session_chat_model",
+            "openprogram.runtime.conversation.session_settings.session_model.new_session_chat_model",
             lambda _agent_id: (PROVIDER, MODEL_ID))
         return fake
 

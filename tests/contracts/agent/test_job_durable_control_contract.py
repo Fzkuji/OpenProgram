@@ -96,7 +96,7 @@ def test_job_surface_sources_use_execution_envelope_and_cursor() -> None:
 def test_non_transport_adapters_preserve_a_job_execution_mapping() -> None:
     for path in (
         "openprogram/interfaces/acp/server.py",
-        "openprogram/interfaces/channels/_conversation.py",
+        "openprogram/interfaces/channels/inbound/_conversation.py",
         "openprogram/runtime/scheduler/service.py",
     ):
         source = _source(path)

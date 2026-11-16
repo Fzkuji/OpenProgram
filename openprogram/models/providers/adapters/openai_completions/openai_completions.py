@@ -50,16 +50,16 @@ from ...types import (
     Usage,
     UserMessage,
 )
-from ...utils.cancelable_stream import iter_until_cancelled
-from ...utils.stream_idle import (
+from ...utils.streams.cancelable_stream import iter_until_cancelled
+from ...utils.streams.stream_idle import (
     StreamIdleTimeout,
     event_idle_timeout_s,
     idle_bounded,
     idle_bounded_open,
 )
-from ...utils.errors import classify_error
-from ...utils.json_parse import parse_partial_json
-from ...utils.stream_retry import PROVIDER_STREAM_MAX_ATTEMPTS, stream_backoff_seconds
+from ...utils.failures.errors import classify_error
+from ...utils.streams.json_parse import parse_partial_json
+from ...utils.streams.stream_retry import PROVIDER_STREAM_MAX_ATTEMPTS, stream_backoff_seconds
 from ...shared.transform_messages import transform_messages as _transform_messages
 from ...shared.validate_modalities import validate_input_modalities
 
@@ -270,24 +270,17 @@ async def stream_simple(
     require_supported_provider(model.provider)
     validate_input_modalities(model, context)
 
-    # Match other HTTP providers' stream retry budget (default 3) so
-    # transient 429/5xx/connect failures are absorbed without
-    # bubbling to runtime.exec(). Override via the shared env
-    # ``OPENPROGRAM_OPENAI_MAX_RETRIES``.
-    import os as _os
-    sdk_max_retries = int(_os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
-    from ...streaming.budget import provider_sdk_retries
-    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
+    # The SDK's own retries are off: the credential layer
+    # (``models/auth/selection.py``) and the stream's re-send see every
+    # failure once.
+    sdk_max_retries = 0
 
-    from ....auth import usage as _auth_usage
-    _pooled = _auth_usage.acquire_pooled(model.provider)
-    _cred_profile: str | None = None
-    _cred_id: str | None = None
-    _conn = None
+    # The credential chosen for this request by the credential layer every
+    # adapter is wrapped in; ``None`` for a caller's own key or a provider
+    # without stored credentials (a local server).
+    _conn = getattr(opts, "credential", None)
+    _cred_id: str | None = _conn.credential_id if _conn else None
     _client_api_key = opts.api_key
-    if _pooled:
-        _conn, _cred_profile, _cred_id = _pooled
-        _client_api_key = _conn.auth_value
 
     # The credential's own base_url wins (e.g. an Aliyun Bailian api_key
     # carries its own endpoint) — else the catalog default, unless that
@@ -327,15 +320,12 @@ async def stream_simple(
         # NEVER hand api_key=None to the SDK, which would silently
         # fall back to the OPENAI_API_KEY env var (wrong key, wrong
         # provider, misleading 401s).
-        from ...utils.errors import ErrorReason, LLMError
-        # "No key" and "key stored but dead (quota / revoked)" are very
-        # different user problems — diagnose which one this is.
-        _diag = _auth_usage.stored_but_unusable(model.provider)
+        from ...utils.failures.errors import ErrorReason, LLMError
         raise LLMError(
-            message=_diag or (
+            message=(
                 f"No API key configured for provider '{model.provider}'. "
                 f"Add one in Settings → Providers, or run: "
-                f"openprogram providers login {model.provider} --api-key"
+                f"openprogram providers keys {model.provider} add"
             ),
             reason=ErrorReason.AUTHENTICATION,
             retryable=False,
@@ -348,7 +338,7 @@ async def stream_simple(
     # instead of a fresh SDK-built client per call. The SDK never closes
     # externally-supplied clients.
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
-    from ...utils.http_client import get_shared_async_client
+    from ...utils.http_transport.http_client import get_shared_async_client
 
     configured_url = base_url or "https://api.openai.com/v1"
     configured_origin = normalize_origin(configured_url)
@@ -649,7 +639,7 @@ async def stream_simple(
                             finished_at = time.monotonic()
 
                 if transport_reserved:
-                    from ...utils.recovery import current_recovery
+                    from ...utils.failures.recovery import current_recovery
                     recovery = current_recovery.get()
                     if recovery is not None:
                         recovery.refund("transport", transport_reserved)
@@ -669,10 +659,15 @@ async def stream_simple(
                 committed = any(
                     not isinstance(b, ThinkingContent) for b in content_blocks
                 )
-                if committed or not retryable or _user_cancelled():
+                # A status the provider answered with (a limit, a refusal, a
+                # server error) is the credential layer's to wait out, retry
+                # or switch (models/auth/selection.py); this loop re-sends
+                # only what failed in transport.
+                answered = getattr(e, "status_code", None) is not None
+                if committed or not retryable or answered or _user_cancelled():
                     raise
-                from ...utils.recovery import reserve_recovery, current_recovery
-                from ...utils.stream_retry import (
+                from ...utils.failures.recovery import reserve_recovery, current_recovery
+                from ...utils.streams.stream_retry import (
                     _sleep_unless_aborted,
                     is_network_unreachable,
                     network_wait_allowed,
@@ -788,29 +783,15 @@ async def stream_simple(
         if stop_reason in ("error", "aborted"):
             yield EventError(type="error", reason=stop_reason, error=final)
         else:
-            # Clean completion — clear any transient cooldown state on the key.
-            if _cred_id:
-                _auth_usage.record_call_success(model.provider, _cred_profile, _cred_id)
             yield EventDone(type="done", reason=stop_reason, message=final)
 
     except _openai.APIError as e:
-        # Cool this key down (429 → rate_limit, 402 → billing, 401/403 →
-        # needs_reauth, 5xx → server_error) so the next request rotates.
-        if _cred_id:
-            _auth_usage.record_call_failure(
-                model.provider, _cred_profile, _cred_id,
-                getattr(e, "status_code", None), str(e),
-            )
         # Re-raise so the classification layer (_build_llm_error /
         # should_failover / retry) sees the real exception — yielding
         # EventError here made agent_loop treat the failure as a normal
         # terminal message and the error was never classified.
         raise
     except Exception as e:
-        # Non-API error (connection/timeout/etc.) — cool down briefly so a flaky
-        # key/endpoint rotates rather than being hammered.
-        if _cred_id:
-            _auth_usage.record_call_failure(model.provider, _cred_profile, _cred_id, None, str(e))
         if not _user_cancelled():
             raise  # same rationale as the APIError branch above
         # User cancel that surfaced as an exception — finalize as

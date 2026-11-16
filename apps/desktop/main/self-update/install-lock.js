@@ -7,7 +7,7 @@ const INSTALL_LOCK_NAME = ".openprogram-app-install.lock";
 
 /**
  * Where the App installers (the release `install-app.sh` and the local
- * `scripts/refresh-local-app.sh`) hold their lock while they replace the
+ * `scripts/local-instances/refresh-local-app.sh`) hold their lock while they replace the
  * App bundle and its runtime: a file next to the App bundle whose first
  * line is the installer's PID. Only the macOS bundle layout has it, so the
  * path is always a POSIX one, whichever platform asks.

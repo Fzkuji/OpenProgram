@@ -1,7 +1,9 @@
 "use client";
 
 /** System events in the transcript: the one-line event row and the
- *  compaction card, which folds the original messages open in place. */
+ *  compaction card, which folds the original messages open in place.
+ *  A finished compaction leaves the card only; no row marks where it ran
+ *  (the /context panel states the last compaction). */
 import { useEffect, useRef, useState } from "react";
 import { type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -128,26 +130,7 @@ function toggleOriginals(cardId: string): void {
 }
 
 export function SystemEventRow({ msg }: { msg: ChatMsg }) {
-  const { text } = useTranslation();
-  const n = msg.summarisedCount;
-  const tb = msg.tokensBefore;
-  const ta = msg.tokensAfter;
-  const label = msg.kind === "compaction" && msg.slot === "event" && typeof n === "number"
-    ? (tb != null && ta != null
-      ? text(
-          `Context compacted here: covered ${n} messages, estimated ${tb} → ${ta} tokens`,
-          `此处压缩了上下文：盖住 ${n} 条，本地估算 ${tb} → ${ta} tokens`,
-        )
-      : text(
-          `Context compacted here: covered ${n} messages`,
-          `此处压缩了上下文：盖住 ${n} 条`,
-        ))
-    : msg.kind === "compaction" && typeof n === "number"
-      ? text(
-          `Context compacted: covered ${n} older messages`,
-          `上下文已压缩：盖住 ${n} 条旧消息`,
-        )
-      : msg.content;
+  const label = msg.content;
   const hm = formatEventTime(msg.timestamp);
   return (
     <div className="message system-event" data-msg-id={msg.id} data-kind={msg.kind} data-slot={msg.slot || ""}>

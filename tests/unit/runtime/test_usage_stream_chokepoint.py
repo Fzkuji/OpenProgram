@@ -52,7 +52,7 @@ class _FakeProvider:
         self.deadline = None
 
     async def stream_simple(self, model, context, opts):
-        from openprogram.models.providers.utils.deadline import get_deadline
+        from openprogram.models.providers.utils.http_transport.deadline import get_deadline
         self.deadline = get_deadline()
         partial = AssistantMessage(role="assistant", content=[], api=model.api,
                                    provider=model.provider, model=model.id, timestamp=0)
@@ -81,7 +81,6 @@ def fake_api(monkeypatch):
     # them by value, so patching the source module wouldn't take effect).
     monkeypatch.setattr(stream_mod, "get_api_provider",
                         lambda a: _FakeProvider(model) if a == api else None)
-    monkeypatch.setattr(stream_mod, "resolve_provider_key", lambda p: "fake-key")
     return model
 
 

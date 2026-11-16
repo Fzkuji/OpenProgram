@@ -5,7 +5,7 @@ import asyncio
 from typing import Any
 
 from openprogram.models.providers.types import ToolCall
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 from openprogram.runtime.agent.loop.types import (
     AgentContext,
     AgentEvent,

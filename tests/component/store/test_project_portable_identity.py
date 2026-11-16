@@ -183,7 +183,7 @@ def test_a_pending_project_with_nothing_left_to_migrate_becomes_available(
 
 
 def test_first_execution_after_move_uses_new_project_location(tmp_path, store):
-    from openprogram.runtime.conversation.workdir import apply_default_workdir
+    from openprogram.runtime.conversation.session_settings.workdir import apply_default_workdir
     folder = tmp_path / "paper"
     folder.mkdir()
     store.create_session("s1", "main", project_path=str(folder))

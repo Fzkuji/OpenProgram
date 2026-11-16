@@ -95,7 +95,7 @@ def test_branch_worktree_serves_only_its_branch(state, repo):
 
 
 def test_turn_location_follows_the_branch(state, repo, monkeypatch):
-    from openprogram.runtime.conversation import workdir
+    from openprogram.runtime.conversation.session_settings import workdir
 
     monkeypatch.setattr(workdir, "_main_project", lambda _sid: None)
     monkeypatch.setattr("openprogram.state.paths.get_default_workdir", lambda: repo)
@@ -125,7 +125,7 @@ def test_a_job_turn_keeps_its_own_worktree(state, repo):
 
 
 def test_environment_block_names_the_worktree(bound, repo):
-    from openprogram.runtime.context.components import environment_block, worktree_notice
+    from openprogram.runtime.context.prompt_assembly.components import environment_block, worktree_notice
 
     notice = worktree_notice(bound.worktree_path)
     assert str(repo) in notice and bound.branch_name in notice
@@ -265,7 +265,7 @@ def test_discard_removes_the_worktree_and_leaves_the_checkout(bound, repo):
 def test_branch_worktree_actions(state, repo, monkeypatch):
     from openprogram.interfaces.server.ws_actions import worktree as actions
 
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.project_workdir_for",
                         lambda _sid: repo / "src")
     payload = actions.session_worktrees_payload("s1")
     assert payload["source_repo"] == str(repo.resolve()) or Path(payload["source_repo"]).resolve() == repo.resolve()
@@ -278,7 +278,7 @@ def test_branch_worktree_actions(state, repo, monkeypatch):
     rows = actions.session_worktrees_payload("s1")["worktrees"]
     assert [(row["parent_branch"], row["summary"]["files"]) for row in rows] == [("b1", [])]
 
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.project_workdir_for",
                         lambda _sid: Path("/"))
     assert actions.create_branch_worktree("s2", "b9")["error"].startswith("not_a_git_repo")
 
@@ -337,13 +337,13 @@ def test_a_worktree_is_never_made_from_the_process_working_directory(state, repo
     plain.mkdir()
     monkeypatch.chdir(repo)
     monkeypatch.delenv("OPENPROGRAM_WORKDIR", raising=False)
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for", lambda _sid: plain)
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.project_workdir_for", lambda _sid: plain)
 
     wt, error = agent_mod._isolated_worktree("s1", "helper", "job_cwd")
     assert wt is None and "needs a git repository" in error
     assert create_mod._resolve_source_repo("", "s1") == str(plain)
 
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for", lambda _sid: None)
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.project_workdir_for", lambda _sid: None)
     assert create_mod._resolve_source_repo("", "s1") is None
     assert _git(repo, "branch", "--list", "op/wt/*") == ""
 

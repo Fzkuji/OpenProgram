@@ -199,9 +199,9 @@ export function AppearanceSection() {
                 >
                   {value === "code-rain" ? <span className={styles.themeRain}>1 0 1 1</span> : (
                     <>
-                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "#fff" : "var(--accent-orange)" }} />
-                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "#c4b5fd" : "var(--accent-green)" }} />
-                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "#67e8f9" : "var(--text-primary)" }} />
+                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "var(--theme-scene-gradient-dot-1)" : "var(--accent-orange)" }} />
+                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "var(--theme-scene-gradient-dot-2)" : "var(--accent-green)" }} />
+                      <span className={styles.themeDot} style={{ background: value === "gradient" ? "var(--theme-scene-gradient-dot-3)" : "var(--text-primary)" }} />
                     </>
                   )}
                 </span>
@@ -254,9 +254,9 @@ export function AppearanceSection() {
 
         <SettingsRow
           label={text("Equal-width digits (numbers in lists and menus line up)", "数字等宽（列表和菜单里的数字上下对齐）")}
-          htmlFor="tabular-nums"
+          htmlFor="equal-width-digits"
         >
-          <Switch id="tabular-nums" checked={tabularNums} onCheckedChange={setTabularNums} />
+          <Switch id="equal-width-digits" checked={tabularNums} onCheckedChange={setTabularNums} />
         </SettingsRow>
       </SettingsSection>
 

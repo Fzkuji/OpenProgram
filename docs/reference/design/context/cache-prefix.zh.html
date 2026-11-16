@@ -166,7 +166,7 @@
 <thead class="sr"><tr><th scope="col">测试</th><th scope="col">守住什么</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">tests/contracts/providers/test_request_bytes.py</code></th><td>Anthropic、Responses、Chat Completions 和 Codex：下一轮按原样重发工具调用、失败的工具、工具图片、用户图片、长粘贴和大的 <code translate="no">tool_search</code> 结果</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_turn_prefix_cache.py</code></th><td>Codex 和 Anthropic：memory、运行说明、从 journal 恢复、旧工具结果完整重发、跨午夜、一天只发一次日期、进出计划模式、Goal 的完整和简短说明、被拒绝的工具；场景矩阵：两轮之间改一处，检查前缀检查能说出改了哪里，以及前缀是否保住；以及 preserved-thinking 规则：同一模型上每个请求的系统提示和工具字节都相同</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/render/test_turn_prefix_cache.py</code></th><td>Codex 和 Anthropic：memory、运行说明、从 journal 恢复、旧工具结果完整重发、跨午夜、一天只发一次日期、进出计划模式、Goal 的完整和简短说明、被拒绝的工具；场景矩阵：两轮之间改一处，检查前缀检查能说出改了哪里，以及前缀是否保住；以及 preserved-thinking 规则：同一模型上每个请求的系统提示和工具字节都相同</td></tr>
 </tbody>
 </table>
 <p>已知后续渲染会不同的地方标为 <code translate="no">xfail(strict=True)</code>，写明对应的缺口。修好缺口的改动同时去掉标记。</p>
@@ -199,10 +199,10 @@
 <tr><th scope="row"><code translate="no">models/usage/prefix_fingerprint.py</code></th><td>指纹、两道检查、通道、基线、<code translate="no">expect_break</code></td></tr>
 <tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td>每次尝试绑定 slot，结算检查，交给计量</td></tr>
 <tr><th scope="row"><code translate="no">models/usage/ledger.py</code></th><td><code translate="no">prefix_baselines</code> 和事件的四列</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/components.py</code></th><td><code translate="no">prompt_parts</code>、<code translate="no">remember_composed</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/components.py</code></th><td><code translate="no">prompt_parts</code>、<code translate="no">remember_composed</code></td></tr>
 <tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code></th><td>用有名字的部分拼出发送的提示；工具数组和 <code translate="no">turn_availability</code>；按视图决定的说明；checkpoint 里按哈希指向提示</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/turn_context.py</code></th><td>条目、<code translate="no">turn_view</code>、<code translate="no">date_to_send</code>、各节和 <code translate="no">kept_sections</code></td></tr>
-<tr><th scope="row"><code translate="no">runtime/conversation/plan_mode.py</code></th><td>计划模式说明和它的节奏</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/turn_context.py</code></th><td>条目、<code translate="no">turn_view</code>、<code translate="no">date_to_send</code>、各节和 <code translate="no">kept_sections</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_settings/plan_mode.py</code></th><td>计划模式说明和它的节奏</td></tr>
 <tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code></th><td><code translate="no">goal_note</code>、<code translate="no">todo_reminder</code></td></tr>
 </tbody>
 </table>

@@ -22,8 +22,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from openprogram.state.store.session.atomic_file import atomic_write_text, read_text_with_retry
-from openprogram.state.store.session.session_lock import registry_file_lock
+from openprogram.state.store.session.files.atomic_file import atomic_write_text, read_text_with_retry
+from openprogram.state.store.session.files.session_lock import registry_file_lock
 
 #: What a foreground operation is. ``reply`` is a chat turn.
 OPERATION_KINDS = ("reply", "compact", "retry", "edit", "rewind", "branch", "function")

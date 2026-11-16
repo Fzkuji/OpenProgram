@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import {
   CHECK_SLOT_PAD,
   GROUP_LABEL,
+  MENU_NOTE,
   MENU_PANEL,
   MENU_SEPARATOR,
   MENU_TRAILING,
@@ -34,6 +35,8 @@ import {
   type ContextBreakdown as Breakdown,
 } from "@/lib/chat/context-breakdown-cache";
 import { isCompacting } from "@/lib/chat/run/run-operation";
+import { formatMessageTime } from "@/lib/chat/transcript/message-time";
+import { announceReaderSeek } from "@/lib/chat/history/chat-scroll";
 
 interface Props {
   sessionId: string | null;
@@ -82,7 +85,7 @@ interface Category {
   groups: Group[];
 }
 
-/** Names of the system prompt's components (context/components.py). A
+/** Names of the system prompt's components (context/prompt_assembly/components.py). A
  *  component a plugin registers shows under its own name. */
 function systemSectionLabel(name: string, text: Text): string {
   switch (name) {
@@ -110,6 +113,17 @@ function messageKindLabel(kind: string, text: Text): string {
   }
 }
 
+/** The last compaction on the branch, as one sentence under Compact. */
+function lastCompactionNote(c: NonNullable<Breakdown["last_compaction"]>, text: Text): string {
+  const when = typeof c.at === "number" && c.at > 0 ? formatMessageTime(new Date(c.at * 1000)) : "";
+  const sizes = c.tokens_before != null && c.tokens_after != null
+    ? `, ${fmt(c.tokens_before)} → ${fmt(c.tokens_after)}` : "";
+  return text(
+    `Last compacted${when ? ` ${when}` : ""}: ${c.covered} messages${sizes}`,
+    `上次压缩${when ? ` ${when}` : ""}：${c.covered} 条消息${sizes}`,
+  );
+}
+
 /** A message preview without Markdown punctuation. */
 function plain(textValue: string): string {
   return textValue.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim();
@@ -127,12 +141,16 @@ async function revealMessage(sessionId: string, id: string): Promise<void> {
   );
   // A recycled row is a sized slot until it is live; bring it near first.
   for (let i = 0; i < 20 && !find(); i += 1) {
-    document.querySelector<HTMLElement>(`[data-msg-slot="${esc}"]`)
-      ?.scrollIntoView({ block: "center" });
+    const slot = document.querySelector<HTMLElement>(`[data-msg-slot="${esc}"]`);
+    // A seek started outside the transcript: a growing reply must not pull
+    // the view back to the latest while it moves.
+    if (slot) announceReaderSeek(slot);
+    slot?.scrollIntoView({ block: "center" });
     await new Promise((resolve) => requestAnimationFrame(resolve));
   }
   const el = find();
   if (!el) return;
+  announceReaderSeek(el);
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.classList.add("dag-flash");
   window.setTimeout(() => el.classList.remove("dag-flash"), 1400);
@@ -561,6 +579,11 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
           {/* A chat with no session has nothing to compact. */}
           {sessionId && <div className={MENU_SEPARATOR} />}
           {sessionId && compactRow}
+          {sessionId && data?.last_compaction && (
+            <div className={cn(MENU_NOTE, "pt-0.5")} data-last-compaction>
+              {lastCompactionNote(data.last_compaction, text)}
+            </div>
+          )}
         </>
       )}
     </div>

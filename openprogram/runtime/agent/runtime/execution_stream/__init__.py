@@ -1,6 +1,6 @@
 """Nested LLM execution_stream.v1 — CallStreamState + transport.
 
-See ``docs/reference/design/runtime/execution/agentic-llm-streaming.zh.html``.
+See ``docs/reference/design/runtime/agent/agentic-llm-streaming.zh.html``.
 """
 from __future__ import annotations
 

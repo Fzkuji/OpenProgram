@@ -178,7 +178,7 @@ class ProgressOperations:
         if not store.root_path.exists():
             return None
         hits: list[tuple[str, shared.Job]] = []
-        from openprogram.state.store.session.placement import iter_session_dirs
+        from openprogram.state.store.session.files.placement import iter_session_dirs
         for sid, sdir in iter_session_dirs(store.root_path):
             if store.state_file_at(sdir, "jobs.json").exists():
                 found = shared._store_load(sid, job_id)
@@ -420,7 +420,7 @@ class ProgressOperations:
             try:
                 from openprogram.runtime.agent.turn_request import TurnRequest
                 from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-                from openprogram.runtime.conversation.session_config import conversation_permission
+                from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
                 from openprogram.runtime.permissions.authority import runtime_authority
                 from openprogram.state.memory.policy import source_writable
                 memory_override = None if all(
@@ -429,7 +429,7 @@ class ProgressOperations:
                 marks = [(self._execution_store.get_job_agent_input(j.id) or {}).get("turn_request") or {} for j in jobs]
                 # The result returns to the branch of the turn that started
                 # the job, even when the person selected another meanwhile.
-                from openprogram.runtime.conversation.branch_config import branch_holding
+                from openprogram.runtime.conversation.session_settings.branch_config import branch_holding
                 caller_branch = branch_holding(deliver_session, job.caller_msg_id or job.parent_msg_id)
                 req = TurnRequest(
                     **({"branch_id": caller_branch} if caller_branch else {}),

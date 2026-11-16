@@ -161,7 +161,7 @@ def _test_elsewhere(command, candidate, scratch, home, temporary, remaining, che
     """The adapter a trial uses: bubblewrap on Linux; no OS sandbox on Windows."""
     from ..trial.sandbox import TrialPolicy, wrap_with_no_network
     from openprogram.state.paths import get_state_dir
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
     argv = list(command)
     if not argv:
@@ -197,7 +197,7 @@ def _run_unconfined(argv, candidate, env, scratch, remaining, check, output_limi
 
 def _test(command, candidate, scratch, remaining, check, *, verification=False, output_limit=1_048_576):
     from ..control.supervisor import _sandbox_profile
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     if verification:
         if (not isinstance(command, list) or not command
                 or any(not isinstance(arg, str) or "\0" in arg for arg in command)
@@ -285,7 +285,7 @@ def _test(command, candidate, scratch, remaining, check, *, verification=False, 
 def materialize(store, record, frozen, repair_request, output, check):
     """Controller-only mutation. An existing intent is never replayed."""
     from .source_repair import _path
-    from openprogram.state.store.session.atomic_file import atomic_write_text
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
     from openprogram.state.worktree.types import Worktree
     from openprogram.state.worktree.store import save_worktree
     from openprogram.state.worktree.manager import _broadcast_worktree_status

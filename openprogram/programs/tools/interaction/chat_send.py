@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from openprogram.programs._host.runtime import ToolReturn, function
 # The tool is hidden on every other source.
-from openprogram.runtime.execution.foreground import CHANNEL_SOURCES
+from openprogram.runtime.execution.projections.foreground import CHANNEL_SOURCES
 
 _DESCRIPTION = (
     "Post a message to the chat this conversation is in (Telegram, Discord, "

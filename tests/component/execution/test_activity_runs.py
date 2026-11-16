@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.runtime.execution import activity_runs
-from openprogram.runtime.execution.activity_runs import (
+from openprogram.runtime.execution.projections import activity_runs
+from openprogram.runtime.execution.projections.activity_runs import (
     ChartReads,
     ExecutionReads,
     RunExecution,

@@ -40,7 +40,7 @@ def deliver(
     ``job_id``: a fixed id, so delivering the same thing twice (a migrated
     hand-off after a crash) admits one Job. ``ancestors``: who waits above
     this message (send_message's cycle check), carried by the Job."""
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.state.authority import normalize_authority
     from .delivery import sender_header, sender_name, target_label
 
@@ -157,7 +157,7 @@ def deliver(
     emit_safe("branch.message_sent", "agent",
               {"from": f"{sid}:{aid}", "to": f"{run_session}:{target_tip}"})
     try:
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn_async
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn_async
         job_id = run_agent_turn_async(
             session_id=run_session,
             prompt=delivery_message,
@@ -203,7 +203,7 @@ def _steer_own_helper(
 
     The inbox entry goes first, marked with the steer's command id, so a
     steer the turn never took is delivered when the turn ends."""
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from . import steer
 
     helper = steer.spawned_running_job(run_session, target_tip or None, sid)

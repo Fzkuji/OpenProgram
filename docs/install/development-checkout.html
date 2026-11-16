@@ -61,7 +61,7 @@
 <tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>Opens it in the default browser, signed in. Each deploy signs browsers out again; OpenProgram Dev signs itself back in.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev copy-models</code></th><td>Copies stable provider settings, API keys and CLI-delegated logins. OAuth logins are signed in separately.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>What each instance runs and which commits promoting would bring</td></tr>
-<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>Runs <code translate="no">scripts/refresh-local-app.sh</code> for that commit, which moves <code translate="no">stable</code> to it once the new version is healthy. Run by hand, the script installs only <code translate="no">refs/heads/stable</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>Runs <code translate="no">scripts/local-instances/refresh-local-app.sh</code> for that commit, which moves <code translate="no">stable</code> to it once the new version is healthy. Run by hand, the script installs only <code translate="no">refs/heads/stable</code></td></tr>
 </tbody>
 </table>
 <p>An Agent does the same with <code translate="no">self_update(action="prepare")</code> from a worktree of the source repository. After the turn ends, a detached controller waits for the stable App's running tasks, then promotes exactly that commit and reports in the conversation that asked. If promotion fails, it lands a revert on <code translate="no">dev</code> and promotes that.</p>
@@ -96,7 +96,7 @@ openprogram upgrade</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Mode</th><th scope="col">What happens</th></tr></thead>
 <tbody>
-<tr><th scope="row">Local iteration</th><td><code translate="no">scripts/refresh-local-app.sh</code> uses a persistent local certificate and sends nothing to Apple. Keep its signing state outside the repository; do not delete it to fix a permission prompt.</td></tr>
+<tr><th scope="row">Local iteration</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> uses a persistent local certificate and sends nothing to Apple. Keep its signing state outside the repository; do not delete it to fix a permission prompt.</td></tr>
 <tr><th scope="row">Public release</th><td>The <code translate="no">Release</code> workflow runs for a <code translate="no">v*</code> tag or manually for an existing immutable tag. It signs the App and native components with Developer ID, waits for notarization, staples and validates tickets, runs the packaged-runtime checks, then publishes checksummed artifacts. Branch pushes do not trigger it.</td></tr>
 </tbody>
 </table>

@@ -15,7 +15,7 @@
 <tr><th scope="row">Discord, Slack</th><td><code translate="no">peer_id</code> 是 <code translate="no">chat_id_user_id</code></td><td>一人</td></tr>
 <tr><th scope="row">Web, CLI, TUI</th><td>没有渠道和 peer</td><td>一人：<code translate="no">owner/local</code></td></tr>
 </tbody></table>
-<p class="note">会话行只存一个 peer，所以身份跟着每条消息走。路由：<code translate="no">openprogram/interfaces/channels/_session_routing.py</code>。<code translate="no">session_scope</code> 的取值继承自 openclaw 的 <code translate="no">dmScope</code>。</p>
+<p class="note">会话行只存一个 peer，所以身份跟着每条消息走。路由：<code translate="no">openprogram/interfaces/channels/inbound/_session_routing.py</code>。<code translate="no">session_scope</code> 的取值继承自 openclaw 的 <code translate="no">dmScope</code>。</p>
 <h2 id="chain">身份怎么传递</h2>
 <figure>
 <svg class="fig-wide" viewBox="0 0 680 290" role="img" aria-label="渠道适配器读取发信人的 id 和显示名，分发器、轮次请求和会话存储把它们放在正文旁传递。实时 Agent、记忆写入器和网页聊天都从已存的消息节点读取。">

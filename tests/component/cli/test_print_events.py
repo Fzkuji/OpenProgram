@@ -7,7 +7,7 @@ type and data, one record each.
 """
 from __future__ import annotations
 
-from openprogram.interfaces.cli import print_events, print_turn
+from openprogram.interfaces.cli.print_mode import print_events, print_turn
 
 
 class _Store:

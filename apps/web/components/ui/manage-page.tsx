@@ -164,6 +164,7 @@ export function ManageEmptyState({
   description,
   action,
   compact = false,
+  dense = false,
   children,
 }: {
   icon?: ReactNode;
@@ -171,10 +172,12 @@ export function ManageEmptyState({
   description?: ReactNode;
   action?: ReactNode;
   compact?: boolean;
+  /** Inside a card's list: a small round icon and tight padding. */
+  dense?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className={cn(styles.emptyState, compact && styles.emptyStateCompact)}>
+    <div className={cn(styles.emptyState, compact && styles.emptyStateCompact, dense && styles.emptyStateDense)}>
       {icon && <span className={styles.emptyIcon} aria-hidden>{icon}</span>}
       <h2 className={styles.emptyTitle}>{title}</h2>
       {description && <p className={styles.emptyDescription}>{description}</p>}
@@ -366,6 +369,7 @@ export function ManageSubnav({
  * holds the trailing controls (a Switch, buttons, ...).
  */
 export function ManageRow({
+  handle,
   icon,
   name,
   description,
@@ -375,6 +379,9 @@ export function ManageRow({
   onClick,
   className,
 }: {
+  /** A control before the icon that stays in the accessibility tree (a
+   *  drag handle a keyboard can pick up), unlike the decorative icon. */
+  handle?: ReactNode;
   icon?: ReactNode;
   name: ReactNode;
   description?: ReactNode;
@@ -386,6 +393,7 @@ export function ManageRow({
 }) {
   const content = (
     <>
+      {handle !== undefined && <span className="-mx-1.5 inline-flex shrink-0">{handle}</span>}
       {icon !== undefined && <span className={styles.rowIcon} aria-hidden>{icon}</span>}
       <div className={styles.rowMain}>
         <div className={styles.rowName}>

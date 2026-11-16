@@ -78,8 +78,8 @@
 </table>
 <ul>
 <li>A non-addressing ambient message opens with <code translate="no">[room event]</code>, runs no ack or typing, and its final text stays in the transcript, labelled "overheard" on the web. Room events count against the flood limit.</li>
-<li>The account's <code translate="no">require_mention</code> gives the default; <code translate="no">/activation</code> stores a per-group override in <code translate="no">rooms.json</code>. Adapters only set <code translate="no">ChannelMessage.mentioned</code> and strip the mention; <code translate="no">channels/_room.py</code> decides, the same on every platform. Direct messages are never gated.</li>
-<li><code translate="no">chat_send(text)</code> posts into the turn's chat, looked up by session key in <code translate="no">channels/_active_turns.py</code> (a <code translate="no">session_scope: main</code> session holds several chats). Needs only <code translate="no">reply</code>, is on the safe auto-allow list, is hidden from non-channel sources, at most five per turn. In an addressed turn it serves a short note before long work; the final reply is still posted.</li>
+<li>The account's <code translate="no">require_mention</code> gives the default; <code translate="no">/activation</code> stores a per-group override in <code translate="no">rooms.json</code>. Adapters only set <code translate="no">ChannelMessage.mentioned</code> and strip the mention; <code translate="no">channels/inbound/_room.py</code> decides, the same on every platform. Direct messages are never gated.</li>
+<li><code translate="no">chat_send(text)</code> posts into the turn's chat, looked up by session key in <code translate="no">channels/inbound/_active_turns.py</code> (a <code translate="no">session_scope: main</code> session holds several chats). Needs only <code translate="no">reply</code>, is on the safe auto-allow list, is hidden from non-channel sources, at most five per turn. In an addressed turn it serves a short note before long work; the final reply is still posted.</li>
 </ul>
 <h2 id="pending-history">Pending history</h2>
 <pre translate="no"><code>[earlier messages in this chat]

@@ -12,8 +12,8 @@ import types
 
 import pytest
 
-from openprogram.runtime.conversation import turn_input
-from openprogram.runtime.conversation.run_note import RUN_NOTE
+from openprogram.runtime.conversation.turn_admission import turn_input
+from openprogram.runtime.conversation.turn_admission.run_note import RUN_NOTE
 from openprogram.runtime.permissions.authority import local_owner_authority
 
 
@@ -70,7 +70,7 @@ def test_a_stored_request_names_its_slash_action_either_way(stored, action):
 
 
 def test_the_conversation_s_permission_and_run_settings_are_read_from_it(monkeypatch):
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
 
     monkeypatch.setattr(session_config, "conversation_permission",
                         lambda session_id: {"permission_mode": "ask", "permission_rules": ["r"]})

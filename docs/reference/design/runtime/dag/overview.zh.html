@@ -219,7 +219,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">head_id</code></th><td>活动分支尖。对话写入把它推进到真实节点，绝不指向占位符或摘要；悬空 head 渲染为空。带 caller 的节点不推进它</td></tr>
 <tr><th scope="row"><code translate="no">get_branch(session_id, head_id)</code></th><td>从 head 沿 predecessor 走到终点</td></tr>
-<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>可见的对话末端及保留的分支引用。Rewind 隐藏撤回的后缀，同时保留兄弟引用，包括停在共同祖先或 ROOT 上的引用。同一位置的引用由分支身份区分。内部执行行不创建对话末端</td></tr>
+<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>可见的对话末端及保留的分支引用。Rewind 隐藏撤回的后缀，同时保留兄弟引用，包括停在共同祖先或 ROOT 上的引用。同一位置的引用由分支身份区分。内部执行行不创建对话末端；轮次写在已记录分支末端下、而 head 和分支记录还没跟上的那一刻的消息也不算</td></tr>
 <tr><th scope="row">分支名</th><td>会话元数据：分支引用的标签保存各自名称；<code translate="no">branches</code> 保留当前消息位置的兼容投影</td></tr>
 </tbody>
 </table>
@@ -250,7 +250,7 @@
 <tr><th scope="row">一个组装器</th><td><code translate="no">build_system_prompt(agent, *, channel, tools, additional_working_dirs, plan_mode)</code>，供所有模型调用：身份、项目记忆、统一工具列表、技能</td></tr>
 <tr><th scope="row">预算</th><td>计的就是发送的字符串</td></tr>
 <tr><th scope="row">变化</th><td>默认不变，以获得 KV 缓存命中，并让聊天和函数背景一致。精简提示词是调用处的显式选择，接受未命中</td></tr>
-<tr><th scope="row">函数内误用工具</th><td>在用户轮开头给情境指引并限制递归深度，不改工具列表（<a href="../execution/agentic-self-recursion.zh.html">自递归</a>）</td></tr>
+<tr><th scope="row">函数内误用工具</th><td>在用户轮开头给情境指引并限制递归深度，不改工具列表（<a href="../agent/agentic-self-recursion.zh.html">自递归</a>）</td></tr>
 <tr><th scope="row">记录</th><td>哈希变化时（开始、工具集变化、计划模式切换）：追加 <code translate="no">role=code</code>、<code translate="no">name="context/system_prompt"</code>、<code translate="no">caller=ROOT</code>、output 为全文的节点。渲染固定使用主干上最新的一个</td></tr>
 <tr><th scope="row"><code translate="no">context/*</code> 名称</th><td>保留并对聊天隐藏，<code translate="no">context/summary</code> 例外，它是真实对话内容</td></tr>
 <tr><th scope="row">记忆预取</th><td>当前 user 节点线上消息的前缀块，存为其 <code translate="no">turn_context</code> 元数据里的 <code translate="no">memory_prefetch</code> 一项（<a href="../../context/composition.zh.html#l2">组合</a>）。系统和工具段字节稳定</td></tr>
@@ -333,12 +333,12 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/nodes.py</code></th><td><code translate="no">Call</code>、<code translate="no">Graph</code>、role 常量</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>追加不变量、<code translate="no">get_branch</code>、<code translate="no">spawn_branch</code>、<code translate="no">list_branches</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram/state/store/session/spill.py</code></th><td>写路径溢出</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>、分段替换</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/components.py</code></th><td>系统提示词组装器</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> 记录、<code translate="no">context/*</code> 隐藏</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/persistence.py</code></th><td>摘要节点</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/files/spill.py</code></th><td>写路径溢出</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/nodes.py</code></th><td><code translate="no">render_context</code>、分段替换</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_dag/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/prompt_assembly/components.py</code></th><td>系统提示词组装器</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/prompt_assembly/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> 记录、<code translate="no">context/*</code> 隐藏</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/compaction/persistence.py</code></th><td>摘要节点</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></th><td>聊天入口</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>函数体内的模型调用</td></tr>
 </tbody>

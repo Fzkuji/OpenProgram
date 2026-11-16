@@ -209,6 +209,24 @@ def test_a_passing_check_makes_the_commit_callable(program):
     assert _load(program).revision == report["revision"]
 
 
+def test_a_working_copy_under_check_is_not_replaced_by_its_checked_version(program):
+    """A package that imports itself by name, whose checked version no longer
+    imports, can still be examined and repaired."""
+    broken = 'import missing_module_for_this_test\n' + _source(program.name, "B")
+    packages.record_checked(program.path, _commit(program, broken, "B"))
+    fixed = (f"import {program.name}\n" + _source(program.name, "C"))
+    (program.path / "__init__.py").write_text(fixed, encoding="utf-8")
+    try:
+        packages.examine_working_copy(program.path)
+        packages.load_user_packages(program.root)
+        assert program.name not in packages._status, "the load pass leaves the package under check alone"
+        module = importlib.import_module(program.name)
+        assert module.VERSION == "C"
+        assert str(program.path) in module.__file__
+    finally:
+        packages._under_check.pop(program.name, None)
+
+
 def test_check_says_when_git_is_missing(program, monkeypatch):
     from openprogram.programs._host.check import CheckFailed, check_program
 

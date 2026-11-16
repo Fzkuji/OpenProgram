@@ -5,7 +5,7 @@
  * right-click menus in the app and the desktop overlay menus that cover
  * native web views. A row is
  *
- *   [Solar icon]  label                [key badge | check | ›]
+ *   [Solar icon]  label         [trail] [key badge | check | ›]
  *
  * The icon is a Solar Bold Duotone glyph, the family of the folder icons.
  * The trailing column holds a key price tag (MenuKey) for a key that works
@@ -67,11 +67,14 @@ export function MenuIcon({ glyph, className }: { glyph: MenuGlyph; className?: s
 
 /** The inside of a row. `checked` undefined: not checkable; false keeps
  *  the check column so labels stay aligned. */
-export function MenuRow({ glyph, icon, label, keys, checked, submenu, danger, iconClassName }: {
+export function MenuRow({ glyph, icon, label, trail, keys, checked, submenu, danger, iconClassName }: {
   glyph?: MenuGlyph;
   /** A non-Solar leading mark (a favicon, a coloured dot) in the icon slot. */
   icon?: React.ReactNode;
   label: React.ReactNode;
+  /** Muted text at the row's end, before its key, check or chevron: a
+   *  submenu's current choice ("Auto"), a key's last four characters. */
+  trail?: React.ReactNode;
   keys?: MenuKeys;
   checked?: boolean;
   submenu?: boolean;
@@ -83,6 +86,7 @@ export function MenuRow({ glyph, icon, label, keys, checked, submenu, danger, ic
     <>
       {glyph ? <MenuIcon glyph={glyph} className={cn(danger && "text-[var(--accent-red)]", iconClassName)} /> : icon ? <span className="inline-flex size-4 shrink-0 items-center justify-center">{icon}</span> : null}
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {trail != null ? <span className="ml-3 shrink-0 text-fs-xs text-text-muted" data-slot="menu-row-trail">{trail}</span> : null}
       {keys ? <MenuKey keys={keys} /> : null}
       {checked === undefined ? null : checked ? <MenuCheck /> : <span className={CHECK_SLOT_PAD} aria-hidden="true" />}
       {submenu ? <ChevronRight className="menu-row-chevron size-4 shrink-0 text-text-muted" aria-hidden="true" /> : null}

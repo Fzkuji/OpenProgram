@@ -3,7 +3,9 @@
 // that needs action shows its word and leads to the fix, a half-used window
 // shows a ring, the submenu header carries the quota rows, the menu ends
 // with Manage providers, and with nothing connected it opens Add provider.
-// The chip carries a mark only when its provider needs action.
+// A provider with two or more credentials ends with its key row, whose
+// submenu pins the conversation to one. The chip carries a mark only when
+// its provider needs action.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { installLoader, STUBS } from "../../_support/load.mjs";
@@ -14,15 +16,17 @@ installLoader({
     "@/lib/i18n": STUBS.i18n,
     "@tanstack/react-query": [
       "export const useQuery = ({ queryKey }) => ({ data: (globalThis.__queries ?? {})[JSON.stringify(queryKey)], isError: !!(globalThis.__errors ?? {})[JSON.stringify(queryKey)] });",
+      "export const useQueryClient = () => ({ setQueryData: (key, data) => { (globalThis.__queries ??= {})[JSON.stringify(key)] = data; } });",
     ].join("\n"),
   },
   replace: {
     "/components/ui/dropdown-menu.tsx": [
       passthrough,
-      "export const DropdownMenuItem = ({ asChild, children, onSelect, className }) => asChild ? cloneElement(children, { 'data-item': '' }) : h('div', { 'data-item': '', className, onClick: onSelect }, children);",
+      "export const DropdownMenuItem = ({ asChild, children, onSelect, className, disabled, ...rest }) => asChild ? cloneElement(children, { 'data-item': '' }) : h('div', { 'data-item': '', className, onClick: onSelect, 'data-disabled': disabled ? '' : undefined, ...rest }, children);",
       "export const DropdownMenuSub = ({ children }) => h('div', { 'data-sub': '' }, children);",
       "export const DropdownMenuSubTrigger = ({ children, className, ...rest }) => h('div', { 'data-sub-trigger': '', className, ...rest }, children);",
       "export const DropdownMenuSubContent = ({ children }) => h('div', { 'data-sub-content': '' }, children);",
+      "export const DropdownMenuSeparator = ({ className }) => h('div', { className, role: 'separator' });",
       "export const DropdownMenu = ({ children }) => h('div', { 'data-menu': '' }, children);",
       "export const DropdownMenuTrigger = ({ children }) => children;",
       "export const DropdownMenuContent = ({ children }) => h('div', { 'data-menu-content': '' }, children);",
@@ -122,6 +126,96 @@ test("the submenu header carries the quota rows, worst first, and the balance", 
   assert.match(codexSub, /data-quota-row="warning"[^]*5h[^]*8%[^]*data-quota-row="normal"[^]*Week[^]*71%/);
   const deepseekSub = html.slice(html.indexOf('data-mark="deepseek"'), html.indexOf('data-mark="kimi"'));
   assert.match(deepseekSub, /Balance[^]*\$18\.42/);
+  // Each line at the menu's secondary size: the label in the primary text
+  // colour, the value on the right edge, a full-width bar under a window.
+  assert.match(codexSub, /class="flex flex-col gap-2 px-1\.5 pt-0\.5 pb-2" data-quota-rows/);
+  assert.match(codexSub, /data-quota-row="warning"><div class="flex min-w-0 items-baseline gap-1\.5 whitespace-nowrap text-fs-sm leading-\[18px\]"><span class="min-w-0 truncate text-text-primary">5h<\/span><span class="ms-auto shrink-0 ps-3 text-\(--warning-soft\)">8%<\/span><\/div><div role="progressbar"[^>]*aria-valuenow="8" data-slot="progress" data-tone="warning" class="[^"]*bg-\(--meter-track\) mt-1\.5"><div data-slot="progress-indicator" class="[^"]*bg-\(--warning-soft\)" style="transform:translateX\(-92%\)"><\/div><\/div>/);
+  // The bar is the kit's Progress, the one every usage row draws.
+  assert.doesNotMatch(codexSub, /style="width:/);
+  // An amount is the line alone, no bar.
+  assert.match(deepseekSub, /data-quota-row="normal"><div class="[^"]*"><span class="min-w-0 truncate text-text-primary">Balance<\/span><span class="ms-auto shrink-0 ps-3 text-text-primary">\$18\.42<\/span><\/div><\/div>/);
+});
+
+test("the header shows the ring's limit even before the status read arrives", () => {
+  const providers = { ...PROVIDERS, "openai-codex": state("openai-codex", {
+    stale: true,
+    quota: { limit_key: "primary", label: "Weekly", left_fraction: 0.16, resets_at: null, tone: "warning", ring: true, warn: true },
+    balance: { amount: 38991.82, unit: "credits", label: "Credits" },
+  }) };
+  const html = menu({ models: MODELS, providers, status: undefined });
+  const codexSub = html.slice(html.indexOf('data-mark="openai-codex"'), html.indexOf('data-mark="deepseek"'));
+  assert.match(codexSub, /data-quota-row="warning" data-stale="true"[^]*Weekly[^]*text-text-muted">16%[^]*data-slot="progress-indicator" class="[^"]*opacity-50[^]*Credits[^]*38,991\.82 credits/);
+});
+
+test("a spent window keeps a red track", () => {
+  const status = { ...STATUS, providers: [{ ...STATUS.providers[0], quota: { ...STATUS.providers[0].quota,
+    limits: [limit("primary", "Weekly", 0, { status: "exhausted" })] } }] };
+  const html = menu({ models: MODELS, providers: PROVIDERS, status });
+  assert.match(html, /data-quota-row="danger"[^]*0%[^]*bg-\[color-mix\(in_oklab,var\(--danger-soft\)_24%,transparent\)\]/);
+});
+
+const cred = (id, label, fields = {}) => ({
+  id, label, display_label: label, kind: "api_key", source: "web", identity: {}, key_tail: id.slice(0, 4), env_var: null,
+  read_only: false, enabled: true, status: "ready", cooldown_until: null, blocked_models: {}, last_error: null,
+  last_used_at: null, use_count: 0, created_at: 0, ...fields,
+});
+const KEYS = {
+  provider: "openai-codex", strategy: "in_order", strategies: ["in_order", "evenly", "least_used"], active: "a1b2",
+  auth: { methods: [], env_vars: [], check: null, keys_url: null, billing_url: null },
+  credentials: [cred("a1b2", "Personal"), cred("work", "Work", { status: "cooling", cooldown_until: 4_000_000_000 }), cred("old0", "Old team key", { status: "invalid_key" })],
+};
+function keyMenu(keys, session) {
+  globalThis.__queries = {
+    [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: PROVIDERS },
+    [JSON.stringify(S.PICKER_LIMITS_QUERY_KEY)]: STATUS,
+    [JSON.stringify(["provider-credentials", "openai-codex"])]: keys,
+    [JSON.stringify(["session-credentials", "s1"])]: session,
+  };
+  const html = renderToStaticMarkup(h(AgentSelector, { onClose() {} }));
+  return html.slice(html.indexOf('data-mark="openai-codex"'), html.indexOf('data-mark="deepseek"'));
+}
+
+test("a provider with several keys ends its models with its keys inline, not a third panel", () => {
+  const codex = keyMenu(KEYS, { binding: {}, pin: {} });
+  const row = codex.slice(codex.indexOf('data-picker-keys="openai-codex"'));
+  assert.match(row, /This conversation uses Personal<\/div>/);
+  assert.doesNotMatch(row, /data-key-mode/, "the check on Automatic says it; the label carries no hint");
+  assert.doesNotMatch(row, /data-slot="dropdown-menu-sub-trigger"/, "the keys open no submenu of their own");
+  assert.ok(codex.indexOf("GPT-6.1-SOL") < codex.indexOf("data-picker-keys"), "the key row follows the models");
+  assert.match(row, /This conversation uses[^]*Automatic \(in order\)/);
+  const choice = (id) => row.slice(row.indexOf(`data-credential-choice="${id}"`), row.indexOf("</div>", row.indexOf(`data-credential-choice="${id}"`)));
+  assert.match(choice("auto"), /data-menu-check|svg/, "Automatic is checked while nothing is pinned");
+  assert.match(choice("a1b2"), /Personal[^]*font-mono">····a1b2/);
+  assert.match(choice("work"), /Work[^]*text-text-muted">back \d\d:\d\d/, "the word is muted: the row is already greyed out");
+  assert.match(row, /data-disabled=""[^>]*data-credential-choice="old0"/, "a credential that cannot answer cannot be picked");
+  assert.doesNotMatch(row, /data-disabled=""[^>]*data-credential-choice="a1b2"/);
+  assert.match(choice("old0"), /text-text-muted">invalid/);
+  assert.doesNotMatch(row, /--(warning|danger)-soft/, "no coloured words in the key submenu");
+  assert.match(row, /<a href="\/settings\/providers\/openai-codex"[^>]*data-picker-manage-keys[^]*Manage keys…/);
+});
+
+test("a pinned conversation names its key and says it is pinned; one key has no row", () => {
+  const pinned = keyMenu(KEYS, { binding: { "openai-codex": "a1b2" }, pin: { "openai-codex": "work" } });
+  assert.match(pinned, /This conversation uses Work<\/div>/);
+  const single = keyMenu({ ...KEYS, credentials: KEYS.credentials.slice(0, 1) }, { binding: {}, pin: {} });
+  assert.doesNotMatch(single, /data-picker-keys/);
+});
+
+test("Manage keys changes the route on a plain click and leaves a modified one to the browser", async () => {
+  const { openInPage } = await import("../../../components/chat/top-bar/menus/provider-keys.tsx");
+  const went = [];
+  const click = (mods = {}) => ({ metaKey: false, ctrlKey: false, shiftKey: false, ...mods, prevented: false,
+    preventDefault() { this.prevented = true; } });
+  const plain = click();
+  openInPage(plain, "/settings/providers/x", (h) => went.push(h));
+  assert.deepEqual(went, ["/settings/providers/x"]);
+  assert.equal(plain.prevented, true);
+  for (const mods of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }]) {
+    const e = click(mods);
+    openInPage(e, "/settings/providers/x", (h) => went.push(h));
+    assert.equal(e.prevented, false, "the browser opens the new tab");
+  }
+  assert.equal(went.length, 1, "the page itself does not move");
 });
 
 test("a provider that needs action shows its word and leads to its fix", () => {
@@ -179,24 +273,36 @@ test("a failed read of the models says so instead of an empty menu", () => {
 
 test("providers with no state keep today's rows", () => {
   const html = menu({ models: MODELS.slice(0, 2), providers: {}, status: undefined });
-  assert.doesNotMatch(html, /data-quota-ring|data-state-word|data-picker-fix/);
+  assert.doesNotMatch(html, /data-quota-ring|data-state-word|data-picker-fix|data-quota-rows/);
   assert.match(html, />1<\/span>/);
 });
 
 test("the chip's mark is a dot in the state's tone", () => {
   const html = renderToStaticMarkup(h(TriggerMark, { tone: "danger" }));
   assert.match(html, /data-trigger-mark="danger"/);
-  assert.match(html, /background:var\(--danger-soft\)/);
+  assert.match(html, /bg-\(--danger-soft\)/);
+  assert.doesNotMatch(html, /style=/);
 });
 
-test("the model chip is marked only when its provider needs action, with the detail in its tooltip", () => {
+test("the model chip is marked, in red, only when its provider cannot answer or its quota is nearly spent", () => {
   const chip = (provider) => {
     globalThis.__queries = { [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: PROVIDERS } };
     return renderToStaticMarkup(h(AgentBadge, { id: "agent", locked: false, provider, model: MODELS.find((m) => m.provider === provider).id }));
   };
+  // 92 % used warns in the menu's ring and bars; the chip stays plain.
   const codex = chip("openai-codex");
-  assert.match(codex, /data-trigger-mark="warning"/);
-  assert.match(codex, /OpenAI Codex · 5h · 8% left/);
+  assert.doesNotMatch(codex, /data-trigger-mark/);
+  assert.match(codex, /Talks with you and plans the work/);
+  const nearlySpent = (() => {
+    globalThis.__queries = { [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: {
+      ...PROVIDERS, "openai-codex": state("openai-codex", { attention: true, quota: { limit_key: "primary", label: "5h", left_fraction: 0.03, resets_at: null, tone: "danger", ring: true, warn: true } }),
+    } } };
+    return renderToStaticMarkup(h(AgentBadge, { id: "agent", locked: false, provider: "openai-codex", model: "gpt-6.1-sol" }));
+  })();
+  assert.match(nearlySpent, /data-trigger-mark="danger"/);
+  assert.match(nearlySpent, /OpenAI Codex · 5h · 3% left/);
+  // Signed out: the reply cannot go out, so the chip says so in red too.
+  assert.match(chip("xai-grok"), /data-trigger-mark="danger"/);
   const kimi = chip("kimi");
   assert.match(kimi, /data-trigger-mark="danger"/);
   assert.match(kimi, /Kimi · No credit/);
@@ -205,4 +311,16 @@ test("the model chip is marked only when its provider needs action, with the det
   const deepseek = chip("deepseek");
   assert.doesNotMatch(deepseek, /data-trigger-mark/);
   assert.match(deepseek, /Talks with you and plans the work/);
+});
+
+test("one way of a company reached several ways is named \"Company · Way\" as soon as the model list arrives; other providers keep their name", () => {
+  const models = [model("openai-codex", "gpt-6.1-sol", "OpenAI Codex"), model("openai", "gpt-6.1", "OpenAI"), model("deepseek", "deepseek-v4", "DeepSeek")];
+  const named = (id, name) => state(id, { name, name_zh: name });
+  const providers = { "openai-codex": named("openai-codex", "OpenAI · ChatGPT"), openai: named("openai", "OpenAI · API"), deepseek: named("deepseek", null) };
+  // No status read yet: the names come with the models.
+  const html = menu({ models, providers, status: undefined });
+  assert.match(html, />OpenAI · ChatGPT</);
+  assert.match(html, />OpenAI · API</);
+  assert.match(html, />DeepSeek</);
+  assert.doesNotMatch(html, />OpenAI Codex</);
 });

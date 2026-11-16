@@ -8,7 +8,7 @@
 <tbody>
 <tr><th scope="row">服务对象</th><td>说 OpenAI Chat Completions、把 OpenProgram 的 Agent 当模型用的工具</td></tr>
 <tr><th scope="row">路由</th><td>Worker 端口上的 <code translate="no">GET /v1/models</code>、<code translate="no">POST /v1/chat/completions</code></td></tr>
-<tr><th scope="row">代码</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>；这一轮经 <code translate="no">runtime/conversation/owner_turn.py</code> 启动；<code translate="no">/v1</code> 的拒绝在 <code translate="no">owner_auth.py</code></td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>；这一轮经 <code translate="no">runtime/conversation/turn_admission/owner_turn.py</code> 启动；<code translate="no">/v1</code> 的拒绝在 <code translate="no">owner_auth.py</code></td></tr>
 <tr><th scope="row">用户文档</th><td><a href="../../../interfaces/openai-api.zh.html">OpenAI 兼容接口</a></td></tr>
 <tr><th scope="row">测试</th><td><code translate="no">tests/component/webui/runtime/test_openai_compatible.py</code>：真实的一轮路径加脚本模型，覆盖流式、客户端离开、认证拒绝</td></tr>
 </tbody>

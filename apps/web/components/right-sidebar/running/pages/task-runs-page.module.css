@@ -1,0 +1,31 @@
+/* A scheduled task's page (task-runs-page.tsx): its facts, the filter, then
+   one line per run under day labels. Unlayered, so these outrank the kit's
+   utility classes on the same elements. */
+.kv { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px; font-size: var(--fs-xs); line-height: 18px; color: var(--text-secondary); }
+.kv b { font-weight: 400; color: var(--text-primary); }
+
+.filterList { width: 100%; height: auto; padding: 2px; border-radius: var(--radius-md); }
+.filterTab { flex: 1 1 auto; height: auto; padding: 3px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: 400; line-height: 18px; }
+
+.day { padding: 8px 8px 2px; font-size: var(--fs-2xs); line-height: 16px; letter-spacing: .02em; color: var(--text-muted); }
+
+/* One run: dot, start, how long, how it came out. */
+.run { display: grid; grid-template-columns: 10px 40px auto minmax(0, 1fr); align-items: center; justify-content: stretch; column-gap: 10px; width: 100%; height: 26px; min-height: 0; padding: 0 8px; border: 0; border-radius: var(--radius-md); background: transparent; box-shadow: none; font: inherit; font-size: var(--fs-xs); font-weight: 400; line-height: 18px; color: var(--text-secondary); text-align: left; transition: background-color .16s; }
+.run > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.run { cursor: pointer; }
+button.run:hover, .run[data-open] { background: var(--row-raised-bg); color: var(--text-secondary); }
+.run:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.tm { color: var(--text-primary); }
+.du { color: var(--text-muted); }
+.rs { color: var(--text-muted); text-align: right; }
+.rs[data-tone="err"] { color: var(--accent-red); }
+.rs[data-tone="warn"] { color: color-mix(in srgb, var(--accent-yellow) 85%, var(--text-primary)); }
+.rs[data-tone="run"] { color: var(--accent-blue); }
+
+/* An opened run: why, then its helpers. */
+.inside { animation: fade .16s linear; }
+@keyframes fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .inside { animation: none; } }
+.note { margin: 0; padding: 4px 8px 6px 28px; font-size: var(--fs-xs); line-height: 1.45; color: var(--text-muted); }
+
+.empty { margin: 0; padding: 8px; font-size: var(--fs-xs); color: var(--text-muted); }

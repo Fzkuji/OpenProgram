@@ -20,8 +20,9 @@
     … +38 lines (ctrl+o to expand)
 ● agent(Survey the parser)
   ⎿ Done (2m 10s)
-● todo_update(#2)
-  ⎿ ☒ Read code
+● task_step(next)
+  ⎿ Ship the parser 1/3
+    ☒ Read code
     ◼ Write tests
     ☐ Ship</pre>
 <table class="stack fixed">
@@ -32,7 +33,7 @@
 <tr><th scope="row">read、grep、glob、list</th><td>一行：<code translate="no">Read 52 lines</code>、<code translate="no">Found 8 files</code>、<code translate="no">Found 3 matches</code>、<code translate="no">No matches</code>；内容只在展开时显示</td></tr>
 <tr><th scope="row">edit、apply_patch、write</th><td><code translate="no">Added X lines, removed Y lines</code> 加 diff：绿色新增、红色删除、三行上下文，折叠段显示 <code translate="no">⋮</code>，超过 12 行才折叠。行号在结果到达时读一次被编辑的文件得到；文件不在本机时不显示行号，不给错的</td></tr>
 <tr><th scope="row">agent</th><td><code translate="no">Running…</code>，然后 <code translate="no">Done (2m 10s)</code> 和回复开头；后台 agent 显示 <code translate="no">Started in the background</code></td></tr>
-<tr><th scope="row">todo_*</th><td>最新一次 todo 调用画出 <code translate="no">todos_update</code> 帧里保存的清单：<code translate="no">☒</code> 完成并划线，<code translate="no">◼</code> 进行中加粗，<code translate="no">☐</code> 待办</td></tr>
+<tr><th scope="row">task_start、task_step</th><td>最新一次任务调用画出 <code translate="no">todos_update</code> 帧里的任务：标题和计数步骤里已完成的数量，然后 <code translate="no">☒</code> 完成或放弃并划线，<code translate="no">◼</code> 进行中加粗，<code translate="no">☐</code> 待办。不嵌套：文字和其他调用仍然平铺。</td></tr>
 <tr><th scope="row">展开</th><td>Ctrl+O 展开或折叠整个转录里的工具输出；折叠提示写当前生效的键</td></tr>
 <tr><th scope="row">匹配</th><td>结果按 <code translate="no">tool_call_id</code> 找到自己的调用，同名工具并发时结果落在正确的行；没有 id 的帧退回到同名最新的运行中调用</td></tr>
 </tbody>
@@ -47,7 +48,7 @@
 <tr><th scope="row">折叠到三行并计数</th><td>Claude Code 折叠到 3 行加 <code translate="no">+N lines</code>；Codex 保留头尾；Pi 显示 bash 的尾部。头部加准确总数能说清藏了多少；总数取服务端的预览元数据，只数预览会少算长输出</td></tr>
 <tr><th scope="row">一个全局展开</th><td>Claude Code 的 Ctrl+O 打开一个冻结的独立屏；Pi 原地切换 <code translate="no">app.tools.expand</code>。原地切换保持转录可滚动，不需要第二个屏和退出键，cell-grid 渲染器本来就整帧重绘</td></tr>
 <tr><th scope="row">diff 来自编辑的参数</th><td>Claude Code 用 <code translate="no">old_string</code> / <code translate="no">new_string</code> 生成 patch；Codex 用它应用的 patch。TUI 从调用里两者都有，不需要改服务端；参数里没有行号，所以读文件取，文件在别处（SSH 对话）时不显示</td></tr>
-<tr><th scope="row">清单来自已保存的 todo</th><td>Claude Code 用 TodoWrite 的参数画清单；我们的工具每次只改一项，所以清单取工具本来就广播的 <code translate="no">todos_update</code> 帧，TodoWrite 式调用仍按参数画</td></tr>
+<tr><th scope="row">步骤来自已保存的任务</th><td>Claude Code 用 TodoWrite 的参数画清单；<code translate="no">task_step</code> 调用不带清单，所以步骤取工具本来就广播的 <code translate="no">todos_update</code> 帧，TodoWrite 式调用仍按参数画</td></tr>
 </tbody>
 </table>
 </details>

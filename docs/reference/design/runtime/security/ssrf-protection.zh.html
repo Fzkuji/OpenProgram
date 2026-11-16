@@ -36,7 +36,7 @@
 <tr><th scope="row"><code translate="no">openprogram/host/security/url_policy.py</code></th><td>URL 和来源规范化；scheme、userinfo、host、port 校验；完整 A/AAAA 分类；精确 Owner 例外；稳定的脱敏原因代码</td><td>发送请求，或推断调用方的信任等级</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/host/security/safe_http.py</code></th><td>不可变消费者注册表；同步和异步的对端约束传输；保留 Host 和 SNI；手动重定向；强制凭据、头、MIME、解码后响应体、编码、超时、代理和原子下载限制</td><td>接受调用方创建的策略对象，或暴露 <code translate="no">verify=False</code></td></tr>
 <tr><th scope="row">消费者适配器</th><td>选择一个注册键；已配置服务或回调提供确切的 Owner 配置来源</td><td>实现第二套私网地址分类，或用裸客户端重试</td></tr>
-<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>、<code translate="no">doctor</code>、<code translate="no">scripts/check_runtime_http.py</code></th><td>有界的脱敏拒绝状态、Owner 例外和代理报告、AST 清单、SDK 处置、过期排除项检测</td><td>显示 userinfo、query、fragment、凭据、对端响应体或含令牌的路径</td></tr>
+<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>、<code translate="no">doctor</code>、<code translate="no">scripts/checks/check_runtime_http.py</code></th><td>有界的脱敏拒绝状态、Owner 例外和代理报告、AST 清单、SDK 处置、过期排除项检测</td><td>显示 userinfo、query、fragment、凭据、对端响应体或含令牌的路径</td></tr>
 </tbody>
 </table>
 
@@ -98,14 +98,14 @@
 
 <details>
 <summary>静态检查和清单排除项</summary>
-<p><code translate="no">scripts/check_runtime_http.py</code> 在出现未注册的裸调用、活跃的非托管 SDK 传输、无已分类消费者的注册项或过期排除项时失败。<code translate="no">doctor</code> 标签：<code translate="no">runtime-http-registry</code>、<code translate="no">runtime-http-owner-exceptions</code>、<code translate="no">runtime-http-policy-proxy</code>、<code translate="no">runtime-http-recent-denials</code>、<code translate="no">runtime-http-unmanaged-transport</code>。</p>
+<p><code translate="no">scripts/checks/check_runtime_http.py</code> 在出现未注册的裸调用、活跃的非托管 SDK 传输、无已分类消费者的注册项或过期排除项时失败。<code translate="no">doctor</code> 标签：<code translate="no">runtime-http-registry</code>、<code translate="no">runtime-http-owner-exceptions</code>、<code translate="no">runtime-http-policy-proxy</code>、<code translate="no">runtime-http-recent-denials</code>、<code translate="no">runtime-http-unmanaged-transport</code>。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">排除项</th><th scope="col">归属与窄理由</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">security/safe_http.py</code></th><td>托管传输；唯一直接构造 <code translate="no">httpcore</code> 连接池和代理的地方</td></tr>
 <tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>浏览器控制；对 App 的 CDP 端点的回环探测</td></tr>
-<tr><th scope="row"><code translate="no">cli/commands/mcp.py</code></th><td>Owner 控制面；仅认证后端 opener</td></tr>
-<tr><th scope="row"><code translate="no">cli/ink.py</code>、<code translate="no">cli/commands/doctor.py</code>、<code translate="no">cli/commands/rescue.py</code></th><td>Owner 控制面；仅确切的回环 Worker 存活 socket</td></tr>
+<tr><th scope="row"><code translate="no">cli/commands/capabilities/mcp.py</code></th><td>Owner 控制面；仅认证后端 opener</td></tr>
+<tr><th scope="row"><code translate="no">cli/ink.py</code>、<code translate="no">cli/commands/maintenance/doctor.py</code>、<code translate="no">cli/commands/maintenance/rescue.py</code></th><td>Owner 控制面；仅确切的回环 Worker 存活 socket</td></tr>
 </tbody>
 </table>
 <p class="note">发布要求：策略和地址测试、真实同步异步 socket 和 TLS 对端测试、DNS 重绑定防护、重定向和凭据来源测试、响应解压和超时清理、所有消费者已迁移、活跃非托管传输为零、仅限 Owner 的精确例外、doctor、审计和静态强制，以及消费者兼容性契约。</p>
@@ -159,4 +159,4 @@
 <tr><th scope="row">被禁用的 SDK 网络功能</th><td>SDK 支持托管传输注入，或强制策略代理有等效测试后才启用</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="sandbox-architecture.zh.html">执行身份与沙箱</a> · <a href="../../providers/network-proxy.zh.html">网络代理</a> · <a href="../../feature-matrix.zh.html">功能矩阵</a></p>
+<p class="next"><a href="sandbox-architecture.zh.html">执行身份与沙箱</a> · <a href="../../providers/requests/network-proxy.zh.html">网络代理</a> · <a href="../../framework-comparison/feature-matrix.zh.html">功能矩阵</a></p>

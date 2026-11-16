@@ -1,6 +1,6 @@
 // Rule (security): credentials are never retrievable in plaintext by the web
 // app. Checked on the AST: no reveal identifiers or reveal URLs, key previews
-// and account views are masked-only types, MCP env/headers are masked maps,
+// and credential rows are masked-only types, MCP env/headers are masked maps,
 // and the MCP edit dialog opens with empty secret inputs. The runtime side
 // (masked getKey request, replacement guard) is tests/settings/secret-non-retrieval.test.mjs.
 import assert from "node:assert/strict";
@@ -10,7 +10,9 @@ import ts from "typescript";
 const root = new URL("../../", import.meta.url);
 const targetPaths = [
   "components/settings/providers/auth/api-key.tsx",
-  "components/settings/providers/detail/keys-panel.tsx",
+  "components/settings/providers/detail/credentials-section.tsx",
+  "components/settings/providers/detail/credential-model.ts",
+  "components/settings/providers/detail/add-credential-dialog.tsx",
   "components/settings/providers/add/key-entry.tsx",
   "lib/net/api.ts",
 ];
@@ -70,18 +72,17 @@ assert.deepEqual(
   "KeyPreview must be masked-only",
 );
 
-const accountFields = interfaceProperties(
+// A credential row carries a key's last four characters, never the key.
+const credentialFields = interfaceProperties(
   "components/settings/providers/types.ts",
-  "ProviderAccountView",
+  "CredentialRow",
 );
-for (const required of ["has_value", "masked_key"]) {
-  assert.ok(accountFields.includes(required), `ProviderAccountView must include ${required}`);
-}
-for (const forbidden of ["identity", "can_reveal", "value", "reveal"]) {
+assert.ok(credentialFields.includes("key_tail"), "CredentialRow must include key_tail");
+for (const forbidden of ["api_key", "access_token", "refresh_token", "secret", "can_reveal", "value", "reveal"]) {
   assert.equal(
-    accountFields.includes(forbidden),
+    credentialFields.includes(forbidden),
     false,
-    `ProviderAccountView must not include plaintext/reveal field ${forbidden}`,
+    `CredentialRow must not include plaintext/reveal field ${forbidden}`,
   );
 }
 

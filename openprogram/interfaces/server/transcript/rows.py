@@ -147,12 +147,17 @@ def _assistant_row(row: dict, row_id: str, timestamp: Any, running: bool) -> dic
         # Which limit or refusal it was (``errors.failure_cause``): the chat's
         # spent-quota card reads the provider, limit and reset from it.
         "errorCause": row.get("error_cause") if failed and isinstance(row.get("error_cause"), dict) else None,
+        # The provider's credentials that took over before the reply started.
+        "credentialNotices": _notices(row.get("credential_notices")),
         "streamSeq": _number(row.get("stream_seq")),
         "thinking": thinking, "tools": tools or None, "blocks": blocks or None,
         "function": row.get("function") or None,
         "display": "runtime" if row.get("display") == "runtime" else None,
         "status": stored_row_status("running" if running else row.get("status"), row.get("type")),
         "rawType": row.get("type"), "goalVerification": row.get("goal_verification"), "timestamp": timestamp,
+        # When the reply ended, however it ended: a task block that was
+        # stopped or cut off counts its time up to here.
+        "finishedAt": _number(row.get("finished_at")),
         "contextTree": _truthy(row.get("context_tree")), "usage": row.get("usage"), "turnFiles": row.get("turn_files"),
         "reverted": bool(_truthy(row.get("reverted"))), "attempts": row.get("attempts"),
         "current_attempt": row.get("current_attempt"), "attach": attach_with_call(row),
@@ -160,6 +165,20 @@ def _assistant_row(row: dict, row_id: str, timestamp: Any, running: bool) -> dic
         **_report_fields(row),
         **_sibling_fields(row),
     })
+
+
+def _notices(value: Any) -> list[dict] | None:
+    """Stored credential switches, each ``{to, from, cause?}``; None when there are none."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    if not isinstance(value, list):
+        return None
+    kept = [{k: str(n[k]) for k in ("to", "from", "cause") if n.get(k) is not None}
+            for n in value if isinstance(n, dict) and n.get("to")]
+    return kept or None
 
 
 def _report_fields(row: dict) -> dict:

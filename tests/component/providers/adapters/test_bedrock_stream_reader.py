@@ -23,7 +23,7 @@ import pytest
 from openprogram.models.providers.adapters.amazon_bedrock import amazon_bedrock
 from openprogram.models.providers.streaming.stream import _metered
 from openprogram.models.providers.types import Context, Model, SimpleStreamOptions, UserMessage
-from openprogram.models.providers.utils.stream_idle import StreamIdleTimeout
+from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
 
 IDLE_S = 0.5
 

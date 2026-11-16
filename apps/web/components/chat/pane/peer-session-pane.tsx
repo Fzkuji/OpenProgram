@@ -99,10 +99,10 @@ export const PeerSessionPane = memo(function PeerSessionPane({
   }, [sessionId, draft]);
 
   // Reserve the composer's real height as scroller padding. The composer is
-  // `position:absolute; bottom:0` and floats over the transcript (same as
-  // the main shell, which reserves a flat 25vh). Ours varies with the input
-  // row / attachment chips / fn-form, so measure it and publish the value
-  // as a CSS var the .chat-messages padding reads.
+  // `position:absolute; bottom:0` and floats over the transcript, as in the
+  // main shell. Its height varies with the input row / attachment chips /
+  // fn-form, so measure it and publish the value as a CSS var the
+  // .chat-messages padding reads: the last row rests 24px above it.
   const composerHostRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -135,11 +135,10 @@ export const PeerSessionPane = memo(function PeerSessionPane({
 
   const columnRef = useRef<HTMLDivElement | null>(null);
   const lastId = ids.at(-1) ?? null;
-  const { detached, jumpToLatest } = useChatAreaStick(scrollKey, lastId, true, {
+  const { showJump, jumpToLatest } = useChatAreaStick(scrollKey, lastId, true, {
     sessionId,
     areaRef,
     columnRef,
-    composerRootRef: composerHostRef,
   });
   const chatKey = scrollKey;
   // The pane draws its conversation as the main chat would, bot view included.
@@ -275,9 +274,9 @@ export const PeerSessionPane = memo(function PeerSessionPane({
           <DecisionOutputs key={sessionId} sessionId={sessionId} placed={placedDecisions} />
         </div>
       </div>
-      {detached ? (
+      {showJump ? (
         <div className="jump-latest-anchor" style={{ bottom: "calc(var(--peer-composer-h, 0px) + 12px)" }}>
-          <Button type="button" variant="elevated" size="xs" className="jump-latest" onClick={jumpToLatest}>
+          <Button type="button" variant="elevated" size="xs" className="jump-latest text-primary ring-1 ring-primary/45" onClick={jumpToLatest}>
             <ArrowDown data-icon="inline-start" aria-hidden="true" />
             {text("Jump to latest", "跳到最新")}
           </Button>

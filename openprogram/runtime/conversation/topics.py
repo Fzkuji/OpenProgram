@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from openprogram.models.providers.structured_output import JsonSchemaOutput
-from openprogram.runtime.execution.activity_runs import Ask, asks_on_branch
+from openprogram.runtime.execution.projections.activity_runs import Ask, asks_on_branch
 from openprogram.host._platform.filesystem import replace_file
 
 _log = logging.getLogger(__name__)

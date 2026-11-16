@@ -1,0 +1,142 @@
+<title>嵌套 LLM 流式输出</title>
+<meta name="description" content="Agent 方法里的每次模型调用如何把尝试和内容块流式送到执行树。">
+<h1>嵌套 LLM 流式输出</h1>
+
+<p>Agent 方法里的每个 <code translate="no">llm()</code> 或 <code translate="no">runtime.exec(..., execution_kind="llm")</code> 都走 <code translate="no">execution_stream.v1</code>，进程内和子进程在界面上结果相同。节点展开后的版式见<a href="../dag/nested-llm-node-content.zh.html">嵌套 LLM 节点内容</a>。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 176" role="img" aria-label="provider 事件进入 CallStreamState，它合并增量、编号修订并写检查点。传输层把帧送到浏览器存储，后者每节点一份状态，按修订应用帧。出现缺口或刷新时，浏览器订阅并收到快照。">
+  <defs><marker id="st-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Provider</text>
+  <text class="t-soft" x="0" y="66">文本、思考、</text>
+  <text class="t-soft" x="0" y="86">工具和重试事件</text>
+  <line class="ln" x1="86" y1="33" x2="150" y2="33" marker-end="url(#st-a)"/>
+  <text class="t-big" translate="no" x="160" y="40">CallStreamState</text>
+  <text class="t-soft" x="160" y="66">合并增量、编号修订</text>
+  <text class="t-soft" x="160" y="86">给节点写检查点</text>
+  <line class="ln" x1="304" y1="33" x2="352" y2="33" marker-end="url(#st-a)"/>
+  <text class="t-big" x="364" y="40">传输</text>
+  <text class="t-soft" x="364" y="66">子进程的帧</text>
+  <text class="t-soft" x="364" y="86">由父进程校验</text>
+  <line class="ln" x1="450" y1="33" x2="522" y2="33" marker-end="url(#st-a)"/>
+  <text class="t-big" x="534" y="40">浏览器存储</text>
+  <text class="t-soft" x="534" y="66">每节点一份状态</text>
+  <text class="t-soft" x="534" y="86">按修订应用</text>
+  <path class="ln-faint" d="M590 100V132H220V104" fill="none" marker-end="url(#st-a)"/>
+  <text class="t-soft mid" x="405" y="158">缺口或刷新：订阅，收到快照</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Provider</strong><small>文本、思考、工具和重试事件</small></li>
+  <li><strong><code translate="no">CallStreamState</code></strong><small>合并增量、编号修订、给节点写检查点</small></li>
+  <li><strong>传输</strong><small>子进程的帧由父进程校验</small></li>
+  <li class="flow-end"><strong>浏览器存储</strong><small>每节点一份状态，按修订应用；缺口或刷新时订阅快照</small></li>
+</ol>
+</figure>
+
+<h2 id="channels">通道</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">载体</th><th scope="col">内容</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution_stream</code></th><td>单个 LLM 节点的尝试、内容块和文本。逐帧驱动。</td><td>绝不写入助手回复内容</td></tr>
+<tr><th scope="row"><code translate="no">tree_update</code></th><td>树结构、状态，以及来自检查点的 <code translate="no">stream_preview</code>。约 1.2 秒轮询一次。</td><td>终态是关键帧</td></tr>
+<tr><th scope="row"><code translate="no">Call.output</code></th><td>节点关闭时写入的最终输出</td><td>流状态只是预览，不是最终结果</td></tr>
+</tbody>
+</table>
+
+<p>只有 <code translate="no">result</code>、<code translate="no">error</code>、<code translate="no">retry_result</code> 帧会结束聊天记录。嵌套流帧不会清除父运行、覆盖回复文本或刷新分支元数据。</p>
+
+<h2 id="frames">帧</h2>
+
+<pre translate="no" tabindex="0">{"type": "chat_response", "data": {
+  "type": "execution_stream", "schema_version": 1,
+  "session_id": "...", "execution_id": "...", "node_id": "...",
+  "generation": 1, "display_msg_id": "...",
+  "op": "block_delta", "base_revision": 11, "revision": 12,
+  "attempt_id": "...", "message_id": "...", "block_id": "...",
+  "kind": "text", "delta": "Hello"}}</pre>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">attempt_started</code></th><td>一次 provider 尝试开始。仍在运行的前一次变为 <code translate="no">superseded</code>。</td></tr>
+<tr><th scope="row"><code translate="no">block_started</code>, <code translate="no">block_delta</code>, <code translate="no">block_finished</code></th><td>尝试中一个有序内容块</td></tr>
+<tr><th scope="row"><code translate="no">attempt_finished</code></th><td>状态 <code translate="no">completed</code>、<code translate="no">failed</code>、<code translate="no">cancelled</code> 或 <code translate="no">superseded</code>，带校验结果</td></tr>
+<tr><th scope="row"><code translate="no">snapshot</code></th><td>完整状态，替换客户端已有内容</td></tr>
+<tr><th scope="row"><code translate="no">node_finished</code></th><td>终态决定，带完整快照</td></tr>
+<tr><th scope="row"><code translate="no">sync_required</code></th><td>客户端需要重新同步</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>内容块类型、阶段和预算</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">内容块类型</th><td><code translate="no">text</code>, <code translate="no">reasoning_summary</code>, <code translate="no">tool_ref</code>, <code translate="no">tool_arguments</code>, <code translate="no">parallel_group</code>, <code translate="no">refusal</code>, <code translate="no">unsupported</code>. 不透明签名绝不累积为文本。</td></tr>
+<tr><th scope="row">节点阶段</th><td><code translate="no">created</code>, <code translate="no">running</code>, <code translate="no">retry_wait</code>, <code translate="no">validating</code>, <code translate="no">finalizing</code>, <code translate="no">completed</code>, <code translate="no">cancelling</code>, <code translate="no">cancelled</code>, <code translate="no">failed</code>, <code translate="no">paused</code>, <code translate="no">reconciliation_required</code></td></tr>
+<tr><th scope="row">增量合并</th><td>同一块，25 毫秒内且小于 16 KiB。绝不跨节点或跨块。</td></tr>
+<tr><th scope="row">检查点</th><td>写入 <code translate="no">Call.metadata.stream</code>，每 0.25 秒或每 64 KiB 新内容一次；临时流不写</td></tr>
+<tr><th scope="row">帧大小</th><td>目标 64 KiB，内联预览 32 KiB。父进程拒收超过 96 KiB 的子进程帧。</td></tr>
+<tr><th scope="row">发送队列</th><td>每连接 256 帧、4 MiB。同一块、修订连续的相邻 <code translate="no">block_delta</code> 会合并；其他操作是关键帧。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="applying">应用一帧</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">帧</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">代次更旧</th><td>拒绝</td></tr>
+<tr><th scope="row">代次更新且带快照</th><td>即使修订更小也替换状态，节点已终态时除外</td></tr>
+<tr><th scope="row">修订不高于当前</th><td>视为重复，忽略</td></tr>
+<tr><th scope="row"><code translate="no">base_revision</code> 与当前修订不同</th><td>请求快照，绝不盲目追加</td></tr>
+<tr><th scope="row">终态节点收到运行中更新</th><td>拒绝，终态节点不回到同步中</td></tr>
+<tr><th scope="row"><code translate="no">sync_required</code>，原因 <code translate="no">owner_unavailable</code></th><td>结束本次恢复并保留内容。不会触发同样的请求；之后的流事件可以再次请求。</td></tr>
+</tbody>
+</table>
+
+<p class="note">浏览器存储是展示副本，按会话、执行和节点分键，并行调用互不混杂。<code translate="no">subscribe_execution_stream</code> 优先由活跃 owner 应答，否则取检查点。</p>
+
+<h2 id="tree-row">执行树行</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td>正文来自流，其次 <code translate="no">stream_preview</code>，再次 output。思考来自 <code translate="no">reasoning_summary</code>。提示和参数留在短注释里，完整提示在详情中。</td></tr>
+<tr><th scope="row">已结束</th><td><code translate="no">output</code> 或 <code translate="no">raw_reply</code>，带耗时</td></tr>
+<tr><th scope="row">同步中</th><td>注释显示“重新同步”</td></tr>
+<tr><th scope="row">重试中</th><td>注释显示“重试中（…）”，旧尝试仍可查看</td></tr>
+</tbody>
+</table>
+
+<h2 id="failure">失败和重连</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">用户取消</th><td>阶段 <code translate="no">cancelled</code>；保留部分文本；之后的增量被拒</td></tr>
+<tr><th scope="row">provider 错误</th><td>阶段 <code translate="no">failed</code>；部分文本和错误保持可见</td></tr>
+<tr><th scope="row">传输重试或结构化输出修复</th><td>当前尝试结束，开始新尝试</td></tr>
+<tr><th scope="row">刷新或重连</th><td>先渲染已保存的快照，再继续活跃帧。不回放增量。</td></tr>
+<tr><th scope="row">owner 不在</th><td>用检查点快照；没有时返回 <code translate="no">owner_unavailable</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>子进程路径</summary>
+<p>子进程不打开 WebSocket。它把帧放进现有的 <code translate="no">event_queue</code>；父进程校验 schema 版本、已知操作、会话、执行、代次不超过启动记录以及大小，然后转发。父进程不重新分配修订，也不写子进程的检查点。</p>
+</details>
+
+<h2 id="non-goals">不包含</h2>
+
+<ul>
+<li>token 级审计日志或可回放的增量记录</li>
+<li>改变顶层 <code translate="no">stream_event.text</code>；终端界面完全一致</li>
+<li>结构化输出的逐字段高亮；图片增量</li>
+<li>跨会话流订阅</li>
+<li>取代 <code translate="no">tree_update</code></li>
+</ul>
+
+<p class="next"><a href="../execution/control.zh.html">活动与控制</a></p>

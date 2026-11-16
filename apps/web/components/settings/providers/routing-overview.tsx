@@ -13,6 +13,8 @@
  * dashed edge to that model. Too narrow for two columns and the edges
  * between them, the pane says so and asks for room instead of a cramped map.
  */
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Bot, Code2, GitBranch, Layers, PanelLeftClose, Waypoints } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -309,15 +311,15 @@ export function RoutingOverview({
             {sessions.map((s) => (
               <section key={s.id} className={styles.session + (s.lanes.some((l) => l.live) ? " " + styles.sessionLive : "")}>
                 {s.kind === "background" ? (
-                  <div className={styles.sessionHead + " " + styles.sessionHeadStatic}>
+                  <div className="flex min-w-0 items-center gap-2 px-2 pt-1.5 pb-[5px]">
                     <span className={styles.sessionTitle}>{text("Background calls", "后台调用")}</span>
                     <span className={styles.entry}>{text("No session", "不属于会话")}</span>
                   </div>
                 ) : (
-                  <button type="button" className={styles.sessionHead} onClick={() => openSession(s.id)}>
+                  <Button variant="ghost" size="sm" className="w-full min-w-0 justify-start" onClick={() => openSession(s.id)}>
                     <span className={styles.sessionTitle}>{s.title || text("Untitled session", "未命名会话")}</span>
                     {entryLabel(s, text) && <span className={styles.entry}>{entryLabel(s, text)}</span>}
-                  </button>
+                  </Button>
                 )}
                 {s.lanes.map((lane) => {
                   const lk = laneKey(s.id, lane.id);
@@ -360,11 +362,11 @@ export function RoutingOverview({
           <div className={styles.models}>
             {groups.map((g) => (
               <section key={g.provider} className={styles.group}>
-                <button type="button" className={styles.groupHead} onClick={() => g.provider && onSelectProvider(g.provider)}>
+                <Button variant="ghost" size="sm" className="w-full min-w-0 justify-start" onClick={() => g.provider && onSelectProvider(g.provider)}>
                   <ProviderIcon id={g.provider} size={16} />
                   <span className={styles.groupName}>{labels.get(g.provider) || g.provider || text("Unknown", "未知")}</span>
                   <AccountChip accounts={data?.accounts[g.provider] ?? []} />
-                </button>
+                </Button>
                 {g.models.map((m) => {
                   const mk = modelKey(m.provider, m.model);
                   const failure = (data?.events ?? []).find((e) => e.from_provider === m.provider && e.from_model === m.model);
@@ -477,18 +479,18 @@ function ago(now: number, ts: number, text: Text): string {
 function AccountChip({ accounts }: { accounts: Account[] }) {
   const { text } = useTranslation();
   if (accounts.length === 0) return null;
-  const broken = accounts.filter((a) => ["needs_reauth", "billing_blocked", "revoked", "invalid"].includes(a.status));
-  const cooling = accounts.filter((a) => a.until_ms > 0);
+  const broken = accounts.filter((a) => a.status === "invalid_key" || a.status === "needs_login");
+  const waiting = accounts.filter((a) => a.until_ms > 0);
   if (broken.length > 0) {
-    return <span className={styles.chip + " " + styles.chipError}>{text(`${broken.length} key needs attention`, `${broken.length} 个 key 需要处理`)}</span>;
+    return <Badge variant="destructive" dot>{text(broken.length === 1 ? "1 credential needs attention" : `${broken.length} credentials need attention`, `${broken.length} 个凭据需要处理`)}</Badge>;
   }
-  if (cooling.length > 0) {
-    const until = new Date(Math.min(...cooling.map((a) => a.until_ms)));
+  if (waiting.length === accounts.length) {
+    const until = new Date(Math.min(...waiting.map((a) => a.until_ms)));
     const hhmm = until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return <span className={styles.chip + " " + styles.chipWarn}>{text(`Rate limited · back at ${hhmm}`, `限流 · ${hhmm} 恢复`)}</span>;
+    return <Badge variant="warning" dot>{text(`All waiting · back at ${hhmm}`, `全部等待中 · ${hhmm} 恢复`)}</Badge>;
   }
   if (accounts.length > 1) {
-    return <span className={styles.chip}>{text(`${accounts.length} keys`, `${accounts.length} 个 key`)}</span>;
+    return <Badge variant="secondary">{text(`${accounts.length} credentials`, `${accounts.length} 个凭据`)}</Badge>;
   }
   return null;
 }

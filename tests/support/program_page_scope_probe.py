@@ -45,7 +45,7 @@ def source_identity():
     for name in (
         "openprogram.runtime.conversation.turn_runtime.runtime_attach",
         "openprogram.runtime.conversation.process_runner",
-        "openprogram.runtime.conversation.turn_request_context",
+        "openprogram.runtime.conversation.turn_admission.turn_request_context",
     ):
         path = Path(importlib.import_module(name).__file__).resolve()
         assert path.is_relative_to(root), path
@@ -228,7 +228,7 @@ def main():
             db=DB,
         )
         if scenario in {"live_deny", "live_ask"}:
-            from openprogram.runtime.conversation.session_config import save_session_run_config
+            from openprogram.runtime.conversation.session_settings.session_config import save_session_run_config
 
             behavior = scenario.removeprefix("live_")
             save_session_run_config(
@@ -236,9 +236,9 @@ def main():
                 agent_id="main",
                 permission_rules={behavior: ["computer_use_agent"]},
             )
-    from openprogram.runtime.permissions.lifecycle import current_permission_request
+    from openprogram.runtime.permissions.approvals.lifecycle import current_permission_request
     from openprogram.runtime.permissions.policy import permission_decision
-    from openprogram.runtime.conversation import plan_mode
+    from openprogram.runtime.conversation.session_settings import plan_mode
 
     parent_effective = current_permission_request(req)
     parent_decision = permission_decision(

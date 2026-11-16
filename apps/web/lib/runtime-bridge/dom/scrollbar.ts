@@ -14,9 +14,13 @@
  * once it leaves the DOM. `initOverlayScrollbars()` is called once by
  * AppShell on mount.
  *
- * The thumb paints above everything, so a box inside a dialog keeps its
- * thumb above the dialog. A box that carries `data-scrollbar-layer="content"`
- * keeps its thumb in the content layer instead (`.overlay-thumb-content`,
+ * The thumb lives on <body>, so it paints in the layer of its box: the
+ * z-index of the box's outermost layered ancestor (a dialog, a popover, a
+ * drawer), or the sticky layer for a box in the page. Being later in the
+ * document than that layer, it sits on top of it, and anything floating
+ * above that layer — a menu or submenu open over a scrolling transcript —
+ * covers it. A box that carries `data-scrollbar-layer="content"` keeps its
+ * thumb in the content layer instead (`.overlay-thumb-content`,
  * base/scrollbar.css): above its rows, under a control floating on its
  * edge such as the width handle on the Agents page's divider.
  */
@@ -49,6 +53,22 @@ function track(el: HTMLElement): { top: number; height: number } {
     break;
   }
   return { top: rect.top + topInset, height: Math.max(0, rect.height - topInset - bottomInset) };
+}
+
+/** The z-index of the root-level layer ``el`` sits in: that of its
+ *  outermost ancestor whose z-index applies (positioned, or a flex or grid
+ *  item), or null for a box in the page itself. */
+export function layerOf(el: HTMLElement): number | null {
+  let layer: number | null = null;
+  for (let node: HTMLElement | null = el; node && node !== document.body; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    const z = parseInt(style.zIndex, 10);
+    if (Number.isNaN(z)) continue;
+    const parent = node.parentElement ? getComputedStyle(node.parentElement).display : "";
+    const applies = style.position !== "static" || /flex|grid/.test(parent);
+    if (applies) layer = z;
+  }
+  return layer;
 }
 
 /** One axis's thumb: where it sits, how long it is, and how a drag along
@@ -121,6 +141,10 @@ function axisThumb(el: HTMLElement, axis: Axis, eager: boolean) {
     t.className = axis === "y" ? "overlay-thumb" : "overlay-thumb overlay-thumb-x";
     if (el.dataset.scrollbarLayer === "content") t.classList.add("overlay-thumb-content");
     t.style.display = "none";
+    // The thumb lives on <body>, outside any menu or dialog layer. Radix's
+    // dismiss listener on document would read a press on it as a press
+    // outside and close the menu or dialog being scrolled.
+    t.addEventListener("pointerdown", (e) => e.stopPropagation());
     t.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || !model.overflows()) return;
       dragging = true;
@@ -165,6 +189,13 @@ function axisThumb(el: HTMLElement, axis: Axis, eager: boolean) {
       const max = model.maxScroll();
       const ratio = max > 0 ? model.scroll / max : 0;
       model.place(t, lane.start + ratio * (lane.length - lane.thumb), lane.thumb);
+      // The layer is read when the thumb is placed hidden or comes back
+      // into view, not on every frame of a scroll: walking the ancestors'
+      // computed styles per frame is wasted work for a box that stays put.
+      if (!t.classList.contains("overlay-thumb-content") && !t.classList.contains("visible")) {
+        const layer = layerOf(el);
+        t.style.zIndex = layer == null ? "" : String(layer);
+      }
       t.style.display = "";
       if (reveal) {
         t.classList.add("visible");

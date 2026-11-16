@@ -11,9 +11,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _access, _room, accounts
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _access, _room
+from openprogram.interfaces.channels import accounts
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 from openprogram.interfaces.channels.implementations.discord import DiscordChannel
 from openprogram.interfaces.channels.implementations.telegram import TelegramChannel
@@ -63,7 +64,7 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         calls.append(kw)
 
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound", fake)
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound", fake)
     return calls
 
 
@@ -76,7 +77,7 @@ def _no_network(monkeypatch: pytest.MonkeyPatch):
 
     for name in ("post_message", "add_reaction", "send_typing"):
         monkeypatch.setattr(
-            f"openprogram.interfaces.channels._transport.{name}", refuse)
+            f"openprogram.interfaces.channels.delivery._transport.{name}", refuse)
 
 
 def _group(adapter, user: str, text="hello", **kw) -> ChannelMessage:
@@ -243,7 +244,7 @@ def test_retired_group_access_setting_is_dropped_once_read(_tmp_state) -> None:
 
 
 def _cli(*argv: str) -> None:
-    from openprogram.interfaces.cli.commands.channels import _dispatch_accounts_verb
+    from openprogram.interfaces.cli.commands.services.channels import _dispatch_accounts_verb
     from openprogram.interfaces.cli.parser import build_parser
 
     args = build_parser().parse_args(["channels", "accounts", *argv])

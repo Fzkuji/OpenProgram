@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_runs_as_a_file_the_way_the_workflow_runs_it(tmp_path: Path) -> None:
-    # `python3 scripts/update_readme_contributors.py` puts only scripts/ on the path.
-    scripts = ROOT / "scripts"
+    # `python3 scripts/publishing/update_readme_contributors.py` puts only its own folder on the path.
+    scripts = ROOT / "scripts" / "publishing"
     result = subprocess.run(
         [sys.executable, "-I", "-c",
          f"import runpy, sys; sys.path.insert(0, {str(scripts)!r}); "

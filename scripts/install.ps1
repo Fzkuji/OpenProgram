@@ -110,7 +110,7 @@ function Winget-Install($id){
 
 # When run via `iwr | iex` there is no script file, so $MyInvocation...Path is
 # empty. A real checkout is detected by pyproject.toml next to us, not the path.
-$RepoUrl = "https://github.com/FuzzyKuji/OpenProgram.git"
+$RepoUrl = "https://github.com/Fzkuji/OpenProgram.git"
 $ScriptPath = $MyInvocation.MyCommand.Path
 $HostRoot = $null
 if ($ScriptPath) {

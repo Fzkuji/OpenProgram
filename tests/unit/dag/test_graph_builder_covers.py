@@ -2,7 +2,7 @@
 
 A summary node stores the exact chain nodes it replaces as
 ``metadata.covers_ids``, written by the persister
-(``context/persistence.py``). Seq intervals span sibling branches in a
+(``context/compaction/persistence.py``). Seq intervals span sibling branches in a
 DAG — a dead fork's seqs can fall inside ``[first_seq, last_seq]`` — so
 ids are the only faithful record. The graph builder passes the list
 through, adds the caller subtrees hanging off covered turns, and drops
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.runtime.context.persistence import SUMMARY_NODE_NAME
+from openprogram.runtime.context.compaction.persistence import SUMMARY_NODE_NAME
 from openprogram.state.store.session.nodes import Call, ROLE_CODE
 from openprogram.state.store import SessionNodeWriter
 from openprogram.runtime.agent.call_state import create_pending_call_node

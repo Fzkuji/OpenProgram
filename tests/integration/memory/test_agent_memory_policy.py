@@ -172,7 +172,7 @@ def test_commit_rechecks_epoch_and_agent_lifetime(runtime):
 
 
 def test_summary_preserves_restricted_source_eligibility(runtime):
-    from openprogram.runtime.context.persistence import Persister
+    from openprogram.runtime.context.compaction.persistence import Persister
     from openprogram.state.memory.policy import node_policy
     _, db, _, _ = runtime
     _turn(runtime)

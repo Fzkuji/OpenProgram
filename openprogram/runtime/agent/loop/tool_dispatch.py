@@ -12,7 +12,7 @@ from openprogram.models.providers.types import (
     ToolCall,
     ToolResultMessage,
 )
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 from openprogram.models.providers.utils.validation import validate_tool_arguments
 
 from openprogram.runtime.events import emit_safe, get_event_bus, make_event
@@ -58,7 +58,7 @@ def _attach_nested_agents_md(tool_call: Any, result: AgentToolResult,
     if result.is_error:
         return result
     try:
-        from openprogram.runtime.context import agents_md
+        from openprogram.runtime.context.prompt_assembly import agents_md
         paths, text = agents_md.nested_for(tool_call.name, tool_call.arguments, seen)
     except Exception:
         _log.debug("AGENTS.md lookup failed for %s", tool_call.name, exc_info=True)
@@ -104,7 +104,7 @@ def _bound_attachment(tool_call: Any, result: AgentToolResult) -> AgentToolResul
     if entry is None:
         return result
     from openprogram.programs._host.runtime import _persist_full_result
-    from openprogram.state.store.session.spill import bound_text
+    from openprogram.state.store.session.files.spill import bound_text
     text = bound_text(entry["text"], lambda whole: _persist_full_result(str(tool_call.id), whole))
     if text == entry["text"]:
         return result
@@ -145,7 +145,7 @@ def _as_stored(tool_call: Any, result: AgentToolResult) -> AgentToolResult:
         return result.model_copy(update={"content": [TextContent(text=_no_output(tool_call, result))]})
     from openprogram.programs._host.execution import CAP_DETAIL
     from openprogram.programs._host.runtime import _persist_full_result
-    from openprogram.state.store.session.spill import bound_text, result_cap
+    from openprogram.state.store.session.files.spill import bound_text, result_cap
     details = dict(result.details) if isinstance(result.details, dict) else {}
     cap = result_cap(details.get(CAP_DETAIL))
     saved: list[Any] = []
@@ -207,6 +207,30 @@ def _tool_call_label(name: str, args: Any) -> str:
     return name
 
 
+def _take_task_progress(tools: Any, tool: Any, args: Any) -> tuple[Any, Any]:
+    from openprogram.programs.tools.planning.todo import progress
+    return progress.take(tool, args, tools)
+
+
+def _apply_task_progress(tools: Any, tool: Any, call: ToolCall, occurrence_id: str) -> tuple[dict | None, str]:
+    """Apply the ``task_progress`` a call carries. Returns the effect for
+    its card (``state.task_blocks``) and a note the model reads in the
+    result when the progress was not applied (todo/progress.py). It is
+    applied once per ``occurrence_id``, not per call id: some providers
+    give the calls of every response the same ids (Gemini's
+    ``call_<index>_<name>``)."""
+    _, value = _take_task_progress(tools, tool, call.arguments)
+    if value is None:
+        return None, ""
+    from openprogram.programs.tools.planning.todo import progress
+    try:
+        return progress.apply(value, occurrence_id)
+    except Exception:
+        # Progress is bookkeeping; the call itself still runs.
+        _log.warning("task_progress of %s not applied", call.name, exc_info=True)
+        return None, f"{progress.KEY} not applied: an internal error."
+
+
 class _SkipExecute(Exception):
     """Internal: repeat-fail trip already built a tool result."""
 
@@ -262,7 +286,7 @@ async def _execute_tool_calls(*args: Any, context_window: int | None = None,
     attach are not attached again (``shared.tool_attachments``).
     """
     from openprogram.models.providers.shared.tool_attachments import attached_paths
-    from openprogram.state.store.session import spill as _spill
+    from openprogram.state.store.session.files import spill as _spill
 
     loaded = None
     if history is not None:
@@ -347,6 +371,15 @@ async def _dispatch_tool_calls(
             from openprogram.programs._host.runtime import unavailable_tool
             tool = unavailable_tool(tool_call.name, loaded[tool_call.name])
         occurrence_id = _occurrence_id(index, tool_call)
+        # The call's ``task_progress`` is the runtime's, applied before the
+        # call runs and never passed on (todo/progress.py). ``sent`` keeps
+        # the call as the model wrote it: its card and history replay it.
+        sent = tool_call
+        task_effect, task_note = _apply_task_progress(tools, tool, tool_call, occurrence_id)
+        call_args, _ = _take_task_progress(tools, tool, call_args)
+        bare, _ = _take_task_progress(tools, tool, tool_call.arguments)
+        if bare is not tool_call.arguments:
+            tool_call = tool_call.model_copy(update={"arguments": bare})
         dag_expose = getattr(tool, "_dag_expose", None) or "full"
         from openprogram.models.providers.types import Tool as AiTool
         validated_args = call_args
@@ -364,9 +397,10 @@ async def _dispatch_tool_calls(
         ev_stream.push(AgentEventToolStart(
             tool_call_id=tool_call.id,
             tool_name=tool_call.name,
-            args=tool_call.arguments,
+            args=sent.arguments,
             occurrence_id=occurrence_id,
             expose=dag_expose,
+            task_effect=task_effect,
         ))
         preflight = getattr(tool, "_permission_preflight", None)
         if callable(preflight) and streak < 2 and validation_error is None:
@@ -591,6 +625,8 @@ async def _dispatch_tool_calls(
                 RUNNING_TOOL_CALLS.pop(tool_call.id, None)
 
         outcome = "not_started" if not execution.started else ("failed" if result.is_error else "completed")
+        if task_note:
+            result = result.model_copy(update={"content": [*(result.content or []), TextContent(text=task_note)]})
         result = _rewrite_tool_result(tool_call, result, attached)
         if not skipped_repeat:
             if result.is_error and not execution.automatic_refusal:

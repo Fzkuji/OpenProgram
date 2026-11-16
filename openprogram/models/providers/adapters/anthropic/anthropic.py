@@ -56,8 +56,8 @@ from ...types import (
     Usage,
     UserMessage,
 )
-from ...utils.cancelable_stream import iter_until_cancelled
-from ...utils.json_parse import parse_streaming_json
+from ...utils.streams.cancelable_stream import iter_until_cancelled
+from ...utils.streams.json_parse import parse_streaming_json
 from ...utils.sanitize_unicode import sanitize_surrogates
 from ...shared.transform_messages import transform_messages as _transform_messages
 from ...shared.tool_attachments import AttachmentMessage
@@ -231,7 +231,7 @@ def _build_client(
 
     ``is_oauth_override`` / ``base_url_override``: when the caller already
     resolved a :class:`~openprogram.auth.resolver.ResolvedConnection`, it
-    knows definitively whether this is oauth/device_code/cli_delegated and
+    knows definitively whether this is oauth/device_code/import and
     what base_url the credential carries — pass those through instead of
     re-deriving them here (sniffing the ``sk-ant-oat`` prefix is a fallback
     for callers that haven't gone through the resolver).
@@ -270,15 +270,10 @@ def _build_client(
     if tool_search:
         beta_features.append(_tool_search_beta(base_url))
 
-    # SDK-level retry budget: Anthropic SDK retries 429/5xx/transport
-    # errors with its own exponential backoff. Default is 2; we raise
-    # to 3 by default to match the stream-level retry budget of our
-    # other HTTP providers (see openai-codex + utils/stream_retry).
-    # ``OPENPROGRAM_ANTHROPIC_MAX_RETRIES`` env overrides.
-    import os as _os
-    sdk_max_retries = int(_os.environ.get("OPENPROGRAM_ANTHROPIC_MAX_RETRIES", "3"))
-    from ...streaming.budget import provider_sdk_retries
-    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
+    # The SDK's own retries are off: the credential layer
+    # (``models/auth/selection.py``) and the stream's re-send handle every
+    # failure once, so a 429 is not retried on the same key behind their back.
+    sdk_max_retries = 0
 
     # Regular API key auth
     default_headers = {
@@ -375,7 +370,7 @@ def _shared_http_client(base_url: str | None = None):
     Policy and construction failures propagate so the SDK cannot fall back to
     its unmanaged default transport.
     """
-    from openprogram.models.providers.utils.http_client import get_shared_async_client
+    from openprogram.models.providers.utils.http_transport.http_client import get_shared_async_client
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
 
     configured_origin = normalize_origin(base_url or "https://api.anthropic.com")
@@ -427,7 +422,7 @@ def _convert_tool_result_block(tr_msg: ToolResultMessage, is_oauth: bool = False
     }
 
 
-# Provider-side web search (docs/reference/design/providers/web-search.html).
+# Provider-side web search (docs/reference/design/providers/requests/web-search.html).
 _WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search"}
 
 
@@ -610,7 +605,7 @@ def _build_messages(
 def _merge_adjacent_user_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One user message for two that follow each other with no reply between.
 
-    A reply stopped before it said anything is not sent (``context.render``),
+    A reply stopped before it said anything is not sent (``context.session_dag.render``),
     so the person's next message follows the one it answered; the API wants
     the roles to alternate. The blocks keep their order; a message holding
     tool results is left as it is.
@@ -763,34 +758,20 @@ async def stream_simple(
 
     from openprogram.models.auth.provider_policy import require_supported_provider
     require_supported_provider(model.provider)
-    _pool = model.provider
-
-    # Per-request credential from an AuthStore pool — enables multi-key
-    # rotation/cooldown and lets a stored credential's own base_url/headers/
-    # kind override the catalog default (e.g. an api_key hitting a
-    # third-party Anthropic-compatible endpoint). No-op (returns None) if
-    # the provider has no AuthStore pool.
-    from ....auth import usage as _auth_usage
-    _pooled = _auth_usage.acquire_pooled(_pool)
-    _conn = _pooled[0] if _pooled else None
-
-    api_key = opts.api_key or (_conn.auth_value if _conn else None) or ""
-    if not api_key:
-        # Fallback path when acquire_pooled found nothing (e.g. a
-        # test/DI credential override — layer 1 of resolve_api_key_sync).
-        from openprogram.models.auth.resolver import resolve_api_key_sync
-        api_key = resolve_api_key_sync(_pool) or ""
+    # The credential this request goes out with, chosen by the credential
+    # layer every adapter is wrapped in (``models/auth/selection.py``); its
+    # own base URL and headers win over the catalogue's.
+    _conn = getattr(opts, "credential", None)
+    api_key = opts.api_key or ""
     if not api_key:
         # No credential anywhere — fail precisely instead of sending an
         # empty x-api-key header (a misleading upstream 401).
-        from ...utils.errors import ErrorReason, LLMError
-        from ....auth import usage as _auth_usage
-        _diag = _auth_usage.stored_but_unusable(model.provider)
+        from ...utils.failures.errors import ErrorReason, LLMError
         raise LLMError(
-            message=_diag or (
+            message=(
                 f"No API key configured for provider '{model.provider}'. "
-                f"Add one in Settings -> Providers, or run: "
-                f"openprogram providers login {model.provider} --api-key"
+                f"Add one in Settings → Providers, or run: "
+                f"openprogram providers keys {model.provider} add"
             ),
             reason=ErrorReason.AUTHENTICATION,
             retryable=False,
@@ -798,10 +779,7 @@ async def stream_simple(
             model=model.id,
         )
 
-    # Prefer the pooled credential's own kind/base_url over sniffing the
-    # bearer string — a conn tells us definitively whether this is
-    # oauth/device_code, rather than pattern-matching "sk-ant-oat".
-    is_oauth = (_conn.kind in ("oauth", "device_code", "cli_delegated")) if _conn else _is_oauth_token(api_key)
+    is_oauth = (_conn.kind in ("oauth", "device_code", "import")) if _conn else _is_oauth_token(api_key)
     base_url = (_conn.base_url if _conn and _conn.base_url else None) \
         or getattr(model, "base_url", None) or getattr(model, "baseUrl", None)
     from openprogram.models.providers.settings.cache_spec import with_lifetime_setting
@@ -959,7 +937,7 @@ async def stream_simple(
     try:
         async with client.messages.stream(**params) as ant_stream:
             _observe_api_key_limits(model, ant_stream, is_oauth=is_oauth, base_url=base_url,
-                                    account=_pooled[2] if _pooled else None, api_key=api_key)
+                                    account=_conn.credential_id if _conn else None, api_key=api_key)
             # <=250ms cancel poll — do not wait for the next token.
             async for event in iter_until_cancelled(ant_stream, _cancelled):
                 # Dispatch on the SSE protocol field, NOT the Python class

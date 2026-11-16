@@ -46,7 +46,7 @@ from typing import Any, Callable, Optional, Union
 
 from openprogram.models.providers.types import AgentToolResult
 from openprogram.models.providers.types import AudioContent, ImageContent, TextContent
-from openprogram.state.store.session.tool_output_gc import TOOL_RESULTS_DIRNAME
+from openprogram.state.store.session.files.tool_output_gc import TOOL_RESULTS_DIRNAME
 import logging
 
 _log = logging.getLogger(__name__)

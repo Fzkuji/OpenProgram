@@ -104,7 +104,7 @@ def test_refresh_script_reads_build_files_instead_of_a_hand_list():
     assert "apps/desktop/package.json" in packer
     assert "build.files" in packer
     assert "main.js menu-geometry.js" not in packer
-    refresh = (root / "scripts/refresh-local-app.sh").read_text(encoding="utf-8")
+    refresh = (root / "scripts/local-instances/refresh-local-app.sh").read_text(encoding="utf-8")
     assert "scripts/release/pack-desktop-archive.sh" in refresh
     assert "main/windows/window-lifecycle.js" in _packaged_files()
 
@@ -122,7 +122,7 @@ def test_packaging_scripts_expand_folder_entries():
 
 
 def test_refresh_script_rejects_stale_checkout_for_default_app():
-    refresh = (DESKTOP.parents[1] / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (DESKTOP.parents[1] / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
 
@@ -139,7 +139,7 @@ def test_refresh_script_rejects_stale_checkout_for_default_app():
 def test_refresh_script_replaces_the_archive_by_rename():
     """An App launched mid-refresh must never read a half-copied app.asar:
     the archive goes into the staged App, which replaces the installed one by rename."""
-    refresh = (DESKTOP.parents[1] / "scripts" / "refresh-local-app.sh").read_text(
+    refresh = (DESKTOP.parents[1] / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
     assert 'cp "$desktop_asar" "$installed_asar' not in refresh

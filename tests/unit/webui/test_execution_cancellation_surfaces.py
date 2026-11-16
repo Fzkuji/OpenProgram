@@ -31,7 +31,7 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
         ROOT / "openprogram/interfaces/server/ws_actions/runtime.py"
     ).read_text(encoding="utf-8")
     cli_cmd = (
-        ROOT / "openprogram/interfaces/cli/commands/execution.py"
+        ROOT / "openprogram/interfaces/cli/commands/conversations/execution.py"
     ).read_text(encoding="utf-8")
     tui_events = (
         ROOT / "apps/cli/src/screens/repl/useWsEvents.ts"

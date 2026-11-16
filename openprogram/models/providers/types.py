@@ -142,6 +142,11 @@ class StreamOptions(BaseModel):
     # resolved provider explicitly advertises support for it.
     supports_idempotency_key: bool = False
     idempotency_key: str | None = None
+    # The credential this request is sent with (``models/auth/selection.py``
+    # ``Lease``: id, label, kind, auth value, base URL, headers), set by the
+    # credential layer every adapter is wrapped in; ``api_key`` holds the
+    # same auth value. ``None`` for a request that carries a caller's own key.
+    credential: Any | None = Field(default=None, exclude=True)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -350,6 +355,9 @@ class AssistantMessage(BaseModel):
     # FailoverCategory value. ``provider``/``model`` above name the model
     # that answered. Empty when the first model answered.
     failover: list[dict[str, str]] = Field(default_factory=list)
+    # The stored credential that sent this reply (``models/auth``), for the
+    # usage log; ``None`` for a caller's own key or a provider with none.
+    credential_id: str | None = None
     # On a compaction summary only: the deferred tools it carries past the
     # turns it covers, as ``{"name", "definition"}`` records
     # (``shared.tool_loads.carried_records``). Rendered from the summary
@@ -564,6 +572,11 @@ class EventRetry(BaseModel):
     # streamed: what this response showed so far is void, and its text and
     # reasoning are no longer shown. Absent otherwise.
     restart: bool | None = None
+    # A provider's credential changed under the request (reason
+    # ``credential``: ``{"to", "from", "cause"}``, the labels and why the
+    # first stopped: rate_limit / quota / auth / model) or the request
+    # waits for one (``credential_wait``: ``{"to"}``). Absent otherwise.
+    credential: dict | None = None
 
 
 class EventStructuredOutputEnd(BaseModel):

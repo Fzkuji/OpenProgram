@@ -98,7 +98,7 @@ def two_branches(tmp_path, monkeypatch):
     import openprogram.runtime.conversation.turn_runtime as dispatcher
     import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
     import openprogram.runtime.agent.questions as questions
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
     import openprogram.models.providers.catalog.api_registry as api_registry
     import openprogram.state.store.session.session_store as session_store_module

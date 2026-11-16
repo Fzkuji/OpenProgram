@@ -10,7 +10,7 @@
  * for the new provider.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { runtimeState } from "@/lib/runtime-bridge/state";
 
@@ -118,12 +118,22 @@ export function useThinkingEffort(): ThinkingEffortHook {
   // `recommended` marks the model's default so the card can label it; the
   // server always sends `default` alongside a non-empty option list, so
   // only the pre-hydration fallback list leans on DEFAULT_THINKING.
-  const options = invocation
-    ? markRecommended(
-        (invocation.thinkingLevels ?? []).map((value) => ({ value })),
-        invocation.defaultThinking,
-      )
-    : markRecommended(readThinkingOptions(own), readBackendDefault(own) ?? DEFAULT_THINKING);
+  // One list per config: the same levels keep their array, so the controls
+  // drawn from it are not redrawn by every composer render.
+  const liveConfig = own ?? runtimeState._thinkingConfig;
+  const liveOptions = liveConfig?.options;
+  const liveDefault = liveConfig?.default;
+  const liveFingerprint = configFingerprint();
+  const options = useMemo(
+    () => invocation
+      ? markRecommended(
+          (invocation.thinkingLevels ?? []).map((value) => ({ value })),
+          invocation.defaultThinking,
+        )
+      : markRecommended(readThinkingOptions(own), readBackendDefault(own) ?? DEFAULT_THINKING),
+    // The live config is mutated in place; the last three name its content.
+    [invocation, own, liveOptions, liveDefault, liveFingerprint],
+  );
 
   // CLAMP: the value actually exposed (and sent with chat turns) must
   // be one the current model supports. If the stored pick isn't in

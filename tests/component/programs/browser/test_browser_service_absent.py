@@ -12,7 +12,7 @@ import pytest
 
 @pytest.fixture
 def no_browser(monkeypatch):
-    from openprogram.runtime.context import components
+    from openprogram.runtime.context.prompt_assembly import components
     from openprogram.programs._host import services as _services
 
     _services.load_programs()
@@ -48,7 +48,7 @@ def test_the_service_names_its_members():
 
 
 def test_the_call_gets_no_pages_section(no_browser):
-    from openprogram.runtime.context.components import build_turn_sections
+    from openprogram.runtime.context.prompt_assembly.components import build_turn_sections
 
     assert build_turn_sections(
         {"id": "main"},

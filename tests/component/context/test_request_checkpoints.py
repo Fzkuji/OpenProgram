@@ -7,7 +7,7 @@ from openprogram.runtime.agent.loop import agent_loop
 from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
 from openprogram.runtime.context.compaction.request import RequestCompactor
 from openprogram.runtime.context.compaction.summarize import Summarizer
-from openprogram.runtime.context.tokens import _text_tokens, estimate_history_tokens
+from openprogram.runtime.context.token_accounting.tokens import _text_tokens, estimate_history_tokens
 from openprogram.models.providers.types import (
     AssistantMessage, Context, EventDone, Model, SimpleStreamOptions,
     TextContent, ToolCall, ToolResultMessage, UserMessage,
@@ -268,7 +268,7 @@ def test_default_provider_path_keeps_checkpoint_across_tool_continuation(monkeyp
         return AgentToolResult(content=[TextContent(text='checked')])
     monkeypatch.setattr('openprogram.models.providers.catalog.api_registry.resolve_api_provider_snapshot',
                         lambda m: SimpleNamespace(provider=object(), supports_idempotency_key=False))
-    monkeypatch.setattr('openprogram.models.providers.utils.failover.resolve_fallback_models', lambda m: [])
+    monkeypatch.setattr('openprogram.models.providers.utils.failures.failover.resolve_fallback_models', lambda m: [])
     monkeypatch.setattr(importlib.import_module('openprogram.models.providers.streaming.stream'), 'stream_simple_with_provider', stream)
     async def run():
         context = AgentContext(messages=[UserMessage(content='Read only.', timestamp=0),

@@ -316,6 +316,7 @@ test("Cmd+1…9 and Cmd+Shift+[ ] pick strip entries", () => {
   assert.deepEqual(key("3"), { action: "select-tab", index: 3 });
   assert.deepEqual(key("}", { shiftKey: true, code: "BracketRight" }), { action: "next-tab" });
   assert.deepEqual(key("T", { shiftKey: true, code: "KeyT" }), { action: "reopen-tab" });
+  assert.deepEqual(key(",", { code: "Comma" }), { action: "open-settings" }, "Cmd+, opens Settings, as the main menu shows");
   assert.equal(key("t"), null, "Cmd+T stays the new-tab menu item");
   assert.equal(key("n", { metaKey: false, ctrlKey: true }), null);
 });

@@ -12,7 +12,7 @@ import pytest
 
 from openprogram.host.cancellation import CancelledError
 from openprogram.models.providers.types import AgentTool, AgentToolResult, AssistantMessage, TextContent, ToolCall
-from openprogram.models.providers.utils.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 from openprogram.runtime.agent.loop import _execute_tool_calls
 
 

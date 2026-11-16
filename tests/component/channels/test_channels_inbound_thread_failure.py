@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from openprogram.interfaces.channels._message import ChannelMessage
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
 from openprogram.interfaces.channels.base import _INBOUND_ORDER, Channel
 
 

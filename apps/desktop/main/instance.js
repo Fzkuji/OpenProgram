@@ -3,10 +3,10 @@ const path = require("path");
 
 // Which local instance this shell serves. The stable App carries its own
 // runtime under Resources/runtime and talks to port 18100. The development
-// App ("OpenProgram Dev", installed by scripts/install-dev-app.sh) is the
+// App ("OpenProgram Dev", installed by scripts/local-instances/install-dev-app.sh) is the
 // same shell with Resources/instance.json naming the development
 // instance: its profile, its port and the runtime that
-// scripts/refresh-dev-instance.sh keeps under ~/.openprogram-dev.
+// scripts/local-instances/refresh-dev-instance.sh keeps under ~/.openprogram-dev.
 const INSTANCE_FILE = "instance.json";
 const STABLE = Object.freeze({
   development: false,

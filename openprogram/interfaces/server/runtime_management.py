@@ -546,7 +546,7 @@ def _resolve_session_provider_model(conv: dict | None, *, snapshot: bool = False
 
     session_id = conv.get("id") if conv else None
     if session_id and not snapshot:
-        from openprogram.runtime.conversation.session_model import read_session_chat_model
+        from openprogram.runtime.conversation.session_settings.session_model import read_session_chat_model
         provider, model = read_session_chat_model(session_id)
         if provider:
             return provider, model

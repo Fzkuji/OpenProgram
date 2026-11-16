@@ -7,7 +7,7 @@ The development instance is a runtime (port 18200,
 it last, opened in ``/Applications/OpenProgram Dev.app`` on macOS or in a
 browser. Commits reach stable only by promotion: a commit that the
 development instance is serving, healthy, is installed into the App by
-``scripts/refresh-local-app.sh``, which fast-forwards ``stable`` onto it
+``scripts/local-instances/refresh-local-app.sh``, which fast-forwards ``stable`` onto it
 once the new version is healthy.
 
 Both build from managed detached worktrees of the source repository, so
@@ -27,7 +27,7 @@ from openprogram.host._platform.filesystem import replace_file
 
 DEV_PROFILE = "dev"
 DEV_PORT = 18200
-# Browser debugging port of the development App (scripts/install-dev-app.sh);
+# Browser debugging port of the development App (scripts/local-instances/install-dev-app.sh);
 # the stable App uses 9223.
 DEV_APP_DEBUG_PORT = 9224
 STABLE_PORT = 18100
@@ -95,7 +95,7 @@ def source_repo() -> Path:
     if not value:
         raise InstanceError(
             "no source checkout is known; set OPENPROGRAM_SOURCE_REPO or "
-            "run scripts/refresh-dev-instance.sh from the checkout once")
+            "run scripts/local-instances/refresh-dev-instance.sh from the checkout once")
     repo = Path(value).expanduser()
     if not (repo / ".git").exists():
         raise InstanceError(f"the recorded source checkout is not a Git repository: {repo}")
@@ -203,38 +203,44 @@ def status() -> dict:
     }
 
 
-# Credentials the development instance may share. An API key is static, and a
-# CLI-delegated credential reads another tool's login by reference. OAuth
-# logins are not copied: their refresh tokens rotate, so two instances
-# refreshing one login would sign each other out.
-SHAREABLE_KINDS = frozenset({"api_key", "cli_delegated"})
+# Credentials the development instance may share. An API key is static, and an
+# imported login reads another tool's login by reference. OAuth logins are not
+# copied: their refresh tokens rotate, so two instances refreshing one login
+# would sign each other out.
+SHAREABLE_KINDS = frozenset({"api_key", "import"})
 MODEL_CONFIG_KEYS = ("api_keys", "providers", "last_used_model")
 
 
 def copy_models() -> dict:
     """Give the development instance the stable instance's model setup.
 
-    Copies provider settings and the shareable credentials; returns what
-    was copied and which OAuth logins must be signed in again there.
+    Copies provider settings and the shareable credentials the development
+    instance does not hold yet; returns what was copied and which providers'
+    sign-ins must be signed in again there. The stable instance's files are
+    only read: its store is opened without the carry-over, which is the
+    stable instance's own to run.
     """
     from openprogram.models.auth.store import AuthStore
-    from openprogram.models.auth.types import CredentialPool
 
-    source = AuthStore(root=stable_state_dir())
+    source = AuthStore(root=stable_state_dir(), carry_over=False)
     target = AuthStore(root=dev_state_dir())
     copied, skipped = [], []
-    for pool in source.list_pools():
-        name = f"{pool.provider_id}/{pool.account_id}"
-        clone = CredentialPool.from_dict(pool.to_dict())
-        clone.credentials = [c for c in clone.credentials if c.kind in SHAREABLE_KINDS]
-        if len(clone.credentials) < len(pool.credentials):
-            skipped.append(name)
-        if not clone.credentials:
-            continue
-        if clone.active_credential_id not in {c.credential_id for c in clone.credentials}:
-            clone.active_credential_id = ""
-        target.put_pool(clone)
-        copied.append(name)
+    for provider in source.providers():
+        stored = source.stored(provider).credentials
+        shareable = [c for c in stored if c.kind in SHAREABLE_KINDS]
+        if len(shareable) < len(stored):
+            skipped.append(provider)
+        held = target.stored(provider).credentials
+        ids = {c.id for c in held}
+        secrets = {c.payload.auth_value for c in held if c.payload.auth_value}
+        added = 0
+        for cred in shareable:
+            if cred.id in ids or (cred.payload.auth_value and cred.payload.auth_value in secrets):
+                continue
+            target.add_credential(cred)
+            added += 1
+        if added:
+            copied.append(provider)
 
     config_path = dev_state_dir() / "config.json"
     stable_config = json.loads((stable_state_dir() / "config.json").read_text(encoding="utf-8"))
@@ -279,7 +285,7 @@ def deploy_dev(ref: str = DEV_BRANCH) -> str:
     if not revision:
         raise InstanceError(f"unknown ref: {ref}")
     tree = _managed_worktree(repo, dev_state_dir() / "source", revision)
-    _run(tree / "scripts" / "refresh-dev-instance.sh", tree)
+    _run(tree / "scripts" / "local-instances" / "refresh-dev-instance.sh", tree)
     return revision
 
 
@@ -375,7 +381,7 @@ def promote(revision: str | None = None, *, wait_for_stable: bool = True,
     already waited, and a repair after a failed promotion must not wait on
     stable's work. The stable profile is backed up next.
 
-    ``scripts/refresh-local-app.sh`` installs ``target`` and moves ``stable``
+    ``scripts/local-instances/refresh-local-app.sh`` installs ``target`` and moves ``stable``
     itself, compare-and-swap from ``current``, only after the new worker is
     healthy. Everything that can fail runs before it stops the old worker,
     and a failure after that puts the previous App and worker back, so a
@@ -402,7 +408,7 @@ def promote(revision: str | None = None, *, wait_for_stable: bool = True,
            "OPENPROGRAM_PROMOTE_FROM": current or "",
            "OPENPROGRAM_SESSION_ID": None}
     try:
-        _run(tree / "scripts" / "refresh-local-app.sh", tree, env)
+        _run(tree / "scripts" / "local-instances" / "refresh-local-app.sh", tree, env)
     except InstanceError as exc:
         # The refresh moves ``stable`` only once the new worker is healthy, so
         # a failure after that (the App window not reopening) is no failed
@@ -410,7 +416,7 @@ def promote(revision: str | None = None, *, wait_for_stable: bool = True,
         # revert a commit that stable is serving.
         if _ref(repo, STABLE_BRANCH) != target:
             raise RefreshFailedError(f"{target[:10]} was not promoted: {exc}; {_stable_now(repo)}") from exc
-        print(f"promoted {target[:10]}, but the refresh then failed: {exc}; {_stable_now(repo)}", file=sys.stderr)
+        sys.stderr.write(f"promoted {target[:10]}, but the refresh then failed: {exc}; {_stable_now(repo)}\n")
     return target
 
 

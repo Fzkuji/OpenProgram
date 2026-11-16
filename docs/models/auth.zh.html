@@ -47,11 +47,16 @@ openprogram providers adopt codex_cli # 导入一项；--all 导入全部</code>
 <p class="note">企业 SSO（<code translate="no">sso</code>）未实现；API 和解析器都会拒绝。</p>
 <h2>管理</h2>
 <p>命令见<a href="README.html">配置模型</a>。</p>
-<p>每个 Provider 支持多个命名账户，一个账户的池可放多个 API 密钥。返回 401、402、429 或 503 的密钥进入冷却，下一个健康密钥处理后续请求。策略：<code translate="no">fill_first</code>（默认，备用密钥）、<code translate="no">round_robin</code>、<code translate="no">random</code>、<code translate="no">least_used</code>。跨整个账户轮换是单独的 Provider 开关，默认关闭。</p>
+<p>一个 Provider 的 key 和登录组成一个有序列表。对话一直用开始时的 key；它被限流、额度用完或被拒时换到下一个可用的，回复里显示一行提示。</p>
+<p>策略：<code translate="no">in-order</code>（默认，用第一个可用的）、<code translate="no">evenly</code>、<code translate="no">least-used</code>。对话可以固定用某一个 key：<a href="several-keys.html">使用多个密钥</a>。</p>
+<pre translate="no"><code>openprogram providers keys openai list
+openprogram providers keys openai add --name work
+openprogram providers keys openai move work --to 1
+openprogram providers keys openai strategy evenly</code></pre>
 <details>
 <summary>Codex 登录</summary>
 <ul>
-<li>Program 调用使用 Provider 的当前账户，包括用 <code translate="no">openprogram providers use openai-codex &lt;account&gt;</code> 设定的账户。脚本可固定另一个：<code translate="no">create_runtime(provider="openai-codex", profile="&lt;account&gt;")</code>。</li>
+<li>Program 调用和对话一样使用 Provider 的列表：按 <code translate="no">openprogram providers keys openai-codex list</code> 显示的顺序，用第一个可用的登录。用同一个 ChatGPT 账号重新登录会更新它原来那一行。</li>
 <li>终端认证失败和标记为不可重试的错误在一次请求后停止，错误类别在 Program 运行时中保留。其他回调失败仍走 Program 的有界恢复。</li>
 <li>回调监听在授权页打开前启动。保持 Provider 面板打开，直到显示成功。</li>
 </ul>

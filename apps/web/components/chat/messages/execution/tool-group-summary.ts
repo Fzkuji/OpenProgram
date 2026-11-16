@@ -6,6 +6,7 @@
  */
 import type { AssistantBlock, TurnFileSummary } from "../../../../lib/session-store/types.ts";
 import { SPAWNING_TOOL_NAMES } from "../../../../lib/chat/transcript/owned-children.ts";
+import { isTaskTool } from "../../../../lib/chat/transcript/task-blocks.ts";
 import { isAgentLive } from "../../../../lib/chat/transcript/row-status.ts";
 import { parseToolArgs, presentTool } from "./tool-presentation.ts";
 import { GUI_TOOL_NAMES, isGuiToolCall } from "./gui-tool-view.ts";
@@ -215,6 +216,7 @@ function kindOf(tool: string, text: Text, args: Args = {}): Kind {
   if (AGENT.has(tool)) return "agent";
   if (tool === "image_generate") return "imagegen";
   if (tool === "image_analyze") return "imageanalyze";
+  // Calls stored before tasks existed; task_start / task_step never reach here.
   if (tool.startsWith("todo_")) return "todo";
   if (tool === "ask_user_question") return "ask";
   if (tool.startsWith("memory_")) return "memory";
@@ -487,9 +489,12 @@ function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Summarise one folded group of thinking and tool blocks. */
-export function summarizeToolGroup(blocks: AssistantBlock[], options: ToolGroupOptions): ToolGroupSummary {
+/** The calls of a group by kind, in order of first appearance, and the one
+ *  in progress. Task bookkeeping calls say nothing here: the task block
+ *  shows them. */
+function groupFacts(all: AssistantBlock[], options: ToolGroupOptions) {
   const { text, active = false, runningIds, spawnNames = [], spawnStates = [], spawnHeads = [], sessionId, turnFiles } = options;
+  const blocks = all.filter((b) => !isTaskTool(b));
   const turn = options.turnBlocks ?? blocks;
   const buckets = new Map<Kind, Bucket>();
   let thinking = 0;
@@ -566,7 +571,21 @@ export function summarizeToolGroup(blocks: AssistantBlock[], options: ToolGroupO
   }
   const ordered = [...buckets.values()].sort((a, b) => a.first - b.first);
   const current = ordered.filter((b) => b.running !== undefined);
-  const live = current[current.length - 1];
+  const live: Bucket | undefined = current[current.length - 1];
+  return { blocks, turn, ordered, live, thinking, failed };
+}
+
+/** What the group is doing right now, in the present tense ("editing
+ *  agent-list.module.css"); "" when no call is in progress. */
+export function livePhrase(blocks: AssistantBlock[], options: ToolGroupOptions): string {
+  const { live } = groupFacts(blocks, options);
+  return live ? presentPhrase(live, options.text) : "";
+}
+
+/** Summarise one folded group of thinking and tool blocks. */
+export function summarizeToolGroup(all: AssistantBlock[], options: ToolGroupOptions): ToolGroupSummary {
+  const { text, active = false, spawnStates = [], turnFiles } = options;
+  const { blocks, turn, ordered, live, thinking, failed } = groupFacts(all, options);
   const phrases = ordered.filter((b) => b !== live).map((b) => pastPhrase(b, text));
   if (live) phrases.push(presentPhrase(live, text) + "…");
   let label: string;

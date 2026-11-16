@@ -19,7 +19,7 @@ import pytest
 
 from openprogram.interfaces.server.ws_actions import session as ws_session
 from openprogram.state.store import SessionStore
-from openprogram.state.store.session import session_log, session_state_file
+from openprogram.state.store.session.files import session_log, session_state_file
 
 SID = "long-chat"
 #: The measured log: 731.6 MB; 13 replies patched 11,013 times with a

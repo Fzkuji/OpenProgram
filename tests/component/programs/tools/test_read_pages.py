@@ -14,7 +14,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from openprogram.programs.tools.files.read import read
 from openprogram.runtime.agent.loop.tool_dispatch import _as_stored
 from openprogram.runtime.agent.runtime import _adapt_tools
-from openprogram.state.store.session import spill
+from openprogram.state.store.session.files import spill
 
 # The bound, in characters of the ASCII text these tests read (a weight of
 # CAP // 4), set as a model's ``tool_output_weight`` would set it.
@@ -133,9 +133,9 @@ def _project_read(tmp_path, monkeypatch, agents_chars, context_window=None):
     import time
     from openprogram.models.providers.shared.tool_attachments import record
     from openprogram.models.providers.types import AssistantMessage, ToolCall
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
     from openprogram.runtime.agent.loop import _execute_tool_calls
-    from openprogram.runtime.context import agents_md
+    from openprogram.runtime.context.prompt_assembly import agents_md
 
     project = tmp_path / "project"
     (project / ".git").mkdir(parents=True)

@@ -37,7 +37,7 @@ from openprogram.operations.self_update.types import (
     UpdateRecord,
     is_terminal,
 )
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 EVIDENCE = "backend:dev_stable"
 TIMEOUT_SECONDS = 2 * 3600
@@ -54,7 +54,7 @@ _FILES_LIMIT = 100
 
 # Environment the controller's build and install steps need. Everything else is
 # left behind: OPENPROGRAM_SESSION_ID in particular would make
-# scripts/refresh-local-app.sh detach and report success before it finished.
+# scripts/local-instances/refresh-local-app.sh detach and report success before it finished.
 _CONTROLLER_ENVIRONMENT = (
     "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TMPDIR", "SSH_AUTH_SOCK",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",

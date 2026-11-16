@@ -511,9 +511,9 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
     monkeypatch.setenv("OPENPROGRAM_DOCS_PYTHON", sys.executable)
     _file(repository / "scripts/docs_site/check.py", "")  # the real check has its own tests
     for relative in (
-        "scripts/publish-github.sh", "scripts/git-hooks/pre-push",
+        "scripts/publishing/publish-github.sh", "scripts/git-hooks/pre-push",
         "scripts/git-hooks/pre-commit", "scripts/git-hooks/install.sh",
-        "scripts/retired_accounts.py", "scripts/release/release-version.py",
+        "scripts/publishing/retired_accounts.py", "scripts/release/release-version.py",
         "scripts/release/office-archive.py",
     ):
         target = repository / relative
@@ -521,7 +521,7 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
         shutil.copy2(ROOT / relative, target)
     # The copied scanner also treats a made-up login as retired, so the tests
     # below can name one without naming a real account.
-    scanner = repository / "scripts/retired_accounts.py"
+    scanner = repository / "scripts/publishing/retired_accounts.py"
     digest = hashlib.sha256(RETIRED_STAND_IN.encode()).hexdigest()
     scanner.write_text(
         scanner.read_text(encoding="utf-8").replace("RETIRED = frozenset({", f'RETIRED = frozenset({{\n    "{digest}",', 1),
@@ -580,7 +580,7 @@ def _version_places(repository: Path, version: str, *, lock: str | None = None) 
 
 def _publish(repository: Path, *arguments: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["bash", str(repository / "scripts/publish-github.sh"), *arguments],
+        ["bash", str(repository / "scripts/publishing/publish-github.sh"), *arguments],
         capture_output=True, text=True, cwd=repository,
     )
 
@@ -741,8 +741,8 @@ def test_main_whose_history_names_a_retired_account_is_not_pushed(publishing) ->
     repository, origin = publishing
     identity = {
         **os.environ,
-        "GIT_AUTHOR_NAME": "FuzzyKuji", "GIT_AUTHOR_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
-        "GIT_COMMITTER_NAME": "FuzzyKuji", "GIT_COMMITTER_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
+        "GIT_AUTHOR_NAME": "FzKuji", "GIT_AUTHOR_EMAIL": "fzkuji@gmail.com",
+        "GIT_COMMITTER_NAME": "FzKuji", "GIT_COMMITTER_EMAIL": "fzkuji@gmail.com",
     }
     old = _git(
         repository, "commit-tree", "dev^{tree}", "-m", f"Earlier version by {RETIRED_STAND_IN}",
@@ -750,7 +750,7 @@ def test_main_whose_history_names_a_retired_account_is_not_pushed(publishing) ->
     ).stdout.strip()
     _git(repository, "update-ref", "refs/heads/main", old, check=True)
     result = _publish(repository)
-    assert result.returncode != 0 and "the history of main names a retired account" in result.stderr
+    assert result.returncode != 0 and "the history being uploaded names a retired account" in result.stderr
     assert _git(origin, "for-each-ref").stdout == ""
 
 
@@ -761,3 +761,23 @@ def test_a_clean_source_still_publishes(publishing) -> None:
     assert _git(origin, "rev-parse", "refs/heads/main").stdout.strip() == _git(
         repository, "rev-parse", "refs/heads/main",
     ).stdout.strip()
+
+
+def test_history_github_already_has_is_not_checked_again(publishing) -> None:
+    """GitHub's main starts with years of commits by many authors; a version
+    is added after them, and only the version is checked."""
+    repository, origin = publishing
+    other = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Someone Else", "GIT_AUTHOR_EMAIL": "else@example.com",
+        "GIT_COMMITTER_NAME": "Someone Else", "GIT_COMMITTER_EMAIL": "else@example.com",
+    }
+    empty = _git(repository, "hash-object", "-t", "tree", os.devnull, check=True).stdout.strip()
+    old = _git(repository, "commit-tree", empty, "-m", "Before 1.0.0", env=other, check=True).stdout.strip()
+    _git(repository, "push", "--quiet", str(origin), f"{old}:refs/heads/main",
+         env={**os.environ, "OPENPROGRAM_GITHUB_PUBLISH": "1"}, check=True)
+    _git(repository, "update-ref", "refs/heads/main", old, check=True)
+    result = _publish(repository, "-m", "Version")
+    assert result.returncode == 0, result.stderr
+    pushed = _git(origin, "log", "--format=%ae", "refs/heads/main", check=True).stdout.split()
+    assert pushed == ["fzkuji@gmail.com", "else@example.com"]

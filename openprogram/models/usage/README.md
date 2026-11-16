@@ -13,7 +13,7 @@ Public API:
   register_usage_hook(fn)         subscribe to events (budget/alerting)
   prefix_fingerprint.expect_break announce a prompt-cache break made on purpose
 
-See docs/design/usage-metering.md.
+See docs/reference/design/providers/usage-metering.html.
 
 ## Files in this directory
 
@@ -33,4 +33,4 @@ See docs/design/usage-metering.md.
 
 - **`quota_fetchers/`** — Read-only quota endpoints, behind one interface, and when they are read
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

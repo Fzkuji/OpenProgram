@@ -207,6 +207,25 @@ export function MessageTimestamp({ timestamp }: { timestamp?: number }) {
   );
 }
 
+/** Rewind to here. It alone reads whether the conversation is running, so
+ *  a run starting or ending redraws this button and not every action bar. */
+function RewindButton({ sessionId, msg }: { sessionId: string; msg: ChatMsg }) {
+  const { text: tr } = useTranslation();
+  const cause = useRewindDisabled(sessionId);
+  return (
+    <ActionButton
+      icon={SVG.undo}
+      title={tr("Rewind to here", "回退到这里")}
+      detail={tr(
+        "Takes this message and everything after it out of the conversation.",
+        "把这条消息及之后的内容撤出对话。",
+      )}
+      disabledReason={cause ? disabledReason(cause, tr) : undefined}
+      onClick={() => void requestRewind(sessionId, msg.id, msg.content ?? "")}
+    />
+  );
+}
+
 export function MessageActions({
   msg,
   onEdit,
@@ -236,9 +255,7 @@ export function MessageActions({
   const sent = Boolean(sessionId) && isRewindable(msg);
   const rewindAllowed = useRewindAllowed(sessionId);
   const rewindable = sent && rewindAllowed;
-  const rewindCause = useRewindDisabled(rewindable ? sessionId : null);
   const forkCause = useForkDisabled(sent ? sessionId : null, msg.id);
-  const rewindDisabled = rewindCause ? disabledReason(rewindCause, tr) : undefined;
 
   function copy() {
     const text = msg.content || "";
@@ -348,18 +365,7 @@ export function MessageActions({
           onClick={onEdit}
         />
       ) : null}
-      {rewindable ? (
-        <ActionButton
-          icon={SVG.undo}
-          title={tr("Rewind to here", "回退到这里")}
-          detail={tr(
-            "Takes this message and everything after it out of the conversation.",
-            "把这条消息及之后的内容撤出对话。",
-          )}
-          disabledReason={rewindDisabled}
-          onClick={() => void requestRewind(sessionId!, msg.id, msg.content ?? "")}
-        />
-      ) : null}
+      {rewindable ? <RewindButton sessionId={sessionId!} msg={msg} /> : null}
       {sent && !forkCause ? (
         <ActionButton
           icon={SVG.fork}

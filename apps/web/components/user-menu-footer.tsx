@@ -222,7 +222,7 @@ export function UserMenuFooter() {
             <div className={MENU_SEPARATOR} />
             <a
               className={cn(itemCls(false), styles.item)}
-              href="https://github.com/FuzzyKuji/OpenProgram"
+              href="https://github.com/Fzkuji/OpenProgram"
               target="_blank"
               rel="noopener"
               onClick={() => setOpen(false)}

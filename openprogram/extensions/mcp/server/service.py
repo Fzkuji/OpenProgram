@@ -936,7 +936,7 @@ class MCPService:
             )
 
         from openprogram.runtime.agent.turn_request import TurnRequest
-        from openprogram.runtime.permissions.approval import wrap_with_approval
+        from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
         from openprogram.runtime.permissions.rule import load_merged_rules
 
         underlying_started = False

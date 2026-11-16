@@ -50,7 +50,7 @@ def test_runner_retries_interrupted_delivery_once(store_fixture, tmp_path, monke
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
     from openprogram.state.store import SessionStore
-    from openprogram.state.store.session.session_log import SessionLog
+    from openprogram.state.store.session.files.session_log import SessionLog
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)

@@ -1,9 +1,8 @@
 import { isLive } from "../transcript/row-status.ts";
 /** Measure-then-recycle window for long transcripts.
  *
- *  Scroll restore is a raw pixel `scrollTop` (`chatScrollByKey`). Off-screen
- *  rows may unmount only after their `offsetHeight` is cached, so the
- *  placeholder stack stays close to a fully mounted `scrollHeight`.
+ *  Off-screen rows may unmount only after their `offsetHeight` is cached,
+ *  so the placeholder stack stays close to a fully mounted `scrollHeight`.
  */
 
 // ponytail: fixed 40 / 1600px; raise overscan if scroll-restore holes appear.
@@ -17,7 +16,7 @@ export type WindowNode =
 
 export type HeightWrite = "first" | "update" | "same";
 
-/** Same chatKey isolation as `chatScrollByKey`; sibling sessionStorage blob. */
+/** One sessionStorage blob, isolated by chatKey. */
 export const CHAT_HEIGHTS_STORAGE_KEY = "chatHeightsByKey";
 export const HEIGHT_PERSIST_MS = 200;
 
@@ -316,8 +315,18 @@ export function decideLiveRows(opts: {
   }
 
   const overscan = opts.overscan ?? OVERSCAN_PX;
-  const viewLo = opts.scrollTop - overscan;
-  const viewHi = opts.scrollTop + opts.viewH + overscan;
+  // A view not measured yet (the first render of a conversation) sits at
+  // the end, where every opening lands.
+  let scrollTop = opts.scrollTop;
+  if (!Number.isFinite(scrollTop)) {
+    let total = opts.lead ?? LIST_LEAD_PX;
+    for (const node of opts.nodes) {
+      total += opts.heights.get(node.kind === "fold" ? foldKey(node.id) : node.id) ?? 0;
+    }
+    scrollTop = Math.max(0, total - opts.viewH);
+  }
+  const viewLo = scrollTop - overscan;
+  const viewHi = scrollTop + opts.viewH + overscan;
   let y = opts.lead ?? LIST_LEAD_PX;
   let prefixKnown = true;
 

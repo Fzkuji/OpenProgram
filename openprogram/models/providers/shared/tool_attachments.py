@@ -2,7 +2,7 @@
 
 When a call is due a tool guide (``programs._authoring.guides``) or reaches
 a directory with an ``AGENTS.md`` the request does not carry yet
-(``runtime.context.agents_md``), that text is not joined into the tool's
+(``runtime.context.prompt_assembly.agents_md``), that text is not joined into the tool's
 own result. It is recorded on the result as
 ``ToolResultMessage.details["attachment"]``:
 ``{"text", "paths", "guides"}``, the text bounded once when it was made.

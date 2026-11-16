@@ -71,6 +71,7 @@ export const INK_BOUNDS: Readonly<Record<string, InkBounds>> = {
   "/images/providers/vercel.svg": { x: 0, y: 0.01, width: 24, height: 20.78, viewBox: [0, 0, 24, 24] },
   "/images/providers/volcengine-color.svg": { x: 1, y: 0, width: 21.81, height: 22.01, viewBox: [0, 0, 24, 24] },
   "/images/providers/wandb-color.svg": { x: 0.04, y: 0.15, width: 23.96, height: 23.85, viewBox: [0, 0, 24, 24] },
+  "/images/providers/xiaomimimo.svg": { x: 0.01, y: 5, width: 23.99, height: 14.55, viewBox: [0, 0, 24, 24] },
   "/images/providers/zai.svg": { x: 0.01, y: 2, width: 23.98, height: 19.99, viewBox: [0, 0, 24, 24] },
   "/images/providers/zenmux.svg": { x: 4.15, y: 1.88, width: 15.79, height: 20.6, viewBox: [0, 0, 24, 24] },
   "/images/providers/zhipu-color.svg": { x: 1, y: 0, width: 22.01, height: 24, viewBox: [0, 0, 24, 24] },

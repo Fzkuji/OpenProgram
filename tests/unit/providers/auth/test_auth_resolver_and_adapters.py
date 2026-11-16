@@ -6,15 +6,10 @@ import time
 
 import pytest
 
-from openprogram.models.auth.context import auth_scope
 from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
 from openprogram.models.auth.resolver import resolve_api_key_sync
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
-from openprogram.models.auth.types import (
-    Credential,
-    CredentialData,
-    CredentialPool,
-)
+from openprogram.models.auth.types import Credential, CredentialData
 from openprogram.models.providers.adapters.anthropic import auth_adapter as anthro_adapter
 from openprogram.models.providers.adapters.github_copilot import auth_adapter as copilot_adapter
 from openprogram.models.providers.adapters.google_gemini_cli import auth_adapter as gemini_adapter
@@ -33,32 +28,30 @@ def store(tmp_path):
 
 # ---- resolver ------------------------------------------------------------
 
-def test_resolver_uses_override_first(store):
-    pinned = Credential(
-        provider_id="openai", account_id="default", kind="api_key",
-        payload=CredentialData(kind="api_key", auth_value="sk-OVERRIDE"),
-    )
-    with auth_scope(credential_overrides={"openai": pinned}):
-        assert resolve_api_key_sync("openai") == "sk-OVERRIDE"
+def _add(store, provider, kind, value, **data):
+    return store.add_credential(Credential(
+        provider_id=provider, kind=kind,
+        payload=CredentialData(kind=kind, auth_value=value, data=data)))
 
 
-def test_resolver_uses_store_when_no_override(store, monkeypatch):
+def test_resolver_uses_the_first_key_of_the_list(store, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    cred = Credential(
-        provider_id="openai", account_id="default", kind="api_key",
-        payload=CredentialData(kind="api_key", auth_value="sk-STORE"),
-    )
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="default", credentials=[cred],
-    ))
-    assert resolve_api_key_sync("openai") == "sk-STORE"
+    _add(store, "openai", "api_key", "sk-FIRST")
+    _add(store, "openai", "api_key", "sk-SECOND")
+    assert resolve_api_key_sync("openai") == "sk-FIRST"
 
 
-def test_resolver_never_reads_env(store, monkeypatch):
-    # No store pool, no override — and the env var must stay inert:
-    # provider keys live in the AuthStore only.
+def test_resolver_skips_a_turned_off_key(store, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    first = _add(store, "openai", "api_key", "sk-FIRST")
+    _add(store, "openai", "api_key", "sk-SECOND")
+    store.update("openai", first.id, lambda row: setattr(row, "enabled", False))
+    assert resolve_api_key_sync("openai") == "sk-SECOND"
+
+
+def test_resolver_reads_a_set_variable_as_a_key(store, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-ENV")
-    assert resolve_api_key_sync("openai") is None
+    assert resolve_api_key_sync("openai") == "sk-ENV"
 
 
 def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):
@@ -67,40 +60,10 @@ def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):
     assert resolve_api_key_sync("anthropic") is None
 
 
-def test_resolver_rejects_anthropic_subscription_token(store):
-    cred = Credential(
-        provider_id="anthropic", account_id="default", kind="oauth",
-        payload=CredentialData(
-            kind="oauth", auth_value="ACC",
-            data={"refresh_token": "REF", "expires_at_ms": int(time.time() * 1000) + 3600_000},
-        ),
-    )
-    store.put_pool(CredentialPool(
-        provider_id="anthropic", account_id="default", credentials=[cred],
-    ))
+def test_resolver_rejects_anthropic_subscription_token(store, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _add(store, "anthropic", "api_key", "sk-ant-oat01-subscription")
     assert resolve_api_key_sync("anthropic") is None
-
-
-def test_resolver_respects_active_profile(store):
-    personal = Credential(
-        provider_id="openai", account_id="personal", kind="api_key",
-        payload=CredentialData(kind="api_key", auth_value="sk-PERSONAL"),
-    )
-    work = Credential(
-        provider_id="openai", account_id="work", kind="api_key",
-        payload=CredentialData(kind="api_key", auth_value="sk-WORK"),
-    )
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="personal", credentials=[personal],
-    ))
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="work", credentials=[work],
-    ))
-
-    with auth_scope(account_id="work"):
-        assert resolve_api_key_sync("openai") == "sk-WORK"
-    with auth_scope(account_id="personal"):
-        assert resolve_api_key_sync("openai") == "sk-PERSONAL"
 
 
 # ---- Anthropic adapter ---------------------------------------------------
@@ -131,7 +94,7 @@ def test_gemini_import_happy_path(tmp_path):
     }))
     cred = gemini_adapter.import_from_gemini_cli(path=path)
     assert cred is not None
-    assert cred.kind == "cli_delegated"
+    assert cred.kind == "import"
     assert cred.read_only is True
     assert cred.metadata["scope"].startswith("https://")
 
@@ -144,32 +107,18 @@ def test_gemini_import_corrupt(tmp_path):
 
 # ---- Copilot adapter -----------------------------------------------------
 
-def test_copilot_prefers_copilot_token_over_gh(monkeypatch):
-    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghu_COPILOT")
-    monkeypatch.setenv("GH_TOKEN", "ghu_GH")
-    cred = copilot_adapter.import_from_env_tokens()
-    assert cred is not None
-    assert cred.payload.auth_value == "ghu_COPILOT"
-    assert cred.metadata["env_var"] == "COPILOT_GITHUB_TOKEN"
-
-
-def test_copilot_falls_through_to_github_token(monkeypatch):
-    for var in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN"]:
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("GITHUB_TOKEN", "ghp_LAST")
-    cred = copilot_adapter.import_from_env_tokens()
-    assert cred is not None
-    assert cred.payload.auth_value == "ghp_LAST"
-
-
-def test_copilot_returns_none_when_none_set(monkeypatch):
-    for var in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]:
-        monkeypatch.delenv(var, raising=False)
-    assert copilot_adapter.import_from_env_tokens() is None
-
-
 def test_copilot_oauth_wrapper():
     cred = copilot_adapter.import_oauth_credential("ACC", "REF", expires_at_ms=1)
     assert cred.kind == "oauth"
     assert cred.payload.auth_value == "ACC"
     assert cred.payload.data["client_id"] == "Iv1.b507a08c87ecfe98"
+
+
+def test_copilot_reads_its_token_variables_in_order(store, monkeypatch):
+    for var in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]:
+        monkeypatch.delenv(var, raising=False)
+    assert resolve_api_key_sync("github-copilot") is None
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp-general")
+    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghu-copilot")
+    rows = store.get("github-copilot").credentials
+    assert [c.id for c in rows] == ["env:COPILOT_GITHUB_TOKEN", "env:GITHUB_TOKEN"]

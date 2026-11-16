@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { rowsOfTurns } from '@/lib/chat/transcript/turn-rows';
 import { useSessionHistory, updateSessionHistory } from '@/lib/chat/history/session-history';
 import { HistoryWindow, type HistoryDirection, type TurnWindow, type WireTurn } from '@/lib/chat/history/history-window';
-import { captureHistoryAnchor, captureAreaRestoreState, historyAreaStillOwned, isFollowLocked, readHistoryAnchor, restoreAreaWindow, saveHistoryAnchor } from '@/lib/chat/history/history-viewport';
+import { captureHistoryAnchor, captureAreaRestoreState, historyAreaStillOwned, isFollowLocked, restoreAreaWindow } from '@/lib/chat/history/history-viewport';
 import { noteTakeLatest } from '@/lib/chat/history/chat-scroll';
 import { clearHeights, retainRowHeights } from '@/lib/chat/history/message-window';
 import { useSessionStore, type ChatMsg } from '@/lib/session-store';
@@ -189,9 +189,6 @@ async function loadTurnPage(
   if (useSessionHistory.getState().pages[id]?.generation !== expected.generation) return false;
   if (page?.error_code === 'cursor_not_on_branch' && getSocket() === socket) {
     // The branch moved away from this cursor: read the chat again, once.
-    // A saved reading position on that row would ask for it again after
-    // every read, so it is forgotten with the cursor.
-    if (direction === 'around' && around && readHistoryAnchor(id)?.id === around) saveHistoryAnchor(id, null);
     updateSessionHistory(id, expected.generation, {loading:false});
     requestSessionLoad({action:'load_session', session_id:id}, true);
     return false;

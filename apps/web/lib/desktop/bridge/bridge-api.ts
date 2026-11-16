@@ -37,9 +37,8 @@ export interface DesktopBridge {
   closeWindow?(): void;
   /** Move this window by a pixel delta (single-tab drag = move window). */
   moveWindowBy?(dx: number, dy: number): void;
-  /** A JPEG of a region of this page (CSS px): a small one for overview
-   *  thumbnails, or the display resolution with `full`. */
-  captureRegion?(rect: { x: number; y: number; width: number; height: number }, options?: { full?: boolean }): Promise<string | null>;
+  /** A small JPEG of a region of this page (CSS px), for overview thumbnails. */
+  captureRegion?(rect: { x: number; y: number; width: number; height: number }): Promise<string | null>;
   /** Video of one pane of this page. Absent in shells older than this build. */
   paneRecording?: {
     arm(): Promise<boolean>;

@@ -1,17 +1,17 @@
 """External credential sources.
 
 A *source* discovers credentials that already exist elsewhere on the user's
-machine — environment variables, other CLIs' on-disk auth stores — and
-offers to adopt them. Every source answers two questions:
+machine — other CLIs' on-disk auth stores — and offers to adopt them.
+(A provider's key environment variables need no adopting: each set one is
+already a read-only credential row, ``store.env_rows``.) Every source answers two questions:
 
-  * ``try_import(account_root)`` — given a fresh/empty account, what
-    credentials can I import right now? Returns zero or more
+  * ``try_import(state_root)`` — what credentials can I import right now? Returns zero or more
     :class:`Credential` objects, pre-populated with enough ``source`` /
     ``metadata`` provenance that later rotation or revocation knows where
     they came from.
   * ``removal_steps(cred)`` — if the user says "forget this credential",
     which concrete things need cleaning up? Files we own get deleted
-    directly (``executable=True``); external CLI stores and env vars get
+    directly (``executable=True``); external CLI stores get
     surfaced as instructions the user must run themselves
     (``executable=False``). Without this contract a revoked credential
     silently re-hydrates on the next ``try_import`` — the exact bug
@@ -25,13 +25,11 @@ separable — you can preview what a source would import without committing.
 from __future__ import annotations
 
 from .codex_cli import CodexCliSource
-from .env import EnvApiKeySource
 from .gh_cli import GhCliSource
 from .qwen_cli import QwenCliSource
 
 __all__ = [
     "CodexCliSource",
-    "EnvApiKeySource",
     "GhCliSource",
     "QwenCliSource",
 ]

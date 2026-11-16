@@ -120,6 +120,35 @@
   border-radius: var(--glass-radius);
   box-shadow: var(--glass-shadow);
 }
+/* A turn that declared tasks lists them under the message; an entry jumps
+   to that task's block, so this card takes the pointer. */
+.msg-rail-card.has-tasks { pointer-events: auto; }
+.msg-rail-card-tasks { display: flex; flex-direction: column; margin: 6px -8px 0; }
+.msg-rail-card-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ui-button-h-sm);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.msg-rail-card-task:hover,
+.msg-rail-card-task:focus-visible { background: var(--bg-selected); color: var(--text-bright); }
+.msg-rail-card-task-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.msg-rail-card-task small {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
 /* codex 风格：顶行 = 用户输入，亮色、单行截断（像标题）。 */
 .msg-rail-card-text {
   color: var(--text-bright);

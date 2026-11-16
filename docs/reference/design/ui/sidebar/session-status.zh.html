@@ -11,7 +11,26 @@
 <tr><th scope="row">4</th><td>置顶、空闲</td><td>置顶或空闲标记</td><td>无</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">ConvItem</code> 决定状态，<code translate="no">StatusMarker</code> 绘制。选中用 <code translate="no">aria-current="true"</code> 表示。CSS 在未选中行屏蔽运行和结束的伪元素。不涉及后端状态、任务执行、导航和对话持久化。</p>
+<p class="note"><code translate="no">ConvItem</code> 决定状态，<code translate="no">StatusMarker</code> 绘制。选中用 <code translate="no">aria-current="true"</code> 表示。CSS 在未选中行屏蔽运行和结束的伪元素。</p>
+
+<h2 id="what-counts-as-running">什么算运行中</h2>
+<p>对话里只要有一轮占着运行槽，这一行就是运行中，不管在哪条分支：选中分支的轮次（<code translate="no">runningTasks</code>），或别的分支上的轮次（<code translate="no">sessionsWithBranchRun</code>，数据在 <code translate="no">lib/chat/run/other-branch-runs.ts</code>）。输入框的停止键仍只管选中分支（<a href="../turn-lifecycle/turn-occupancy.zh.html">轮次占用</a>）。</p>
+<table class="stack">
+<thead><tr><th scope="col">轮次</th><th scope="col">这一行</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入的消息、重试、编辑</th><td>从准入到结束都是运行中</td></tr>
+<tr><th scope="row">Goal 的下一轮、它的验证、从控件启动的 Goal</th><td>整轮都是运行中，在 Goal 跟随的那条分支上；两轮之间没有东西在跑，这一行是空闲</td></tr>
+<tr><th scope="row">后台命令结束的通知</th><td>智能体回应它的时候是运行中</td></tr>
+<tr><th scope="row">未选中分支上的轮次</th><td>运行中；在那里等人回答或已失败的轮次不算</td></tr>
+<tr><th scope="row">帮手智能体、Job、常驻签到</th><td>不算这一行的状态，它们显示在活动面板里</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>为什么算任何分支</strong>：这一行代表对话，不代表某个窗格显示的分支。人选了别的分支以后 Goal 还在自己的分支上干活，这时一行空闲等于说什么都没在跑。</li>
+<li><strong>中途连上的客户端</strong>每次连接问一次 <code translate="no">get_running_sessions</code> 并应用回答（<code translate="no">lib/chat/run/running-sessions.ts</code>）；它还显示为运行中、回答里却没有的行，用 <code translate="no">get_run_state</code> 再问一次并清掉。</li>
+<li><strong>存下来的 <code translate="no">status</code></strong>：一轮结束时还有另一轮在跑，对话的状态保持 <code translate="no">running</code>（<code translate="no">mark_session_finished</code>）；这一行的运行标记不读它。</li>
+<li><strong>测试</strong>：<code translate="no">apps/web/tests/chat/run/running-sessions.test.mjs</code>、<code translate="no">tests/component/runtime/test_owner_turn_run_slot.py</code>。</li>
+</ul>
 
 <details>
 <summary>安装和验收</summary>

@@ -117,9 +117,11 @@ class ExecutionEventEffects:
 
             hooks.close_ownerless_run(self.store, execution)
         self._project_row_status(execution)
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._settle_session_status(execution)
         if notify_clients:
             from openprogram.runtime.events import emit_ws_frame
-            from openprogram.runtime.execution.public import execution_update_frame
+            from openprogram.runtime.execution.projections.public import execution_update_frame
 
             payload = self._payload(event, execution)
             emit_ws_frame(execution_update_frame(
@@ -159,7 +161,7 @@ class ExecutionEventEffects:
         return running
 
     def _payload(self, event: ExecutionEvent, execution: ExecutionRecord) -> dict[str, Any]:
-        from .foreground import foreground_task_snapshot
+        from .projections.foreground import foreground_task_snapshot
 
         source = self.store.get_execution_input(execution.execution_id)
         entrypoint = source.entrypoint if source is not None else None
@@ -313,6 +315,21 @@ class ExecutionEventEffects:
             if (db.get_session(execution.session_id) or {}).get("status") != "idle":
                 db.update_session(execution.session_id, status="idle")
 
+    def _settle_session_status(self, execution: ExecutionRecord) -> None:
+        """A chat turn has ended: a conversation it left ``running`` behind
+        another turn is ``done`` once no such turn is left (``settle_session_status``)."""
+        if execution.parent_execution_id:
+            return
+        current = self.store.get_execution(execution.execution_id)
+        if current is None or current.status not in TERMINAL_EXECUTION_STATUSES:
+            return
+        if (self.store.get_agent_turn_input(execution.execution_id) or {}).get("kind") != "chat":
+            return
+        from openprogram.runtime.context.session_db import default_db
+        from .projections.foreground import settle_session_status
+
+        settle_session_status(default_db(), self.store, execution.session_id)
+
     def _project_row_status(self, execution: ExecutionRecord) -> None:
         """Keep the anchor row's status with the run: settled at its end,
         paused while it waits, and running again when it resumes."""
@@ -437,7 +454,7 @@ class ExecutionEventEffects:
     def _journal(self, execution: ExecutionRecord, assistant_id: str):
         """The turn's journal, if it recorded a model decision for this reply."""
         from .agent_journal import latest_pointer, load_journal
-        from .checkpoints import ExecutionCheckpointStore
+        from .recovery.checkpoints import ExecutionCheckpointStore
 
         if not execution.session_id:
             return None

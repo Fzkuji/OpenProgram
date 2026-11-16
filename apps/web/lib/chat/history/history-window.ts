@@ -23,20 +23,20 @@ export class HistoryWindow {
   /** Place a page of turns by its position. A page that neither touches nor
    *  overlaps what is held is dropped, and this returns false. A page reply
    *  never moves the window's revision. */
-  addTurns(turns: WireTurn[], window: TurnWindow, direction: HistoryDirection, anchor?: string): boolean {
+  addTurns(turns: WireTurn[], page: TurnWindow, direction: HistoryDirection, anchor?: string): boolean {
     const held = this.history;
     const replaces = direction === 'around' || direction === 'latest' || !held;
-    if (!replaces && (window.end < (held.start ?? 0) || window.start > (held.end ?? 0))) return false;
+    if (!replaces && (page.end < (held.start ?? 0) || page.start > (held.end ?? 0))) return false;
     if (replaces) this.chunks = [];
     const taken = new Set(this.chunks.flatMap(p => p.turnIds ?? []));
     const fresh = turns.map((turn, at) => ({ turn, at })).filter(({ turn }) => !taken.has(turn.id));
     if (fresh.length) {
-      const start = window.start + fresh[0].at, end = window.start + fresh[fresh.length - 1].at + 1;
+      const start = page.start + fresh[0].at, end = page.start + fresh[fresh.length - 1].at + 1;
       const history: HistoryPage = {
-        ...window, start, end,
-        revision: replaces ? window.revision : held?.revision,
+        ...page, start, end,
+        revision: replaces ? page.revision : held?.revision,
         before: start > 0 ? fresh[0].turn.id : null,
-        after: end < window.total ? fresh[fresh.length - 1].turn.id : null,
+        after: end < page.total ? fresh[fresh.length - 1].turn.id : null,
       };
       const rows = fresh.flatMap(({ turn }) => turn.rows);
       this.chunks.push({

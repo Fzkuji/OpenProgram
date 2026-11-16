@@ -18,9 +18,9 @@ import pytest
 
 DESKTOP = Path(__file__).resolve().parents[4] / "apps" / "desktop"
 SCRIPTS = (
-    "check-webtab-navigation.js",
-    "check-tab-transfer-store.js",
-    "check-window-state.js",
+    "web-views/check-webtab-navigation.js",
+    "web-views/check-tab-transfer-store.js",
+    "windows/check-window-state.js",
 )
 
 

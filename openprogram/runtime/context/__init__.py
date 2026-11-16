@@ -19,7 +19,7 @@ Public API:
 from __future__ import annotations
 
 from openprogram.runtime.context.model import Context, DELETE
-from openprogram.runtime.context.workflow_blocks import call_path, workflow_source
+from openprogram.runtime.context.prompt_assembly.workflow_blocks import call_path, workflow_source
 
 from openprogram.runtime.context.engine import (
     CONTEXT_ENGINE_REGISTRY,
@@ -30,7 +30,7 @@ from openprogram.runtime.context.engine import (
     register_engine,
     resolve_engine_for,
 )
-from openprogram.runtime.context.tokens import (
+from openprogram.runtime.context.token_accounting.tokens import (
     estimate_history_tokens,
     estimate_message_tokens,
     real_context_window,
@@ -41,7 +41,7 @@ from openprogram.runtime.context.types import (
     TurnPrep,
     UsageState,
 )
-from openprogram.runtime.context.usage import default_tracker as usage_tracker
+from openprogram.runtime.context.token_accounting.usage import default_tracker as usage_tracker
 
 
 __all__ = [

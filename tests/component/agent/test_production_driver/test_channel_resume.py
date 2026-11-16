@@ -90,7 +90,7 @@ def _activate_continuation(store, control, execution_id, request, monkeypatch):
     def reached(*args, **kwargs):
         raise _ReachedRuntime()
     monkeypatch.setattr(loop_runner, "resolve_agent_runtime", reached)
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.runtime_location_for",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.runtime_location_for",
                         lambda *a, **kw: {"workdir": None})
 
     execution = store.get_execution(execution_id)

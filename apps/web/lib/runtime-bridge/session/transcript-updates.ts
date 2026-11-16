@@ -70,19 +70,19 @@ export function applyTranscriptUpdate(frame: UpdateFrame): void {
   if (frame.previous !== cursor) { readAtAnchor(view); return; }
   flushTextFrames();
   const store = useSessionStore.getState();
-  const window = isSubAgent ? undefined : historyWindowOf(view);
+  const historyWindow = isSubAgent ? undefined : historyWindowOf(view);
   const atLatest = isSubAgent ? true : !page?.after;
   const rows = selectServerRows(view)(store);
   const result = applyTranscriptChanges(
     { order: store.messageOrder[view] ?? [], rows, overlays: store.overlaysByView[view], heldFrames: store.heldFramesByView[view] },
     frame.changes,
-    { holdsTurn: viewHoldsTurn(window, rows), atLatest, windowListsTurn: window ? (turnId) => window.holdsTurn(turnId) : undefined },
+    { holdsTurn: viewHoldsTurn(historyWindow, rows), atLatest, windowListsTurn: historyWindow ? (turnId) => historyWindow.holdsTurn(turnId) : undefined },
   );
   store.writeView(view, result);
   if (isSubAgent) advanceSubAgentCursor(view, frame.revision);
   else if (page) {
-    window?.noteRows(result.addedRows);
-    window?.noteTurns(result.addedTurns, result.turnsPastWindow);
+    historyWindow?.noteRows(result.addedRows);
+    historyWindow?.noteTurns(result.addedTurns, result.turnsPastWindow);
     updateSessionHistory(view, page.generation, { revision: frame.revision, total: (page.total ?? 0) + result.addedTurns.length + result.turnsPastWindow });
   }
   for (const effect of result.effects) runEffect(view, effect);

@@ -71,7 +71,7 @@ _load_program_modules()
 
 
 # The safe default set: file ops + shell + search + multi-file patch +
-# transactional memory + the todo planning board. ``write_stdin`` reaches the
+# transactional memory + the task tools (a task and its steps). ``write_stdin`` reaches the
 # command sessions ``bash`` leaves running.
 DEFAULT_TOOLS: list[str] = [
     "bash",
@@ -96,9 +96,9 @@ DEFAULT_TOOLS: list[str] = [
     # Speaking in a chat channel on the agent's own initiative: the only
     # voice of an ambient room event, hidden outside channel sources.
     "chat_send",
-    "todo_create",
-    "todo_update",
-    "todo_list",
+    # A task and its steps; ``task_list`` (read-only) is loaded on demand.
+    "task_start",
+    "task_step",
     # What the Agent still owes the user, across its conversations.
     "open_work",
     "create_goal",
@@ -161,6 +161,11 @@ DEFERRED_DEFAULT_TOOLS: set = {
     "skill",
     # Saving a routine is rare; its catalog line says when to load it.
     "save_routine",
+    # A step moves on with a real call's ``task_progress`` (todo/progress.py);
+    # resident, the model sent it alone in half the measured replies.
+    # ``task_start`` stays resident: deferred, the model loaded it and still
+    # called it alone, two round trips instead of one.
+    "task_step",
 }
 
 # 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块

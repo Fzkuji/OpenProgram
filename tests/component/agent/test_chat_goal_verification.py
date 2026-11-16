@@ -35,8 +35,8 @@ def test_independent_verification_uses_real_read_and_persisted_result(runtime, m
     from openprogram.models.providers.types import AgentTool
     from openprogram.models.providers.types import Model
     from openprogram.programs.tools.planning.todo import shared
-    from openprogram.programs.tools.planning.todo.todo_create.todo_create import _todo_create_impl
-    from openprogram.programs.tools.planning.todo.todo_update.todo_update import _todo_update_impl
+    from openprogram.programs.tools.planning.todo.task_start.task_start import _task_start_impl
+    from openprogram.programs.tools.planning.todo.task_step.task_step import _task_step_impl
     goals, chat, store = runtime
     artifact = tmp_path / "result.txt"
     artifact.write_text("Task result: verified output")
@@ -69,7 +69,7 @@ def test_independent_verification_uses_real_read_and_persisted_result(runtime, m
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **kw: [read, fake, write])
     monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: Model(id="fake", name="fake", provider="openai", api="openai-completions", base_url="https://example.invalid"))
-    monkeypatch.setattr("openprogram.runtime.context.components.build_system_prompt", lambda *a, **kw: "System")
+    monkeypatch.setattr("openprogram.runtime.context.prompt_assembly.components.build_system_prompt", lambda *a, **kw: "System")
     monkeypatch.setattr(shared, "todos_path", lambda sid: tmp_path / "todos.json")
     monkeypatch.setattr(shared, "current_session_id", lambda: "goal-chat")
 
@@ -88,15 +88,15 @@ def test_independent_verification_uses_real_read_and_persisted_result(runtime, m
             if len(calls) == 1:
                 persist(request, "I claim the task is complete.")
                 if automatic:
-                    assert "created" in _todo_create_impl("Inspect output")
-                    assert "updated" in _todo_update_impl("1", status="completed")
+                    assert "started" in _task_start_impl("Inspect", steps=["Inspect output"]).content[0].text
+                    assert "finished" in _task_step_impl(outcome="inspected").content[0].text
                 else:
                     chat.update(request.session_id, "complete", expected=chat.current_identity())
                 assert goals.load_goal(request.session_id)["status"] == "active"
             elif request.goal_verification:
                 assert get_current_execution_id() != first.execution_id
                 if outcome == "restart":
-                    from openprogram.runtime.execution.effects import EffectClassification, EffectStatus, EffectStore
+                    from openprogram.runtime.execution.recovery.effects import EffectClassification, EffectStatus, EffectStore
                     current = store.get_execution(get_current_execution_id())
                     effects = EffectStore(store)
                     effect = effects.register(effect_id="interrupted-read", execution_id=current.execution_id,
@@ -180,7 +180,8 @@ def test_independent_verification_uses_real_read_and_persisted_result(runtime, m
                           config_snapshot_ref="session:goal-chat")
     asyncio.run(adapter.activate(first))
     if outcome == "restart":
-        from openprogram.runtime.execution import default_control_service, restart
+        from openprogram.runtime.execution import default_control_service
+        from openprogram.runtime.execution.recovery import restart
         assert recovery_ready.wait(30)
         restart.reconcile(SimpleNamespace(_execution_store=store, _execution_control=default_control_service()))
     assert finished.wait(30), goals.load_goal("goal-chat")

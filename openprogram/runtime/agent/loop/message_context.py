@@ -64,11 +64,11 @@ def _inject_memory_prefetch(llm_messages: list, block: str, anchor: str | None =
     would stop matching. Returns True when a message was replaced.
 
     Later turns render the block from the message's node
-    (``context.render.with_turn_block``), with the same bytes; a message that
+    (``context.session_dag.render.with_turn_block``), with the same bytes; a message that
     already starts with it (a resumed turn rendered from its node) is left
     as it is.
     """
-    from openprogram.runtime.context.render import with_turn_block
+    from openprogram.runtime.context.session_dag.render import with_turn_block
 
     prefix = with_turn_block("", block)
     if anchor and not any(_field(msg, "role") == "user" and _latest_user_text([msg]) == anchor

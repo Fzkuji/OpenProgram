@@ -88,7 +88,7 @@
 <thead><tr><th scope="col">Scenario</th><th scope="col">Required outcome</th><th scope="col">Evidence</th></tr></thead>
 <tbody>
 <tr><th scope="row">Open or reconnect (<code translate="no">useWS</code>)</th><td>Visible history requested before saved execution recovery. No replay-driven transcript storm. At most one recovery in flight; duplicates coalesce</td><td>Controlled transport tests; native cold and warm refresh timing</td></tr>
-<tr><th scope="row">Switch A → B → A</th><td>Draft and reading position survive. Late A responses cannot replace B. Cached content stays during refresh</td><td>Rapid switching and delayed responses</td></tr>
+<tr><th scope="row">Switch A → B → A</th><td>The draft survives and A opens at its latest. Late A responses cannot replace B. Cached content stays during refresh</td><td>Rapid switching and delayed responses</td></tr>
 <tr><th scope="row">Long history, paging, jump</th><td>Bounded reads and DOM, stable prepend anchor, stale cursor recovery, earliest message reachable, explicit retry</td><td>Large transcript, oldest, latest and search targets, interrupted paging</td></tr>
 <tr><th scope="row">Streaming text and tools</th><td>Frame-batched; reading history is not interrupted by auto-follow. Expanded output loads on demand; completion flushes final deltas</td><td>Burst and delayed deltas, output expansion, long-content render budget</td></tr>
 <tr><th scope="row">Send, queue, steer, stop</th><td>Input retained until acknowledgement; no duplicate on reconnect; explicit queued, sending or failed state; cancellation cannot revive the old turn</td><td>Disconnect before and after ACK, active queue, retry, cancellation</td></tr>

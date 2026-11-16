@@ -69,7 +69,7 @@ def test_planned_repair_preserves_contract_in_jobs_and_child(diagnosis_environme
 
 
 def test_iteration_approval_never_hides_envelope_after_a_long_goal():
-    from openprogram.runtime.permissions.approval import _approval_detail
+    from openprogram.runtime.permissions.approvals.approval import _approval_detail
     args = dict(goal="goal " * 1000, iteration_policy=dict(mode="bounded_auto", max_attempts=3,
                 deadline=12345, allowed_paths=["feature.txt"], required_tests=["python -m pytest"]))
     for action in ("prepare", "retry"):
@@ -122,7 +122,7 @@ def test_bounded_repair_submits_new_child_with_original_budget(diagnosis_environ
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c 'assert True'"]}], indirect=True)
 @native_sandbox
 def test_the_retry_approval_card_shows_the_candidate(diagnosis_environment, monkeypatch):
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.programs.tools.system import self_update as tools
     from tests.component.programs.tools.test_self_update_tools import _request
     store, _, _, update_id = diagnosis_environment
@@ -149,7 +149,7 @@ def test_the_retry_approval_card_shows_the_candidate(diagnosis_environment, monk
 def test_the_owner_answer_on_the_retry_card_reaches_the_retry(diagnosis_environment, monkeypatch, tmp_path, answer):
     import time
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.runtime.execution.run_control import (
         reset_current_execution_id,
         set_current_execution_id,
@@ -221,7 +221,7 @@ def test_the_owner_answer_on_the_retry_card_reaches_the_retry(diagnosis_environm
 @pytest.mark.parametrize("decision", ["allow", "deny", "dirty", "log", "log_link_race"])
 @native_sandbox
 def test_a_retry_in_an_asking_mode_goes_through_the_card(diagnosis_environment, monkeypatch, decision):
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.programs.tools.system import self_update as tools
     from openprogram.operations.self_update.control.handoff import release_prepared_update
     from tests.component.programs.tools.test_self_update_tools import _request
@@ -516,7 +516,7 @@ def test_submitted_child_uses_native_transaction_and_new_verifier(
     from openprogram.operations.self_update.verification import system_probe
     from openprogram.interfaces.server.routes.settings import misc
     from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-    from tests.component.providers.adapters import test_web_owner_auth_listener as listener
+    from tests.component.webui.owner_auth import test_web_owner_auth_listener as listener
 
     store, runner, _, parent_id = diagnosis_environment
     monkeypatch.setattr("openprogram.operations.self_update.delivery.launcher.launch_supervisor", lambda *a, **kw: None)
@@ -877,7 +877,7 @@ def test_first_startup_resumes_durable_repair_result_without_retesting(diagnosis
     from openprogram.operations.self_update.repair import source_repair
     from openprogram.operations.self_update.repair import next_candidate
     from openprogram.operations.self_update.control.handoff import release_prepared_update
-    from openprogram.runtime.permissions import approval as _approval
+    from openprogram.runtime.permissions.approvals import approval as _approval
     from openprogram.programs.tools.system import self_update as tools
     store, runner, _, uid = diagnosis_environment
     root = store.load(uid)

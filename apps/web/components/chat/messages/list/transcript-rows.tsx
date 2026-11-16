@@ -6,19 +6,18 @@
  * from its caller and hands them to every row (TranscriptScopeContext), so
  * no row looks at the focused conversation. Around the rows it places what
  * hangs off them: covered originals folded under their compaction card,
- * task lists, goal records, decision receipts and rewind marks.
+ * goal records, decision receipts and rewind marks.
  */
 import { useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { selectViewRows, useSessionStore, type ChatMsg } from "@/lib/session-store";
-import { carryUnfinishedPlan, plansByRow } from "@/lib/chat/transcript/todo-plan";
+import { rowRenderKeys } from "@/lib/chat/transcript/row-render-key";
 import { placeMarks } from "@/lib/chat/rewind/rewind-logic";
 import { useRewindAllowed, useRewindDisabled } from "@/lib/chat/rewind/use-rewind-disabled";
 
 import { GoalDetails, useSessionGoal } from "../../badges/goal-chip";
 import { RewindMarkers, useRewindMarks } from "../../rewind/rewind-marker";
 import { DecisionOutputs, useDecisionAnchors } from "../runtime/decision-output";
-import { TodoPlans, useSessionPlans } from "../cards/todo-plan-card";
 import { originalsOpen, originalsSubs } from "./rows/system-event-rows";
 import { MessageRow, PlainRow, RecyclableRow } from "./rows/message-rows";
 import { BotViewContext, TranscriptScopeContext, type TranscriptScope } from "./transcript-view-scope";
@@ -97,12 +96,8 @@ export function TranscriptRows({
   const rewindAllowed = useRewindAllowed(sessionId);
   const rewindMarks = placeMarks(rewindAllowed && !embedded ? allRewindMarks : [], ids, rewindDisabled !== null);
   const decisionAnchors = useDecisionAnchors(embedded ? null : sessionId);
-  // Each task list sits under the reply of the turn that last changed it.
-  // A sub-agent's own lists sit under its replies (the row draws them).
-  const sessionPlans = useSessionPlans(embedded ? null : sessionId);
-  const plansAt = plansByRow(sessionPlans, ids, heldRows);
-  carryUnfinishedPlan(plansAt, sessionPlans, ids, heldRows);
-  const lastUserRow = ids.findLastIndex((id) => heldRows[id]?.role === "user");
+  // A sent message keeps its key when the server renames its row.
+  const keyOf = rowRenderKeys(ids, heldRows);
 
   const nodes: ReactNode[] = [];
   const addGoalRecords = (anchors: (string | null)[]) => {
@@ -111,18 +106,6 @@ export function TranscriptRows({
       if (anchors.includes(record.anchor_id)) nodes.push(
         <div key={`goal-end-${record.goal.goal_id}`} data-only-full-view="">
           <GoalDetails sessionId={sessionId} goal={record.goal} historical />
-        </div>,
-      );
-    }
-  };
-  const addTodoPlans = (anchors: string[]) => {
-    if (botView) return;
-    for (const anchor of anchors) {
-      const plans = plansAt.get(anchor);
-      if (plans) nodes.push(
-        <div key={`plans-${anchor}`} data-only-full-view="">
-          <TodoPlans sessionId={sessionId} rowId={anchor} plans={plans}
-            latest={ids.indexOf(anchor) > lastUserRow} />
         </div>,
       );
     }
@@ -164,27 +147,25 @@ export function TranscriptRows({
           </div>
         </div>,
       );
-      addTodoPlans(run);
       addGoalRecords(run);
       addDecisionReceipts(run);
       run.forEach(addRewindMarks);
       continue;
     }
-    if (embedded) nodes.push(<MessageRow key={id} id={id} />);
+    if (embedded) nodes.push(<MessageRow key={keyOf(id)} id={id} />);
     else nodes.push(
       liveRows && chatKey ? (
         <RecyclableRow
-          key={id}
+          key={keyOf(id)}
           id={id}
           chatKey={chatKey}
           live={liveRows.has(id)}
           onMeasured={onMeasured ?? noop}
         />
       ) : (
-        <PlainRow key={id} id={id} />
+        <PlainRow key={keyOf(id)} id={id} />
       ),
     );
-    addTodoPlans([id]);
     addGoalRecords([id]);
     addDecisionReceipts([id]);
     addRewindMarks(id);

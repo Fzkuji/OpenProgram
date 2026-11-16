@@ -184,11 +184,11 @@ export function ModelList({
                   </td>
                   <td>
                     <HoverTip label={isDefault ? text("Default model", "默认模型") : text("Make default", "设为默认")}>
-                      <button type="button" className={cn(styles.star, isDefault && styles.on)} aria-pressed={isDefault}
+                      <Button variant="ghost" size="icon-xs" className={cn("text-text-muted", isDefault && "text-(--accent-fill) [&_svg]:fill-current")} aria-pressed={isDefault}
                         aria-label={isDefault ? text(`${m.id} is the default`, `${m.id} 是默认模型`) : text(`Make ${m.id} the default`, `将 ${m.id} 设为默认`)}
                         onClick={() => { if (!isDefault) void makeDefault(m); }}>
-                        <Star size={14} />
-                      </button>
+                        <Star />
+                      </Button>
                     </HoverTip>
                   </td>
                 </tr>

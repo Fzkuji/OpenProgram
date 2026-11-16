@@ -14,7 +14,7 @@ import types
 
 import pytest
 
-from openprogram.interfaces.cli import print_stop, print_turn, worker_turn
+from openprogram.interfaces.cli.print_mode import print_stop, print_turn, worker_turn
 
 
 @pytest.fixture(autouse=True)
@@ -199,7 +199,7 @@ def test_ctrl_break_stops_a_child_with_143():
     child = subprocess.Popen(
         [sys.executable, "-c", (
             "import threading\n"
-            "from openprogram.interfaces.cli import print_stop\n"
+            "from openprogram.interfaces.cli.print_mode import print_stop\n"
             "finished = threading.Event()\n"
             "try:\n"
             "    with print_stop.interrupt_on_terminate():\n"

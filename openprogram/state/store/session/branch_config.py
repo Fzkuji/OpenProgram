@@ -317,6 +317,64 @@ def advance_branch(meta: dict, session_id: str, target: str | None, nodes: dict)
     meta.update(head_id=target, active_branch_id=active_id, branch_refs=refs)
 
 
+def behind_selected_tip(meta: dict, target: str | None, nodes: dict) -> bool:
+    """Whether ``target`` is a message the selected branch has already
+    carried on past: an ancestor of its tip, not the tip itself.
+
+    A turn records its reply as the head when it ends. When a later turn
+    was written under that reply meanwhile (a Goal continuation started
+    while a background-command notice was still being answered), the
+    branch is already further on, and that write changes nothing: the head
+    does not go back and no branch is made. Going back on purpose is a
+    checkout or a rewind, which do not ask this.
+    """
+    active = (meta.get("branch_refs") or {}).get(meta.get("active_branch_id")) or {}
+    tip = active.get("head_id") or meta.get("head_id")
+    if not target or not tip or tip == target:
+        return False
+    seen = {tip}
+    node = nodes.get(tip)
+    cursor = getattr(node, "predecessor", None) if node is not None else None
+    while cursor and cursor not in seen:
+        if cursor == target:
+            return True
+        seen.add(cursor)
+        node = nodes.get(cursor)
+        cursor = getattr(node, "predecessor", None) if node is not None else None
+    return False
+
+
+def branch_holding(meta: dict, node_id: str | None, nodes: dict, *,
+                   prefer: str | None = None) -> str | None:
+    """The recorded branch whose line holds message ``node_id``.
+
+    ``prefer`` when its line holds it; else the selected branch when its
+    line does; else the branch that ends exactly there. ``None`` when no
+    live record's line reaches the message.
+    """
+    if not node_id:
+        return None
+    refs = {key: ref for key, ref in (meta.get("branch_refs") or {}).items()
+            if isinstance(ref, dict) and ref.get("status") != "aborted"}
+
+    def holds(branch_id: str | None) -> bool:
+        cursor = (refs.get(branch_id) or {}).get("head_id") if branch_id else None
+        seen: set = set()
+        while cursor and cursor not in seen:
+            if cursor == node_id:
+                return True
+            seen.add(cursor)
+            node = nodes.get(cursor)
+            cursor = getattr(node, "predecessor", None) if node is not None else None
+        return False
+
+    for candidate in (prefer, meta.get("active_branch_id")):
+        if candidate in refs and holds(candidate):
+            return candidate
+    exact = [key for key, ref in refs.items() if ref.get("head_id") == node_id]
+    return exact[0] if len(exact) == 1 else None
+
+
 def follow_agent_resets(meta: dict, agent_settings) -> dict:
     """The branch settings to put back to "follow the Agent": ``{branch_id:
     [field, ...]}``, ``None`` naming the conversation's own (top-level)

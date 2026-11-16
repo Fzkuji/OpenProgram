@@ -1,4 +1,6 @@
-"""Tests for the ``openprogram providers`` command tree."""
+"""The ``openprogram providers`` command tree: ``keys <provider> ...``, ``login``
+(= ``keys add``), ``logout``, ``list``, ``status``, ``aliases``, ``doctor``.
+They change the same list the Providers page does (models/auth/manage.py)."""
 from __future__ import annotations
 
 import argparse
@@ -9,16 +11,10 @@ import sys
 import pytest
 
 from openprogram.interfaces.cli.commands.providers import build_parser, dispatch
+from openprogram.models.auth import selection
 from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
-from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-from openprogram.models.auth.account.accounts import AccountManager
-from openprogram.models.auth.account.accounts import set_account_manager_for_testing
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
-from openprogram.models.auth.types import (
-    Credential,
-    CredentialData,
-    CredentialPool,
-)
+from openprogram.models.auth.types import Credential, CredentialData
 
 
 @pytest.fixture
@@ -28,541 +24,260 @@ def isolated(tmp_path, monkeypatch, capsys):
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
     set_credential_provider_for_testing(CredentialProvider(store=store))
-    pm = AccountManager(root=tmp_path / "profiles")
-    set_account_manager_for_testing(pm)
-    # Redirect Codex path so imports don't touch the real file.
+    selection.forget_bindings()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "fake_codex"))
-    # Isolate ~/.openprogram so the config.json api_keys mirror inside
-    # _login_paste_api_key can never clobber the developer's real keys
-    # when a login test runs. get_state_dir() resolves off $HOME.
     fake_home = tmp_path / "home"
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(fake_home))
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(_model_listing, "fetch_models_remote", lambda _provider: {})
-    yield store, pm, tmp_path, capsys
+    monkeypatch.setattr("getpass.getpass", _no_prompt)
+    yield store, capsys
     set_store_for_testing(None)
     set_credential_provider_for_testing(None)
-    set_account_manager_for_testing(None)
+
+
+def _no_prompt(*_a, **_k):
+    raise AssertionError("must not prompt")
 
 
 def _parse(argv):
-    """Build the same argparse tree openprogram.interfaces.cli.application.main sets up, so
-    the test drives the exact code path real invocations take.
-
-    Shape: ``openprogram providers <verb> ...`` — `build_parser` wires
-    verbs directly on the `providers` subparser.
-    """
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command")
     p_providers = sub.add_parser("providers")
-    providers_sub = p_providers.add_subparsers(dest="providers_cmd")
-    build_parser(providers_sub)
+    build_parser(p_providers.add_subparsers(dest="providers_cmd"))
     return parser.parse_args(["providers", *argv])
 
 
-# ---- list ----------------------------------------------------------------
+def _run(argv, stdin: str | None = None, monkeypatch=None) -> int:
+    if stdin is not None:
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+    return dispatch(_parse(argv))
 
-def test_list_empty_suggests_next_steps(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["list"]))
+
+def _keys(store, provider="openai"):
+    return [(c.label, c.payload.auth_value) for c in store.get(provider).credentials]
+
+
+def _put(store, label, value, provider="openai"):
+    return store.add_credential(Credential(
+        provider_id=provider, kind="api_key", label=label,
+        payload=CredentialData(kind="api_key", auth_value=value))).id
+
+
+# ---- adding ---------------------------------------------------------------
+
+def test_add_reads_the_key_from_stdin(isolated, monkeypatch):
+    store, cap = isolated
+    rc = _run(["keys", "openai", "add", "--api-key-stdin", "--no-check", "--name", "Work"],
+              "sk-stdin-0000AAAA\n", monkeypatch)
     assert rc == 0
+    assert _keys(store) == [("Work", "sk-stdin-0000AAAA")]
     out = cap.readouterr().out
-    assert "No credential pools yet" in out
-    assert "providers discover" in out
-    assert "providers login" in out
+    assert "Added Work to openai." in out and "sk-stdin" not in out
+    assert store.get("openai").credentials[0].source == "cli"
 
 
-def test_list_json_emits_array(isolated):
-    store, _, _, cap = isolated
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="default",
-        credentials=[Credential(
-            provider_id="openai", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-deadbeef1234"),
-            source="cli_paste",
-        )],
-    ))
-    rc = dispatch(_parse(["list", "--json"]))
-    assert rc == 0
-    body = json.loads(cap.readouterr().out)
-    assert len(body) == 1
-    assert body[0]["provider_id"] == "openai"
-    assert body[0]["credentials"][0]["kind"] == "api_key"
-    # Preview is masked — must not contain the full secret.
-    assert "sk-deadbeef1234" not in body[0]["credentials"][0]["preview"]
-
-
-def test_list_respects_account_filter(isolated):
-    store, pm, _, cap = isolated
-    pm.create_account("work")
-    for prof, tag in [("default", "personal"), ("work", "work")]:
-        store.put_pool(CredentialPool(
-            provider_id="openai", account_id=prof,
-            credentials=[Credential(
-                provider_id="openai", account_id=prof, kind="api_key",
-                payload=CredentialData(kind="api_key", auth_value=f"sk-{tag}-11112222"),
-            )],
-        ))
-    dispatch(_parse(["list", "--account", "work", "--json"]))
-    body = json.loads(cap.readouterr().out)
-    assert len(body) == 1
-    assert body[0]["account_id"] == "work"
-
-
-# ---- discover ------------------------------------------------------------
-
-def test_discover_picks_up_env_var(isolated, monkeypatch):
-    _, _, _, cap = isolated
-    for v in ["GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN"]:
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-found-on-machine")
-    rc = dispatch(_parse(["discover", "--json"]))
-    assert rc == 0
-    body = json.loads(cap.readouterr().out)
-    env = [e for e in body if e.get("source_id") == "env:OPENAI_API_KEY"]
-    assert env, body
-    # Still masked in the discover output.
-    assert "sk-found-on-machine" not in env[0]["preview"]
-
-
-# ---- adopt ---------------------------------------------------------------
-
-def test_adopt_env_var(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-adopt-me-please-123")
-    rc = dispatch(_parse(["adopt", "env:OPENAI_API_KEY"]))
-    assert rc == 0
-    pool = store.find_pool("openai", "default")
-    assert pool is not None
-    assert len(pool.credentials) == 1
-    assert pool.credentials[0].payload.auth_value == "sk-adopt-me-please-123"
-
-
-def _clear_provider_env(monkeypatch):
-    """Wipe every env var discover() looks at so the dev machine's real
-    keys don't leak into the test. Keeps only what the test sets."""
-    from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
-    for v in set(PROVIDER_ENV_VARS.values()):
-        monkeypatch.delenv(v, raising=False)
-    for v in [
-        "GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN",
-        "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN",
-        "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
-    ]:
-        monkeypatch.delenv(v, raising=False)
-
-
-def test_adopt_all_batches_everything(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-batch-one-11112222")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk-batch-two-33334444")
-    rc = dispatch(_parse(["adopt", "--all"]))
-    assert rc == 0, cap.readouterr()
-    assert store.find_pool("openai", "default") is not None
-    assert store.find_pool("groq", "default") is not None
-
-
-def test_adopt_all_is_idempotent(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-idempotent-test-55")
-    dispatch(_parse(["adopt", "--all"]))
-    cap.readouterr()
-    # Run again — should silently skip.
-    rc = dispatch(_parse(["adopt", "--all"]))
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "Adopted 0" in out  # zero new, others skipped
-
-
-def test_adopt_bare_without_args_errors(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["adopt"]))
-    assert rc == 2
-    assert "--all" in cap.readouterr().err
-
-
-def test_adopt_unknown_source(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["adopt", "made_up_source"]))
-    assert rc == 1
-    err = cap.readouterr().err
-    assert "Unknown source" in err
-
-
-def test_adopt_routes_to_non_default_account(isolated, monkeypatch):
-    store, pm, _, cap = isolated
-    pm.create_account("work")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-adopt-to-work-1")
-    rc = dispatch(_parse(["adopt", "env:OPENAI_API_KEY", "--account", "work"]))
-    assert rc == 0
-    assert store.find_pool("openai", "work") is not None
-    assert store.find_pool("openai", "default") is None
-
-
-# ---- logout --------------------------------------------------------------
-
-def test_logout_removes_pool(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="default",
-        credentials=[Credential(
-            provider_id="openai", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-goodbye-12345"),
-        )],
-    ))
-    # --yes skips confirmation.
-    rc = dispatch(_parse(["logout", "openai", "--yes"]))
-    assert rc == 0
-    assert store.find_pool("openai", "default") is None
-    out = cap.readouterr().out
-    assert "Removed 1 credential" in out
-
-
-def test_logout_no_pool_is_noop(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["logout", "nothing-here", "--yes"]))
-    assert rc == 0
-    assert "nothing to remove" in cap.readouterr().out
-
-
-# ---- status --------------------------------------------------------------
-
-def test_status_reports_missing_credential(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["status", "openai"]))
-    assert rc == 1
-    out = cap.readouterr().out
-    assert "No credential configured" in out
-    assert "openprogram providers login openai" in out
-
-
-def test_status_reports_valid_credential(isolated):
-    store, _, _, cap = isolated
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="default",
-        credentials=[Credential(
-            provider_id="openai", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-working-key-555"),
-            source="cli_paste",
-        )],
-    ))
-    rc = dispatch(_parse(["status", "openai"]))
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "Kind:     api_key" in out
-    # Status line's preview must still be masked.
-    assert "sk-working-key-555" not in out
-
-
-# ---- login (api_key with mocked getpass) ---------------------------------
-
-def test_login_paste_api_key(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-pasted-from-cli")
-    # --method skips the interactive method selection.
-    rc = dispatch(_parse(["login", "openai", "--method", "api_key"]))
-    assert rc == 0
-    pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.auth_value == "sk-pasted-from-cli"
-
-
-def test_login_paste_empty_fails(isolated, monkeypatch):
-    _, _, _, cap = isolated
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "   ")
-    rc = dispatch(_parse(["login", "openai", "--method", "api_key"]))
-    assert rc == 1
-    assert "empty API key" in cap.readouterr().err
-
-
-def test_login_unknown_method(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["login", "openai", "--method", "telepathy"]))
-    assert rc == 1
-    assert "not available" in cap.readouterr().err
-
-
-# ---- login (non-interactive: --api-key / --api-key-stdin / piped stdin) ---
-# These are the paths agents and scripts rely on: no tty, no getpass prompt,
-# no method picker eating the piped key. getpass is patched to fail so a
-# regression that reintroduces the interactive prompt is caught loudly.
-
-def _no_getpass(monkeypatch):
-    monkeypatch.setattr(
-        "getpass.getpass",
-        lambda prompt="": pytest.fail("getpass called in a non-interactive path"),
-    )
-
-
-def test_login_api_key_flag_is_non_interactive(isolated, monkeypatch):
-    store, _, _, _ = isolated
-    _no_getpass(monkeypatch)
-    rc = dispatch(_parse(["login", "openai", "--api-key", "sk-flag-AAA"]))
-    assert rc == 0
-    pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.auth_value == "sk-flag-AAA"
-
-
-def test_login_api_key_stdin(isolated, monkeypatch):
-    store, _, _, _ = isolated
-    _no_getpass(monkeypatch)
-    monkeypatch.setattr("sys.stdin", io.StringIO("sk-stdin-BBB\n"))
-    rc = dispatch(_parse(["login", "openai", "--api-key-stdin"]))
-    assert rc == 0
-    pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.auth_value == "sk-stdin-BBB"
-
-
-def test_login_bare_pipe_reads_stdin_when_no_tty(isolated, monkeypatch):
-    # No flags, no --method: a piped (non-tty) stdin is read as the key
-    # rather than blocking on the picker / getpass. io.StringIO.isatty()
-    # is already False.
-    store, _, _, _ = isolated
-    _no_getpass(monkeypatch)
-    monkeypatch.setattr("sys.stdin", io.StringIO("sk-piped-CCC\n"))
-    rc = dispatch(_parse(["login", "openai"]))
-    assert rc == 0
-    pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.auth_value == "sk-piped-CCC"
-
-
-def test_login_empty_stdin_fails_clearly(isolated, monkeypatch):
-    _, _, _, cap = isolated
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    rc = dispatch(_parse(["login", "openai", "--api-key-stdin"]))
-    assert rc == 1
-    assert "stdin was empty" in cap.readouterr().err
-
-
-def test_login_oauth_only_headless_fails_clean_not_hang(isolated, monkeypatch):
-    # openai-codex is OAuth-only; with no tty there's nothing to do
-    # headlessly — it must error, not block on /dev/tty.
-    _, _, _, cap = isolated
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    rc = dispatch(_parse(["login", "openai-codex"]))
-    assert rc == 1
-    assert "interactive terminal" in cap.readouterr().err
-
-
-# ---- account -------------------------------------------------------------
-
-def test_account_list(isolated):
-    _, pm, _, cap = isolated
-    pm.create_account("work")
-    rc = dispatch(_parse(["accounts", "list"]))
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "work" in out
-    assert DEFAULT_ACCOUNT_NAME in out
-
-
-def test_account_create_and_delete(isolated):
-    _, _, _, cap = isolated
-    assert dispatch(_parse(["accounts", "create", "scratch"])) == 0
-    assert "Created account scratch" in cap.readouterr().out
-    assert dispatch(_parse(["accounts", "delete", "scratch", "--yes"])) == 0
-    assert "Deleted account scratch" in cap.readouterr().out
-
-
-def test_account_create_duplicate(isolated):
-    _, _, _, cap = isolated
-    dispatch(_parse(["accounts", "create", "dup"]))
-    cap.readouterr()
-    rc = dispatch(_parse(["accounts", "create", "dup"]))
-    assert rc == 1
-
-
-# ---- codex login (browser PKCE only) ------------------------------------
-
-def test_login_codex_only_offers_pkce(isolated):
-    """Codex has a real OAuth flow, so the CLI deliberately hides the
-    api_key and import_from_cli methods. Matches OpenClaw's setup UX."""
-    from openprogram.interfaces.cli.commands.providers.login import _available_login_methods
-    methods = _available_login_methods("openai-codex")
-    assert [m[0] for m in methods] == ["pkce_oauth"]
-
-
-def test_login_codex_rejects_legacy_methods(isolated):
-    """Asking for --method api_key or --method import_from_cli on
-    openai-codex should fail loudly. The ChatGPT Responses backend
-    can't use an api_key, and import_from_cli was a workaround we no
-    longer want to expose."""
-    _, _, _, cap = isolated
-    for bad in ("api_key", "import_from_cli"):
-        rc = dispatch(_parse(["login", "openai-codex", "--method", bad]))
-        assert rc == 1, f"expected failure for --method {bad}"
-
-
-# ---- aliases -------------------------------------------------------------
-
-def test_aliases_list_shows_canonical(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["aliases"]))
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "codex" in out
-    assert "openai-codex" in out
-    assert "claude" in out and "anthropic" in out
-
-
-def test_aliases_json_is_parseable(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["aliases", "--json"]))
-    assert rc == 0
-    body = json.loads(cap.readouterr().out)
-    assert body["codex"] == "openai-codex"
-
-
-def test_login_resolves_alias(isolated, monkeypatch):
-    # anthropic now offers only pkce_oauth + setup_token. setup_token reads a
-    # secret prompt and stores into the anthropic pool, so it's the载体 here
-    # for verifying the `claude` → `anthropic` alias resolution.
-    store, _, _, cap = isolated
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-api-from-alias")
-    # Use an alias rather than the canonical id.
-    rc = dispatch(_parse(["login", "claude", "--method", "api_key"]))
-    assert rc == 0
-    # The pool must be stored under the canonical id, not the alias — on disk
-    # under anthropic/, never a literal claude/ dir. (The store is now itself
-    # alias-aware, so find_pool("claude") resolves to the same anthropic pool;
-    # assert the on-disk canonical location, which is the real guarantee.)
+def test_login_is_keys_add_and_resolves_an_alias(isolated, monkeypatch):
+    store, _ = isolated
+    assert _run(["login", "claude", "--api-key-stdin", "--no-check"], "sk-ant-api-key-0001", monkeypatch) == 0
+    assert _keys(store, "anthropic") == [("", "sk-ant-api-key-0001")]
     assert not (store.base_dir() / "claude").exists()
-    pool = store.find_pool("anthropic", "default")
-    assert pool is not None
-    assert pool.provider_id == "anthropic"
-    assert pool.credentials[0].payload.auth_value == "sk-ant-api-from-alias"
 
 
-def test_status_resolves_alias(isolated):
-    store, _, _, cap = isolated
-    store.put_pool(CredentialPool(
-        provider_id="anthropic", account_id="default",
-        credentials=[Credential(
-            provider_id="anthropic", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-ant-abc12345678"),
-            source="cli_paste",
-        )],
-    ))
-    # `claude` → `anthropic`
-    rc = dispatch(_parse(["status", "claude"]))
-    assert rc == 0
+def test_a_piped_key_is_read_without_flags(isolated, monkeypatch):
+    store, _ = isolated
+    assert _run(["keys", "openai", "add", "--no-check"], "sk-piped-0000CCCC\n", monkeypatch) == 0
+    assert _keys(store) == [("", "sk-piped-0000CCCC")]
+
+
+def test_an_empty_key_saves_nothing(isolated, monkeypatch):
+    store, cap = isolated
+    assert _run(["keys", "openai", "add", "--api-key-stdin"], "", monkeypatch) == 1
+    assert "No key given" in cap.readouterr().err
+    assert _keys(store) == []
+
+
+def test_a_sign_in_only_provider_needs_a_terminal(isolated, monkeypatch):
+    _, cap = isolated
+    assert _run(["keys", "openai-codex", "add"], "", monkeypatch) == 1
+    assert "needs a terminal" in cap.readouterr().err
+
+
+def test_a_way_the_provider_does_not_offer_is_refused(isolated, monkeypatch):
+    _, cap = isolated
+    for bad in ("api_key", "import_from_cli"):
+        assert _run(["keys", "openai-codex", "add", "--method", bad], "", monkeypatch) == 1
+    assert "no way to connect" in cap.readouterr().err
+
+
+def test_a_rejected_key_is_not_kept(isolated, monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.models.listing import credentials as cr
+    store, cap = isolated
+    monkeypatch.setattr(cr, "validate_credential", lambda *a, **k: SimpleNamespace(
+        status=cr.INVALID_CREDENTIAL, ok=False, kind="openai_bearer", via="GET /models", detail="no",
+        to_dict=lambda: {"status": cr.INVALID_CREDENTIAL}))
+    assert _run(["keys", "openai", "add", "--api-key", "sk-bad-0000DDDD"]) == 1
+    assert "Not saved" in cap.readouterr().err
+    assert _keys(store) == []
+
+
+# ---- the list -------------------------------------------------------------
+
+def test_list_marks_the_one_in_use(isolated):
+    store, cap = isolated
+    _put(store, "Work", "sk-work-00001111")
+    _put(store, "", "sk-spare-0002222")
+    assert _run(["keys", "openai", "list"]) == 0
     out = cap.readouterr().out
-    assert "anthropic" in out
+    assert "openai — in-order" in out
+    assert " * 1. Work" in out and "   2. Key ····2222" in out
+    assert "sk-work" not in out
 
 
-# ---- doctor --------------------------------------------------------------
-
-def test_doctor_empty_store_warns_no_pools(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["doctor"]))
-    # No ERRORs, just WARN → exit 0.
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "no_pools" in out
+def test_list_json_is_the_web_shape(isolated):
+    from openprogram.models.auth.manage import provider_credentials
+    store, cap = isolated
+    _put(store, "Work", "sk-work-00001111")
+    assert _run(["keys", "openai", "list", "--json"]) == 0
+    assert json.loads(cap.readouterr().out) == json.loads(json.dumps(provider_credentials("openai")))
 
 
-def test_doctor_json_has_findings_list(isolated):
-    _, _, _, cap = isolated
-    rc = dispatch(_parse(["doctor", "--json"]))
-    assert rc == 0
+def test_every_provider_list_and_empty_hint(isolated):
+    store, cap = isolated
+    assert _run(["list"]) == 0
+    assert "providers keys <provider> add" in cap.readouterr().out
+    _put(store, "A", "sk-aaaa-00001111")
+    _put(store, "D", "sk-dddd-00002222", provider="deepseek")
+    assert _run(["list", "--json"]) == 0
+    assert sorted(p["provider"] for p in json.loads(cap.readouterr().out)) == ["deepseek", "openai"]
+
+
+# ---- changing it ----------------------------------------------------------
+
+def test_name_id_or_number_picks_the_key(isolated):
+    from openprogram.interfaces.cli.commands.providers.keys import resolve_name
+    store, _ = isolated
+    a = _put(store, "Work", "sk-work-00001111")
+    b = _put(store, "Spare", "sk-spare-0002222")
+    assert resolve_name("openai", "work").id == a
+    assert resolve_name("openai", b).id == b
+    assert resolve_name("openai", "2").id == b
+    assert resolve_name("openai", "3") is None
+
+
+def test_rename_move_disable_and_strategy(isolated):
+    store, _ = isolated
+    _put(store, "Work", "sk-work-00001111")
+    _put(store, "Spare", "sk-spare-0002222")
+    assert _run(["keys", "openai", "rename", "Work", "Office"]) == 0
+    assert _run(["keys", "openai", "move", "Spare", "--up"]) == 0
+    assert [c.label for c in store.get("openai").credentials] == ["Spare", "Office"]
+    assert _run(["keys", "openai", "move", "1", "--to", "2"]) == 0
+    assert [c.label for c in store.get("openai").credentials] == ["Office", "Spare"]
+    assert _run(["keys", "openai", "disable", "Office"]) == 0
+    assert store.get("openai").credentials[0].enabled is False
+    assert _run(["keys", "openai", "enable", "Office"]) == 0
+    assert store.get("openai").credentials[0].enabled is True
+    assert _run(["keys", "openai", "strategy", "least-used"]) == 0
+    assert store.get("openai").strategy == "least_used"
+
+
+def test_replace_keeps_name_and_place(isolated, monkeypatch):
+    store, _ = isolated
+    cid = _put(store, "Work", "sk-work-00001111")
+    _put(store, "Spare", "sk-spare-0002222")
+    monkeypatch.setattr("openprogram.models.auth.manage._probe_or_none", lambda *a, **k: None)
+    assert _run(["keys", "openai", "replace", "Work", "--api-key-stdin"], "sk-new-00003333", monkeypatch) == 0
+    first = store.get("openai").credentials[0]
+    assert (first.id, first.label, first.payload.auth_value) == (cid, "Work", "sk-new-00003333")
+
+
+def test_remove_needs_yes_without_a_terminal(isolated, monkeypatch):
+    store, cap = isolated
+    _put(store, "Work", "sk-work-00001111")
+    assert _run(["keys", "openai", "remove", "Work"], "", monkeypatch) == 1
+    assert "--yes" in cap.readouterr().err
+    assert _run(["keys", "openai", "remove", "Work", "--yes"]) == 0
+    assert _keys(store) == []
+    assert _run(["keys", "openai", "remove", "Work", "--yes"]) == 1
+
+
+def test_an_environment_key_is_removed_by_unsetting_it(isolated, monkeypatch):
+    store, cap = isolated
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-00004444")
+    assert _run(["keys", "openai", "remove", "1", "--yes"]) == 1
+    assert "Unset OPENAI_API_KEY" in cap.readouterr().err
+    assert [c.id for c in store.get("openai").credentials] == ["env:OPENAI_API_KEY"]
+
+
+def test_logout_removes_every_stored_key(isolated):
+    store, cap = isolated
+    _put(store, "A", "sk-aaaa-00001111")
+    _put(store, "B", "sk-bbbb-00002222")
+    assert _run(["logout", "openai", "--yes"]) == 0
+    assert _keys(store) == []
+    assert _run(["logout", "openai", "--yes"]) == 0
+
+
+def test_status_of_a_provider_resolves_an_alias(isolated):
+    store, cap = isolated
+    _put(store, "Mine", "sk-ant-api-0005555", provider="anthropic")
+    assert _run(["status", "claude"]) == 0
+    assert "anthropic" in cap.readouterr().out
+
+
+# ---- other verbs ----------------------------------------------------------
+
+def test_aliases(isolated):
+    _, cap = isolated
+    assert _run(["aliases", "--json"]) == 0
+    body = json.loads(cap.readouterr().out)
+    assert body["codex"] == "openai-codex" and body["claude"] == "anthropic"
+
+
+def test_doctor_on_an_empty_store(isolated):
+    _, cap = isolated
+    assert _run(["doctor", "--json"]) == 0
     body = json.loads(cap.readouterr().out)
     assert body["pools_checked"] == 0
-    assert any(f["code"] == "no_pools" for f in body["findings"])
+    assert "no_pools" in {f["code"] for f in body["findings"]}
 
 
-def test_doctor_flags_expired_oauth_without_refresh(isolated):
-    store, _, _, cap = isolated
-    # Provider with no refresh registered → expired oauth must be ERROR.
-    store.put_pool(CredentialPool(
-        provider_id="random-oauth-provider", account_id="default",
-        credentials=[Credential(
-            provider_id="random-oauth-provider", account_id="default",
-            kind="oauth",
-            payload=CredentialData(
-                kind="oauth", auth_value="tok-expired",
-                data={"refresh_token": "r-abc", "expires_at_ms": 1},  # epoch — definitely expired
-            ),
-            source="cli_paste",
-        )],
-    ))
-    rc = dispatch(_parse(["doctor", "--json"]))
-    body = json.loads(cap.readouterr().out)
-    assert rc == 1, body
-    codes = {f["code"] for f in body["findings"]}
-    assert "expired_no_refresh" in codes
+def test_the_removed_verbs_are_gone(isolated):
+    for argv in (["use", "openai", "work"], ["migrate"], ["accounts"]):
+        with pytest.raises(SystemExit):
+            _parse(argv)
 
 
-def test_doctor_flags_missing_source_file(isolated, tmp_path):
-    store, _, _, cap = isolated
-    # Pretend we imported from a file that no longer exists.
-    ghost = tmp_path / "gone.json"
-    store.put_pool(CredentialPool(
-        provider_id="openai-codex", account_id="default",
-        credentials=[Credential(
-            provider_id="openai-codex", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-orphaned-123456"),
-            source="codex_cli_import",
-            metadata={"source_path": str(ghost), "imported_from": "codex_cli"},
-        )],
-    ))
-    rc = dispatch(_parse(["doctor", "--json"]))
-    # Missing source file is only a WARN → exit 0.
-    assert rc == 0
-    body = json.loads(cap.readouterr().out)
-    codes = {f["code"] for f in body["findings"]}
-    assert "missing_source_file" in codes
-
-
-def test_doctor_healthy_api_key_pool_passes(isolated):
-    store, _, _, cap = isolated
-    store.put_pool(CredentialPool(
-        provider_id="openai", account_id="default",
-        credentials=[Credential(
-            provider_id="openai", account_id="default", kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value="sk-healthy-key-12345"),
-            source="cli_paste",
-        )],
-    ))
-    rc = dispatch(_parse(["doctor"]))
-    assert rc == 0
-    out = cap.readouterr().out
-    assert "✗ ERROR" not in out
-
-
-# ---- setup (wizard) ------------------------------------------------------
-
-def test_setup_wizard_aborts_cleanly_on_no(isolated, monkeypatch):
-    _, _, _, cap = isolated
-    # User answers 'n' to the opening "Start?" prompt.
-    answers = iter(["n"])
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
-    rc = dispatch(_parse(["setup"]))
-    assert rc == 0
-    assert "Cancelled" in cap.readouterr().out
-
-
-def test_setup_wizard_adopts_detected_env_var(isolated, monkeypatch):
-    store, _, _, cap = isolated
-    for v in ["GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN"]:
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-wizard-adopted-12345")
-    # Answer: start? y, adopt all? y, then decline every popular-login offer.
-    answers = iter(["y", "y"] + ["n"] * 10)
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
-    rc = dispatch(_parse(["setup"]))
-    assert rc == 0, cap.readouterr()
-    pool = store.find_pool("openai", "default")
-    assert pool is not None
-    assert pool.credentials[0].payload.auth_value == "sk-wizard-adopted-12345"
-
-
-def test_bare_providers_command_lists_pools(isolated, monkeypatch):
+def test_bare_providers_command_lists(isolated, monkeypatch):
     from openprogram.interfaces.cli import application
 
-    _, _, _, cap = isolated
+    _, cap = isolated
     monkeypatch.setattr(sys, "argv", ["openprogram", "providers"])
     with pytest.raises(SystemExit) as exited:
         application.main()
     assert exited.value.code in (0, None)
-    assert "No credential pools yet" in cap.readouterr().out
+    assert "No keys or sign-ins yet" in cap.readouterr().out
+
+
+def test_a_sign_in_lists_its_account_and_plan_once(isolated):
+    store, cap = isolated
+    store.add_credential(Credential(provider_id="openai-codex", kind="import", source="import",
+                                    identity={"email": "a@example.com", "plan": "prolite"},
+                                    payload=CredentialData(kind="import", auth_value="", data={})))
+    assert _run(["keys", "openai-codex", "list"]) == 0
+    out = cap.readouterr().out
+    assert "a@example.com (Pro Lite)" in out
+    assert "import" in out and out.count("import") == 1, "the source is not repeated after the kind"
+
+
+def test_the_verdict_says_why_a_key_was_not_confirmed():
+    from openprogram.interfaces.cli.commands.providers.keys import _verdict
+    assert _verdict({"result": "works", "detail": "ok"}) == "works"
+    assert _verdict({"result": "unverified", "detail": "HTTP 500."}) == "not confirmed (HTTP 500.)"
+    assert _verdict({"result": "not_configured"}) == "the provider is not set up here, so the key was not checked"
+    assert _verdict({"result": "works", "detail": "Key accepted; the test message failed: HTTP 400."}).endswith(
+        "(Key accepted; the test message failed: HTTP 400.)")

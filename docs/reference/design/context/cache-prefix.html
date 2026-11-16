@@ -166,7 +166,7 @@
 <thead class="sr"><tr><th scope="col">Suite</th><th scope="col">What it holds</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">tests/contracts/providers/test_request_bytes.py</code></th><td>Anthropic, Responses, Chat Completions and Codex: the next turn re-sends a tool call, a failed tool, a tool image, a user image, a long paste and a large <code translate="no">tool_search</code> result as they were sent</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_turn_prefix_cache.py</code></th><td>Codex and Anthropic: memory, run notes, journal resume, old tool results resent whole, midnight, the date once a day, plan mode in and out, a Goal's full and short notes, a refused tool; a scenario matrix that changes one thing between two turns, checks that the prefix check names it, and checks whether the prefix holds; and the preserved-thinking rule that every request on one model sends the same system and tools bytes</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/render/test_turn_prefix_cache.py</code></th><td>Codex and Anthropic: memory, run notes, journal resume, old tool results resent whole, midnight, the date once a day, plan mode in and out, a Goal's full and short notes, a refused tool; a scenario matrix that changes one thing between two turns, checks that the prefix check names it, and checks whether the prefix holds; and the preserved-thinking rule that every request on one model sends the same system and tools bytes</td></tr>
 </tbody>
 </table>
 <p>A known place where a later render differs is marked <code translate="no">xfail(strict=True)</code> with the gap it shows. The change that closes a gap removes its mark.</p>
@@ -199,10 +199,10 @@
 <tr><th scope="row"><code translate="no">models/usage/prefix_fingerprint.py</code></th><td>Fingerprint, both checks, lanes, baselines, <code translate="no">expect_break</code></td></tr>
 <tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td>Binds a slot per attempt, settles the check, passes it to metering</td></tr>
 <tr><th scope="row"><code translate="no">models/usage/ledger.py</code></th><td><code translate="no">prefix_baselines</code> and the four event columns</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/components.py</code></th><td><code translate="no">prompt_parts</code>, <code translate="no">remember_composed</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/components.py</code></th><td><code translate="no">prompt_parts</code>, <code translate="no">remember_composed</code></td></tr>
 <tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code></th><td>Composes the sent prompt from named parts; the tools array and <code translate="no">turn_availability</code>; the notes decided from the view; the prompt by reference in checkpoints</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/turn_context.py</code></th><td>Entries, <code translate="no">turn_view</code>, <code translate="no">date_to_send</code>, sections and <code translate="no">kept_sections</code></td></tr>
-<tr><th scope="row"><code translate="no">runtime/conversation/plan_mode.py</code></th><td>The plan-mode notes and their schedule</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/turn_context.py</code></th><td>Entries, <code translate="no">turn_view</code>, <code translate="no">date_to_send</code>, sections and <code translate="no">kept_sections</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_settings/plan_mode.py</code></th><td>The plan-mode notes and their schedule</td></tr>
 <tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code></th><td><code translate="no">goal_note</code>, <code translate="no">todo_reminder</code></td></tr>
 </tbody>
 </table>

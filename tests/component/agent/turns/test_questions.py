@@ -205,7 +205,7 @@ def test_agent_loop_stops_before_a_declared_interaction_effect():
     from openprogram.runtime.agent.loop import _execute_tool_calls
     from openprogram.models.providers.types import AgentTool, AgentToolResult
     from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
 
     ran = False
     seen = []

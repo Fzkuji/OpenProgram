@@ -31,30 +31,19 @@ platforms via:
 
 ## Files in this directory
 
-- **`_access.py`** — 入站 access 门禁
-- **`_active_turns.py`** — 正在跑的渠道轮次
-- **`_attachments.py`** — 入站附件单点
 - **`_broadcast.py`** — Channel turn 完成后给 webui 推 WS event
-- **`_conversation.py`** — Inbound-message → agent-session dispatcher
-- **`_format.py`** — 出站格式化单点
 - **`_heartbeats.py`** — Channel adapter heartbeat registry
-- **`_message.py`** — 中性入站消息结构
-- **`_question_bridge.py`** — Push a function's runtime.ask / form question into the chat it came
-- **`_question_commands.py`** — Channel /answer · /decline text commands
-- **`_room.py`** — 群聊房间层
-- **`_session_routing.py`** — Channel session 路由
-- **`_session_store.py`** — Channel session 存储
-- **`_transport.py`** — 共享底层
 - **`_wechat_media.py`** — WeChat (iLink) 媒体
 - **`accounts.py`** — Multi-account channel credential store
 - **`base.py`** — Channel 抽象
 - **`bindings.py`** — Channel → Agent routing
-- **`bound_reply.py`** — Send a bound chat's assistant reply to its channel conversation
 - **`link_registration.py`** — The channels interface's implementation of the core's channel link
 - **`outbound.py`** — Outbound
 
 ## Sub-packages
 
+- **`delivery/`** — Getting a reply onto the platform: transport of the bytes,
 - **`implementations/`** — Channel implementations
+- **`inbound/`** — From a platform message to an agent turn: the access gate, the room
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 from openprogram.runtime.agent.loop.driver import LoopDriver, LoopDriverOptions
 from openprogram.runtime.agent.loop import agent_loop
 from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
@@ -322,7 +322,7 @@ def test_iteration_cap_without_hidden_submission_is_missing_submission():
 
 
 def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypatch):
-    import openprogram.models.providers.utils.failover as failover_module
+    import openprogram.models.providers.utils.failures.failover as failover_module
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
@@ -523,7 +523,7 @@ def test_default_agent_dispatch_uses_the_negotiated_registry_snapshot(monkeypatc
 
 
 def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monkeypatch):
-    import openprogram.models.providers.utils.failover as failover_module
+    import openprogram.models.providers.utils.failures.failover as failover_module
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})

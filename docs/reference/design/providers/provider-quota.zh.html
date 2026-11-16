@@ -76,14 +76,15 @@
 <p><code translate="no">usage.db</code> 新增 <code translate="no">quota_snapshots</code>（每个供应商、账户、限制的最新值）、<code translate="no">quota_samples</code>（每 15 分钟一个样本，保留 90 天）和 <code translate="no">quota_reads</code>（每个供应商、账户最近一次端点读取）。</p>
 
 <h2 id="health">健康和失败原因</h2>
-<p>关于一个密钥有两份记录：调用失败时写下的凭据状态（<code translate="no">status_at</code>，即凭据池的 <code translate="no">updated_at</code>），和它额度端点的最近一次读取（<code translate="no">read_at</code>）。较新的那份说了算；时间相同时，401 优先于已存的欠费停用或限流。</p>
+<p>关于一个密钥有两份记录：调用失败时写下的凭据状态（<code translate="no">status_at</code>，即凭据的 <code translate="no">updated_at</code>），和它额度端点的最近一次读取（<code translate="no">read_at</code>）。较新的那份说了算；时间相同时，401 优先于已存的欠费停用或限流。</p>
 <ul>
-<li>比状态新的 401 读取：<code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。</li>
-<li>在 <code translate="no">billing_blocked</code> 停用之后成功的读取推翻这个停用，由这次读取的余额决定。</li>
-<li>refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）的登录是 <code translate="no">needs_reauth</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮。已存的登录和委托给 Codex CLI 文件的登录都一样；委托的那个在文件换成另一个登录之前不再请求。</li>
+<li>比状态新的 401 读取：<code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。密钥（不是登录）的这个状态也写到它那一行，服务商的列表和卡片说法一致。</li>
+<li>只有已验证的端点才写到那一行，<code translate="no">CreditsError</code> 响应体不算。</li>
+<li>在 <code translate="no">quota</code> 停用之后成功的读取推翻这个停用，由这次读取的余额决定。</li>
+<li>refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）的登录是 <code translate="no">needs_login</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮。已存的登录和委托给 Codex CLI 文件的登录都一样；委托的那个在文件换成另一个登录之前不再请求。</li>
 </ul>
 <p>健康取最好那个密钥的状态，被用尽的限制覆盖：<code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code> 或 <code translate="no">unknown</code>。没有密钥的供应商是 <code translate="no">not_configured</code>；不应答的本地服务是 <code translate="no">not_running</code>。每个需要处理的状态都带着它的修复动作，见<a href="provider-management.zh.html">供应商管理</a>。</p>
-<p>限流只持续到冷却结束。凭据池在下次成功前保留密钥的 <code translate="no">rate_limited</code> 状态，但冷却一过就会再选它，所以健康把这样的密钥读成 <code translate="no">ready</code>，不会显示“限流到一个已经过去的时间”。</p>
+<p>限流只持续到冷却结束。密钥在下次成功前保留 <code translate="no">cooling</code> 状态，但冷却一过就会再被选中，所以健康把这样的密钥读成 <code translate="no">ready</code>，不会显示“限流到一个已经过去的时间”。</p>
 <p>CLI 表格只打印将来的时间（<code translate="no">until 14:05</code>、<code translate="no">resets Nov 19 02:22</code>），已经过去的时间不打印。表格适应终端宽度：进度条先减少格数，最少 5 格，再把重置时间移到下一行。输出到管道且没有 <code translate="no">COLUMNS</code> 时不折行。</p>
 <p>失败的回复在错误原因旁带一个 cause，从供应商错误一路传到轮次结果、事件（<code translate="no">cause</code>）和保存的占位消息（<code translate="no">error_cause</code>）：</p>
 <table class="stack fixed">

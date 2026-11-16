@@ -14,11 +14,11 @@ the running turn reach it, and claims the core's cancellation check
 
 # The call core, context and permission packages sit below this one;
 # register what they read from conversations (see each module's docstring).
-from openprogram.runtime.conversation import context_registration as _context_registration  # noqa: E402,F401
-from openprogram.runtime.conversation import permission_registration as _permission_registration  # noqa: E402,F401
+from openprogram.runtime.conversation.layer_registrations import context_registration as _context_registration  # noqa: E402,F401
+from openprogram.runtime.conversation.layer_registrations import permission_registration as _permission_registration  # noqa: E402,F401
 
 # Register the Agent hooks with the execution control plane.
-from openprogram.runtime.conversation import execution_hooks as _execution_hooks  # noqa: E402,F401
-from openprogram.runtime.conversation import engine_registration as _engine_registration  # noqa: E402,F401
+from openprogram.runtime.conversation.layer_registrations import execution_hooks as _execution_hooks  # noqa: E402,F401
+from openprogram.runtime.conversation.layer_registrations import engine_registration as _engine_registration  # noqa: E402,F401
 # Claim the call core's cancellation check and session-id provider.
 from openprogram.runtime.conversation import run_control as _run_control  # noqa: E402,F401

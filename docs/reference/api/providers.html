@@ -43,7 +43,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 <table class="stack">
 <thead><tr><th scope="col">Parameter</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>; <code translate="no">None</code> resolves from the credential store. <code translate="no">anthropic</code> raises <code translate="no">ValueError</code> when none resolves.</td></tr>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>; a given key is sent as is. <code translate="no">None</code> lets each request choose from the provider's list of keys and sign-ins, switching to the next when one is limited or refused; <code translate="no">ValueError</code> when the provider has none.</td></tr>
 <tr><th scope="row"><code translate="no">model</code></th><td>see table above</td><td>Id under the provider's namespace (<code translate="no">anthropic</code>, <code translate="no">openai</code>, <code translate="no">google</code>)</td></tr>
 <tr><th scope="row"><code translate="no">max_retries</code></th><td><code translate="no">OPENPROGRAM_MAX_RETRIES</code>, else 6</td><td>Retry budget forwarded to the base <code translate="no">Runtime</code></td></tr>
 </tbody>

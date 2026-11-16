@@ -14,7 +14,7 @@
         throw "invalid OpenProgram repository: $Repository"
     }
     $ReleasesPage = "https://github.com/$Repository/releases"
-    $InstallGuide = "https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/install/install.html"
+    $InstallGuide = "https://github.com/Fzkuji/OpenProgram/blob/main/docs/install/install.html"
     $ProxyHelp = "If this computer reaches the internet through a proxy, set HTTPS_PROXY (and NO_PROXY if some hosts skip the proxy), for example: `$env:HTTPS_PROXY = 'http://proxy.example:8080'. Then run this command again."
     $Curl = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
     if (-not $Curl) {

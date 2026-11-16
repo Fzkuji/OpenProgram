@@ -19,12 +19,16 @@ export function useRewindAllowed(sessionId: string | null | undefined): boolean 
 }
 
 /** Why this message cannot be forked right now: a copy needs the server and
- *  a finished reply. */
+ *  a finished reply. One read of the answer, so a run starting or ending
+ *  redraws only the last prompt's actions, the one message it changes. */
 export function useForkDisabled(sessionId: string | null | undefined, msgId: string): ForkDisabledCause | null {
-  const offline = useSessionStore(s => s.wsStatus === "closed");
-  const running = useSessionStore(s => Boolean(sessionId && s.runningTasks?.[sessionId]));
-  const lastPrompt = useSessionStore(s => Boolean(
-    sessionId && isLastPrompt(s.messageOrder?.[sessionId], s.rowsByView?.[sessionId] ?? {}, msgId),
-  ));
-  return forkDisabledCause({ offline, running, lastPrompt });
+  return useSessionStore(s => {
+    const offline = s.wsStatus === "closed";
+    const running = Boolean(sessionId && s.runningTasks?.[sessionId]);
+    return forkDisabledCause({
+      offline,
+      running,
+      lastPrompt: running && !offline && isLastPrompt(s.messageOrder?.[sessionId!], s.rowsByView?.[sessionId!] ?? {}, msgId),
+    });
+  });
 }

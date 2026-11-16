@@ -85,7 +85,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             cancel_grace_seconds=shared._CANCEL_ESCALATION_SECS,
         )
         self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
-        from openprogram.runtime.execution.resource_saga import ResourceSaga
+        from openprogram.runtime.execution.recovery.resource_saga import ResourceSaga
         from openprogram.runtime.execution.waits import DurableWaitStore
 
         self._resource_saga = ResourceSaga(
@@ -238,9 +238,15 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         return shared._store_load(sid, job_id)
 
 
-    def get_job_resource_view(self, job_id: str):
-        """Return the canonical resource DTO for one persisted Job."""
-        job = self.get_job(job_id)
+    def get_job_resource_view(self, job_id: str, *, job: shared.Optional[shared.Job] = None, jobs_in=None):
+        """Return the canonical resource DTO for one persisted Job.
+
+        A caller that already read the Job (``job``) and lists sessions
+        through one ``store.session_jobs_reader`` (``jobs_in``) spares the
+        view its own reads of the session's Jobs.
+        """
+        if job is None:
+            job = self.get_job(job_id)
         if job is None:
             return None
         from openprogram.runtime.jobs.resource_governance import build_job_resource_view
@@ -251,6 +257,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             resolved=self._governor._limit_resolver(
                 job.parent_session_id, job,
             ),
+            jobs_in=jobs_in,
         )
         execution = self._execution_store.get_execution(job_id)
         if execution is None:
@@ -315,7 +322,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             "usage": view.budget,
             "reservation": None,
         }
-        from openprogram.runtime.execution.public import job_resource_dto
+        from openprogram.runtime.execution.projections.public import job_resource_dto
 
         return job_resource_dto(
             job,
@@ -495,7 +502,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         if not store.root_path.exists():
             return []
         out: list[shared.Job] = []
-        from openprogram.state.store.session.placement import iter_session_dirs
+        from openprogram.state.store.session.files.placement import iter_session_dirs
         for sid, _sdir in iter_session_dirs(store.root_path):
             out.extend(shared._store_list(sid, status_filter=status_filter))
         out.sort(key=lambda t: t.created_at or 0, reverse=True)

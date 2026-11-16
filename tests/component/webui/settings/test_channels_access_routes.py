@@ -38,7 +38,7 @@ def test_access_management_rejects_non_loopback_requests():
 
 
 def test_web_owner_can_list_and_approve_pending_pairing(monkeypatch):
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
 
     pending = _access.decide_inbound_sender(
         "telegram", "default", "u7", "[Eve]\n\u202e",
@@ -69,7 +69,7 @@ def test_web_owner_can_list_and_approve_pending_pairing(monkeypatch):
 
 
 def test_web_owner_can_revoke_paired_sender(monkeypatch):
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
 
     _access.approve_user("telegram", "default", "u7", display="Eve")
     client = _client(monkeypatch)
@@ -136,7 +136,8 @@ def test_channels_settings_exposes_pairing_management():
 
 
 def test_web_owner_manages_the_group_lists(monkeypatch):
-    from openprogram.interfaces.channels import _access, accounts
+    from openprogram.interfaces.channels.inbound import _access
+    from openprogram.interfaces.channels import accounts
 
     accounts.create("telegram", "default")
     client = _client(monkeypatch)
@@ -175,7 +176,8 @@ def test_web_refuses_a_name_and_a_channel_without_groups(monkeypatch):
 
 
 def test_web_refuses_listing_a_bound_contact_as_chat_only(monkeypatch):
-    from openprogram.interfaces.channels import _access, accounts
+    from openprogram.interfaces.channels.inbound import _access
+    from openprogram.interfaces.channels import accounts
 
     accounts.create("telegram", "default")
     _access.approve_user("telegram", "default", "555")

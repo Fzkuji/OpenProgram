@@ -1,14 +1,3 @@
-.trigger {
-  appearance: none;
-  cursor: pointer;
-  font: inherit;
-}
-
-.trigger:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
 .dialog {
   max-height: min(760px, 88vh);
   overflow-y: auto;

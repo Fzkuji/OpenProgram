@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.runtime.conversation.turn_runtime import loop_runner
-from openprogram.runtime.execution.runtime_contract import system_prompt_sha256, validate_runtime_contract
+from openprogram.runtime.execution.admission_input.runtime_contract import system_prompt_sha256, validate_runtime_contract
 
 PROMPT = "<system>you are helpful</system>"
 
@@ -56,7 +56,7 @@ def test_an_old_checkpoint_with_the_text_still_resumes(record):
 
 
 def test_the_contract_check_accepts_the_hash_when_the_prompt_matches():
-    from openprogram.runtime.execution.runtime_contract import _with_prompt_from_ref
+    from openprogram.runtime.execution.admission_input.runtime_contract import _with_prompt_from_ref
 
     kept = {key: value for key, value in _snapshot().items() if key != "system_prompt"}
     kept["system_prompt_sha256"] = system_prompt_sha256(PROMPT)

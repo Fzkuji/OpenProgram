@@ -42,7 +42,7 @@ def clean_runtime_control():
 
 
 def test_restart_with_cancel_intent_and_no_owner_finishes_cancelled(store):
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     store.create_session("s1", "main")
     SessionNodeWriter(store, "s1").append(
@@ -71,7 +71,7 @@ def test_restart_with_cancel_intent_and_no_owner_finishes_cancelled(store):
 
 
 def test_restart_with_cancel_intent_keeps_cancelling_if_owner_alive(store):
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     store.create_session("s1", "main")
     SessionNodeWriter(store, "s1").append(
@@ -109,7 +109,7 @@ def test_restart_with_cancel_intent_keeps_cancelling_if_owner_alive(store):
 
 
 def test_restart_without_cancel_intent_becomes_interrupted(store):
-    from openprogram.runtime.execution import dag as _exec_dag
+    from openprogram.runtime.execution.projections import dag as _exec_dag
 
     store.create_session("s1", "main")
     SessionNodeWriter(store, "s1").append(

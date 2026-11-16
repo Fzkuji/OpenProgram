@@ -14,15 +14,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col"><code translate="no">openprogram providers</code></th><th scope="col">效果</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td>自动选择 OAuth 或 API 密钥。脚本用 <code translate="no">--api-key-stdin</code></td></tr>
-<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>删除它的凭据</td></tr>
+<tr><th scope="row"><code translate="no">keys &lt;provider&gt; add</code>（或 <code translate="no">login &lt;provider&gt;</code>）</th><td>在 Provider 列表末尾加一个 key 或登录。脚本用 <code translate="no">--api-key-stdin</code></td></tr>
+<tr><th scope="row"><code translate="no">keys &lt;provider&gt;</code> <code translate="no">list</code> <code translate="no">rename</code> <code translate="no">move</code> <code translate="no">disable</code> <code translate="no">replace</code> <code translate="no">remove</code> <code translate="no">strategy</code></th><td>和 Providers 页面同一个列表</td></tr>
+<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>删除所有已存的 key 和登录</td></tr>
 <tr><th scope="row"><code translate="no">status &lt;provider&gt;</code></th><td>凭据能用吗？</td></tr>
-<tr><th scope="row"><code translate="no">list</code></th><td>按账户列出凭据池</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>每个 Provider 的列表</td></tr>
 <tr><th scope="row"><code translate="no">available [QUERY]</code></th><td>完整的可配置目录，含社区条目</td></tr>
 <tr><th scope="row"><code translate="no">discover</code> <code translate="no">adopt</code></th><td>扫描并导入本机已有凭据：<a href="auth.html">认证</a></td></tr>
-<tr><th scope="row"><code translate="no">use &lt;provider&gt; [account]</code></th><td>该 Provider 用哪个账户</td></tr>
 <tr><th scope="row"><code translate="no">doctor</code></th><td>过期、刷新、冷却、冲突</td></tr>
-<tr><th scope="row"><code translate="no">aliases</code> <code translate="no">accounts</code> <code translate="no">migrate</code></th><td>短名、账户、凭据格式迁移</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>短名</td></tr>
 </tbody>
 </table>
 <h2>已启用模型</h2>
@@ -47,4 +47,4 @@
 <tr><th scope="row">品牌图标</th><td>随产品打包；自定义或未识别的 Provider 显示首字母</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="local-models.html">本地模型</a> · <a href="providers.html">Provider</a> · <a href="auth.html">认证</a> · <a href="fast-tier.html">Fast 模式</a> · <a href="thinking-effort.html">思考强度</a> · <a href="token-tracking.html">Token 统计</a></p>
+<p class="next"><a href="local-models.html">本地模型</a> · <a href="providers.html">Provider</a> · <a href="auth.html">认证</a> · <a href="several-keys.html">使用多个密钥</a> · <a href="fast-tier.html">Fast 模式</a> · <a href="thinking-effort.html">思考强度</a> · <a href="token-tracking.html">Token 统计</a></p>

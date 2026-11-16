@@ -235,7 +235,96 @@ def _attach_embed_stats(
     return count, tokens
 
 
-def _spawned_heads(session_id: str, heads: list[str]) -> set[str]:
+def _session_nodes(session_id: str) -> dict:
+    from openprogram.state.store.current import current_store
+    from openprogram.state.store import SessionNodeWriter
+    return SessionNodeWriter(current_store(), session_id).load().nodes
+
+
+def runtime_started_heads(nodes: dict, heads: list[str], *, kept=()) -> set[str]:
+    """Tips of branches the runtime opened and no person ever wrote on.
+
+    A branch's own part runs from its tip up to where it leaves another
+    line (a message with more than one message under it). It is the
+    runtime's when every prompt in that part was written by the runtime
+    (``display: runtime``: a Goal continuation, a background-command
+    notice), or it holds no prompt and only reports (``report_…``, posted
+    by an always-on Agent or a scheduled task where the head stood, and left
+    behind when the reader moved on). A turn that continues its branch no
+    longer opens one; these are in conversations saved while it did. They stay in the History
+    graph and the Branches panel; lists of the agents a reader works with
+    leave them out.
+
+    The shape alone cannot tell which of two lines leaving one message is
+    the older: a branch a person forked off a Goal's line looks like the
+    Goal's line leaving the person's. ``kept`` names the tips the records
+    say are in use (the selected branch's, the Goal's), and those are
+    never the runtime's.
+    """
+    conversation = ("user", "assistant")
+    under: dict[str, int] = {}
+    for node in nodes.values():
+        if node.role in conversation and node.predecessor:
+            under[node.predecessor] = under.get(node.predecessor, 0) + 1
+    started = set()
+    for head in heads:
+        if head in kept:
+            continue
+        key, seen, prompts, forked, reports = head, set(), [], False, True
+        while key and key not in seen:
+            seen.add(key)
+            node = nodes.get(key)
+            if node is None or (node.metadata or {}).get("display") == "root":
+                break
+            if node.role == "user":
+                prompts.append((node.metadata or {}).get("display") == "runtime")
+            reports = reports and str(key).startswith("report_")
+            if under.get(node.predecessor or "", 0) > 1:
+                forked = True
+                break
+            key = node.predecessor
+        if forked and (all(prompts) if prompts else reports):
+            started.add(head)
+    return started
+
+
+def scheduled_heads(nodes: dict, heads: list[str], *, kept=()) -> set[str]:
+    """Tips of lines a schedule wrote: every prompt on the line's own part, from
+    the tip up to where it leaves another line, came from the scheduler. The
+    reports a task posts there carry no prompt. A part that is only a reply
+    (a run cut off before its reply, and continued from its prompt) is judged
+    by the prompt it answers. ``kept`` tips are in use (the selected branch's)
+    and are never a task's."""
+    under: dict[str, int] = {}
+    for node in nodes.values():
+        if getattr(node, "role", None) in ("user", "llm", "assistant") and node.predecessor:
+            under[node.predecessor] = under.get(node.predecessor, 0) + 1
+    kept = set(kept)
+    found = set()
+    for head in heads:
+        if head in kept:
+            continue
+        key, seen, prompts = head, set(), []
+        while key and key not in seen:
+            seen.add(key)
+            node = nodes.get(key)
+            metadata = getattr(node, "metadata", None) or {}
+            if node is None or metadata.get("display") == "root":
+                break
+            if node.role == "user":
+                prompts.append(metadata.get("source") == "scheduler")
+            if under.get(node.predecessor or "", 0) > 1:
+                fork = nodes.get(node.predecessor)
+                if not prompts and fork is not None and fork.role == "user":
+                    prompts.append((getattr(fork, "metadata", None) or {}).get("source") == "scheduler")
+                break
+            key = node.predecessor
+        if prompts and all(prompts):
+            found.add(head)
+    return found
+
+
+def _spawned_heads(session_id: str, heads: list[str], nodes: dict | None = None) -> set[str]:
     """Tips whose chain starts at a sub-agent's spawn root.
 
     Older sessions keep a sub-agent's turns in the parent session: its
@@ -243,10 +332,9 @@ def _spawned_heads(session_id: str, heads: list[str]) -> set[str]:
     ``agent_spawn``) and its reply has no caller, so ``list_branches``
     reports the reply as a tip like any branch the user made.
     """
-    from openprogram.state.store.current import current_store
-    from openprogram.state.store import SessionNodeWriter
     from openprogram.state.store.session.session_store.shared import _is_spawn_root
-    nodes = SessionNodeWriter(current_store(), session_id).load().nodes
+    if nodes is None:
+        nodes = _session_nodes(session_id)
     spawned = set()
     for head in heads:
         key, seen = head, set()
@@ -260,6 +348,19 @@ def _spawned_heads(session_id: str, heads: list[str]) -> set[str]:
                 break
             key = node.predecessor
     return spawned
+
+
+def _branches_in_use(session: dict | None, leaves: list[dict]) -> set[str]:
+    """The tips of the selected branch and of the branch a Goal works on."""
+    session = session or {}
+    extra = session.get("extra_meta") if isinstance(session.get("extra_meta"), dict) else {}
+    goal = extra.get("goal") or session.get("goal")
+    in_use = {session.get("active_branch_id"), goal.get("branch_id") if isinstance(goal, dict) else None}
+    in_use.discard(None)
+    kept = {row["head_msg_id"] for row in leaves if row.get("branch_id") in in_use}
+    if session.get("head_id"):
+        kept.add(session["head_id"])
+    return kept
 
 
 def build_branches_payload(session_id: str | None) -> dict:
@@ -282,7 +383,12 @@ def build_branches_payload(session_id: str | None) -> dict:
             from openprogram.state.store.session.graph.builder import build_session_graph
             graph = build_session_graph(session_id, active_head)
             leaves = db.list_branches(session_id)
-            spawned = _spawned_heads(session_id, [row["head_msg_id"] for row in leaves])
+            nodes = _session_nodes(session_id)
+            heads = [row["head_msg_id"] for row in leaves]
+            spawned = _spawned_heads(session_id, heads, nodes)
+            in_use = _branches_in_use(sess, leaves)
+            runtime_started = runtime_started_heads(nodes, heads, kept=in_use)
+            scheduled = scheduled_heads(nodes, heads, kept=in_use)
             for row in leaves:
                 # An archived branch is retired from the agent list
                 # (agent-collaboration.md §2.6). The panel is the same
@@ -314,7 +420,12 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "sub_agent": mid in spawned,
                     # A scheduled task's branch: other agents can read it,
                     # its runs show on the task's page, not in branch lists.
-                    "scheduled_task": bool(row.get("scheduled_task_id")),
+                    # A line only the schedule wrote on is one too, the
+                    # tips older runs left behind among them.
+                    "scheduled_task": bool(row.get("scheduled_task_id")) or mid in scheduled,
+                    # Opened by the runtime, never written on by a person:
+                    # not a branch the reader made (``runtime_started_heads``).
+                    "runtime_started": mid in runtime_started,
                 })
         except Exception as e:
             _log.warning("[list_branches] %s: %s", session_id, e)

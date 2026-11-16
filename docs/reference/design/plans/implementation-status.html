@@ -1,0 +1,54 @@
+<title>Implementation navigation</title>
+<meta name="description" content="Where each design's implementation evidence lives, what each status word means, and what an implementation note contains.">
+<meta name="covers" content="none">
+<h1>Implementation navigation</h1>
+
+<p>Finds a design's owner and evidence. Certifies no integration branch, release or installed App.</p>
+
+<h2 id="implementation-section-1">Find the implementation documentation</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Design</th><th scope="col">Implementation context</th><th scope="col">Inspect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Repository ownership</th><td><a href="../repository/structure.html">Design</a></td><td><a href="../repository/structure-implementation.html">Context</a></td><td>Application roots, compatibility surfaces, verification</td></tr>
+<tr><th scope="row">Execution control</th><td><a href="../runtime/execution/control.html">Design</a></td><td><a href="../runtime/README.html">Context</a></td><td>Pause, resume, cancellation, recovery, surface synchronization</td></tr>
+<tr><th scope="row">Goal execution</th><td><a href="../runtime/reliability/goal-and-recovery.html">Design</a></td><td><a href="../runtime/reliability/goal-and-recovery.html">Context</a></td><td>Controller lifecycle, persistence, remaining acceptance</td></tr>
+<tr><th scope="row">Sessions and DAG</th><td><a href="../runtime/dag/overview.html">Design</a></td><td><a href="../runtime/session/README.html">Context</a></td><td>Graph semantics, storage, session operations</td></tr>
+<tr><th scope="row">Permissions and sandbox</th><td><a href="../runtime/security/sandbox-architecture.html">Design</a></td><td><a href="../runtime/security/sandbox-architecture.html">Context</a></td><td>Authority, approvals, execution boundaries</td></tr>
+<tr><th scope="row">Memory</th><td><a href="../memory/architecture.html">Design</a></td><td><a href="../memory/README.html">Context</a></td><td>Ownership, recall, implementation boundaries</td></tr>
+<tr><th scope="row">Web integration</th><td><a href="../integrations/browser/application.html">Design</a></td><td><a href="../integrations/computer-use/computer-and-browser-use.html">Context</a></td><td>Browser integration and its evidence</td></tr>
+<tr><th scope="row">Record and replay</th><td><a href="../providers/requests/record-replay.html">Design</a></td><td><a href="../providers/requests/record-replay.html">Context</a></td><td>Provider recording, replay, failure handling</td></tr>
+<tr><th scope="row">MCP server</th><td><a href="../integrations/extensions/mcp-server.html">Design</a></td><td><a href="../integrations/extensions/mcp-integration.html">Context</a></td><td>Server exposure and MCP integration</td></tr>
+<tr><th scope="row">Distribution</th><td><a href="../distribution/installation-packaging.html">Design</a></td><td><a href="../distribution/automatic-updates.html">Context</a></td><td>Packaging, activation, updates, release acceptance</td></tr>
+<tr><th scope="row">Testing</th><td><a href="../testing/test-system.html">Design</a></td><td><a href="../repository/structure-implementation.html">Context</a></td><td>Verification layers, source-layout checks</td></tr>
+</tbody>
+</table>
+<p class="note">Other areas: <a href="../README.html">subsystem index</a>. The <a href="../framework-comparison/feature-matrix.html">framework feature comparison</a> has its own scope and is no release acceptance report.</p>
+
+<h2 id="implementation-section-2">Status words</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Has an implementation and the required evidence. State the verified boundary.</td></tr>
+<tr><th scope="row">Partial</th><td>Some paths exist; named implementation or acceptance requirements remain.</td></tr>
+<tr><th scope="row">Unimplemented</th><td>Specified; implementation still required.</td></tr>
+<tr><th scope="row">Out of scope</th><td>Excluded from the current design; no implicit task.</td></tr>
+<tr><th scope="row">Not reverified</th><td>Evidence not checked against the current source or target environment. Never convert it into a current pass.</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-section-3">What an implementation document contains</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry points</th><td>Public entry points and observable behaviour</td></tr>
+<tr><th scope="row">Source owners</th><td>With links, including compatibility entry points</td></tr>
+<tr><th scope="row">Data</th><td>Ownership, state transitions, persistence boundaries</td></tr>
+<tr><th scope="row">Failure</th><td>Cancellation and recovery, where applicable</td></tr>
+<tr><th scope="row">Verification</th><td>Reproducible commands and the contract each checks</td></tr>
+<tr><th scope="row">Status appendix</th><td>Remaining work and acceptance gaps</td></tr>
+</tbody>
+</table>
+<p class="note">Rationale belongs in the topic's design; notes hold source mapping and verification. Migration chronology and review output stay in Git history.</p>
+
+<h2 id="implementation-section-4">Implementation status</h2>
+<p>Not reverified here: this page runs no subsystem tests and establishes no publication, deployment or installed-App acceptance. Consult the linked topic and reverify the affected contract before changing its status.</p>

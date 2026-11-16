@@ -9,12 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _conversation as C
-from openprogram.interfaces.channels import _format
-from openprogram.interfaces.channels import _transport
+from openprogram.interfaces.channels.inbound import _conversation as C
+from openprogram.interfaces.channels.delivery import _format
+from openprogram.interfaces.channels.delivery import _transport
 from openprogram.interfaces.channels import accounts as _accounts
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel, MessageHandle
 
 
@@ -240,11 +240,11 @@ class _ThreadChannel(Channel):
 def test_base_dispatches_and_replies_in_the_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
     _access.approve_user("slack", "a1", "U1")
     seen: dict = {}
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels.inbound._conversation.dispatch_inbound",
         lambda **kw: seen.update(kw) or "reply")
     ch = _ThreadChannel()
     ch._dispatch_and_reply(ChannelMessage(

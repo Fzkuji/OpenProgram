@@ -67,7 +67,7 @@ def parent_turn(tmp_path, monkeypatch, request):
     turn_tok = store_mod._current_turn_id.set("a1")
 
     calls: list[dict] = []
-    from openprogram.runtime.conversation.sub_agent_run import run_agent_turn_async as real_async
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn_async as real_async
 
     def fake_async(**kw):
         if kw.get("defer_dispatch"):
@@ -76,7 +76,7 @@ def parent_turn(tmp_path, monkeypatch, request):
         return "t_fake"
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", fake_async)
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn_async", fake_async)
     monkeypatch.setattr(
         'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     s.async_calls = calls
@@ -284,7 +284,7 @@ def _dispatch_queued(parent_turn, monkeypatch, prompt="audit the config"):
 
 
 def test_busy_target_precreates_job_and_queues(parent_turn, monkeypatch):
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.runtime.jobs.store import load_job
     from openprogram.runtime.jobs.types import JobStatus
     tid, _ = _dispatch_queued(parent_turn, monkeypatch)
@@ -324,7 +324,7 @@ def test_busy_inbox_failure_cancels_canonical_admission(parent_turn, monkeypatch
     def fail_enqueue(*args, **kwargs):
         raise OSError("inbox unavailable")
 
-    monkeypatch.setattr("openprogram.runtime.conversation.inbox.enqueue", fail_enqueue)
+    monkeypatch.setattr("openprogram.runtime.conversation.peer_agents.inbox.enqueue", fail_enqueue)
     out = send("audit", to="p2:a9")
 
     assert "inbox unavailable" in out
@@ -350,7 +350,7 @@ def test_busy_duplicate_cancels_duplicate_admission(parent_turn, monkeypatch):
         "openprogram.runtime.conversation.run_control.is_turn_running",
         lambda sid: sid == "p2",
     )
-    monkeypatch.setattr("openprogram.runtime.conversation.inbox.enqueue", lambda *a, **k: "duplicate")
+    monkeypatch.setattr("openprogram.runtime.conversation.peer_agents.inbox.enqueue", lambda *a, **k: "duplicate")
     out = send("audit", to="p2:a9")
 
     assert "duplicate message ignored" in out
@@ -362,7 +362,7 @@ def test_busy_duplicate_cancels_duplicate_admission(parent_turn, monkeypatch):
 # --- inbox drain ---
 
 def test_drain_delivers_queued_entry_on_its_job(parent_turn, monkeypatch):
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     tid, _ = _dispatch_queued(parent_turn, monkeypatch)
     monkeypatch.setattr(
         "openprogram.runtime.conversation.run_control.is_turn_running", lambda sid: False)
@@ -376,7 +376,7 @@ def test_drain_delivers_queued_entry_on_its_job(parent_turn, monkeypatch):
 
 
 def test_drain_skips_withdrawn_entry(parent_turn, monkeypatch):
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.runtime.jobs import get_runner
     tid, _ = _dispatch_queued(parent_turn, monkeypatch)
     get_runner().cancel_execution(tid)

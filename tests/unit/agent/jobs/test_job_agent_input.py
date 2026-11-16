@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.runtime.execution.job_input import JobAgentInputError
+from openprogram.runtime.execution.admission_input.job_input import JobAgentInputError
 from openprogram.runtime.jobs.input import JobAgentInputV1
 from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
 from openprogram.runtime.execution import ExecutionStore
@@ -153,7 +153,7 @@ def test_a_job_starts_in_the_default_only_when_the_owner_started_it(tier, source
 
 
 def test_a_job_with_no_parent_to_inherit_from_runs_as_its_conversation(monkeypatch):
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.jobs.types import Job
     from openprogram.runtime.permissions.modes import PermissionRules
 

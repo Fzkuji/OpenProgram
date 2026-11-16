@@ -85,21 +85,23 @@ def _codex_ping(
         "originator": "openprogram",
         "OpenAI-Beta": "responses=experimental",
     }
-    # Codex credential lives in the OAuth pool, not env/config — ask CredentialProvider.
+    # A ChatGPT sign-in: the one a request would use now.
     if not api_key:
         try:
             from openprogram.models.auth.credential_provider import get_credential_provider
             cred = get_credential_provider().acquire_sync(provider_id)
-            api_key = getattr(cred.payload, "access_token", None) or None
-            account_id = (getattr(cred.payload, "extra", None) or {}).get("account_id", "")
-            if account_id:
-                headers["chatgpt-account-id"] = account_id
+            api_key = cred.payload.auth_value or None
         except Exception:
             return {
                 "ok": False,
-                "error": ("No usable Codex credential. "
-                          "Run `openprogram providers login openai-codex`."),
+                "error": ("No usable Codex sign-in. "
+                          "Run `openprogram providers keys openai-codex add`."),
             }
+    if api_key:
+        from openprogram.models.providers.adapters.openai_codex.oauth import _get_account_id_from_jwt
+        account_id = _get_account_id_from_jwt(api_key) or ""
+        if account_id:
+            headers["chatgpt-account-id"] = account_id
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 

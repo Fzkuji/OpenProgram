@@ -61,6 +61,16 @@ test("a field a server row never carries survives its upsert", () => {
   assert.deepEqual(out.rows.a.retryStatus, { attempt: 2 });
 });
 
+test("a reply's credential notices stay while it streams and the stored ones win once it is saved", () => {
+  const live = [{ to: "Work", from: "Personal", cause: "rate_limit" }];
+  const start = view(row("a", { credentialNotices: live }));
+  const streaming = applyTranscriptChanges(start, [{ kind: "row_upsert", turnId: "a", afterRowId: null, row: row("a", { content: "x" }) }], context(["a"]));
+  assert.deepEqual(streaming.rows.a.credentialNotices, live);
+  const stored = [{ to: "Work", from: "Personal", cause: "quota" }];
+  const saved = applyTranscriptChanges(streaming, [{ kind: "row_upsert", turnId: "a", afterRowId: null, row: row("a", { credentialNotices: stored }) }], context(["a"]));
+  assert.deepEqual(saved.rows.a.credentialNotices, stored);
+});
+
 test("applying the same change twice leaves one card", () => {
   const change = { kind: "item_upsert", turnId: "t", rowId: "r", list: "attachCards", item: card("c", "running") };
   const out = applyTranscriptChanges(view(row("r")), [change, change], context());
@@ -236,4 +246,33 @@ test("an until_row_gone overlay ends with its row", () => {
   const retried = overlaid({ status: "running" }, "until_row_gone");
   const gone = applyLocalChange(retried, { kind: "local_remove", rowId: "r" });
   assert.equal(gone.overlays, undefined);
+});
+
+test("the frame that opens a block writes its task and step on it; a later frame does not restamp it", () => {
+  const start = view(row("r", { content: "", blocks: [], status: "streaming" }));
+  const first = applyTextFrame(start, textFrame(0, "he", { task: "T3", step: "16" }));
+  assert.deepEqual([first.rows.r.blocks[0].task, first.rows.r.blocks[0].step], ["T3", "16"]);
+  const more = applyTextFrame({ order: ["r"], rows: first.rows }, textFrame(2, "llo", { task: "T3", step: "17" }));
+  assert.deepEqual([more.rows.r.blocks[0].text, more.rows.r.blocks[0].step], ["hello", "16"]);
+  const plain = applyTextFrame(start, textFrame(0, "x"));
+  assert.equal("task" in plain.rows.r.blocks[0], false);
+});
+
+test("a tool block's task and step arrive with it and follow a later upsert", () => {
+  const start = view(row("r", { status: "streaming", blocks: [] }));
+  const change = (item) => ({ kind: "item_upsert", turnId: "t", rowId: "r", list: "blocks", index: 0, item });
+  const first = applyTranscriptChanges(start, [change({ id: "tool:c1", type: "tool", tool: "grep", tool_call_id: "c1", task: "T3", step: "14" })], context(["t"]));
+  assert.deepEqual([first.rows.r.blocks[0].task, first.rows.r.blocks[0].step], ["T3", "14"]);
+  const moved = applyTranscriptChanges(first, [change({ id: "tool:c1", type: "tool", tool: "grep", tool_call_id: "c1", task: "T3", step: "15" })], context(["t"]));
+  assert.equal(moved.rows.r.blocks[0].step, "15");
+});
+
+test("a turn that follows one the view does not hold is not drawn as the newest", () => {
+  // A read already held the writes this update sends late: the turn before
+  // the window comes again, after a turn this view does not have.
+  const older = { id: "before-47", rows: [row("before-47")] };
+  const out = applyTranscriptChanges(view(row("cut")), [{ kind: "turn_upsert", turn: older, afterTurnId: "before-46" }], context(["cut"]));
+  assert.deepEqual(out.order, ["cut"]);
+  assert.equal(out.addedTurns.length, 0);
+  assert.equal(out.turnsPastWindow, 0);
 });

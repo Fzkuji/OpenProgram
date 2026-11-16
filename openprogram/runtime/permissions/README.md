@@ -10,9 +10,9 @@ permission policy independently.
 | `rule.py` | Rule strings: parsing, printing, command matching and merged global/project/session rule sets |
 | `state.py` | Persisted modes, authenticated owner validation and atomic version checks |
 | `policy.py` | Shared decisions, explicit rules, Plan restrictions and hard constraints |
-| `classifier.py` | Auto-mode risk classification; only JSON boolean `true` grants approval |
-| `approval.py` | Approval manifests, exact wait consumption and authorized tool execution |
-| `lifecycle.py` | Per-call snapshots, confirmed live changes and durable wait reconciliation |
+| `auto_mode/classifier.py` | Auto-mode risk classification; only JSON boolean `true` grants approval |
+| `approvals/approval.py` | Approval manifests, exact wait consumption and authorized tool execution |
+| `approvals/lifecycle.py` | Per-call snapshots, confirmed live changes and durable wait reconciliation |
 | `modes.py` | Permission modes (`VALID_PERMISSION`, `DEFAULT_PERMISSION`) and `PermissionRules`; session settings re-export them |
 | `session_facts.py` | The session and turn facts permission code reads, registered by the conversation package |
 
@@ -30,7 +30,7 @@ conversation knows (the bound session and execution, a running turn, plan
 mode, session-layer rules, project defaults, surface grants, the Agent's
 outbound hold, the session's chat model, an execution's turn request) is
 read through `session_facts.facts()`, which
-`openprogram.runtime.conversation.permission_registration` registers on
+`openprogram.runtime.conversation.layer_registrations.permission_registration` registers on
 import. Process isolation remains
 in `sandbox/`. `SessionStore` owns settings and the execution wait store owns
 approval outcomes. Permission updates do not mutate admission identity or reuse

@@ -1,7 +1,7 @@
 """Node-level memory write markers and branch-local ingestion."""
 from __future__ import annotations
 
-from openprogram.state.store.session.session_log import SessionLog
+from openprogram.state.store.session.files.session_log import SessionLog
 import atexit
 import json
 import re

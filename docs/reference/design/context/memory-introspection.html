@@ -145,7 +145,7 @@ Harness: OpenProgram · its own state lives at ~/.openprogram (not the project y
 <tbody>
 <tr><th scope="row">Memory describes itself: name, root, topic count, last write, budget used</th><td><code translate="no">MemoryBackend.describe()</code></td><td>The interface stays small; C covers failures</td></tr>
 <tr><th scope="row">Each component declares its source, as <code translate="no">Contents of {path} ({owner})</code></th><td>An <code translate="no">origin</code> field; edits to every builder; every cached prefix invalidates</td><td>One block causes the problem; untagged components (<code translate="no">base</code>, <code translate="no">inline_prompt</code>, <code translate="no">current_date</code>) can wait</td></tr>
-<tr><th scope="row"><code translate="no">context_status</code> tool: what this turn saw, which block is memory, what was absent</th><td>Expose <code translate="no">context/breakdown.py</code> to the model</td><td>A and C give the needed knowledge</td></tr>
+<tr><th scope="row"><code translate="no">context_status</code> tool: what this turn saw, which block is memory, what was absent</th><td>Expose <code translate="no">context/token_accounting/breakdown.py</code> to the model</td><td>A and C give the needed knowledge</td></tr>
 <tr><th scope="row">Status lines carry checkable quantities</th><td><code translate="no">describe()</code>, as above</td><td>Do with the first item, to change the interface once</td></tr>
 </tbody>
 </table>

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import os
 import time
+import logging
 from typing import Any
 
 from openprogram.state.memory.references import (
@@ -12,6 +13,8 @@ from openprogram.state.memory.references import (
     resolve as resolve_memory_refs,
 )
 from openprogram.programs.tools.jobs.cron import cron as cron_tool
+
+logger = logging.getLogger(__name__)
 
 
 TASK_TYPES = frozenset({"once", "recurring", "monitor", "webhook"})
@@ -292,15 +295,20 @@ def update_task(
     return updated
 
 
-def delete_task(task_id: str) -> bool:
+def delete_task(task_id: str, *, by: str = "") -> bool:
+    """Remove a task. ``by`` names what asked (the API, the cron tool, ...):
+    the worker log is then the record of when a task went and through what."""
     path = cron_tool._resolve_path()
     with cron_tool._store_lock(path):
         entries = cron_tool._load(path)
         kept = [row for row in entries if row.get("id") != task_id]
         if len(kept) == len(entries):
             return False
+        gone = next(row for row in entries if row.get("id") == task_id)
         cron_tool._save(path, kept)
-        return True
+    logger.info("scheduler task %s (%s, %s) deleted by %s", task_id, gone.get("type") or "task",
+                str(gone.get("title") or "")[:60], by or "an unnamed caller")
+    return True
 
 
 __all__ = [

@@ -27,8 +27,8 @@ def payload_summary(cred: Credential) -> str:
         return f"oauth {mask_secret(p.auth_value)}{extra} exp={expiry}"
     if p.kind == "device_code":
         return f"device_code {mask_secret(p.auth_value)} exp={format_expiry(p.data.get('expires_at_ms', 0))}"
-    if p.kind == "cli_delegated":
-        return f"cli_delegated → {p.data.get('store_path')}"
+    if p.kind == "import":
+        return f"import → {p.data.get('store_path')}"
     if p.kind == "credential_process":
         return f"credential_process {' '.join(p.data.get('command', []))}"
     return cred.kind

@@ -53,7 +53,7 @@ def test_app_control_safe_point_waits_before_tool_effect_and_resumes_once(
     from openprogram.runtime.conversation.production_driver import AgentProductionDriver
     from openprogram.runtime.execution.control import RuntimeControlService
     from openprogram.runtime.execution.driver import DriverRegistry
-    from openprogram.runtime.execution.effects import EffectStore
+    from openprogram.runtime.execution.recovery.effects import EffectStore
     from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
     from openprogram.models.providers.types import Model
 
@@ -577,8 +577,8 @@ def test_production_pause_precedes_steer_and_paused_steer_is_next_activation_inp
 
 def test_long_turn_pause_continue_uses_current_decision_cursor(tmp_path):
     from openprogram.runtime.conversation.checkpoint import AgentContinuation
-    from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
-    from openprogram.runtime.execution.public import execution_snapshot
+    from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
+    from openprogram.runtime.execution.projections.public import execution_snapshot
 
     store, attempts, control, driver, request, snapshot, execution, active, hook = (
         _prepare_long_turn(tmp_path, "exec-long-pause")
@@ -769,7 +769,7 @@ def test_function_suspension_retains_pending_agent_tool_slot(tmp_path, monkeypat
     )
     monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
     from openprogram.runtime.conversation.checkpoint import AgentContinuation
-    from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
+    from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
 
     store, attempts, control, driver, request, snapshot, execution, active, hook = (
         _prepare_long_turn(tmp_path, "function-slot")
@@ -976,7 +976,7 @@ def test_function_pause_while_a_step_starts_stops_after_it_and_resumes_past_it(
         FunctionSuspended,
         function_execution,
     )
-    from openprogram.runtime.execution.effects import EffectStore
+    from openprogram.runtime.execution.recovery.effects import EffectStore
     from openprogram.runtime.execution.function_log import COMMITTED, FunctionLog
 
     store, active, control, program = _pause_admission_owner(tmp_path, monkeypatch)
@@ -1116,7 +1116,7 @@ def test_function_pause_after_dispatch_keeps_unknown_effect_for_reconciliation(
     import pytest
 
     from openprogram.runtime.agent.durable_steps import function_execution
-    from openprogram.runtime.execution.effects import EffectStore, EffectStatus
+    from openprogram.runtime.execution.recovery.effects import EffectStore, EffectStatus
     from openprogram.runtime.execution.function_log import FunctionLog
     from openprogram.runtime.execution.state_machine import InvalidCommand
 

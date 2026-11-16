@@ -9,9 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.interfaces.channels import _active_turns, _conversation, _room
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _active_turns, _conversation, _room
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 from openprogram.runtime.execution.model import ExecutionStatus
 
@@ -24,11 +24,11 @@ def _state(tmp_path, monkeypatch: pytest.MonkeyPatch):
     state.mkdir(mode=0o700)
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation._route",
+        "openprogram.interfaces.channels.inbound._conversation._route",
         lambda channel, account_id, peer, *, rotate=True: ("main", SESSION, "base"),
     )
     _room.reset_state()
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
     _access.approve_user("faketg", "acct1", "701")
     yield
     _room.reset_state()
@@ -65,7 +65,7 @@ def _group(text: str, user: str = "701") -> ChannelMessage:
 
 def _set_group_level(monkeypatch: pytest.MonkeyPatch, level: str) -> None:
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._access.group_sender_access",
+        "openprogram.interfaces.channels.inbound._access.group_sender_access",
         lambda *args, **kwargs: level,
     )
 
@@ -101,7 +101,7 @@ def test_stop_finds_a_turn_on_an_older_session_key(monkeypatch) -> None:
 def test_stop_never_starts_a_new_generation(monkeypatch) -> None:
     routed: list[bool] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._conversation._route",
+        "openprogram.interfaces.channels.inbound._conversation._route",
         lambda channel, account_id, peer, *, rotate=True: routed.append(rotate) or ("main", SESSION, "base"),
     )
     monkeypatch.setattr(

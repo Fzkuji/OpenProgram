@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { cachedFetch, invalidate, readCachedSettings } from "@/lib/prefs/settings-cache";
+import { CREDENTIALS_CHANGED } from "../detail/credential-model";
 import type {
   ProviderQuotaFrame,
   ProviderStatus,
@@ -14,6 +15,9 @@ export const STATUS_URL = "/api/providers/status";
 /** The window event a `provider_quota` WebSocket frame becomes
  *  (lib/net/ws/use-ws.ts): one key's new quota, applied in place. */
 export const QUOTA_EVENT = "op:provider-quota";
+
+/** How long the cards wait after a change for the rest of its burst. */
+export const CHANGE_SETTLE_MS = 250;
 
 /** One key's new quota folded into the payload, without a request. */
 export function applyQuotaFrame(payload: ProviderStatusPayload, frame: ProviderQuotaFrame): ProviderStatusPayload {
@@ -39,8 +43,9 @@ export function applyQuotaFrame(payload: ProviderStatusPayload, frame: ProviderQ
 }
 
 /** The status of every connected provider: read once (cached 30 s for the
- *  next visit), kept current by quota frames, re-read when providers or
- *  models change, and read fresh from every quota endpoint by Refresh. */
+ *  next visit), kept current by quota frames, re-read when providers,
+ *  models or a provider's credentials change (a burst of changes is read
+ *  once), and read fresh from every quota endpoint by Refresh. */
 export function useProviderStatus() {
   const [payload, setPayload] = useState<ProviderStatusPayload | null>(
     () => readCachedSettings<ProviderStatusPayload>(STATUS_URL) ?? null,
@@ -66,12 +71,19 @@ export function useProviderStatus() {
       if (!frame?.provider) return;
       setPayload((prev) => (prev ? applyQuotaFrame(prev, frame) : prev));
     };
-    const onChanged = () => { void load(true); };
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onChanged = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; void load(true); }, CHANGE_SETTLE_MS);
+    };
     window.addEventListener(QUOTA_EVENT, onQuota);
     window.addEventListener("op:provider-models-changed", onChanged);
+    window.addEventListener(CREDENTIALS_CHANGED, onChanged);
     return () => {
+      if (timer) clearTimeout(timer);
       window.removeEventListener(QUOTA_EVENT, onQuota);
       window.removeEventListener("op:provider-models-changed", onChanged);
+      window.removeEventListener(CREDENTIALS_CHANGED, onChanged);
     };
   }, [load]);
 

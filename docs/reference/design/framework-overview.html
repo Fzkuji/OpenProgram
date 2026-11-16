@@ -120,7 +120,7 @@
 <tr><th scope="row"><code translate="no">subagent.started / .ended</code></th><td><code translate="no">jobs/runner/shared.py</code></td><td>observers</td><td>origin system; session passed explicitly</td></tr>
 <tr><th scope="row"><code translate="no">branch.message_sent</code></th><td><code translate="no">send_message.py</code></td><td>observers, ws.frame</td><td>from, to</td></tr>
 <tr><th scope="row"><code translate="no">question.asked</code></th><td><code translate="no">agent/questions.py</code></td><td>channels _question_bridge.py</td><td>Bus and ws frame</td></tr>
-<tr><th scope="row"><code translate="no">question.replied</code></th><td><code translate="no">permissions/lifecycle.py</code></td><td>front end</td><td>ws frame only</td></tr>
+<tr><th scope="row"><code translate="no">question.replied</code></th><td><code translate="no">permissions/approvals/lifecycle.py</code></td><td>front end</td><td>ws frame only</td></tr>
 <tr><th scope="row"><code translate="no">question.rejected</code></th><td><code translate="no">agent/questions.py</code></td><td>front end, as withdrawn</td><td>ws frame only</td></tr>
 <tr><th scope="row"><code translate="no">context.compacted</code></th><td><code translate="no">context/engine.py</code></td><td>UI, observers</td><td>Compaction happened</td></tr>
 <tr><th scope="row"><code translate="no">file.changed</code></th><td>functions watcher and others</td><td>observers</td><td>File change</td></tr>
@@ -139,7 +139,7 @@
 <tr><th scope="row">Storage</th><td><code translate="no">state/store/session/session_store/</code>, <code translate="no">memory_index.py</code>, <code translate="no">session_log.py</code></td></tr>
 <tr><th scope="row">Event layer</th><td><code translate="no">runtime/events/</code> (<code translate="no">bus.py</code>, <code translate="no">tool_gate.py</code>), <code translate="no">runtime/agent/questions.py</code></td></tr>
 <tr><th scope="row">Context engine</th><td><code translate="no">runtime/context/</code>: <code translate="no">engine.py</code>, <code translate="no">render.py</code>, <code translate="no">compaction/</code>; finalize in <code translate="no">conversation/turn_runtime/finalize.py</code></td></tr>
-<tr><th scope="row">Agent run</th><td><code translate="no">runtime/agent/loop/</code>, <code translate="no">conversation/sub_agent_run.py</code>, <code translate="no">models/providers/utils/event_stream.py</code>, <code translate="no">extensions/gating.py</code></td></tr>
+<tr><th scope="row">Agent run</th><td><code translate="no">runtime/agent/loop/</code>, <code translate="no">conversation/peer_agents/sub_agent_run.py</code>, <code translate="no">models/providers/utils/streams/event_stream.py</code>, <code translate="no">extensions/gating.py</code></td></tr>
 <tr><th scope="row">Collaboration</th><td><code translate="no">programs/tools/agents/send_message/</code>, <code translate="no">programs/tools/agents/agent/</code></td></tr>
 </tbody>
 </table>
@@ -187,4 +187,4 @@
 <tr><th scope="row">Context engine</th><td><code translate="no">ContextEngine.after_turn</code> has a stub on the abstract base and the working version on the concrete engine.</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="framework-comparison.html">Framework comparison</a></p>
+<p class="next"><a href="framework-comparison/overview.html">Framework comparison</a></p>

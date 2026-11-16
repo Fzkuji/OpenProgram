@@ -37,6 +37,7 @@ from .provider_status import (
     fix_for,
     health_of,
     is_subscription,
+    in_use,
     keys_of,
     local_health,
     quota_of,
@@ -70,6 +71,10 @@ class PickerBalance(TypedDict):
 
 class PickerProvider(TypedDict):
     id: str
+    #: The menu's name for one way of a company reached several ways
+    #: ("OpenAI · ChatGPT"), in English and Chinese; null for any other provider.
+    name: Optional[str]
+    name_zh: Optional[str]
     #: Has a key, a sign-in, or (local) a server address.
     configured: bool
     state: HealthState
@@ -80,7 +85,8 @@ class PickerProvider(TypedDict):
     balance: Optional[PickerBalance]
     #: The values are older than 15 minutes.
     stale: bool
-    #: Mark the picker trigger: an action is needed, or the quota warns.
+    #: Mark the picker trigger: an action is needed, or the quota is nearly
+    #: spent (95 % used) or spent. A quota that only warns leaves it plain.
     attention: bool
 
 
@@ -136,7 +142,7 @@ def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = N
     from openprogram.models.providers.catalog.local import is_local_provider
     from .quota_fetchers import last_reads
     now = time.time() if now is None else now
-    keys = keys_of(provider_id)
+    keys = in_use(keys_of(provider_id))
     stored = {k["credential_id"] for k in keys} | {""}
     reports = [r for r in default_store.reports(provider_id) if r.account in stored]
     reads = {a: r for a, r in last_reads(provider_id).items() if a in stored}
@@ -152,8 +158,12 @@ def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = N
     limits = report.limits if report else []
     quota = picker_quota(limits, now)
     state = health["state"]
+    from openprogram.models.auth.login.login_method_registry import company_of
+    found = company_of(provider_id)
     return {
         "id": provider_id,
+        "name": f"{found[0].label} · {found[1].short}" if found else None,
+        "name_zh": f"{found[0].label} · {found[1].short_zh}" if found else None,
         "configured": configured,
         "state": state,
         "until": health["until"],
@@ -161,7 +171,7 @@ def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = N
         "quota": quota,
         "balance": picker_balance(limits),
         "stale": bool(wire["stale"]),
-        "attention": state in _ACTION_STATES or bool(quota and (quota["warn"] or quota["tone"] == "danger")),
+        "attention": state in _ACTION_STATES or bool(quota and quota["tone"] == "danger"),
     }
 
 

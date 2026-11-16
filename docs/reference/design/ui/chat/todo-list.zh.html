@@ -1,0 +1,82 @@
+<title>任务存储</title>
+<meta name="description" content="对话怎么保存它的任务：在 todos.json 里，一个任务是一份清单，一个步骤是一条待办，每条回复和每个任务有一段供对话画出来。">
+<h1>任务存储</h1>
+
+<p>一个任务是一份清单，一个步骤是一条待办，按对话保存在 <code translate="no">todos.json</code> 里。<a href="task-blocks.zh.html">任务块</a>从它画出。</p>
+
+<dl class="pairs">
+<dt>任务</dt><dd><code translate="no">T3</code>：标题、目的、打开、做完或被顶掉、结果、是否推进过、它所属的 Goal</dd>
+<dt>步骤</dt><dd><code translate="no">plan</code> 等于任务 id 的一条待办：等待、进行中、已完成或已放弃，带半句 <code translate="no">result</code></dd>
+<dt>段</dt><dd>每条回复和每个任务一段：任务和它全部步骤在这条回复最后留下的样子</dd>
+</dl>
+
+<h2>看板</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">每个分支一块看板</th><td>任务、步骤和段。重试、编辑或分叉出来的分支从它离开的那块看板的副本开始，两个分支不会互相覆盖。</td></tr>
+<tr><th scope="row">每个 agent 一个开着的任务</th><td>开新任务会关掉开着的那个。子 agent 的任务是它自己的（<code translate="no">scope</code> 为 <code translate="no">agent:&lt;id&gt;</code>）。</td></tr>
+<tr><th scope="row">Id</th><td>任务是 <code translate="no">T&lt;n&gt;</code>，按看板计数。步骤沿用待办 id；模型按步骤在任务里的位置称呼它，第一步是 1。</td></tr>
+<tr><th scope="row">放弃的步骤</th><td>不计入进度，也不是 Goal 的要求。仍然列给 Goal 的验收者。</td></tr>
+<tr><th scope="row">没有任务的子 agent</th><td>勾对话里开着的任务的一步；更新父任务最新的一段</td></tr>
+</tbody>
+</table>
+
+<h2>段</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anchor_id</code>、<code translate="no">plan_id</code></th><td>回复和任务。同一条回复里之后的改动替换这一段；之后的回复里的改动新增一段，所以更早的回复保留它当时留下的任务。</td></tr>
+<tr><th scope="row"><code translate="no">state</code></th><td><code translate="no">running</code>、<code translate="no">done</code>、<code translate="no">carried</code>（开着，在之后的轮次继续）或 <code translate="no">displaced</code>（被另一个任务顶掉）。停止和失败不保存：由回复的状态说明。</td></tr>
+<tr><th scope="row"><code translate="no">current</code></th><td>最后一次改动时进行中的步骤；停止后保留</td></tr>
+<tr><th scope="row"><code translate="no">earlier</code></th><td>这一段开始时已经完成的步骤：就是“前几步已完成”那一行</td></tr>
+<tr><th scope="row"><code translate="no">advanced</code></th><td>是否有步骤调用推进过这个任务</td></tr>
+<tr><th scope="row"><code translate="no">todos</code></th><td>每一个步骤：id、标题、状态、结果</td></tr>
+<tr><th scope="row"><code translate="no">title</code>、<code translate="no">purpose</code>、<code translate="no">outcome</code>、<code translate="no">started_at</code>、<code translate="no">ended_at</code></th><td>标题行显示的内容</td></tr>
+</tbody>
+</table>
+<p class="note">每个分支保留 500 段；最早的被丢掉。</p>
+
+<h2>发给界面的内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">帧</th><th scope="col">携带</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">todos_update</code></th><td><code translate="no">changed</code>：一次调用或一轮结束改动的那些段。客户端按回复和任务替换自己的那一份。</td></tr>
+<tr><th scope="row"><code translate="no">session_loaded</code></th><td><code translate="no">todo_plans</code>：所有分支的段</td></tr>
+<tr><th scope="row"><code translate="no">goal_update</code></th><td><code translate="no">progress</code>：Goal 最近的任务、进行中的步骤、已完成和计数的步数、它最新的块所在的回复</td></tr>
+<tr><th scope="row">块和文字帧</th><td>每个文字、思考和工具块上的 <code translate="no">task</code> 和 <code translate="no">step</code></td></tr>
+</tbody>
+</table>
+
+<h2>任务之前保存的数据</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">条目</th><th scope="col">读成</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有 <code translate="no">title</code> 的段</th><td>一份普通的待办清单，按保存的样子读。对话把一条回复下同一个 agent 的条目合成一份清单，收起来画一次。</td></tr>
+<tr><th scope="row">不属于任何任务的待办</th><td>留在看板上；仍然计入创建它时所属的 Goal</td></tr>
+<tr><th scope="row">只有一块看板的文件</th><td>属于第一次读取时选中的分支</td></tr>
+</tbody>
+</table>
+
+<h2>依据</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">任务下面仍是待办存储</th><td>Goal 验收、Goal 的清单和子 agent 勾父任务的步骤本来就读待办。任务只是在上面加了名字和状态；它们都不用改。</td></tr>
+<tr><th scope="row">每条回复一段</th><td>以后再读一条回复，看到的是它当时留下的任务；跨多轮的任务在每一轮画自己那一部分</td></tr>
+<tr><th scope="row">只发改动的段</th><td>长 Goal 有几百段；重新连接时整份重新加载</td></tr>
+<tr><th scope="row">停止不是保存的状态</th><td>回复已经说明了它怎么结束；第二份副本可能与它不一致</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>代码</summary>
+<ul>
+<li><code translate="no">openprogram/programs/tools/planning/todo/shared.py</code>（<code translate="no">place_segment</code>、<code translate="no">close_at_turn_end</code>、<code translate="no">turn_owner</code>、<code translate="no">publish</code>）</li>
+<li><code translate="no">openprogram/programs/tools/planning/todo/task_start/task_start.py</code>、<code translate="no">task_step/task_step.py</code></li>
+<li><code translate="no">openprogram/programs/tools/planning/goal/chat.py</code>（<code translate="no">progress</code>）</li>
+<li><code translate="no">apps/web/lib/chat/transcript/task-blocks.ts</code>（<code translate="no">normalizeSegments</code>、<code translate="no">tasksByRow</code>、<code translate="no">oneListPerAgent</code>）</li>
+</ul>
+</details>
+
+<p class="next"><a href="task-blocks.zh.html">任务块</a></p>

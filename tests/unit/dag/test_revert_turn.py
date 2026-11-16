@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.runtime.conversation.revert.revert_turn.
+"""Unit tests for openprogram.runtime.conversation.rewinds.revert.revert_turn.
 
 Drives the CheckpointStore directly (no real dispatcher needed) — the
 unit under test is the wiring between SessionStore + CheckpointStore +
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.runtime.conversation.revert import reapply_turn, revert_turn
+from openprogram.runtime.conversation.rewinds.revert import reapply_turn, revert_turn
 from openprogram.state.store.session.session_store import SessionStore
 from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 

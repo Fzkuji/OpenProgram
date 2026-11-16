@@ -26,6 +26,8 @@ one execution. Anything else is refused as before.
 """
 from __future__ import annotations
 
+import contextlib
+
 import threading
 import time
 import uuid
@@ -136,11 +138,9 @@ def forget_operation(session_id: str, task: dict | None) -> None:
     with _cancel_events_lock:
         _cancel_events.pop(op_id, None)
     if (task or {}).get("_recorded"):
-        try:
+        with contextlib.suppress(Exception):  # noqa: BLE001 - a stale record is swept at the next start
             from openprogram.state.store.session.operations import finish_operation
             finish_operation(session_id, op_id)
-        except Exception:  # noqa: BLE001 - a stale record is swept at the next start
-            pass
 
 
 def holds_its_slot(task: dict) -> bool:

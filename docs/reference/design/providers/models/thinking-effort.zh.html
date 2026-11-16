@@ -25,7 +25,7 @@
 <h2 id="data-flow">从选择器到请求</h2>
 <ol>
 <li><code translate="no">get_thinking_config_for_model</code>（<code translate="no">interfaces/server/thinking_effort.py</code>）用模型的 <code translate="no">thinking_levels</code> 生成选项。</li>
-<li><code translate="no">_normalize_thinking</code>（<code translate="no">runtime/conversation/session_config.py</code>）按 <code translate="no">VALID_THINKING</code> 校验，按会话分支保存。新分支创建时继承一次，切换时恢复对应分支的选择。</li>
+<li><code translate="no">_normalize_thinking</code>（<code translate="no">runtime/conversation/session_settings/session_config.py</code>）按 <code translate="no">VALID_THINKING</code> 校验，按会话分支保存。新分支创建时继承一次，切换时恢复对应分支的选择。</li>
 <li><code translate="no">reasoning_from_config</code> 把它作为 <code translate="no">SimpleStreamOptions.reasoning</code> 交给本轮，由 <code translate="no">normalize_reasoning_level</code> 限制在模型的档位之内（见下）。</li>
 <li>提供商的 <code translate="no">stream_simple()</code> 调用 <code translate="no">translate_reasoning(provider, model, level)</code>，把结果写进请求字段，例如 <code translate="no">{"output_config": {"effort": "high"}}</code>。</li>
 </ol>
@@ -120,7 +120,7 @@
 <tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>唯一的推导入口</td></tr>
 <tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch 补全</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>从 capabilities 取档位</td></tr>
-<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>、<code translate="no">reasoning_from_config</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_settings/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>、<code translate="no">reasoning_from_config</code></td></tr>
 </tbody>
 </table>
 </details>

@@ -163,7 +163,7 @@ def test_check_in_reports_and_delivers_to_a_channel(world):
 def test_a_check_in_that_finds_nothing_stays_out_of_sight(world):
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.conversation import always_on
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn
     from tests.component.providers.scripted_provider import ScriptedText
 
     world.manager.update(world.agent_id, {"always_on": {"enabled": True, "research": True}})
@@ -216,6 +216,9 @@ def test_standing_goal_starts_once_as_a_goal(world):
     # ("busy": the Goal's own next turn is already running.)
     assert always_on.wake(sid, reason="manual")["outcome"] in {"goal_in_progress", "goal_paused", "check_in", "busy"}
     assert store.load_state(sid)["applied_goal"]["text"] == "Watch the docs"
+    # A check-in this wake started ends before the test does: left running,
+    # it would ask the next test's model.
+    wait_until(lambda: _wake_ended(sid), timeout=30)
 
 
 class _RoutedProvider:
@@ -252,14 +255,14 @@ def test_send_message_reaches_the_other_conversation_by_its_title(world, monkeyp
     reply routes back to the sender (the reply notice itself is covered by
     the job notice tests; this world runs no Job dispatcher)."""
     from openprogram.models.providers.catalog import api_registry
-    from openprogram.runtime.permissions import classifier
+    from openprogram.runtime.permissions.auto_mode import classifier
 
     async def allow(*_a, **_kw):
         # Auto mode reviews a message like any action; the reviewer approves here.
         return classifier.ReviewResult(False, "", "")
     monkeypatch.setattr(classifier, "auto_classify_tool", allow)
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn
     from openprogram.runtime.jobs.store import list_jobs
     from tests.component.providers.scripted_provider import ScriptedToolCall
 

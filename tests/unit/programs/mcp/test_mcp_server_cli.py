@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from openprogram.interfaces.cli import application as cli
-from openprogram.interfaces.cli.commands import mcp as mcp_commands
+from openprogram.interfaces.cli.commands.capabilities import mcp as mcp_commands
 
 
 def _auth():

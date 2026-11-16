@@ -7,7 +7,7 @@ import time
 from openprogram.runtime.agent.loop import _execute_tool_calls
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 
 
 def _asst(call_id: str, name: str, args: dict) -> AssistantMessage:
@@ -89,7 +89,7 @@ def test_changed_args_are_not_tripped():
 
 
 def test_many_distinct_failures_keep_safe_point_payload_valid():
-    from openprogram.runtime.execution.runtime_contract import MAX_AGENT_REPEAT_FAILURES
+    from openprogram.runtime.execution.admission_input.runtime_contract import MAX_AGENT_REPEAT_FAILURES
 
     async def execute(call_id, args, cancel, on_update):
         return AgentToolResult(content=[TextContent(text="failed")], details={}, is_error=True)

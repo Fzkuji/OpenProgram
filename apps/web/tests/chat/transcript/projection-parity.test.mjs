@@ -23,6 +23,7 @@ const ADDED = new Set([
   "coveredBy", // the compaction card folding a row
   "origin", "clientRequestId", // who wrote a user row and which send it answers
   "continues", // the cut replies a continuation joins
+  "finishedAt", // when a reply ended, which a stopped task block counts its time up to
 ]);
 /** Fields only the mapper had: a card named what it covered, which coveredBy now says on each row. */
 const RETIRED = new Set(["coversIds"]);
@@ -35,6 +36,9 @@ function comparable(value, inBlock = false) {
   for (const [key, item] of Object.entries(value)) {
     if (item === null || item === undefined || ADDED.has(key) || RETIRED.has(key)) continue;
     if (inBlock && ADDED_IN_BLOCKS.has(key)) continue;
+    // A run's measured length, like a clock reading, differs on every
+    // recording run.
+    if (key === "duration_s" && typeof item === "number") { out[key] = "<duration>"; continue; }
     if (key === "blocks" && Array.isArray(item)) out[key] = item.map((block) => comparable(block, true));
     else out[key] = comparable(item);
   }

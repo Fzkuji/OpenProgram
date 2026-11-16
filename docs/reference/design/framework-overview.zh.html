@@ -120,7 +120,7 @@
 <tr><th scope="row"><code translate="no">subagent.started / .ended</code></th><td><code translate="no">jobs/runner/shared.py</code></td><td>旁观</td><td>origin 为 system；session 显式传递</td></tr>
 <tr><th scope="row"><code translate="no">branch.message_sent</code></th><td><code translate="no">send_message.py</code></td><td>旁观、ws.frame</td><td>from、to</td></tr>
 <tr><th scope="row"><code translate="no">question.asked</code></th><td><code translate="no">agent/questions.py</code></td><td>渠道 _question_bridge.py</td><td>同时进总线和 ws 帧</td></tr>
-<tr><th scope="row"><code translate="no">question.replied</code></th><td><code translate="no">permissions/lifecycle.py</code></td><td>前端</td><td>只走 ws 帧</td></tr>
+<tr><th scope="row"><code translate="no">question.replied</code></th><td><code translate="no">permissions/approvals/lifecycle.py</code></td><td>前端</td><td>只走 ws 帧</td></tr>
 <tr><th scope="row"><code translate="no">question.rejected</code></th><td><code translate="no">agent/questions.py</code></td><td>前端、按收回处理</td><td>只走 ws 帧</td></tr>
 <tr><th scope="row"><code translate="no">context.compacted</code></th><td><code translate="no">context/engine.py</code></td><td>UI、旁观</td><td>已压缩</td></tr>
 <tr><th scope="row"><code translate="no">file.changed</code></th><td>functions watcher and others</td><td>旁观</td><td>文件变更</td></tr>
@@ -139,7 +139,7 @@
 <tr><th scope="row">存储</th><td><code translate="no">state/store/session/session_store/</code>、<code translate="no">memory_index.py</code>、<code translate="no">session_log.py</code></td></tr>
 <tr><th scope="row">事件层</th><td><code translate="no">runtime/events/</code>（<code translate="no">bus.py</code>、<code translate="no">tool_gate.py</code>）、<code translate="no">runtime/agent/questions.py</code></td></tr>
 <tr><th scope="row">上下文引擎</th><td><code translate="no">runtime/context/</code>：<code translate="no">engine.py</code>、<code translate="no">render.py</code>、<code translate="no">compaction/</code>；finalize 在 <code translate="no">conversation/turn_runtime/finalize.py</code></td></tr>
-<tr><th scope="row">Agent 运行</th><td><code translate="no">runtime/agent/loop/</code>、<code translate="no">conversation/sub_agent_run.py</code>、<code translate="no">models/providers/utils/event_stream.py</code>、<code translate="no">extensions/gating.py</code></td></tr>
+<tr><th scope="row">Agent 运行</th><td><code translate="no">runtime/agent/loop/</code>、<code translate="no">conversation/peer_agents/sub_agent_run.py</code>、<code translate="no">models/providers/utils/streams/event_stream.py</code>、<code translate="no">extensions/gating.py</code></td></tr>
 <tr><th scope="row">协作</th><td><code translate="no">programs/tools/agents/send_message/</code>、<code translate="no">programs/tools/agents/agent/</code></td></tr>
 </tbody>
 </table>
@@ -187,4 +187,4 @@
 <tr><th scope="row">上下文引擎</th><td><code translate="no">ContextEngine.after_turn</code> 在抽象基类是桩，具体引擎上才真正工作。</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="framework-comparison.zh.html">框架对比</a></p>
+<p class="next"><a href="framework-comparison/overview.zh.html">框架对比</a></p>

@@ -185,12 +185,25 @@ export interface NoticeItem {
   line: string;
 }
 
+/** The reply moved to another of the provider's credentials before it
+ *  started (a rate limit, a spent quota, a refused key): which one it left,
+ *  which one it uses, and why. Shown as one muted line over the reply. */
+export interface CredentialNotice {
+  to: string;
+  from: string;
+  /** rate_limit | quota | auth | model */
+  cause?: string;
+}
+
 /** An automatic retry the reply is waiting on (chat-turn-visual-spec.html §1). */
 export interface RetryStatus {
   attempt: number;
   maxAttempts?: number;
-  /** transport | network_wait | output_limit | incomplete_response | a structured-output issue code */
+  /** transport | network_wait | output_limit | incomplete_response |
+   *  credential_wait | a structured-output issue code */
   reason?: string;
+  /** credential_wait: the credential the request waits for. */
+  waitingFor?: string;
   /** Wait before the next attempt, counted from `receivedAt`. */
   delayMs?: number;
   /** What failed, one short line. */
@@ -223,6 +236,9 @@ export interface ChatMsg {
   thinking?: string;
   /** Live status for an automatic retry within this assistant turn. */
   retryStatus?: RetryStatus;
+  /** Credential switches this reply made before it started: live from the
+   *  stream, then stored with the reply (``credential_notices``). */
+  credentialNotices?: CredentialNotice[];
   /** Tool calls made during this assistant turn, in emit order. */
   tools?: ChatToolCall[];
   status?: MessageStatus;
@@ -281,6 +297,9 @@ export interface ChatMsg {
    *  of the sub branch so the user can switch back. */
   spawnedFrom?: { callerId: string; label?: string };
   timestamp?: number;
+  /** When a reply ended, in seconds, however it ended. `timestamp` is when
+   *  the row was made, which for a reply is its start. */
+  finishedAt?: number;
   attempts?: { content: string; timestamp: number; tree?: TreeNode; usage?: unknown }[];
   current_attempt?: number;
   /** Server response type — "result" / "error". Drives the runtime
@@ -476,6 +495,10 @@ export interface AssistantBlock {
   /** Text block: sources the provider cited for this text. */
   citations?: Citation[];
   outcome?: "not_started" | "failed" | "cancelled" | "completed" | "unknown" | "waiting" | "recovered";
+  /** The task and step this block was done for, stamped by the runtime from
+   *  its position in the reply (lib/chat/transcript/task-blocks.ts). */
+  task?: string;
+  step?: string;
 }
 
 export interface ConvSummary {

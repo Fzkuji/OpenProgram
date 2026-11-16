@@ -23,7 +23,7 @@ import types
 import pytest
 
 from openprogram.interfaces.cli import chat as chat_module
-from openprogram.interfaces.cli import print_events, print_stop, print_turn, worker_turn
+from openprogram.interfaces.cli.print_mode import print_events, print_stop, print_turn, worker_turn
 from openprogram.models.providers.catalog import api_registry
 from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
 from openprogram.models.providers.types import (
@@ -125,24 +125,6 @@ class FakeProvider:
         else:
             message.content = [TextContent(text=f"wrote {n - 1} files")]
         yield EventDone(reason=message.stop_reason, message=message)
-
-
-@pytest.fixture(autouse=True)
-def _never_in_a_real_profile():
-    """These tests run real turns. Run outside the repository's test tree (a
-    copy in a scratch folder, ``--noconftest``) they would write their fake
-    conversations and projects into the person's own data, so they refuse."""
-    import pwd
-
-    from openprogram.state.paths import get_state_dir
-
-    home = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
-    state = os.path.realpath(str(get_state_dir()))
-    real = [os.path.join(home, name) for name in (".openprogram", ".openprogram-dev")]
-    if any(state == folder or state.startswith(folder + os.sep) for folder in real):
-        pytest.fail(f"refusing to run a real turn against {state}: run this file from the "
-                    "repository's tests/ tree, where conftest.py gives each test its own data folder")
-    yield
 
 
 @pytest.fixture
@@ -799,9 +781,9 @@ ENABLED_MODELS["stuck/model"] = Model(
     id="model", name="stuck", api="print-stuck-api", provider="stuck",
     base_url="http://print-stuck.invalid",
     cost=ModelCost(input=1.0, output=2.0, cache_read=0.0, cache_write=0.0, source="configured"))
-from openprogram.interfaces.cli import print_turn, worker_turn
+from openprogram.interfaces.cli.print_mode import print_turn, worker_turn
 worker_turn.resolve_worker = lambda: None
-from openprogram.interfaces.cli import print_stop
+from openprogram.interfaces.cli.print_mode import print_stop
 print_stop.CANCEL_GRACE_S = float(os.environ["STUCK_GRACE"])
 from openprogram.interfaces.cli import main
 sys.argv = ["openprogram", "--print=wait", "--model", "stuck/model",
@@ -889,9 +871,9 @@ ENABLED_MODELS["command/model"] = Model(
     id="model", name="command", api="print-command-api", provider="command",
     base_url="http://print-command.invalid",
     cost=ModelCost(input=1.0, output=2.0, cache_read=0.0, cache_write=0.0, source="configured"))
-from openprogram.interfaces.cli import print_turn, worker_turn
+from openprogram.interfaces.cli.print_mode import print_turn, worker_turn
 worker_turn.resolve_worker = lambda: None
-from openprogram.interfaces.cli import print_stop
+from openprogram.interfaces.cli.print_mode import print_stop
 print_stop.CANCEL_GRACE_S = float(os.environ["COMMAND_GRACE"])
 if os.environ.get("COMMAND_IGNORES_STOP"):
     # A turn the cancel never reaches, as a turn stuck elsewhere is.
@@ -995,7 +977,7 @@ def test_usage_summary_counts_the_run_and_its_sub_agents(monkeypatch):
         trees.append(execution_id)
         return frozenset({"exec_run", "exec_child"})
 
-    monkeypatch.setattr("openprogram.runtime.execution.execution_tree.execution_tree", tree)
+    monkeypatch.setattr("openprogram.runtime.execution.projections.execution_tree.execution_tree", tree)
     run = print_turn.PrintRun(session_id="local_usage1", started_at=time.time() - 1)
     run.ended = print_turn.ENDED_COMPLETED
     run.execution_id = "exec_run"
@@ -1134,7 +1116,7 @@ def test_the_run_note_lives_in_the_runtime_with_the_same_bytes():
     from pathlib import Path
 
     from openprogram.interfaces.server.ws_actions.chat import turn as ws_turn
-    from openprogram.runtime.conversation import run_note
+    from openprogram.runtime.conversation.turn_admission import run_note
 
     assert print_turn.RUN_NOTE is run_note.RUN_NOTE
     assert hashlib.sha256(run_note.RUN_NOTE.encode()).hexdigest() == (

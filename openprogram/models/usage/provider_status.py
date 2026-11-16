@@ -2,7 +2,7 @@
 
 The payload of ``GET /api/providers/status`` and of ``openprogram providers
 status --json``, built here once so the page and the CLI read the same
-data. Its shape is the TypedDicts below; ``scripts/generate_provider_status_types.py``
+data. Its shape is the TypedDicts below; ``scripts/generators/generate_provider_status_types.py``
 writes them as TypeScript for the web.
 
 A provider is connected when it is enabled or has a key (a stored
@@ -12,6 +12,8 @@ subscription's calls are included in its plan, so its spend reads as
 included, with the API list price kept apart.
 """
 from __future__ import annotations
+
+import contextlib
 
 import time
 from typing import Any, Literal, Optional, TypedDict
@@ -103,10 +105,23 @@ class SpendWire(TypedDict):
 
 
 class KeyHealth(TypedDict):
+    #: The server's name for it (``Credential.display_label``).
     account: str
     credential_id: str
     kind: str
+    #: The name a person gave it; empty when it has none and the web names it by kind.
+    label: str
+    #: The account's email a sign-in names; empty for a key.
+    email: str
+    #: The key's last four characters; empty for a sign-in or an environment key.
+    key_tail: str
+    #: The variable an environment key is read from; null for a stored one.
+    env_var: Optional[str]
+    #: What a sign-in of the provider is called ("ChatGPT").
+    signin_name: str
     status: str
+    #: False for a credential set to "Not in use": listed and counted, never chosen.
+    enabled: bool
     active: bool
     cooldown_until: Optional[float]
     last_error: Optional[str]
@@ -124,9 +139,27 @@ class FixWire(TypedDict):
     url: Optional[str]
 
 
+class WayLabel(TypedDict):
+    """What a provider is called as one way of connecting its company."""
+
+    #: The section's title on the company's card ("ChatGPT subscription").
+    title: str
+    title_zh: str
+    #: A few words after the company's name ("OpenAI · ChatGPT").
+    short: str
+    short_zh: str
+
+
 class ProviderStatus(TypedDict):
     id: str
     label: str
+    #: The company this provider is one way of (``login_method_registry.COMPANIES``);
+    #: its own id when it is a company of its own.
+    family: str
+    #: The company's name ("OpenAI"); the provider's label when it is a company of its own.
+    family_label: str
+    #: Its names as one of the company's ways; null for a company of its own.
+    way_label: Optional[WayLabel]
     billing: Billing
     enabled: bool
     health: HealthWire
@@ -142,6 +175,9 @@ class ProviderStatus(TypedDict):
     plan: Optional[str]
     #: When Refresh last read this provider's login, quota and health again (this process); null before.
     checked_at: Optional[float]
+    #: The provider is connected with an API key (it offers no sign-in), so
+    #: its credentials are "keys" and its add button reads "Add key".
+    takes_keys: bool
 
 
 class ProviderQuotaFrame(TypedDict):
@@ -164,9 +200,8 @@ class ProviderStatusPayload(TypedDict):
 # Health
 
 _STATE_OF = {
-    "valid": "ready", "expiring_soon": "ready", "refreshing": "ready",
-    "rate_limited": "rate_limited", "needs_reauth": "signed_out", "stale": "signed_out",
-    "billing_blocked": "no_credit", "revoked": "invalid_key",
+    "ready": "ready", "cooling": "rate_limited", "quota": "no_credit",
+    "needs_login": "signed_out", "invalid_key": "invalid_key",
 }
 _RANK = {"ready": 0, "unknown": 1, "rate_limited": 2, "signed_out": 3, "no_credit": 4, "invalid_key": 5}
 
@@ -188,9 +223,9 @@ def _key_view(key: KeyHealth, now: float, read: Optional[dict] = None) -> tuple[
     failed (``status_at``), and the last read of its quota endpoint
     (``read_at``). The newer one wins; at the same time a 401 from the
     endpoint outranks a stored billing stop or throttle. So a stored
-    status expires the way a throttle does (``pool._is_healthy`` picks a
-    key again once ``cooldown_until`` has passed, so an expired throttle
-    reads ``ready``): a ``billing_blocked`` stop is overruled by a later
+    status expires the way a throttle does (selection uses a key again
+    once ``cooldown_until`` has passed, so an expired throttle reads
+    ``ready``): a ``quota`` stop is overruled by a later
     read that answered, after which a spent balance on that read decides,
     and by a later 401, which reads ``invalid_key``.
     """
@@ -204,6 +239,8 @@ def _key_view(key: KeyHealth, now: float, read: Optional[dict] = None) -> tuple[
     if state in ("ready", "rate_limited"):
         cooling = bool(key["cooldown_until"] and key["cooldown_until"] > now)
         state = "rate_limited" if cooling else "ready"
+    elif state == "no_credit" and key["cooldown_until"] and key["cooldown_until"] <= now:
+        state = "ready"
     return state, (key["last_error"] if state != "ready" else None)
 
 
@@ -232,30 +269,48 @@ def health_of(keys: list[KeyHealth], reports: list[QuotaReport], now: float,
 
 
 def keys_of(provider: str) -> list[KeyHealth]:
-    """Each stored key of a provider with its health; never its value."""
+    """Every credential of a provider with its health, the ones not in use
+    included (``enabled`` false), so a card counts what the provider's page
+    lists; never a value. ``active`` marks the one a new conversation would
+    use now (always an enabled one)."""
     try:
-        from openprogram.models.auth.account.account_selection import get_active_account
+        from openprogram.models.auth.selection import choose
         from openprogram.models.auth.store import get_store
-        pools = [pool for pool in get_store().list_pools() if pool.provider_id == provider]
-        active = get_active_account(provider)
+        creds = list(get_store().get(provider).credentials)
+        try:
+            active = choose(provider, record=False).id if any(c.enabled for c in creds) else ""
+        except Exception:
+            active = ""
     except Exception:
         return []
+    from openprogram.models.auth.login.login_method_registry import signin_name
     out: list[KeyHealth] = []
-    for pool in pools:
-        for cred in pool.credentials:
-            out.append({
-                "account": pool.account_id,
-                "credential_id": cred.credential_id,
-                "kind": str(cred.kind),
-                "status": str(cred.status),
-                "active": pool.account_id == active,
-                "cooldown_until": cred.cooldown_until_ms / 1000 if cred.cooldown_until_ms else None,
-                "last_error": cred.last_error,
-                "last_used_at": cred.last_used_at_ms / 1000 if cred.last_used_at_ms else None,
-                "use_count": int(cred.use_count or 0),
-                "status_at": cred.updated_at_ms / 1000 if cred.updated_at_ms else None,
-            })
+    for cred in creds:
+        out.append({
+            "account": cred.display_label(),
+            "credential_id": cred.id,
+            "kind": str(cred.kind),
+            "label": cred.label,
+            "email": str(cred.identity.get("email") or ""),
+            "key_tail": cred.key_tail,
+            "env_var": cred.metadata.get("env_var") if cred.source == "env" else None,
+            "signin_name": signin_name(cred.provider_id),
+            "status": str(cred.status),
+            "enabled": bool(cred.enabled),
+            "active": cred.id == active,
+            "cooldown_until": cred.cooldown_until_ms / 1000 if cred.cooldown_until_ms else None,
+            "last_error": (cred.last_error or {}).get("message") or None,
+            "last_used_at": cred.last_used_at_ms / 1000 if cred.last_used_at_ms else None,
+            "use_count": int(cred.use_count or 0),
+            "status_at": cred.updated_at_ms / 1000 if cred.updated_at_ms else None,
+        })
     return out
+
+
+def in_use(keys: list[KeyHealth]) -> list[KeyHealth]:
+    """The credentials of ``keys`` that are in use: the ones a provider's
+    health, quota and plan are read from."""
+    return [k for k in keys if k.get("enabled", True)]
 
 
 # Spend
@@ -379,22 +434,69 @@ def connected_providers() -> list[dict]:
             if row.get("enabled") or (row.get("configured") and not is_local_provider(row["id"]))]
 
 
+class _Family(TypedDict):
+    family: str
+    family_label: str
+    way_label: Optional[WayLabel]
+
+
+def family_of(provider_id: str, label: str) -> _Family:
+    """The company ``provider_id`` is one way of, from the one table that
+    groups them (``login_method_registry.COMPANIES``)."""
+    from openprogram.models.auth.login.login_method_registry import company_of
+    found = company_of(provider_id)
+    if found is None:
+        return {"family": provider_id, "family_label": label, "way_label": None}
+    company, way = found
+    return {"family": company.id, "family_label": company.label,
+            "way_label": {"title": way.title, "title_zh": way.title_zh,
+                          "short": way.short, "short_zh": way.short_zh}}
+
+
+def by_company(providers: list[ProviderStatus]) -> list[ProviderStatus]:
+    """The list with each company's ways together, where its first one was,
+    in the company table's order (the ChatGPT subscription before the API)."""
+    from openprogram.models.auth.login.login_method_registry import COMPANIES
+    rank = {w.provider: i for company in COMPANIES for i, w in enumerate(company.ways)}
+    groups: dict[str, list[ProviderStatus]] = {}
+    for provider in providers:
+        groups.setdefault(provider["family"], []).append(provider)
+    return [p for group in groups.values() for p in sorted(group, key=lambda p: rank.get(p["id"], 0))]
+
+
+def takes_keys(provider_id: str) -> bool:
+    """Whether the provider is connected only with API keys (no sign-in)."""
+    from openprogram.models.auth.login.login_method_registry import login_method_list
+    methods = [m.id for m in login_method_list(provider_id)]
+    return bool(methods) and all(m == "api_key" for m in methods)
+
+
+def first_enabled_model(provider_id: str) -> Optional[str]:
+    """The first model of the provider that is on, for a card with no model
+    picked: read from the enabled registry, with no catalogue read."""
+    try:
+        from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
+    except Exception:
+        return None
+    for key, model in list(ENABLED_MODELS.items()):
+        owner = getattr(model, "provider", None) or (key.split("/", 1)[0] if "/" in key else None)
+        if owner == provider_id and getattr(model, "id", None):
+            return model.id
+    return None
+
+
 def _default_models(now: float, ledger: Any) -> dict[str, str]:
     """Per provider: the model last picked if it is this provider's, else its most used."""
     out: dict[str, str] = {}
-    try:
+    with contextlib.suppress(Exception):
         for row in ledger.provider_models(since=now - DAYS * 86400):
             out.setdefault(row["provider"], row["model_id"])
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         from openprogram.models.providers.catalog.last_used import last_used_in_config
         from openprogram.state import config as user_config
         pair = last_used_in_config(user_config.read_config())
         if pair:
             out[pair[0]] = pair[1]
-    except Exception:
-        pass
     return out
 
 
@@ -424,7 +526,9 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
     out: list[ProviderStatus] = []
     for row in rows:
         pid = row["id"]
-        keys = keys_of(pid)
+        listed = keys_of(pid)
+        # Health, quota and plan come from the credentials in use.
+        keys = in_use(listed)
         reports = default_store.reports(pid)
         stored = {k["credential_id"] for k in keys} | {""}
         reports = [r for r in reports if r.account in stored]
@@ -435,24 +539,28 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
         health = health_of(keys, reports, now, reads)
         if local:
             health = local_health(pid, row)
-        elif not keys and health["state"] == "unknown" and row.get("configured") is False:
+        elif not listed and health["state"] == "unknown" and row.get("configured") is False:
             health = {"state": "not_configured", "until": None, "detail": None}
+        label = str(row.get("label") or pid)
         out.append({
             "id": pid,
-            "label": str(row.get("label") or pid),
+            "label": label,
+            **family_of(pid, label),
             "billing": billing,
             "enabled": bool(row.get("enabled")),
             "health": health,
             "quota": quota_of(reports, keys, now, reads),
             "spend": spend_of(pid, [d for d in days if d["provider"] == pid], now),
-            "default_model": defaults.get(pid),
-            "keys": keys,
+            # The model last picked or most used, else the first one on.
+            "default_model": defaults.get(pid) or (None if local else first_enabled_model(pid)),
+            "keys": listed,
             "fix": fix_for(pid, health["state"]),
             "console_url": console_url(pid, "keys"),
             "plan": plan_of(pid, keys) if billing == "subscription" else None,
             "checked_at": _checked.get(pid),
+            "takes_keys": takes_keys(pid),
         })
-    return {"generated_at": now, "stale_after_s": STALE_AFTER_S, "providers": out}
+    return {"generated_at": now, "stale_after_s": STALE_AFTER_S, "providers": by_company(out)}
 
 
 # Fix action, local servers
@@ -503,9 +611,13 @@ __all__ = [
     "SUBSCRIPTION_PROVIDERS",
     "SpendDay",
     "SpendWire",
+    "WayLabel",
     "build_status",
+    "by_company",
     "connected_providers",
+    "family_of",
     "health_of",
+    "in_use",
     "keys_of",
     "plan_of",
     "quota_of",

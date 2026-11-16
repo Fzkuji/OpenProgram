@@ -67,14 +67,20 @@ def owner_principal_id() -> str:
                 ensure_ascii=False,
                 indent=2,
             ) + "\n"
+            # Written whole beside the target, then linked into place: the
+            # link fails when another process got there first, and a reader
+            # never sees the file before its content.
+            draft = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+            fd = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            except FileExistsError:
-                principal = _read_owner(path)
-            else:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     handle.write(payload)
-                os.chmod(path, 0o600)
+                os.chmod(draft, 0o600)
+                os.link(draft, path)
+            except FileExistsError:
+                principal = _read_owner(path)
+            finally:
+                draft.unlink(missing_ok=True)
         _owner_cache[path] = principal
         return principal
 

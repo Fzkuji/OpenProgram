@@ -134,6 +134,11 @@ const ICONS = {
   "exit": "bold-duotone",
   "play": "bold-duotone",
   "pause": "bold-duotone",
+  // a provider's credential rows and the model menu's Key row
+  "key-minimalistic": "bold-duotone",
+  "transfer-horizontal": "bold-duotone",
+  "pause-circle": "bold-duotone",
+  "play-circle": "bold-duotone",
   "question-circle": "bold-duotone",
   "sort-vertical": "bold-duotone",
   "sort-from-top-to-bottom": "bold-duotone",

@@ -305,7 +305,7 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
     release = threading.Event()
 
     def stubborn_run(**_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         entered.set()
         release.wait(2.0)
         return AgentTurnResult(

@@ -91,7 +91,7 @@ def waiter_gone(job: Any) -> bool:
 def ensure_attach_placeholder(job: Any) -> bool:
     """Write the running attach card a held spawn was admitted for, once."""
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.runtime.conversation.sub_agent_run import (
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
         _attach_node,
         write_attach_placeholder_for_spawn,
     )

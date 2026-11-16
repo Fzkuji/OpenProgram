@@ -40,7 +40,7 @@ def _owner(message):
 
 
 def _visible_args(node):
-    from openprogram.state.store.session.transcript import _format_args
+    from openprogram.state.store.session.reading.transcript import _format_args
     return _format_args(node) if node.get('role') == 'tool' else ''
 
 
@@ -116,7 +116,7 @@ class EvidenceGate:
         from openprogram.runtime.agent.loop import _execute_tool_calls, _create_agent_stream
         from openprogram.runtime.agent.call_state import _run_pre_invocation_hooks
         from openprogram.host.cancellation import run_cancellation_check
-        from openprogram.models.providers.utils.deadline import remaining
+        from openprogram.models.providers.utils.http_transport.deadline import remaining
         from openprogram.models.providers.types import AssistantMessage, ToolCall
         from openprogram.runtime.context.session_db import default_db
         from openprogram.state.memory.policy import allowed
@@ -203,9 +203,9 @@ class EvidenceGate:
                 break
 
     def _current_owner(self):
-        from openprogram.runtime.conversation.turn_request_context import original_owner_request
+        from openprogram.runtime.conversation.turn_admission.turn_request_context import original_owner_request
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.state.store.session.transcript import session_read_violation, MAX_TEXT_CHARS
+        from openprogram.state.store.session.reading.transcript import session_read_violation, MAX_TEXT_CHARS
         from openprogram.state.memory.policy import allowed, consume_sources
         request = original_owner_request()
         if request is None or not _owner(request) or not allowed():
@@ -255,7 +255,7 @@ class EvidenceGate:
     async def execute(self, call_id, args, signal, update):
         from openprogram.runtime.context.session_db import default_db
         from openprogram.programs.tools.knowledge.read_conversation import _current_session
-        from openprogram.state.store.session.transcript import (
+        from openprogram.state.store.session.reading.transcript import (
             render_session_transcript, session_read_violation, MAX_TEXT_CHARS, MAX_RESULT_CHARS,
         )
         from openprogram.state.memory.policy import allowed
@@ -345,7 +345,7 @@ class EvidenceGate:
 
     def verify(self, claims, refs, reporting_week=None):
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.state.store.session.transcript import session_read_violation
+        from openprogram.state.store.session.reading.transcript import session_read_violation
         from openprogram.state.memory.policy import allowed
         from datetime import date
         if reporting_week is not None:

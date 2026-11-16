@@ -728,7 +728,13 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
     paused: false,
     title: "Connecting…",
   },
-  setStatusBadge: (b) => set({ statusBadge: b }),
+  // Derived again on every run frame; the same badge keeps its object, so
+  // the environment chip redraws only when the badge changes.
+  setStatusBadge: (b) => set((s) => {
+    const held = s.statusBadge;
+    return held.label === b.label && held.tone === b.tone && held.paused === b.paused && held.title === b.title
+      ? s : { statusBadge: b };
+  }),
   channelHealth: "unknown",
   setChannelHealth: (h) => set({ channelHealth: h }),
   conversations: {},

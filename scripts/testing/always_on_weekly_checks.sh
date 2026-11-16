@@ -57,7 +57,7 @@ import time
 from openprogram.interfaces import channels
 from openprogram.runtime.conversation.always_on import ticker
 from openprogram.state.paths import get_state_dir
-from openprogram.state.store.session.session_state_file import read_files
+from openprogram.state.store.session.files.session_state_file import read_files
 from scripts.testing.always_on_weekly_report import STATE_NAME, conversation_directories
 
 

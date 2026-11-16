@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.runtime.conversation import session_model as sm
+from openprogram.runtime.conversation.session_settings import session_model as sm
 
 
 def test_read_pin_from_memory(monkeypatch):

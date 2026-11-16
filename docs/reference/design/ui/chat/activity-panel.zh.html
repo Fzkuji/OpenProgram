@@ -5,15 +5,15 @@
 <p>右侧栏的 Activity 只看一个对话。一次运行在等的事不单独成组，而是落在相关那一行，字形角上显示红色计数。唯一的例外是“等你处理”，即各对话留给读者的报告。消息不作为行。</p>
 
 <h2 id="overview">总览</h2>
-<p>各组顺序固定。Agents 一直显示；其余各组为空时连同组头都不显示。只有等你处理的组头带计数；Agents 的组头加上助手的花费。悬停组头显示 <code translate="no">SectionHeader</code> 的箭头，点击折叠（按浏览器保存，<code translate="no">lib/prefs/activity-view.ts</code>）。</p>
+<p>各组顺序固定。Agents 一直显示；其余各组为空时连同组头都不显示。只有等你处理的组头带计数；Agents 的组头加上助手和定时任务运行的花费。悬停组头显示 <code translate="no">SectionHeader</code> 的箭头，点击折叠（按浏览器保存，<code translate="no">lib/prefs/activity-view.ts</code>）。</p>
 <table class="stack">
 <thead><tr><th scope="col">组</th><th scope="col">行</th><th scope="col">状态行</th></tr></thead>
 <tbody>
 <tr><th scope="row">等你处理</th><td>所有常驻对话里还在等读者的报告（<code translate="no">lib/agents/pending-inbox</code>）。每行打开对应对话。</td><td>“发现 · &lt;代理&gt; · &lt;时间&gt;”</td></tr>
-<tr><th scope="row">代理</th><td>主代理，总是列出，下面是<a href="#agent-roster">它启动的助手</a>：会话的回合没有留下执行记录时也有它，静止时显示会话最后活动时间，打开后从对话记录读取运行。有多个分支时，每个分支一行，地位相同。代理<a href="../../runtime/always-on-agents.zh.html">常驻</a>期间，已检出分支的行多一行，显示下次唤醒。</td><td>运行中（当前调用或“等待子代理”，加用时，蓝色）；“失败 · &lt;时间&gt;”（红色）；否则是最后消息时间。助手收起时加“· 3 个子代理进行中”。在自己 <a href="../../runtime/execution/agent-worktree.zh.html">worktree</a> 里的分支多一个“Worktree”标签和“worktree 中 3 个文件”</td></tr>
-<tr><th scope="row">程序和命令</th><td>运行中的 shell 调用、随运行中断的 shell 调用、所有后台程序。运行中在前，其余按新到旧；每次 20 条。<code translate="no">agent</code> 调用不在这里。</td><td>“命令 · 运行中 · 12 秒”；“命令 · 已中断 · 昨天”（灰色）；“45 / 100 samples · 3.4/s”；“已完成 · 10 / 10 epochs · 4 分 5 秒”；“在 62 / 200 失败 · 退出码 1”</td></tr>
+<tr><th scope="row">代理</th><td>主代理，总是列出，下面是<a href="#agent-roster">它启动的助手</a>：会话的回合没有留下执行记录时也有它，静止时显示会话最后活动时间，打开后从对话记录读取运行。有多个分支时，<a href="#agent-branches">活动的分支各一行</a>。然后是<a href="#task-rows">每个运行提示词的定时任务一行</a>。</td><td>运行中（当前调用或“等待子代理”，加用时，蓝色）；“失败 · &lt;时间&gt;”（红色）；否则是最后消息时间，代理<a href="../../runtime/always-on-agents.zh.html">常驻</a>时是“常驻 · 下次唤醒 02:31”。忙的时候，常驻这一行放在状态下面。在自己 <a href="../../runtime/execution/agent-worktree.zh.html">worktree</a> 里的分支多一个“Worktree”标签和“worktree 中 3 个文件”。定时任务：“178 次运行 · 9 次没完成 · 最近 23:00”，下面是最近 24 次运行的色条</td></tr>
+<tr><th scope="row">程序和命令</th><td>正在运行的 shell 调用和后台程序，以及失败的程序；<a href="#programs-listed">完成的离开列表</a>。运行中在前，其余按新到旧；每次 20 条。<code translate="no">agent</code> 调用不在这里。</td><td>“命令 · 运行中 · 12 秒”；“45 / 100 samples · 3.4/s”；“已退出 · exit 1”；“在 62 / 200 失败 · exit 1”</td></tr>
 <tr><th scope="row">未完成事项</th><td><a href="../../../../capabilities/agents.zh.html#未完成事项">未完成事项</a>，每项一行；完成后离开总览</td><td>“未完成 · &lt;时间&gt;”</td></tr>
-<tr><th scope="row">定时任务</th><td>从本对话设置的 Scheduler 任务、提醒和 webhook（任务或其签名规格的 <code translate="no">session_id</code>），新的在前</td><td>“Webhook · 被调用时”；“循环 · 0 9 * * 1-5 · 检查结果变化时”</td></tr>
+<tr><th scope="row">定时任务</th><td>从本对话设置的提醒和命令（任务或其签名规格的 <code translate="no">session_id</code>），新的在前：Scheduler 不经代理、按时做的事。运行提示词的任务是代理，只<a href="#task-rows">列在 Agents 里</a>。</td><td>“提醒 · 11月20日 9:00”；“循环 · 0 9 * * 1-5 · 检查结果变化时”</td></tr>
 </tbody>
 </table>
 <p class="note">状态词：运行中、已完成、失败、已取消、已中断、等你回答、等你授权。静止的行只显示时间。调用和程序在读取执行之后才归位，不会闪现成无主；未列出的算主代理的。</p>
@@ -25,23 +25,39 @@
 <tbody>
 <tr><th scope="row">组头</th><td>“Agents · $0.14”：助手一共花了多少，只算价格已知的。有助手在进行时显示“全部停止”，取消每个最上层的助手，停止会传到它启动的助手。</td></tr>
 <tr><th scope="row">行</th><td>头像、名字、状态徽章，右侧是它整棵子树的成本；悬停显示成本、token 和工具调用数。一行放不下时先去掉成本，再截短名字。每深一层缩进 16。点击在聊天里显示它的对话，和它卡片上的“切换”一样。</td></tr>
-<tr><th scope="row">徽章</th><td>正在运行（实底，圆点呼吸）；等你授权、等你回答、无进展（描边，黄色圆点）；失败（红色）；等待中（排队等空位）和空闲（描边，弱化）。正在运行和等读者处理来自执行和聊天里未答的卡片，立即生效；无进展、排队、被限制停止来自名单读取。</td></tr>
-<tr><th scope="row">列出</th><td>正在进行、需要读者或失败的助手。已完成的助手只在它下面还有列出的助手时保留。</td></tr>
+<tr><th scope="row">徽章</th><td>正在运行（实底，圆点呼吸）；等你授权、等你回答、无进展（黄色圆点加文字，不描边，和行的状态行说法一致）；失败（红色）；等待中（排队等空位）和空闲（描边，弱化）。正在运行和等读者处理来自执行和聊天里未答的卡片，立即生效；无进展、排队、被限制停止来自名单读取。</td></tr>
+<tr><th scope="row">列出</th><td>正在进行、需要读者或失败的助手。已完成的助手只在它下面还有列出的助手时保留。定时运行启动的助手属于它的任务，列在任务页上；但需要读者的那个列在这里、主代理正下方，因为读者要在本对话里处理它。</td></tr>
 <tr><th scope="row">“N 个已完成”</th><td>最后一行。原地展开成已完成的助手，每次 50 个，各带“空闲”和成本。</td></tr>
 <tr><th scope="row">“→ 名字”</th><td>发给另一个代理、还没答复的消息；对方开始处理前是“等待中”。点击打开那个对话。</td></tr>
-<tr><th scope="row">折叠</th><td>代理名字后的箭头，或在它的行上按左右键，收起和展开它的助手；在助手行上按左键收起整组，焦点回到代理的行。用键盘走到的行显示悬停时的底色。收起后这一行显示还在进行的助手数，红色计数保留。按对话和代理保存在本浏览器（<code translate="no">lib/prefs/activity-view.ts</code> 的 <code translate="no">foldedAgents</code>）。</td></tr>
+<tr><th scope="row">箭头</th><td>代理的行只有一个箭头，在右边，打开代理页；助手不再收起，因为定时运行都去了任务页，代理下面的列表很短。在助手行上按左键，焦点回到代理的行。用键盘走到的行显示悬停时的底色。</td></tr>
 <tr><th scope="row">高度</th><td>名单在 360 像素内滚动，下面的组不被推走</td></tr>
 <tr><th scope="row">读取</th><td>面板显示时读 <code translate="no">GET /api/session/{id}/activity/roster</code>：进入时、收到 <code translate="no">op:execution-update</code> 和 <code translate="no">op:job-status</code> 时（每秒至多一次），以及每 30 秒</td></tr>
 </tbody>
 </table>
 </details>
 
-<details>
+<details id="agent-branches">
+<summary>Agents 里的分支</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分支</th><th scope="col">在列表里</th></tr></thead>
+<tbody>
+<tr><th scope="row">已检出</th><td>自己一行，带“当前”标签</td></tr>
+<tr><th scope="row">有内容在运行、在等用户或失败了（它自己或它的助手）</th><td>自己一行</td></tr>
+<tr><th scope="row">静止</th><td>全部合成一行“N 个其他分支”，和“N 个已完成”是同一种安静的行；点开后就地展开</td></tr>
+<tr><th scope="row">运行时开出的（<a href="../../runtime/dag/branch-collaboration.zh.html#three-operations"><code translate="no">runtime_started</code></a>）</th><td>没有行：它不是用户分出来的分支。它的运行算在已检出分支上。没有别的分支时，整个会话就是一个“主代理”。常驻代理或任务在当时的头部发的报告，读者走开后留下的那一段也算：没有提示词，只有 <code translate="no">report_…</code> 消息。</td></tr>
+<tr><th scope="row">定时任务写的（<code translate="no">scheduled_task</code>）</th><td>没有行：它的运行属于<a href="#task-rows">它的任务</a>。任务的分支记录会这样标，自身那一段只有调度器写的提示词的线也算，这就涵盖了旧运行被截断时留下的末端。已检出的分支不会是它。</td></tr>
+</tbody>
+</table>
+<p class="note">有些会话保存时每个运行时轮次各有一条分支记录，Goal 的各个轮次在这里排成一列同名的代理。这个列表只放用户能处理的东西，所以分支和助手一样，有事才占一行。</p>
+</details>
+
+<details id="programs-listed">
 <summary>列表里的程序</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row">标题</th><td>bash 调用的 <code translate="no">description</code>，否则是它运行的脚本或模块，跳过 <code translate="no">cd</code>、<code translate="no">mkdir</code> 这类准备步骤。命令以等宽字体列在下面。</td></tr>
+<tr><th scope="row">列出</th><td>和<a href="#agent-roster">子代理</a>同一条规则：正在进行的，以及失败的（状态为失败，或以非 0 退出码退出）。已完成、被停止、被截断或监管进程消失的程序离开列表，shell 调用返回或被截断后也离开。没有“N 个已完成”这一行：聊天里保留每条命令和输出。没有可列的内容时，这个分组不显示。</td></tr>
 <tr><th scope="row">运行中，已知总量</th><td>进度加细进度条，末端显示剩余时间（“还剩 16 秒”）</td></tr>
 <tr><th scope="row">运行中，总量未知</th><td>已运行时间和最后一行输出，下面是往复进度条</td></tr>
 <tr><th scope="row">保留</th><td>结束后记录和输出保留一天（<code translate="no">openprogram/host/processes/store.py</code> 的 <code translate="no">RETENTION_SECONDS</code>），“状态未知”的从最后一次心跳起一天。之后 worker 的进程清理删除它，连同尚未发送的退出通知。</td></tr>
@@ -58,14 +74,74 @@
 <tr><th scope="row">行</th><td>分支名、泳道色的幽灵图标，当前检出的带“当前”标记。没有运行时显示分支自身的时间。</td></tr>
 <tr><th scope="row">无主项</th><td>未列出的调用和程序，以及没启动子代理的调用，算当前检出分支的</td></tr>
 <tr><th scope="row">页面</th><td>该分支的代理页；非当前分支时有“切换到这个分支”（分支面板的检出）</td></tr>
-<tr><th scope="row">排除</th><td>旧会话内联的子代理回合：其链从派生根开始的末端，由 <code translate="no">build_branches_payload</code> 标记为 <code translate="no">sub_agent</code> 并排除</td></tr>
+<tr><th scope="row">排除</th><td>旧会话内联的子代理回合：其链从派生根开始的末端，由 <code translate="no">build_branches_payload</code> 标记为 <code translate="no">sub_agent</code> 并排除。定时启动的运行（执行上带 <code translate="no">scheduled_task_id</code>）和它下面的一切属于它的任务，不管在哪个分支上。</td></tr>
 </tbody>
 </table>
 </details>
 
 <details>
 <summary>常驻、未完成事项和定时任务的读取</summary>
-<p>统一读 <code translate="no">GET /api/sessions/{id}/work</code>：面板打开时、收到 <code translate="no">always_on_update</code>、<code translate="no">always_on_report</code>、<code translate="no">open_work_update</code> 帧时、获得焦点时，以及每 30 秒一次（Scheduler 任务不发事件）。</p>
+<p>统一读 <code translate="no">GET /api/sessions/{id}/work</code>：面板打开时、收到 <code translate="no">always_on_update</code>、<code translate="no">always_on_report</code>、<code translate="no">open_work_update</code> 帧时、获得焦点时，以及每 30 秒一次（Scheduler 任务不发事件）。每个任务带着 <code translate="no">summary</code>：运行次数、没完成的、通知过的、最近一次开始的时间和最近 24 次的结果。</p>
+</details>
+
+<details id="task-rows" open>
+<summary>Agents 里的定时任务</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">行</th><td>日历图标、任务标题、“178 次运行 · 9 次没完成 · 最近 23:00”（一天内显示时刻，否则显示日期；暂停时加“· 已暂停”），下面是最近 24 次运行的色条，最旧的在左，每次一格。右边一个箭头；点行打开任务页。</td></tr>
+<tr><th scope="row">色条</th><td>正常完成（没有新情况，或已通知读者）为绿色，失败为红色，被停止、被截断或没能检查为黄色，运行中为蓝色。只用主题的强调色。</td></tr>
+<tr><th scope="row">页面</th><td>返回和标题在一行，下面一条细线；“每小时 · 178 次运行 · $26.31”；筛选：全部、没完成 · 7、已通知（套件的 Tabs）。运行下面是“在定时任务中打开”和任务本身（提示词、备注、创建时间、ID）。</td></tr>
+<tr><th scope="row">运行</th><td>按天列出（“昨天 · 11月15日”、“11月10日”），每次一行：圆点、开始时刻、用时，右边是<a href="#task-outcomes">结果</a>。先显示 30 次，“显示更早的 50 次”加载更多。</td></tr>
+<tr><th scope="row">展开一次运行</th><td>失败、被停止、被截断或没能检查的运行可以原地展开，一句话说明原因（“代理运行器出错停止，运行了 3 小时 28 分。”），以及它启动的助手，每个都能打开它的对话。没能检查的运行给出它自己说的原因，用任务的语言。</td></tr>
+<tr><th scope="row">运行的名字</th><td>从不用 ID：一次运行就是任务标题加开始时间</td></tr>
+</tbody>
+</table>
+<table class="stack fixed" id="task-outcomes">
+<thead><tr><th scope="col">结果</th><th scope="col">什么时候</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有新情况（<code translate="no">quiet</code>）</th><td>完成了，没有要说的；没通知任何人</td></tr>
+<tr><th scope="row">已通知</th><td>完成了，有新情况，读者收到了消息</td></tr>
+<tr><th scope="row">没能检查（<code translate="no">unable</code>）</th><td>完成了，但回答 <code translate="no">[could not check]</code> 和原因。计入失败通知，不算没完成。</td></tr>
+<tr><th scope="row">失败</th><td>执行失败</td></tr>
+<tr><th scope="row">已停止</th><td>被取消：读者停的，或到了时间上限</td></tr>
+<tr><th scope="row">被中断</th><td>被重启截断，没能继续</td></tr>
+<tr><th scope="row">运行中、等你处理</th><td>还在进行，或停下等读者</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事实</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">属于哪个任务</th><td>运行保存的回合写着它的任务（<code translate="no">scheduled_task</code>，来源 <code translate="no">scheduler</code>）。回合还没写任务时保存的运行，取它那条线的任务：一个任务的运行在一条线上前后相接，所以后来的运行、它的分支记录和分支条目为前面的运行指明任务（<code translate="no">task_activity.run_tasks</code>）。<code translate="no">GET /api/session/{id}/executions</code> 在每个顶层运行上以 <code translate="no">scheduled_task_id</code> 发出。</td></tr>
+<tr><th scope="row">结果</th><td>任务记录（<code translate="no">task_runs</code>，最近 20 次）里有这次运行时以它为准；否则看执行的状态和回答，判断方式与 <code translate="no">run_finish</code> 在运行结束时相同。结束了的运行只判断一次并保留。</td></tr>
+<tr><th scope="row">原因</th><td>由运行的 <code translate="no">reason_code</code> 和运行时长生成，中英文各一份：<code translate="no">agent_runner_error</code>、<code translate="no">time_limit</code>、<code translate="no">owner_lost_before_checkpoint</code>、<code translate="no">unfinished_before_session_logs</code>、<code translate="no">scheduled_run_start_failed</code>，其余是简单的“失败”“被停止”或“运行 … 后被截断”</td></tr>
+<tr><th scope="row">花费</th><td>记在运行的执行和它的助手 Job 上的模型调用。调用还没记执行时保存的那些，算给当时这个对话里正在进行的运行。</td></tr>
+<tr><th scope="row">页面读取</th><td><code translate="no">GET /api/session/{id}/activity/tasks/{task}?filter=all|unfinished|notified&amp;offset=&amp;limit=</code>：计数、最近 24 次、花费和一页运行。在有 177 次运行的对话上，对话已在内存时约 26 ms；对话还没载入时第一次约 0.6 秒。进入页面、收到 <code translate="no">op:execution-update</code> 和 <code translate="no">op:job-status</code> 时，以及每 30 秒读一次；刷新按 ID 替换最新的几行。</td></tr>
+</tbody>
+</table>
+<p>为什么一行：每小时运行的任务有几百次运行，每次一行、或者每条线一行，会把读者真正在用的代理埋掉。<a href="../../runtime/always-on-agents.zh.html">常驻设计</a>对比的同类产品都是一个任务列一次、历史放在它自己的页面：</p>
+<ul>
+<li>Claude Code 列出 routines。</li>
+<li>Codex 列出 automations。</li>
+<li>DeepSeek Harness 有任务页和每个任务的投递记录。</li>
+</ul>
+<p>这里的行多给了最近一天跑得怎么样，用一条色条表示；历史留在任务页，分页，并能只看没完成的。</p>
+<p class="note">特意与定时任务分开：那一组放 Scheduler 不经代理做的事，所以一个任务不会出现在两处。</p>
+</details>
+
+<details id="reading-overview">
+<summary>概览的读取</summary>
+<p>概览先画出这个会话上次读到的内容，同时在后台重新读取；新结果在原处替换，不出任何提示。</p>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">首次打开</th><td>Agents 一开始就是展开的：当前分支的主代理，静止，显示会话最近一次活动的时间。读到之后，其他分支、助手和调用在原处补上。</td></tr>
+<tr><th scope="row">再回来</th><td>四项读取（执行、程序和调用、助手名单、会话事务）按会话保留到页面关闭（<code translate="no">lib/execution/activity-reads.ts</code>），回到这个 tab 或切回这个会话时第一帧就画出来。执行和助手名单在新鲜时不重读：不到 30 秒、期间连接一直在、读取开始后没有 <code translate="no">op:execution-update</code> 或 <code translate="no">op:job-status</code>。会话事务每次都读，因为 Scheduler 任务不发事件。</td></tr>
+<tr><th scope="row">显示期间</th><td>执行在上述事件时读取，最多每秒一次，另外每 30 秒一次。读取失败后隔 2、4、8 …… 秒重试，最长 30 秒。</td></tr>
+<tr><th scope="row">失败</th><td>有内容可显示时什么也不说。运行记录从来没读到、并且连续失败 5 秒，Agents 下面显示“读不到这个会话的运行记录。”和“重试”。</td></tr>
+<tr><th scope="row">服务端</th><td><code translate="no">GET /api/session/{id}/executions</code> 每次请求对每个会话只读一次 Job（<code translate="no">jobs.store.session_jobs_reader</code>），每一行的 Job、包括助手用量都从中查找；前台轮次没有 Job，不再逐条去查。会话目录来自位置索引，索引文件变了才重新解析。一个有 203 次运行的会话，响应从 4–6 秒降到约 0.2 秒，三个请求同时到达也不再在会话锁上排队 18 秒。</td></tr>
+</tbody>
+</table>
 </details>
 
 <h2 id="branches-runs-and-waits">分支、运行和等待</h2>
@@ -76,8 +152,8 @@
 <tr><th scope="row">分支</th><td>每个执行属于一个：子代理的分支包含其下没有更深子代理拥有的一切；其余属于主代理</td></tr>
 <tr><th scope="row">运行</th><td>一条消息及为它做的一切，通常是一个顶层执行，其执行树包含子执行、未返回的函数调用和托管程序。较早的运行只以消息形式存在。是代理页里的一行，不在总览中出现。</td></tr>
 <tr><th scope="row">等读者处理</th><td>只有暂停在提问或授权上的运行（模型的 <code translate="no">issues</code> 过滤出暂停的执行）</td></tr>
-<tr><th scope="row">已中断</th><td>被重启截断的调用或运行。灰色历史，无需处理。</td></tr>
-<tr><th scope="row">状态未知</th><td>监管进程已消失的程序。灰色历史，无需处理。</td></tr>
+<tr><th scope="row">已中断</th><td>被重启截断的调用或运行。属于历史，无需处理：概览里不列出。</td></tr>
+<tr><th scope="row">状态未知</th><td>监管进程已消失的程序。属于历史，无需处理：概览里不列出，它所属的代理也不会因它显示“运行中”。</td></tr>
 <tr><th scope="row">已结束</th><td>仅缺模型响应记录的执行（<code translate="no">provider_response_incomplete</code>）</td></tr>
 </tbody>
 </table>
@@ -111,7 +187,7 @@
 <tr><th scope="row">调用</th><td>取自描述的标题、状态、任务或命令，返回后有输出。被中断时显示“已中断”。</td></tr>
 <tr><th scope="row">程序</th><td>标题同列表行，带进度条和文字进度，或运行时间、时长和退出码。运行中有“停止程序”，然后在时间轴上依次是进度、命令、输出（自动展开）和技术详情。打开时每秒读取一次。</td></tr>
 <tr><th scope="row">未完成事项</th><td>事项、状态、标记完成（完成后为重新打开）、移除（之后回到总览）、这个列表的用途、备注、创建时间。没有时间轴。</td></tr>
-<tr><th scope="row">定时任务</th><td>标题和计划、“在调度器中打开”、一行 Task（含提示词、命令、备注、创建时间、ID、Copy 后面的 webhook 地址和密钥、监视命令，密钥从不显示），然后是任务记录里的最近运行，与代理页相同</td></tr>
+<tr><th scope="row">定时任务</th><td>运行提示词的任务：<a href="#task-rows">它的运行页</a>。提醒或命令：标题和计划、“在调度器中打开”、一行 Task（含提示词、命令、备注、创建时间、ID、Copy 后面的 webhook 地址和密钥、监视命令，密钥从不显示），然后是任务记录里的最近运行，与代理页相同</td></tr>
 <tr><th scope="row">常驻</th><td>从时间图顶部的“下次唤醒”打开。内容：立即唤醒、常驻的含义、代理、常驻目标、Goal、唤醒计划、巡检模型、上次唤醒及花费、今日花费、下次唤醒；没有进入聊天的报告；关于报告的要求，每条展开后可删除。</td></tr>
 <tr><th scope="row">报告</th><td>消息 ID 以 <code translate="no">report_</code> 开头的运行，用刻度而不是长条。常驻记录里还有它时：正文、类型、链接、发送结果、“不要报告这类事情”。更早的显示消息本身。</td></tr>
 </tbody>
@@ -271,7 +347,7 @@
 
 <details>
 <summary>代码</summary>
-<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>、<code translate="no">apps/web/lib/execution/agent-roster.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>、<code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>、<code translate="no">apps/web/lib/execution/activity-model.ts</code>、<code translate="no">apps/web/lib/prefs/activity-view.ts</code>、<code translate="no">apps/web/lib/chat/conversation-work.ts</code>、<code translate="no">openprogram/runtime/execution/activity_calls.py</code>、<code translate="no">openprogram/runtime/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
+<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>、<code translate="no">apps/web/lib/execution/agent-roster.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/activity-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/activity-page-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/activity-page-geometry.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/activity-run-wording.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/runs/run-list.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/runs/run-insides.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/runs/sub-agent-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/runs/execution-controls.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/program-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/command-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/scheduled-task-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/task-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/task-runs-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/runs/use-task-runs.ts</code>、<code translate="no">apps/web/lib/net/execution/task-runs-client.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/open-work-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/pages/always-on-row.tsx</code>、<code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>、<code translate="no">apps/web/lib/execution/activity-model.ts</code>、<code translate="no">apps/web/lib/prefs/activity-view.ts</code>、<code translate="no">apps/web/lib/chat/conversation-work.ts</code>、<code translate="no">apps/web/lib/execution/activity-reads.ts</code>、<code translate="no">apps/web/lib/execution/use-execution-debugger.ts</code>、<code translate="no">apps/web/lib/execution/use-managed-processes.ts</code>、<code translate="no">openprogram/interfaces/server/routes/execution/lifecycle.py</code>、<code translate="no">openprogram/runtime/jobs/store.py</code>、<code translate="no">openprogram/runtime/execution/projections/activity_calls.py</code>、<code translate="no">openprogram/runtime/execution/projections/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code>、<code translate="no">openprogram/runtime/scheduler/task_activity.py</code>、<code translate="no">openprogram/state/store/session/graph/branches.py</code></p>
 </details>
 
 <p class="next"><a href="../visual-system/indicator-dots.zh.html">状态圆点</a> · <a href="sub-agent-row.zh.html">子代理自己的对话</a></p>

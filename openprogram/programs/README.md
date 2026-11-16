@@ -59,5 +59,5 @@ catalogue and the owner-recorded program sources, `check` the
 description and icon every surface shows for an application. `ui/` runs applications with a
 UI: catalog, loader, served pages, the operation runner and service.
 
-See [Program Model](https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/reference/design/function/program-model.html)
+See [Program Model](https://github.com/Fzkuji/OpenProgram/blob/main/docs/reference/design/function/program-model.html)
 for the design.

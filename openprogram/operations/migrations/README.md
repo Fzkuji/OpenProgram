@@ -6,4 +6,4 @@
 
 - **`open_permissions.py`** — One-time rewrite of a profile's stored permission data to the open defaults
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

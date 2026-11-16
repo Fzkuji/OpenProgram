@@ -24,7 +24,7 @@ _log = logging.getLogger(__name__)
 def _canonical_snapshot(execution_id: str) -> dict | None:
     """Read the complete public snapshot for one running item."""
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.public import execution_snapshot
+    from openprogram.runtime.execution.projections.public import execution_snapshot
 
     store = default_store()
     execution = store.get_execution(execution_id)
@@ -150,7 +150,7 @@ def _collect() -> list[dict]:
             canonical = None
             try:
                 from openprogram.runtime.execution import default_store
-                from openprogram.runtime.execution.public import execution_snapshot
+                from openprogram.runtime.execution.projections.public import execution_snapshot
 
                 execution = default_store().get_execution(job.id)
                 if execution is not None:

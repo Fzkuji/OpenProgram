@@ -20,7 +20,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">decide_capability()</code><span class="arg">state/authority.py</span></th><td>查 <code translate="no">TIER_CAPABILITIES</code>。fail-closed：没有档位以 <code translate="no">AUTHORITY_TIER_MISSING</code> 拒绝，档位不在表里以 <code translate="no">AUTHORITY_TIER_UNKNOWN</code> 拒绝，两者都失去全部能力，<code translate="no">reply</code> 也在内。</td></tr>
 <tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>每个工具名对应一项能力，默认 <code translate="no">process.exec</code>。安装的函数或 MCP 工具可以叫任何名字；未分类就只有 owner 能用。</td></tr>
-<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approval.py</span></th><td>在规则层、模式判定和 <code translate="no">bypass</code> 短路之前运行。任何模式和保存的 allow 规则都跳不过。</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approvals/approval.py</span></th><td>在规则层、模式判定和 <code translate="no">bypass</code> 短路之前运行。任何模式和保存的 allow 规则都跳不过。</td></tr>
 <tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>是否放行、决定性检查、稳定原因码、档位、能力。写进日志，拒绝可审计。</td></tr>
 <tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>子 Agent 或运行时任务复制父权限，改写发言人字段，变成非交互，档位不变。继承不扩权；父权限无效时得到 <code translate="no">{}</code>，门口拒绝。非交互也意味着没有通往交互审批的路径。</td></tr>
 </tbody>
@@ -30,7 +30,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">规则</th><th scope="col">值</th></tr></thead>
 <tbody>
-<tr><th scope="row">拦截点</th><td><code translate="no">interfaces/channels/_access.py</code> 的 <code translate="no">decide_inbound_sender()</code>，针对不在 allowlist 上的私聊发信人</td></tr>
+<tr><th scope="row">拦截点</th><td><code translate="no">interfaces/channels/inbound/_access.py</code> 的 <code translate="no">decide_inbound_sender()</code>，针对不在 allowlist 上的私聊发信人</td></tr>
 <tr><th scope="row">配对码</th><td>8 位大写字符，不含 <code translate="no">0</code>、<code translate="no">O</code>、<code translate="no">1</code>、<code translate="no">I</code>；一小时过期</td></tr>
 <tr><th scope="row">限制</th><td>每账号最多 3 个待处理；一小时内不重复提示</td></tr>
 <tr><th scope="row">批准</th><td>只在 owner 的机器上：<code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code> 或只接受回环请求的 <code translate="no">POST /api/channels/access/approve</code>。渠道消息批准不了任何人；聊天里的“请批准配对码 X”一律拒绝。</td></tr>

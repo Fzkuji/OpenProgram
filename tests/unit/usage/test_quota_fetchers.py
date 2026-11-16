@@ -254,7 +254,7 @@ def test_a_failed_read_keeps_the_values_and_names_why_once(fake, monkeypatch, tm
     assert reads["cred-1"]["error"] == "HTTP 401" and reads["cred-1"]["read_at"] == NOW + 60
 
     from openprogram.models.usage import provider_status
-    key = {"account": "a", "credential_id": "cred-1", "kind": "api_key", "status": "valid", "active": True,
+    key = {"account": "a", "credential_id": "cred-1", "kind": "api_key", "status": "ready", "active": True,
            "cooldown_until": None, "last_error": None, "last_used_at": None, "use_count": 0}
     wire = provider_status.quota_of([report], [key], NOW + 120, reads)
     assert wire["read_error"] == "HTTP 401" and wire["fetched_at"] == NOW
@@ -265,3 +265,44 @@ def test_a_failed_read_keeps_the_values_and_names_why_once(fake, monkeypatch, tm
     reads = quota_fetchers.last_reads("openrouter")
     assert reads["cred-1"]["error"] is None
     assert provider_status.health_of([key], fake.store.reports("openrouter"), NOW + 200, reads)["state"] == "ready"
+
+
+def test_a_key_its_quota_endpoint_refuses_is_marked_on_its_row(fake, tmp_path):
+    from openprogram.models.auth import Credential, CredentialData
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+
+    auth = AuthStore(root=tmp_path / "state")
+    set_store_for_testing(auth)
+    try:
+        cred = auth.add_credential(Credential(provider_id="openrouter", kind="api_key", source="cli",
+                                              payload=CredentialData(kind="api_key", auth_value="sk-or-test")))
+        quota_fetchers.credentials = lambda provider: [FetchCredential(provider, cred.id, "sk-or-test")]
+        fake.answers.append((401, '{"error": "no key"}', {}))
+        quota_fetchers.refresh(["openrouter"], reason="manual", http_get=fake.http_get, now=NOW)
+        row = auth.find("openrouter", cred.id)
+        assert row.status == "invalid_key"
+        assert "401" in (row.last_error or {}).get("message", "")
+    finally:
+        set_store_for_testing(None)
+
+
+@pytest.mark.parametrize("module, body", [
+    (minimax, '{"error": "no token plan"}'),  # an unverified endpoint
+    (openrouter, '{"type": "error", "error": {"type": "CreditsError", "message": "Insufficient balance"}}'),
+])
+def test_a_401_that_does_not_say_the_key_is_refused_leaves_its_row(fake, tmp_path, module, body):
+    from openprogram.models.auth import Credential, CredentialData
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+
+    auth = AuthStore(root=tmp_path / "state")
+    set_store_for_testing(auth)
+    try:
+        cred = auth.add_credential(Credential(provider_id="minimax", kind="api_key", source="cli",
+                                              payload=CredentialData(kind="api_key", auth_value="sk-or-test")))
+        fake.answers.append((401, body, {}))
+        quota_fetchers.fetch_one(module, FetchCredential("minimax", cred.id, "sk-or-test"),
+                                 http_get=fake.http_get, now=NOW)
+        assert auth.find("minimax", cred.id).status == "ready"
+        assert quota_fetchers.last_reads("minimax")[cred.id]["error"] == "HTTP 401"
+    finally:
+        set_store_for_testing(None)

@@ -1,0 +1,133 @@
+<title>仓库结构</title>
+<meta name="description" content="核心优先的 monorepo：各目录负责什么、大文件如何拆分、布局必须保持哪些事实。">
+<h1>仓库结构</h1>
+
+<pre translate="no" tabindex="0">OpenProgram/
+  apps/
+    web/         Next.js Web application
+    desktop/     Electron desktop application
+    cli/         Ink terminal client
+  openprogram/   Agent core, Python SDK and the Python interfaces
+    interfaces/server/  FastAPI, HTTP, WebSocket, authentication, static hosting
+    interfaces/cli/     Python CLI: parser, dispatch, Rich fallback, setup
+  tests/         Python tests: layer / product domain / feature
+  docs/          User documentation and design records
+  scripts/       Development, validation and release tools
+  references/    Reference implementation snapshots
+  website/       Official website source
+  translations/  Root README in other languages
+  pyproject.toml Single Python aggregate-project configuration
+  uv.lock        Sole Python lockfile
+  package.json   npm workspace entry
+  package-lock.json  Sole npm workspace lockfile</pre>
+
+<h2 id="principles">原则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">原则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">核心与应用分离</th><td>核心领域绝不依赖应用。核心没有兼容命名空间：Server 和 CLI 模块以 <code translate="no">openprogram.interfaces.server.*</code>、<code translate="no">openprogram.interfaces.cli.*</code> 导入。</td></tr>
+<tr><th scope="row">沿可验证的边界拆分</th><td>只有具备独立输入、输出和测试入口的代码才移动。仅因文件长而引入 mixin、manager 或 facade 不算拆分。包内含义相同的模块放进以用途命名的子包；不为一两个文件建文件夹，不建工具杂物夹。</td></tr>
+<tr><th scope="row">公开接口稳定</th><td>CLI 命令、HTTP/WS 协议、端口、用户数据目录、必要的 Python 导入。每个应用单独移动、验证、提交。</td></tr>
+<tr><th scope="row">设计与实现记录分开</th><td>本页是长期结构；<a href="structure-implementation.zh.html">仓库结构实现</a>记录位置、兼容和验证。历史看 Git。</td></tr>
+</tbody>
+</table>
+
+<h2 id="packages">Python 核心与打包</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">核心顶层</th><td>只放能独立解释的领域：<code translate="no">runtime/</code>、<code translate="no">programs/</code>、<code translate="no">models/</code>、<code translate="no">state/</code>、<code translate="no">host/</code>、<code translate="no">extensions/</code>、<code translate="no">operations/</code>、<code translate="no">interfaces/</code>。子能力放在所属领域内，如 Context 的 Git DAG 在 <code translate="no">runtime/context/git/</code>。</td></tr>
+<tr><th scope="row">Server</th><td><code translate="no">routes/</code>、<code translate="no">ws_actions/</code>、<code translate="no">server_runtime/</code> 和顶层模块；<code translate="no">openprogram.interfaces.server.server</code> 组装应用。每个模块只有一个名字、一份状态。</td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">apps/cli/</code> 只有 Ink 客户端（<code translate="no">src/</code>、<code translate="no">tests/</code>、<code translate="no">package.json</code>）。<code translate="no">openprogram.interfaces.cli</code> 从 <code translate="no">application.py</code> 重新导出 <code translate="no">main</code> 和 <code translate="no">build_parser</code>。</td></tr>
+<tr><th scope="row">分发</th><td>一个用户可安装的 <code translate="no">openprogram</code> wheel，含核心、Server 和 Python CLI，由包发现找到，wheel、可编辑安装和检出共用一种布局。不建无成员的 <code translate="no">[tool.uv.workspace]</code>，不拆三个公开发行包。</td></tr>
+<tr><th scope="row"><code translate="no">packages/</code></th><td>不创建。只有第二个共享包具备稳定公开入口且至少两个使用方时才重新考虑。</td></tr>
+<tr><th scope="row">Profile 状态</th><td>工具配置、收藏等写入 <code translate="no">~/.openprogram[-profile]/</code>，绝不作为源码或 wheel 种子。兼容读取只查旧的 <code translate="no" data-claim="example">openprogram/webui/</code> 位置，一次性复制到 profile 状态，绝不依赖 Server 模块路径。</td></tr>
+<tr><th scope="row">Skills</th><td>不随安装分发；内置工作流由 Programs 提供。<code translate="no">openprogram/extensions/skills/</code> 只负责从远端缓存、插件、<code translate="no">~/.openprogram/skills/</code> 和 <code translate="no">&lt;cwd&gt;/skills/</code> 加载兼容 AgentSkills 的技能。没有 <code translate="no">skills_bundled/</code> 或隐藏副本。</td></tr>
+<tr><th scope="row">测试</th><td><code translate="no">tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按实际最强依赖选层。测试多的领域按功能分文件夹，以所测的源码包或关注点命名，例如 <code translate="no">tests/unit/context/compaction/</code>、<code translate="no">tests/unit/store/session/</code>、<code translate="no">tests/component/execution/control/</code> 和 <code translate="no">tests/e2e/web/chat/</code>；一个功能文件夹至少有三个测试。见<a href="../testing/test-system.zh.html">测试体系</a>。</td></tr>
+<tr><th scope="row">不算结构</th><td><code translate="no">__pycache__/</code>、<code translate="no">.DS_Store</code>、构建产物和 Finder 冲突副本保持忽略。用户安装的 <code translate="no">programs/packages/</code> 检出是产品数据，重组时保留。</td></tr>
+</tbody>
+</table>
+
+<h2 id="node-and-scripts">Node 工作区与脚本</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">React 版本</th><td>Web 固定 React 18，Ink CLI 固定 React 19。npm 提升可能让共享 peer 互相影响，所以私有根包声明精确的 React 18、<code translate="no">react-reconciler</code> 0.29 和类型版本作为布局约束。CLI 的 React 19 和 <code translate="no">react-reconciler</code> 0.33 留在自己的工作区；它不使用从根解析 React 的第三方 hook 包。</td></tr>
+<tr><th scope="row">脚本归属</th><td>单个应用放 <code translate="no">apps/&lt;name&gt;/scripts/</code>，跨应用工具放 <code translate="no">scripts/</code>，按用途一个文件夹：<code translate="no">local-instances/</code>（稳定版和开发版 App）、<code translate="no">publishing/</code>（GitHub）、<code translate="no">generators/</code>（派生文件）、<code translate="no">checks/</code>（检查和冒烟运行）、<code translate="no">maintenance/</code>（针对安装状态的手动工具）、<code translate="no">docs_site/</code>、<code translate="no">testing/</code>、<code translate="no">benchmarks/</code>、<code translate="no">git-hooks/</code>、<code translate="no">release/</code>（运行时、安装器、发布）。直接放在 <code translate="no">scripts/</code> 下的只有安装入口。</td></tr>
+<tr><th scope="row">公开安装器</th><td><code translate="no">scripts/install-release.sh</code> 是兼容入口。完整检出时运行 <code translate="no">scripts/release/install-release.sh</code>；单独下载时，从同一受验证仓库和不可变 tag 取该文件到临时文件后运行。</td></tr>
+<tr><th scope="row">固定路径</th><td><code translate="no">scripts/install.sh</code>、<code translate="no">scripts/install.ps1</code>、<code translate="no">scripts/install-release.sh</code>、<code translate="no">scripts/install-release.ps1</code>：安装命令和已发布的版本按这些路径获取它们。本地刷新（<code translate="no">scripts/local-instances/refresh-local-app.sh</code>）复用 <code translate="no">scripts/release/</code> 的暂存和版本校验工具。</td></tr>
+<tr><th scope="row">根目录文件</th><td>只有两种生态的入口文件和 lockfile、项目元数据、入口文档。<code translate="no">.github/</code> 是仓库基础设施。</td></tr>
+</tbody>
+</table>
+
+<h2 id="large-files">大文件</h2>
+<table class="stack">
+<thead><tr><th scope="col">文件</th><th scope="col">状态</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/desktop/main.js</code></th><td>组合根，约 2000 行；纯逻辑在 <code translate="no">main/windows/menu-geometry.js</code>、<code translate="no">main/worker/worker-recovery-state.js</code>、<code translate="no">main/web-views/tab-transfer-validation.js</code></td><td>HTTP 探测、进程和窗口生命周期、原生 WebView 归属、传输协调和菜单托管，都要有执行级验收才移动</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/desktop/desktop-bridge.ts</code></th><td>小的聚合入口；状态、恢复、传输、菜单、事件和表面在 <code translate="no">bridge/</code>；类型在 <code translate="no">desktop-bridge-types.ts</code> 和 <code translate="no">desktop-transfer-types.ts</code></td><td>保留聚合入口</td></tr>
+<tr><th scope="row">运行时状态机模块</th><td>不变量集中</td><td>不按长度拆；只因职责可独立验证或存在重复实现才拆。不引入 mixin 层。</td></tr>
+<tr><th scope="row">大型 Web 和 Desktop 检查脚本</th><td>夹具、场景和结构断言混在一起</td><td>先提取共享夹具和可独立执行的场景；保留命令入口；不为缩短文件引入测试框架</td></tr>
+</tbody>
+</table>
+
+<h2 id="documentation">文档</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户文档</th><td><code translate="no">start/ install/ capabilities/ interfaces/ models/ integrations/ server/ reference/</code>；进入公开导航和搜索</td></tr>
+<tr><th scope="row">当前设计</th><td><code translate="no">reference/design/</code>，一个子系统一个文件夹；大的子系统按主题组再分文件夹，例如 <code translate="no">providers/requests/</code>、<code translate="no">integrations/computer-use/</code>、<code translate="no">runtime/agent/</code> 和 <code translate="no">ui/transcript-model/</code>。直接放在其中的只有索引页和框架总览。UI 文档分为基础、对话编辑、浏览器标签、设置/目录和工作区</td></tr>
+<tr><th scope="row">实现记录</th><td>放在设计页旁和 <code translate="no">reference/design/plans/</code>：边界、验证、剩余工作。状态集中在末尾；不复制设计正文，不积累提交日志。</td></tr>
+<tr><th scope="row">唯一归属</th><td>工程记录只在 <code translate="no">docs/reference/design/</code>，一个主题一份。工具生成的计划和台账不进 <code translate="no">docs/</code>，长期内容并入主题页。当前设计仍引用的计划发布在 Plans 分组。</td></tr>
+<tr><th scope="row">README</th><td>根目录：产品，英文；其他语言的版本在 <code translate="no">translations/</code>。<code translate="no">openprogram/README.md</code>：核心 SDK。<code translate="no">openprogram/interfaces/server/</code>、<code translate="no">apps/web/</code>、<code translate="no">apps/desktop/</code>、<code translate="no">apps/cli/</code>：各入口当前的职责、依赖方向和验证命令。</td></tr>
+</tbody>
+</table>
+
+<h2 id="choices">取舍</h2>
+<table class="stack">
+<thead><tr><th scope="col">选项</th><th scope="col">结果</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">根目录 <code translate="no">openprogram/</code> 核心加 <code translate="no">apps/</code></th><td>采用</td><td>核心仍是顶层项目入口；非 Python 客户端在 <code translate="no">apps/</code> 下一目了然</td></tr>
+<tr><th scope="row">只移动的应用迁移</th><td>采用</td><td>先改路径、构建、导入和脚本，之后再拆，避免同时改行为</td></tr>
+<tr><th scope="row">设计页按子系统放进文件夹</th><td>采用</td><td>页面所在的文件夹说明它属于哪个子系统；移动过的页面，旧 URL 留在 <code translate="no">docs/redirects.json</code></td></tr>
+<tr><th scope="row">把 <code translate="no">openprogram/</code> 改名为 backend</th><td>拒绝</td><td>它是 Agent 核心和 SDK；Server 只是一个应用入口</td></tr>
+<tr><th scope="row">Server 留在 <code translate="no" data-claim="example">openprogram/webui/</code></th><td>拒绝</td><td>混杂服务器代码、旧静态 UI、构建产物和 Web 命名</td></tr>
+<tr><th scope="row">按固定行数拆分</th><td>拒绝</td><td>行数不等于职责，容易产生只转发的模块</td></tr>
+<tr><th scope="row">依赖注入框架</th><td>拒绝</td><td>模块函数和显式参数足以保持边界</td></tr>
+<tr><th scope="row">一次提交移动所有应用</th><td>拒绝</td><td>无法评审</td></tr>
+</tbody>
+</table>
+
+<h2 id="acceptance">必须保持的事实</h2>
+<h3>分层</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">核心包</th><td><code translate="no">interfaces/</code> 之外的 <code translate="no">openprogram/</code> 没有 FastAPI 路由或 WebSocket 处理器；没有前端或 Electron 源码，没有持久化的前端构建产物。</td></tr>
+<tr><th scope="row">接口</th><td><code translate="no">openprogram/interfaces/server</code>、<code translate="no">apps/web</code>、<code translate="no">apps/desktop</code>、<code translate="no">apps/cli</code> 各有自己的入口、README、测试和构建命令。</td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram.interfaces.cli.main</code> 和 <code translate="no">build_parser</code> 保持可导入，完整命令树、控制台脚本和 TUI 不变。</td></tr>
+<tr><th scope="row">端口</th><td>默认端口 <code translate="no">18100</code>；一个 Worker 提供 API、WebSocket 和 Web 静态文件，没有双端口 Next.js Server。</td></tr>
+<tr><th scope="row">Web 与 Electron</th><td>浏览器和 Electron 加载同一 Web 应用；Electron 专属能力只经 preload/IPC。</td></tr>
+<tr><th scope="row">Agent Harness</th><td>Agent Harness 导入 <code translate="no">openprogram</code> 时不依赖 Server、Web 或 Desktop。</td></tr>
+</tbody>
+</table>
+<h3>构建与状态</h3>
+<ul>
+<li>没有旧静态 UI 和旧双端口实现；核心没有 Server 或 CLI 兼容命名空间。</li>
+<li>前端构建产物只进被忽略的构建或暂存目录和最终发行物。</li>
+<li>可变 profile 状态不在源码树和 wheel 中；旧的包内 JSON 只作升级输入，不被跟踪。</li>
+</ul>
+<h3>文档与仓库</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">发布的文档</th><td><code translate="no">docs/</code> 下除构建输出和纯静态目录外都发布；工程记录在 <code translate="no">docs/reference/design/</code>；所有公开链接有效。</td></tr>
+<tr><th scope="row">设计导航</th><td>设计页放在所属子系统的文件夹里，导航按产品能力分组；每个停用的 URL 在 <code translate="no">docs/redirects.json</code> 中都有条目。</td></tr>
+<tr><th scope="row">顶层目录</th><td>Git 跟踪的顶层目录在结构契约中声明。开发脚本和 README 译文不放根目录；没有实现的源码检出模块入口由契约单独列出。</td></tr>
+<tr><th scope="row">源码根路径</th><td>README、技能和安装说明不提已删除的源码根路径；根目录没有 <code translate="no">web/</code>、<code translate="no">desktop/</code>、<code translate="no">cli/</code>。</td></tr>
+<tr><th scope="row">包 README</th><td>顶层 Python 包目录 README 与 <code translate="no">__init__.py</code> docstring 同步。</td></tr>
+<tr><th scope="row">结构批次</th><td>每批结构改动单独提交，通过直接受影响的测试后再做规格和质量复审。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="structure-implementation.zh.html">仓库结构实现</a></p>

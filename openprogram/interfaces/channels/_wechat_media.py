@@ -29,7 +29,7 @@ from urllib.parse import quote
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from openprogram.interfaces.channels._message import Attachment
+from openprogram.interfaces.channels.inbound._message import Attachment
 
 
 CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c"

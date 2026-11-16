@@ -24,6 +24,7 @@ from .load import handle_load_session
 from .search import handle_search_session
 from .tool_output import handle_get_full_tool_output
 from .run_state import handle_get_run_state
+from .run_state import handle_get_running_sessions
 from .run_state import handle_follow_up_answer
 from .permission_rules import handle_list_permission_rules
 from .permission_rules import handle_add_permission_rule
@@ -52,6 +53,7 @@ ACTIONS = {
     "load_session": handle_load_session,
     "get_full_tool_output": handle_get_full_tool_output,
     "get_run_state": handle_get_run_state,
+    "get_running_sessions": handle_get_running_sessions,
     "follow_up_answer": handle_follow_up_answer,
     "set_working_dirs": handle_set_working_dirs,
     "set_sandbox": handle_set_sandbox,

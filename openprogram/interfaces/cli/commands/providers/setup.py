@@ -2,10 +2,14 @@
 from __future__ import annotations
 import sys
 from typing import Any
-from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-from openprogram.models.auth.account.accounts import get_account_manager
 from openprogram.models.auth.store import get_store
 from openprogram.models.auth.types import Credential
+
+
+def _already_held(store, cred: Credential) -> bool:
+    """The provider's list already holds this sign-in's secret."""
+    held = {c.payload.auth_value for c in store.stored(cred.provider_id).credentials}
+    return bool(cred.payload.auth_value) and cred.payload.auth_value in held
 
 
 def _cmd_setup() -> int:
@@ -30,25 +34,18 @@ def _cmd_setup() -> int:
 
 def _run_setup() -> int:
     from .formatting import _confirm, _payload_summary
-    from .login import _cmd_login
-    from openprogram.models.auth.sources import (
-        CodexCliSource,
-        EnvApiKeySource,
-        GhCliSource,
-        QwenCliSource,
-    )
+    from .keys import _cmd_add
+    from openprogram.models.auth.adoption import _sources
 
     store = get_store()
-    pm = get_account_manager()
-    default = pm.get_account(DEFAULT_ACCOUNT_NAME)
 
     print("═" * 60)
     print("  OpenProgram — provider setup")
     print("═" * 60)
     print()
     print("This wizard walks you through connecting AI providers.")
-    print("We'll scan for existing logins (Codex CLI, Claude Code, env")
-    print("variables, etc.) and offer to import them. You can skip any")
+    print("We'll scan for sign-ins other tools hold (Codex, Qwen, GitHub")
+    print("CLIs) and offer to import them. You can skip any")
     print("step. Nothing is sent anywhere; everything stays on this box.")
     print()
     if _confirm("Start?", default=True) is False:
@@ -57,19 +54,10 @@ def _run_setup() -> int:
 
     # --- step 1: scan -----------------------------------------------------
     print("\n[1/3] Scanning for existing credentials...\n")
-    sources: list[Any] = [
-        CodexCliSource(),
-        QwenCliSource(),
-        GhCliSource(),
-    ]
-    from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
-    for provider, env_var in PROVIDER_ENV_VARS.items():
-        sources.append(EnvApiKeySource(provider_id=provider, env_var=env_var))
-
     findings: list[tuple[Any, list[Credential]]] = []
-    for src in sources:
+    for src in _sources():
         try:
-            creds = src.try_import(default.root)
+            creds = src.try_import(store.root)
         except Exception:
             continue
         if creds:
@@ -98,13 +86,7 @@ def _run_setup() -> int:
                     )
                     if not pick:
                         continue
-                # Dedup by source label — credential_id is freshly
-                # minted every try_import, so id-equality never matches
-                # and we used to create duplicates on every wizard run.
-                existing = store.find_pool(cred.provider_id, cred.account_id)
-                if existing and any(
-                    c.source == cred.source for c in existing.credentials
-                ):
+                if _already_held(store, cred):
                     continue
                 try:
                     store.add_credential(cred)
@@ -123,13 +105,13 @@ def _run_setup() -> int:
         ("openai",       "OpenAI (raw API key)"),
     ]
     for prov_id, label in popular:
-        if store.find_pool(prov_id, DEFAULT_ACCOUNT_NAME) is not None:
+        if store.get(prov_id).credentials:
             continue
         pick = _confirm(f"  Log into {label} now?", default=False)
         if not pick:
             continue
         try:
-            rc = _cmd_login(prov_id, DEFAULT_ACCOUNT_NAME, method=None)
+            rc = _cmd_add(prov_id)
             if rc != 0:
                 print(f"    (skipped — {prov_id} login exited {rc})")
         except (KeyboardInterrupt, EOFError):
@@ -141,7 +123,7 @@ def _run_setup() -> int:
     print("  Verify anytime:")
     print("    openprogram providers list")
     print("    openprogram providers doctor")
-    print("    openprogram providers status <provider>")
+    print("    openprogram providers keys <provider> list")
     print()
     return 0
 

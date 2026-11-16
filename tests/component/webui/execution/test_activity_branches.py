@@ -4,7 +4,7 @@ from openprogram.state.store.session.nodes import Call
 
 
 def test_activity_projects_conversation_branches_not_turns(tmp_path):
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
 
     db = SessionStore(tmp_path / 'sessions')
     writer = SessionNodeWriter(db, 'conversation')
@@ -34,7 +34,7 @@ def test_activity_projects_conversation_branches_not_turns(tmp_path):
 
 
 def test_called_session_does_not_expose_unrelated_branch_tips(tmp_path):
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
     db = SessionStore(tmp_path / 'sessions')
     writer = SessionNodeWriter(db, 'target')
     for node in [Call(id='user', role='user', predecessor='ROOT'),
@@ -60,10 +60,11 @@ def test_session_endpoint_returns_branch_membership_after_authorization(tmp_path
     writer.append(Call(id='user', role='user', predecessor='ROOT'))
     writer.append(Call(id='assistant', role='llm', predecessor='user'))
     monkeypatch.setattr('openprogram.runtime.context.session_db.default_db', lambda: db)
-    monkeypatch.setattr('openprogram.runtime.execution.default_store', lambda: SimpleNamespace(get_agent_turn_input=lambda _: {}))
+    monkeypatch.setattr('openprogram.runtime.execution.default_store', lambda: SimpleNamespace(
+        get_agent_turn_input=lambda _: {}, list_for_session=lambda _: [], list_inputs_for_session=lambda _: []))
     execution = SimpleNamespace(execution_id='run', session_id='session', status=SimpleNamespace(value='completed'), created_at=1, status_version=1)
     monkeypatch.setattr('openprogram.runtime.execution.conversation_scope.conversation_execution_scope', lambda *_: ([execution], {}))
-    monkeypatch.setattr(lifecycle, '_execution_payload', lambda _: {'display': {'user_message_id': 'user', 'assistant_message_id': 'assistant'}})
+    monkeypatch.setattr(lifecycle, '_execution_payload', lambda *_, **__: {'display': {'user_message_id': 'user', 'assistant_message_id': 'assistant'}})
     monkeypatch.setattr(lifecycle, '_actor_and_session', lambda _: ({}, 'session'))
     monkeypatch.setattr('openprogram.runtime.execution.authorization.authorize_session_action', lambda *_: None)
     app = FastAPI()
@@ -76,7 +77,7 @@ def test_session_endpoint_returns_branch_membership_after_authorization(tmp_path
 
 
 def test_compaction_coverage_retains_earlier_turn_membership(tmp_path):
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
     db = SessionStore(tmp_path / 'sessions')
     writer = SessionNodeWriter(db, 's')
     writer.append(Call(id='u1', role='user', predecessor='ROOT'))
@@ -97,7 +98,7 @@ def test_compaction_coverage_retains_earlier_turn_membership(tmp_path):
 
 
 def test_branch_projection_observes_placement_from_another_store(tmp_path):
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
     root = tmp_path / 'home-sessions'
     reader = SessionStore(root)
     registrar = SessionStore(root)
@@ -116,7 +117,7 @@ def test_branch_projection_observes_placement_from_another_store(tmp_path):
 
 
 def test_branch_projection_observes_relocation_after_open(tmp_path):
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
     reader = SessionStore(tmp_path / 'home')
     registrar = SessionStore(tmp_path / 'home')
     for place, tip in [('old', 'old-tip'), ('new', 'new-tip')]:
@@ -136,7 +137,7 @@ def test_spawned_agent_branch_is_named_by_its_task_label_while_it_runs(tmp_path,
     in the branch list (list_agents reads it) and in Activity, before the
     run has replied. A message to that agent later keeps the name."""
     from types import SimpleNamespace
-    from openprogram.runtime.execution.activity_branches import conversation_activity_branches
+    from openprogram.runtime.execution.projections.activity_branches import conversation_activity_branches
     from openprogram.runtime.jobs.runner import admission
 
     db = SessionStore(tmp_path / 'sessions')

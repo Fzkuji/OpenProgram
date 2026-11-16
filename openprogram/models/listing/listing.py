@@ -220,7 +220,7 @@ def _list_providers() -> list[dict[str, Any]]:
     """
     from openprogram.models.providers import get_providers, get_models
     from openprogram.models.auth.account.aliases import resolve as _resolve_alias
-    from openprogram.models.auth.login.login_method_registry import login_methods as _login_methods
+    from openprogram.models.auth.login.login_method_registry import login_method_payload as _login_methods
 
     from openprogram.models.providers.catalog.metadata import provider_base_url
 
@@ -266,9 +266,8 @@ def _list_providers() -> list[dict[str, Any]]:
             "local": local,
             "enabled": bool(pcfg.get("enabled", False)),
             "configured": is_configured(pid),
-            # Synthesised key label for custom providers (Detail shows
-            # AccountManager when api_key_env is truthy). Display only — keys
-            # resolve from the AuthStore by pid.
+            # The variable a key of this provider is read from (a synthesised
+            # one for custom providers). Display only.
             "api_key_env": env_var_for(pid) or (synthesized_env_var(pid) if custom else None),
             "default_base_url": default_base_url,
             "base_url": pcfg.get("base_url") or "",
@@ -288,16 +287,11 @@ def _list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             e["setup_hint"] = hint
-        # Native login methods (OAuth / device-code / import-from-CLI) the web
-        # can drive — excluding plain api_key, which the ApiKey field already
-        # handles. Single source of truth: openprogram/models/auth/login/login_method_registry.py.
-        native = [
-            {"id": mid, "label": label}
-            for mid, label in _login_methods(pid)
-            if mid != "api_key"
-        ]
-        if native:
-            e["login_methods"] = native
+        # Every way to connect, recommended first, from the provider's
+        # connection entry (openprogram/models/auth/login/login_method_registry.py).
+        methods = _login_methods(pid)
+        if methods:
+            e["login_methods"] = methods
         doc = (md_provs.get(pid) or {}).get("doc_url")
         if doc:
             e["doc_url"] = doc

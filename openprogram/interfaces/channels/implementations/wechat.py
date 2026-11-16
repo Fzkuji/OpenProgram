@@ -154,13 +154,13 @@ class WechatChannel(Channel):
         if not from_id:
             return
         # iLink 取"正在输入"的 ticket 要带这个用户最近的 context_token.
-        from openprogram.interfaces.channels._transport import remember_wechat_context
+        from openprogram.interfaces.channels.delivery._transport import remember_wechat_context
         remember_wechat_context(
             self.account_id, str(from_id), str(msg.get("context_token") or ""),
         )
 
         # Parse wechat iLink msg dict → ChannelMessage (audit 缺陷 4).
-        from openprogram.interfaces.channels._message import ChannelMessage
+        from openprogram.interfaces.channels.inbound._message import ChannelMessage
         ch_msg = ChannelMessage(
             text=text,
             chat_id=str(from_id),
@@ -254,7 +254,7 @@ def _save_login(account_id: str, creds: dict[str, str]) -> None:
     code on their first message only drops what they wrote. Anyone else
     still needs one.
     """
-    from openprogram.interfaces.channels import _access
+    from openprogram.interfaces.channels.inbound import _access
     from openprogram.interfaces.channels import accounts as _accounts
     _accounts.save_credentials("wechat", account_id, creds)
     owner = str(creds.get("ilink_user_id") or "").strip()

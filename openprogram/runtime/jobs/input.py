@@ -1,7 +1,7 @@
 """A background Agent Job's admission input, built from and turned into live objects.
 
 The versioned envelope and its validation live in
-``openprogram.runtime.execution.job_input``; this module adds the
+``openprogram.runtime.execution.admission_input.job_input``; this module adds the
 conversions between it and a ``Job`` or a ``TurnRequest``.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import dataclasses
 from dataclasses import fields
 from typing import Any, Mapping
 
-from openprogram.runtime.execution.job_input import (
+from openprogram.runtime.execution.admission_input.job_input import (
     JOB_AGENT_INPUT_VERSION,
     _DEFERRED_KEYS,
     JobAgentInputError,
@@ -127,7 +127,7 @@ class JobAgentInputV1(_JobAgentInputSchema):
             request["detached"] = True
         # Resolve the destination before permission defaults: the page may
         # be on a different branch from the delivered message.
-        from openprogram.runtime.conversation.branch_config import freeze_branch_request
+        from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
         request = freeze_branch_request(request)
         if permission_snapshot is not None:
             from openprogram.runtime.permissions.modes import VALID_PERMISSION
@@ -145,7 +145,7 @@ class JobAgentInputV1(_JobAgentInputSchema):
         elif owner_work and job.parent_session_id:
             # No live parent to inherit from (a message delivered once its
             # target went idle): the turn runs as one sent in that conversation.
-            from openprogram.runtime.conversation.session_config import conversation_permission
+            from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
             permission = conversation_permission(job.parent_session_id, **(
                 {"branch_id": request["branch_id"]} if request.get("branch_id") else {}
             ))

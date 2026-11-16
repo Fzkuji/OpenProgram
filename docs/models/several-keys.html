@@ -1,0 +1,80 @@
+<title>Use several keys</title>
+<meta name="description" content="Give one provider several API keys or signed-in accounts, choose their order, pin a conversation to one, and see what happens when a key stops.">
+<meta name="covers" content="apps/web/components/settings/providers/detail/credentials-section.tsx apps/web/components/chat/top-bar/menus/provider-keys.tsx openprogram/interfaces/server/routes/identity/provider_credentials.py">
+<h1>Use several keys</h1>
+<p>A provider can hold several API keys or signed-in accounts. They form one list, used from the top.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="A provider's list holds Personal, Work and Old team key. A conversation uses Personal. When Personal is rate limited, the next request goes to Work and the reply shows one line: Switched to Work: Personal hit a rate limit. Old team key is invalid and is skipped.">
+  <defs><marker id="sk-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="20">The provider's list</text>
+  <rect class="tile" x="0" y="34" width="210" height="40" rx="8"/>
+  <text class="t-big" x="16" y="59">1  Personal</text>
+  <rect class="tile" x="0" y="84" width="210" height="40" rx="8"/>
+  <text class="t-big" x="16" y="109">2  Work</text>
+  <rect class="tile" x="0" y="134" width="210" height="40" rx="8"/>
+  <text class="t-no" x="16" y="159">3  Old team key</text>
+  <line class="ln" x1="222" y1="54" x2="330" y2="54" marker-end="url(#sk-a)"/>
+  <text class="t-big" x="342" y="59">Conversation</text>
+  <text class="t-soft" x="342" y="80">keeps Personal while it works</text>
+  <line class="ln-acc" x1="222" y1="104" x2="330" y2="104" marker-end="url(#sk-a)"/>
+  <text class="t-big" x="342" y="109">Personal is rate limited</text>
+  <text class="t-soft" x="342" y="130">the next request uses Work; the reply says</text>
+  <text class="t-cmd" x="342" y="150">Switched to Work: Personal hit a rate limit</text>
+  <text class="t-soft" x="342" y="176">An invalid key is skipped until it is replaced</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>The list: Personal, Work, Old team key</li>
+<li class="via">A conversation keeps Personal while it works</li>
+<li class="via">Personal is rate limited: the next request uses Work, and the reply says "Switched to Work: Personal hit a rate limit"</li>
+<li class="flow-end">An invalid key is skipped until it is replaced</li>
+</ol>
+</figure>
+
+<h2 id="add">Add a key</h2>
+<p>Settings → LLM Providers, then the provider's card, or its section on its company's card: <strong>Add key</strong> (a filled button while the provider has none), or <strong>Sign in with another account</strong> for a subscription. A provider with several ways to connect lists them first, the recommended one on top.</p>
+<p>The key is checked with the provider before it is saved, and the dialog says what it found:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Result</th><th scope="col">Saved</th></tr></thead>
+<tbody>
+<tr><th scope="row">Key works · 42 models</th><td>Yes</td></tr>
+<tr><th scope="row">Key works · no credit</th><td>Yes, with Top up for the billing page</td></tr>
+<tr><th scope="row">Key saved · not verified</th><td>Yes: the provider took the key but nothing proved it can answer</td></tr>
+<tr><th scope="row">Can't reach the provider</th><td>Yes, with Retry</td></tr>
+<tr><th scope="row">Key rejected</th><td>No: paste another key, or Get a key</td></tr>
+</tbody>
+</table>
+<p class="note">A name is optional; without one the row reads "Key ····c41e". A key is never shown again, only its last four characters. A key set in the Worker's environment appears as its own row with the variable's name; paste the same key here and it is saved, keeps working when the variable is gone, and is listed once.</p>
+
+<h2 id="order">Order and strategy</h2>
+<p>With two or more keys, the Credentials section shows a choice over the list:</p>
+<dl class="pairs">
+<dt>In order</dt><dd>The first usable key; the rest wait as spares. The default.</dd>
+<dt>Evenly</dt><dd>New conversations take turns across the usable keys.</dd>
+<dt>Least used</dt><dd>A new conversation takes the key used least today.</dd>
+</dl>
+<p>Drag a row by its grip, or use <strong>Move up</strong> / <strong>Move down</strong> in its ⋯ menu. <strong>Don't use for now</strong> keeps a key but skips it; <strong>Use again</strong> brings it back. <strong>Remove…</strong> is the only action that asks first.</p>
+
+<h2 id="pin">Pin a conversation to one key</h2>
+<p>In the composer's model menu, a provider with two or more keys ends its models with <strong>This conversation uses Personal</strong>, then <strong>Automatic (in order)</strong> and each key with its state; choosing a key pins this conversation to it and moves the check from Automatic to that key.</p>
+<p class="note">A key that cannot answer now cannot be picked. Other conversations keep following the list.</p>
+
+<h2 id="stops">When a key stops</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">The row says</th><th scope="col">What happens, and the fix</th></tr></thead>
+<tbody>
+<tr><th scope="row">Back at 14:32</th><td>Rate limited: skipped until then, then used again by itself</td></tr>
+<tr><th scope="row">Out of quota</th><td>Skipped until the quota resets. <strong>Top up</strong> on the provider's card opens this row</td></tr>
+<tr><th scope="row">Invalid key</th><td>The provider refused it. <strong>Replace</strong> pastes a new key into the same row, keeping its name and place</td></tr>
+<tr><th scope="row">Sign in again</th><td>The sign-in expired. <strong>Sign in again</strong> renews the same row</td></tr>
+</tbody>
+</table>
+<p>When every key is waiting, the reply says "Waiting for Work, back in 30s".</p>
+
+<h2 id="terminal">From the terminal</h2>
+<pre translate="no"><code>openprogram providers keys openai list
+openprogram providers keys openai add --name work
+openprogram providers keys openai move work --to 1
+openprogram providers keys openai strategy evenly</code></pre>
+<p class="note">In the terminal UI, <code translate="no">/login &lt;provider&gt;</code> opens the same list: check, rename, set aside, move, remove, or add a key or account.</p>
+
+<p class="next"><a href="auth.html">Authentication</a> · <a href="providers.html">Providers</a></p>

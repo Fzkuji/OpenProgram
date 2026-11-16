@@ -75,7 +75,7 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture(autouse=True)
 def _no_running_processes(monkeypatch: pytest.MonkeyPatch):
     """Default: nothing is running, so restore is allowed."""
-    from openprogram.interfaces.cli.commands import backup
+    from openprogram.interfaces.cli.commands.maintenance import backup
 
     monkeypatch.setattr(backup, "_running_processes", lambda: [])
 
@@ -147,8 +147,6 @@ def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
     secrets = {
         "config_api_keys": b"config-secret-101",
         "auth_store": b"auth-secret-202",
-        "profile_auth_store": b"profile-auth-secret-303",
-        "profile_env": b"profile-env-secret-404",
         "channel_credentials": b"channel-secret-505",
         "mcp_env": b"mcp-env-secret-606",
         "mcp_header": b"mcp-header-secret-707",
@@ -172,16 +170,6 @@ def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
         json.dumps({"credentials": [{"api_key": secrets["auth_store"].decode()}]}),
         encoding="utf-8",
     )
-    account = profile / "profiles" / "work"
-    (account / "auth" / "openai").mkdir(parents=True)
-    (account / "account.json").write_text('{"name":"work"}', encoding="utf-8")
-    (account / "auth" / "openai" / "default.json").write_text(
-        json.dumps(
-            {"credentials": [{"api_key": secrets["profile_auth_store"].decode()}]}
-        ),
-        encoding="utf-8",
-    )
-    (account / ".env").write_bytes(b"API_KEY=" + secrets["profile_env"] + b"\n")
     channel = profile / "channels" / "slack" / "accounts" / "default"
     channel.mkdir(parents=True)
     (channel / "account.json").write_text('{"name":"default"}', encoding="utf-8")
@@ -246,8 +234,6 @@ def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
     for private_path in (
         profile / "config.json",
         profile / "auth" / "openai" / "default.json",
-        account / "auth" / "openai" / "default.json",
-        account / ".env",
         channel / "credentials.json",
         channel / "access.json",
         profile / "mcp_servers.json",
@@ -325,8 +311,6 @@ def test_default_backup_contains_no_registered_raw_secret(profile: Path):
         "allowlist": {"approved": {"display": "Alice"}},
     }
     assert "channels/slack/accounts/default/credentials.json" not in archived
-    assert "profiles/work/.env" not in archived
-    assert "profiles/work/auth/openai/default.json" not in archived
 
     manifest = json.loads(archived["backup-manifest.json"])
     assert manifest["format_version"] == 1
@@ -334,8 +318,6 @@ def test_default_backup_contains_no_registered_raw_secret(profile: Path):
     assert manifest["included_secret_kinds"] == []
     assert set(manifest["excluded_secret_kinds"]) == {
         "auth_store",
-        "profile_auth_store",
-        "profile_env",
         "channel_credentials",
         "mcp_tokens",
     }
@@ -362,8 +344,6 @@ def test_opt_in_backup_contains_exactly_allowed_persistent_secrets(profile: Path
         for name in (
             "config_api_keys",
             "auth_store",
-            "profile_auth_store",
-            "profile_env",
             "channel_credentials",
             "mcp_env",
             "mcp_header",
@@ -380,8 +360,6 @@ def test_opt_in_backup_contains_exactly_allowed_persistent_secrets(profile: Path
     assert set(manifest["included_secret_kinds"]) == {
         "config_api_keys",
         "auth_store",
-        "profile_auth_store",
-        "profile_env",
         "channel_credentials",
         "mcp_server_secrets",
         "mcp_tokens",
@@ -389,19 +367,19 @@ def test_opt_in_backup_contains_exactly_allowed_persistent_secrets(profile: Path
 
 
 @pytest.mark.parametrize("include_credentials", [False, True])
-def test_profile_allowlist_and_secret_writer_temps_never_leak(
+def test_secret_writer_temps_and_the_old_accounts_folder_never_leak(
     profile: Path,
     include_credentials: bool,
 ) -> None:
     from openprogram.operations.backup import create_backup
 
     _seed_registered_secrets(profile)
+    # The folder the removed per-account layer kept; nothing reads it now.
     account = profile / "profiles" / "work"
-    (account / "metadata.json").write_text('{"display_name":"Work"}')
     leaks = {
         account / "home" / ".codex" / "auth.json": b"nested-home-secret",
-        account / ".env.tmp": b"dotenv-temp-secret",
-        account / "auth" / "openai" / "default.json.tmp": b"auth-temp-secret",
+        account / ".env": b"API_KEY=old-account-secret",
+        account / "auth" / "openai" / "default.json": b"old-account-auth-secret",
         profile
         / "channels"
         / "slack"
@@ -425,16 +403,13 @@ def test_profile_allowlist_and_secret_writer_temps_never_leak(
     combined = b"\n".join(archived.values())
 
     assert all(secret not in combined for secret in leaks.values())
-    assert "profiles/work/metadata.json" in archived
-    assert not any(name.startswith("profiles/work/home/") for name in archived)
+    assert not any(name.startswith("profiles/") for name in archived)
     assert not any(name.endswith(".tmp") for name in archived)
     manifest = json.loads(archived["backup-manifest.json"])
     if include_credentials:
         assert set(manifest["included_secret_kinds"]) == {
             "config_api_keys",
             "auth_store",
-            "profile_auth_store",
-            "profile_env",
             "channel_credentials",
             "mcp_server_secrets",
             "mcp_tokens",
@@ -442,8 +417,6 @@ def test_profile_allowlist_and_secret_writer_temps_never_leak(
     else:
         assert set(manifest["excluded_secret_kinds"]) == {
             "auth_store",
-            "profile_auth_store",
-            "profile_env",
             "channel_credentials",
             "mcp_tokens",
         }
@@ -503,7 +476,7 @@ def test_manifest_marks_malformed_mixed_secret_as_actually_excluded(
 
 
 def test_default_restore_preserves_local_secrets(profile: Path):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
     from openprogram.operations.backup import create_backup
 
     _seed_registered_secrets(profile)
@@ -513,10 +486,6 @@ def test_default_restore_preserves_local_secrets(profile: Path):
     local_pairing_code = "LOCALPAIR"
     whole_file_updates = {
         profile / "auth" / "openai" / "default.json": b"local-auth-secret",
-        profile / "profiles" / "work" / "auth" / "openai" / "default.json": (
-            b"local-profile-auth-secret"
-        ),
-        profile / "profiles" / "work" / ".env": b"API_KEY=local-env-secret\n",
         profile
         / "channels"
         / "slack"
@@ -563,20 +532,17 @@ def test_default_restore_preserves_local_secrets(profile: Path):
 
 
 def test_opt_in_restore_replaces_persistent_secrets(profile: Path):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
     from openprogram.operations.backup import create_backup
 
     secrets = _seed_registered_secrets(profile)
     archive = create_backup(include_credentials=True)
     auth_path = profile / "auth" / "openai" / "default.json"
-    env_path = profile / "profiles" / "work" / ".env"
     auth_path.write_text('{"credentials":[]}', encoding="utf-8")
-    env_path.write_text("API_KEY=changed\n", encoding="utf-8")
 
     assert _cmd_backup_restore(archive.name, yes=True) == 0
 
     assert secrets["auth_store"] in auth_path.read_bytes()
-    assert secrets["profile_env"] in env_path.read_bytes()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
@@ -714,7 +680,7 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
 
 
 def test_backup_cli_warning_and_manifest_report_same_scope(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_create
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_create
 
     _seed_registered_secrets(profile)
     assert _cmd_backup_create(include_credentials=True) == 0
@@ -736,7 +702,7 @@ def test_archive_is_owner_only_and_named_for_profile(profile: Path):
 
 
 def test_create_and_restore_round_trip(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_create, _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_create, _cmd_backup_restore
 
     assert _cmd_backup_create() == 0
     out = capsys.readouterr().out
@@ -755,7 +721,7 @@ def test_create_and_restore_round_trip(profile: Path, capsys):
 
 
 def test_restore_snapshots_current_state_first(profile: Path):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
     from openprogram.operations.backup import create_backup
 
     archive = create_backup()
@@ -805,7 +771,7 @@ def test_create_backup_is_busy_during_restore_publication(
 def test_backup_create_cli_reports_busy_without_archive(
     profile: Path, tmp_path: Path, capsys
 ) -> None:
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_create
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_create
     from openprogram.operations.backup import recover_interrupted_restore
 
     archive = _write_restorable_archive(
@@ -831,7 +797,7 @@ def test_backup_create_cli_reports_busy_without_archive(
 def test_busy_restore_cli_does_not_create_safety_snapshot(
     profile: Path, tmp_path: Path
 ) -> None:
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
     from openprogram.operations.backup import recover_interrupted_restore
 
     archive = _write_restorable_archive(
@@ -853,7 +819,7 @@ def test_busy_restore_cli_does_not_create_safety_snapshot(
 
 
 def test_restore_refuses_while_worker_running(profile: Path, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import backup
+    from openprogram.interfaces.cli.commands.maintenance import backup
 
     archive = backup.create_backup()
     monkeypatch.setattr(backup, "_running_processes", lambda: ["worker (PID 42)"])
@@ -867,7 +833,7 @@ def test_restore_refuses_while_worker_running(profile: Path, monkeypatch, capsys
 
 
 def test_dry_run_changes_nothing(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
     from openprogram.operations.backup import create_backup
 
     archive = create_backup()
@@ -885,7 +851,7 @@ def test_dry_run_changes_nothing(profile: Path, capsys):
 
 
 def test_restore_declined_at_prompt_aborts(profile: Path, monkeypatch):
-    from openprogram.interfaces.cli.commands import backup
+    from openprogram.interfaces.cli.commands.maintenance import backup
 
     archive = backup.create_backup()
     (profile / "memory" / "core.md").write_text("kept", encoding="utf-8")
@@ -896,7 +862,7 @@ def test_restore_declined_at_prompt_aborts(profile: Path, monkeypatch):
 
 
 def test_list_shows_size_and_contents(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_list
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_list
     from openprogram.operations.backup import create_backup
 
     create_backup()
@@ -908,7 +874,7 @@ def test_list_shows_size_and_contents(profile: Path, capsys):
 
 
 def test_list_is_empty_without_backups(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_list
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_list
 
     assert _cmd_backup_list() == 0
     assert "No backups" in capsys.readouterr().out
@@ -918,7 +884,7 @@ def test_prune_keeps_newest_n(profile: Path):
     import os
     import time
 
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_prune
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_prune
     from openprogram.operations.backup import create_backup
 
     made = []
@@ -935,7 +901,7 @@ def test_prune_keeps_newest_n(profile: Path):
 
 
 def test_prune_rejects_zero(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_prune
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_prune
 
     assert _cmd_backup_prune(keep=0) == 1
     assert "at least 1" in capsys.readouterr().err
@@ -962,7 +928,7 @@ def test_interrupted_create_leaves_no_visible_archive(profile: Path, monkeypatch
 
 
 def test_restore_unknown_name_errors(profile: Path, capsys):
-    from openprogram.interfaces.cli.commands.backup import _cmd_backup_restore
+    from openprogram.interfaces.cli.commands.maintenance.backup import _cmd_backup_restore
 
     assert _cmd_backup_restore("nope.tar.gz", yes=True) == 1
     assert "no such backup" in capsys.readouterr().err

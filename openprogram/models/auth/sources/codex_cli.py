@@ -2,7 +2,7 @@
 
 The Codex CLI stores OAuth tokens at ``~/.codex/auth.json`` (or
 ``$CODEX_HOME/auth.json`` when set). We read the file non-destructively
-and register a ``CredentialData(kind="cli_delegated")`` credential that
+and register a ``CredentialData(kind="import")`` credential that
 points at it.
 "Delegated" mode means we never copy the secret bytes into our own
 store — every API call re-reads the file — so Codex CLI's own rotations
@@ -43,7 +43,7 @@ def _codex_binary_present() -> bool:
     """True if a ``codex`` (or ``codex.exe`` on Windows) executable is
     on PATH and can be invoked. We treat presence as "Codex CLI is
     actively maintaining ~/.codex/auth.json", which is the contract
-    behind ``cli_delegated`` mode — every read re-checks the file so
+    behind ``import`` mode — every read re-checks the file so
     rotations from the external CLI propagate for free.
 
     Without the binary that contract is a lie: the file just rots,
@@ -61,7 +61,6 @@ class CodexCliSource:
     """Reads ``~/.codex/auth.json`` and adopts its tokens read-only."""
 
     provider_id: str = "openai-codex"
-    account_id: str = "default"
     # Allow tests to point at a fake file without monkey-patching $HOME.
     override_path: str = ""
 
@@ -75,7 +74,7 @@ class CodexCliSource:
             return Path(codex_home).expanduser() / "auth.json"
         return Path.home() / ".codex" / "auth.json"
 
-    def try_import(self, account_root: Path) -> list[Credential]:
+    def try_import(self, state_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -94,13 +93,16 @@ class CodexCliSource:
             "imported_from": self.source_id,
             "source_path": str(path),
         }
+        from ..account.account_labels import token_identity
+        # The account's email and ChatGPT plan, from the sign-in's id token.
+        identity = token_identity(tokens.get("id_token"))
         if tokens.get("account_id"):
-            metadata["account_id"] = tokens["account_id"]
+            identity["account_id"] = metadata["account_id"] = tokens["account_id"]
 
         # Two adoption modes, picked based on whether the Codex CLI is
         # actually around to maintain ~/.codex/auth.json:
         #
-        #   * codex binary present → ``cli_delegated``. We just point at
+        #   * codex binary present → ``import``. We just point at
         #     the file and re-read it on every use so rotations propagate.
         #     The store never copies it; when its token is near expiry or
         #     rejected, the Codex adapter refreshes the login in the file
@@ -115,10 +117,9 @@ class CodexCliSource:
             return [
                 Credential(
                     provider_id=self.provider_id,
-                    account_id=self.account_id,
-                    kind="cli_delegated",
+                    kind="import",
                     payload=CredentialData(
-                        kind="cli_delegated",
+                        kind="import",
                         data={
                             "store_path": str(path),
                             "access_key_path": ["tokens", "access_token"],
@@ -127,7 +128,8 @@ class CodexCliSource:
                             "expires_key_path": [],
                         },
                     ),
-                    source=self.source_id,
+                    source="import",
+                    identity=identity,
                     metadata=metadata,
                     read_only=True,
                 )
@@ -145,7 +147,6 @@ class CodexCliSource:
         return [
             Credential(
                 provider_id=self.provider_id,
-                account_id=self.account_id,
                 kind="oauth",
                 payload=CredentialData(
                     kind="oauth",
@@ -160,7 +161,8 @@ class CodexCliSource:
                         "extra": {"account_id": tokens.get("account_id") or ""},
                     },
                 ),
-                source=self.source_id,
+                source="import",
+                identity=identity,
                 metadata=metadata,
             )
         ]
@@ -171,7 +173,7 @@ class CodexCliSource:
         # credentials the Codex CLI still wants.
         path = (
             cred.payload.data.get("store_path")
-            if cred.kind == "cli_delegated"
+            if cred.kind == "import"
             else str(self._resolve_path())
         )
         return [

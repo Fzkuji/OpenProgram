@@ -1,21 +1,16 @@
 """
-Provider API-key resolution.
+Provider API-key resolution outside a model request.
 
-LLM provider credentials live in exactly ONE place: the AuthStore under
-``~/.openprogram`` — written by the settings UI ("add a key") and by the
-CLI (``openprogram providers login <provider> --api-key``). Environment
-variables are NOT consulted, with one exception: a one-shot ``openprogram
---print`` process, after the AuthStore finds no key, reads the provider's
-standard variable for itself and stores nothing
-(:func:`read_env_keys_in_this_process`). There is no config.json fallback.
+A provider's keys are its credentials (``models/auth/store.py``): the
+keys added in Settings or the CLI, and a row for each of the provider's
+standard environment variables that is set, read from the environment on
+use and never copied. Model requests choose among them in
+``models/auth/selection.py``; :func:`resolve_provider_key` gives the
+callers outside a request (tools, probes, model listing) the key a
+request would use now.
 
-The two exceptions are Amazon Bedrock and Google Vertex, whose
-authentication is the cloud SDK's own credential chain (AWS SigV4 /
-GCP ADC) rather than a bearer key.
-
-The env-var NAME tables below are retained purely as display labels /
-identifiers for the UI and models.dev catalogue — they are no longer
-read from ``os.environ``.
+Amazon Bedrock and Google Vertex authenticate through the cloud SDK's own
+credential chain (AWS SigV4 / GCP ADC) instead of a bearer key.
 """
 from __future__ import annotations
 
@@ -25,148 +20,27 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-# Maps provider name → environment variable name
-PROVIDER_ENV_VARS: dict[str, str] = {
-    "openai": "OPENAI_API_KEY",
-    "google": "GEMINI_API_KEY",
-    "gemini-subscription": "GEMINI_API_KEY",
-    "groq": "GROQ_API_KEY",
-    "xai": "XAI_API_KEY",
-    "mistral": "MISTRAL_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "vercel-ai-gateway": "AI_GATEWAY_API_KEY",  # Changed from VERCEL_AI_GATEWAY_API_KEY
-    "azure-openai-responses": "AZURE_OPENAI_API_KEY",
-    "cerebras": "CEREBRAS_API_KEY",
-    "zai": "ZAI_API_KEY",
-    "huggingface": "HF_TOKEN",
-    "minimax": "MINIMAX_API_KEY",
-    "minimax-cn": "MINIMAX_CN_API_KEY",
-    "opencode": "OPENCODE_API_KEY",
-    "opencode-go": "OPENCODE_API_KEY",
-    "kimi-coding": "KIMI_API_KEY",
-    "kimi": "KIMI_API_KEY",
-    "moonshot": "MOONSHOT_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-}
-
 
 def resolve_provider_key(provider: str) -> str | None:
-    """Resolve a provider's API key — the runtime path.
-
-    Single source: the AuthStore (settings UI "add a key", or
-    ``openprogram providers login <provider> --api-key``). It takes
-    api-key-shaped credentials ONLY — OAuth tokens are excluded because
-    the wires that call this put the result in ``x-api-key`` /
-    ``Authorization: Bearer <key>`` headers, and an OAuth access_token
-    there just 401s; OAuth providers have their own transports
-    (claude-code daemon, codex OAuth). Bedrock/Vertex return the
-    ``"<authenticated>"`` cloud-credential sentinel when the AWS / GCP
-    SDK credential chain is satisfied — those have no bearer key.
-    """
+    """The key (API key, environment variable or helper command) a request
+    of ``provider`` would send now, or the ``"<authenticated>"`` sentinel
+    for a satisfied Bedrock / Vertex chain, or ``None``. Sign-in tokens are
+    left out: the callers put this value in a key header."""
     if provider == "amazon-bedrock":
         return "<authenticated>" if _bedrock_chain_ok() else None
     if provider == "google-vertex":
         return "<authenticated>" if _vertex_adc_ok() else None
+    from openprogram.models.auth.resolver import resolve_store_api_key_sync
+    from openprogram.models.auth.types import AuthCredentialProcessError
     try:
-        from openprogram.models.auth.resolver import resolve_store_api_key_sync
-        from openprogram.models.auth.types import AuthCredentialProcessError
-    except ImportError:
-        return None
-    try:
-        stored = resolve_store_api_key_sync(provider)
+        return resolve_store_api_key_sync(provider)
     except AuthCredentialProcessError:
-        # A configured helper that fails is an error the user must see,
-        # not a "no key here" shrug — see auth.resolver's module docstring.
+        # A configured helper that fails is an error the user must see.
         raise
     except Exception:
-        stored = None
-    return stored or process_env_key(provider)
-
-
-# A one-shot run (``openprogram --print``) may take a provider's standard
-# environment variable when the AuthStore has no key: read in this process
-# only, never written to the store, and only after a stored key.
-_env_keys_in_process = False
-
-
-def read_env_keys_in_this_process(enabled: bool = True) -> None:
-    """Let :func:`resolve_provider_key` fall back to the provider's standard
-    environment variable for the rest of this process (``--print`` only)."""
-    global _env_keys_in_process
-    _env_keys_in_process = bool(enabled)
-
-
-def process_env_key(provider: str) -> str | None:
-    """The provider's key from its standard environment variable, when this
-    process allows it (:func:`read_env_keys_in_this_process`). OAuth tokens
-    are not keys and are skipped."""
-    if not _env_keys_in_process:
+        _log.debug("key for %s not resolved", provider, exc_info=True)
         return None
-    for name in env_vars_for(provider):
-        if "OAUTH" in name.upper():
-            continue
-        value = (os.environ.get(name) or "").strip()
-        if value.lower().startswith("bearer "):
-            value = value[7:].strip()
-        if value:
-            return value
-    return None
 
-
-# 
-# Env-var NAME tables — display labels / identifiers only.
-#
-# The settings UI shows "API key: DEEPSEEK_API_KEY" style labels and the
-# models.dev catalogue keys community providers by these names. They are
-# NOT read from ``os.environ``: provider keys resolve from the AuthStore
-# exclusively (see resolve_provider_key above). config.json ``api_keys``
-# remains in use only by the web-search / TTS key flows (their own storage).
-# 
-
-# provider_id → accepted env-var names, in precedence order. Merges the four
-# previously-divergent maps; multi-name entries reconcile real conflicts:
-#   google      — three historical names (configs store any of them)
-#   anthropic   — OAuth token wins over the API key
-#   minimax-cn  — runtime used MINIMAX_CN_API_KEY, webui used MINIMAX_API_KEY
-#   kimi-coding — runtime used KIMI_API_KEY, webui used MOONSHOT_API_KEY
-#   github-copilot — three token sources
-_PROVIDER_ENV_VARS: dict[str, list[str]] = {
-    "openai": ["OPENAI_API_KEY"],
-    "anthropic": ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
-    "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
-    "gemini-subscription": ["GEMINI_API_KEY"],
-    "github-copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
-    "groq": ["GROQ_API_KEY"],
-    "xai": ["XAI_API_KEY"],
-    "mistral": ["MISTRAL_API_KEY"],
-    "openrouter": ["OPENROUTER_API_KEY"],
-    "vercel-ai-gateway": ["AI_GATEWAY_API_KEY"],
-    "azure-openai-responses": ["AZURE_OPENAI_API_KEY"],
-    "cerebras": ["CEREBRAS_API_KEY"],
-    "zai": ["ZAI_API_KEY"],
-    "huggingface": ["HF_TOKEN"],
-    "minimax": ["MINIMAX_API_KEY"],
-    "minimax-cn": ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
-    # MiniMax "Token Plan" (the coding-plan subscription) is the SAME account
-    # and SAME API key as the region's pay-as-you-go provider above — MiniMax
-    # has no separate subscription login. Map each Token Plan to its region
-    # sibling's env(s) so: (1) the key resolves at runtime offline too (the
-    # models.dev fallback in env_vars_for returns [] on a cold cache, which
-    # otherwise broke auth), and (2) the web form classifies them as api-key
-    # providers (add_mode) and shows the key field.
-    "minimax-coding-plan": ["MINIMAX_API_KEY"],
-    "minimax-cn-coding-plan": ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
-    "opencode": ["OPENCODE_API_KEY"],
-    "opencode-go": ["OPENCODE_API_KEY"],
-    "kimi-coding": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
-    "kimi": ["KIMI_API_KEY"],
-    "moonshot": ["MOONSHOT_API_KEY"],
-    # The catalogue's id for the same service: known here so its key is
-    # recognised even before the catalogue has been read.
-    "moonshotai": ["MOONSHOT_API_KEY"],
-    "deepseek": ["DEEPSEEK_API_KEY"],
-    "atlascloud": ["ATLASCLOUD_API_KEY"],
-}
 
 # Providers whose credential is a cloud-credential chain (SigV4 / ADC), not a
 # bearer key — resolve_provider_key returns the "<authenticated>" sentinel
@@ -175,27 +49,10 @@ _CLOUD_CRED_PROVIDERS = frozenset({"amazon-bedrock", "google-vertex"})
 
 
 def env_vars_for(provider_id: str) -> list[str]:
-    """Key-name labels for ``provider_id`` (display / identifier use only —
-    never read from ``os.environ``).
-
-    A provider not in the static map above is a community / models.dev
-    one (e.g. ``minimax-cn-coding-plan``); its name lives in the
-    models.dev catalogue. Lazy + guarded so this lower layer stays
-    import-free at load time."""
-    names = list(_PROVIDER_ENV_VARS.get(provider_id, []))
-    if names:
-        return names
-    try:
-        from openprogram.models.providers.catalog.metadata import env_var_for
-        ev = env_var_for(provider_id)
-        if ev:
-            return [ev]
-    except Exception:
-        # Catalog metadata is optional; no env var names is a valid answer.
-        _log.debug("env var lookup failed for %s", provider_id, exc_info=True)
-    return []
-
-
+    """The variables that hold ``provider_id``'s key, first preferred, from
+    the provider's connection entry (``auth/login/login_method_registry.py``)."""
+    from openprogram.models.auth.login.login_method_registry import env_vars
+    return env_vars(provider_id)
 
 
 def _bedrock_chain_ok() -> bool:
@@ -228,41 +85,17 @@ def is_configured(provider_id: str) -> bool:
 
 
 def provider_id_for_env_var(env_var: str) -> str | None:
-    """Reverse of :func:`env_vars_for` — the provider an env-var name belongs to
-    (first match in table order, so the canonical owner of a shared name wins:
-    ``GEMINI_API_KEY`` → ``google``, ``KIMI_API_KEY`` → ``kimi-coding``).
-    Returns ``None`` for non-LLM keys (search providers etc.)."""
-    for pid, names in _PROVIDER_ENV_VARS.items():
-        if env_var in names:
-            return pid
-    return None
+    """The provider a key variable belongs to (the first listed owner)."""
+    from openprogram.models.auth.login.login_method_registry import provider_for_env_var
+    return provider_for_env_var(env_var)
 
 def resolve_api_key_with_auth_store(provider_id: str) -> str | None:
-    """Resolved API key for a provider (AuthStore > env var).
-
-    Looks up the provider's standard env var via
-    ``providers.env_var_for`` (manual override → models.dev community
-    catalogue). Returns ``None`` for providers that
-    have no standard env var (OAuth / daemon providers like
-    ``openai-codex``, ``claude-code``, ``github-copilot``) — those
-    need their own resolution path (e.g. CredentialProvider.acquire_sync,
-    daemon HEAD probe).
-    """
-    # AuthStore FIRST: the account manager ("Add key" in the web form) saves
-    # credentials into the AuthStore (keyed by provider/profile). Without
-    # this, the connectivity check and Fetch-models resolved only env vars
-    # and reported "not set" for a key the per-account validate had already
-    # proved VALID.
+    """The bearer value a request of ``provider_id`` would use now, of any
+    credential kind, or ``None`` (for checks and model listing)."""
     try:
         from openprogram.models.auth.resolver import resolve_api_key_sync
-        tok = resolve_api_key_sync(provider_id)
-        if tok:
-            return tok
+        return resolve_api_key_sync(provider_id)
     except Exception as resolve_exc:
-        # Fall through to the remaining sources. No traceback: it could
-        # carry key material.
+        # No traceback: it could carry key material.
         _log.debug("stored key resolution failed for %s (%s)", provider_id, type(resolve_exc).__name__)
-    # Env vars and every special case already ran inside
-    # resolve_api_key_sync (its layer 3 delegates back to
-    # resolve_provider_key) — nothing else to consult.
-    return None
+        return None

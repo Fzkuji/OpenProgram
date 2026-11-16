@@ -79,9 +79,13 @@ export const MessageList = memo(function MessageList({
   const { shown: botView, markerRef: viewMarker, labelledRows } = useBotViewTransition(viewKey, useBotView(viewKey));
   const heldRows = selectViewRows(viewKey)(useSessionStore.getState());
   const { covered: coveredSet, hidden: hiddenCovered } = coveringOf(ids, heldRows, botView);
-  const runningTask = useSessionStore((s) =>
-    viewKey ? s.runningTasks[viewKey] ?? null : null,
-  );
+  // Read as the three things drawn from it: the task object is replaced by
+  // every status frame of a run.
+  const isRunning = useSessionStore((s) => !!viewKey && s.runningTasks[viewKey] != null);
+  const runStartedAt = useSessionStore((s) => (viewKey ? s.runningTasks[viewKey]?.started_at : undefined));
+  // An operation that is not a reply (/compact, a rewind, a turn's own
+  // compaction) is named in the indicator's place.
+  const operationText = useSessionStore((s) => operationStatusText(viewKey ? s.runningTasks[viewKey] : null, text));
   // Pin to #chatView (column, not the scroller). Portal into #chatArea
   // puts absolute-bottom on the scroll content, so the button is off
   // screen exactly when we want it visible.
@@ -99,7 +103,7 @@ export const MessageList = memo(function MessageList({
   );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
   const readStatus = useSessionStore(s => sessionId ? s.transcriptReadStatus[sessionId] : undefined);
-  const { detached, jumpToLatest } = useChatAreaStick(
+  const { showJump, jumpToLatest } = useChatAreaStick(
     chatKey,
     lastId,
     paintRows,
@@ -160,7 +164,7 @@ export const MessageList = memo(function MessageList({
   const [jumpShown, setJumpShown] = useState(false);
   const [jumpLeaving, setJumpLeaving] = useState(false);
   useEffect(() => {
-    const want = paintRows && detached && ids.length > 0;
+    const want = paintRows && showJump && ids.length > 0;
     if (want) {
       setJumpLeaving(false);
       setJumpShown(true);
@@ -173,7 +177,7 @@ export const MessageList = memo(function MessageList({
       setJumpLeaving(false);
     }, JUMP_LATEST_FADE_MS);
     return () => window.clearTimeout(t);
-  }, [detached, ids.length, jumpShown, paintRows]);
+  }, [showJump, ids.length, jumpShown, paintRows]);
 
   // Parent-return actions: once the reload has rows on screen, reveal the
   // original sub-agent timeline row. Collapsed strips unmount their children,
@@ -250,10 +254,7 @@ export const MessageList = memo(function MessageList({
   // ``TypingIndicator`` handles the empty-streaming state. Without
   // this guard the user sees two stacked "Agentic" rows: the real
   // placeholder bubble + the standalone, double-rendering.
-  const showPending = runningTask !== null && lastRole === "user";
-  // An operation that is not a reply (/compact, a rewind, a turn's own
-  // compaction) is named in the indicator's place.
-  const operationText = operationStatusText(runningTask, text);
+  const showPending = isRunning && lastRole === "user";
   const timeLabels = useMemo(() => timeBreaks(ids.flatMap((id) => {
     const message = selectRow(viewKey, id)(useSessionStore.getState());
     return message ? [message] : [];
@@ -291,9 +292,9 @@ export const MessageList = memo(function MessageList({
         />
       ) : null}
       {paintRows && operationText && !botView ? (
-        <OperationStatusIndicator label={operationText} timestamp={runningTask?.started_at} />
+        <OperationStatusIndicator label={operationText} timestamp={runStartedAt} />
       ) : paintRows && showPending ? (
-        botView ? <BotTyping /> : <PendingReplyIndicator timestamp={runningTask?.started_at} />
+        botView ? <BotTyping /> : <PendingReplyIndicator timestamp={runStartedAt} />
       ) : null}
       {paintRows ? <DecisionOutputs key={`decisions-${sessionId}`} sessionId={sessionId} placed={placedDecisionAnchors} /> : null}
       {paintRows && botView && heldRows[ids[ids.length - 1]]?.role === "assistant" ? <div className="bot-end-room" aria-hidden /> : null}
@@ -302,16 +303,16 @@ export const MessageList = memo(function MessageList({
         ? createPortal(
             <div className={[
               "jump-latest-anchor",
-              runningTask ? "is-live" : "",
+              isRunning ? "is-live" : "",
               jumpLeaving ? "is-leaving" : "",
             ].filter(Boolean).join(" ")}>
               <Button
                 type="button"
                 variant="elevated"
-                className="jump-latest"
+                className="jump-latest text-primary ring-1 ring-primary/45"
                 onClick={jumpToLatest}
               >
-                {runningTask ? (
+                {isRunning ? (
                   <span className="jump-latest-live" data-icon="inline-start" aria-hidden>
                     <i />
                     <i />

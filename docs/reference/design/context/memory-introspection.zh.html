@@ -145,7 +145,7 @@ Harness: OpenProgram · its own state lives at ~/.openprogram (not the project y
 <tbody>
 <tr><th scope="row">记忆自述：名称、根路径、主题数、最后写入、预算占用</th><td><code translate="no">MemoryBackend.describe()</code></td><td>接口保持小；C 已覆盖失败</td></tr>
 <tr><th scope="row">每个成分声明来源，形如 <code translate="no">Contents of {path} ({owner})</code></th><td><code translate="no">origin</code> 字段；改全部构建函数；所有缓存前缀失效</td><td>只有一块出问题；没有标签的成分（<code translate="no">base</code>、<code translate="no">inline_prompt</code>、<code translate="no">current_date</code>）可以等</td></tr>
-<tr><th scope="row"><code translate="no">context_status</code> 工具：本轮看到什么、哪块是记忆、缺了什么</th><td>把 <code translate="no">context/breakdown.py</code> 开放给模型</td><td>A 和 C 已给出所需信息</td></tr>
+<tr><th scope="row"><code translate="no">context_status</code> 工具：本轮看到什么、哪块是记忆、缺了什么</th><td>把 <code translate="no">context/token_accounting/breakdown.py</code> 开放给模型</td><td>A 和 C 已给出所需信息</td></tr>
 <tr><th scope="row">状态行带可核对的数量</th><td>同样需要 <code translate="no">describe()</code></td><td>和第一项一起做，接口只改一次</td></tr>
 </tbody>
 </table>

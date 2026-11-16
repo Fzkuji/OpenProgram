@@ -11,7 +11,7 @@ while read -r local_ref local_oid remote_ref remote_oid; do
     refs/heads/main)
       if test "${OPENPROGRAM_GITHUB_PUBLISH:-}" != "1" || \
         test "$local_oid" != "$(git rev-parse --verify --quiet refs/heads/main)"; then
-        echo "pushing to main is refused: publish with scripts/publish-github.sh -m \"summary\"" >&2
+        echo "pushing to main is refused: publish with scripts/publishing/publish-github.sh -m \"summary\"" >&2
         exit 1
       fi
       ;;
@@ -24,7 +24,7 @@ while read -r local_ref local_oid remote_ref remote_oid; do
     refs/tags/*)
       if test "$local_oid" != "$zero" && { test "${OPENPROGRAM_GITHUB_PUBLISH:-}" != "1" || \
         test "$(git rev-parse --verify --quiet "$local_oid^{commit}")" != "$(git rev-parse --verify --quiet 'refs/heads/main^{commit}')"; }; then
-        echo "pushing $remote_ref is refused: tag a release with scripts/publish-github.sh --tag" >&2
+        echo "pushing $remote_ref is refused: tag a release with scripts/publishing/publish-github.sh --tag" >&2
         exit 1
       fi
       ;;

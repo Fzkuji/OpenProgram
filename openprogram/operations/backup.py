@@ -61,7 +61,6 @@ INCLUDED: tuple[str, ...] = (
     "commands",
     "owner.json",
     "projects",
-    "profiles",  # account metadata; credentials are inventory-filtered
     "worktrees.json",
     "usage.db",  # usage/accounting history
     "run_index.jsonl",  # which session each run belongs to
@@ -134,10 +133,7 @@ _OWNER_FD_CAPABLE = hasattr(os, "geteuid") and hasattr(os, "fchmod")
 
 def _credential_tree_member(relative: str) -> bool:
     parts = PurePath(relative).parts
-    return bool(parts) and (
-        parts[0] in CREDENTIAL_ENTRIES
-        or (len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth")
-    )
+    return bool(parts) and parts[0] in CREDENTIAL_ENTRIES
 
 
 def _state_dir() -> Path:
@@ -253,18 +249,6 @@ def create_backup(
             for selector in entry.secret_fields
         )
 
-    def _profile_member_allowed(source: Path, arcname: str) -> bool:
-        parts = Path(arcname).parts
-        if not parts or parts[0] != "profiles":
-            return True
-        if len(parts) <= 2:
-            return True
-        if len(parts) == 3:
-            return parts[2] in {"metadata.json", ".env", "auth"}
-        if parts[2] != "auth":
-            return False
-        return source.is_dir() or bool(inventory_for_path(arcname))
-
     def _is_secret_writer_temporary(arcname: str) -> bool:
         if not arcname.endswith(".tmp"):
             return False
@@ -272,8 +256,6 @@ def create_backup(
             return True
         parts = Path(arcname).parts
         if parts and parts[0] in {"auth", "mcp_tokens"}:
-            return True
-        if len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth":
             return True
         return (
             len(parts) >= 5
@@ -304,7 +286,6 @@ def create_backup(
     def _add_path(tar: tarfile.TarFile, source: Path, arcname: str) -> None:
         if (
             _excluded(source)
-            or not _profile_member_allowed(source, arcname)
             or _is_secret_writer_temporary(arcname)
             or (
                 source.is_file()

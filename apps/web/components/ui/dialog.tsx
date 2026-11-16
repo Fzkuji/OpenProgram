@@ -8,7 +8,8 @@
 //   and the parts forward their refs (React 18).
 // - Layers: overlay z-(--z-overlay), content z-(--z-dialog) (the Select popup is z-(--z-popover));
 //   the overlay is marked data-native-view-occluder so native web views
-//   hide behind it.
+//   hide behind it. The overlay is Nova's light scrim without its
+//   backdrop blur, so the page behind a dialog stays readable.
 // - The close button's label is translated.
 
 import * as React from "react"
@@ -48,7 +49,7 @@ const DialogOverlay = React.forwardRef<
     data-slot="dialog-overlay"
     data-native-view-occluder="true"
     className={cn(
-      "fixed inset-0 isolate z-(--z-overlay) bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+      "fixed inset-0 isolate z-(--z-overlay) bg-black/10 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
       className
     )}
     {...props}

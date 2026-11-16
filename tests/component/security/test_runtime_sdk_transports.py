@@ -125,7 +125,7 @@ def test_every_task6_sdk_entry_has_an_explicit_disposition(consumer, disposition
 
 
 def test_provider_client_factory_requires_policy_scope_and_returns_managed_client():
-    from openprogram.models.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_transport.http_client import build_async_client
 
     signature = inspect.signature(build_async_client)
     assert signature.parameters["consumer"].default is inspect.Parameter.empty
@@ -149,8 +149,8 @@ def test_provider_client_factory_preserves_stream_timeout_and_socket_hardening(
 ):
     import asyncio
     import socket
-    from openprogram.models.providers.utils import timeouts
-    from openprogram.models.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_transport import timeouts
+    from openprogram.models.providers.utils.http_transport.http_client import build_async_client
 
     monkeypatch.setenv("OPENPROGRAM_FORCE_IPV4", "1")
     client = build_async_client(
@@ -168,7 +168,7 @@ def test_provider_client_factory_preserves_stream_timeout_and_socket_hardening(
 
 
 def test_provider_client_factory_rejects_unmanaged_client_kwargs():
-    from openprogram.models.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_transport.http_client import build_async_client
 
     with pytest.raises(TypeError):
         build_async_client(
@@ -224,7 +224,7 @@ def test_real_anthropic_provider_constructor_receives_managed_httpx_client():
 
 def test_real_google_sdk_constructor_receives_both_managed_httpx_clients():
     from google import genai
-    from openprogram.models.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_transport.http_client import build_google_http_options
 
     options = build_google_http_options("https://generativelanguage.googleapis.com")
     client = genai.Client(api_key="secret", http_options=options)
@@ -284,7 +284,7 @@ def test_real_anthropic_sdk_method_reaches_managed_socket(sdk_server):
 
 def test_real_google_sdk_method_reaches_managed_socket(sdk_server):
     from google import genai
-    from openprogram.models.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_transport.http_client import build_google_http_options
 
     base = f"http://127.0.0.1:{sdk_server.port}"
     client = genai.Client(
@@ -307,7 +307,7 @@ def test_real_google_sdk_method_reaches_managed_socket(sdk_server):
 def test_anthropic_rejects_when_managed_client_factory_rejects(monkeypatch):
     from openprogram.models.providers.adapters.anthropic.anthropic import _build_client
     from openprogram.models.providers.types import Model
-    from openprogram.models.providers.utils import http_client
+    from openprogram.models.providers.utils.http_transport import http_client
 
     rejection = URLPolicyError("PRIVATE_ADDRESS", "https://private.invalid")
 

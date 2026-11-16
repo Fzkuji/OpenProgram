@@ -36,7 +36,7 @@
 <tr><th scope="row"><code translate="no">openprogram/host/security/url_policy.py</code></th><td>URL and origin normalization; scheme, userinfo, host and port validation; full A/AAAA classification; exact owner exceptions; stable sanitized reason codes</td><td>Send requests or infer a caller's trust class</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/host/security/safe_http.py</code></th><td>Immutable consumer registry; sync and async peer-constrained transports; Host and SNI preservation; manual redirects; credential, header, MIME, decoded-body, encoding, timeout, proxy and atomic-download enforcement</td><td>Accept caller-created policy objects or expose <code translate="no">verify=False</code></td></tr>
 <tr><th scope="row">Consumer adapters</th><td>Select one registry key; for configured services or callbacks, supply the exact owner-configured origin</td><td>Implement a second private-address classifier or retry through a raw client</td></tr>
-<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>, <code translate="no">doctor</code>, <code translate="no">scripts/check_runtime_http.py</code></th><td>Bounded sanitized denial state, owner exception and proxy reporting, AST inventory, SDK disposition, stale exclusion detection</td><td>Display userinfo, query, fragment, credentials, peer bodies or token-bearing paths</td></tr>
+<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>, <code translate="no">doctor</code>, <code translate="no">scripts/checks/check_runtime_http.py</code></th><td>Bounded sanitized denial state, owner exception and proxy reporting, AST inventory, SDK disposition, stale exclusion detection</td><td>Display userinfo, query, fragment, credentials, peer bodies or token-bearing paths</td></tr>
 </tbody>
 </table>
 
@@ -98,14 +98,14 @@
 
 <details>
 <summary>Static checks and inventory exclusions</summary>
-<p><code translate="no">scripts/check_runtime_http.py</code> fails on an unregistered raw call, an active unmanaged SDK transport, a registry entry without a classified consumer, or a stale exclusion. <code translate="no">doctor</code> labels: <code translate="no">runtime-http-registry</code>, <code translate="no">runtime-http-owner-exceptions</code>, <code translate="no">runtime-http-policy-proxy</code>, <code translate="no">runtime-http-recent-denials</code>, <code translate="no">runtime-http-unmanaged-transport</code>.</p>
+<p><code translate="no">scripts/checks/check_runtime_http.py</code> fails on an unregistered raw call, an active unmanaged SDK transport, a registry entry without a classified consumer, or a stale exclusion. <code translate="no">doctor</code> labels: <code translate="no">runtime-http-registry</code>, <code translate="no">runtime-http-owner-exceptions</code>, <code translate="no">runtime-http-policy-proxy</code>, <code translate="no">runtime-http-recent-denials</code>, <code translate="no">runtime-http-unmanaged-transport</code>.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Exclusion</th><th scope="col">Owner and narrow reason</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">security/safe_http.py</code></th><td>Managed transport; the only direct <code translate="no">httpcore</code> pool and proxy construction</td></tr>
 <tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>Browser control; loopback probe of the App's CDP endpoint</td></tr>
-<tr><th scope="row"><code translate="no">cli/commands/mcp.py</code></th><td>Owner control plane; authenticated backend opener only</td></tr>
-<tr><th scope="row"><code translate="no">cli/ink.py</code>, <code translate="no">cli/commands/doctor.py</code>, <code translate="no">cli/commands/rescue.py</code></th><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
+<tr><th scope="row"><code translate="no">cli/commands/capabilities/mcp.py</code></th><td>Owner control plane; authenticated backend opener only</td></tr>
+<tr><th scope="row"><code translate="no">cli/ink.py</code>, <code translate="no">cli/commands/maintenance/doctor.py</code>, <code translate="no">cli/commands/maintenance/rescue.py</code></th><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
 </tbody>
 </table>
 <p class="note">Publication requires policy and address tests, real sync and async socket and TLS peer tests, DNS-rebinding prevention, redirect and credential-origin tests, response, decompression and timeout cleanup, all consumers migrated, zero active unmanaged transports, owner-only exact exceptions, doctor, audit and static enforcement, and the consumer compatibility contract.</p>
@@ -159,4 +159,4 @@
 <tr><th scope="row">Disabled SDK network features</th><td>Enable only after the SDK takes managed transport injection, or an enforcing policy proxy has equivalent tests</td></tr>
 </tbody>
 </table>
-<p class="next"><a href="sandbox-architecture.html">Execution authority and sandbox</a> · <a href="../../providers/network-proxy.html">Network proxy</a> · <a href="../../feature-matrix.html">Feature matrix</a></p>
+<p class="next"><a href="sandbox-architecture.html">Execution authority and sandbox</a> · <a href="../../providers/requests/network-proxy.html">Network proxy</a> · <a href="../../framework-comparison/feature-matrix.html">Feature matrix</a></p>

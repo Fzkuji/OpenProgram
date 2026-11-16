@@ -317,8 +317,8 @@ def hold_relays(delivery: dict[str, Any]) -> None:
 def wait_for_restart_to_settle(session_id: str) -> None:
     """Let the restart continue this conversation's own turns first: a new
     turn here would read as the user having moved on from them."""
-    from openprogram.runtime.conversation.owner_turn import WAKE_POLL_S, WAKE_WAIT_S
-    from openprogram.runtime.execution.restart import conversation_settling
+    from openprogram.runtime.conversation.turn_admission.owner_turn import WAKE_POLL_S, WAKE_WAIT_S
+    from openprogram.runtime.execution.recovery.restart import conversation_settling
     from openprogram.runtime.execution.store import default_store
     deadline = time.monotonic() + WAKE_WAIT_S
     while conversation_settling(default_store(), session_id) and time.monotonic() < deadline:

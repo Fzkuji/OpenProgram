@@ -7,7 +7,7 @@ restart). The tool result a stopped call leaves follows Codex
 says how long it ran, a call that never started says so; the output a call
 had already produced stays in front of that line (OpenCode
 ``shell/result.ts``). The reply's own interruption note is
-:func:`openprogram.runtime.context.turn_context.interruption_note`.
+:func:`openprogram.runtime.context.prompt_assembly.turn_context.interruption_note`.
 """
 from __future__ import annotations
 

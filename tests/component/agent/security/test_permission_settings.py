@@ -6,7 +6,7 @@ import pytest
 
 from openprogram.runtime.permissions.authority import local_owner_authority, owner_authority
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 from openprogram.runtime.permissions import permission_state, update_permission, PermissionUpdateError
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.state.store.session.session_store import SessionStore
@@ -100,14 +100,14 @@ def test_plan_switch_restricts_pending_write_and_can_leave_plan(permissions, mon
 
 
 def test_first_message_retains_draft_permission_without_ghost_session(permissions):
-    from openprogram.runtime.conversation.session_config import save_session_run_config
+    from openprogram.runtime.conversation.session_settings.session_config import save_session_run_config
     result = save_session_run_config("new-draft", agent_id="main", permission_mode="bypass")
     assert result.permission_mode == "bypass"
     assert permissions[0].get_session("new-draft") is None
 
 
 def test_reading_inherited_mode_does_not_pin_project_default(permissions, monkeypatch):
-    import openprogram.runtime.conversation.session_config as config
+    import openprogram.runtime.conversation.session_settings.session_config as config
     db, actor = permissions
     db.create_session("inherited", "main")
     defaults = {"permission_mode": "bypass"}
@@ -142,7 +142,7 @@ def test_spawn_snapshot_of_a_web_owner_is_valid_job_input(permissions, monkeypat
     from types import SimpleNamespace
     from openprogram.runtime.jobs.input import JobAgentInputV1
     from openprogram.runtime.jobs.types import Job
-    from openprogram.runtime.permissions.lifecycle import spawn_permission_snapshot
+    from openprogram.runtime.permissions.approvals.lifecycle import spawn_permission_snapshot
     from openprogram.runtime.permissions.modes import PermissionRules
     actor = permissions[1]
     monkeypatch.setattr("openprogram.runtime.execution.run_control.get_current_execution_id", lambda: "exec-parent")

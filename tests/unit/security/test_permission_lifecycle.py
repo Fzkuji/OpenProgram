@@ -2,7 +2,7 @@
 import pytest
 from openprogram.runtime.permissions.authority import owner_authority
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 from openprogram.runtime.permissions.modes import PermissionRules
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 

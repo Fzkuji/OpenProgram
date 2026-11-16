@@ -47,7 +47,7 @@ def _client(tmp_path, monkeypatch, *, running=False):
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr(runtime, "_db", lambda: db)
     monkeypatch.setattr(runtime, "_broadcast", lambda frame: frames.append(frame))
-    monkeypatch.setattr("openprogram.runtime.conversation.session_model.write_session_chat_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.session_model.write_session_chat_model",
                         lambda sid, provider, model: pins.append((sid, provider, model)))
     monkeypatch.setattr(_s, "_sessions", live, raising=False)
     monkeypatch.setattr(_s, "_sessions_lock", threading.Lock(), raising=False)

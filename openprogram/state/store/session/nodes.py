@@ -29,7 +29,7 @@ nesting is expressed by ``caller``, chat order by ``predecessor``.
 This module is the schema the session store persists: the role
 constants, the ``Call`` node, and ``Graph``, the in-memory append-only
 container. What the context engine computes over a graph (render
-context, spines, fold history) lives in ``openprogram.runtime.context.nodes``.
+context, spines, fold history) lives in ``openprogram.runtime.context.session_dag.nodes``.
 """
 
 from __future__ import annotations

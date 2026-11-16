@@ -512,6 +512,81 @@ def oversized_topics(root: Path) -> list[str]:
     return [rel for size, rel in sorted(sizes, reverse=True) if size > TOPIC_SPLIT_BYTES]
 
 
+def _regroup_workspace(root: Path, agent: Any) -> list[dict[str, Any]]:
+    """File one workspace's notes into folders that follow meaning.
+
+    Code does what needs no judgment (a note beside a same-named folder
+    becomes its overview). Each directory that still holds a flat run
+    then gets one agent pass of its own, in its own commit. A pass whose
+    edits are rejected leaves that run for the next night.
+    """
+    from .management import filing
+    from .management.api import regroup_topics
+
+    audit: list[dict[str, Any]] = []
+    filing.regroup(root)
+    for directory, _count in filing.flat_runs(root / "topics"):
+        try:
+            audit += regroup_topics(root, agent=agent, directory=directory)
+        except TransactionError as exc:
+            if exc.code == "CONCURRENT_UPDATE":
+                raise
+            logger.warning("memory: regrouping %s failed: %s", directory, exc)
+            continue
+        git_commit_state(root, f"memory: regroup {directory}")
+    return audit
+
+
+def regroup(
+    *,
+    root: str | Path | None = None,
+    plan: Any = None,
+    dry_run: bool = False,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """File notes into folders, on demand (``openprogram memory regroup``).
+
+    ``root`` names one workspace; without it the personal workspace and
+    every project's are done. With ``plan`` the listed moves are applied
+    and no model runs; ``dry_run`` only reports. Otherwise each workspace
+    gets the mechanical pass and then an agent pass per flat run, as the
+    nightly reorganize gives it.
+    """
+    from . import is_enabled, project_layer, store
+    from .management import filing
+
+    if root is not None:
+        roots = [Path(root).expanduser().resolve()]
+        if not (roots[0] / "topics").is_dir():
+            raise ValueError(f"not a memory workspace: {roots[0]}")
+    else:
+        if plan is not None:
+            raise ValueError("a plan applies to one workspace: name it with root")
+        if not is_enabled():
+            return {"status": "disabled"}
+        roots = [store.ensure(), *project_layer.project_roots()]
+    reports: dict[str, Any] = {}
+    agent = None
+    for workspace in roots:
+        if plan is not None or dry_run:
+            reports[str(workspace)] = filing.regroup(workspace, plan, dry_run=dry_run)
+            continue
+        try:
+            with workspace_write_lock(workspace, timeout_s=5.0):
+                before = filing.problems(workspace / "topics")
+                if before and agent is None:
+                    agent = _agent(model)
+                audit = _regroup_workspace(workspace, agent) if before else []
+                reports[str(workspace)] = {
+                    "problems_before": before,
+                    "problems_after": filing.problems(workspace / "topics"),
+                    "changed_files": _changed_files(audit),
+                }
+        except TransactionError as exc:
+            reports[str(workspace)] = {"status": "failed", "error": exc.message}
+    return {"status": "ok", "workspaces": reports}
+
+
 def reorganize(*, model: str | None = None) -> dict[str, Any]:
     """Rewrite every topic file. Called by the nightly scheduler.
 
@@ -539,6 +614,9 @@ def reorganize(*, model: str | None = None) -> dict[str, Any]:
         with workspace_write_lock(root, timeout_s=5.0):
             agent = _agent(model)
             audit: list[dict[str, Any]] = []
+            # Filing comes first, so the passes below read the tree the
+            # way it will stay.
+            audit += _regroup_workspace(root, agent)
             # One pass over every file runs out before it reaches a large
             # file late in the list, so each oversized file gets a pass of
             # its own first, then the whole workspace gets the usual one.

@@ -27,7 +27,7 @@ class Channels:
 
     def post_message(self, channel: str, account_id: str, peer_id: str, text: str,
                      *, thread_id: str = "") -> Any:
-        from openprogram.interfaces.channels import _transport
+        from openprogram.interfaces.channels.delivery import _transport
         if thread_id:
             return _transport.post_message(channel, account_id, peer_id, text,
                                            thread_id=thread_id)
@@ -42,15 +42,15 @@ class Channels:
         return bindings.list_for_agent(agent_id)
 
     def active_turn(self, session_id: str) -> Any:
-        from openprogram.interfaces.channels import _active_turns
+        from openprogram.interfaces.channels.inbound import _active_turns
         return _active_turns.get(session_id)
 
     def take_send(self, session_id: str) -> bool:
-        from openprogram.interfaces.channels import _active_turns
+        from openprogram.interfaces.channels.inbound import _active_turns
         return _active_turns.take_send(session_id)
 
     def sends_per_turn(self) -> int:
-        from openprogram.interfaces.channels import _active_turns
+        from openprogram.interfaces.channels.inbound import _active_turns
         return _active_turns.MAX_SENDS_PER_TURN
 
     def owner_peer(self, channel: str, account_id: str) -> str:
@@ -59,15 +59,15 @@ class Channels:
 
     def upload_marked_files(self, channel: str, account_id: str, peer_id: str, text: str,
                             attached_files: Any) -> str:
-        from openprogram.interfaces.channels._conversation import _deliver_outbound_files
+        from openprogram.interfaces.channels.inbound._conversation import _deliver_outbound_files
         return _deliver_outbound_files(channel, account_id, peer_id, text, attached_files=attached_files)
 
     def open_reply(self, channel: str, account_id: str, peer_id: str, *, flatten: bool = False) -> Any:
-        from openprogram.interfaces.channels import bound_reply
+        from openprogram.interfaces.channels.delivery import bound_reply
         return bound_reply.open_reply(channel, account_id, peer_id, flatten=flatten)
 
     def flatten_tables(self, text: str) -> str:
-        from openprogram.interfaces.channels import _format
+        from openprogram.interfaces.channels.delivery import _format
         return _format.flatten_tables(text)
 
 

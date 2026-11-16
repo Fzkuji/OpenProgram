@@ -47,13 +47,13 @@ free = max(0, window - displayed_used) if window else none</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">runtime/context/system_prompt_node.py</code></th><td>按分支 HEAD 取实际系统提示词</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/tool_snapshot_node.py</code></th><td>本轮冻结工具及其开销</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/session_stats.py</code></th><td>分类、去重、校准</td></tr>
-<tr><th scope="row"><code translate="no">runtime/context/budget.py</code></th><td>冻结工具 schema 估算</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/system_prompt_node.py</code></th><td>按分支 HEAD 取实际系统提示词</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/prompt_assembly/tool_snapshot_node.py</code></th><td>本轮冻结工具及其开销</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/token_accounting/session_stats.py</code></th><td>分类、去重、校准</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/token_accounting/budget.py</code></th><td>冻结工具 schema 估算</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/routes/files/tree.py</code></th><td>为响应计算一次分类</td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/badges/context-breakdown-panel.tsx</code></th><td>在 App 和 Web 中显示</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/test_session_stats_accuracy.py</code></th><td>结构化消息、未分类差额、高估校准、分支祖先、旧快照、不推进 HEAD 的子 Agent、冻结工具、动态注册表、模型切换</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/statistics/test_session_stats_accuracy.py</code></th><td>结构化消息、未分类差额、高估校准、分支祖先、旧快照、不推进 HEAD 的子 Agent、冻结工具、动态注册表、模型切换</td></tr>
 </tbody>
 </table>
 </details>

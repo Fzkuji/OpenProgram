@@ -1,6 +1,6 @@
 // Rule: every action menu builds its rows from the shared MenuRow and shows
 // keys only as MenuKey badges (the notation itself is tested in
-// tests/ui/menu-keys.test.mjs); the desktop overlay rows keep the same
+// tests/ui/popups/menu-keys.test.mjs); the desktop overlay rows keep the same
 // slots in the same order; every tab-menu row has its icon; and browser
 // menus are owned by a per-pane id, never by the URL-bearing tab id.
 import assert from "node:assert/strict";
@@ -25,7 +25,9 @@ const MENUS = [
   "components/files/explorer/tree-context-menu.tsx",
   "components/files/file-management.tsx",
   "components/agents/agents-page.tsx",
-  "components/right-sidebar/agents-view-menu.tsx",
+  "components/chat/top-bar/menus/agent-selector.tsx",
+  "components/chat/top-bar/menus/provider-keys.tsx",
+  "components/settings/providers/detail/credentials-section.tsx",
 ];
 for (const path of MENUS) {
   const source = read(path);

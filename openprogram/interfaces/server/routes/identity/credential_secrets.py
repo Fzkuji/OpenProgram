@@ -21,7 +21,7 @@ def declared_credential_names() -> frozenset[str]:
     Three sources, all read at call time so a provider registered after
     import still counts:
 
-      * the static LLM provider table (``_PROVIDER_ENV_VARS``),
+      * the providers' connection entries (``auth/login/login_method_registry.py``),
       * the models.dev community catalogue — 160+ providers with no static
         row, whose env-var names would otherwise be undeclared and so
         unsettable through the Web UI,
@@ -29,10 +29,10 @@ def declared_credential_names() -> frozenset[str]:
     """
     names: set[str] = set()
 
-    from openprogram.models.providers.settings.env_api_keys import _PROVIDER_ENV_VARS
+    from openprogram.models.auth.login.login_method_registry import listed_providers, provider_auth
 
-    for declared in _PROVIDER_ENV_VARS.values():
-        names.update(declared)
+    for provider in listed_providers():
+        names.update(provider_auth(provider).env_vars or ())
 
     # Community providers arrive from the models.dev catalogue, not from any
     # table in this repo. A cold / unreachable cache yields [] — the static

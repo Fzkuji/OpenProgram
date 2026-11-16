@@ -27,6 +27,7 @@ import { useFolderPicker } from "@/components/ui/folder-picker";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { listSessionProjects } from "@/lib/projects/list-projects";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useBoundChat } from "../bound-chat";
 import { GROUP_LABEL, MENU_NOTE, MENU_NOTE_ERROR, MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/ui/menu/menu-styles";
@@ -111,19 +112,11 @@ export function WorkingDirChips() {
 
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
-    const data = await wsRequest<{
+    const data = await listSessionProjects<{
       projects: Project[];
       current_project_id: string | null;
       session_id: string | null;
-    }>(
-      "list_projects",
-      { session_id: sessionId ?? "" },
-      "projects_list",
-      // 只认后端回显 session_id 匹配的回复——其他组件（侧栏 Projects
-      // 分组等）并发发的 list_projects 不带会话，其 current_project_id
-      // 恒为 null，误收会把选中态画到默认项目上。
-      (d) => (d.session_id ?? null) === (sessionId || null),
-    );
+    }>(sessionId);
     if (generation !== refreshGeneration.current) return true;
     if (data?.projects) {
       setProjects(data.projects);

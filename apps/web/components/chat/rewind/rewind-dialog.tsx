@@ -104,7 +104,7 @@ export function RewindDialog() {
         ) : null}
         {showSelect ? (
           <div className={statsHidden ? "invisible grid gap-1" : "grid gap-1"}>
-            <p className="min-h-5 text-fs-sm text-text-muted tabular-nums">{stats}</p>
+            <p className="min-h-5 text-fs-sm text-text-muted">{stats}</p>
             {skipped ? <p className="text-fs-xs text-text-muted">{skipped}</p> : null}
             <p className={noCode ? "hidden" : checking ? "invisible text-fs-xs text-text-muted" : "text-fs-xs text-text-muted"}>
               {text(

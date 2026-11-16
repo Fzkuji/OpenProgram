@@ -204,7 +204,7 @@ def redact_context(context: Any, vault: Vault) -> Any:
 def redacting_stream_fn(base_stream_fn: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap a ``stream_fn`` so each call sends a redacted context and streams
     back restored events. A request with nothing to redact passes through."""
-    from .event_stream import AssistantMessageEventStream, close_stream
+    from .streams.event_stream import AssistantMessageEventStream, close_stream
     import asyncio
 
     def _fn(model: Any, context: Any, options: Any):

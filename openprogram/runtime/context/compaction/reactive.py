@@ -12,7 +12,7 @@ from __future__ import annotations
 def is_overflow_error(exc: Exception) -> bool:
     """Whether an exception says the request did not fit the context window."""
     msg_text = str(exc)
-    from openprogram.models.providers.utils.overflow import OVERFLOW_PATTERNS, _STATUS_CODE_RE
+    from openprogram.models.providers.utils.failures.overflow import OVERFLOW_PATTERNS, _STATUS_CODE_RE
     for p in OVERFLOW_PATTERNS:
         if p.search(msg_text):
             return True

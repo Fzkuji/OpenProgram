@@ -5,14 +5,14 @@ import asyncio
 
 import pytest
 
-from openprogram.models.providers.utils.errors import ExecInterrupt
-from openprogram.models.providers.utils.recovery import (
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.recovery import (
     RecoveryState,
     current_recovery,
     recovery_limit_from_max_retries,
     reserve_recovery,
 )
-from openprogram.models.providers.utils.stream_retry import (
+from openprogram.models.providers.utils.streams.stream_retry import (
     ProviderStreamError,
     _sleep_unless_aborted,
     retry_stream,
@@ -84,7 +84,7 @@ def test_a_request_that_recovers_refunds_its_transport_retries():
         return None
 
     async def run():
-        import openprogram.models.providers.utils.stream_retry as module
+        import openprogram.models.providers.utils.streams.stream_retry as module
         original = module._sleep_unless_aborted, module.NETWORK_WAIT_MAX_S
         module._sleep_unless_aborted = no_sleep
         module.NETWORK_WAIT_MAX_S = 0
@@ -182,7 +182,7 @@ class _Clock:
 
 
 def _network_test_env(monkeypatch, *, wait_max_s=1800.0):
-    import openprogram.models.providers.utils.stream_retry as module
+    import openprogram.models.providers.utils.streams.stream_retry as module
 
     clock = _Clock()
     sleeps = []

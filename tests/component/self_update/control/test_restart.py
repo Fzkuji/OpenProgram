@@ -85,7 +85,7 @@ def _environment(tmp_path, monkeypatch):
 def test_an_update_does_not_pause_a_check_in_to_continue_it(tmp_path, monkeypatch):
     from openprogram.operations.self_update.control.maintenance import enter_maintenance
     from openprogram.operations.self_update.delivery import restart
-    from openprogram.runtime.execution import restart as policy
+    from openprogram.runtime.execution.recovery import restart as policy
 
     _updates, runner, _service, _attempt = _environment(tmp_path, monkeypatch)
     monkeypatch.setattr(policy, "is_check_in", lambda _store, _execution_id: True)
@@ -101,7 +101,7 @@ def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch,
     from openprogram.operations.self_update import UpdatePhase
     from openprogram.operations.self_update.control.maintenance import enter_maintenance
     from openprogram.operations.self_update.control.maintenance import leave_maintenance
-    from openprogram.runtime.execution.checkpoints import CheckpointFragment
+    from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
     from openprogram.runtime.execution import RuntimeControlService, AttemptStore
     from openprogram.runtime.execution.driver import DriverRegistry
 
@@ -133,7 +133,7 @@ def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch,
     # Terminal state alone does not authorize task activation.
     restart.reconcile(runner)
     assert runner._execution_store.get_execution("active").status.value == "paused"
-    from openprogram.runtime.execution import restart as policy
+    from openprogram.runtime.execution.recovery import restart as policy
     monkeypatch.setattr(policy, "window_seconds", lambda: window)
     deadline_start = updates.load("su_test").state.updated_at
     monkeypatch.setattr(policy, "time", lambda: deadline_start + elapsed)
@@ -275,7 +275,7 @@ def test_a_locked_session_cannot_stall_the_check_past_its_deadline(tmp_path, mon
     from openprogram.operations.self_update.control import supervisor
     from openprogram.runtime.jobs import store as job_store
     from openprogram.host._platform import locking
-    from openprogram.state.store.session.session_lock import session_lock_path
+    from openprogram.state.store.session.files.session_lock import session_lock_path
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(

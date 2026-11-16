@@ -124,7 +124,7 @@ def test_the_scan_sees_function_local_relative_and_string_imports(tmp_path):
     sample.write_text(
         "import importlib\n"
         "def f():\n"
-        "    from openprogram.runtime.context import nodes\n"
+        "    from openprogram.runtime.context.session_dag import nodes\n"
         "    from ...runtime.events import emit\n"
         "    from openprogram import runtime\n"
         "    import openprogram.runtime.agent\n"
@@ -138,7 +138,7 @@ def test_the_scan_sees_function_local_relative_and_string_imports(tmp_path):
 
     sample.write_text(
         "try:\n"
-        "    from openprogram.runtime.context.nodes import Call\n"
+        "    from openprogram.runtime.context.session_dag.nodes import Call\n"
         "except ImportError:\n"
         "    Call = None\n",
         encoding="utf-8",

@@ -21,7 +21,7 @@ class TurnReader:
 
     def _tree(self, row_id: str) -> Any:
         if self._trees is None:
-            from openprogram.runtime.execution.dag import build_exec_dags_by_id
+            from openprogram.runtime.execution.projections.dag import build_exec_dags_by_id
 
             self._trees = build_exec_dags_by_id(self.view.session_id, self._card_ids)
         return self._trees.get(row_id)

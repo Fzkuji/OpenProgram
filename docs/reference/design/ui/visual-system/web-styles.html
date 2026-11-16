@@ -25,7 +25,7 @@
 <tr><th scope="row">Placement follows the tree</th><td><code translate="no">dag/graph/nodes.css</code> for the drawer in <code translate="no">lib/runtime-bridge/dag/render/nodes.ts</code>; <code translate="no">chat/messages/bubbles.css</code> for a chat bubble</td></tr>
 <tr><th scope="row">Global stays global</th><td>Tokens in <code translate="no">design/</code>, theme values in <code translate="no">themes/</code>, the shell in <code translate="no">base/</code>. <code translate="no">chat/pane/layout.css</code> (<code translate="no">.main</code>, <code translate="no">#chatView</code>) is the one deliberately cross-component file.</td></tr>
 <tr><th scope="row">Module CSS stays</th><td>Components on <code translate="no">*.module.css</code> (the composer) keep it; this tree is the global layer only</td></tr>
-<tr><th scope="row">Style tests</th><td>Read the per-component file through postcss, as <code translate="no">apps/web/tests/tabs/canvas-css-geometry.test.mjs</code> does for the center-tabs modules</td></tr>
+<tr><th scope="row">Style tests</th><td>Read the per-component file through postcss, as <code translate="no">apps/web/tests/tabs/canvas/canvas-css-geometry.test.mjs</code> does for the center-tabs modules</td></tr>
 </tbody>
 </table>
 
@@ -37,7 +37,8 @@
 <tr><th scope="row">Shows</th><td>Only while the box scrolls or the thumb is held; fades 900ms later. Vertical, and horizontal when the box overflows sideways.</td></tr>
 <tr><th scope="row">Never shows for</th><td>Hovering, resizing, content changes. A faded thumb takes no pointer events.</td></tr>
 <tr><th scope="row">Layout</th><td>Takes no width</td></tr>
-<tr><th scope="row">Layer</th><td>Above everything, including dialogs. <code translate="no">data-scrollbar-layer="content"</code> keeps it above the box's rows and under a control on its edge (Agent list, Agent grid).</td></tr>
+<tr><th scope="row">Layer</th><td>The layer of its box: the z-index of the box's outermost layered ancestor (a dialog, a popover, a drawer), or the sticky layer for a box in the page, so a menu opened over a scrolling box covers its thumb. <code translate="no">data-scrollbar-layer="content"</code> keeps it above the box's rows and under a control on its edge (Agent list, Agent grid).</td></tr>
+<tr><th scope="row">Press</th><td>A press on the thumb stays with the thumb. The thumb is a child of <code translate="no">&lt;body&gt;</code>, outside any menu or dialog, so a menu or dialog would otherwise read the press as one outside it and close.</td></tr>
 <tr><th scope="row">Shadow root</th><td>Hides its own bar and calls <code translate="no">attachOverlayScrollbar</code></td></tr>
 </tbody>
 </table>

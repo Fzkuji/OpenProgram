@@ -4,7 +4,7 @@ from openprogram.runtime.conversation.turn_runtime import loop_runner
 
 def test_safe_point_records_the_location_a_resume_resolves(monkeypatch):
     location = {"workdir": "/repo", "project": None, "worktree": None}
-    monkeypatch.setattr("openprogram.runtime.conversation.workdir.runtime_location_for",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.workdir.runtime_location_for",
                         lambda session_id, use_context=True: dict(location) if not use_context else None)
     started = {"model": {"id": "m"}, "request_semantics": {"_execution_revision_id": "r",
                                                           "execution_location": dict(location)}}

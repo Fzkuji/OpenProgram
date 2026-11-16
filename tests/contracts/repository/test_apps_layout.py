@@ -9,7 +9,7 @@ import sys
 import openprogram
 
 from openprogram.interfaces.cli import ink
-from openprogram.interfaces.cli.commands import rescue
+from openprogram.interfaces.cli.commands.maintenance import rescue
 from openprogram.operations.worker import web as worker_web
 
 

@@ -15,7 +15,7 @@ import time
 
 from ..control.supervisor import _tree_digest
 from ..store import SelfUpdateStore
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 from openprogram.host._platform import filesystem
 from openprogram.host._platform.architecture import interpreter_architecture
 

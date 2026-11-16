@@ -10,7 +10,7 @@
  * by the worker; highlight mode preserves the real tree hierarchy.
  */
 import { revealLabel } from "@/lib/files/reveal-file";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FilePlus,
   Info,
@@ -105,7 +105,9 @@ const MAX_SEARCH_RESULTS = 500;
 /** Extension bucket → icon + colour (existing accent tokens only). */
 type DirState = TreeEntry[] | "loading" | "error";
 
-export function FileTree({
+// Memoized: the panel around it redraws on every tab, route and project
+// answer; the tree redraws for its own project and state.
+export const FileTree = memo(function FileTree({
   projectId,
   headerExtra,
   central = false,
@@ -1192,4 +1194,4 @@ export function FileTree({
       ) : null}
     </div>
   );
-}
+});

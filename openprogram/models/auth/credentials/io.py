@@ -47,11 +47,35 @@ def _revision(raw: bytes | None) -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
+def _make_private_dirs(directory: Path) -> None:
+    """Create ``directory`` and each missing parent readable by the owner only (0700)."""
+    missing = []
+    here = Path(directory)
+    while not here.exists() and here != here.parent:
+        missing.append(here)
+        here = here.parent
+    for folder in reversed(missing):
+        try:
+            folder.mkdir(mode=0o700)
+        except FileExistsError:
+            continue
+        os.chmod(folder, 0o700)  # mkdir's mode is masked by the umask
+
+
 def _ensure_private_directory(path: Path, *, root: Path) -> Path:
     del root
     directory = Path(path)
-    directory.mkdir(parents=True, exist_ok=True)
+    _make_private_dirs(directory)
     return directory
+
+
+def tighten_private_directory(directory: Path) -> None:
+    """Make an existing private folder readable by its owner only (0700)."""
+    try:
+        if Path(directory).is_dir() and os.stat(directory).st_mode & 0o077:
+            os.chmod(directory, 0o700)
+    except OSError:
+        pass
 
 
 @contextmanager
@@ -63,7 +87,7 @@ def _private_file_lock(
 ) -> Iterator[None]:
     del root, timeout
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _make_private_dirs(target.parent)
     key = os.fspath(target.absolute())
     held = getattr(_held_locks, "paths", set())
     if key in held:
@@ -71,10 +95,27 @@ def _private_file_lock(
         return
 
     lock_path = target.with_suffix(target.suffix + ".lock")
-    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
     from openprogram.host._platform import locking
 
-    locking.flock(descriptor, locking.LOCK_EX)
+    for _attempt in range(50):
+        try:
+            # Owner-only, like the file it guards (it holds nothing, but
+            # nothing in a private folder is readable by others).
+            descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        except FileNotFoundError:
+            # The folder went (an empty one is tidied away): make it again.
+            _make_private_dirs(target.parent)
+            continue
+        locking.flock(descriptor, locking.LOCK_EX)
+        if _is_current_lock(descriptor, lock_path):
+            _owner_only(descriptor)
+            break
+        # The lock file was removed while this process waited for it
+        # (``drop_unused_lock``): take the one at the path now.
+        locking.flock(descriptor, locking.LOCK_UN)
+        os.close(descriptor)
+    else:
+        raise OSError(f"could not lock {lock_path}")
     held.add(key)
     _held_locks.paths = held
     try:
@@ -82,6 +123,53 @@ def _private_file_lock(
     finally:
         held.remove(key)
         locking.flock(descriptor, locking.LOCK_UN)
+        os.close(descriptor)
+
+
+def _owner_only(descriptor: int) -> None:
+    """A lock file an earlier version made 0644, made 0600."""
+    try:
+        if hasattr(os, "fchmod") and os.fstat(descriptor).st_mode & 0o077:
+            os.fchmod(descriptor, 0o600)
+    except OSError:
+        pass
+
+
+def _is_current_lock(descriptor: int, lock_path: Path) -> bool:
+    """Whether the open lock file is still the one at ``lock_path``."""
+    try:
+        here = os.stat(lock_path)
+    except FileNotFoundError:
+        return False
+    held = os.fstat(descriptor)
+    return (here.st_dev, here.st_ino) == (held.st_dev, held.st_ino)
+
+
+def drop_unused_lock(lock_path: Path, guarded: Path) -> bool:
+    """Remove ``lock_path`` when the file it guards does not exist and no
+    process holds it (taken without waiting; skipped when held). Removed
+    while held here, so a process waiting on it takes a new one."""
+    from openprogram.host._platform import locking
+
+    try:
+        descriptor = os.open(lock_path, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        try:
+            locking.flock(descriptor, locking.LOCK_EX | locking.LOCK_NB)
+        except OSError:
+            return False  # a writer has it
+        try:
+            if guarded.exists() or not _is_current_lock(descriptor, lock_path):
+                return False
+            os.unlink(lock_path)
+            return True
+        except OSError:
+            return False
+        finally:
+            locking.flock(descriptor, locking.LOCK_UN)
+    finally:
         os.close(descriptor)
 
 
@@ -110,7 +198,7 @@ def _atomic_write(
     path: Path, writer: Callable[[BinaryIO], object]
 ) -> PrivateAtomicWriteResult:
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _make_private_dirs(target.parent)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
     )

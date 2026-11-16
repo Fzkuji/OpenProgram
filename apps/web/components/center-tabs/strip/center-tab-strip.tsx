@@ -16,7 +16,7 @@
  * Closing a tab with unsaved edits (dirty=true, set by the file
  * editor) saves the document first; a failed save keeps the tab open.
  */
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CirclePlus, LayoutGrid, Plus } from "lucide-react";
 
@@ -55,7 +55,8 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
  *  strip's edge, short enough that a real exit reflows promptly. */
 const UNFREEZE_GRACE_MS = 400;
 
-export function CenterTabStrip() {
+// Memoized: the shell redraws on every tab and route change, and this takes no part in those.
+export const CenterTabStrip = memo(function CenterTabStrip() {
   const { t, text } = useTranslation();
 
   const groups = useCenterTabs((s) => s.groups);
@@ -470,4 +471,4 @@ export function CenterTabStrip() {
       </span>
     </div>
   );
-}
+});

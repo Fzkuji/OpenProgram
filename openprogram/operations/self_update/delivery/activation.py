@@ -55,7 +55,7 @@ _RULES: tuple[tuple[str, str | None], ...] = (
     ("CITATION.cff", None),
     ("LICENSE", None),
     ("README.md", None),
-    ("README.zh.md", None),
+    ("translations/*", None),
     ("apps/*/README.md", None),
     # Docs pages and the generator that renders them.
     ("docs/*", "docs"),

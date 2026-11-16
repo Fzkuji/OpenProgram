@@ -116,7 +116,7 @@ def test_cross_session_async_spawn_finalizes_both_session_provenance(
     executed: dict = {}
 
     def fake_execute(*, request, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         session_id = request.session_id
         prompt = request.user_text
@@ -302,7 +302,7 @@ def test_cross_session_async_spawn_finalizes_both_session_provenance(
             AssertionError("cross-session attach must not scan all sessions")
         ),
     )
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
     seen = repr(rendered_history(store, "source", head_id=final.attach_pointer_id))
     # A sub-agent's pointer carries its report, not the remote transcript.
     assert "remote result" in seen
@@ -355,7 +355,7 @@ def test_cross_session_sync_spawn_persists_target_pointer(
     captured: dict = {}
 
     def fake_run(**kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         captured.update(kwargs)
         store.append_message("target", {
@@ -373,7 +373,7 @@ def test_cross_session_sync_spawn_persists_target_pointer(
         )
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn", fake_run,
     )
 
     from openprogram.runtime.execution.run_control.binding import _current_session_id
@@ -418,7 +418,7 @@ def test_cross_session_sync_failure_persists_errored_pointer(
     target_head_before = (store.get_session("target") or {})["head_id"]
 
     def fake_run(**_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         store.append_message("target", {
             "id": "target_failed_a",
@@ -437,7 +437,7 @@ def test_cross_session_sync_failure_persists_errored_pointer(
         )
 
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.runtime.conversation.peer_agents.sub_agent_run.run_agent_turn", fake_run,
     )
 
     from openprogram.runtime.execution.run_control.binding import _current_session_id
@@ -485,7 +485,7 @@ def test_same_session_attach_keeps_return_edge_without_remote_markers(
     store.set_head("source", source_head)
     store.commit_turn("source", "local result")
 
-    from openprogram.runtime.conversation.sub_agent_run import (
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
         AgentTurnResult,
         write_attach_pointer_for_spawn,
     )
@@ -515,7 +515,7 @@ def test_cross_session_non_success_terminal_updates_source_card(
     terminal_status,
 ):
     """Failure and cancellation close the source placeholder as well."""
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
 
     pointer_id = write_attach_placeholder_for_spawn(
         session_id="source",
@@ -560,7 +560,7 @@ def test_running_cross_session_placeholder_is_not_expanded_into_context(
     cross_session_store,
 ):
     """A turn cannot consume a remote agent card before it is terminal."""
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
 
     pointer_id = write_attach_placeholder_for_spawn(
         session_id="source",
@@ -578,7 +578,7 @@ def test_running_cross_session_placeholder_is_not_expanded_into_context(
         message for message in cross_session_store.get_messages("source")
         if message["id"] == pointer_id
     )
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
     seen = rendered_history(cross_session_store, "source", head_id=pointer_id)
     # Until it is terminal the card reads only as running, with nothing of the remote run.
     assert seen[-1]["id"] == pointer_id and seen[-1]["content"] == "(running)"
@@ -590,7 +590,7 @@ def test_unpublished_accepted_job_recovery_publishes_cross_session_spawn(
     """Recovery finishes a hand-off whose card was persisted before its
     admission was published: the submitter is gone, so the Job is published
     and runs, and the source card stays open for its result."""
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
 
     pointer_id = write_attach_placeholder_for_spawn(
         session_id="source",
@@ -645,7 +645,7 @@ def test_startup_reconcile_closes_cross_session_legacy_placeholder(
     cross_session_store,
 ):
     """A pre-governor orphan must not leave its source card running."""
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
 
     pointer_id = write_attach_placeholder_for_spawn(
         session_id="source",
@@ -695,7 +695,7 @@ def test_job_execution_waits_for_accepted_side_effect(
     monkeypatch,
 ):
     """A durable Job is not claimable until its accepted callback returns."""
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
     callback_entered = threading.Event()
     callback_release = threading.Event()
@@ -750,7 +750,7 @@ def test_governed_worker_loss_closes_cross_session_source_card(
     tmp_path,
 ):
     """Lease recovery must update the canonical Job and its source card."""
-    from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
 
     pointer_id = write_attach_placeholder_for_spawn(
         session_id="source",
@@ -845,7 +845,7 @@ def test_sync_spawn_card_runs_with_its_job_and_settles(cross_session_store, monk
     head = (store.get_session("source") or {})["head_id"]
 
     def outcome(request):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
         store.append_message("source", {
             "id": "spawned", "role": "assistant", "content": "done",
@@ -868,7 +868,7 @@ def test_sync_spawn_card_runs_with_its_job_and_settles(cross_session_store, monk
 
 
 def test_sync_spawn_card_settles_when_the_run_fails(cross_session_store, monkeypatch):
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
 
     _seen, node = _sync_spawn(
         cross_session_store, monkeypatch,
@@ -882,7 +882,7 @@ def test_sync_spawn_card_settles_when_the_run_fails(cross_session_store, monkeyp
 
 
 def test_a_failed_placeholder_is_replaced_by_the_end_write(cross_session_store, monkeypatch):
-    from openprogram.runtime.conversation import sub_agent_run as module
+    from openprogram.runtime.conversation.peer_agents import sub_agent_run as module
 
     monkeypatch.setattr(module, "write_attach_placeholder_for_spawn", lambda **_k: None)
     module.write_attach_pointer_for_spawn(
@@ -897,7 +897,7 @@ def test_a_failed_placeholder_is_replaced_by_the_end_write(cross_session_store, 
 
 
 def test_a_result_with_no_head_and_no_placeholder_writes_no_row(cross_session_store):
-    from openprogram.runtime.conversation import sub_agent_run as module
+    from openprogram.runtime.conversation.peer_agents import sub_agent_run as module
 
     assert module.write_attach_pointer_for_spawn(
         session_id="source", caller_msg_id="source_a",

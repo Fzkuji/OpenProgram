@@ -127,6 +127,7 @@
 <tr><th scope="row">Split path skips <code translate="no">pipOpenMustFork</code></th><td>It only checks agent ownership, and changes the group's web pane URL.</td></tr>
 <tr><th scope="row"><code translate="no">show</code> does not ungroup</th><td>A leaf in another group stays a member while bound as a preview.</td></tr>
 <tr><th scope="row">Regions differ</th><td><code translate="no">surfaceRefForChat</code> marks ungrouped pages <code translate="no">right</code>; <code translate="no">browserPageInventory</code> marks them <code translate="no">center</code>.</td></tr>
+<tr><th scope="row">Browser windows share one layout</th><td>Outside the desktop App there is no window id: every browser window of one origin saves to <code translate="no">centerTabs</code>. An open window keeps its layout, but a reload takes whichever window saved last.</td></tr>
 <tr><th scope="row">Binding is not persisted</th><td>Reload loses binding, background and position; leaves return as tabs, and Resources previews reapply.</td></tr>
 </tbody>
 </table>
@@ -171,6 +172,7 @@
 <tr id="last-tab"><th scope="row">Closing the last tab</th><td>Allowed. Window and strip stay, content blank, across routes and reloads, with no automatic draft. Session-owned hidden pages stay in Resources and are never the fallback. Close selects visible neighbors after normalizing split groups.</td></tr>
 <tr id="tab-release-resources"><th scope="row">Press and release</th><td>Press uses the drag background and blur, changes no page. Release without drag activates by normal click; drag, Escape, cancel or lost focus consumes the click. Focus ring stays.</td></tr>
 <tr><th scope="row">Drag appearance</th><td>Tab and pane-label previews share background, backdrop-filter and shadow variables. Settings → General: transparency 0–100%, blur 0–40px, shadow 0–100%, live preview, Restore defaults. Defaults: 20%, 16px, saturation 1.2, 25% of the original shadow alpha. Text and icons stay opaque.</td></tr>
+<tr><th scope="row">Remove from group</th><td>Takes only that tab out of its split; the other panes stay side by side, and a split left with one pane dissolves. Other splits are never touched.</td></tr>
 <tr><th scope="row">New window cue</th><td>Stays in the strip, above native page bounds: renderer content cannot stack over an Electron child view.</td></tr>
 <tr><th scope="row">Drag a page onto Resources</th><td>A single web tab attaches that exact Page to the visible conversation on release. Targets: the Resources navigation row, plus its body when open; never one combined rectangle. One border matching the target's outer bounds, no blur. Groups, drafts and other kinds are not sources or destinations.</td></tr>
 </tbody>
@@ -183,6 +185,19 @@
 <li>Preferences live in local storage, normalized; the pre-paint theme script applies them before hydration; storage events sync same-origin windows. Theme changes keep them. Invalid fields use defaults, numbers are clamped, zero disables that effect. Ordinary buttons and Resources outlines are unaffected. Dragging in the strip reorders; outside it transfers windows as before.</li>
 </ul>
 </details>
+
+<h2 id="per-window">What belongs to a window</h2>
+<p>A window's layout is its own. Nothing a window does to its tabs or splits reaches another window.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tabs, splits, pane sizes, focused tab, Back/Forward</th><td>Per window, saved under <code translate="no">centerTabs:&lt;window id&gt;</code>. A window reads only its own key and no window listens for another's writes, so opening, closing, resizing or changing a split stays in that window.</td></tr>
+<tr><th scope="row">New window</th><td>Starts with the tabs moved into it and no split of its own; it inherits no layout.</td></tr>
+<tr><th scope="row">Restart</th><td>Every window open at quit comes back under the same id (<code translate="no">session-windows.js</code>) and restores its own layout.</td></tr>
+<tr><th scope="row">Unsent input</th><td>Per window, saved under that window's id like its layout.</td></tr>
+<tr><th scope="row">Shared on purpose</th><td>Preferences of this device: left sidebar open, right panel open, its view and width, collapsed projects. A window reads them when it loads; changing one never moves an open window. Appearance preferences follow storage events and change every window at once.</td></tr>
+</tbody>
+</table>
 
 <h2 id="conversation-file-preview">Conversation file previews</h2>
 <p>Chat left, document right, reusing tab groups and <code translate="no">DocumentWindow</code>.</p>

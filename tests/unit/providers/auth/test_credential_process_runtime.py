@@ -37,9 +37,9 @@ def _script(tmp_path, name: str, body: str) -> str:
     return str(path)
 
 
-def _cred(data: dict, *, account: str = "default") -> Credential:
+def _cred(data: dict, *, cid: str = "cred_helper") -> Credential:
     return Credential(
-        provider_id="helperco", account_id=account,
+        provider_id="helperco", id=cid,
         kind="credential_process",
         payload=CredentialData(kind="credential_process", data=data),
     )
@@ -108,12 +108,12 @@ def test_cache_seconds_zero_disables_caching(tmp_path):
     assert _forks(counter) == 2
 
 
-def test_cache_is_scoped_per_profile(tmp_path):
+def test_cache_is_scoped_per_credential(tmp_path):
     counter = tmp_path / "runs"
     helper = _counting_helper(tmp_path, counter)
     data = {"command": [helper], "parses": "text", "cache_seconds": 300}
-    resolve_connection(_cred(data, account="work"))
-    resolve_connection(_cred(data, account="personal"))
+    resolve_connection(_cred(data, cid="cred_work"))
+    resolve_connection(_cred(data, cid="cred_personal"))
     assert _forks(counter) == 2
 
 
@@ -223,19 +223,18 @@ def test_resolve_api_key_sync_does_not_swallow_helper_failure(tmp_path, monkeypa
     """The whole point of the fix: the funnel must not fall back silently."""
     from openprogram.models.auth import resolver as resolver_mod
 
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+
     helper = _script(tmp_path, "bad.sh", "exit 9")
-    cred = _cred({"command": [helper], "parses": "text"})
+    store = AuthStore(root=tmp_path / "state")
+    store.add_credential(_cred({"command": [helper], "parses": "text"}))
+    set_store_for_testing(store)
 
-    class FakeManager:
-        def acquire_sync(self, provider_id, account_id=None):
-            return cred
-
-    monkeypatch.setattr(resolver_mod, "get_credential_provider", lambda: FakeManager())
-    monkeypatch.setattr(resolver_mod, "get_active_account", lambda p: "default")
-    monkeypatch.setattr(resolver_mod, "get_credential_override", lambda p: None)
-
-    with pytest.raises(AuthCredentialProcessError):
-        resolver_mod.resolve_api_key_sync("helperco")
+    try:
+        with pytest.raises(AuthCredentialProcessError):
+            resolver_mod.resolve_api_key_sync("helperco")
+    finally:
+        set_store_for_testing(None)
 
 
 # ---- env / cwd passthrough ------------------------------------------------

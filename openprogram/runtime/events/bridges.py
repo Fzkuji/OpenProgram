@@ -42,11 +42,24 @@ def translate_auth_event(ev: AuthEvent) -> Event | None:
         "system",
         payload={
             "provider": ev.provider_id,
-            "profile": ev.account_id,
             "credential": ev.credential_id,
             "detail": dict(ev.detail or {}),
         },
     )
+
+
+CREDENTIALS_CHANGED_FRAME = "provider.credentials.changed"
+
+
+def _tell_tabs(ev: AuthEvent) -> None:
+    """A provider's credential list changed (added, removed, renamed,
+    reordered, a state such as cooling or invalid): open tabs reload it.
+    ``{"type": "provider.credentials.changed", "data": {"provider": id}}``."""
+    try:
+        from openprogram.runtime.events import emit_ws_frame
+        emit_ws_frame({"type": CREDENTIALS_CHANGED_FRAME, "data": {"provider": ev.provider_id}})
+    except Exception:
+        _log.debug("credential change not sent to tabs", exc_info=True)
 
 
 def install_event_bridges(auth_store=None, bus=None) -> bool:
@@ -68,6 +81,9 @@ def install_event_bridges(auth_store=None, bus=None) -> bool:
         bus = get_event_bus()
 
     def _forward(auth_ev: AuthEvent) -> None:
+        if auth_ev.type == AuthEventType.CREDENTIALS_CHANGED:
+            _tell_tabs(auth_ev)
+            return
         try:
             ev = translate_auth_event(auth_ev)
             if ev is not None:

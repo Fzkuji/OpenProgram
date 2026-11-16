@@ -11,10 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.interfaces.channels import _access, _conversation, _room, _transport
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._session_routing import _read_generations
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _access, _conversation, _room
+from openprogram.interfaces.channels.delivery import _transport
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.inbound._session_routing import _read_generations
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 from openprogram.models.providers.types import (
     AssistantMessage,
@@ -201,7 +202,7 @@ def test_a_failing_stop_still_answers(edits, monkeypatch) -> None:
 def test_stop_on_an_idle_expired_session_starts_no_new_conversation(edits, monkeypatch) -> None:
     monkeypatch.setattr(_Agent, "session_idle_minutes", 1)
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._session_routing._last_activity",
+        "openprogram.interfaces.channels.inbound._session_routing._last_activity",
         lambda session_key: time.time() - 3600,
     )
     channel = _FakeChannel()

@@ -58,6 +58,12 @@ export function retryLabel(retry: RetryStatus, seconds: number, text: Text): str
     }
     case "output_limit":
       return text("Hit the output limit, continuing", "输出到上限，继续生成");
+    case "credential_wait": {
+      const name = retry.waitingFor || text("a key", "一个密钥");
+      return seconds > 0
+        ? text(`Waiting for ${name}, back in ${seconds}s`, `等待 ${name}，${seconds} 秒后恢复`)
+        : text(`Waiting for ${name}`, `等待 ${name}`);
+    }
     default:
       return text(`Reply came back incomplete, retrying ${count}`, `回复不完整，正在重试 ${count}`);
   }

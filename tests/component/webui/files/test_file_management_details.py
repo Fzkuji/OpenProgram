@@ -244,7 +244,7 @@ def test_size_cache_unavailable_or_corrupt_still_allows_queries(project_root, mo
     (state / 'folder-sizes.json').write_text('{invalid JSON')
     cmd = {'project_id': 'p1', 'path': 'src'}
     assert _run(ws_files.handle_project_folder_size, cmd)['data']['state'] == 'unknown'
-    from openprogram.state.store.session import atomic_file
+    from openprogram.state.store.session.files import atomic_file
     def unavailable(*args):
         raise OSError('read-only storage')
     monkeypatch.setattr(atomic_file, 'atomic_write_text', unavailable)

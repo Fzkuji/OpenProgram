@@ -90,7 +90,7 @@ def register(app) -> None:
 
     @router.delete("/api/scheduler/tasks/{task_id}")
     def delete_task(task_id: str):
-        if not service.delete_task(task_id):
+        if not service.delete_task(task_id, by="the Scheduler API"):
             return _error("task not found", 404)
         return JSONResponse(content={"ok": True})
 

@@ -36,6 +36,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { listSessionProjects } from "@/lib/projects/list-projects";
 import { duplicateNamePrefixes } from "@/lib/projects/duplicate-names";
 import { canConfirmInPlace, confirmProjectFolder, locationMessage, locationProblem, relocateProject, type RelocateReply } from "@/lib/projects/project-location";
 import { useBoundChat } from "../bound-chat";
@@ -94,19 +95,11 @@ export function ProjectMenu({
   const [err, setErr] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const data = await wsRequest<{
+    const data = await listSessionProjects<{
       projects: Project[];
       current_project_id: string | null;
       session_id: string | null;
-    }>(
-      "list_projects",
-      { session_id: sessionId ?? "" },
-      "projects_list",
-      // 只认后端回显 session_id 匹配的回复——其他组件（侧栏 Projects
-      // 分组等）并发发的 list_projects 不带会话，其 current_project_id
-      // 恒为 null，误收会把选中态画到默认项目上。
-      (d) => (d.session_id ?? null) === (sessionId || null),
-    );
+    }>(sessionId);
     // An unreadable registry answers `projects: null`; keep what is shown.
     if (data && Array.isArray(data.projects)) {
       setProjects(data.projects);
@@ -428,18 +421,11 @@ export function ProjectBadge() {
   // retrying). On a fresh page load the WebSocket may not be OPEN yet, so
   // `wsRequest` resolves null — we retry below until it answers.
   const refreshLabel = useCallback(async (): Promise<boolean> => {
-    const data = await wsRequest<{
+    const data = await listSessionProjects<{
       projects: Project[];
       current_project_id: string | null;
       session_id: string | null;
-    }>(
-      "list_projects",
-      { session_id: sessionId ?? "" },
-      "projects_list",
-      // 同 ProjectMenu.refresh：并发的无会话 list_projects 回复会把
-      // 徽标误置回默认项目，按回显的 session_id 只认自己那条。
-      (d) => (d.session_id ?? null) === (sessionId || null),
-    );
+    }>(sessionId);
     if (!data || !Array.isArray(data.projects)) return false;
     const projects = data.projects;
     const wantId =

@@ -3,7 +3,7 @@ import pytest
 
 from ._support import _prepare_long_turn, _provider_tool_decision, _committed_tool_ids
 from openprogram.runtime.conversation.checkpoint import AgentContinuation
-from openprogram.runtime.execution.checkpoints import ExecutionCheckpointStore
+from openprogram.runtime.execution.recovery.checkpoints import ExecutionCheckpointStore
 from openprogram.runtime.execution.store import ExecutionStore
 
 

@@ -189,7 +189,7 @@ def test_the_event_reaches_a_prompt_as_data(scheduler_env):
 
 @pytest.mark.parametrize("mode", ["bypass", "auto", "acceptEdits", "ask", "plan"])
 def test_an_event_turn_runs_in_its_conversations_mode(monkeypatch, mode):
-    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation.turn_admission import owner_turn
     from openprogram.runtime.agent import turn_request as agent_turn_request
 
     seen = {}
@@ -203,7 +203,7 @@ def test_an_event_turn_runs_in_its_conversations_mode(monkeypatch, mode):
             return SimpleNamespace(execution_id="e1")
 
     monkeypatch.setattr("openprogram.runtime.conversation.production_driver.CanonicalAgentAdapter", Adapter)
-    monkeypatch.setattr("openprogram.runtime.conversation.session_config.load_session_run_config",
+    monkeypatch.setattr("openprogram.runtime.conversation.session_settings.session_config.load_session_run_config",
                         lambda sid: SimpleNamespace(permission_mode=mode, thinking_effort=None,
                                                     additional_working_dirs=[]))
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda sid: None)

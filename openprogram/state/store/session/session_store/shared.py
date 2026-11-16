@@ -57,12 +57,12 @@ _READING_CACHED_INDEX: ContextVar[bool] = ContextVar("openprogram_reading_cached
 from openprogram.state.store.session.nodes import Call, ROLE_CODE, ROLE_USER, ROLE_LLM  # noqa: F401
 from openprogram.host._platform.filesystem import remove_tree  # noqa: F401
 from .._msg_adapter import _msg_to_node, _node_to_msg, _row_to_session  # noqa: F401
-from ..atomic_file import atomic_write_text, read_text_with_retry  # noqa: F401
-from ..session_log import RUN_ROWS_RECORD, SessionLog, report_foreign_change  # noqa: F401
-from ..session_state_file import SessionStateFile  # noqa: F401
+from ..files.atomic_file import atomic_write_text, read_text_with_retry  # noqa: F401
+from ..files.session_log import RUN_ROWS_RECORD, SessionLog, report_foreign_change  # noqa: F401
+from ..files.session_state_file import SessionStateFile  # noqa: F401
 from ..memory_index import SessionMemoryIndex  # noqa: F401
 from ..branch_config import BRANCH_RECORD_KEYS, take_durable_branch_records  # noqa: F401
-from ..placement import (  # noqa: F401
+from ..files.placement import (  # noqa: F401
     INDEX_FILE,
     LOCATIONS_FILE,
     is_deleted,
@@ -77,7 +77,7 @@ from ..placement import (  # noqa: F401
     session_looks_present,
     target_dir_for_project,
 )
-from ..session_lock import (  # noqa: F401
+from ..files.session_lock import (  # noqa: F401
     conversation_lock, registry_file_lock, remove_session_lock_files,
     session_interprocess_lock, stale_lock_files, sweep_lock_files,
 )

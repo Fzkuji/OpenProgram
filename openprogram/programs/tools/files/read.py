@@ -250,7 +250,7 @@ def _page_quarters() -> int:
     smaller on a model with a small window) would cut it. Guides and
     AGENTS.md files are sent beside the result, not in it, so they take
     nothing from the page."""
-    from openprogram.state.store.session import spill
+    from openprogram.state.store.session.files import spill
     return spill.result_cap() * 4
 
 

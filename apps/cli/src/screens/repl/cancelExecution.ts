@@ -11,7 +11,7 @@
  *   updated, refuses a cancel whose `expected_version` is not current
  *   (`stale_version`) with the execution's latest snapshot; for those the
  *   cancel goes out once more, with the same command id and the version the
- *   refusal names, as `openprogram --print` (`interfaces/cli/worker_turn.py`)
+ *   refusal names, as `openprogram --print` (`interfaces/cli/print_mode/worker_turn.py`)
  *   does.
  * - `cancel_by_request`: a stop may name the send before its execution is
  *   known; the send's admission then ends as stopped.

@@ -49,7 +49,7 @@ export function toolKind(tool: string): ToolKind {
   if (name === 'grep' || name === 'glob' || name === 'search') return 'search';
   if (name === 'list' || name === 'ls') return 'list';
   if (name === 'agent' || name === 'task') return 'agent';
-  if (name.startsWith('todo')) return 'todo';
+  if (name === 'task_start' || name === 'task_step' || name === 'task_list' || name.startsWith('todo')) return 'todo';
   return 'generic';
 }
 
@@ -57,7 +57,10 @@ export function parseArgs(input?: string): Record<string, unknown> {
   if (!input) return {};
   try {
     const value = JSON.parse(input);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    // The runtime's task progress, not the tool's own argument.
+    const { task_progress: _progress, ...args } = value as Record<string, unknown>;
+    return args;
   } catch {
     return {};
   }
@@ -91,7 +94,11 @@ function argOf(kind: ToolKind, args: Record<string, unknown>, raw?: string): str
     }
     case 'list': return str(args.path);
     case 'agent': return str(args.description) ?? (str(args.prompt) ? firstLine(str(args.prompt)!) : undefined);
-    case 'todo': return str(args.subject) ?? (str(args.todo_id) ? `#${str(args.todo_id)}` : undefined);
+    case 'todo': return str(args.title) ?? str(args.subject)
+      ?? (str(args.todo_id) ? `#${str(args.todo_id)}` : undefined)
+      ?? (str(args.outcome) ? 'done' : undefined)
+      ?? (typeof args.step === 'number' && args.step > 0 ? `#${args.step}` : undefined)
+      ?? (args.next === true ? 'next' : undefined);
     default: {
       const first = Object.values(args).find((v) => typeof v === 'string' && v) as string | undefined;
       if (first) return firstLine(first);
@@ -136,16 +143,23 @@ function diffLines(rows: DiffRow[], expanded: boolean, expandKey: string): ViewL
   return out;
 }
 
-const TODO_MARK: Record<string, string> = { completed: '☒', in_progress: '◼', pending: '☐' };
+const TODO_MARK: Record<string, string> = { completed: '☒', in_progress: '◼', pending: '☐', dropped: '☒' };
+const SETTLED = new Set(['completed', 'dropped']);
 
-function boardLines(board: TodoItem[]): ViewLine[] {
-  return board.map((item) => ({
+/** A task's steps; under a title, the title and the steps done out of the
+ *  ones that count (a dropped step is not counted). */
+function boardLines(board: TodoItem[], title?: string): ViewLine[] {
+  const counted = board.filter((item) => item.status !== 'dropped');
+  const head: ViewLine[] = title
+    ? [{ kind: 'text', text: counted.length ? `${title} ${counted.filter((item) => item.status === 'completed').length}/${counted.length}` : title, tone: 'text' }]
+    : [];
+  return [...head, ...board.map((item) => ({
     kind: 'text' as const,
     text: `${TODO_MARK[item.status] ?? '☐'} ${item.subject}`,
-    tone: item.status === 'completed' ? 'muted' as const : item.status === 'in_progress' ? 'active' as const : 'text' as const,
+    tone: SETTLED.has(item.status) ? 'muted' as const : item.status === 'in_progress' ? 'active' as const : 'text' as const,
     bold: item.status === 'in_progress',
-    strike: item.status === 'completed',
-  }));
+    strike: SETTLED.has(item.status),
+  }))];
 }
 
 /** Todos written by a Claude-Code-style `TodoWrite` call's own arguments. */
@@ -264,8 +278,8 @@ export function toolView(call: ToolCall, opts: { expanded?: boolean; expandKey?:
     }
     case 'todo': {
       const board = call.board ?? boardFromArgs(args);
-      if (board && board.length) {
-        view.lines = boardLines(board);
+      if ((board && board.length) || call.boardTitle) {
+        view.lines = boardLines(board ?? [], call.boardTitle);
         return view;
       }
       view.lines = call.status === 'running' ? [summary('Updating…')] : folded(lines, expanded, expandKey, 'muted');

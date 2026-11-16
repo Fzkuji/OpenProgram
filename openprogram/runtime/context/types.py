@@ -115,7 +115,7 @@ class TurnPrep:
     summary_id: Optional[str] = None
     # ``{section id: note}``: the last note of each section the rendered
     # history shows (absent: none, so the system prompt's section is what
-    # the model has; ``context.turn_context``). None: the engine did not
+    # the model has; ``context.prompt_assembly.turn_context``). None: the engine did not
     # report it (a TurnPrep built elsewhere), and the turn then assumes any
     # stored note may be shown.
     section_notes: Optional[dict] = None

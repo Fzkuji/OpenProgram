@@ -55,7 +55,9 @@ def test_done_items_leave_the_prompt(session_dirs, monkeypatch) -> None:
 
 def test_the_prompt_component_reads_the_current_conversation(session_dirs, monkeypatch) -> None:
     from openprogram.runtime.execution import run_control as execution_run_control
-    from openprogram.runtime.conversation import context_registration as components
+    from openprogram.runtime.conversation.layer_registrations import (
+        context_registration as components,
+    )
 
     store.add("s2", "Follow up on the invoice")
     token = execution_run_control.set_current_session_id("s2")

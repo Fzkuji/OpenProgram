@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import uuid4
 
-from openprogram.models.providers.utils.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
 
 @dataclass

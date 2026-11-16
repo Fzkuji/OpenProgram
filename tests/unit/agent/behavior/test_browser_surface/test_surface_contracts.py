@@ -395,7 +395,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
 
     from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.models.providers.types import AgentTool, AgentToolResult
     from openprogram.models.providers.types import TextContent
 
@@ -432,7 +432,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
         raise AssertionError("unexpected approval")
 
     monkeypatch.setattr(
-        "openprogram.runtime.permissions.approval.await_user_approval",
+        "openprogram.runtime.permissions.approvals.approval.await_user_approval",
         unexpected_approval,
     )
 

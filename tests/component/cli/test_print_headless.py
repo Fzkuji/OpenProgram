@@ -24,8 +24,13 @@ import types
 import pytest
 
 from openprogram.interfaces.cli import chat as chat_module
-from openprogram.interfaces.cli import print_events, print_input, print_session, print_stop
-from openprogram.interfaces.cli import print_turn, worker_turn
+from openprogram.interfaces.cli.print_mode import (
+    print_events,
+    print_input,
+    print_session,
+    print_stop,
+)
+from openprogram.interfaces.cli.print_mode import print_turn, worker_turn
 from openprogram.models.providers.types import (
     AssistantMessage,
     EventDone,
@@ -38,7 +43,6 @@ from tests.component.cli.test_oneshot_via_worker import SESSION, fake_worker
 from tests.component.cli.test_print_turn import (  # noqa: F401 - fixtures
     _STUCK_RUN,
     MODEL,
-    _never_in_a_real_profile,
     _this_checkout,
     provider,
 )
@@ -371,20 +375,6 @@ def test_the_named_model_is_the_turn_s_and_the_folder_gets_no_marker(provider, t
     assert not (tmp_path / "task" / ".openprogram").exists()
 
 
-def test_a_standard_variable_serves_only_without_a_stored_key(monkeypatch):
-    from openprogram.models.auth import resolver
-    from openprogram.models.providers.settings import env_api_keys
-
-    monkeypatch.setattr(env_api_keys, "_env_keys_in_process", False)
-    monkeypatch.setenv("OPENAI_API_KEY", "Bearer sk-env")
-    monkeypatch.setattr(resolver, "resolve_store_api_key_sync", lambda _p: None)
-    assert env_api_keys.resolve_provider_key("openai") is None
-    env_api_keys.read_env_keys_in_this_process()
-    assert env_api_keys.resolve_provider_key("openai") == "sk-env"
-    monkeypatch.setattr(resolver, "resolve_store_api_key_sync", lambda _p: "sk-stored")
-    assert env_api_keys.resolve_provider_key("openai") == "sk-stored"
-
-
 # ---------------------------------------------------------------------------
 # Which conversation
 # ---------------------------------------------------------------------------
@@ -451,7 +441,7 @@ def test_at_a_tip_runs_on_that_branch_and_inside_one_starts_a_branch(monkeypatch
 # ---------------------------------------------------------------------------
 
 def test_compact_reads_its_arguments():
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.runtime.conversation.turn_admission import local_commands
 
     assert local_commands.compact_args("/compact") == {}
     assert local_commands.compact_args("/compact 4000") == {"keep_recent_tokens": 4000}
@@ -482,7 +472,7 @@ def test_a_compaction_the_worker_refuses_is_an_error():
 
 
 def test_compact_in_this_process_runs_without_a_model_turn(provider, monkeypatch, capsys):
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.runtime.conversation.turn_admission import local_commands
 
     fake = provider(0)
     seen = {}
@@ -569,7 +559,8 @@ def test_a_turn_model_on_an_agent_trial_replaces_the_trial_s_saved_model(monkeyp
     from openprogram.interfaces.server.ws_actions.chat import turn as turn_module
     from openprogram.interfaces.server.ws_actions.chat.turn_request import _ChatRequest
     from openprogram.models.providers.catalog import enabled_models
-    from openprogram.runtime.conversation import production_driver, turn_input
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.conversation.turn_admission import turn_input
     from openprogram.runtime.permissions import rule
 
     monkeypatch.setattr(enabled_models, "use_model_in_process", lambda p, m: True)
@@ -646,7 +637,7 @@ def test_the_relay_reads_wire_facts_from_the_result_frame():
 
 
 def test_required_memory_that_failed_is_not_retried():
-    from openprogram.models.providers.utils.errors import taxonomy_fields
+    from openprogram.models.providers.utils.failures.errors import taxonomy_fields
     from openprogram.state.memory.policy import MemoryPolicyError
 
     assert taxonomy_fields(MemoryPolicyError("down")) == ("unknown", False, None)

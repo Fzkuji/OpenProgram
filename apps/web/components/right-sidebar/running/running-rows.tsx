@@ -18,6 +18,11 @@ const DOT: Record<Tone, string> = {
   warn: "--warn", run: "--neutral pulse-opacity", ok: "--ok", err: "--err", muted: "is-muted",
 };
 
+/** The small status dot in a tone, as the rows' status lines draw it. */
+export function StatusDot({ tone }: { tone: Tone }) {
+  return <span className={`indicator-dot sm ${DOT[tone]}`} aria-hidden="true" />;
+}
+
 export function Glyph({ name, tone, large }: { name: SolarIconName; tone: ToolTone | "run"; large?: boolean }) {
   return <span className={styles.glyph} data-tone={tone} data-large={large ? "1" : undefined} aria-hidden="true">
     <SolarIcon name={name} size={large ? 22 : 16} motionPreset="none" />

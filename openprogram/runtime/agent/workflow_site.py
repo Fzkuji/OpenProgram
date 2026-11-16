@@ -253,8 +253,8 @@ def entry_chat_messages(entry: WorkflowEntry, context) -> list:
     writer = entry.writer
     if writer is None or not entry.call_id:
         return []
-    from openprogram.runtime.context.nodes import render_context
-    from openprogram.runtime.context.render import render_dag_messages
+    from openprogram.runtime.context.session_dag.nodes import render_context
+    from openprogram.runtime.context.session_dag.render import render_dag_messages
     graph = writer.load()
     node = graph.nodes.get(entry.call_id)
     if node is None:

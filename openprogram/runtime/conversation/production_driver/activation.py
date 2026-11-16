@@ -15,7 +15,7 @@ from openprogram.runtime.execution.driver import (
 )
 from openprogram.runtime.execution.attempts import AttemptRecord, AttemptStatus
 from openprogram.runtime.execution.agent_journal import AGENT_STATE_SCHEMA_VERSION
-from openprogram.runtime.execution.runtime_contract import (
+from openprogram.runtime.execution.admission_input.runtime_contract import (
     RuntimeContractError,
     validate_runtime_contract,
 )
@@ -108,7 +108,7 @@ class ActivationOperations:
             # Job input has its own strict envelope.  A Job is still driven by
             # the same Agent loop, so it exposes the same provider/tool safe
             # points and durable steering contract as ordinary chat.
-            from openprogram.runtime.execution.job_input import JobAgentInputError
+            from openprogram.runtime.execution.admission_input.job_input import JobAgentInputError
             from openprogram.runtime.jobs.input import JobAgentInputV1
 
             try:
@@ -285,7 +285,7 @@ class ActivationOperations:
                 if assistant_node and assistant_node.predecessor != record.user_message_id:
                     request._steering_tail_id = assistant_node.predecessor
                 from openprogram.runtime.conversation.turn_runtime.loop_runner import resolve_agent_runtime
-                from openprogram.runtime.conversation.workdir import runtime_location_for
+                from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
                 from openprogram.state.worktree.context import reset_worktree, set_worktree
                 _location = runtime_location_for(
                     request.session_id, use_context=False,

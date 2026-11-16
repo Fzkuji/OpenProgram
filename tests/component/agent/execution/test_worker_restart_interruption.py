@@ -23,7 +23,7 @@ def restart_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_worker_shutdown_finishes_agent_stream_as_control_failure(monkeypatch):
     from openprogram.runtime.conversation import run_control
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
     agent_loop = importlib.import_module("openprogram.runtime.agent.loop")
 
     stopping = threading.Event()
@@ -82,7 +82,7 @@ def test_worker_shutdown_error_path_stops_before_transcript_mutation(monkeypatch
             started_at=0.0,
         )
     except BaseException as exc:
-        from openprogram.models.providers.utils.errors import ExecInterrupt
+        from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
         assert isinstance(exc, ExecInterrupt)
         assert str(exc) == "worker_stopping"

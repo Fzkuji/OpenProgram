@@ -1,0 +1,86 @@
+<title>Plugin runtime</title>
+<meta name="description" content="How an enabled plugin's contents are mounted inside the worker and taken back out.">
+<h1>Plugin runtime</h1>
+<p>A plugin is a manifest naming skills, commands, agents, hooks, MCP servers and provider directories. The host mounts them through one <code translate="no">ProgramContext</code>; no plugin code is imported and there is no plugin-only registry. Manifest forms, sources, trust: <a href="skills-and-plugins.html">Skills and plugins</a>. Model: <a href="../../function/program-model.html#4-plugins">Program Model</a>.</p>
+
+<h2 id="lifecycle">Lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rescan</code></th><td>Builds <code translate="no">Plugin</code> records, with any code refusal as the error. Keeps a loaded plugin at the same root; a changed root deactivates it first. Enabled set: <code translate="no">~/.openprogram/plugins-enabled.json</code></td></tr>
+<tr><th scope="row"><code translate="no">load_plugin</code> check</th><td>No code, trust, compatibility, <code translate="no">requires</code> (dependencies load first)</td></tr>
+<tr><th scope="row">Activate</th><td><code translate="no">ProgramContext(name, root, options)</code>, owner <code translate="no">plugin:&lt;name&gt;</code>; manifest keys become effects. Any exception: <code translate="no">ctx.dispose()</code>, error kept on the plugin</td></tr>
+<tr><th scope="row">After load</th><td>Emit <code translate="no">plugin.enable</code>, broadcast <code translate="no">plugins:changed</code></td></tr>
+<tr><th scope="row"><code translate="no">unload_plugin</code></th><td>Emit <code translate="no">plugin.disable</code>, then <code translate="no">ctx.dispose()</code></td></tr>
+<tr><th scope="row"><code translate="no">reload_plugin</code></th><td>Unload, rescan, load. Stays enabled if the new files fail</td></tr>
+</tbody>
+</table>
+<p class="note">At startup <code translate="no">_load_plugins</code> in <code translate="no">interfaces/server/server.py</code> runs after the MCP servers, hands the loop to <code translate="no">set_host_loop</code>, and calls <code translate="no">loader.load_enabled()</code> on a thread: dependency order, each failure logged without stopping the others.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">npm</th><td><code translate="no">~/.openprogram/plugins/node_modules/</code></td></tr>
+<tr><th scope="row">Path</th><td><code translate="no">~/.openprogram/plugins/&lt;name&gt;</code>. <code translate="no">install path &lt;dir&gt;</code> symlinks it: edits apply on reload, uninstall removes only the link</td></tr>
+<tr><th scope="row">Project pins</th><td>Later sources win a name clash</td></tr>
+</tbody>
+</table>
+
+<h2 id="effects">Effects</h2>
+<table class="stack">
+<thead><tr><th scope="col">Manifest key</th><th scope="col">Effect</th><th scope="col">Host registry</th><th scope="col">Undo</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">ctx.skills(dir)</code></td><td><code translate="no">skills</code> plugin source</td><td>Unregister the source</td></tr>
+<tr><th scope="row"><code translate="no">commands</code></th><td><code translate="no">ctx.command(name, prompt, description)</code></td><td><code translate="no">contrib["_commands"]</code>, read by the commands registry adapter</td><td>Cleared with the contributions</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td><code translate="no">ctx.gate</code>, <code translate="no">ctx.on</code> with a shell gate or notifier</td><td><code translate="no">EventBus.subscribe_gate</code>, <code translate="no">subscribe</code></td><td>The subscription's disposer</td></tr>
+<tr><th scope="row"><code translate="no">mcpServers</code></th><td><code translate="no">ctx.mcp_server(name, config)</code></td><td><code translate="no">add_server</code> as <code translate="no">&lt;plugin&gt;_&lt;name&gt;</code> on the host loop; never in <code translate="no">mcp_servers.json</code></td><td><code translate="no">remove_server</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td><code translate="no">ctx.provider_root(dir)</code></td><td><code translate="no">models/providers/catalog/plugin_dirs.py</code>, behind <code translate="no">provider.json</code> lookups. Shipped directories win a clash</td><td>Remove the root</td></tr>
+<tr><th scope="row"><code translate="no">agents</code></th><td><code translate="no">manager.create</code> as <code translate="no">&lt;plugin&gt;-&lt;name&gt;</code> when missing</td><td>Agent registry</td><td>None: deleting an agent deletes its sessions</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">ctx.dispose()</code> runs disposers in reverse, collects errors instead of stopping, and empties <code translate="no">ctx.contributions</code>, the per-kind record the Plugins page and <code translate="no">plugin</code> tool show. Defined in <code translate="no">programs/_host/context.py</code>.</p>
+
+<h2 id="refusal">Code is refused</h2>
+<p><code translate="no">extensions/plugins/manifest.py</code> records keys naming code in <code translate="no">code</code>: <code translate="no">python</code>, <code translate="no">module</code>, <code translate="no">setup</code>, <code translate="no">main</code>, <code translate="no">tools</code>, <code translate="no">client</code>, <code translate="no">web</code>, <code translate="no">sidebar</code>, a <code translate="no">module:name</code> <code translate="no">hooks</code> value, an <code translate="no">__init__.py</code> beside a Hermes <code translate="no">plugin.yaml</code>. <code translate="no">code_refusal</code> names them and says to add an <code translate="no">application.json</code> and run <code translate="no">openprogram programs install &lt;dir&gt;</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry</th><th scope="col">Refusal</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">installer.install</code></th><td>Refuses a <code translate="no">path</code> install, removes a git clone, uninstalls an npm package. <code translate="no">pip</code> is not a source</td></tr>
+<tr><th scope="row"><code translate="no">rescan</code></th><td>Lists the plugin with the refusal as its error</td></tr>
+<tr><th scope="row"><code translate="no">_check</code>, <code translate="no">_activate</code></th><td>Raise <code translate="no">PluginContainsCode</code> (a <code translate="no">PermissionError</code>); the toggle route answers <code translate="no">403</code>, <code translate="no">code: "contains_code"</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="hooks">Hooks</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shapes (<code translate="no">plugins/hooks.py</code>)</th><td>Inline or a JSON file. OpenProgram: <code translate="no">{event: [{command, timeout, shell, args}]}</code>, as in <code translate="no">config.json</code>; <code translate="no">shell</code> and <code translate="no">args</code> are optional (<a href="../../distribution/windows-command-shell.html#hook-shell">which shell runs a hook</a>). Claude Code: <code translate="no">{hooks: {PreToolUse: [{matcher, hooks: [{type: "command", command}]}]}}</code></td></tr>
+<tr><th scope="row"><code translate="no">CLAUDE_EVENTS</code></th><td><code translate="no">PreToolUse</code> → <code translate="no">tool.before</code>, <code translate="no">PostToolUse</code> → <code translate="no">tool.after</code>, <code translate="no">UserPromptSubmit</code> → <code translate="no">chat.before_send</code>, <code translate="no">Stop</code> → <code translate="no">turn.stop</code>, <code translate="no">SessionStart</code> → <code translate="no">session.start</code></td></tr>
+<tr><th scope="row">Substitution</th><td><code translate="no">${CLAUDE_PLUGIN_ROOT}</code> is the plugin directory; <code translate="no">matcher</code> is a regular expression over the event's <code translate="no">tool</code></td></tr>
+<tr><th scope="row">Execution (<code translate="no">runtime/events/shell_hooks.py</code>)</th><td>Event as JSON on stdin. On a gate event, exit 2 denies with stderr as the reason; any other exit allows</td></tr>
+<tr><th scope="row">Skipped</th><td>Unknown events, non-command hook types, transform events</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event kind (<code translate="no">runtime/events/registry.py</code>)</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">notify</th><td>Observers; return values ignored</td></tr>
+<tr><th scope="row">gate</th><td>May veto (<code translate="no">tool.before</code>, <code translate="no">turn.stop</code>)</td></tr>
+<tr><th scope="row">transform</th><td>Each rewriter gets <code translate="no">(event, value)</code> and returns the new value; <code translate="no">None</code> keeps it; one that raises is skipped</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">tool.result</code> is a transform: <code translate="no">_rewrite_tool_result</code> joins the text blocks and replaces the text, keeping images and audio. Applications subscribe with <code translate="no">ctx.transform</code>; plugins cannot.</p>
+
+<h2 id="tool">Self-description, tool, CLI</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extensions/plugins/inspect.py</code></th><td><code translate="no">describe()</code> from live registries: allowed and refused keys, each event with kind and hook eligibility, the Claude Code map, exposure tiers, every entry with owner, tier and approval flag. <code translate="no">guide()</code> is the same as text. Backs <code translate="no">GET /api/plugins/inspect</code>, <code translate="no">openprogram plugins inspect [--json]</code>, the <code translate="no">plugin</code> tool</td></tr>
+<tr><th scope="row"><code translate="no">plugin</code> tool (<code translate="no">programs/tools/runtime/plugin.py</code>)</th><td><code translate="no">guide</code>, <code translate="no">inspect</code>, <code translate="no">list</code>, <code translate="no">install</code> (link, trust as community, enable), <code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">reload</code>, <code translate="no">uninstall</code>. Runs in the worker (<code translate="no">_run_in_worker</code>), requires approval, unavailable on chat channels and in plan mode. Code is refused with the same message</td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">install</code>, <code translate="no">uninstall</code>, <code translate="no">reload</code> call the worker's HTTP API first, else edit the state files</td></tr>
+<tr><th scope="row">Web</th><td>No UI from plugins: no routes or shell slots for Web modules, pages, sidebar rows. The plugins page lists contributions and refreshes on <code translate="no">plugins:changed</code>. A screen is an application's <code translate="no">application.json</code> UI</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<p>Implemented as described, except: auto-discovery of Claude Code's default directories (<code translate="no">commands/</code>, <code translate="no">agents/</code>, <code translate="no">skills/</code>, <code translate="no">hooks/hooks.json</code>) when the manifest omits them; Claude Code's <code translate="no">prompt</code> hook type; <code translate="no">lspServers</code> and <code translate="no">outputStyles</code>, parsed and ignored.</p>

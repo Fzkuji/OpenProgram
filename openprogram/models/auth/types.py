@@ -3,11 +3,10 @@ Auth v2 — type definitions.
 
 Design goals that shape every type here:
 
-  - one process-wide source of truth (:class:`AuthStore`) keyed by
-    ``(provider_id, account_id)``; every runtime asks the store, never
-    caches its own copy
-  - credentials are a tagged union so future auth kinds (SSO, hardware
-    keys, enterprise JWT brokers) drop in without touching call sites
+  - one process-wide source of truth (:class:`AuthStore`) holding one
+    ordered credential list per provider; every runtime asks the store,
+    never caches its own copy
+  - API keys and sign-ins are rows of the same list, told apart by ``kind``
   - every state transition emits an :class:`AuthEvent` so telemetry,
     "your session expires in 5 min" UI, and audit logs can subscribe
     without the core knowing about them
@@ -31,10 +30,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Literal, Optional, Protocol
 
-# Schema version for on-disk credential files. Every write stamps this;
-# every read checks it. Mismatches are treated as corrupt rather than
-# silently migrated — callers escalate to "re-auth this account".
-CREDENTIAL_SCHEMA_VERSION = 3
+# Schema version of a provider's credential file. Every write stamps it and
+# every read checks it; anything older is carried over once by
+# :mod:`openprogram.models.auth.carry_over` before it is read.
+CREDENTIAL_SCHEMA_VERSION = 4
 
 
 # ---------------------------------------------------------------------------
@@ -42,27 +41,33 @@ CREDENTIAL_SCHEMA_VERSION = 3
 # ---------------------------------------------------------------------------
 
 CredentialKind = Literal[
-    "api_key",          # static secret (env or pasted)
-    "oauth",            # access_token + refresh_token (PKCE or device code result)
-    "cli_delegated",    # another tool's auth file we read through (read-only)
-    "device_code",      # same payload shape as oauth but obtained via device flow;
-                        # kept distinct so metrics + UI can show the origin
-    "credential_process", # credential is produced by shelling out to a helper each use
-    "sso",              # enterprise SSO — reserved, not implemented; kind exists so
-                        # the discriminator carries a valid value when stubbed out
+    "api_key",            # a static key, pasted or held by an environment variable
+    "oauth",              # access + refresh token from a browser sign-in
+    "device_code",        # same payload as oauth, obtained through a device code
+    "import",             # another tool's login file, read where it lives
+    "token",              # a pasted access token (a GitHub token for Copilot)
+    "credential_process", # a helper command prints the key on each use
 ]
 
 
-CredentialStatus = Literal[
-    "valid",            # usable right now
-    "expiring_soon",    # ok but should refresh opportunistically
-    "stale",            # past expiry; must refresh before use
-    "refreshing",       # another caller is currently refreshing it; wait
-    "needs_reauth",     # refresh is hopeless; UI should surface a re-login prompt
-    "revoked",          # admin revoked / user deleted it; do not try to use
-    "rate_limited",     # 429 recently; in cooldown, see :attr:`cooldown_until_ms`
-    "billing_blocked",  # 402; in cooldown, see :attr:`cooldown_until_ms`
-]
+#: ready — usable; cooling — throttled until ``cooldown_until_ms``; quota —
+#: its quota or balance is spent, until ``cooldown_until_ms``; invalid_key —
+#: the provider refused the key; needs_login — the sign-in can no longer be
+#: refreshed. The last two clear only when the key is replaced, the account
+#: signed in again, or a check passes.
+CredentialStatus = Literal["ready", "cooling", "quota", "invalid_key", "needs_login"]
+
+#: in_order — the first usable one in the user's order; evenly — each in
+#: turn; least_used — the one used least.
+Strategy = Literal["in_order", "evenly", "least_used"]
+STRATEGIES: tuple[str, ...] = ("in_order", "evenly", "least_used")
+
+#: Where a credential was added: the settings page, the CLI, an import of
+#: another tool's login, or an environment variable (never written to disk).
+CredentialSourceName = Literal["web", "cli", "import", "env"]
+
+#: Kinds that are signed in (and signed in again) rather than replaced.
+LOGIN_KINDS = frozenset({"oauth", "device_code", "import", "token"})
 
 
 @dataclass
@@ -82,160 +87,132 @@ class CredentialData:
 CredentialPayload = CredentialData  # kept as an alias so annotations still resolve
 
 
-@dataclass(frozen=True)
-class AuthReference:
-    """Pointer to a credential source we don't own the bytes of.
-
-    Some providers — notably subscription-only CLIs like Claude Code —
-    manage their own on-disk auth and don't expose the tokens to us.
-    For those we can't create a :class:`Credential` (there's nothing to
-    refresh or rotate), but the runtime still needs to tell the CLI
-    *where* to find its own state.
-
-    Two concrete uses today:
-
-    - ``kind="external_file"`` + ``store_path=~/.claude/.credentials.json``
-      — Claude Code CLI reads its own OAuth from this file. Our job
-      is ensuring its HOME/XDG vars point at the right dir so the CLI
-      finds the file; we never decode the contents.
-    - ``kind="credential_ref"`` + ``provider_id`` + ``account_id`` —
-      "use whatever CredentialProvider currently returns for this pool".
-      Useful for cross-account reuse (a subprocess runtime that wants
-      to share credentials with an API runtime's account without
-      duplicating the Credential entry).
-
-    Intentionally not a union member of :class:`CredentialPayload` —
-    ``AuthReference`` never lives *inside* a Credential; it's a
-    sibling concept the Runtime layer resolves itself.
-    """
-
-    kind: Literal["external_file", "credential_ref"]
-    # external_file: path to a vendor-CLI-owned auth file. The runtime
-    # only uses this to derive HOME / env vars; contents are opaque.
-    store_path: Optional[str] = None
-    # credential_ref: target pool to delegate to. Resolve via CredentialProvider.
-    provider_id: Optional[str] = None
-    account_id: Optional[str] = None
-    # Free-form metadata for provider-specific hints (e.g. the HOME dir
-    # the CLI expects, the env var name it reads from).
-    metadata: dict = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.kind == "external_file" and not self.store_path:
-            raise ValueError(
-                "AuthReference(kind='external_file') requires store_path"
-            )
-        if self.kind == "credential_ref" and not (self.provider_id and self.account_id):
-            raise ValueError(
-                "AuthReference(kind='credential_ref') requires provider_id "
-                "and account_id"
-            )
-
-
 @dataclass
 class Credential:
-    """One authentication artifact, plus the metadata needed to manage it.
+    """One key or sign-in of a provider, with what selection needs to know.
 
-    The split between :class:`Credential` (management state) and the
-    variant payload (the secret bits) keeps rotation/cooldown/telemetry
-    uniform regardless of auth kind — pool logic, UI renderers, event
-    emitters all work on the outer object.
+    A provider's credentials form one ordered list
+    (:class:`CredentialPool`); the order is the order ``in_order`` tries
+    them in. ``identity`` holds what a sign-in says about its account
+    (``email``, ``plan``, ``org``, ``account_id``) and is how signing in
+    again finds the row it renews. Secrets live only in ``payload`` and are
+    never part of a listing.
     """
 
     provider_id: str
-    account_id: str
     kind: CredentialKind
-    payload: CredentialPayload
-    status: CredentialStatus = "valid"
-    created_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
-    updated_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
-    # Who produced us — "pkce_login" / "codex_cli_import" / "env_OPENAI_API_KEY".
-    # Used by :class:`RemovalStep` to know where to clean up on unregister.
-    source: str = "manual"
-    # Free-form provenance: account email, display name, org id. The UI
-    # renders whatever is here; the manager doesn't interpret it.
-    metadata: dict = field(default_factory=dict)
-    # Pool-level bookkeeping. Populated by :class:`CredentialPool` at
-    # runtime; persisted so restart doesn't forget which key just got 429.
+    payload: CredentialData
+    id: str = field(default_factory=lambda: _new_id("cred"))
+    label: str = ""
+    source: CredentialSourceName = "web"
+    identity: dict = field(default_factory=dict)
+    enabled: bool = True
+    status: CredentialStatus = "ready"
     cooldown_until_ms: int = 0
+    #: model id -> ms until which this credential is not used for that model.
+    blocked_models: dict = field(default_factory=dict)
+    #: ``{"code", "message", "at"}`` of the last failure, or ``None``.
+    last_error: Optional[dict] = None
     last_used_at_ms: int = 0
     use_count: int = 0
-    last_error: Optional[str] = None
-    # Marks credentials that come from a ``kind="cli_delegated"`` source
-    # or an external-import account. Write operations (refresh, rotate) on
-    # read-only credentials either no-op or raise AuthReadOnlyError
-    # depending on the call site — the manager enforces the rule, not
-    # individual sources.
+    #: Requests since local midnight (``least_used`` picks by it). Like
+    #: ``use_count`` it is read from the provider's ``usage.json``, never
+    #: from ``credentials.json``.
+    uses_today: int = field(default=0, compare=False)
+    #: Consecutive throttles; doubles the next cooldown, reset by a success.
+    strikes: int = 0
+    created_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+    updated_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+    #: Held by another tool or an environment variable: never refreshed or rewritten here.
     read_only: bool = False
-    # Unique id for cross-process coordination; avoids "I refreshed the one
-    # whose access_token ends in abc" confusion when two processes race.
-    credential_id: str = field(default_factory=lambda: _new_id("cred"))
+    #: Non-secret details a source keeps (the variable an env row reads, the
+    #: file an import reads, the refresh token digest a refusal marked).
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def key_tail(self) -> str:
+        """The last four characters of a key, for telling keys apart."""
+        if self.kind not in ("api_key", "token"):
+            return ""
+        value = self.payload.auth_value
+        if self.source == "env":
+            import os
+            value = os.environ.get(self.metadata.get("env_var") or "", "")
+        value = (value or "").strip()
+        return value[-4:] if len(value) >= 8 else ""
+
+    def display_label(self) -> str:
+        """The name a person sees: the label, else the account's email, else
+        ``$VAR`` for an environment key, ``Key ····tail`` for a key, and
+        "<ChatGPT> sign-in" for a sign-in. The plan is not part of it; a
+        listing shows it apart. (The web builds its own default name from
+        the kind, in the reader's language.)"""
+        if self.label:
+            return self.label
+        email = self.identity.get("email") or ""
+        if email:
+            return email
+        if self.source == "env" and self.metadata.get("env_var"):
+            return f"${self.metadata['env_var']}"
+        if self.kind in ("api_key", "token"):
+            tail = self.key_tail
+            return f"Key ····{tail}" if tail else "Key"
+        from openprogram.models.auth.login.login_method_registry import signin_name
+        return f"{signin_name(self.provider_id)} sign-in"
 
     def to_dict(self) -> dict:
+        payload = _payload_to_dict(self.payload)
+        if self.source == "env":
+            # An environment variable's key is read where it lives, never stored.
+            payload["auth_value"] = ""
         return {
-            "v": CREDENTIAL_SCHEMA_VERSION,
+            "id": self.id,
             "provider_id": self.provider_id,
-            "account_id": self.account_id,
             "kind": self.kind,
-            "payload": _payload_to_dict(self.payload),
-            "status": self.status,
-            "created_at_ms": self.created_at_ms,
-            "updated_at_ms": self.updated_at_ms,
+            "label": self.label,
             "source": self.source,
-            "metadata": self.metadata,
+            "identity": dict(self.identity),
+            "enabled": self.enabled,
+            "status": self.status,
             "cooldown_until_ms": self.cooldown_until_ms,
+            "blocked_models": dict(self.blocked_models),
+            "last_error": self.last_error,
             "last_used_at_ms": self.last_used_at_ms,
             "use_count": self.use_count,
-            "last_error": self.last_error,
+            "strikes": self.strikes,
+            "created_at_ms": self.created_at_ms,
+            "updated_at_ms": self.updated_at_ms,
             "read_only": self.read_only,
-            "credential_id": self.credential_id,
+            "metadata": dict(self.metadata),
+            "key_tail": self.key_tail if self.source != "env" else "",
+            "payload": payload,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "Credential":
-        if d.get("v") != CREDENTIAL_SCHEMA_VERSION:
-            raise AuthCorruptCredentialError(
-                f"credential schema v={d.get('v')!r} not understood"
-            )
-        status, last_error = _reread_billing_stop(d.get("status", "valid"), d.get("last_error"))
         return cls(
             provider_id=d["provider_id"],
-            account_id=d["account_id"],
             kind=d["kind"],
-            payload=_payload_from_dict(d["kind"], d["payload"]),
-            status=status,
-            created_at_ms=d.get("created_at_ms", 0),
-            updated_at_ms=d.get("updated_at_ms", 0),
-            source=d.get("source", "manual"),
-            metadata=d.get("metadata", {}),
-            cooldown_until_ms=d.get("cooldown_until_ms", 0),
-            last_used_at_ms=d.get("last_used_at_ms", 0),
-            use_count=d.get("use_count", 0),
-            last_error=last_error,
-            read_only=d.get("read_only", False),
-            credential_id=d.get("credential_id", _new_id("cred")),
+            payload=_payload_from_dict(d["kind"], d.get("payload") or {}),
+            # A row saved without an id gets one, the same on every read:
+            # ``None`` would match every other id-less row when one is removed.
+            id=str(d.get("id") or "") or _stable_id(d),
+            label=d.get("label") or "",
+            source=d.get("source") or "web",
+            identity=dict(d.get("identity") or {}),
+            enabled=bool(d.get("enabled", True)),
+            status=d.get("status") or "ready",
+            cooldown_until_ms=int(d.get("cooldown_until_ms") or 0),
+            blocked_models={str(k): int(v) for k, v in (d.get("blocked_models") or {}).items()},
+            last_error=d.get("last_error") if isinstance(d.get("last_error"), dict) else None,
+            last_used_at_ms=int(d.get("last_used_at_ms") or 0),
+            use_count=int(d.get("use_count") or 0),
+            strikes=int(d.get("strikes") or 0),
+            created_at_ms=int(d.get("created_at_ms") or 0),
+            updated_at_ms=int(d.get("updated_at_ms") or 0),
+            read_only=bool(d.get("read_only", False)),
+            metadata=dict(d.get("metadata") or {}),
         )
-
-
-def _reread_billing_stop(status: str, last_error: Optional[str]) -> tuple[str, Optional[str]]:
-    """A stop written as a rejected key whose stored error says the balance is
-    spent is read as ``billing_blocked``.
-
-    Before the error body decided ahead of the status code, a 401 carrying
-    "Insufficient balance" (OpenCode Zen's ``CreditsError``) was filed as
-    ``needs_reauth``; reading it again here shows such a key as out of
-    credit without a new failing call."""
-    if status not in ("needs_reauth", "revoked") or not last_error:
-        return status, last_error
-    try:
-        from openprogram.models.providers.utils.errors import is_billing_exhausted
-    except Exception:
-        return status, last_error
-    if not is_billing_exhausted(last_error):
-        return status, last_error
-    prefix = f"{status}: "
-    detail = last_error[len(prefix):] if last_error.startswith(prefix) else last_error
-    return "billing_blocked", f"billing_blocked: {detail}"
 
 
 def _payload_to_dict(p: CredentialData) -> dict:
@@ -249,8 +226,6 @@ def _payload_to_dict(p: CredentialData) -> dict:
 
 
 def _payload_from_dict(kind: CredentialKind, d: dict) -> CredentialData:
-    # New structure only. Old 6-payload JSON (has "__type__", no top-level
-    # "kind" inside payload) is migrated out-of-band by _migrate_payload.py.
     return CredentialData(
         kind=d.get("kind", kind),
         auth_value=d.get("auth_value", ""),
@@ -261,121 +236,58 @@ def _payload_from_dict(kind: CredentialKind, d: dict) -> CredentialData:
 
 
 # ---------------------------------------------------------------------------
-# Pool — multiple credentials per provider with rotation
+# A provider's credentials
 # ---------------------------------------------------------------------------
-
-# "fixed" = rotation OFF: always use the pinned credential
-# (``active_credential_id``), ignoring cooldown — the user's explicit single
-# choice. The other four rotate across healthy credentials.
-PoolStrategy = Literal["fixed", "fill_first", "round_robin", "random", "least_used"]
-
 
 @dataclass
 class CredentialPool:
-    """Multiple credentials for the same provider, picked by strategy.
+    """Every credential of one provider, in the order they are tried.
 
-    Pool membership is a property of :class:`Account`: a account can bundle
-    several keys (e.g. two OpenAI keys for hedging against rate limits).
-    Accounts without multiple keys still go through the pool — it's just
-    a one-element list. Unifying the code path avoids two "thin vs fat"
-    branches in the manager.
-
-    Strategy semantics:
-      * ``fill_first``   — use #0 until it cools down, then #1, then #2…
-      * ``round_robin``  — cycle through every call, skipping cooled-down ones
-      * ``random``       — uniform choice among healthy members
-      * ``least_used``   — pick the one with the smallest ``use_count``
-
-    Cooldown / status filtering applies to every strategy: cred with
-    ``cooldown_until_ms > now`` or ``status in {"revoked", "needs_reauth"}``
-    is invisible to the picker.
+    Stored as ``<state>/auth/<provider>/credentials.json``. ``cursor`` is
+    where ``evenly`` continues, kept in the file so a restart does not start
+    the turn over.
     """
 
     provider_id: str
-    account_id: str
-    strategy: PoolStrategy = "fill_first"
+    strategy: Strategy = "in_order"
     credentials: list[Credential] = field(default_factory=list)
-    # Strategy-private state. Kept on the pool rather than in a closure so
-    # restart can rehydrate round-robin cursor etc. if ever needed.
-    _rr_cursor: int = 0
-    # Which credential the "fixed" strategy uses (the user's pinned single
-    # choice), and the one a rotating strategy treats as the default/first.
-    # Empty ⇒ the first credential.
-    active_credential_id: str = ""
-    # Pool-level cascade: if every member is cooled-down / broken, the
-    # manager falls back to these provider+account pairs in order before
-    # giving up. Each entry is a (provider_id, account_id) tuple.
-    fallback_chain: list[tuple[str, str]] = field(default_factory=list)
+    cursor: int = 0
+
+    def find(self, credential_id: str) -> Optional[Credential]:
+        return next((c for c in self.credentials if c.id == credential_id), None)
 
     def to_dict(self) -> dict:
         return {
+            "v": CREDENTIAL_SCHEMA_VERSION,
             "provider_id": self.provider_id,
-            "account_id": self.account_id,
             "strategy": self.strategy,
+            "cursor": self.cursor,
             "credentials": [c.to_dict() for c in self.credentials],
-            "_rr_cursor": self._rr_cursor,
-            "active_credential_id": self.active_credential_id,
-            "fallback_chain": [list(t) for t in self.fallback_chain],
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "CredentialPool":
+        if d.get("v") != CREDENTIAL_SCHEMA_VERSION:
+            raise AuthCorruptCredentialError(
+                f"credential file schema v={d.get('v')!r} not understood",
+                provider_id=str(d.get("provider_id") or ""),
+            )
+        strategy = d.get("strategy")
+        rows: list[Credential] = []
+        seen: set[str] = set()
+        for index, raw in enumerate(d.get("credentials") or []):
+            cred = Credential.from_dict(raw)
+            if cred.id in seen:
+                # Two rows under one id (a hand-copied file) stay two rows.
+                cred.id = _stable_id(raw, salt=str(index))
+            seen.add(cred.id)
+            rows.append(cred)
         return cls(
             provider_id=d["provider_id"],
-            account_id=d["account_id"],
-            strategy=d.get("strategy", "fill_first"),
-            credentials=[Credential.from_dict(c) for c in (d.get("credentials") or [])],
-            _rr_cursor=d.get("_rr_cursor", 0),
-            active_credential_id=d.get("active_credential_id", ""),
-            fallback_chain=[tuple(t) for t in (d.get("fallback_chain") or [])],
+            strategy=strategy if strategy in STRATEGIES else "in_order",
+            credentials=rows,
+            cursor=int(d.get("cursor") or 0),
         )
-
-
-# ---------------------------------------------------------------------------
-# Account — isolation boundary
-# ---------------------------------------------------------------------------
-
-@dataclass
-class Account:
-    """A fully isolated auth + subprocess environment.
-
-    Each account has its own filesystem root (the directory is still
-    named ``accounts/`` on disk — renaming it would strand every
-    existing user's stored credentials for no functional gain):
-      ~/.openprogram/accounts/<name>/
-        auth/<provider>/<account_id>.json   credential pools
-        home/                                subprocess HOME override
-        .env                                 per-account env vars
-        metadata.json                        display name, created_at, …
-
-    When a call runs "under" an account, subprocesses it spawns see
-    ``HOME``, ``XDG_*`` pointed at ``home/`` so tools like ``git`` /
-    ``ssh`` / ``gh`` / ``npm`` don't leak credentials across accounts.
-    This matches hermes-agent's isolation model, which is the only OSS
-    agent framework that has taken this problem seriously.
-
-    Distinct from the workspace account in :mod:`openprogram.state.paths`
-    (``--account`` / ``~/.openprogram-<name>``), which scopes config and
-    sessions rather than credentials.
-    """
-
-    name: str                                  # user-facing identifier
-    root: Path                                 # account filesystem root
-    created_at_ms: int
-    display_name: str = ""
-    description: str = ""
-
-    @property
-    def auth_dir(self) -> Path:
-        return self.root / "auth"
-
-    @property
-    def home_dir(self) -> Path:
-        return self.root / "home"
-
-    @property
-    def env_file(self) -> Path:
-        return self.root / ".env"
 
 
 # ---------------------------------------------------------------------------
@@ -399,17 +311,15 @@ class AuthEventType(str, Enum):
     POOL_MEMBER_COOLDOWN = "pool_member_cooldown"
     POOL_ROTATED = "pool_rotated"
     POOL_EXHAUSTED = "pool_exhausted"
-    # Account-lifecycle
-    ACCOUNT_CREATED = "account_created"
-    ACCOUNT_DELETED = "account_deleted"
-    ACCOUNT_ACTIVATED = "account_activated"
+    # The list changed in any way a listing shows (order, strategy, a
+    # credential's name, status, enabled flag): the web reloads it.
+    CREDENTIALS_CHANGED = "credentials_changed"
 
 
 @dataclass
 class AuthEvent:
     type: AuthEventType
     provider_id: str = ""
-    account_id: str = ""
     credential_id: str = ""
     detail: dict = field(default_factory=dict)
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
@@ -431,16 +341,14 @@ class AuthError(Exception):
     """
 
     provider_id: str = ""
-    account_id: str = ""
 
-    def __init__(self, message: str, *, provider_id: str = "", account_id: str = "") -> None:
+    def __init__(self, message: str, *, provider_id: str = "") -> None:
         super().__init__(message)
         self.provider_id = provider_id
-        self.account_id = account_id
 
 
 class AuthConfigError(AuthError):
-    """Provider/account not registered, or registered wrong."""
+    """The provider has no credential, or it is set up wrong."""
 
 
 class AuthCorruptCredentialError(AuthError):
@@ -465,27 +373,6 @@ class AuthRotationConsumedError(AuthRefreshError):
     """
 
 
-class AuthExpiredError(AuthError):
-    """Access token expired and we didn't catch it in time. Usually
-    auto-upgraded to a refresh — you see this only if the manager is
-    misconfigured."""
-
-
-class AuthRateLimitedError(AuthError):
-    """429 on this credential. Manager puts it in cooldown and rotates
-    to the next pool member; raised only if the whole pool is cooled-down."""
-
-
-class AuthBillingBlockedError(AuthError):
-    """402 — account exhausted billing allowance. Longer cooldown, same
-    pool semantics as rate-limited."""
-
-
-class AuthRevokedError(AuthError):
-    """403 with specific revocation semantics — the key/token is dead. Manager
-    marks the credential revoked; re-login required."""
-
-
 class AuthNeedsReauthError(AuthError):
     """Refresh token itself is invalid. User must go through login again.
     Webui listens for this, surfaces a banner, doesn't retry."""
@@ -503,9 +390,7 @@ class AuthCredentialProcessError(AuthError):
 
 
 class AuthPoolExhaustedError(AuthError):
-    """Every credential in the pool is cooled-down, revoked, or needs
-    re-auth. Manager escalates to fallback_chain; if that's empty too,
-    this is what the caller sees."""
+    """No credential of the provider can be used now."""
 
 
 # ---------------------------------------------------------------------------
@@ -519,8 +404,8 @@ class RemovalStep:
     Example: a credential imported from ``~/.codex/auth.json`` needs one
     step — a note that the user must ``codex logout`` to remove the
     underlying file (we don't touch external CLI stores). A credential
-    we created via PKCE has one step — delete ``accounts/<p>/auth/<prov>/
-    <account>.json``. A credential that was also referenced by an env var
+    we created via PKCE needs none beyond removing it from the provider's
+    credential list. A credential that was also referenced by an env var
     hint has an informational step telling the user to unset that var.
 
     Steps with ``executable=True`` are run by the manager on removal;
@@ -552,13 +437,13 @@ class CredentialSource(Protocol):
       * ``claude_code.py`` — parses Claude Code's oauth file
       * ``qwen_cli.py``, ``gh_cli.py`` — same pattern
 
-    ``try_import`` is allowed to return multiple credentials (e.g. a file
-    with several accounts); each becomes its own account id.
+    ``try_import`` may return several credentials (a file with several
+    accounts); each becomes its own row of the provider's list.
     """
 
     source_id: str
 
-    def try_import(self, account_root: Path) -> list[Credential]: ...
+    def try_import(self, state_root: Path) -> list[Credential]: ...
 
     def removal_steps(self, cred: Credential) -> list[RemovalStep]: ...
 
@@ -598,6 +483,16 @@ class LoginUi(Protocol):
 # Small internals
 # ---------------------------------------------------------------------------
 
+def _stable_id(d: dict, *, salt: str = "") -> str:
+    """An id for a stored row that has none (or repeats another's): derived
+    from the row, so it is the same on every read until the file is saved."""
+    import hashlib
+    import json as _json
+
+    body = _json.dumps({k: v for k, v in d.items() if k != "id"}, sort_keys=True, default=str)
+    return "cred_" + hashlib.sha256(f"{salt}:{body}".encode("utf-8")).hexdigest()[:12]
+
+
 def _new_id(prefix: str) -> str:
     # 96 bits of randomness is plenty for credential ids — collision across
     # a single user's store is effectively impossible, and we're not
@@ -606,19 +501,12 @@ def _new_id(prefix: str) -> str:
 
 
 __all__ = [
-    "CREDENTIAL_SCHEMA_VERSION",
-    "CredentialKind", "CredentialStatus",
-    "CredentialData",
-    "CredentialPayload", "Credential",
-    "AuthReference",
-    "PoolStrategy", "CredentialPool",
-    "Account",
+    "CREDENTIAL_SCHEMA_VERSION", "LOGIN_KINDS", "STRATEGIES",
+    "CredentialKind", "CredentialStatus", "CredentialSourceName", "Strategy",
+    "CredentialData", "CredentialPayload", "Credential", "CredentialPool",
     "AuthEventType", "AuthEvent", "AuthEventListener",
     "AuthError", "AuthConfigError", "AuthCorruptCredentialError",
     "AuthReadOnlyError", "AuthRefreshError", "AuthRotationConsumedError",
-    "AuthExpiredError", "AuthRateLimitedError", "AuthBillingBlockedError",
-    "AuthRevokedError", "AuthNeedsReauthError", "AuthPoolExhaustedError",
-    "AuthCredentialProcessError",
-    "RemovalStep",
-    "CredentialSource", "LoginMethod", "LoginUi",
+    "AuthNeedsReauthError", "AuthPoolExhaustedError", "AuthCredentialProcessError",
+    "RemovalStep", "CredentialSource", "LoginMethod", "LoginUi",
 ]

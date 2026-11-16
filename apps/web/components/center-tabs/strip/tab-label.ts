@@ -12,7 +12,7 @@ const pageLabels: Record<string, [string, string]> = {
   settings: ["Settings", "设置"],
 };
 const settingsLabels: Record<string, [string, string]> = {
-  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["LLM Providers", "大模型 Provider"],
+  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["LLM Providers", "LLM 服务商"],
   channels: ["Channels", "消息渠道"], browser: ["Browser", "浏览器"],
   system: ["System", "系统"], memory: ["Memory", "记忆"],
   search: ["Web Search", "网页搜索"], usage: ["Token Usage", "Token 用量"],

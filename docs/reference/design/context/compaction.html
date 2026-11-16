@@ -36,7 +36,7 @@
 </dl>
 </figure>
 
-<p>A summary stands in for the turns it covers on every chain that holds them all, and each chain reads its own. One rule, <code translate="no">active_summary_for_chain</code> (<code translate="no">state/store/session/summaries.py</code>), serves the render, the compaction input and the graph builder, so they never disagree. The capsule that draws a summary: <a href="../runtime/dag/rendering.html">DAG rendering §9</a>.</p>
+<p>A summary stands in for the turns it covers on every chain that holds them all, and each chain reads its own. One rule, <code translate="no">active_summary_for_chain</code> (<code translate="no">state/store/session/reading/summaries.py</code>), serves the render, the compaction input and the graph builder, so they never disagree. The capsule that draws a summary: <a href="../runtime/dag/rendering.html">DAG rendering §9</a>.</p>
 
 <h2 id="data-model">Summary node</h2>
 <table class="stack fixed">
@@ -80,7 +80,7 @@
 </details>
 
 <h2 id="rendering-rule">Rendering rule</h2>
-<p><code translate="no">render_context</code> in <code translate="no">context/nodes.py</code> decides what the model reads. With S the chain's summary and L its <code translate="no">covers_ids</code>: drop L and admit S at its position, as one user message (summary, then restored state); on Anthropic it joins the next user message.</p>
+<p><code translate="no">render_context</code> in <code translate="no">context/session_dag/nodes.py</code> decides what the model reads. With S the chain's summary and L its <code translate="no">covers_ids</code>: drop L and admit S at its position, as one user message (summary, then restored state); on Anthropic it joins the next user message.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
 <tbody>
@@ -236,7 +236,7 @@
 
 <details id="tuning">
 <summary>Choosing the share from the user's own calls</summary>
-<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → System → Models → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
+<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → System → Models → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
 <ul>
 <li>Calls replay in order, each prompt growing as it really grew, with recorded compactions (a drop to under 60% of a prompt of at least 20K) removed.</li>
 <li>Past the threshold (the share of the window less the reply reserve), a compaction reads the whole prompt and writes a summary as long as those seen (or 10K over the start when none were). The next call writes it to cache; later ones read back what recorded compactions were followed by (at least 10K until five were seen).</li>
@@ -264,15 +264,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Invariant</th><th scope="col">Tested in</th></tr></thead>
 <tbody>
-<tr><th scope="row">After compaction, the active branch renders <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/test_compaction_covers.py</code>; scenario suite</td></tr>
-<tr><th scope="row">Each chain reads its own summary; switching writes nothing; a rewind falls back; the builder agrees</th><td><code translate="no">tests/unit/context/test_summary_per_chain.py</code></td></tr>
+<tr><th scope="row">After compaction, the active branch renders <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/compaction/test_compaction_covers.py</code>; scenario suite</td></tr>
+<tr><th scope="row">Each chain reads its own summary; switching writes nothing; a rewind falls back; the builder agrees</th><td><code translate="no">tests/unit/context/compaction/test_summary_per_chain.py</code></td></tr>
 <tr><th scope="row">An overflow retries the one request, at most twice per turn; a stop ends it as stopped</th><td><code translate="no">tests/component/context/test_reactive_retry.py</code></td></tr>
-<tr><th scope="row">A new summary is user input with its prefix; an incomplete or capped one fails and counts toward the hold</th><td><code translate="no">tests/unit/context/test_summary_prompt_and_role.py</code></td></tr>
-<tr><th scope="row">The restored state follows the summary, in budget, the same bytes on every request</th><td><code translate="no">tests/unit/context/test_compaction_restore.py</code></td></tr>
-<tr><th scope="row">The summary request reuses the last request's prefix; an overflow recovery never forks</th><td><code translate="no">tests/unit/context/test_compaction_fork.py</code></td></tr>
+<tr><th scope="row">A new summary is user input with its prefix; an incomplete or capped one fails and counts toward the hold</th><td><code translate="no">tests/unit/context/compaction/test_summary_prompt_and_role.py</code></td></tr>
+<tr><th scope="row">The restored state follows the summary, in budget, the same bytes on every request</th><td><code translate="no">tests/unit/context/compaction/test_compaction_restore.py</code></td></tr>
+<tr><th scope="row">The summary request reuses the last request's prefix; an overflow recovery never forks</th><td><code translate="no">tests/unit/context/compaction/test_compaction_fork.py</code></td></tr>
 <tr><th scope="row">A downshift is summarised by the larger model, then the turn's</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
 <tr><th scope="row">Under the window a turn's requests only grow at the end; over it, one checkpoint and no per-result summary</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
-<tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; on openai-codex one pair before S keeps the tools array the same before and after compaction; any other provider reads S first</th><td><code translate="no">tests/unit/context/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; on openai-codex one pair before S keeps the tools array the same before and after compaction; any other provider reads S first</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">Compaction never moves HEAD</th><td>Scenario suite</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> never names a node off the summarized chain</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
 <tr><th scope="row">HEAD survives restart, session load, model switch, meta save</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>
@@ -285,8 +285,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Code</th></tr></thead>
 <tbody>
-<tr><th scope="row">Node shape and pipeline</th><td><code translate="no">runtime/context/persistence.py</code> (<code translate="no">insert_summary_node</code>, <code translate="no">covered_chain_ids</code>, <code translate="no">rendered_history</code>), <code translate="no">runtime/context/engine.py</code></td></tr>
-<tr><th scope="row">Which summary</th><td><code translate="no">state/store/session/summaries.py</code>; <code translate="no">runtime/context/nodes.py</code> (<code translate="no">render_context</code>); <code translate="no">state/store/session/graph/builder.py</code></td></tr>
+<tr><th scope="row">Node shape and pipeline</th><td><code translate="no">runtime/context/compaction/persistence.py</code> (<code translate="no">insert_summary_node</code>, <code translate="no">covered_chain_ids</code>, <code translate="no">rendered_history</code>), <code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row">Which summary</th><td><code translate="no">state/store/session/reading/summaries.py</code>; <code translate="no">runtime/context/session_dag/nodes.py</code> (<code translate="no">render_context</code>); <code translate="no">state/store/session/graph/builder.py</code></td></tr>
 <tr><th scope="row">Overflow recovery, mid-turn compaction</th><td><code translate="no">runtime/agent/loop/loop.py</code>, <code translate="no">turn_runtime/turn_compaction.py</code></td></tr>
 <tr><th scope="row">Prompt, restore, fork</th><td><code translate="no">compaction/prompts.py</code>, <code translate="no">summarize.py</code>, <code translate="no">bounded_summary.py</code>, <code translate="no">restore.py</code>, <code translate="no">fork.py</code></td></tr>
 <tr><th scope="row">Model downshift</th><td><code translate="no">turn_runtime/loop_runner.py</code> (<code translate="no">_auto_compact_new_turn</code>)</td></tr>

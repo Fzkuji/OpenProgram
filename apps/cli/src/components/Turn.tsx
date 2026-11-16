@@ -21,12 +21,15 @@ export interface ToolCall {
   totalLines?: number;
   /** File line an edit's first line sits on, when the file could be read. */
   startLine?: number;
-  /** The todo board after this call (the `todos_update` frame). */
+  /** The task's steps after this call (the `todos_update` frame). */
   board?: TodoItem[];
+  /** The task the steps belong to. */
+  boardTitle?: string;
 }
 
 export interface TodoItem {
   subject: string;
+  /** pending | in_progress | completed | dropped */
   status: string;
 }
 

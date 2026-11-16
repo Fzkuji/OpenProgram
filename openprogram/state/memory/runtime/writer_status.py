@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 from openprogram.host._platform import locking
 from openprogram.state.memory.backend import MemoryWriteFailureCode
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 from ..workspace_layout import runtime_dir
 

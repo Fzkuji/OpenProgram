@@ -55,9 +55,9 @@ def goal_execution_state(goal: dict, session_id: str = "") -> dict:
         execution = store.get_execution(execution_id)
         if execution is None or (session_id and execution.session_id != session_id):
             return unavailable
-        from openprogram.runtime.execution.chat_recovery import recovery_state
+        from openprogram.runtime.execution.recovery.chat_recovery import recovery_state
         recovery = recovery_state(store, execution, allow_cancel=True)
-        from openprogram.runtime.execution.public import _effect_summary
+        from openprogram.runtime.execution.projections.public import _effect_summary
         provider_incomplete = _effect_summary(store, execution).get("provider_response_incomplete") is True
         finished = execution.status in TERMINAL_EXECUTION_STATUSES and not recovery["active_children"]
         source = store.get_execution_input(execution_id)
@@ -90,9 +90,9 @@ def goal_control_state(goal: dict, session_id: str, observed: dict | None = None
     verify_reason = "no_completed_work"
     try:
         from openprogram.runtime.execution import default_store
-        from openprogram.runtime.execution.foreground import active_foreground_task
+        from openprogram.runtime.execution.projections.foreground import active_foreground_task
         from openprogram.runtime.execution.conversation_scope import conversation_executions
-        from openprogram.runtime.execution.effects import EffectStore
+        from openprogram.runtime.execution.recovery.effects import EffectStore
         from openprogram.runtime.execution.waits import DurableWaitStore
         store = default_store()
         if observed["status"] == "unavailable":
@@ -120,7 +120,7 @@ def goal_control_state(goal: dict, session_id: str, observed: dict | None = None
         source = store.get_agent_turn_input(goal["execution_id"]) if goal.get("execution_id") else None
         if source and source.get("kind") == "chat" and observed.get("finished"):
             verify_reason = verification.blockers(store, session_id, goal["execution_id"], goal)
-            if not verify_reason and any(item.get("status") != "completed" for item in chat.todos(session_id, goal)):
+            if not verify_reason and chat.unfinished_todos(session_id, goal):
                 verify_reason = "unfinished_todos"
     except Exception:
         execution_reason = verify_reason = "execution_unavailable"

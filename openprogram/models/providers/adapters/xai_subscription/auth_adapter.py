@@ -103,22 +103,11 @@ def _xai_refresh(cred: Credential) -> Credential:
             "extra": dict(payload.data.get("extra") or {}),
         },
     )
-    return Credential(
-        provider_id=cred.provider_id,
-        account_id=cred.account_id,
-        kind="oauth",
-        payload=new_payload,
-        status="valid",
-        created_at_ms=cred.created_at_ms,
-        updated_at_ms=int(time.time() * 1000),
-        source=cred.source,
-        metadata=dict(cred.metadata),
-        cooldown_until_ms=0,
-        last_used_at_ms=cred.last_used_at_ms,
-        use_count=cred.use_count,
-        last_error=None,
-        read_only=False,
-        credential_id=cred.credential_id,
+    import dataclasses
+    return dataclasses.replace(
+        cred, kind="oauth", payload=new_payload, status="ready", cooldown_until_ms=0,
+        last_error=None, read_only=False, updated_at_ms=int(time.time() * 1000),
+        metadata=dict(cred.metadata), identity=dict(cred.identity),
     )
 
 
@@ -157,7 +146,7 @@ def _entry_from_grok_auth(raw: dict) -> dict | None:
     return None
 
 
-def import_from_grok_cli(*, account_id: str = "default"):
+def import_from_grok_cli():
     """Copy ~/.grok/auth.json into the xai-subscription pool."""
     import json
     from datetime import datetime
@@ -193,7 +182,6 @@ def import_from_grok_cli(*, account_id: str = "default"):
         meta["email"] = entry["email"]
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -205,15 +193,15 @@ def import_from_grok_cli(*, account_id: str = "default"):
                 "token_endpoint": OAUTH_TOKEN_URL,
             },
         ),
-        status="valid",
+        status="ready",
         created_at_ms=now_ms,
         updated_at_ms=now_ms,
-        source="import_from_cli:xai-subscription",
+        source="web",
         metadata=meta,
     )
 
 
-def import_pasted_token(token: str, *, account_id: str = "default") -> Credential:
+def import_pasted_token(token: str) -> Credential:
     """Store a pasted SuperGrok access token, or exchange a refresh token."""
     token = (token or "").strip()
     if not token:
@@ -222,7 +210,6 @@ def import_pasted_token(token: str, *, account_id: str = "default") -> Credentia
     if token.count(".") != 2 and len(token) < 200:
         stub = Credential(
             provider_id=PROVIDER_ID,
-            account_id=account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth",
@@ -238,7 +225,6 @@ def import_pasted_token(token: str, *, account_id: str = "default") -> Credentia
     now_ms = int(time.time() * 1000)
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -250,10 +236,10 @@ def import_pasted_token(token: str, *, account_id: str = "default") -> Credentia
                 "token_endpoint": OAUTH_TOKEN_URL,
             },
         ),
-        status="valid",
+        status="ready",
         created_at_ms=now_ms,
         updated_at_ms=now_ms,
-        source="paste_token:xai-subscription",
+        source="web",
         metadata={},
     )
 

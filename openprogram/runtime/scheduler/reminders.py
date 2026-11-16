@@ -250,7 +250,7 @@ def wake_text(payload: dict[str, Any]) -> str:
 
 
 def _wake(payload: dict[str, Any], session: dict[str, Any]) -> None:
-    from openprogram.runtime.conversation.owner_turn import start_owner_turn_when_free
+    from openprogram.runtime.conversation.turn_admission.owner_turn import start_owner_turn_when_free
 
     session_id = payload["session_id"]
 

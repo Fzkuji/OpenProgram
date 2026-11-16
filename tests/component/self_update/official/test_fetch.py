@@ -418,7 +418,7 @@ def version_store(monkeypatch):
 
 
 def test_a_bare_upgrade_on_a_version_store_goes_through_the_fetcher(version_store, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
 
     calls = []
     outcome = replay.ReplayResult(outcome=replay.ACTIVATED, message="Updated to 0.2.0.", release="0.2.0")
@@ -428,7 +428,7 @@ def test_a_bare_upgrade_on_a_version_store_goes_through_the_fetcher(version_stor
 
 
 def test_upgrade_check_on_a_version_store_reports_without_applying(version_store, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
 
     monkeypatch.setattr(fetch, "update", lambda **_: pytest.fail("a check must not update"))
     monkeypatch.setattr(fetch, "check", lambda: {
@@ -441,7 +441,7 @@ def test_upgrade_check_on_a_version_store_reports_without_applying(version_store
 
 
 def test_upgrade_from_a_directory_still_works(version_store, monkeypatch, tmp_path):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
     from openprogram.operations.self_update.control import official_update
 
     outcome = replay.ReplayResult(outcome=replay.UP_TO_DATE, message="Already there.", release="0.2.0")
@@ -453,7 +453,7 @@ def test_upgrade_from_a_directory_still_works(version_store, monkeypatch, tmp_pa
 
 
 def test_a_refused_release_exits_non_zero_with_the_reason(version_store, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
 
     def refuse(**_):
         raise ReleaseError("the release signature does not match a trusted key")
@@ -471,7 +471,7 @@ def no_version_store(monkeypatch):
 
 
 def test_a_copy_inside_the_app_is_sent_to_settings(no_version_store, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
     from openprogram.operations.self_update.github_release import detect
 
     root = Path("/Applications/OpenProgram.app/Contents/Resources/runtime")
@@ -482,7 +482,7 @@ def test_a_copy_inside_the_app_is_sent_to_settings(no_version_store, monkeypatch
 
 
 def test_a_pip_install_is_told_how_to_reinstall(no_version_store, monkeypatch, capsys):
-    from openprogram.interfaces.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands.updates import upgrade
     from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setattr(detect, "managed_runtime_root", lambda: None)

@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 
 
-from openprogram.runtime.execution.agent_input_budget import (
+from openprogram.runtime.execution.admission_input.agent_input_budget import (
     AGENT_IMAGE_BYTES_MAX,
     AGENT_TURN_IMAGE_BYTES_MAX,
     AGENT_TURN_INPUT_MAX_BYTES,
@@ -347,7 +347,7 @@ class AgentActivationService:
         return TurnRequest(session_id=record.session_id, **values)
 
     def build_job_activation(self, record: Any) -> JobAgentActivation:
-        from openprogram.runtime.execution.job_input import JobAgentInputError
+        from openprogram.runtime.execution.admission_input.job_input import JobAgentInputError
         from openprogram.runtime.jobs.input import JobAgentInputV1
 
         payload = self._input_resolver(record)
@@ -635,7 +635,7 @@ class CanonicalAgentAdapter:
         # before the input is frozen; the reply id follows the runtime's
         # ``<user_msg_id>_reply`` rule. Without them an interrupted turn
         # could never continue from its checkpoint.
-        from openprogram.runtime.conversation.branch_config import freeze_branch_request
+        from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
         from openprogram.runtime.agent.turn_request import INHERIT_PARENT
         values = asdict(request) if is_dataclass(request) else dict(request)
         # asdict deep-copies sentinels. Keep omission distinct from an

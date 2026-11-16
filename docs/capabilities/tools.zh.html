@@ -94,7 +94,7 @@
 <ul>
 <li>输入需要 <code translate="no">bash(..., tty=true)</code>（伪终端，macOS 或 Linux 本地后端）。否则 stdin 关闭，等输入的命令会结束，只接受中断。</li>
 <li>每次调用最多保留 1 MiB 输出：过长时保留首尾各一半。</li>
-<li>后台命令结束而没人看到时，对话收到一个通知轮次，含命令、退出码和最后输出，排在进行中的轮次之后。你自己停止的不通知。</li>
+<li>后台命令结束而没人看到时，对话收到一个通知轮次，含命令、退出码和最后输出，排在进行中的轮次之后。Goal 运行时轮次之间没有空隙，通知改为放进 Goal 的下一轮。你自己停止的不通知。</li>
 <li>显示在资源的 Terminal 下的 <strong>Background terminal</strong>，可查看输出和停止，也在 Activity 里。记录和输出在结束或状态变未知一天后删除。</li>
 <li>每个对话最多 64 个。再启动会停掉最久未用的，绝不停最近用的八个，结果会点名。取消轮次会停掉第一次等待中的命令，已在后台的继续运行。</li>
 <li>轮询和中断从不询问。输入和 <code translate="no">bash</code> 一样遵循权限模式。</li>
@@ -172,7 +172,7 @@
 <thead><tr><th scope="col">领域</th><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
 <tbody>
 <tr><th scope="row">未完成工作</th><td><code translate="no">open_work</code></td><td>Agent 在这个对话里还欠你什么，每轮都在指令里：<a href="agents.zh.html#未完成事项">Open work</a></td></tr>
-<tr><th scope="row">规划</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code></td><td>会话的书面清单：条目、状态、负责人、依赖，按状态列出。写入不启动任何事。Web 在改动它的回复下显示为<a href="../interfaces/web.zh.html#task-list">任务列表</a>。</td></tr>
+<tr><th scope="row">规划</th><td><code translate="no">task_start</code>、<code translate="no">task_step</code>、<code translate="no">task_list</code></td><td>任务给一段工作起名并列出步骤；每个 agent 同时开着一个。<code translate="no">task_step</code> 完成当前步骤并开始下一步、增加或放弃步骤，或带着结果结束任务。写入不启动任何事。Web 在回复里显示为<a href="../interfaces/web.zh.html#task-list">任务块</a>，每一步的工作在它下面。</td></tr>
 <tr><th scope="row">执行</th><td><code translate="no">list_jobs</code>、<code translate="no">job_output</code></td><td>列出本会话的后台任务；等待或查看结果。访问时检查派发会话和祖先。</td></tr>
 <tr><th scope="row">实体</th><td><code translate="no">agent</code></td><td>创建 agent 并收回回复，或用 <code translate="no">to=</code> 把跟踪任务交给已有 agent。<code translate="no">run_in_background=true</code> 返回任务 id。<code translate="no">start_from</code>：<code translate="no">clean</code>、<code translate="no">inherit</code> 或 <code translate="no">SID:MSG_ID</code>。<code translate="no">archive_when_done=true</code> 在结果返回后归档。</td></tr>
 <tr><th scope="row">实体</th><td><code translate="no">list_agents</code></td><td>名字、地址、大小、忙闲；<code translate="no">scope="archived"</code> 看归档的</td></tr>

@@ -296,9 +296,10 @@ export function useTabMenu({
   }
 
   function removeMenuTabFromGroup(tabId: string) {
-    const group = findCenterTabGroup(useCenterTabs.getState().groups, tabId);
-    if (!group) return;
-    for (const memberId of group.memberIds.slice(0, -1)) ungroupTab(memberId);
+    if (!findCenterTabGroup(useCenterTabs.getState().groups, tabId)) return;
+    // Only this tab leaves: the other panes of its split stay side by side
+    // (a split left with one pane dissolves by itself).
+    ungroupTab(tabId);
     finishMenuAction(tabId, text("Tab removed from group", "标签已移出分组"));
   }
 

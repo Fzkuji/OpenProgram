@@ -126,6 +126,9 @@ const MENTION_SOURCES: MentionSources = { tabs: () => useCenterTabs.getState().t
  *   pre-split behavior — everything below resolves to the focused session
  *   exactly as before.
  */
+/** No chat model read yet: one object, so the controls it feeds stay as drawn. */
+const NO_CHAT_AGENT: NonNullable<ReturnType<typeof useSessionAgentSettings>["chat"]> = {};
+
 export function Composer({ sessionId: boundSessionId }: { sessionId?: string } = {}) {
   const { text } = useTranslation();
   const bound = boundSessionId ?? null;
@@ -139,7 +142,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // session's running task, not a global flag. This is what lets the
   // user switch from a running session A to session B and immediately
   // send a new message in B while A is still streaming.
-  const runningTask = useSessionScope((s) => s.running);
+  // Read as two flags: the task object is replaced by every status frame of
+  // a run, and the composer draws nothing else of it.
+  const isRunning = useSessionScope((s) => s.running !== null);
+  const isCancelling = useSessionScope((s) => Boolean(s.running?.cancelling));
   // Draft text — this scope's, always. No focused-session fallback: the
   // single-session shell provides a scope too.
   const input = useSessionScope((s) => s.draft);
@@ -208,9 +214,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const send = wsSend;
-  const isRunning = runningTask !== null;
   const modKey = platformKeys("⌘");
-  const isCancelling = Boolean(runningTask?.cancelling);
   const fnFormActive = fnFormFunction !== null;
   // Decisions have their own output cards. Chat text always sends or queues
   // a message. While a run goes on the action button is Stop, draft or not:
@@ -255,7 +259,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // Agent settings feed the model chip below — this conversation's own
   // (a split pane never shows or changes the other pane's model).
   const agentSettings = useSessionAgentSettings();
-  const chatAgent = agentSettings.chat || {};
+  const chatAgent = agentSettings.chat || NO_CHAT_AGENT;
   // The effort picker only appears once a chat model is actually
   // selected; with no model picked it stays hidden.
   const chatModel = chatAgent.model;
@@ -267,6 +271,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const pendingRecording = useRecordingStore((s) => s.pending[recordingComposer]);
   const activeRecording = useRecordingStore((s) => s.active);
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
+  const openRecordDialog = useCallback(() => setRecordDialogOpen(true), []);
   const [canRecord, setCanRecord] = useState(false);
   useEffect(() => {
     setCanRecord(recordingAvailable());
@@ -302,8 +307,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const fastSupported = !!chatAgent.fast;
   const setComposerSettings = useBoundSetComposerSettings();
   // Web search follows the Agent unless this branch set it (the chip's tooltip says which).
-  const webSearchOrigin = settingOrigin(useBoundComposerSettings().resolved, "web_search");
-  const toggleFast = () => setComposerSettings({ fast: !fastEnabled, fastByModel: { ...fastByModel, [fastModelKey]: !fastEnabled } });
+  const resolvedSettings = useBoundComposerSettings().resolved;
+  const webSearchOrigin = useMemo(() => settingOrigin(resolvedSettings, "web_search"), [resolvedSettings]);
+  const toggleFast = useCallback(
+    () => setComposerSettings({ fast: !fastEnabled, fastByModel: { ...fastByModel, [fastModelKey]: !fastEnabled } }),
+    [setComposerSettings, fastEnabled, fastByModel, fastModelKey],
+  );
   const fastHint = chatAgent.fast_capability?.status === "unsupported"
     ? text("Fast is disabled for this connection.", "当前线路已禁用高速模式。")
     : !fastSupported
@@ -601,7 +610,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       plusMenuOpen={plusMenuOpen}
       setPlusMenuOpen={setPlusMenuOpen}
       onPickImages={onPickImages}
-      onRecord={canRecord && recordingOn ? () => setRecordDialogOpen(true) : undefined}
+      onRecord={canRecord && recordingOn ? openRecordDialog : undefined}
       recordingActive={!!activeRecording}
       pendingImagesCount={pendingImages.length}
       pendingDocsCount={pendingDocs.length}

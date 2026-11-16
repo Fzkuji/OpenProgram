@@ -12,7 +12,7 @@ import types
 import openprogram.runtime.execution as execution_pkg
 import openprogram.runtime.execution.waits as waits_module
 import openprogram.runtime.execution.run_control.cancellation as cancellation
-import openprogram.runtime.conversation.inbox as inbox
+import openprogram.runtime.conversation.peer_agents.inbox as inbox
 
 
 class _FakeWS:

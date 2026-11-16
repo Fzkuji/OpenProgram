@@ -101,7 +101,7 @@
 
 <h2 id="4-plugins">插件</h2>
 <p>只指 Claude Code、Codex、OpenCode 或 Hermes 格式的声明式包：manifest 描述的 skills、斜杠命令、agents、hooks、MCP server 和 provider 目录。<code translate="no">plugins/manifest.py</code> 读取，并通过 <code translate="no">plugin:&lt;name&gt;</code> 的 context 挂载。Hooks 是经 <code translate="no">ctx.gate</code>、<code translate="no">ctx.on</code> 订阅的 shell 命令。插件代码不在 worker 里运行。</p>
-<p>manifest 指向代码（<code translate="no">python</code>、<code translate="no">module</code>、<code translate="no">setup</code>、<code translate="no">main</code>、<code translate="no">tools</code>、<code translate="no">client</code>、<code translate="no">web</code>、<code translate="no">sidebar</code>、<code translate="no">module:name</code> hook 映射、Hermes <code translate="no">__init__.py</code>）时，安装和加载都会拒绝：请用 <code translate="no">application.json</code> 打包成应用，并运行 <code translate="no">openprogram programs install &lt;dir&gt;</code>。<a href="../integrations/plugin-runtime.zh.html">插件运行时</a></p>
+<p>manifest 指向代码（<code translate="no">python</code>、<code translate="no">module</code>、<code translate="no">setup</code>、<code translate="no">main</code>、<code translate="no">tools</code>、<code translate="no">client</code>、<code translate="no">web</code>、<code translate="no">sidebar</code>、<code translate="no">module:name</code> hook 映射、Hermes <code translate="no">__init__.py</code>）时，安装和加载都会拒绝：请用 <code translate="no">application.json</code> 打包成应用，并运行 <code translate="no">openprogram programs install &lt;dir&gt;</code>。<a href="../integrations/extensions/plugin-runtime.zh.html">插件运行时</a></p>
 
 <h2 id="5-exposure-tiers">暴露层级</h2>
 <table class="stack">
@@ -161,15 +161,15 @@
 <tr><th scope="row"><code translate="no">run NAME [--arg k=v]</code></th><td>在当前进程调用入口</td></tr>
 <tr><th scope="row"><code translate="no">run APP OPERATION [--input JSON] [--project ID] [--request-key KEY]</code></th><td>在 worker 启动 Agent 可见的操作；该 key 让重试启动安全</td></tr>
 <tr><th scope="row"><code translate="no">status RUN_ID</code>、<code translate="no">cancel RUN_ID</code></th><td>查看或取消操作运行</td></tr>
-<tr><th scope="row"><code translate="no">check DIRECTORY [-m MSG] [--json]</code></th><td>包：校验，在 OS 沙箱跑测试，提交。应用：校验</td></tr>
+<tr><th scope="row"><code translate="no">check DIRECTORY [-m MSG] [--json]</code></th><td>包：在 OS 沙箱里校验和测试工作副本，然后提交；检查期间不导入它已检查过的版本，所以一个已经加载不了的版本可以修好。应用：校验</td></tr>
 <tr><th scope="row"><code translate="no">install SOURCE [--upgrade] [--replace] [--trust]</code></th><td>记录本地应用目录；把本地包仓库、git URL 或 <code translate="no">owner/repo</code> 克隆到 <code translate="no">~/.openprogram/programs/&lt;name&gt;</code></td></tr>
 <tr><th scope="row"><code translate="no">uninstall NAME</code></th><td>注销应用（数据保留），或把目录移到 <code translate="no">.removed/</code></td></tr>
 <tr><th scope="row"><code translate="no">enable ID</code>、<code translate="no">disable ID</code></th><td>加载或移除应用的 UI、资源、服务和入口；工具会被拒绝</td></tr>
 </tbody>
 </table>
-<p class="note">改变状态的应用命令走 owner API（<code translate="no">/api/applications/*</code>）；<code translate="no">list</code>、<code translate="no">check</code> 不需要 worker。REPL 的 <code translate="no">/programs</code> 列出同样的行。代码：<code translate="no">openprogram/interfaces/cli/commands/programs.py</code>。</p>
+<p class="note">改变状态的应用命令走 owner API（<code translate="no">/api/applications/*</code>）；<code translate="no">list</code>、<code translate="no">check</code> 不需要 worker。REPL 的 <code translate="no">/programs</code> 列出同样的行。代码：<code translate="no">openprogram/interfaces/cli/commands/capabilities/programs.py</code>。</p>
 
 <h2>实现状态</h2>
-<p>以上全部已实现。核心只通过服务访问 <code translate="no">browser</code>，没有它也能运行（<a href="../integrations/computer-and-browser-use.zh.html#浏览器应用">浏览器应用</a>）。应用新增能力 <code translate="no">files.project.write</code>。工具名、toolset 和选项不变，Programs 页保留 Web 应用使用的 <code translate="no">workflow/&lt;name&gt;</code> 路径，owner API 保留 <code translate="no">/api/applications/*</code> 路由。用户包从 <code translate="no">openprogram.programs._authoring.reports</code> 导入报告辅助。</p>
+<p>以上全部已实现。核心只通过服务访问 <code translate="no">browser</code>，没有它也能运行（<a href="../integrations/computer-use/computer-and-browser-use.zh.html#浏览器应用">浏览器应用</a>）。应用新增能力 <code translate="no">files.project.write</code>。工具名、toolset 和选项不变，Programs 页保留 Web 应用使用的 <code translate="no">workflow/&lt;name&gt;</code> 路径，owner API 保留 <code translate="no">/api/applications/*</code> 路由。用户包从 <code translate="no">openprogram.programs._authoring.reports</code> 导入报告辅助。</p>
 <p>已移除：<code translate="no">programs/workflow/</code> 及其导入路径；<code translate="no">agent_browser</code>、<code translate="no">browser_agent</code>、<code translate="no">playwright_browser</code>、CLI <code translate="no">/browser</code>；<code translate="no" data-claim="invalid">openprogram workflows</code>、<code translate="no" data-claim="invalid">openprogram apps</code>、<code translate="no">programs apps</code>、<code translate="no">programs available</code>、<code translate="no">gui</code> 和 <code translate="no">all</code> 安装选择器；pip 作为插件来源；插件 Web 模块、页面和侧栏行。</p>
 <p class="next"><a href="calling-unification.zh.html">函数调用</a></p>

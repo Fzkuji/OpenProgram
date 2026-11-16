@@ -2,7 +2,7 @@
  * Rule: chat markdown is sanitized at the source. `renderMd` wraps
  * `marked.parse` in `sanitizeHtml` (marked does not sanitize, and tool-relayed
  * content reaches chat bubbles), and `SAFE_URL` allows `data:` only for
- * images. Payload behaviour is in tests/chat/messages/markdown-sanitize.test.mjs.
+ * images. Payload behaviour is in tests/chat/messages/bubbles/markdown-sanitize.test.mjs.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

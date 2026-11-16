@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openprogram.state import attachments
-from openprogram.state.store.session.session_log import SessionLog
-from openprogram.state.store.session.migration import migrate_session
+from openprogram.state.store.session.files.session_log import SessionLog
+from openprogram.state.store.session.files.migration import migrate_session
 from openprogram.state.store.session.session_store import SessionStore
 
 
@@ -186,7 +186,7 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     monkeypatch.setenv("OPENPROGRAM_PROJECT_ROOT", str(project))
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.state.store.session.migration._live_jobs", lambda _sid: False,
+        "openprogram.state.store.session.files.migration._live_jobs", lambda _sid: False,
     )
     store = SessionStore(state / "projects")
     result = migrate_session(store, {
@@ -291,7 +291,7 @@ def test_search_and_resolve_use_the_chats_working_directory(client, tmp_path, mo
     chat_dir = tmp_path / "work"
     (chat_dir / "src").mkdir(parents=True)
     (chat_dir / "src" / "main.py").write_text("print(1)", encoding="utf-8")
-    from openprogram.runtime.conversation import workdir
+    from openprogram.runtime.conversation.session_settings import workdir
     monkeypatch.setattr(
         workdir, "runtime_location_for",
         lambda sid, use_context=True: {"workdir": str(chat_dir) if sid == "s1" else None},
@@ -341,7 +341,7 @@ def test_file_paths_answers_each_path_in_one_request(client, project, tmp_path, 
     deck.write_bytes(b"PK")
     outside = tmp_path / "secret.txt"
     outside.write_text("nope")
-    from openprogram.runtime.conversation import workdir
+    from openprogram.runtime.conversation.session_settings import workdir
     monkeypatch.setattr(
         workdir, "runtime_location_for",
         lambda sid, use_context=True: {"workdir": str(project) if sid == "s1" else None},

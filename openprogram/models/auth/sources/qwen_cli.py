@@ -34,7 +34,6 @@ class QwenCliSource:
     """Reads ``~/.qwen/oauth_creds.json`` and adopts it read-only."""
 
     provider_id: str = "qwen"
-    account_id: str = "default"
     override_path: str = ""
 
     source_id: str = "qwen_cli"
@@ -44,7 +43,7 @@ class QwenCliSource:
             return Path(self.override_path).expanduser()
         return Path.home() / ".qwen" / "oauth_creds.json"
 
-    def try_import(self, account_root: Path) -> list[Credential]:
+    def try_import(self, state_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -67,10 +66,9 @@ class QwenCliSource:
         return [
             Credential(
                 provider_id=self.provider_id,
-                account_id=self.account_id,
-                kind="cli_delegated",
+                kind="import",
                 payload=CredentialData(
-                    kind="cli_delegated",
+                    kind="import",
                     data={
                         "store_path": str(path),
                         "access_key_path": ["access_token"],
@@ -78,7 +76,7 @@ class QwenCliSource:
                         "expires_key_path": ["expiry_date"],
                     },
                 ),
-                source=self.source_id,
+                source="import",
                 metadata=metadata,
                 read_only=True,
             )
@@ -87,7 +85,7 @@ class QwenCliSource:
     def removal_steps(self, cred: Credential) -> list[RemovalStep]:
         path = (
             cred.payload.data.get("store_path")
-            if cred.kind == "cli_delegated"
+            if cred.kind == "import"
             else str(self._resolve_path())
         )
         return [

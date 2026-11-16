@@ -16,9 +16,42 @@ import pytest
 class _DB:
     def __init__(self):
         self.updates: list[tuple[str, dict]] = []
+        self.rows: dict[str, dict] = {}
 
     def update_session(self, session_id, **fields):
         self.updates.append((session_id, fields))
+        self.rows.setdefault(session_id, {}).update(fields)
+
+    def get_session(self, session_id):
+        return self.rows.get(session_id)
+
+
+class _Turns:
+    """Root chat executions of one conversation, each with its own user message."""
+
+    def __init__(self, *running):
+        self.running = {execution_id: status for execution_id, status in running}
+        self.ended: set[str] = set()
+
+    def end(self, execution_id):
+        self.running.pop(execution_id)
+        self.ended.add(execution_id)
+
+    def list_nonterminal(self, *, session_id):
+        return [types.SimpleNamespace(execution_id=execution_id, session_id=session_id, status=status,
+                                      parent_execution_id=None)
+                for execution_id, status in self.running.items()]
+
+    def get_execution(self, execution_id):
+        from openprogram.runtime.execution.model import ExecutionStatus
+        status = ExecutionStatus.COMPLETED if execution_id in self.ended else self.running[execution_id]
+        return types.SimpleNamespace(execution_id=execution_id, status=status)
+
+    def get_agent_turn_input(self, _execution_id):
+        return {"kind": "chat", "request": {"source": "web"}}
+
+    def get_execution_input(self, execution_id):
+        return types.SimpleNamespace(user_message_id=execution_id + "_user")
 
 
 class _WS:
@@ -53,6 +86,27 @@ def test_turn_end_marks_unread_when_nobody_looks(connections, failed, status):
     assert db.updates == [("s1", {"status": status, "unread": True})]
     assert frames == [{"type": "session_updated",
                        "data": {"id": "s1", "status": status, "unread": True}}]
+
+
+def test_a_turn_that_ends_while_another_runs_leaves_the_conversation_running(connections, monkeypatch):
+    """A short turn (a background-command notice, a turn on another
+    branch) ends while another turn of the conversation still runs: the
+    conversation is not done until that one is. A failure is still said."""
+    from openprogram.runtime.conversation.turn_runtime import turn_writer
+
+    sockets, frames = connections
+    sockets.append(_WS(focused="s1"))
+    db = _DB()
+    asked = []
+    monkeypatch.setattr(turn_writer, "_another_turn_runs",
+                        lambda session_id, own_msg_id: asked.append((session_id, own_msg_id)) or True)
+
+    turn_writer.mark_session_finished(db, "s1", own_msg_id="notice_user")
+    turn_writer.mark_session_finished(db, "s1", failed=True, own_msg_id="notice_user")
+
+    assert asked == [("s1", "notice_user")]
+    assert [fields["status"] for _sid, fields in db.updates] == ["running", "failed"]
+    assert frames[0]["data"]["status"] == "running"
 
 
 def test_a_quiet_turn_end_leaves_the_dot_alone(connections):
@@ -164,7 +218,9 @@ def test_failed_turn_records_failure_with_unread(connections):
 
     writer.record_failure("reply-1")
 
-    assert db.updates == [("s1", {"status": "failed", "unread": True, "head_id": "reply-1"})]
+    # The head only goes forward: a later turn written under this reply keeps it.
+    assert db.updates == [("s1", {"status": "failed", "unread": True, "head_id": "reply-1",
+                                  "head_forward_only": True})]
 
 
 def test_loading_a_session_does_not_mark_it_viewed(monkeypatch):
@@ -184,3 +240,79 @@ def test_loading_a_session_does_not_mark_it_viewed(monkeypatch):
         "action": "load_session", "code": "session_not_found",
         "session_id": "missing", "request_id": "r1",
     }}]
+
+
+def _ended(execution_id, status_name="COMPLETED"):
+    from openprogram.runtime.execution.model import ExecutionStatus
+    return types.SimpleNamespace(execution_id=execution_id, session_id="s1", parent_execution_id=None,
+                                 status=getattr(ExecutionStatus, status_name), status_version=9)
+
+
+def test_two_turns_ending_together_leave_the_conversation_done(connections, monkeypatch):
+    """Each of two turns ends while the other's execution is still running,
+    so each leaves ``running``; once both executions have ended, the event
+    effect of the last one settles the conversation as done."""
+    from openprogram.runtime import execution as execution_package
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.conversation.turn_runtime import turn_writer
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
+    from openprogram.runtime.execution.model import ExecutionStatus
+
+    sockets, frames = connections
+    sockets.append(_WS(focused="s1"))
+    db = _DB()
+    store = _Turns(("a", ExecutionStatus.RUNNING), ("b", ExecutionStatus.RUNNING))
+    monkeypatch.setattr(execution_package, "default_store", lambda: store)
+    monkeypatch.setattr(session_db, "default_db", lambda: db)
+    effects = ExecutionEventEffects.__new__(ExecutionEventEffects)
+    effects.store = store
+
+    turn_writer.mark_session_finished(db, "s1", own_msg_id="a_user")
+    turn_writer.mark_session_finished(db, "s1", own_msg_id="b_user")
+    assert db.rows["s1"]["status"] == "running"
+
+    store.end("a")
+    effects._settle_session_status(_ended("a"))
+    assert db.rows["s1"]["status"] == "running"
+    store.end("b")
+    effects._settle_session_status(_ended("b"))
+
+    assert db.rows["s1"]["status"] == "done"
+    assert frames[-1] == {"type": "session_updated", "data": {"id": "s1", "status": "done"}}
+
+
+def test_a_queued_turn_stopped_before_it_ran_does_not_leave_the_conversation_running(connections, monkeypatch):
+    """A notice turn ends while a Goal continuation waits in the queue, so
+    the conversation stays running; the queued turn is then stopped before
+    it ever starts and writes no ending of its own."""
+    from openprogram.runtime import execution as execution_package
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.conversation.turn_runtime import turn_writer
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
+    from openprogram.runtime.execution.model import ExecutionStatus
+
+    _sockets, _frames = connections
+    db = _DB()
+    store = _Turns(("notice", ExecutionStatus.RUNNING), ("goal", ExecutionStatus.QUEUED))
+    monkeypatch.setattr(execution_package, "default_store", lambda: store)
+    monkeypatch.setattr(session_db, "default_db", lambda: db)
+    effects = ExecutionEventEffects.__new__(ExecutionEventEffects)
+    effects.store = store
+
+    turn_writer.mark_session_finished(db, "s1", own_msg_id="notice_user")
+    store.end("notice")
+    effects._settle_session_status(_ended("notice"))
+    assert db.rows["s1"]["status"] == "running"
+
+    store.end("goal")
+    effects._settle_session_status(_ended("goal", "CANCELLED"))
+    assert db.rows["s1"]["status"] == "done"
+
+
+def test_a_failed_conversation_is_not_settled_as_done(monkeypatch):
+    from openprogram.runtime.execution.projections.foreground import settle_session_status
+
+    db = _DB()
+    db.rows["s1"] = {"status": "failed"}
+    assert not settle_session_status(db, _Turns(), "s1")
+    assert db.rows["s1"]["status"] == "failed"

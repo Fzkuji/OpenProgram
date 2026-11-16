@@ -44,7 +44,10 @@ function read(): State {
 }
 
 function update(next: State, persist: boolean): void {
-  current = next;
+  // Every reader re-reads storage when it mounts (each message row has
+  // one); the others are told only when the value is a different one.
+  const changed = next.enabled !== current.enabled || next.density !== current.density || next.gradient !== current.gradient;
+  if (changed) current = next;
   // The code rain style's CSS keys off this (code-rain-style.css), the
   // Launchpad's gradient off data-backdrop (launchpad.module.css).
   document.documentElement.dataset.codeRain = next.enabled ? "on" : "off";
@@ -56,7 +59,7 @@ function update(next: State, persist: boolean): void {
       window.localStorage.setItem(GRADIENT_THEME_STORAGE_KEY, next.gradient ? "on" : "off");
     } catch { /* The current document still updates if storage is unavailable. */ }
   }
-  subscribers.forEach((subscriber) => subscriber(next));
+  if (changed) subscribers.forEach((subscriber) => subscriber(current));
 }
 
 export function useWelcomeBackdropPref() {

@@ -20,7 +20,7 @@ _checkpoint_owner = ContextVar("checkpoint_owner", default=None)
 @contextmanager
 def _locked_checkpoint():
     from openprogram.state.store import _current_turn_id, _store
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
 
     shim = _store.get()
     turn_id = _current_turn_id.get()

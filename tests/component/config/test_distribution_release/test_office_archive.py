@@ -159,7 +159,7 @@ def test_pack_zips_a_prepared_pack_the_app_installs_and_pins_it(
 
     import openprogram.programs.applications.office_editor.install as installer
     from openprogram.programs.applications.office_editor.assets import install_office_pack
-    from tests.component.config.test_office_packaging import make_office_pack
+    from tests.component.config.office_editor.test_office_packaging import make_office_pack
 
     prepared = tmp_path / "prepared"
     install_office_pack(make_office_pack(tmp_path / "pack"), prepared)  # what prepare.py publishes

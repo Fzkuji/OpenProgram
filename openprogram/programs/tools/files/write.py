@@ -33,7 +33,7 @@ _MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 def _read_staged_source(source_path: str, target_path: str) -> tuple[bytes, dict]:
     from openprogram.host._platform.filesystem import is_link_metadata
-    from openprogram.runtime.permissions.file_state import check_current, fingerprint
+    from openprogram.runtime.permissions.approvals.file_state import check_current, fingerprint
     from openprogram.host.sandbox import validate_read_path
 
     violation = validate_read_path(source_path)
@@ -113,7 +113,7 @@ def execute(file_path: str, content: str | None = None,
         if not os.path.isabs(source_path):
             return f"Error: source_path must be absolute, got {source_path!r}"
         try:
-            from openprogram.runtime.permissions.file_state import fingerprint
+            from openprogram.runtime.permissions.approvals.file_state import fingerprint
             target_state = fingerprint(file_path)
             payload, source_fingerprint = _read_staged_source(source_path, file_path)
             source_state[source_path] = source_fingerprint
@@ -152,9 +152,9 @@ def execute(file_path: str, content: str | None = None,
     except Exception as e:
         return f"Error: mutation journal preparation failed for {file_path}: {e}"
     try:
-        from openprogram.runtime.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.approvals.file_state import write_checked
         if source_path is not None:
-            from openprogram.runtime.permissions.file_state import write_checked_atomic
+            from openprogram.runtime.permissions.approvals.file_state import write_checked_atomic
             assert isinstance(payload, bytes) and target_state is not None
             write_checked_atomic(file_path, payload, expected_state=target_state,
                                  source_state=source_state)

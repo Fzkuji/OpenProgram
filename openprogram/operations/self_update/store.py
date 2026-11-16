@@ -17,7 +17,7 @@ from typing import Any, Iterator, Mapping
 
 from openprogram.host._platform import filesystem
 from openprogram.host._platform import locking
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 from .types import (
     PROTOCOL_VERSION,

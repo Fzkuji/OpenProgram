@@ -1,0 +1,208 @@
+<title>Task blocks</title>
+<meta name="description" content="A reply groups a stretch of work into a named, collapsible task block: its steps, the work done for each step, and a one-line result when it is finished.">
+<h1>Task blocks</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 330" aria-label="A reply with two task blocks. The first is finished and folded into one line with its name, result, step count and time. The second is running and open: its header shows progress 1/3, the purpose sits under its name, and its three steps sit one indent in, on a rail. The first step was opened with a click and shows its tool row one indent further in; the other steps are waiting. The answer text sits outside both blocks.">
+<text class="t-soft" x="20" y="28">Opening sentence, outside any block</text>
+<rect class="tile" x="20" y="44" width="640" height="34" rx="8"/>
+<text x="36" y="66">✓ Fold the agent list</text>
+<text class="t-soft" x="196" y="66">— finished agents fold into one row · 5 steps · 4 min</text>
+<text class="t-soft" x="20" y="104">Text between two tasks, always visible</text>
+<rect class="tile" x="20" y="120" width="640" height="170" rx="8"/>
+<text x="36" y="144">◌ Update the design page</text>
+<text class="t-soft" x="230" y="144">· 1/3 · 20 s</text>
+<text class="t-soft" x="58" y="166">Both language versions say what the code does</text>
+<line class="ln-faint" x1="64" y1="196" x2="64" y2="254"/>
+<text class="t-note" x="58" y="190">◌ Edit the English page</text>
+<text class="t-soft" x="644" y="190" text-anchor="end">opened by a click</text>
+<text class="t-cmd" x="80" y="212">⌕ Reading activity-panel.html</text>
+<text class="t-soft" x="58" y="236">○ Edit the Chinese page</text>
+<text class="t-soft" x="58" y="260">○ Run the docs check</text>
+<text class="t-soft" x="20" y="316">Final answer, outside any block</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>Opening sentence, outside any block</li>
+<li>Finished block, one line: name, result, 5 steps, 4 min</li>
+<li>Text between two tasks</li>
+<li>Running block, open: header 1/3, purpose under the name; one indent in, the three steps; the first, opened by a click, shows its tool row one indent further in</li>
+<li class="flow-end">Final answer, outside any block</li>
+</ol>
+</figure>
+
+<p>A task block is one named stretch of work inside a reply. The agent says where each tool call stands in the task with that call's <code translate="no">task_progress</code> argument, so reporting progress costs no model round trip; the runtime decides which work belongs to it and closes it when the reply ends.</p>
+
+<h2>Parts</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shape</th><td>A passage in the reply column. No bordered card. State is drawn on the header's status glyph.</td></tr>
+<tr><th scope="row">Levels</th><td>Three, marked by indentation alone, one unit apart: the header; the steps; a step's work. The unit is the header's glyph and its gap, so each level's nodes sit under the text of the level above. Size and weight do not mark a level: the name, its one-line purpose, every step and a step's note are set in one size, the size of the tool group summary, the step in progress included.</td></tr>
+<tr><th scope="row">Header</th><td>Status glyph, task name, progress, elapsed time, the <span class="nb">+N −M</span> pill, chevron. Same 28px row and type as the tool group summary. Running, progress is the place of the step in progress (<span class="nb">3/5</span>: on the third); stopped or carried, the steps finished. Hidden when the task has no steps or ended without advancing.</td></tr>
+<tr><th scope="row">Narrow column</th><td>The name is cut last: the result and the current step shorten first, and under 480px the time and the pill leave the header.</td></tr>
+<tr><th scope="row">Purpose</th><td>One muted line under the name saying what the block is for</td></tr>
+<tr><th scope="row">Steps</th><td>One indent in, one row per step, the nodes on one rail that runs from the first step to the last. State is the node and the text colour. Done: check, title, a muted half-sentence result. Current: sweep and a present-tense summary. Waiting: hollow circle. Dropped: struck through, not counted.</td></tr>
+<tr><th scope="row">A step's work</th><td>Folded until the reader clicks the step, the step in progress included; a second click folds it. Then the existing step rows (tool calls, thinking, sub-agent rows) and the text said during that step, one more indent in, with no rail of their own. Normal, Thinking and Verbose apply here.</td></tr>
+<tr><th scope="row">No steps</th><td>A name alone opens a block; the work lies flat under it. A task that ended without one advance is drawn the same way, its steps as outline only: no step is ticked for it and no <span class="nb">N/N</span> is shown. While it runs it is on its first step and the work is that step's.</td></tr>
+<tr><th scope="row">Outside the block</th><td>The sentence before work starts, text between two tasks, and the final answer. Always visible.</td></tr>
+<tr><th scope="row">Small work</th><td>No block. The reply looks as it does without a task: summary lines and text.</td></tr>
+</tbody>
+</table>
+
+<h2>States</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Drawn as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running</th><td>Open to the name, purpose and steps; every step one row, its work folded</td></tr>
+<tr><th scope="row">Running, folded by hand</th><td>One row: name, current step, <span class="nb">3/5</span>, time</td></tr>
+<tr><th scope="row">Finished</th><td>Folds in place to one row: name, result, step count, diff, time. Without a written result, the deterministic summary; never guessed from the text.</td></tr>
+<tr><th scope="row">Stopped, failed, interrupted</th><td>Stays open with the existing Stopped, Interrupted or failure tag and <span class="nb">3/5</span>. The step it was on carries the state on its node; waiting steps stay waiting. The tag is on the block alone: nothing after it in the reply is tagged again. The time runs to the end of the reply, and is left out when that is not known.</td></tr>
+<tr><th scope="row">Waiting on the person</th><td>Still running: open, no tag. The glyph and the name stop moving until the reply goes on.</td></tr>
+<tr><th scope="row">Continued after a stop</th><td>A segment with the same name in the new reply, from the first <code translate="no">task_step</code> call there</td></tr>
+<tr><th scope="row">Second task in one reply</th><td>The earlier block folds. One that was not finished reads "stopped at 3/5", not a check, and its open steps are dropped.</td></tr>
+<tr><th scope="row">Goal over several turns</th><td>A task spans turns. Each reply draws its own segment; steps finished in earlier turns are one row, "5 earlier steps done", which jumps to them.</td></tr>
+<tr><th scope="row">Sub-agent</th><td>Its existing row sits under the step that sent it. The block stays open while it runs. Its own task blocks show only in its conversation. A task it starts belongs to that one run: two runs of the same agent never share a task.</td></tr>
+<tr><th scope="row">Reopened conversation</th><td>Ownership is derived from where the stored calls sit, the same as live</td></tr>
+<tr><th scope="row">Conversation stored with todo lists</th><td>A list is one folded block named Todos, with its count, at the first todo call of the first loaded reply that has it. A list that cannot be placed stays as "updated todos" in the summary line. Nothing is rewritten.</td></tr>
+<tr><th scope="row">After compaction</th><td>The open task (title, steps, current step) is given to the model again</td></tr>
+<tr><th scope="row">Opened or folded by hand</th><td>A block: wins over its automatic opening and folding. A step: the only way it opens; it stays as chosen while work streams in and after the step finishes. Both are remembered per reply in this browser, for the latest 500 choices. Enter and Space toggle; Left folds, Right opens.</td></tr>
+</tbody>
+</table>
+
+<h2>Tools</h2>
+<p>One argument on every call, two tools for what it cannot say. A task is one list in the todo store and a step is one todo, so Goal verification and a sub-agent ticking its parent's step read the same data.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">task_progress</code><span class="arg"><code translate="no">task?, steps?, step?, result?</code></span></th><td>An optional argument of every tool the model can call, MCP tools included, when the turn offers the task tools. It says where the call stands: <code translate="no">step</code> is the number of the step the call works on. A <code translate="no">task</code> no open task has as its title opens one with <code translate="no">steps</code>. When <code translate="no">step</code> changes, the step in progress is finished, <code translate="no">result</code> left on it. Sent again unchanged, it changes nothing. A step past the last keeps the last one going.</td></tr>
+<tr><th scope="row"><code translate="no">task_start</code><span class="arg"><code translate="no">title, purpose?, steps?</code></span></th><td>Title is a noun phrase of at most 40 characters; purpose is one sentence; steps are 1 to 7 short phrases, written at once. The first step starts. An open block is closed first.</td></tr>
+<tr><th scope="row"><code translate="no">task_step</code><span class="arg"><code translate="no">next?, step?, add?, drop?, result?, outcome?</code></span></th><td><code translate="no">next</code> finishes the current step and starts the following one, without an id. <code translate="no">step</code> jumps out of order. <code translate="no">add</code> appends, <code translate="no">drop</code> marks dropped. <code translate="no">result</code> leaves a half sentence on the step just finished. <code translate="no">outcome</code> ends the task with its result; steps still open are dropped. With no open task it returns a hint, not an error. A sub-agent with no task of its own ticks step N of the task it was sent from with <code translate="no">step=N</code>.</td></tr>
+<tr><th scope="row"><code translate="no">task_list</code></th><td>Read-only: the tasks and their steps. Loaded on demand, not always present.</td></tr>
+<tr><th scope="row">Who is sent what</th><td><code translate="no">task_start</code> is resident: its description carries the rules. <code translate="no">task_step</code> is loaded on demand, for a purpose, added or dropped steps and an outcome. The loader, the task tools and the structured-output submit tool take no <code translate="no">task_progress</code>; a tool whose own schema has a property of that name keeps its own.</td></tr>
+<tr><th scope="row">Rules in the description</th><td>Progress rides on real calls, never a response of its own; no last call to close a task. The plan is not repeated in the text. A task is for three steps or a dozen calls; a reply holds none, one or two. When redirected, drop the steps or start a task.</td></tr>
+<tr><th scope="row">Result</th><td>A task tool's result is one line on where the task stands. A real call's result is its own; a sentence is added only when its <code translate="no">task_progress</code> could not be applied.</td></tr>
+</tbody>
+</table>
+
+<h2>What the runtime decides</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ownership is by position</th><td>A reply's blocks are read in order. A task call, or a call whose <code translate="no">task_progress</code> moved the task, is a boundary: it and every block after it belong to the task and step it set. Each text, thinking and tool block is stamped <code translate="no">task</code> and <code translate="no">step</code>. The stored blocks give the same answer while streaming, when finished and when read back.</td></tr>
+<tr><th scope="row">A block ends at its last real call</th><td>Stamped text after the task's last tool call that is not a task call is drawn outside. The text between two tasks and the final answer stay visible without the model marking them. While the segment is not closed, thinking after that call is the step's work too, so a step's work is inside it from the start and a stop leaves no second row under the block.</td></tr>
+<tr><th scope="row">Progress is applied before the call runs</th><td>The dispatcher takes <code translate="no">task_progress</code> out of the arguments before they are checked, applies it, and only then runs the call, so the call's card is under its step from the start and the tool, an MCP server or a plugin never sees the argument. The card and history keep the call as the model wrote it, so later requests send the same bytes.</td></tr>
+<tr><th scope="row">Applied once</th><td>A call dispatched again after a pause is applied once: its occurrence (the response, its place in it and its id) is kept on the task, not the bare id, because Gemini gives the calls of every response the same ids.</td></tr>
+<tr><th scope="row">Progress never moves back</th><td>A step already finished or dropped is never taken up again: a parallel call written for the step before, run after the call that moved on, leaves the task where it is.</td></tr>
+<tr><th scope="row">The argument is added where the tools array is built</th><td>One place adds it to each tool sent, the same every request, so the cached prefix holds. Strict providers get it as one more nullable property. A tool's own definition and its load record are left alone.</td></tr>
+<tr><th scope="row">A reply starts in no task</th><td>Except a turn of the Goal the open task was started under: it continues that task from its first block, and its segment begins at its first real call.</td></tr>
+<tr><th scope="row">A normal end closes</th><td>The step in progress is finished only when that closes the task: advanced, no step waiting, under no Goal. A Goal's turn ends whenever the model stops calling tools, so its step stays in progress. Nothing left: the task is done. Never advanced and under no Goal: done, no step ticked. Otherwise it stays open, the step still in progress, and the segment is carried to the next turn.</td></tr>
+<tr><th scope="row">A sub-agent's run closes its own task</th><td>The task is keyed by the run's reply. A run has no next turn: at its normal end a task with steps left is closed as displaced, its open steps dropped, none ticked.</td></tr>
+<tr><th scope="row">A stop, a pause or a failure closes nothing</th><td>The segment still says running; the reply's own status draws it Stopped, Failed or Interrupted. No second copy of that state exists to disagree with the reply.</td></tr>
+<tr><th scope="row">A displaced task drops its open steps</th><td>Its step in progress is finished first when that closes it, by the rule of a normal end. A Goal would otherwise wait for steps nobody will tick. The segment keeps the steps as they stood, and Goal acceptance still lists dropped steps to the verifier.</td></tr>
+<tr><th scope="row">A segment may arrive after its blocks</th><td>A block whose task has no segment yet is drawn as outside any task, and joins when the segment arrives.</td></tr>
+</tbody>
+</table>
+
+<h2>Elsewhere in the interface</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Under a reply</th><td>Nothing: a task shows only as its block</td></tr>
+<tr><th scope="row">Tool group summary</th><td>Task calls give no phrase; a line holding only task calls is not drawn</td></tr>
+<tr><th scope="row">Goal chip</th><td>Reads "current step · 3/5": the place of the step in progress, as in the block's header. A click scrolls to the open block and opens it only when the reader had folded it, so a block open by itself still folds when the task ends. With the block already in view, or not on the page, the click opens the Goal's details, which have no other entry. Dropped steps leave the total.</td></tr>
+<tr><th scope="row">Jump from the chip</th><td>The chip sits outside the scroll area, so the jump tells the area the reader is moving. A view parked at the latest is otherwise pulled back on the first frame.</td></tr>
+<tr><th scope="row">Activity panel</th><td>No task group</td></tr>
+<tr><th scope="row">Message rail</th><td>A turn with a task has a 14px tick; its preview lists the task titles with their step range, and a click goes to that block. Under the titles is the answer after the last call, not text said inside a step. A conversation with one message shows the rail once its replies hold two task blocks, as a Goal does.</td></tr>
+<tr><th scope="row">Terminal</th><td>No nesting: a task call draws the title, <span class="nb">3/5</span> and the steps under its own line</td></tr>
+<tr><th scope="row">Channels</th><td>The task tools are not offered; text is sent as written</td></tr>
+</tbody>
+</table>
+
+<h2>Why</h2>
+<table class="stack">
+<thead><tr><th scope="col">Harness</th><th scope="col">Plan or task tool</th><th scope="col">Where the list shows</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><code translate="no" data-claim="example">TaskCreate</code>, <code translate="no" data-claim="example">TaskUpdate</code>; <code translate="no" data-claim="example">TodoWrite</code> before them, a call of its own carrying the whole list. Present by default only on Opus 4.7, Sonnet 4.6, Haiku 4.5 and earlier; left out on other models unless opted in.</td><td>A task list view outside the transcript, toggled with Ctrl+T, five tasks at a time; kept across compaction</td><td><a href="https://code.claude.com/docs/en/tools-reference#task-tool-availability">Tools reference</a>, <a href="https://code.claude.com/docs/en/interactive-mode#task-list">Task list</a></td></tr>
+<tr><th scope="row">Codex CLI</th><td><code translate="no" data-claim="example">update_plan</code>: a call of its own with an optional explanation and the whole list of steps with a status each; at most one in progress; the result is only "Plan updated"; refused in Plan mode</td><td>Not verified</td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/plan_spec.rs">plan_spec.rs</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/plan.rs">plan.rs</a></td></tr>
+<tr><th scope="row">OpenCode</th><td>The built-in tools page lists no todo tool</td><td>Not verified</td><td><a href="https://opencode.ai/docs/tools/">Tools</a></td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no" data-claim="example">todo_list</code>, for tasks of three steps or more; an item can name a parent and become a subtask</td><td>The tree, indented</td><td><a href="https://hermes-agent.nousresearch.com/docs/reference/tools-reference">Tools reference</a></td></tr>
+<tr><th scope="row">GitHub Copilot CLI</th><td>Plan mode writes an implementation plan before any code; no progress list is documented</td><td>Not documented</td><td><a href="https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli">About Copilot CLI</a></td></tr>
+<tr><th scope="row">Pi</th><td>Ships without plan mode and sub-agents; such features come from packages</td><td>None built in</td><td><a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md">README</a></td></tr>
+<tr><th scope="row">mini-SWE-agent</th><td>Bash only, linear history</td><td>None</td><td><a href="https://github.com/SWE-agent/mini-swe-agent/blob/main/README.md">README</a></td></tr>
+<tr><th scope="row">Cline</th><td>In v3.30, every tool took an optional <code translate="no" data-claim="example">task_progress</code> parameter holding the whole checklist, to be updated regularly. The current source keeps it only to read old tasks, and the Focus Chain built on it is listed as deprecated.</td><td>A checklist in the chat</td><td><a href="https://github.com/cline/cline/blob/v3.30.0/src/core/prompts/system-prompt/components/task_progress.ts">task_progress.ts</a> (v3.30.0), <a href="https://docs.cline.bot/resources/deprecations">Deprecations</a></td></tr>
+</tbody>
+</table>
+<p class="note">Not examined: Oh My Pi, ZCode, KimiCode, Alma, MiniMax Code, Maka, DeepSeek Harness, Grok Build, Exo, Antigravity CLI. The set is the one on frontierharness.org/live.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Work hangs under its step</th><td>No harness above ties the calls to the step they serve; a list beside the transcript says what is planned, not what was done for it. A finished list under a reply has nothing left to say and is never read again.</td></tr>
+<tr><th scope="row">A block per task, folded in place</th><td>A long reply stays a few lines; each line still opens to everything behind it</td></tr>
+<tr><th scope="row">Steps fold until clicked</th><td>The reader follows a task by its steps, the goals the agent set; the calls behind a step are read only when something needs checking. A step open by itself fills the block with searches and reads and pushes the remaining steps out of view.</td></tr>
+<tr><th scope="row">Indentation marks the level</th><td>A step whose node sits under the name's node reads as a second task, and a bolder or larger step reads as a heading. One indent per level, as Hermes Agent draws its subtasks, is a tree at a glance and needs no type of its own.</td></tr>
+<tr><th scope="row">The tool is kept</th><td>Claude Code leaves its task tools out on newer models and Pi ships none. Here a Goal continues over turns from this data, so it stays, with a contract small enough to cost little.</td></tr>
+<tr><th scope="row">Progress rides on the real call</th><td>Claude Code and Codex report progress with a call of its own. On <code translate="no">openai-codex/gpt-6-luna</code> such a call goes out alone whatever the description says, so each costs a model round trip (table below). Cline put the checklist on every tool call; that is the shape kept here, as one optional argument the runtime takes out before the tool runs.</td></tr>
+<tr><th scope="row">The argument is a state, not a change</th><td>Given <code translate="no">{start}</code> and <code translate="no">{next}</code> changes, the model sent the opening change again on every call and never moved on, so every block stayed on its first step. Given the step number, it repeats the state on each call, and a repeated state changes nothing.</td></tr>
+<tr><th scope="row">No call to close a task</th><td>The end of the reply closes it, and a new task closes the one before, both finishing the last step only when no step waits. No step is marked done mid-reply on a guess. A finished block without a written result shows the deterministic summary, never one taken from the answer.</td></tr>
+<tr><th scope="row"><code translate="no">task_step</code> is loaded on demand</th><td>Resident, it was still sent alone in half the replies, beside the same step change in <code translate="no">task_progress</code>. What only it can do (drop steps, an outcome) is rare.</td></tr>
+<tr><th scope="row">Steps written at once</th><td>Codex's <code translate="no" data-claim="example">update_plan</code> carries the whole plan in a call; with one item per call the model planned one step at a time</td></tr>
+<tr><th scope="row">Runtime closes the block</th><td>A model that forgets the last tick leaves no half-finished block after a normal end</td></tr>
+<tr><th scope="row">No bordered card</th><td>State is drawn on the glyph, not on a frame, as for graph nodes; several framed boxes in one reply read as separate windows</td></tr>
+</tbody>
+</table>
+
+<p>Six runs each of one four-to-five-step task (run the tests, fix two bugs, add a test, run again, document three functions) on <code translate="no">openai-codex/gpt-6-luna</code> at low effort, through the print mode of the same code with and without <code translate="no">task_progress</code>:</p>
+<table class="stack">
+<thead><tr><th scope="col">Per six runs</th><th scope="col">Task calls only</th><th scope="col">With <code translate="no">task_progress</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Model responses</th><td>99 (14 to 20 a run)</td><td>79 (11 to 15 a run)</td></tr>
+<tr><th scope="row">Responses holding only task calls</th><td>31: every task call went alone</td><td>7: the <code translate="no">task_start</code> that opened each task, and one sent twice</td></tr>
+<tr><th scope="row">Real calls carrying the argument</th><td>None</td><td>73 of 73</td></tr>
+<tr><th scope="row">Step changes made by it</th><td>None: 25 <code translate="no">task_step</code> calls</td><td>19 of 19</td></tr>
+<tr><th scope="row">Blocks whose steps match the work</th><td>6 of 6</td><td>6 of 6</td></tr>
+</tbody>
+</table>
+
+<h2>Limits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ownership follows the model's step numbers</th><td>A model that never changes <code translate="no">step</code> gets a flat block: the outline and, under it, all the work. A step it skips stays waiting, so the task stays open after the reply. A <code translate="no">task_step</code> call placed after the real call of its response leaves that call on the previous step.</td></tr>
+<tr><th scope="row">Opening a task still costs a response</th><td>The model opens each task with a <code translate="no">task_start</code> call of its own before the first real call. Loaded on demand instead, it was searched for and then called alone, two responses instead of one, so it stays resident.</td></tr>
+<tr><th scope="row">Text stamps are fixed while streaming</th><td>A text block made before a task call returned keeps its first owner until the reply settles; tool blocks are corrected at once</td></tr>
+<tr><th scope="row">500 segments per branch</th><td>Past that the oldest replies draw their work flat again; nothing is lost</td></tr>
+<tr><th scope="row">A Goal started on todo lists</th><td>Its unfinished todos are in no task and no tool ticks them; editing the Goal starts a revision without them</td></tr>
+<tr><th scope="row">Text inside a block folds with it</th><td>Only text outside blocks and the final answer are always visible</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p>Implemented: the tools, the stamps, the segments, the block in the reply, the Goal chip, the message rail, the terminal's list and what is given back after compaction. How the store keeps it is in <a href="todo-list.html">Task store</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Open</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Other model lines</th><td>Measured on <code translate="no">openai-codex/gpt-6-luna</code> only; models that already batch a task call with a real one gain less</td></tr>
+<tr><th scope="row">Terminal</th><td>Its list is drawn from task tool calls, so a task opened or moved by <code translate="no">task_progress</code> does not show there</td></tr>
+<tr><th scope="row">Measured after release</th><td>The share of replies that start a task, calls per task, and the share of tasks that never advance, per model line</td></tr>
+<tr><th scope="row">Sub-agent ticking its parent's step</th><td>Covered by unit tests; not yet run with a real sub-agent</td></tr>
+<tr><th scope="row">A reply with no stream events</th><td>Its blocks are not stamped; it draws as a reply without a task</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code</summary>
+<ul>
+<li><code translate="no">openprogram/programs/tools/planning/todo/</code> (<code translate="no">task_start</code>, <code translate="no">task_step</code>, <code translate="no">task_list</code>, <code translate="no">shared.py</code>, <code translate="no">progress.py</code>)</li>
+<li><code translate="no">openprogram/runtime/agent/loop/streaming.py</code>, <code translate="no">tool_dispatch.py</code></li>
+<li><code translate="no">openprogram/state/task_blocks.py</code></li>
+<li><code translate="no">openprogram/runtime/conversation/turn_runtime/stream_tap.py</code></li>
+<li><code translate="no">apps/web/lib/chat/transcript/task-blocks.ts</code></li>
+<li><code translate="no">apps/web/components/chat/messages/execution/task-block.tsx</code></li>
+<li><code translate="no">apps/web/lib/prefs/task-block-open.ts</code></li>
+<li><code translate="no">apps/web/components/chat/badges/goal-chip.tsx</code></li>
+<li><code translate="no">apps/cli/src/components/tools/toolView.ts</code></li>
+</ul>
+</details>
+
+<p class="next"><a href="todo-list.html">Task store</a></p>

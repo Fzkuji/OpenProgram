@@ -6,7 +6,7 @@ is running, the session's plan mode and stored rules, its project's
 defaults, and the model it chats on. The permission package sits below
 the conversation package and never imports it; instead the conversation
 package registers a :class:`SessionFacts` implementation on import
-(``openprogram.runtime.conversation.permission_registration``).
+(``openprogram.runtime.conversation.layer_registrations.permission_registration``).
 
 The defaults describe a process in which no conversation exists: nothing
 is bound, no turn runs, no session holds rules. Each of those values can

@@ -42,7 +42,7 @@ import {
 } from "@/lib/chat/send/pending-user-text";
 import { frameNamesPendingSend } from "./unacked-sends";
 import { offSelectedBranch } from "../../chat/run/selected-branch.ts";
-import { patchHeldRow, placeCitations, queueTextFrame } from "./text-frames.ts";
+import { appendCredentialNotice, patchHeldRow, placeCitations, queueTextFrame } from "./text-frames.ts";
 import { normalizeCitations } from "../../chat/transcript/web-sources.ts";
 
 function requestExecutionStreamSnapshot(event: {
@@ -93,6 +93,8 @@ interface StreamEvent {
   separator?: string;
   /** text_end: sources the provider cited for the block it closes. */
   citations?: unknown;
+  /** retry with reason credential / credential_wait: the credential switch. */
+  credential?: { to?: string; from?: string; cause?: string };
 }
 
 interface ChatResponseData {
@@ -128,6 +130,9 @@ interface ChatResponseData {
   item_id?: string;
   item_index?: number;
   offset?: number;
+  /** Text frames: the task and step the block belongs to, when it has one. */
+  task?: string;
+  step?: string;
 }
 
 interface WsEnvelope {
@@ -339,6 +344,8 @@ function applyStreamFrame(d: ChatResponseData, event: StreamEvent): void {
       queueTextFrame({
         rowId: d.row_id, itemId: d.item_id, itemIndex: d.item_index, offset: d.offset, type: event.type, text: event.text ?? "",
         ...(event.type === "text" && event.separator ? { separator: event.separator } : {}),
+        ...(d.task ? { task: d.task } : {}),
+        ...(d.step ? { step: d.step } : {}),
       });
       return;
     }
@@ -348,6 +355,15 @@ function applyStreamFrame(d: ChatResponseData, event: StreamEvent): void {
       return;
     }
   }
+  if (event.type === "retry" && event.reason === "credential") {
+    // Another of the provider's credentials took over before the reply
+    // started: one muted line over the reply, no retry state.
+    const switched = event.credential;
+    if (d.row_id && switched?.to) {
+      appendCredentialNotice(d.row_id, { to: switched.to, from: switched.from ?? "", ...(switched.cause ? { cause: switched.cause } : {}) });
+    }
+    return;
+  }
   if (event.type === "retry" || event.type === "structured_output_retry") {
     if (d.row_id) patchHeldRow(d.row_id, {
       retryStatus: {
@@ -356,6 +372,7 @@ function applyStreamFrame(d: ChatResponseData, event: StreamEvent): void {
         reason: event.reason ?? event.issues?.[0]?.code,
         delayMs: event.delay_ms,
         error: event.error || undefined,
+        ...(event.reason === "credential_wait" && event.credential?.to ? { waitingFor: event.credential.to } : {}),
         receivedAt: Date.now(),
       },
     });

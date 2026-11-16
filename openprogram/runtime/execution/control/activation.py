@@ -4,7 +4,7 @@ import inspect
 import logging
 from typing import Any, Mapping
 from ..attempts import AttemptConflict, AttemptRecord
-from ..checkpoints import CheckpointManifest
+from ..recovery.checkpoints import CheckpointManifest
 from ..driver import ActivationInput, DriverBinding, DriverRegistryConflict
 from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord, ExecutionStatus, TERMINAL_EXECUTION_STATUSES
 

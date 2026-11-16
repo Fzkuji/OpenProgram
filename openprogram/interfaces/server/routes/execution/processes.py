@@ -22,7 +22,7 @@ def _authorize(request, session_id, record=None, *, stop=False):
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.execution.authorization import authorize_session_action, ExecutionAuthorizationError
     from openprogram.runtime.execution.conversation_scope import authorize_conversation_execution
-    from openprogram.runtime.execution.public import project_id_for_session
+    from openprogram.runtime.execution.projections.public import project_id_for_session
 
     actor, bound_session = _actor_and_session(request)
     action = "execution.cancel" if stop else "execution.snapshot"
@@ -216,7 +216,7 @@ def register(app):
                 if record.get("background", True):
                     items.append(public_record(record))
             from openprogram.runtime.context.session_db import default_db
-            from openprogram.runtime.execution.activity_calls import active_tool_calls, agent_calls
+            from openprogram.runtime.execution.projections.activity_calls import active_tool_calls, agent_calls
             calls = active_tool_calls(default_store(), scope.values())
             spawns = agent_calls(default_store(), session_id, list(scope.values()), default_db().get_messages)
             return JSONResponse({"items": items, "calls": calls, "spawns": spawns, "now": time.time()},

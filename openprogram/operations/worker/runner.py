@@ -469,7 +469,7 @@ def run_foreground() -> int:
     import openprogram.interfaces.speech  # noqa: F401
 
     try:
-        from openprogram.state.store.session.migration import run_startup_migration
+        from openprogram.state.store.session.files.migration import run_startup_migration
         run_startup_migration()
         worker_print("session migration: ready")
     except Exception as exc:  # noqa: BLE001
@@ -554,7 +554,7 @@ def run_foreground() -> int:
         # Full tool outputs in the profile's shared folder that no
         # conversation names any more go once a day.
         try:
-            from openprogram.state.store.session.tool_output_gc import start_daily
+            from openprogram.state.store.session.files.tool_output_gc import start_daily
             start_daily()
         except Exception as exc:  # noqa: BLE001
             worker_print(f"tool output collection failed to start: {type(exc).__name__}")
@@ -641,7 +641,7 @@ def run_foreground() -> int:
     # Channel question bridge — push runtime.ask/form questions from a
     # channel session into that chat so the user can /answer them.
     try:
-        from openprogram.interfaces.channels._question_bridge import install_question_bridge
+        from openprogram.interfaces.channels.inbound._question_bridge import install_question_bridge
         install_question_bridge()
         worker_print("channel question bridge installed")
     except Exception as exc:  # noqa: BLE001
@@ -680,7 +680,7 @@ def run_foreground() -> int:
     except KeyboardInterrupt:
         print()
         worker_print("stopping...")
-        from openprogram.runtime.execution.restart import prepare_shutdown
+        from openprogram.runtime.execution.recovery.restart import prepare_shutdown
         try:
             prepare_shutdown(get_job_runner())
         except Exception:

@@ -204,17 +204,19 @@
 </tbody>
 </table>
 
-<h3 id="task-list">任务清单</h3>
+<h3 id="task-list">任务块</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">情况</th><th scope="col">显示</th></tr></thead>
 <tbody>
-<tr><th scope="row">来源</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>；在改动它的轮次回复下</td></tr>
-<tr><th scope="row">运行中</th><td>展开：已完成、进行中、待办</td></tr>
-<tr><th scope="row">这一轮结束</th><td>消失</td></tr>
-<tr><th scope="row">仍有子 Agent 在跑</th><td>保留，并在等待的那项显示数量</td></tr>
-<tr><th scope="row">停止或出错且有未完成任务</th><td>保留到你发下一条消息</td></tr>
-<tr><th scope="row">新轮次没有计划</th><td>显示未完成的清单，标为 <strong>你上一条消息之前的计划</strong></td></tr>
-<tr><th scope="row">长计划</th><td>显示十二项，其余显示数量</td></tr>
+<tr><th scope="row">来源</th><td>Agent 用 <code translate="no">task_start</code> 给一段较长的工作起名；这段工作在回复里画成一个块。小工作没有块。</td></tr>
+<tr><th scope="row">运行中</th><td>展开：任务名、正在第几步（如 <strong>3/5</strong>）、耗时和它的步骤。当前步骤展开到它的工具行和 Agent 说的话；已完成的步骤各占一行，带一句简短的结果。</td></tr>
+<tr><th scope="row">做完</th><td>收成一行：名字、结果、步数、改动行数、耗时。点一下重新展开。</td></tr>
+<tr><th scope="row">停止、失败或中断</th><td>保持展开，停在当时的那一步，带标签。不替它勾任何步骤。</td></tr>
+<tr><th scope="row">回复里的第二个任务</th><td>第一个收起；没做完时写 <strong>停在 3/5</strong></td></tr>
+<tr><th scope="row">文字</th><td>Agent 在开工前、两个任务之间说的话和最终回答始终可见。某一步里说的话随块折叠。</td></tr>
+<tr><th scope="row">跨多轮的 Goal</th><td>每条回复显示这一轮的步骤；<strong>前 5 步已完成</strong> 跳到更早的那些</td></tr>
+<tr><th scope="row">展开和收起</th><td>你的选择按回复记在本浏览器里。Enter 或空格切换；左方向键收起，右方向键展开。</td></tr>
+<tr><th scope="row">保存着待办清单的对话</th><td>每份清单是一个收起的块，名为 <strong>待办</strong></td></tr>
 </tbody>
 </table>
 
@@ -222,7 +224,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row">左边缘刻度</th><td>你有两条以上消息时，每条一个。指向显示预览卡片；点击滚动。</td></tr>
+<tr><th scope="row">左边缘刻度</th><td>你有两条以上消息时，每条一个。指向显示预览卡片；点击滚动。有任务的那一轮刻度更长，卡片里列出任务：点一条跳到它的块。</td></tr>
 <tr><th scope="row"><strong>钉为章节</strong>，回复操作行</th><td>更粗的紫色刻度、实心书签、常显的操作行；在包含该消息的所有分支和窗口都有效</td></tr>
 <tr><th scope="row"><strong>取消章节</strong></th><td>移除</td></tr>
 </tbody>
@@ -407,7 +409,7 @@
 <tbody>
 <tr><th scope="row"><strong>等你处理</strong>，有内容时</th><td>常驻 Agent 留给你的报告</td><td>打开对应对话</td></tr>
 <tr><th scope="row"><strong>Agents</strong></th><td><strong>主 Agent</strong>，含状态和子 Agent 数；红色角标计等待项。每个分支一行，标记 <strong>Current</strong>。<a href="../capabilities/always-on-agents.html">常驻</a>时多一行状态。</td><td>它的运行，新的在前，每次运行里有它做的事；常驻时有 <strong>Always-on</strong> 一行；分支页有 <strong>Switch to this branch</strong></td></tr>
-<tr><th scope="row"><strong>Programs and commands</strong></th><td>运行中的命令、<strong>Interrupted</strong> 的命令、所有后台程序，运行中的在前</td><td>进度、命令、终端输出、<strong>Stop program</strong>，目录和环境在 <strong>Technical details</strong> 里；命令返回后显示输出</td></tr>
+<tr><th scope="row"><strong>Programs and commands</strong></th><td>正在运行的命令和后台程序，以及失败的程序；完成的不再列出</td><td>进度、命令、终端输出、<strong>Stop program</strong>，目录和环境在 <strong>Technical details</strong> 里；命令返回后显示输出</td></tr>
 <tr><th scope="row"><strong>Open work</strong>，有内容时</th><td><a href="../capabilities/agents.html#open-work">Agent 还欠你的事</a></td><td>备注、<strong>Mark done</strong> 或 <strong>Reopen</strong>、<strong>Remove</strong></td></tr>
 <tr><th scope="row"><strong>Scheduled tasks</strong></th><td>本对话设置的调度任务、<a href="../capabilities/reminders.html">提醒</a>、<a href="../capabilities/event-triggers.html">事件触发器</a></td><td><strong>Open in Scheduler</strong>；一行 <strong>Task</strong>，含提示或命令，webhook 另有地址和密钥及 <strong>Copy</strong>；最近 20 次运行</td></tr>
 </tbody>

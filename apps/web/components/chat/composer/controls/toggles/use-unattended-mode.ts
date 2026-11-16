@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useSessionScope } from "@/lib/session-store/session-scope";
 
@@ -11,13 +11,13 @@ export function useUnattendedMode(
   const unattended = useSessionScope((state) => state.settings.unattended);
   const patchSettings = useSessionScope((state) => state.patchSettings);
 
-  const toggleUnattended = () => {
+  const toggleUnattended = useCallback(() => {
     const next = !unattended;
     patchSettings({ unattended: next });
     if (sessionId) {
       send({ action: "set_attended", session_id: sessionId, attended: !next });
     }
-  };
+  }, [unattended, patchSettings, sessionId, send]);
 
   useEffect(() => {
     if (sessionId) {

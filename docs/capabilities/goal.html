@@ -4,7 +4,7 @@
 <h1>Goals in chat</h1>
 <p>A Goal keeps an objective active across ordinary turns of the current agent, with the conversation's tools, model, permissions and history. There is no nested working agent.</p>
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="A successful working turn leads to another automatic turn while the Goal is active. When the agent submits a completion candidate with update_goal status complete, or the todo plan is fully complete, a separate read-only verification turn runs. Accepted evidence, rechecked by the runtime, ends the Goal as achieved. Missing evidence returns to working turns.">
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="A successful working turn leads to another automatic turn while the Goal is active. When the agent submits a completion candidate with update_goal status complete, or every step of its task is done, a separate read-only verification turn runs. Accepted evidence, rechecked by the runtime, ends the Goal as achieved. Missing evidence returns to working turns.">
   <defs><marker id="gl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="56">Working turn</text>
   <text class="t-soft" x="0" y="82">repeats while active</text>
@@ -30,13 +30,13 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Plan</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>, <code translate="no">todo_list</code> for multi-step work; a simple objective needs none. New items attach to the Goal and revision. Progress refreshes after each todo change and when a turn ends; a failed progress notice does not undo todos.</td></tr>
-<tr><th scope="row">Candidate</th><td>The agent checks evidence against every requirement, then <code translate="no">update_goal(status="complete")</code>. This only submits. Unfinished associated todos prevent it. A fully completed plan also triggers verification, once per changed plan.</td></tr>
-<tr><th scope="row">Verifying</th><td>Assesses the original objective and each todo requirement, with trusted built-in inspection tools under normal permissions. No shell, writes or Goal mutation; needed tests go back to the working agent as missing evidence.</td></tr>
-<tr><th scope="row">Achieved</th><td>Needs a per-requirement assessment with evidence references. The runtime rechecks requirements, user controls, todos, unfinished executions, unknown effects and evidence. Pause, edit, cancellation, new instructions or changed evidence prevent stale success. A failed execution stays recoverable.</td></tr>
+<tr><th scope="row">Plan</th><td><code translate="no">task_start</code> opens a task with its steps and <code translate="no">task_step</code> moves it on, for multi-step work; a simple objective needs none. A task belongs to the Goal and revision it was started under and continues over turns, shown as a <a href="../interfaces/web.html#task-list">task block</a> in each reply. Progress refreshes after each change and when a turn ends; a failed progress notice does not undo steps.</td></tr>
+<tr><th scope="row">Candidate</th><td>The agent checks evidence against every requirement, then <code translate="no">update_goal(status="complete")</code>. This only submits. Unfinished steps prevent it; a dropped step does not. A task with every step done also triggers verification, once per changed plan.</td></tr>
+<tr><th scope="row">Verifying</th><td>Assesses the original objective and each step that was not dropped, with trusted built-in inspection tools under normal permissions. No shell, writes or Goal mutation; needed tests go back to the working agent as missing evidence.</td></tr>
+<tr><th scope="row">Achieved</th><td>Needs a per-requirement assessment with evidence references. The runtime rechecks requirements, user controls, steps, unfinished executions, unknown effects and evidence. Pause, edit, cancellation, new instructions or changed evidence prevent stale success. A failed execution stays recoverable.</td></tr>
 </tbody>
 </table>
-<p class="note">Semantic verification is an independent model judgment, not a guarantee. Completion describes the time of verification and starts no monitoring. Checking every todo does not prove the objective.</p>
+<p class="note">Semantic verification is an independent model judgment, not a guarantee. Completion describes the time of verification and starts no monitoring. Finishing every step does not prove the objective.</p>
 <p class="note">A Goal belongs to the branch it was set on: its automatic turns continue that branch, and a turn on another branch leaves it alone.</p>
 <h2 id="control-execution">Commands</h2>
 <table class="stack fixed">
@@ -68,7 +68,7 @@
 <tr><th scope="row">Paused</th><td>Shows why: failed turn, Plan mode, unmet verification prerequisite, restart limit</td></tr>
 </tbody>
 </table>
-<p class="note">Goals have no round limit. The badge shows todo completion and omits it when there are no todos; status stays visible. Limits are optional and use cumulative usage. Automatic continuation does not expand tool permissions.</p>
+<p class="note">Goals have no round limit. The badge names the step in progress and its place, such as <strong>Restyle · 3/5</strong>; otherwise status and steps done. A click goes to the open task block, then to the Goal's details. Limits are optional and use cumulative usage. Automatic continuation does not expand tool permissions.</p>
 <details>
 <summary>In the transcript and details</summary>
 <ul>
@@ -85,7 +85,7 @@
 <tbody>
 <tr><th scope="row">Worker restart</th><td>Does not pause a chat Goal: compatible checkpoints resume under the automatic restart policy, and a turn completed during shutdown keeps a durable continuation notification</td></tr>
 <tr><th scope="row">Automatic work prevented by</th><td>User pause, cancellation, exhausted budgets, explicit restart limits. Legacy recoverable pauses and Goals with no saved continuation provenance need explicit Resume. External-event wakeups remain a recovery limitation. A wait or unresolved execution is not evidence of completion.</td></tr>
-<tr><th scope="row">Verify needs</th><td>Finished work, completed associated todos, available budget and no unresolved relevant work. Goal-owned background processes running or of unknown outcome prevent it; unrelated resources do not. Pause, cancellation, changed versions and duplicate requests cannot bypass this.</td></tr>
+<tr><th scope="row">Verify needs</th><td>Finished work, no unfinished step, available budget and no unresolved relevant work. Goal-owned background processes running or of unknown outcome prevent it; unrelated resources do not. Pause, cancellation, changed versions and duplicate requests cannot bypass this.</td></tr>
 <tr><th scope="row">Resume of an ordinary chat with no owner or active descendants</th><td>Can close its interrupted frame and start a restricted inspection turn, without replaying old tool calls. Unknown effects stay unknown; nothing claims an external operation was cancelled.</td></tr>
 <tr><th scope="row">New admission</th><td>Has a durable identity, so a crash before saving the Goal cannot duplicate turns. Incompatible checkpoints use a new chat turn; temporary activation or credential errors do not authorize that. Provider-only interrupted background Jobs keep their input and resource admission. Child executions with unresolved effects need inspection.</td></tr>
 <tr><th scope="row">Incomplete tool-call history in provider requests</th><td>Repaired without rewriting saved records: missing outputs get an unknown-outcome placeholder, real outputs win, duplicates collapse, interrupted text stays labelled, unpaired results are omitted from the request but stay saved. This does not prove failure or authorize a retry.</td></tr>

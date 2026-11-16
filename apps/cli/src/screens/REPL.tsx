@@ -49,7 +49,7 @@ import { stopForeground, type PendingSend, type StopState } from './repl/cancelE
 import { compactionOperation } from './repl/wsHandlers/handleChatResponse.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
-import { makeAccountsClient } from '../utils/providerAccounts.js';
+import { makeCredentialsClient } from '../utils/providerAccounts.js';
 import { KeybindingsProvider } from '../keybindings/KeybindingsContext.js';
 import { bindingMatches, loadBindings } from '../keybindings/resolve.js';
 import { ToolExpansionContext } from '../components/tools/ToolRow.js';
@@ -61,7 +61,7 @@ import {
   nextAttachmentNumber,
   type PendingAttachment,
 } from '../utils/attachments.js';
-import type { AccountsState, AddStarted } from '../utils/providerAccounts.js';
+import { EMPTY_CREDENTIALS, type CredentialList, type AddStarted } from '../utils/providerAccounts.js';
 
 export type { REPLProps } from './repl/types.js';
 
@@ -151,9 +151,7 @@ export const REPL: React.FC<REPLProps> = ({
   // menu, the in-flight code-paste add (login URL + session awaiting a code),
   // and the in-flight login-mode add (new account name + chosen method).
   const [accountsProviderId, setAccountsProviderId] = useState<string>('claude-code');
-  const [accountsState, setAccountsState] = useState<AccountsState>({
-    installed: false, ready: false, active: null, accounts: [],
-  });
+  const [accountsState, setAccountsState] = useState<CredentialList>(EMPTY_CREDENTIALS);
   const [accountSelected, setAccountSelected] = useState<string | null>(null);
   const [accountPendingAdd, setAccountPendingAdd] = useState<AddStarted | null>(null);
   const [accountLogin, setAccountLogin] = useState<{ name: string; method: string } | null>(null);
@@ -419,7 +417,7 @@ export const REPL: React.FC<REPLProps> = ({
       // and triggers auto-install for claude-code).
       const openAccountsPanel = (providerId: string) => {
         setAccountsProviderId(providerId);
-        void makeAccountsClient(providerId).fetchAccounts()
+        void makeCredentialsClient(providerId).fetch()
           .then((s) => setAccountsState(s))
           .catch(() => { /* paint empty; Add will install + refresh */ })
           .finally(() => {

@@ -117,7 +117,7 @@ PROGRAM_ENTRIES = [researcher.research]</code></pre>
 <li>延迟目录作为 <code translate="no">turn_context</code> 的 <code translate="no">deferred_catalog</code> 段放在用户消息旁：范围内的全部延迟工具，加载与否都列出，第一次发完整列表，之后只发新增和移除，所以加载工具或服务器连上都不会改动提示（<a href="deferred-tools.zh.html#catalog">延迟工具</a>）。<code translate="no">agent_loop</code> 仍收到完整列表。</li>
 <li>每次 provider 调用前，<code translate="no">split_tools_for_dispatch</code> 保留非延迟工具，以及本次请求自己的消息加载过的工具（<code translate="no">loaded_tools(messages)</code>：工具结果上的加载记录、压缩摘要携带的名字），作为 <code translate="no">tools=[]</code>。</li>
 <li>收到 <code translate="no">ToolCall</code> 时，<code translate="no">agent_loop</code> 在 <code translate="no">context.tools</code> 或 <code translate="no">_registry</code> 查找，校验参数，await <code translate="no">execute(call_id, args, cancel, on_update)</code>。</li>
-<li><code translate="no">tool_search(select="cron")</code> 加载 <code translate="no">cron</code>：下一次请求带上其 schema，因为这次搜索的结果记下每个加载工具的定义（<code translate="no">details.loads</code>、<code translate="no">record_loads</code>），历史里保留模型第一次收到的版本。原生发送加载器的 Responses provider 把它放在这次搜索的结果里，而不是 <code translate="no">tools=[]</code>（<a href="../providers/codex-transport.zh.html#deferred-tools">Codex 传输</a>）。</li>
+<li><code translate="no">tool_search(select="cron")</code> 加载 <code translate="no">cron</code>：下一次请求带上其 schema，因为这次搜索的结果记下每个加载工具的定义（<code translate="no">details.loads</code>、<code translate="no">record_loads</code>），历史里保留模型第一次收到的版本。原生发送加载器的 Responses provider 把它放在这次搜索的结果里，而不是 <code translate="no">tools=[]</code>（<a href="../providers/requests/codex-transport.zh.html#deferred-tools">Codex 传输</a>）。</li>
 </ol>
 
 <details><summary>各部分所在位置</summary>

@@ -1,64 +1,30 @@
-"""Single entry point callers use to resolve "the right credential, now".
+"""From a credential to what one request sends.
 
-The problem this solves: most call sites don't want to reason about
-whether a provider uses OAuth, api_key, delegated-CLI, or env-var auth —
-they just want a bearer string they can stick on the Authorization
-header. :func:`resolve_api_key_sync` hides the ladder behind one call.
+:func:`resolve_connection` turns a :class:`Credential` into the bearer
+string, base URL and headers a request carries: an imported login is read
+from the other tool's file, a helper command is run, an environment
+variable's key is read from the environment. Model requests get their
+credential through :func:`openprogram.models.auth.selection.with_credential`;
+the two ``resolve_*_sync`` helpers serve the callers outside a model request
+(probes, tools, model listing), choosing the same way without counting a use.
 
-Resolution order:
-
-  1. :func:`auth.context.get_credential_override` — lets tests or
-     middleware inject a specific credential for this scope without
-     writing the store.
-  2. :meth:`CredentialProvider.acquire_sync` — the proper v2 path. Returns a
-     refreshed access_token/api_key from the provider pool. If the
-     provider isn't registered or the pool is empty, raises
-     :class:`AuthConfigError`; we fall through rather than propagate.
-  3. ``env_api_keys.resolve_provider_key`` — covers the Bedrock/Vertex
-     cloud-credential sentinel (those have no bearer key). Env vars are
-     NOT consulted anywhere; provider keys live in the AuthStore only.
-
-Returns ``None`` if every step fails — caller decides whether that
-triggers a "please log in" banner or just proceeds key-less (useful for
-local model endpoints that don't need auth).
-
-One deliberate exception to "fall through silently":
-:class:`AuthCredentialProcessError` propagates. When the user configured a
-helper command, the answer to "the helper is broken" is an error naming
-the helper, not a quiet downgrade to a stale key from another layer.
-
-Intentionally sync: most provider call sites are sync (FastAPI
-dependencies, CLI entry points). Async callers should call
-:meth:`CredentialProvider.acquire` directly.
+A configured helper command that fails raises
+:class:`AuthCredentialProcessError` instead of yielding nothing: the user
+who set up the helper sees the helper's error, not another key.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
-from .account.account_selection import get_active_account
-from .context import (
-    get_credential_override,
-)
-from .credential_provider import get_credential_provider
-from .types import (
-    AuthConfigError,
-    AuthError,
-    AuthCredentialProcessError,
-    Credential,
-)
+from .types import AuthConfigError, AuthCredentialProcessError, AuthError, Credential
 
 
 @dataclass
 class ResolvedConnection:
-    """What one request needs, translated from a Credential.
-
-    ``kind`` is the credential kind carried through so wire code can
-    still branch on it if needed; ``auth_value`` is always the bearer
-    string to use (never a raw payload attribute name); ``base_url``
-    is ``None`` (not empty string) when unset, so wire code's
-    catalog-default fallback triggers correctly.
-    """
+    """What one request needs, translated from a Credential. ``base_url`` is
+    ``None`` when unset so the catalogue's default applies."""
 
     kind: str
     auth_value: str
@@ -66,153 +32,89 @@ class ResolvedConnection:
     headers: dict
 
 
-def resolve_connection(cred: "Credential") -> "ResolvedConnection | None":
-    """Translate a Credential into what one request needs.
-
-    cli_delegated reads its external file here for the freshest token.
-    credential_process runs its helper here (cached for ``cache_seconds``)
-    and raises :class:`AuthCredentialProcessError` if the helper fails —
-    a user who configured a helper must not have it silently replaced by
-    whatever other credential the ladder finds. sso raises
-    :class:`AuthConfigError`; the kind exists but no flow implements it.
-    """
+def resolve_connection(cred: Credential) -> Optional[ResolvedConnection]:
+    """The bearer value, base URL and headers ``cred`` sends, or ``None``
+    when it has no usable value (Anthropic accepts API keys only)."""
     from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
     p = cred.payload
+    payload_kind = getattr(p, "kind", "") or cred.kind
     if cred.provider_id in UNSUPPORTED_PROVIDERS or (
-        cred.provider_id == "anthropic" and (cred.kind in ("oauth", "device_code", "cli_delegated")
-        or p.kind in ("oauth", "device_code", "cli_delegated"))
+        cred.provider_id == "anthropic" and cred.kind != "api_key"
     ):
         return None
-    kind = getattr(p, "kind", "")
     auth_value = p.auth_value
-    if kind == "cli_delegated":
-        auth_value = _read_delegated_token(p) or ""
-    elif kind == "credential_process":
+    if cred.source == "env":
+        auth_value = os.environ.get(cred.metadata.get("env_var") or "", "").strip()
+    elif cred.kind == "import":
+        auth_value = _read_delegated_token(p) or auth_value
+    elif cred.kind == "credential_process" or payload_kind == "credential_process":
         from .methods.credential_process import token_for_payload
-        auth_value = token_for_payload(
-            p.data, scope=f"{cred.provider_id}/{cred.account_id}",
-        )
-    elif kind == "sso":
-        raise AuthConfigError(
-            "enterprise SSO credentials are not implemented; "
-            "no login flow can produce or use kind='sso'",
-            provider_id=cred.provider_id, account_id=cred.account_id,
-        )
+        auth_value = token_for_payload(p.data, scope=f"{cred.provider_id}/{cred.id}")
+    elif payload_kind == "sso":
+        raise AuthConfigError("enterprise SSO credentials are not implemented",
+                              provider_id=cred.provider_id)
     if not auth_value or "sk-ant-oat" in auth_value:
         return None
-    base_url = p.base_url or None
-    return ResolvedConnection(
-        kind=kind, auth_value=auth_value,
-        base_url=base_url, headers=dict(p.headers or {}),
-    )
+    return ResolvedConnection(kind=cred.kind, auth_value=auth_value,
+                              base_url=p.base_url or None, headers=dict(p.headers or {}))
 
 
-def resolve_api_key_sync(
-    provider_id: str,
-    account_id: Optional[str] = None,
-) -> Optional[str]:
-    """Return a bearer string for the provider, or None if no path yields one.
-
-    ``account_id`` defaults to the provider's active account
-    (:func:`auth.account_selection.get_active_account` — its pinned account, else the
-    ambient scope, else ``"default"``). Explicit override is useful for scripts
-    that want a specific account regardless of the active selection.
-    """
-    account = account_id or get_active_account(provider_id)
-
-    # Layer 1 — scope-injected override (tests, DI).
-    override = get_credential_override(provider_id)
-    if override is not None:
-        token = _extract_token(override)
-        if token:
-            return token
-
-    # Layer 2 — CredentialProvider.
+def _token(provider_id: str, *, keys_only: bool) -> Optional[str]:
+    from .credential_provider import get_credential_provider
+    from .selection import choose, usable
+    from .store import canonical_provider, get_store
+    provider_id = canonical_provider(provider_id)
+    pool = get_store().get(provider_id)
+    if not pool.credentials:
+        return None
     try:
-        cred = get_credential_provider().acquire_sync(provider_id, account)
-        token = _extract_token(cred)
-        if token:
-            return token
-    except AuthCredentialProcessError:
-        # The user configured this helper. A broken helper is their bug
-        # to fix, not a cue to hand back some other layer's credential.
-        raise
+        first = choose(provider_id, record=False)
     except (AuthConfigError, AuthError):
-        # Fall through silently — these are expected when the provider
-        # simply hasn't been registered in the new system yet.
-        pass
-    except RuntimeError:
-        # Running inside an event loop — callers in that situation should
-        # use the async API. Don't crash the whole resolver; fall through
-        # to env-var path so legacy code keeps working.
-        pass
-
-    # Layer 3 — the Bedrock/Vertex cloud-credential sentinel (no bearer
-    # key exists for those; "<authenticated>" means the chain is ready).
-    try:
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-    except ImportError:
         return None
-    return resolve_provider_key(provider_id) or None
-
-
-def resolve_store_api_key_sync(
-    provider_id: str,
-    account_id: Optional[str] = None,
-) -> Optional[str]:
-    """API-key-shaped credential from the AuthStore only, or None.
-
-    Unlike :func:`resolve_api_key_sync`, OAuth/device tokens are
-    EXCLUDED: those belong to provider-specific transports (claude-code
-    daemon, codex OAuth headers) — handing an access_token to a wire
-    that puts it in ``x-api-key`` just 401s. This is the single key
-    source ``resolve_provider_key`` reads.
-
-    ``credential_process`` IS included: a helper prints a plain key that
-    goes in the same header an ``api_key`` would. Helper failures raise
-    rather than returning None, for the reason in the module docstring.
-    """
-    account = account_id or get_active_account(provider_id)
-
-    override = get_credential_override(provider_id)
-    if override is not None:
-        payload = getattr(override, "payload", None)
-        if payload is not None and getattr(payload, "kind", "") == "api_key":
-            conn = resolve_connection(override)
-            return conn.auth_value if conn else None
-        return None
-
-    try:
-        cred = get_credential_provider().acquire_sync(provider_id, account)
-    except (AuthConfigError, AuthError, RuntimeError):
-        return None
-    payload = getattr(cred, "payload", None)
-    if payload is not None and getattr(payload, "kind", "") == "credential_process":
-        conn = resolve_connection(cred)
-        return conn.auth_value if conn else None
-    if payload is not None and getattr(payload, "kind", "") == "api_key":
-        conn = resolve_connection(cred)
-        return conn.auth_value if conn else None
+    order = [first] + [c for c in pool.credentials if c.id != first.id and usable(c)]
+    for cred in order:
+        if keys_only and cred.kind not in ("api_key", "credential_process"):
+            continue
+        try:
+            conn = resolve_connection(get_credential_provider().prepare(cred))
+        except AuthCredentialProcessError:
+            raise
+        except (AuthConfigError, AuthError):
+            continue
+        if conn is not None:
+            return conn.auth_value
     return None
 
 
-def _extract_token(cred: Credential) -> Optional[str]:
-    """Pull the bearer value out of whichever payload shape we got."""
-    conn = resolve_connection(cred)
-    return conn.auth_value if conn else None
+def has_key(provider_id: str) -> bool:
+    """Whether ``provider_id`` has a key-shaped credential (an API key, an
+    environment variable, a helper command) in its list, whatever its state
+    now. For a check at setup; the key a request sends is chosen then."""
+    from .store import canonical_provider, get_store
+    return any(c.kind in ("api_key", "credential_process")
+               for c in get_store().get(canonical_provider(provider_id)).credentials)
+
+
+def resolve_api_key_sync(provider_id: str) -> Optional[str]:
+    """The bearer value of the credential a request of ``provider_id`` would
+    use now (any kind), or the cloud-credential sentinel, or ``None``."""
+    token = _token(provider_id, keys_only=False)
+    if token:
+        return token
+    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+    return resolve_provider_key(provider_id) or None
+
+
+def resolve_store_api_key_sync(provider_id: str) -> Optional[str]:
+    """The key of the first usable key-shaped credential (an API key, an
+    environment variable, a helper command), or ``None``. Sign-in tokens are
+    left out: callers put this value in an ``x-api-key`` style header."""
+    return _token(provider_id, keys_only=True)
 
 
 def _read_delegated_token(payload) -> Optional[str]:
-    """Read the access token out of a delegated CLI's on-disk store.
-
-    ``payload.data["store_path"]`` points at the external CLI's auth file
-    (e.g. codex's ``~/.codex/auth.json`` or Claude Code's
-    ``~/.claude/.credentials.json``); ``payload.data["access_key_path"]``
-    is the JSON key path to the access token inside it. Any read/parse
-    failure yields None so the resolver falls through rather than raising —
-    the caller then surfaces the actionable "no credential" error or
-    re-login prompt.
-    """
+    """The access token in another tool's login file
+    (``data["store_path"]``, at ``data["access_key_path"]``), or ``None``."""
     import json
     from pathlib import Path
 
@@ -231,9 +133,5 @@ def _read_delegated_token(payload) -> Optional[str]:
     return node if isinstance(node, str) and node else None
 
 
-__all__ = [
-    "resolve_api_key_sync",
-    "resolve_store_api_key_sync",
-    "resolve_connection",
-    "ResolvedConnection",
-]
+__all__ = ["ResolvedConnection", "has_key", "resolve_api_key_sync", "resolve_connection",
+           "resolve_store_api_key_sync"]

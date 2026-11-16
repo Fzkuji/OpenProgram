@@ -201,7 +201,7 @@ def test_refresh_copies_installer_and_regenerates_packaged_protocol(package_fact
     shutil.copyfile(ROOT / "apps/desktop/scripts/install-app.sh", staged_installer)
     # Execute the real archive/resource replacement statements over fixture files;
     # deliberately exclude worker stop/start and OS App opening from this check.
-    source = (ROOT / "scripts/refresh-local-app.sh").read_text()
+    source = (ROOT / "scripts/local-instances/refresh-local-app.sh").read_text()
     block = source[source.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"'):source.index('revision="$build_revision"')]
     assets = tmp_path / "runtime-assets"
     assets.mkdir()

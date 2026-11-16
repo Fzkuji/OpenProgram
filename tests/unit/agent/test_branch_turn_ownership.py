@@ -10,7 +10,7 @@ from __future__ import annotations
 import types
 
 from openprogram.runtime.agent.turn_request import owns_conversation_effects
-from openprogram.runtime.execution.foreground import foreground_task_snapshot
+from openprogram.runtime.execution.projections.foreground import foreground_task_snapshot
 from openprogram.runtime.execution.model import ExecutionStatus
 
 from tests.unit.agent.test_branch_agent_admission import two_branches
@@ -29,7 +29,7 @@ def _bind(monkeypatch, store):
 def test_ownership_is_frozen_at_admission(store, monkeypatch):
     a, b = two_branches(store)
     _bind(monkeypatch, store)
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     selected = freeze_branch_request({"session_id": "s"}, branch_authority=True)
     beside = freeze_branch_request({"session_id": "s", "branch_id": a, "side_branch": True},
                                    branch_authority=True)
@@ -84,7 +84,7 @@ def test_a_resumed_turn_keeps_its_standing_from_the_stored_request():
 def test_admission_records_each_setting_with_its_source(store, monkeypatch):
     a, _b = two_branches(store)
     _bind(monkeypatch, store)
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     frozen = freeze_branch_request({"session_id": "s", "branch_id": a, "thinking_effort": "max",
                                     "agent_id": None, "permission_mode": None})
     record = frozen["turn_settings"]
@@ -121,7 +121,7 @@ def test_a_branch_record_keeps_its_own_token_count(store):
 def test_two_branches_budget_against_their_own_last_request(store, monkeypatch):
     a, b = two_branches(store)
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
-    from openprogram.runtime.context.usage import UsageTracker
+    from openprogram.runtime.context.token_accounting.usage import UsageTracker
     tracker = UsageTracker()
     tracker.record_turn("s", usage={"context_tokens": 50_000, "input_tokens": 50_000}, branch_id=b)
     tracker.record_turn("s", usage={"context_tokens": 7_000, "input_tokens": 7_000}, branch_id=a)
@@ -145,7 +145,7 @@ def test_the_turns_branch_comes_from_the_usage_context(store, monkeypatch):
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     from dataclasses import replace
     from openprogram.models.usage.context import _current
-    from openprogram.runtime.context.usage import UsageTracker
+    from openprogram.runtime.context.token_accounting.usage import UsageTracker
     tracker = UsageTracker()
     tracker.record_turn("s", usage={"context_tokens": 40_000}, branch_id=b)
     token = _current.set(replace(_current.get(), session_id="s", branch_id=a))

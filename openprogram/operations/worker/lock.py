@@ -61,7 +61,7 @@ class WorkerLock:
         self.holder_pid = os.getpid()
         with _held_paths_lock:
             _held_paths.add(_lock_key(self.path))
-        from openprogram.state.store.session import session_log
+        from openprogram.state.store.session.files import session_log
 
         session_log.claim_main_writer()
         return True
@@ -85,7 +85,7 @@ class WorkerLock:
             pass
         with _held_paths_lock:
             _held_paths.discard(_lock_key(self.path))
-        from openprogram.state.store.session import session_log
+        from openprogram.state.store.session.files import session_log
 
         session_log.release_main_writer()
         self._fh = None

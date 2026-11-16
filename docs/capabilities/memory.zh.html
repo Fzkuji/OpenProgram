@@ -17,7 +17,7 @@
 <tr><th scope="row">手动编辑</th><td>服务端按五分钟合并检查点，容差 15 秒。截止时间跨重启保留，不依赖编辑器开着。保留每段编辑之前的状态。</td></tr>
 <tr><th scope="row">后台写入</th><td>单独提交，以来源会话命名</td></tr>
 <tr><th scope="row">写入触发的重新整理</th><td>单独提交</td></tr>
-<tr><th scope="row">夜间整理</th><td>每拆分一个文件一次提交</td></tr>
+<tr><th scope="row">夜间整理</th><td>每拆分一个文件、每归档一个文件夹各一次提交：有多篇笔记的公司、人或项目会有自己的文件夹，<code translate="no">openprogram memory regroup</code> 可随时执行</td></tr>
 <tr><th scope="row">agent 的 <code translate="no">memory_update</code></th><td>单独提交，以会话命名</td></tr>
 <tr><th scope="row">OpenProgram 之外的编辑</th><td>在下次写入前单独提交，恢复某次写入不会带上它们</td></tr>
 </tbody>

@@ -16,10 +16,10 @@ export {useSessionStore,selectRow} from './lib/session-store';
 export {createHistoryFragmentDecoder} from './lib/net/ws/history-fragments';
 export {holdsHistoryWindow,registerSessionHistory,updateSessionHistory,useSessionHistory} from './lib/chat/history/session-history';
 export {peekTakeLatest,lastSettledTakeLatest} from './lib/chat/history/chat-scroll';
-export {setFollowLock,readHistoryAnchor,saveHistoryAnchor} from './lib/chat/history/history-viewport';
+export {setFollowLock} from './lib/chat/history/history-viewport';
 `,resolveDir:root},bundle:true,format:'esm',platform:'node',packages:'external',tsconfig:join(root,'tsconfig.json'),outfile:join(dir,'test.mjs')});
 const fragment=(decoder,data)=>decoder.receive(JSON.stringify({type:'history_fragment',data}));
-const {readHistoryAnchor,saveHistoryAnchor,seedTurnWindow,peekTakeLatest,lastSettledTakeLatest,setFollowLock,registerHistoryViewport,retrySessionHistory,loadSessionHistoryWindow,loadOlderSessionHistory,loadSessionData,runtimeState,setSocket,useSessionStore,selectRow,createHistoryFragmentDecoder,registerSessionHistory,updateSessionHistory,useSessionHistory,holdsHistoryWindow}=await import(pathToFileURL(join(dir,'test.mjs')));
+const {seedTurnWindow,peekTakeLatest,lastSettledTakeLatest,setFollowLock,registerHistoryViewport,retrySessionHistory,loadSessionHistoryWindow,loadOlderSessionHistory,loadSessionData,runtimeState,setSocket,useSessionStore,selectRow,createHistoryFragmentDecoder,registerSessionHistory,updateSessionHistory,useSessionHistory,holdsHistoryWindow}=await import(pathToFileURL(join(dir,'test.mjs')));
 test('large Unicode response is dispatched only when all ordered fragments arrive',()=>{
  const decoder=createHistoryFragmentDecoder();
  const original=JSON.stringify({type:'session_loaded',data:{id:'s',messages:['中文😀'.repeat(500000)]}});
@@ -193,26 +193,6 @@ test('an unknown cursor does one first read instead of retrying the same cursor'
  assert.equal(await load,false);
  assert.equal(ws.sent.length,before+1);
  assert.equal(ws.sent.at(-1).action,'load_session');assert.equal(ws.sent.at(-1).history_around,undefined);
- setSocket(null);
-});
-test('a reading position on a row the branch no longer has is forgotten, so the next read does not ask for it again',async t=>{
- const kept=new Map();const descriptor=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');
- Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:k=>kept.get(k)??null,setItem:(k,v)=>kept.set(k,v)}});
- t.after(()=>descriptor?Object.defineProperty(globalThis,'sessionStorage',descriptor):delete globalThis.sessionStorage);
- const {ws,reply}=turnSocket();const id='v3-anchor-gone';
- openTurns(id,[turn('t10')],turnWindow(10,11,20,{before:'t10'}));
- saveHistoryAnchor(id,{id:'gone',offset:12,head:'old-head'});saveHistoryAnchor('other',{id:'kept',offset:0});
- const load=loadSessionHistoryWindow(id,'around','gone');
- reply({id,error_code:'cursor_not_on_branch'});
- assert.equal(await load,false);
- assert.equal(ws.sent.at(-1).action,'load_session');assert.equal(ws.sent.at(-1).history_around,undefined);
- assert.equal(readHistoryAnchor(id),null,'the row is not on this branch: nothing restores to it');
- assert.equal(readHistoryAnchor('other').id,'kept');
- saveHistoryAnchor(id,{id:'t10',offset:0});
- const older=loadSessionHistoryWindow(id,'around','elsewhere');
- reply({id,error_code:'cursor_not_on_branch'});
- assert.equal(await older,false);
- assert.equal(readHistoryAnchor(id).id,'t10','a position on another row stays');
  setSocket(null);
 });
 test('a first read answered in turns seeds the window and holds no raw rows',()=>{

@@ -9,7 +9,7 @@
  * every composer mode shares the same row, this component only knows
  * the cluster's contents.
  */
-import React, { useRef } from "react";
+import React, { memo, useRef } from "react";
 
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { SolarIcon } from "@/components/solar-icons";
@@ -79,7 +79,9 @@ export interface ControlsClusterProps {
   thinkingTriggerRef: React.RefObject<HTMLDivElement>;
 }
 
-export function ControlsCluster({
+// Memoized: it redraws when one of its controls changes, not with every
+// composer redraw (a keystroke, a settings frame).
+export const ControlsCluster = memo(function ControlsCluster({
   bound,
   plusMenuOpen,
   setPlusMenuOpen,
@@ -365,4 +367,4 @@ export function ControlsCluster({
 
     </>
   );
-}
+});

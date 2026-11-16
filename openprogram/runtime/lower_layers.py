@@ -110,7 +110,7 @@ def _agent_registry():
 
 
 def _session_chat_model(session_id):
-    from openprogram.runtime.conversation.session_model import read_session_chat_model
+    from openprogram.runtime.conversation.session_settings.session_model import read_session_chat_model
 
     return read_session_chat_model(session_id)
 
@@ -195,14 +195,14 @@ def _allowed_tool_names():
 
 
 def _session_workdir(session_id: str):
-    from openprogram.runtime.conversation.workdir import runtime_location_for
+    from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
 
     workdir = runtime_location_for(session_id)["workdir"]
     return workdir if isinstance(workdir, str) and workdir else None
 
 
 def _session_additional_working_dirs(session_id: str):
-    from openprogram.runtime.conversation.session_config import load_session_run_config
+    from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config
 
     return load_session_run_config(session_id).additional_working_dirs
 
@@ -232,7 +232,7 @@ def _load_programs() -> None:
 
 
 def _system_prompt_parts(text: str):
-    from openprogram.runtime.context.components import prompt_parts
+    from openprogram.runtime.context.prompt_assembly.components import prompt_parts
 
     return prompt_parts(text)
 

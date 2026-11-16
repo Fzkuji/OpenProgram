@@ -265,9 +265,8 @@ def test_invalid_startup_config_keeps_import_alive_and_blocks_live_provider(
     assert blocked.requires_credentials is False
     stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        stream_module,
-        "resolve_provider_key",
-        lambda provider: pytest.fail("invalid replay config resolved credentials"),
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: pytest.fail("invalid replay config resolved credentials"),
     )
     model = Model(
         id="blocked",

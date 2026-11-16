@@ -56,9 +56,9 @@ def test_community_provider_names_are_declared():
     if not catalogue:
         pytest.skip("models.dev catalogue cache is empty")
 
-    from openprogram.models.providers.settings.env_api_keys import _PROVIDER_ENV_VARS
+    from openprogram.models.auth.login.login_method_registry import env_vars, listed_providers
 
-    static = {name for names in _PROVIDER_ENV_VARS.values() for name in names}
+    static = {name for provider in listed_providers() for name in env_vars(provider)}
     community = [
         provider["env_var"]
         for provider in catalogue

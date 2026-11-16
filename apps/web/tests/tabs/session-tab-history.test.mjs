@@ -156,6 +156,17 @@ test("draft history survives a background ACK, rename and reload", () => {
   state().closeTab(id); assert.equal(sessionAckIsActive("ready"), false);
 });
 
+test("an acknowledgement that changes no tab leaves the tab state as it is", () => {
+  reset(); const draft = state().openDraftSessionTab();
+  state().markSessionReady(draft);
+  const settled = state();
+  assert.equal(active().draft, false);
+  // Every later send of the conversation is acknowledged too.
+  state().markSessionReady(draft);
+  assert.equal(state(), settled);
+  assert.equal(state().tabs, settled.tabs);
+});
+
 test("unsent draft is restored and groups keep stable member references", () => {
   reset(); const draft = state().openDraftSessionTab(); const id = active().id;
   state().openWebTabInSplit("https://example.test"); state().setActive(id);

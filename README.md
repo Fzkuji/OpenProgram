@@ -22,8 +22,8 @@
 <p align="center"><b>An open-source agent harness where agents are Python programs that improve themselves.</b></p>
 
 <p align="center">
-  <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CHANGELOG.md"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFuzzyKuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
-  <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CHANGELOG.md"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
 </p>
@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
+  <a href="README.md">English</a> · <a href="translations/README.zh.md">简体中文</a> · <a href="translations/README.zh-Hant.md">繁體中文</a> · <a href="translations/README.ja.md">日本語</a> · <a href="translations/README.ko.md">한국어</a> · <a href="translations/README.es.md">Español</a> · <a href="translations/README.fr.md">Français</a> · <a href="translations/README.de.md">Deutsch</a> · <a href="translations/README.pt-BR.md">Português</a> · <a href="translations/README.ru.md">Русский</a>
 </p>
 
 - **Agents are Python classes.** Control flow, checks and retries are ordinary code; `self(...)` is a model call.
@@ -90,7 +90,7 @@ Each entry links to its design document.
 | **[Execution DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | Every user turn, model call and function call is a node you can inspect, branch and replay. |
 | **[Context](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | Each call reads a selection of nodes instead of a growing transcript, with automatic compaction. |
 | **[Self-programming](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | Agents write new methods into their own class; they become tools on the next turn. |
-| **[Checked decisions](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/execution/next-step-decision.html)** | The model picks from a fixed menu and code validates the pick before anything runs. |
+| **[Checked decisions](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.html)** | The model picks from a fixed menu and code validates the pick before anything runs. |
 | **[Sub-agents](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Sub-agents run on their own branch, optionally in a Git worktree, and return only their result. |
 | **[Events](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | A typed event bus; plugins observe events or gate tool calls. |
 | **[Always-on agents](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | Agents that keep running in the background and react to events. |
@@ -105,7 +105,7 @@ Each entry links to its design document.
 | **[Split panes](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Chats, files, terminals and web pages side by side. |
 | **[Built-in browser](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | A browser the agent reads and operates while you watch. |
 | **[Integrated terminal](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | Terminals in the workspace, shared with the agent. |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-and-browser-use.html)** | Operate desktop apps, browser pages or a remote VM. |
+| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Operate desktop apps, browser pages or a remote VM. |
 | **[CLI and TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | The same agent from the terminal. |
 | **[Remote access](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | Reach your own instance from another device, owner-only. |
 
@@ -123,9 +123,9 @@ Each entry links to its design document.
 | | |
 |---|---|
 | **[Providers](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini and more, several accounts per provider. |
-| **[Local models](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/local-models.html)** | Local inference servers, with optional authentication. |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/mcp-integration.html)** | Use MCP servers, or expose OpenProgram as one. |
-| **[Skills and plugins](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/skills-and-plugins.html)** | Extend what the agent knows and can call. |
+| **[Local models](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.html)** | Local inference servers, with optional authentication. |
+| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.html)** | Use MCP servers, or expose OpenProgram as one. |
+| **[Skills and plugins](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Extend what the agent knows and can call. |
 | **[Channels](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Talk to your agents from Telegram, Discord, Slack and WeChat. |
 | **[Automatic updates](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | Signed releases that update in place. |
 
@@ -159,4 +159,4 @@ Thanks to contributors who provide code, reports, reproductions, tests, document
 </p>
 <!-- /contributors-avatars -->
 
-[Issues](https://github.com/FuzzyKuji/OpenProgram/issues) · [Pull requests](https://github.com/FuzzyKuji/OpenProgram/pulls)
+[Issues](https://github.com/Fzkuji/OpenProgram/issues) · [Pull requests](https://github.com/Fzkuji/OpenProgram/pulls)

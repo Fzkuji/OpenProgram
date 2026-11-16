@@ -30,6 +30,14 @@ export interface ContextBreakdown {
     groups: Array<{ kind: string; tokens: number; count: number }>;
     top: Array<{ id: string; kind: string; tokens: number; preview: string }>;
   };
+  /** The compaction in effect on the branch: how many messages its summary
+   *  covers, the occupancy before and after, and when it ran (epoch seconds). */
+  last_compaction?: {
+    covered: number;
+    tokens_before?: number;
+    tokens_after?: number;
+    at?: number;
+  };
   context_window?: number | null;
   model?: string;
   error?: string;

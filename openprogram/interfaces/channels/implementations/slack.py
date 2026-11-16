@@ -124,7 +124,7 @@ class SlackChannel(Channel):
             user = event.get("user")
 
             # Parse slack event dict → ChannelMessage.
-            from openprogram.interfaces.channels._message import Attachment, ChannelMessage
+            from openprogram.interfaces.channels.inbound._message import Attachment, ChannelMessage
             attachments = tuple(
                 Attachment(
                     name=str(f.get("name") or "file"),

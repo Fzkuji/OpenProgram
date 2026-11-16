@@ -37,13 +37,13 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Location</th></tr></thead>
 <tbody>
-<tr><th scope="row">Merge engine</th><td><code translate="no">openprogram/runtime/conversation/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
+<tr><th scope="row">Merge engine</th><td><code translate="no">openprogram/runtime/conversation/peer_agents/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
 <tr><th scope="row">WebSocket action</th><td><code translate="no">openprogram/interfaces/server/ws_actions/merge.py</code></td></tr>
 <tr><th scope="row">Slash command</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/slash_actions.py</code></td></tr>
 <tr><th scope="row">Attach parsing</th><td><code translate="no">openprogram/state/store/session/graph/branches.py</code> <code translate="no">_attach_info</code></td></tr>
 <tr><th scope="row">DAG edges and shapes</th><td><code translate="no">apps/web/lib/runtime-bridge/dag/render/edges.ts</code>, <code translate="no">shapes.ts</code></td></tr>
 <tr><th scope="row">Merge node lane</th><td><code translate="no">openprogram/state/store/session/graph/layout/lane.py</code></td></tr>
-<tr><th scope="row">Check a graph</th><td><code translate="no">scripts/dag_dump.py</code></td></tr>
+<tr><th scope="row">Check a graph</th><td><code translate="no">scripts/maintenance/dag_dump.py</code></td></tr>
 </tbody>
 </table>
 </details>
@@ -55,6 +55,7 @@
 <tbody>
 <tr><th scope="row">Switch to an existing branch</th><td>Nothing; the view and the head move to that branch's tip</td><td>Always allowed</td></tr>
 <tr><th scope="row">Start again from an old point: edit and resend, retry, send from a message selected in the graph</th><td>A new branch beside the original, with its own record (<code translate="no">branch_identity</code> of the new message). Both stay and both can run. A retry of a prompt that never got a reply reruns that prompt instead</td><td>Allowed from any point while other branches run; waits while the selected branch's own turn runs</td></tr>
+<tr><th scope="row">A turn that continues its branch: a message, a Goal continuation, a background-command notice, a sub-agent's return</th><td>Nothing, whichever branch is selected. Its messages go under its branch's tip and that branch's record follows them (<code translate="no">follow_line</code> while it is selected; <code translate="no">point_branch</code> for the prompt and <code translate="no">carry_branch</code> for the reply while it is not, leaving the head and the selection alone). A turn that ends after a later turn was written under its reply leaves the head on the later one (<code translate="no">behind_selected_tip</code>)</td><td>Always; two runtime turns on one branch follow one another on its line</td></tr>
 <tr><th scope="row">Rewind</th><td>Nothing. The tail of the current branch is retracted in place: same branch id, name, settings and usage; the tip moves back before the chosen prompt, which returns to the composer</td><td>Refused while that branch runs; one that changes files, while any branch runs</td></tr>
 </tbody>
 </table>
@@ -69,6 +70,14 @@
 </ul>
 <p>Undo and Redo of a rewind take the nodes off and back on the list. A switch to a retracted tip is refused and points to Undo. Conversations whose earlier rewinds left an extra branch keep it; nothing is migrated. File restoration: <a href="../operations/file-management.html#shared-workspace-contract">File management</a>.</p>
 
+<p>Only a message that names an earlier point (<code translate="no">branch_from</code>) makes a branch. Conversations saved while each runtime turn on an unselected branch was recorded as its own branch keep those records; nothing is migrated.</p>
+<ul>
+<li>The branch list marks them <code translate="no">runtime_started</code>: every prompt on the branch's own part was written by the runtime, or the part holds only reports (<code translate="no">report_…</code>) posted where the head stood.</li>
+<li>A part whose prompts all came from the scheduler is marked <code translate="no">scheduled_task</code>, like a task's own branch: its runs are the task's.</li>
+<li>The Activity panel gives them no row.</li>
+<li>Their Goal moves onto the line of its last turn at its next continuation.</li>
+</ul>
+
 <p class="note">Peers agree that a rewind removes recent turns from the current line rather than starting a new one. Claude Code's <code translate="no">/rewind</code> slices the conversation in place and gives the prompt back; forking copies the session. Codex writes <code translate="no">ThreadRolledBack</code> with a turn count; the turns stay in the rollout file, leave the history and cannot anchor a fork.</p>
 <p class="note">The retracted list plays the part of Codex's rollback marker and keeps an Undo, which neither peer has in-session. Starting again stays a separate operation, so a person never loses the original by rewinding, and never gets a stray version by retracting.</p>
 
@@ -77,6 +86,7 @@
 <p>Work started on a branch keeps acting on it after the person selects another:</p>
 <ul>
 <li>A Goal records the branch it was started on (<code translate="no">branch_id</code>). Its check-ins and verification continue and read that branch; a turn on another branch gets neither its instructions nor its accounting. A Goal saved before this follows the selected branch.</li>
+<li>A Goal stays on the line of its last turn (<code translate="no">follow_last_turn</code>, before each continuation). When that turn's reply is not on its branch's line (the person started the turn again from an old point), the Goal takes the branch whose line holds the reply, the selected one first; its tasks and steps go with it (<code translate="no">carry_board</code>).</li>
 <li><code translate="no">/merge</code> and <code translate="no">merge_branches</code> write the reply to the branch they started on (<code translate="no">target_branch_id</code>) and move the head only while that branch is still selected.</li>
 <li>A <code translate="no">send_message</code> queued for a busy conversation continues the branch it addressed, from that branch's tip.</li>
 </ul>

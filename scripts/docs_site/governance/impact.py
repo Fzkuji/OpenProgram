@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from . import acknowledgements
 from .corpus import visible_words
 from .references import (
+    CLI_COMMAND_GROUPS,
     CLI_COMMANDS,
     CLI_PARSER,
     DEEP_DIRECTORY,
@@ -52,14 +53,23 @@ def _depth(path: str) -> int:
     return len(PurePosixPath(path).parts)
 
 
+def _verb_module(repository: Repository, word: str) -> str | None:
+    """The module of one verb: ``commands/<verb>.py`` or ``commands/<group>/<verb>.py``."""
+    name = word.replace("-", "_")
+    for file in (f"{CLI_COMMANDS}/{name}.py", *(f"{CLI_COMMANDS}/{group}/{name}.py" for group in CLI_COMMAND_GROUPS)):
+        if file in repository.files:
+            return file
+    return None
+
+
 def _command_targets(repository: Repository, value: str) -> list[str]:
     targets = [CLI_PARSER]
     parts = value.split()
     word = next((part for part in parts[1:] if not part.startswith("-")), "")
     if word:
-        file = f"{CLI_COMMANDS}/{word.replace('-', '_')}.py"
+        file = _verb_module(repository, word)
         directory = f"{CLI_COMMANDS}/{word.replace('-', '_')}"
-        if file in repository.files:
+        if file:
             targets.append(file)
         elif directory in repository.directories:
             targets.append(directory + "/")
@@ -79,8 +89,7 @@ def _deep_directory(repository: Repository, value: str) -> list[str]:
 
 def _command_file(repository: Repository, value: str) -> str | None:
     word = next((part for part in value.split()[1:] if not part.startswith("-")), "")
-    file = f"{CLI_COMMANDS}/{word.replace('-', '_')}.py"
-    return file if word and file in repository.files else None
+    return _verb_module(repository, word) if word else None
 
 
 def targets_of(repository: Repository, found: PageReferences) -> dict[str, tuple[int, str]]:

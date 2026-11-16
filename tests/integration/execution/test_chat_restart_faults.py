@@ -21,8 +21,8 @@ from openprogram.runtime.permissions.authority import local_owner_authority
 from openprogram.runtime.execution.run_control import get_current_execution_id
 from openprogram.runtime.execution import default_store, default_control_service
 from openprogram.runtime.execution.attempts import AttemptStore, AttemptConflict
-from openprogram.runtime.execution.effects import EffectStore, EffectClassification, EffectStatus
-from openprogram.runtime.execution.restart import reconcile
+from openprogram.runtime.execution.recovery.effects import EffectStore, EffectClassification, EffectStatus
+from openprogram.runtime.execution.recovery.restart import reconcile
 from openprogram.programs.tools.planning.goal import chat
 import openprogram.programs.tools.planning.goal as goals
 from tests.support.waiting import wait_until

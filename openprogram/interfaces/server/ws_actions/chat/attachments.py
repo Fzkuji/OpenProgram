@@ -262,7 +262,7 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
     """
     import base64
     import hashlib
-    from openprogram.runtime.conversation.workdir import session_workdir_for
+    from openprogram.runtime.conversation.session_settings.workdir import session_workdir_for
 
     wd = session_workdir_for(session_id)
     if wd is None:

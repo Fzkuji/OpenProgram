@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .checkpoints import CheckpointManifest, ExecutionCheckpointStore
+from .recovery.checkpoints import CheckpointManifest, ExecutionCheckpointStore
 from .model import _json, _snapshot_json, _thaw_json
 from .store import ExecutionConflict, ExecutionStore
 from .store.run_tables import TableHandle
@@ -227,7 +227,7 @@ class RevisionControlService:
         """Identify the model, prompt and tools the checkpoint's turn resolved."""
         import hashlib
         from .agent_journal import load_journal
-        from .runtime_contract import canonical_json_bytes
+        from .admission_input.runtime_contract import canonical_json_bytes
 
         pointer = checkpoint.state_refs.get("agent_journal")
         execution = self.executions.get_execution(checkpoint.execution_id)

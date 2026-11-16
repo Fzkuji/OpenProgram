@@ -20,7 +20,7 @@ it is not a lifecycle authority and cannot replace durable execution state.
 
 This package imports no engine. The persisted schemas it decodes live here:
 the Agent checkpoint payload (`agent_checkpoint.py`), a Job's admission input
-(`job_input.py`). So does execution binding and cancellation inside
+(`admission_input/job_input.py`). So does execution binding and cancellation inside
 one process (`run_control/`). Where the control plane must start or ask an
 engine, it calls a hook from `hooks.py` that the engine registers when its
 package is imported: `openprogram.runtime.conversation` registers
@@ -58,5 +58,5 @@ explicit continuation decision.
 The normative design is
 [`docs/reference/design/runtime/execution/control.html`](../../docs/reference/design/runtime/execution/control.html).
 
-`restart.py` records bounded worker restart intents in canonical events and
+`recovery/restart.py` records bounded worker restart intents in canonical events and
 continues eligible checkpoints through the existing control/resource commands.

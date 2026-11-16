@@ -2,7 +2,7 @@
 
 The composer ring (WS ``context_stats``) and the ``/context`` panel
 (``GET /api/sessions/{id}/context``) both take their headline total from
-``openprogram.runtime.context.session_stats``, so they can never disagree.
+``openprogram.runtime.context.token_accounting.session_stats``, so they can never disagree.
 
 Covered here:
 - ``measured`` after a real request, ``estimated`` once the graph moves;
@@ -18,7 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.runtime.context import session_stats as cs
+from openprogram.runtime.context.token_accounting import session_stats as cs
 from openprogram.interfaces.server import server as srv
 
 
@@ -349,7 +349,7 @@ def test_missing_last_request_does_not_display_turn_billing(monkeypatch, session
 
 
 def test_usage_tracker_separates_billing_from_occupancy():
-    from openprogram.runtime.context.usage import UsageTracker
+    from openprogram.runtime.context.token_accounting.usage import UsageTracker
     from openprogram.runtime.context.types import UsageState
     tracker = UsageTracker()
     tracker._cache["s"] = UsageState()
@@ -387,7 +387,7 @@ def registry(monkeypatch):
 
 def _real_window():
     from openprogram.models.providers.catalog import models as catalog
-    from openprogram.runtime.context.tokens import real_context_window
+    from openprogram.runtime.context.token_accounting.tokens import real_context_window
     return real_context_window(catalog.get_model("openai-codex", "gpt-6.1-sol"))
 
 
@@ -462,7 +462,7 @@ def test_a_chat_following_its_agent_broadcasts_the_turn_model_window(monkeypatch
 
 
 def test_a_chat_following_its_agent_reads_the_agent_model_after_reload(monkeypatch, registry, session):
-    from openprogram.runtime.conversation import session_model
+    from openprogram.runtime.conversation.session_settings import session_model
     conv, sent = session
     conv.update({"id": "ctx-test", "agent_id": "main"})
     monkeypatch.setattr(session_model, "new_session_chat_model",
@@ -613,7 +613,7 @@ def test_a_head_no_live_branch_ends_at_reads_the_selected_model(branched):
 
 def test_an_unselected_branch_without_a_model_follows_its_agent(monkeypatch, branched):
     """The selected branch's pin and last turn say nothing about it."""
-    from openprogram.runtime.conversation import session_model
+    from openprogram.runtime.conversation.session_settings import session_model
     conv, _sent = branched
     conv["_turn_model_ref"] = "openai-codex/gpt-6.1-sol"
 
@@ -664,3 +664,17 @@ def test_a_branch_switch_drops_the_left_branchs_turn_model(monkeypatch, tmp_path
         assert "_turn_context_window" not in conv
     finally:
         store.close()
+
+
+def test_the_breakdown_states_the_compaction_in_effect_on_the_branch():
+    branch = [
+        {"id": "summary_1", "role": "llm", "compaction": True, "covers_ids": ["a", "b", "c"],
+         "summarised_count": 25, "tokens_before": 354_455, "tokens_after": 29_975,
+         "compacted_at": 1_700_000_000.0},
+        {"id": "u9", "role": "user", "content": "next"},
+    ]
+    assert cs._last_compaction(branch) == {
+        "covered": 25, "tokens_before": 354_455, "tokens_after": 29_975, "at": 1_700_000_000.0}
+    # An old summary without the stamped facts still says how much it covers.
+    assert cs._last_compaction([{"id": "s", "compaction": True, "covers_ids": ["a", "b"]}]) == {"covered": 2}
+    assert cs._last_compaction(branch[1:]) is None

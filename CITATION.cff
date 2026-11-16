@@ -9,7 +9,7 @@ authors:
 version: 0.6.0
 date-released: 2026-07-21
 license: AGPL-3.0-or-later
-repository-code: "https://github.com/FuzzyKuji/OpenProgram"
+repository-code: "https://github.com/Fzkuji/OpenProgram"
 url: "https://fuzzykuji.github.io/openprogram-site/"
 keywords:
   - self-programming agents

@@ -1,12 +1,12 @@
 """The Gemini subscription adapter bounds each attempt's read itself.
 
-Its retry loop sleeps between attempts, sometimes for as long as the server
-asks. That sleep is not a stall: read through the stream chokepoint, a
-server-directed wait longer than the idle bound must still answer, not end
-as ``StreamIdleTimeout``. Response headers or data lines that never come
-end the attempt at the bound, and a wait beyond the Retry-After cap goes up
-at once as the rate-limit error. The bound is shortened to a fraction of a
-second.
+A limit is the credential layer's to wait out (models/auth/selection.py):
+it sends the request again on the same credential after a short
+server-directed wait, and that wait is not a stall, so read through the
+stream chokepoint a wait longer than the idle bound must still answer, not
+end as ``StreamIdleTimeout``. Response headers or data lines that never come
+end the attempt at the bound, and the adapter itself sends each request
+once. The bound is shortened to a fraction of a second.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import pytest
 from openprogram.models.providers.catalog.register import _load_builtin_providers
 from openprogram.models.providers.streaming.stream import stream_simple_with_provider
 from openprogram.models.providers.types import Context, Model, SimpleStreamOptions, UserMessage
-from openprogram.models.providers.utils.stream_idle import StreamIdleTimeout
+from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
 
 gmod = importlib.import_module(
     "openprogram.models.providers.adapters.google_gemini_cli.google_gemini_cli")
@@ -95,11 +95,25 @@ def _install(monkeypatch, responses):
     return sent
 
 
+@pytest.fixture
+def stored_login(tmp_path):
+    from openprogram.models.auth import selection
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+    from openprogram.models.auth.types import Credential, CredentialData
+    store = AuthStore(root=tmp_path / "state")
+    set_store_for_testing(store)
+    selection.forget_bindings()
+    store.add_credential(Credential(provider_id="gemini-subscription", kind="api_key",
+                                    payload=CredentialData(kind="api_key", auth_value="k")))
+    yield store
+    set_store_for_testing(None)
+
+
 async def _through_chokepoint():
     provider = _load_builtin_providers()["gemini-subscription"]
     events = []
     async for event in stream_simple_with_provider(
-        provider, _model(), _context(), SimpleStreamOptions(api_key="k", project_id="p"),
+        provider, _model(), _context(), SimpleStreamOptions(project_id="p"),
     ):
         events.append((time.monotonic(), event))
     return events
@@ -111,7 +125,7 @@ async def _adapter_only():
         pass
 
 
-def test_a_server_directed_wait_longer_than_the_bound_answers(monkeypatch):
+def test_a_server_directed_wait_longer_than_the_bound_answers(monkeypatch, stored_login):
     # The hint is 1 s (+1 s margin): far beyond the 0.3 s bound.
     sent = _install(monkeypatch, [
         _Response(429, b'{"error": "please retry in 1s"}'),
@@ -121,7 +135,7 @@ def test_a_server_directed_wait_longer_than_the_bound_answers(monkeypatch):
     events = asyncio.run(_through_chokepoint())
     done_at, done = events[-1]
     assert done.type == "done", done
-    assert done_at - started >= 2.0
+    assert done_at - started >= 1.0
     assert [block.text for block in done.message.content if block.type == "text"] == ["answer"]
     assert len(sent) == 2
 
@@ -136,13 +150,14 @@ def test_a_silent_attempt_ends_at_the_bound(monkeypatch, response):
     assert IDLE_S <= time.monotonic() - started < IDLE_S + 1.5
 
 
-def test_a_wait_beyond_the_retry_after_cap_goes_up_at_once(monkeypatch):
+def test_the_adapter_sends_a_limited_request_once(monkeypatch):
+    from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
     sent = _install(monkeypatch, [
         _Response(429, b'{"error": "quota will reset after 4000s"}'),
         _Response(lines=[_ANSWER]),
     ])
     started = time.monotonic()
-    with pytest.raises(RuntimeError, match="HTTP 429"):
+    with pytest.raises(ProviderStreamError, match="HTTP 429"):
         asyncio.run(_adapter_only())
     assert time.monotonic() - started < 1.0
     assert len(sent) == 1

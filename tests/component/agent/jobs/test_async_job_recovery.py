@@ -145,7 +145,7 @@ def test_runner_recovers_deferred_inbox_after_process_crash(
     monkeypatch.setattr(
         'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.conversation.peer_agents import inbox
     from openprogram.runtime.jobs import get_runner
     import openprogram.runtime.jobs.runner as runner_mod
     runner = get_runner()
@@ -194,7 +194,7 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
         'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.models.usage.ledger import UsageLedger
@@ -255,7 +255,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
     from openprogram.runtime.conversation import run_control
     from openprogram.runtime.execution import run_control as execution_run_control
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.models.usage.ledger import UsageLedger
@@ -485,7 +485,7 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         broadcasts.clear()
         runner._reconcile_resources()
         assert broadcasts == []
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
             "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
             staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
@@ -542,7 +542,7 @@ def test_vanished_job_row_releases_admission_instead_of_leaking_it(
 
         # The session is admissible again.
         vanish = False
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
             "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
             staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
@@ -565,7 +565,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.models.usage.ledger import UsageLedger
@@ -733,7 +733,7 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
     from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.models.usage.ledger import UsageLedger
@@ -839,7 +839,7 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
     from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import (
         JobRunner, current_job_operation_timeout,
     )
@@ -906,7 +906,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
     )
     from openprogram.runtime.execution import run_control as execution_run_control
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
-    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult, run_agent_turn
     from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import JobStatus
     from openprogram.models.usage.ledger import UsageLedger

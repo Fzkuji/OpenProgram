@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Iterable, Optional
 
-from openprogram.models.providers.utils.rate_limit import (
+from openprogram.models.providers.utils.http_transport.rate_limit import (
     CodexRateLimits,
     parse_codex_rate_limit_frame,
     parse_codex_rate_limits,
@@ -337,9 +337,9 @@ def _digest(token: str) -> str:
 def account_for_token(provider: str, token: Optional[str]) -> Optional[str]:
     """The stored credential a bearer token belongs to.
 
-    Returns its ``credential_id``, ``""`` for a key that is not stored (an
-    environment variable), or ``None`` when there is no token. Only a digest
-    of the token is kept, to remember the answer.
+    Returns its id (an environment variable's row included), ``""`` for a
+    key that is not among the provider's credentials, or ``None`` when there
+    is no token. Only a digest of the token is kept, to remember the answer.
     """
     if not token:
         return None
@@ -349,15 +349,13 @@ def account_for_token(provider: str, token: Optional[str]) -> Optional[str]:
             return _account_cache[key]
     found = ""
     try:
+        import os
         from openprogram.models.auth.store import get_store
-        for pool in get_store().list_pools():
-            if pool.provider_id != provider:
-                continue
-            for cred in pool.credentials:
-                if getattr(cred.payload, "auth_value", None) == token:
-                    found = cred.credential_id
-                    break
-            if found:
+        for cred in get_store().get(provider).credentials:
+            value = (os.environ.get(cred.metadata.get("env_var") or "", "")
+                     if cred.source == "env" else cred.payload.auth_value)
+            if value and value.strip() == token:
+                found = cred.id
                 break
     except Exception:
         _log.debug("no credential store for %s", provider, exc_info=True)
@@ -557,13 +555,19 @@ def observe_headers(provider: str, token: Optional[str], headers: Any, *,
         return []
 
 
-def observe_codex_frame(provider: str, token: Optional[str], frame: Any) -> list[QuotaLimit]:
-    """Record a Codex ``codex.rate_limits`` WebSocket frame. Never raises."""
+def observe_codex_frame(provider: str, token: Optional[str], frame: Any, *,
+                        account: Optional[str] = None) -> list[QuotaLimit]:
+    """Record a Codex ``codex.rate_limits`` WebSocket frame. Never raises.
+
+    ``account`` names the credential the request was sent with (an imported
+    sign-in's token is read from another tool's file, so its token never
+    matches a stored value); otherwise it is found from ``token``."""
     try:
         family = parse_codex_rate_limit_frame(frame)
         if family is None:
             return []
-        account = account_for_token(provider, token) or ""
+        if account is None:
+            account = account_for_token(provider, token) or ""
         default_store.note_plan(provider, account, family.plan_type)
         if not family.present:
             return []

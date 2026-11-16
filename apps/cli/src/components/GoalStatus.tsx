@@ -13,6 +13,8 @@ interface GoalSnapshot {
   phase?: string;
   text?: string;
   checklist?: Array<{ done?: boolean }>;
+  /** Where the Goal's latest task stands (`goal/chat.py` `progress`). */
+  progress?: { step?: string | null; done?: number; total?: number } | null;
   questions?: Array<{ status?: string }>;
 }
 interface GoalView {
@@ -117,7 +119,12 @@ export function GoalStatus({ client, sessionId }: { client: BackendClient; sessi
   if (!g && !view.failed && !view.loading && view.connection === 'connected') return null;
   const pending = Array.isArray(g?.questions) ? g.questions.filter((q) => q?.status === 'pending').length : 0;
   const checklist = Array.isArray(g?.checklist) ? g.checklist : [];
-  const progress = checklist.length ? `${checklist.filter((item) => item?.done).length}/${checklist.length}` : '';
+  const task = g?.progress && Number(g.progress.total) > 0 ? g.progress : null;
+  // While the Goal works: the step in progress and its place. Otherwise the steps finished.
+  const step = task && g?.status === 'active' && typeof task.step === 'string' ? clean(task.step).trim() : '';
+  const finished = Number(task?.done) || 0;
+  const progress = task ? (step ? `${step} ${Math.min(finished + 1, Number(task.total))}/${task.total}` : `${finished}/${task.total}`)
+    : checklist.length ? `${checklist.filter((item) => item?.done).length}/${checklist.length}` : '';
   const saved = g ? 'last confirmed' : 'no snapshot';
   const freshness = view.connection !== 'connected' ? `offline · ${saved}`
     : view.failed ? `refresh failed · ${saved}` : view.loading ? 'refreshing' : '';

@@ -61,7 +61,7 @@
 <tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>在默认浏览器以已登录状态打开。每次部署都会让浏览器重新登录；OpenProgram Dev 自己重新登录。</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev copy-models</code></th><td>复制稳定版的 provider 设置、API key 和委托给 CLI 的登录。OAuth 登录要单独进行。</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>两个实例各自运行什么，晋升会带来哪些提交</td></tr>
-<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>为该提交运行 <code translate="no">scripts/refresh-local-app.sh</code>，新版本健康后它把 <code translate="no">stable</code> 移到该提交。手动运行时脚本只安装 <code translate="no">refs/heads/stable</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>为该提交运行 <code translate="no">scripts/local-instances/refresh-local-app.sh</code>，新版本健康后它把 <code translate="no">stable</code> 移到该提交。手动运行时脚本只安装 <code translate="no">refs/heads/stable</code></td></tr>
 </tbody>
 </table>
 <p>Agent 在源码仓库的 worktree 里用 <code translate="no">self_update(action="prepare")</code> 做同样的事。这一轮结束后，脱离的控制器等稳定版 App 跑完运行中的任务，晋升这个提交，结果回到发起的对话。晋升失败时，在 <code translate="no">dev</code> 上落 revert 并晋升它。</p>
@@ -96,7 +96,7 @@ openprogram upgrade</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">模式</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row">本地迭代</th><td><code translate="no">scripts/refresh-local-app.sh</code> 使用固定的本地证书，不向 Apple 提交任何内容。签名状态保存在仓库外；不要为消除权限弹窗删除它。</td></tr>
+<tr><th scope="row">本地迭代</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> 使用固定的本地证书，不向 Apple 提交任何内容。签名状态保存在仓库外；不要为消除权限弹窗删除它。</td></tr>
 <tr><th scope="row">正式发布</th><td><code translate="no">Release</code> 工作流在 <code translate="no">v*</code> 标签时运行，或手动指定已有不可变标签。用 Developer ID 签名 App 和原生组件，等待公证，附加并验证票据，运行打包 runtime 检查，再发布带校验和的产物。分支推送不触发。</td></tr>
 </tbody>
 </table>

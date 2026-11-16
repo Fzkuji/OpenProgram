@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.models.providers.utils.rate_limit import (
+from openprogram.models.providers.utils.http_transport.rate_limit import (
     parse_codex_rate_limit_frame,
     parse_codex_rate_limits,
     parse_rate_limit,
@@ -217,16 +217,27 @@ def test_snapshots_survive_in_usage_db(tmp_path):
     ledger.close()
 
 
-def test_a_token_is_matched_to_its_stored_credential_by_digest(monkeypatch):
-    from types import SimpleNamespace
+def test_a_token_is_matched_to_its_stored_credential_by_digest(tmp_path, monkeypatch):
+    from openprogram.models.auth.store import AuthStore
+    from openprogram.models.auth.types import Credential, CredentialData
 
-    cred = SimpleNamespace(credential_id="cred-9", payload=SimpleNamespace(auth_value="sk-test-1"))
-    pool = SimpleNamespace(provider_id="openai", credentials=[cred])
-    store = SimpleNamespace(list_pools=lambda: [pool])
-    import openprogram.models.auth.store as auth_store
-    monkeypatch.setattr(auth_store, "get_store", lambda: store)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    store = AuthStore(root=tmp_path)
+    monkeypatch.setattr("openprogram.models.auth.store._store", store)
+    cred = store.add_credential(Credential(provider_id="openai", kind="api_key", payload=CredentialData(
+        kind="api_key", auth_value="sk-test-1")))
     quota.forget_accounts()
-    assert quota.account_for_token("openai", "sk-test-1") == "cred-9"
+    assert quota.account_for_token("openai", "sk-test-1") == cred.id
     assert quota.account_for_token("openai", "sk-other") == ""
     assert quota.account_for_token("openai", None) is None
     assert all("sk-test" not in key[1] for key in quota._account_cache)
+
+
+def test_a_codex_frame_is_kept_for_the_account_that_sent_the_request(tmp_path, monkeypatch):
+    store = QuotaStore(UsageLedger(db_path=tmp_path / "usage.db"))
+    monkeypatch.setattr(quota, "default_store", store)
+    monkeypatch.setattr(quota, "account_for_token", lambda provider, token: "")
+    frame = {"type": "codex.rate_limits", "plan_type": "plus",
+             "rate_limits": {"primary": {"used_percent": 30, "window_minutes": 300, "reset_at": int(NOW + 60)}}}
+    quota.observe_codex_frame("openai-codex", "token-from-another-tool", frame, account="cred-work")
+    assert [report.account for report in store.reports("openai-codex")] == ["cred-work"]

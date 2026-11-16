@@ -122,7 +122,7 @@ def save_job(
     _mirror: bool = True,
 ) -> None:
     """Idempotent write — overwrites the entry for ``job.id``."""
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _ensure_session(session_id)
         if path is None:
@@ -158,7 +158,7 @@ def mirror_linked_job_to_caller(job: Job) -> None:
 
 def settle_notice(session_id: str, job_id: str) -> None:
     """The parent's notice for this Job is queued (or not owed): clear the mark."""
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _jobs_path(session_id)
         if path is None or not path.exists():
@@ -174,7 +174,7 @@ def settle_notice(session_id: str, job_id: str) -> None:
 
 
 def load_job(session_id: str, job_id: str) -> Optional[Job]:
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _jobs_path(session_id)
         if path is None or not path.exists():
@@ -203,7 +203,7 @@ def list_jobs(
     With ``lock_timeout``, raises :class:`TimeoutError` if another process
     keeps the session locked that long; by default it waits for the lock.
     """
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id, timeout=lock_timeout):
         path = _jobs_path(session_id)
         if path is None or not path.exists():
@@ -224,6 +224,25 @@ def list_jobs(
     if limit is not None:
         out = out[:limit]
     return out
+
+
+def session_jobs_reader() -> Callable[[str], list[Job]]:
+    """``list_jobs`` that reads each session once, for one caller's pass.
+
+    A read that projects many executions (Activity lists every run of a
+    conversation) asks for the same session's Jobs again and again: for
+    each row's own Job and for the helpers under it. Each ``list_jobs``
+    takes the session's lock and folds its log, so the pass reads every
+    session once and keeps what it read until it ends.
+    """
+    read: dict[str, list[Job]] = {}
+
+    def jobs_in(session_id: str) -> list[Job]:
+        if session_id not in read:
+            read[session_id] = list_jobs(session_id)
+        return read[session_id]
+
+    return jobs_in
 
 
 def update_job_status(
@@ -248,7 +267,7 @@ def update_job_status(
     changing any fields. The comparison shares the write lock so a progress
     stamp cannot race a terminal transition and try to resurrect the job.
     """
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.files.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _ensure_session(session_id)
         if path is None:
@@ -338,7 +357,7 @@ def reconcile_orphans(
         return 0
     count = 0
     linked_updates: list[Job] = []
-    from openprogram.state.store.session.placement import iter_session_dirs
+    from openprogram.state.store.session.files.placement import iter_session_dirs
     for sid, sdir in iter_session_dirs(store.root_path):
         path = store.state_file_at(sdir, "jobs.json")
         if not path.exists():

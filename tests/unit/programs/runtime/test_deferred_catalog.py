@@ -78,7 +78,7 @@ def test_the_first_turn_after_a_summary_has_no_catalog_in_view():
     """The baseline is the last catalog note the rendered history shows: a
     note on a turn a summary covers is not shown, so the whole catalog is
     sent again."""
-    from openprogram.runtime.context import turn_context
+    from openprogram.runtime.context.prompt_assembly import turn_context
     from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER
 
     catalog = deferred_catalog([_tool("scheduler")])
@@ -97,7 +97,7 @@ def test_the_first_turn_after_a_summary_has_no_catalog_in_view():
 
 
 def test_the_catalog_renders_after_the_memory_section():
-    from openprogram.runtime.context import turn_context
+    from openprogram.runtime.context.prompt_assembly import turn_context
 
     items = turn_context.put([], turn_context.SECTION, turn_context.CATALOG, "<deferred-tools>x",
                              catalog={})
@@ -106,7 +106,7 @@ def test_the_catalog_renders_after_the_memory_section():
 
 
 def test_the_conversation_prompt_is_the_same_bytes_when_a_server_connects():
-    from openprogram.runtime.context.components import build_system_prompt
+    from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
 
     agent = {"id": "main", "system_prompt": "you are helpful"}
     plain = [_tool("read", deferred=False), _tool("tool_search", deferred=False), _tool("scheduler")]

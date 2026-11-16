@@ -3,8 +3,8 @@ import pytest
 from pathlib import Path
 
 from tests.unit.dag.test_rewind_modes import Session, store, _append, _apply
-from openprogram.runtime.conversation.rewind import plan_rewind, rewind_to
-from openprogram.runtime.conversation.rewind_marks import undo_rewind, redo_rewind, take_rewind_note
+from openprogram.runtime.conversation.rewinds.rewind import plan_rewind, rewind_to
+from openprogram.runtime.conversation.rewinds.rewind_marks import undo_rewind, redo_rewind, take_rewind_note
 
 
 def test_rewind_keeps_branch_identity_and_hides_withdrawn_versions(store, tmp_path):
@@ -111,13 +111,13 @@ def test_later_sibling_edit_blocks_rewind_even_in_the_same_session(store, tmp_pa
 
 
 def test_copy_preserves_write_provenance_and_protects_later_changes(store, tmp_path):
-    from openprogram.runtime.context.branch_session import branch_session
+    from openprogram.runtime.context.session_dag.branch_session import branch_session
     file = tmp_path / "code"
     file.write_text("zero")
     session = Session(store, "s")
     session.turn_edits((file, "one"))
     copied = branch_session("s", "a1", store=store)
-    from openprogram.runtime.conversation.rewind import list_rewind_points
+    from openprogram.runtime.conversation.rewinds.rewind import list_rewind_points
     prompt = list_rewind_points(copied)[0]["msg_id"]
     assert plan_rewind(copied, prompt)["has_changes"] is True
     file.write_text("human")
@@ -177,7 +177,7 @@ def test_switching_and_rewinding_siblings_preserves_each_identity_and_name(store
     import asyncio
     from openprogram.interfaces.server.routes.chat_branches import post_chat_checkout
     from openprogram.interfaces.server.ws_actions.branch import handle_checkout_branch
-    from tests.unit.store.test_session_branch_consistency import FakeWS
+    from tests.unit.store.session.test_session_branch_consistency import FakeWS
     _checkout_server(monkeypatch, store)
     session = Session(store, "s")
     session.turn_edits()
@@ -214,7 +214,7 @@ def test_switching_and_rewinding_siblings_preserves_each_identity_and_name(store
 def test_converged_rewinds_keep_selectable_identities_names_and_own_undo(store, monkeypatch, target):
     import asyncio
     from openprogram.interfaces.server.routes.chat_branches import post_chat_checkout
-    from openprogram.runtime.conversation.rewind_marks import list_rewind_marks
+    from openprogram.runtime.conversation.rewinds.rewind_marks import list_rewind_marks
     _checkout_server(monkeypatch, store)
     session = Session(store, "s")
     session.turn_edits()

@@ -1,54 +1,64 @@
-<title>账号与轮询</title>
-<meta name="description" content="账号就是 profile，CLI、网页、TUI 用同样的方式管理，轮询可选。">
-<h1>账号与轮询</h1>
+<title>Provider 的 key 与故障切换</title>
+<meta name="description" content="每个 provider 有一个有序的 key 和登录列表；对话固定用一个，出错时换到下一个。">
+<h1>Provider 的 key 与故障切换</h1>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">概念</th><th scope="col">含义</th></tr></thead>
 <tbody>
-<tr><th scope="row">账号</th><td>一个 profile：<code translate="no">~/.openprogram/auth/&lt;provider&gt;/&lt;profile&gt;.json</code> 一个凭据池。OAuth 刷新轮换要求每个池最多一个 OAuth 凭据，所以只有这个模型能覆盖所有供应商。</td></tr>
-<tr><th scope="row"><code translate="no">account_id</code></th><td>运行时分配的稳定 ASCII 键（<code translate="no">default</code>、<code translate="no">account-2</code>……），永不改变</td></tr>
-<tr><th scope="row"><code translate="no">label</code></th><td>Unicode 显示文字；可随意改名；允许重复</td></tr>
+<tr><th scope="row">列表</th><td>每个 provider 一个文件 <code translate="no">~/.openprogram/auth/&lt;provider&gt;/credentials.json</code>：<code translate="no">strategy</code> 和有序的 <code translate="no">credentials</code>。每次修改（<code translate="no">AuthStore.mutate</code>）从读到写都持有文件锁，并作用在当时的文件上，所以 CLI 加的密钥、别的进程刷新的令牌都不会丢。删除或替换密钥时连同上一份好副本（<code translate="no">.bak</code>、<code translate="no">.bad-*</code>）一起去掉，密钥不留在磁盘上（<code translate="no">models/auth/store.py</code>）。</td></tr>
+<tr><th scope="row">使用次数</th><td><code translate="no">&lt;provider&gt;/usage.json</code>：每个凭据的使用次数、今天的次数、最近使用，以及 <code translate="no">evenly</code> 轮到哪里。请求只写这个文件，从不写密钥文件。</td></tr>
+<tr><th scope="row">凭据</th><td><code translate="no">id</code>、<code translate="no">label</code>、<code translate="no">kind</code>（<code translate="no">api_key</code>、<code translate="no">oauth</code>、<code translate="no">device_code</code>、<code translate="no">import</code>、<code translate="no">token</code>、<code translate="no">credential_process</code>）、<code translate="no">source</code>（<code translate="no">web</code>、<code translate="no">cli</code>、<code translate="no">import</code>、<code translate="no">env</code>）、<code translate="no">identity</code>、<code translate="no">enabled</code>、<code translate="no">status</code>、冷却、被封的模型、最近错误、最近使用</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">ready</code>、<code translate="no">cooling</code>、<code translate="no">quota</code>、<code translate="no">invalid_key</code>、<code translate="no">needs_login</code></td></tr>
+<tr><th scope="row">环境变量 key</th><td>provider 读取的变量（<code translate="no">login_method_registry.env_vars</code>）已设置时，是一行只读的 <code translate="no">env:&lt;VAR&gt;</code>，使用时从环境读取；保存它的位置和状态，不保存值</td></tr>
+<tr><th scope="row">重新登录</th><td>同一个 <code translate="no">account_id</code> 或邮箱就地更新原来那一行：id、名称、位置都不变</td></tr>
 </tbody>
 </table>
-<p class="note">新登录的 label：手填、OAuth 邮箱、供应商显示名、稳定 id，依次取。身份来自凭据 metadata、嵌套 OAuth 数据或 <code translate="no">id_token</code> claims。旧凭据读取时推导。</p>
-<h2>请求路径</h2>
+<p class="note">显示的名称：label，否则登录的邮箱（套餐另外显示），否则变量名，否则 <code translate="no">Key ····1234</code>。任何列表都不带密钥。</p>
+<h2>选哪个凭据</h2>
+<ol class="flow">
+<li><strong>固定</strong><small>对话指定的凭据，可用时</small></li>
+<li><strong>绑定</strong><small>对话上次用的凭据</small></li>
+<li class="flow-end"><strong>策略</strong><small><code translate="no">in_order</code>、<code translate="no">evenly</code>、<code translate="no">least_used</code>（今天用得最少）</small></li>
+</ol>
+<p>绑定和固定存在会话 metadata 里（<code translate="no">credential_binding</code>、<code translate="no">credential_pin</code>）；调用先认上下文里的对话，再认 <code translate="no">Runtime</code> 发出的缓存键（<code translate="no">op-…</code>），子会话顺着 <code translate="no">parent_session_id</code> 找到所属对话，所以程序、agent 方法、子 agent 和 Goal 轮次都用对话固定或绑定的密钥。</p>
+<p>所有 adapter 的流都由同一个 <code translate="no">with_credential()</code>（<code translate="no">models/auth/selection.py</code>）包住；adapter 的 SDK 自己不重试。</p>
+<h2>出错时怎么办</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">机制</th><th scope="col">行为</th></tr></thead>
+<thead><tr><th scope="col">错误</th><th scope="col">凭据</th><th scope="col">请求</th></tr></thead>
 <tbody>
-<tr><th scope="row">当前账号</th><td><code translate="no">auth/account/account_selection.py</code>：<code translate="no">get_active_account</code>、<code translate="no">set_active_account</code>、<code translate="no">get_active_pin</code>。<code translate="no">acquire</code> 和解析器默认用它；聊天和执行进入 <code translate="no">auth_scope</code>。默认仍是 <code translate="no">default</code>。</td></tr>
-<tr><th scope="row">结果上报</th><td><code translate="no">auth/usage.py</code> 和 <code translate="no">openai_completions.stream_simple</code> 每次请求获取并上报；429 冷却这个 key，外层重试换下一个。没有真实 AuthStore 池时不起作用。</td></tr>
-<tr><th scope="row">对话亲和</th><td>流式调用运行在 <code translate="no">conversation_affinity(session_id)</code> 里；<code translate="no">pool.pick</code> 让对话继续用上次的健康凭据，前提是 1 小时内活跃（<code translate="no">AFFINITY_IDLE_MS</code>），这样供应商缓存不用重复付费。凭据冷却或吊销后对话换走，不再回来。每进程最多 4096 个（<code translate="no">AFFINITY_MAX</code>）。沿用 magpie（yetone/magpie，MIT）。</td></tr>
-<tr><th scope="row">策略</th><td><code translate="no">fixed</code>、<code translate="no">fill_first</code>、<code translate="no">round_robin</code>、<code translate="no">random</code>、<code translate="no">least_used</code>；<code translate="no">auth/pool.py</code> 跳过冷却；<code translate="no">auth/credential_provider.py</code> 处理 fallback</td></tr>
+<tr><th scope="row">429，Retry-After ≤ 5 秒</th><td>不变</td><td>同一个凭据再试一次</td></tr>
+<tr><th scope="row">429</th><td><code translate="no">cooling</code>，时长按 Retry-After，否则 60 秒起每次翻倍，最多 15 分钟</td><td>下一个可用的</td></tr>
+<tr><th scope="row">额度或余额</th><td><code translate="no">quota</code>，到服务给的重置时间，否则 24 小时</td><td>下一个可用的</td></tr>
+<tr><th scope="row">401，或指明密钥的 403</th><td>登录先刷新一次（只在这里，adapter 不再刷新）；之后 <code translate="no">invalid_key</code> 或 <code translate="no">needs_login</code></td><td>刷新后用同一个，否则下一个</td></tr>
+<tr><th scope="row">其他 403</th><td>关于模型的 403（验证、组织）封这个模型；关于地区或策略的不动密钥</td><td>下一个可用的，或报错</td></tr>
+<tr><th scope="row">模型被拒</th><td>这个模型封 24 小时</td><td>下一个可用的</td></tr>
+<tr><th scope="row">5xx、网络</th><td>不变</td><td>同一个凭据退避重试两次</td></tr>
+<tr><th scope="row">都不可用</th><td>—</td><td>60 秒内有恢复的就等，刚失败的那个也算（只有一个密钥遇到 429 会等它冷却完）；否则走模型回退；再否则报错，列出每个凭据的状态</td></tr>
 </tbody>
 </table>
-<h2>REST</h2>
-<p>位于 <code translate="no">/api/providers/{provider}/accounts</code>：</p>
+<p class="note">切换时在回复里加一行淡色提示（<code translate="no">EventRetry</code>，reason 为 <code translate="no">credential</code>）。保存的错误信息先去掉密钥、<code translate="no">Bearer</code> 令牌和 <code translate="no">?key=</code> 的值。已经输出内容后出错，不再换凭据重试。</p>
+<h2>接口</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">路由</th><th scope="col">效果</th></tr></thead>
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">GET</code></th><td><code translate="no">{active, accounts:[{id,label,name,email?,status,kind,is_active,is_fallback}]}</code>、策略、<code translate="no">add_mode</code>（<code translate="no">code_paste</code> 或 <code translate="no">login</code>）。<code translate="no">name</code> 是 <code translate="no">label</code> 的别名。</td></tr>
-<tr><th scope="row"><code translate="no">POST /use {id}</code></th><td>固定账号；<code translate="no">""</code> 交还 fallback（<code translate="no">default</code>），它的开关不能单独关闭</td></tr>
-<tr><th scope="row"><code translate="no">POST /rename {id,name}</code></th><td>只改显示文字</td></tr>
-<tr><th scope="row"><code translate="no">POST /remove {id}</code></th><td>移除</td></tr>
-<tr><th scope="row"><code translate="no">POST /add</code>、<code translate="no">/keys {api_key,name?,validate?}</code></th><td>新账号；名字留空自动取</td></tr>
-<tr><th scope="row"><code translate="no">GET /{name}/reveal</code>、<code translate="no">POST /{name}/update</code></th><td>完整 key；替换</td></tr>
-<tr><th scope="row"><code translate="no">POST /{name}/validate</code>、<code translate="no">/validate-all</code></th><td>校验一个或全部</td></tr>
-<tr><th scope="row"><code translate="no">POST /rotation {enabled,strategy?}</code></th><td>关：只用当前账号。开：冷却、跳过、换下一个。默认关。</td></tr>
-<tr><th scope="row"><code translate="no">POST /reorder {order}</code></th><td>轮询优先级</td></tr>
-<tr><th scope="row"><code translate="no">POST /enabled</code></th><td>加入或移出轮询</td></tr>
-<tr><th scope="row"><code translate="no">POST /{name}/retry</code></th><td>清除冷却</td></tr>
+<tr><th scope="row">REST</th><td><code translate="no">/api/providers/{p}/credentials</code>：列表、添加、<code translate="no">PATCH</code> 名称或开关、删除、<code translate="no">check</code>、<code translate="no">replace</code>、<code translate="no">reorder</code>、<code translate="no">strategy</code>。<code translate="no">/api/sessions/{sid}/credentials</code>：绑定和固定。</td></tr>
+<tr><th scope="row">事件</th><td><code translate="no">provider.credentials.changed {provider}</code>、<code translate="no">session.credentials.changed {session_id, binding, pin}</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers keys &lt;provider&gt; list|add|replace|rename|move|enable|disable|check|remove|strategy</code>；<code translate="no">providers login</code> 等于 <code translate="no">keys add</code></td></tr>
+<tr><th scope="row">用量</th><td>每条用量记录 <code translate="no">credential_id</code>；额度按凭据读取</td></tr>
 </tbody>
 </table>
-<p class="note">登录添加复用 <code translate="no">/api/providers/{id}/login/{start,poll,submit,cancel}</code>，可带 <code translate="no">label</code>；id 由运行时分配。多 profile 和诊断：<code translate="no">routes/identity/credentials.py</code>（<code translate="no">/profiles</code>、<code translate="no">/pools</code>、<code translate="no">/doctor</code>、SSE <code translate="no">/events</code>）。</p>
-<h2>各界面</h2>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">界面</th><th scope="col">组件</th></tr></thead>
-<tbody>
-<tr><th scope="row">网页</th><td>所有供应商共用一个密钥面板（<code translate="no">detail/keys-panel.tsx</code>）。后端只在怎么添加、身份长什么样上不同。</td></tr>
-<tr><th scope="row">TUI</th><td><code translate="no">providerAccounts.tsx</code>、<code translate="no">providerLoginFlow.tsx</code>，基于 <code translate="no">/login/*</code>；<code translate="no">/login &lt;provider&gt;</code> 对任何供应商可用</td></tr>
-<tr><th scope="row">CLI</th><td><code translate="no">providers use &lt;provider&gt; [profile]</code>；<code translate="no">providers list</code> 里的 <code translate="no">← active</code></td></tr>
-</tbody>
-</table>
-<details><summary>实现状态</summary>
-<p>尚未实现：UI 上的 <code translate="no">fallback_chain</code> 开关、TUI 凭据池控制、原生 <code translate="no">providers pool …</code> 命令；账号等于 profile 之后退役 <code translate="no">fixed</code> 策略。</p>
-</details>
+<p>粘贴的密钥用 <code translate="no">POST /api/providers/{p}/credentials/check-key</code> 检查，这一步不保存；点“添加密钥”或“更换密钥”时连同名称一次保存，并沿用刚才的检查结果。添加登录沿用 <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>。对列表的修改都经过 <code translate="no">models/auth/manage.py</code>，路由和 CLI 共用。</p>
+<h2>旧数据迁移</h2>
+<p>在新布局上第一次启动时，把旧的按账号分开的文件迁移一次（<code translate="no">models/auth/carry_over.py</code>）：</p>
+<ol>
+<li>读每个旧账号文件：带 <code translate="no">credentials</code> 列表和旧账号字段的对象。别的文件不动；读不了的只按路径记日志。</li>
+<li>把 <code translate="no">auth/</code> 复制一次到 <code translate="no">auth/.carry-over-backup</code>，在沙箱不让工具读的目录里。</li>
+<li>把每个 provider 的文件展平成一个列表，按账号顺序，再按每个账号内的凭据顺序；缺 id 或重复的 id 换新的。</li>
+<li>保留每个已存的密钥。存过密钥的旧环境变量行变成换了新 id 的已存密钥；变量在不在取决于哪个进程先启动，所以这里不做判断。和某个变量值相同的已存密钥照样保存，读取时只列一次（<code translate="no">store.env_rows</code>）。只有没存值的环境变量行会去掉，日志里写服务商、行 id 和原因。</li>
+<li>改正其余的：因余额用完被拒的密钥（HTTP 402，或 OpenCode 的 401 <code translate="no">CreditsError</code>）是额度用完，从发生时起停一天，没记时间就是可用。登录从自己的 <code translate="no">id_token</code> 取邮箱和套餐。</li>
+<li>确认每一行都到了，才删除这个 provider 的旧文件。</li>
+</ol>
+<p>某个 provider 失败只保留它自己的旧文件，不耽误别的。再运行一次不会重复添加，也不再备份。</p>
+<p>机器上别处装的旧版 OpenProgram 还会按它读到的环境变量写出旧文件，所以任何一次启动都可能再迁移。列表里已有的密钥不会再加一遍；重复同一个已存密钥的行只留最早的那条，它带着这个密钥的使用记录。</p>
+<p>以前的迁移写出的列表，下次启动时按第 4、5 步的改法修一次（<code translate="no">carry_over.repair</code>，在备份里留 <code translate="no">.repaired</code> 标记）。它不改任何密钥，所以每份 <code translate="no">.bak</code> 都留着；后来的检查盖掉了余额用完的错误时，它从 <code translate="no">.bak</code> 里读出来。</p>
+<p>它还会整理：只在拿着锁时删锁文件，删掉空文件夹，把文件夹改成 0700。改不了的文件夹保持原样，修复照样记为完成。</p>
 <p class="next"><a href="unified-auth-storage.zh.html">认证存储</a></p>

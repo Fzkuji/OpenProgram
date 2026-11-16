@@ -114,7 +114,7 @@ def test_a_turn_admitted_on_a_branch_that_is_not_selected_runs_its_agent_and_per
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
                         lambda sid, **kwargs: ("rules", kwargs.get("branch_id")))
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     head = store.get_session("s")["branch_refs"][a]["head_id"]
     # What a conversation-level caller reads: the selected branch's.
     values = {"session_id": "s", "agent_id": "beta", "permission_mode": "ask",
@@ -135,7 +135,7 @@ def test_an_omitted_agent_and_permission_come_from_the_turns_branch(store, monke
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
                         lambda sid, **kwargs: ("rules", kwargs.get("branch_id")))
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     frozen = freeze_branch_request({"session_id": "s", "agent_id": None, "permission_mode": None,
                                     "branch_id": a})
     assert (frozen["agent_id"], frozen["permission_mode"]) == ("alpha", "bypass")
@@ -149,7 +149,7 @@ def test_a_scheduled_run_gets_its_own_branch_record_with_the_tasks_agent(store, 
     monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
                         lambda sid, **kwargs: ("rules", kwargs.get("branch_id")))
     from openprogram.runtime.scheduler import task_branch
-    from openprogram.runtime.conversation.branch_config import freeze_branch_request
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
     task = {"id": "t1", "title": "Watch", "execution": {"agent_id": "watcher"}}
     first = task_branch.prepare("s", task, db=store)
     refs = store.get_session("s")["branch_refs"]
@@ -186,7 +186,7 @@ def test_a_scheduled_run_gets_its_own_branch_record_with_the_tasks_agent(store, 
 
 def test_plan_is_kept_per_branch():
     from openprogram.runtime.agent.turn_request import TurnRequest, set_turn_request, reset_turn_request
-    from openprogram.runtime.conversation import plan_mode
+    from openprogram.runtime.conversation.session_settings import plan_mode
     plan_mode.enter("plan-s", "a")
     try:
         assert plan_mode.is_plan_mode("plan-s", "a")

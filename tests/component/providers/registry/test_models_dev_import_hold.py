@@ -4,7 +4,7 @@ Importing any ``openprogram.models.providers.utils.*`` module first (as the
 runtime's agent loop does) used to fail with ``_DeadlockError``: the package
 import built the enabled-model registry, that read found the disk catalogue
 stale and started the refresh thread, and the thread's import of
-``utils.http_proxy`` crossed the importing thread's import of ``utils``.
+``utils.http_transport.http_proxy`` crossed the importing thread's import of ``utils``.
 """
 from __future__ import annotations
 
@@ -82,11 +82,11 @@ def test_importing_a_utils_module_first_with_a_stale_catalogue(tmp_path):
 
         def fake_client(*_, **__):
             # What the real client does on its way to the socket.
-            from openprogram.models.providers.utils.http_proxy import get_proxy_mounts  # noqa: F401
+            from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts  # noqa: F401
             return _NoNetwork()
 
         safe_http.safe_client = fake_client
-        import openprogram.models.providers.utils.failover  # noqa: F401
+        import openprogram.models.providers.utils.failures.failover  # noqa: F401
         from openprogram.models.providers.catalog.sources import models_dev
         thread = models_dev._refresh_thread
         assert thread is not None, "the stale catalogue did not ask for a refresh"

@@ -37,7 +37,7 @@ def test_ownership_is_shared_across_processes_and_released(tmp_path):
 
 def test_live_goal_owner_survives_sibling_startup(tmp_path, monkeypatch):
     import openprogram.programs.tools.planning.goal as goal_pkg
-    from openprogram.runtime.execution.dag import reconcile_interrupted_runs
+    from openprogram.runtime.execution.projections.dag import reconcile_interrupted_runs
 
     db = SessionDB(tmp_path / "sessions")
     db.create_session("s", "main")

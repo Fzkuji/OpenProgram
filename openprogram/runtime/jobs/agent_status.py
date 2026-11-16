@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from openprogram.runtime.jobs.types import Job, JobStatus, is_terminal
 
@@ -79,13 +79,16 @@ def agent_status(job: Job, *, wait_kind: Any = ..., stalled: Optional[bool] = No
     return "running"
 
 
-def subtree_usage(job: Job, *, ledger: Any = None) -> dict[str, Any]:
+def subtree_usage(
+    job: Job, *, ledger: Any = None,
+    jobs_in: Optional[Callable[[str], list[Job]]] = None,
+) -> dict[str, Any]:
     """``{"tokens", "cost_usd"}`` of ``job`` and the helpers under it; a
     value the ledger cannot give is None (``cost_usd`` too when a price is
-    unknown)."""
+    unknown). ``jobs_in`` is ``agent_result.subtree_job_ids``'s session reader."""
     from openprogram.runtime.jobs.agent_result import _ledger_usage, subtree_job_ids
     from decimal import Decimal
-    usage = _ledger_usage(subtree_job_ids(job), ledger)
+    usage = _ledger_usage(subtree_job_ids(job, jobs_in=jobs_in), ledger)
     if usage is None:
         return {"tokens": None, "cost_usd": None}
     cost = None

@@ -42,7 +42,7 @@ from openprogram.models.providers.recording.replay import (
     read_recording_file,
 )
 from openprogram.models.providers.structured_output import StructuredOutputCapabilities
-from openprogram.models.providers.utils.errors import LLMError
+from openprogram.models.providers.utils.failures.errors import LLMError
 from openprogram.models.providers.types import (
     AssistantMessageEvent,
     Context,
@@ -335,11 +335,9 @@ def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
 
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
-    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        stream_module,
-        "resolve_provider_key",
-        lambda provider: pytest.fail("structured replay resolved credentials"),
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: pytest.fail("structured replay resolved credentials"),
     )
     replayed = _runtime_for_registered_model(monkeypatch, max_retries=2).exec(
         "answer",
@@ -400,13 +398,11 @@ def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
 
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
-    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        stream_module,
-        "resolve_provider_key",
-        lambda provider: pytest.fail("schema mismatch resolved credentials"),
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: pytest.fail("schema mismatch resolved credentials"),
     )
-    failover_module = importlib.import_module("openprogram.models.providers.utils.failover")
+    failover_module = importlib.import_module("openprogram.models.providers.utils.failures.failover")
     monkeypatch.setattr(
         failover_module,
         "failover_stream_fn",
@@ -579,9 +575,7 @@ def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
 
 def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
-    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
-    monkeypatch.setattr(stream_module, "resolve_provider_key", lambda provider: None)
-
+    
     class EmptyMemory:
         def search(self, query: str) -> str:
             return ""
@@ -1217,9 +1211,8 @@ def test_replay_stream_skips_credential_resolution(
     register_api_provider(_API, replay)
     stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        stream_module,
-        "resolve_provider_key",
-        lambda provider: pytest.fail("replay resolved provider credentials"),
+        "openprogram.models.auth.selection.with_credential",
+        lambda model, opts, attempt: pytest.fail("replay resolved provider credentials"),
     )
 
     async def replay_once() -> list:

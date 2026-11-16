@@ -145,9 +145,9 @@ def test_sandbox_reads_are_correlated_and_only_mutations_broadcast(monkeypatch):
     def save(*args, sandbox_enabled, **kwargs):
         state['sandbox'] = sandbox_enabled
 
-    monkeypatch.setattr('openprogram.runtime.conversation.session_config.load_session_run_config',
+    monkeypatch.setattr('openprogram.runtime.conversation.session_settings.session_config.load_session_run_config',
                         lambda sid: SimpleNamespace(sandbox_enabled=state['sandbox']))
-    monkeypatch.setattr('openprogram.runtime.conversation.session_config.save_session_run_config', save)
+    monkeypatch.setattr('openprogram.runtime.conversation.session_settings.session_config.save_session_run_config', save)
     monkeypatch.setattr('openprogram.interfaces.server.ws_actions.chat._db_agent_id', lambda sid: 'main')
     monkeypatch.setattr('openprogram.host.sandbox.ui_state', lambda value: {'sandbox': value})
     monkeypatch.setattr(server, '_broadcast', lambda frame: broadcasts.append(json.loads(frame)))

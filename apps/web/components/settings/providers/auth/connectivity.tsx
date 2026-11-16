@@ -2,10 +2,10 @@
 
 import { forwardRef, useImperativeHandle, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SettingsHeading } from "@/components/settings/settings-ui";
 import { useTranslation } from "@/lib/i18n";
-
-import styles from "../provider-pane.module.css";
 
 /** Imperative handle so the parent can "click Check" programmatically
  *  (e.g. auto-run after an API key is saved) and await the result. */
@@ -34,7 +34,7 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string;
 
   async function test(): Promise<boolean> {
     setBusy(true);
-    setResult({ kind: "info", text: "…" });
+    setResult(null);
     try {
       const r = await fetch(`/api/providers/${encodeURIComponent(providerId)}/validate`, {
         method: "POST",
@@ -46,33 +46,33 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string;
       const via: string = d.via || "";
       const title = d.detail || (via ? text(`verified via ${via}`, `已通过 ${via} 验证`) : undefined);
       if (isUsableValid(status, via, d.kind)) {
-        setResult({ kind: "ok", text: d.latency_ms ? `✓ ${d.latency_ms} ms` : text("✓ valid", "✓ 有效"), title });
+        setResult({ kind: "ok", text: d.latency_ms ? `${d.latency_ms} ms` : text("Valid", "有效"), title });
         return true;
       }
       if (local) {
-        setResult({ kind: "err", text: text("✗ check failed", "✗ 检查失败"), title: d.detail || status });
+        setResult({ kind: "err", text: text("Check failed", "检查失败"), title: d.detail || status });
         return false;
       }
       if (status === "valid_no_balance" || status === "billing_blocked") {
-        setResult({ kind: "err", text: text("✗ out of credits", "✗ 欠费停用"), title });
+        setResult({ kind: "err", text: text("Out of credits", "欠费停用"), title });
         return false;
       }
       if (status === "valid_model_unavailable") {
-        setResult({ kind: "warn", text: text("model unavailable", "模型不可用"), title });
+        setResult({ kind: "warn", text: text("Model unavailable", "模型不可用"), title });
         return false;
       }
       if (status === "valid" || (status === "unknown" && via.startsWith("GET "))) {
-        setResult({ kind: "info", text: text("key accepted", "密钥已接受"), title });
+        setResult({ kind: "info", text: text("Key accepted", "密钥已接受"), title });
         return false;
       }
-      const tag = status === "invalid_credential" ? text("✗ invalid key", "✗ key 无效")
-        : status === "needs_reauth" ? text("✗ sign in again", "✗ 需重新登录")
-        : status === "missing" ? text("✗ not set", "✗ 未设置")
-        : `✗ ${status}`;
+      const tag = status === "invalid_credential" ? text("Invalid key", "key 无效")
+        : status === "needs_reauth" ? text("Sign in again", "需重新登录")
+        : status === "missing" ? text("Not set", "未设置")
+        : status;
       setResult({ kind: "err", text: tag, title: d.detail || status });
       return false;
     } catch (e) {
-      setResult({ kind: "err", text: "✗", title: (e as Error).message });
+      setResult({ kind: "err", text: text("Unreachable", "无法连接"), title: (e as Error).message });
       return false;
     } finally {
       setBusy(false);
@@ -82,37 +82,27 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string;
   // Expose "click Check" to the parent so it can auto-run on key save.
   useImperativeHandle(ref, () => ({ run: test }));
 
+  const tone = { ok: "success", err: "destructive", warn: "warning", info: "secondary" } as const;
   return (
-    <div className="flex flex-col gap-[10px]">
-      <div className={styles.detailSectionTitle}>
-        <span>{text("Connectivity check", "连接检查")}</span>
-      </div>
-      <div className={`${styles.detailRow} flex gap-[10px] items-center`}>
-        <span className={styles.modelCountSummary} style={{ flex: 1 }}>
-          {local
-            ? text("Checks the server's model listing and runs a small completion request when a model is available.", "检查服务器的模型列表，有可用模型时发送一次小型补全请求。")
-            : text("Confirms the key is usable now — a cheap auth check, plus a tiny completion ping when the provider has no billing endpoint.", "确认密钥现在可用：先做廉价鉴权，提供商没有余额端点时再发一次极小的补全探测。")}
-        </span>
-        {result && (
-          <span
-            className={
-              styles.testResult + " " + (
-                result.kind === "ok" ? styles.ok
-                : result.kind === "err" ? styles.err
-                : result.kind === "warn" ? styles.warn
-                : styles.info
-              )
-            }
-            data-tip={result.title}
-            style={{ maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            {result.text}
-          </span>
-        )}
-        <Button onClick={() => { void test(); }} disabled={busy}>
-          {text("Check", "检查")}
-        </Button>
-      </div>
-    </div>
+    <section className="flex flex-col gap-3" aria-label={text("Connectivity check", "连接检查")}>
+      <SettingsHeading
+        title={text("Connectivity check", "连接检查")}
+        description={local
+          ? text("Checks the server's model listing and runs a small completion request when a model is available.", "检查服务器的模型列表，有可用模型时发送一次小型补全请求。")
+          : text("Confirms the key is usable now — a cheap auth check, plus a tiny completion ping when the provider has no billing endpoint.", "确认密钥现在可用：先做廉价鉴权，提供商没有余额端点时再发一次极小的补全探测。")}
+        action={
+          <div className="flex items-center gap-2">
+            {result && (
+              <Badge variant={tone[result.kind]} dot title={result.title} className="max-w-80 truncate" role="status">
+                {result.text}
+              </Badge>
+            )}
+            <Button size="sm" variant="elevated" onClick={() => { void test(); }} disabled={busy}>
+              {text("Check", "检查")}
+            </Button>
+          </div>
+        }
+      />
+    </section>
   );
 });

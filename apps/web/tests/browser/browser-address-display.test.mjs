@@ -4,10 +4,10 @@ import test from "node:test";
 import { addressDisplayParts, shortcutHint } from "../../lib/browser/browser-layout.ts";
 
 test("a resting address shows the host apart from the path, without the scheme", () => {
-  assert.deepEqual(addressDisplayParts("https://github.com/FuzzyKuji/OpenProgram/pulls?q=1#top"), {
+  assert.deepEqual(addressDisplayParts("https://github.com/Fzkuji/OpenProgram/pulls?q=1#top"), {
     secure: true,
     host: "github.com",
-    rest: "/FuzzyKuji/OpenProgram/pulls?q=1#top",
+    rest: "/Fzkuji/OpenProgram/pulls?q=1#top",
   });
   assert.deepEqual(addressDisplayParts("http://localhost:18100/"), {
     secure: false,

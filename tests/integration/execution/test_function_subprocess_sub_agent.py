@@ -17,7 +17,7 @@ class SubAgentProgram(Agent):
 
     @staticmethod
     def starts_sub_agent(folder: str):
-        from openprogram.runtime.conversation.sub_agent_run import run_agent_turn
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn
         marker = Path(folder) / 'accepted'
         result = run_agent_turn('session', 'look around', 'main', on_accepted=lambda job: marker.write_text(job.id))
         (Path(folder) / 'result').write_text(result.final_text)

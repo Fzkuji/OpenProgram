@@ -60,7 +60,7 @@ class FetchCredential:
     """What one quota read needs: never stored, never logged."""
 
     provider: str
-    account: str          # credential id, '' for an environment key
+    account: str          # credential id
     token: str
     base_url: Optional[str] = None
 
@@ -119,31 +119,23 @@ def _http_get(url: str, headers: dict, configured_base: Optional[str]) -> Option
 
 
 def credentials(provider: str) -> list[FetchCredential]:
-    """Every key of a provider: its stored credentials, else its environment key."""
+    """Every enabled credential of a provider (environment keys included),
+    each read on its own: a quota belongs to one key or one sign-in."""
     out: list[FetchCredential] = []
     try:
         from openprogram.models.auth.resolver import resolve_connection
         from openprogram.models.auth.store import get_store
-        for pool in get_store().list_pools():
-            if pool.provider_id != provider:
+        for cred in get_store().get(provider).credentials:
+            if not cred.enabled:
                 continue
-            for cred in pool.credentials:
-                try:
-                    conn = resolve_connection(cred)
-                except Exception:
-                    conn = None
-                if conn is not None and conn.auth_value:
-                    out.append(FetchCredential(provider, cred.credential_id, conn.auth_value, conn.base_url))
+            try:
+                conn = resolve_connection(cred)
+            except Exception:
+                conn = None
+            if conn is not None and conn.auth_value:
+                out.append(FetchCredential(provider, cred.id, conn.auth_value, conn.base_url))
     except Exception:
         _log.debug("no stored credentials for %s", provider, exc_info=True)
-    if not out:
-        try:
-            from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-            key = resolve_provider_key(provider)
-        except Exception:
-            key = None
-        if key:
-            out.append(FetchCredential(provider, "", key))
     return out
 
 
@@ -217,7 +209,7 @@ def _due(cred: FetchCredential, reason: str, now: float) -> bool:
 
 
 def _retry_after(headers: dict) -> Optional[float]:
-    from openprogram.models.providers.utils.errors import parse_retry_after
+    from openprogram.models.providers.utils.failures.errors import parse_retry_after
     lowered = {str(k).lower(): v for k, v in (headers or {}).items()}
     return parse_retry_after(lowered)
 
@@ -241,6 +233,9 @@ def fetch_one(module: Any, cred: FetchCredential, *, http_get: HttpGet = _http_g
         return None
     if status != 200:
         _note_read(*account, read_at=now, status=status, error=f"HTTP {status}")
+        if status == 401 and cred.account and getattr(module, "VERIFIED", False) \
+                and not _is_spent_balance(body):
+            _refused_key(cred)
         return None
     try:
         payload = json.loads(body)
@@ -252,6 +247,32 @@ def fetch_one(module: Any, cred: FetchCredential, *, http_get: HttpGet = _http_g
         default_store.observe(cred.provider, cred.account, limits, force_write=True, replace_source=True)
     _note_read(*account, read_at=now, status=status, error=None if limits else "no quota in the answer")
     return limits or None
+
+
+def _is_spent_balance(body: object) -> bool:
+    """A 401 whose body says the balance ran out (OpenCode's CreditsError)."""
+    try:
+        from openprogram.models.providers.utils.failures.errors import is_billing_exhausted
+        return bool(body) and is_billing_exhausted(str(body))
+    except Exception:
+        return False
+
+
+def _refused_key(cred: FetchCredential) -> None:
+    """A key its own quota endpoint refused is marked on its row, so the
+    provider's list says what its card does. Only a verified endpoint's 401
+    marks: an unverified one (a plan endpoint a plain key may not reach, a
+    region the key is not for) only records its read error."""
+    try:
+        from openprogram.models.auth.selection import mark
+        from openprogram.models.auth.store import get_store
+        row = get_store().find(cred.provider, cred.account)
+        if row is None or row.kind not in ("api_key", "credential_process"):
+            return
+        mark(cred.provider, cred.account, "invalid_key", code="invalid_key",
+             message="quota endpoint answered 401")
+    except Exception:
+        _log.debug("refused key of %s not marked", cred.provider, exc_info=True)
 
 
 def refresh(providers: Optional[Iterable[str]] = None, *, reason: str = "open",
@@ -308,7 +329,7 @@ def after_failure(provider: str, exc: BaseException) -> None:
     try:
         if fetcher_for(provider) is None:
             return
-        from openprogram.models.providers.utils.errors import _PERMANENT_MARKERS_QUOTA
+        from openprogram.models.providers.utils.failures.errors import _PERMANENT_MARKERS_QUOTA
         status = getattr(exc, "http_status", None) or getattr(exc, "status_code", None)
         text = f"{exc} {getattr(exc, 'error_text', '') or ''}".lower()
         if status in (402, 429) or any(marker in text for marker in _PERMANENT_MARKERS_QUOTA):

@@ -144,33 +144,28 @@ def _session_lanes(db, sids: list[str], by_id: dict) -> dict[str, tuple[dict | N
 
 
 def _accounts(providers: list[str]) -> dict[str, list[dict]]:
-    """Accounts of each provider and whether each can take requests now."""
+    """Each provider's credentials, in order, and whether each can take
+    requests now: ``{label, status, until_ms}`` with ``status`` one of
+    ready / cooling / quota / invalid_key / needs_login."""
     try:
-        from openprogram.models.auth.account.account_labels import effective_account_label
         from openprogram.models.auth.account.aliases import resolve
+        from openprogram.models.auth.selection import state_of
         from openprogram.models.auth.store import get_store
-        pools = get_store().list_pools()
+        store = get_store()
     except Exception:
         return {p: [] for p in providers}
     now_ms = int(time.time() * 1000)
-    return {p: _pool_accounts(resolve(p), pools, now_ms, effective_account_label) for p in providers}
-
-
-def _pool_accounts(pool_id: str, pools, now_ms: int, effective_account_label) -> list[dict]:
-    out = []
-    for pool in pools:
-        if pool.provider_id != pool_id or not pool.credentials:
-            continue
-        cred = pool.credentials[0]
-        status = getattr(cred, "status", "") or "valid"
-        until = int(getattr(cred, "cooldown_until_ms", 0) or 0)
-        if status == "rate_limited" and until <= now_ms:
-            status, until = "valid", 0
-        out.append({
-            "label": effective_account_label(cred, pool.account_id),
-            "status": status,
-            "until_ms": until if until > now_ms else 0,
-        })
+    out: dict[str, list[dict]] = {}
+    for p in providers:
+        rows = []
+        for cred in store.get(resolve(p)).credentials:
+            if not cred.enabled:
+                continue
+            status = state_of(cred, now_ms)
+            until = int(cred.cooldown_until_ms or 0)
+            rows.append({"label": cred.display_label(), "status": status,
+                         "until_ms": until if status in ("cooling", "quota") and until > now_ms else 0})
+        out[p] = rows
     return out
 
 

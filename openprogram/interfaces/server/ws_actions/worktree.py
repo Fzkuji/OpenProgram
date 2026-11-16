@@ -221,7 +221,7 @@ def _source_repo_for(session_id: str) -> str | None:
     worktree of: the top level of the conversation's project folder, or
     ``None`` when that folder is not in a repository."""
     import subprocess
-    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
     folder = project_workdir_for(session_id)
     if folder is None:
         return None

@@ -6,7 +6,7 @@
 // only while no OpenProgram window has focus, and holds the system awake
 // while any window reports a running session. An urgent request (a
 // reminder the user set) shows even while the App has focus. Electron objects are injected
-// so tests/check-attention-service.js can drive it in plain Node.
+// so tests/windows/check-attention-service.js can drive it in plain Node.
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");

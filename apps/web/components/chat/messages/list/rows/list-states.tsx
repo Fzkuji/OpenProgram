@@ -50,6 +50,14 @@ export function PendingReplyIndicator({ timestamp }: { timestamp?: number }) {
         <ThinkingStatus />
         <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
       </div>
+      {/* The reply that takes this place is drawn with its action row from
+          its first frame; the same row holds the place here, unseen, so the
+          swap moves nothing. */}
+      <div className="message-actions-footer" aria-hidden="true">
+        <div className="message-actions">
+          <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -63,7 +71,7 @@ export function OperationStatusIndicator({ label, timestamp }: { label: string; 
   return (
     <div className="message assistant pending-standalone" data-operation-status>
       <div className="pending-body" role="status" aria-live="polite">
-        <span className="text-muted-foreground">{label}</span>
+        <span className="text-text-muted">{label}</span>
         <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
       </div>
     </div>

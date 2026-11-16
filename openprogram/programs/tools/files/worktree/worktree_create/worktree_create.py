@@ -31,7 +31,7 @@ def _resolve_source_repo(source_repo: str, session_id: Optional[str] = None) -> 
     """
     if source_repo and source_repo.strip():
         return os.path.abspath(os.path.expanduser(source_repo.strip()))
-    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.runtime.conversation.session_settings.workdir import project_workdir_for
     from openprogram.state.paths import configured_workdir
     folder = project_workdir_for(session_id) if session_id else None
     wd = str(folder) if folder is not None else configured_workdir()

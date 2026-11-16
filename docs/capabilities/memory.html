@@ -18,7 +18,7 @@
 <tr><th scope="row">Manual edits</th><td>Five-minute checkpoints by the server, tolerance 15 seconds. The deadline survives restart and needs no open editor. The state before the interval is retained.</td></tr>
 <tr><th scope="row">Background write</th><td>Its own, named for the conversation</td></tr>
 <tr><th scope="row">Reorganizing a write triggers</th><td>Its own</td></tr>
-<tr><th scope="row">Nightly reorganization</th><td>One per file it splits</td></tr>
+<tr><th scope="row">Nightly reorganization</th><td>One per file it splits and per folder it regroups: a company, person or project with several notes gets a folder of its own, and <code translate="no">openprogram memory regroup</code> does this on demand</td></tr>
 <tr><th scope="row"><code translate="no">memory_update</code> by the agent</th><td>Its own, named for the conversation</td></tr>
 <tr><th scope="row">Edits outside OpenProgram</th><td>Committed alone just before the next write, so restoring a write never takes them along</td></tr>
 </tbody>

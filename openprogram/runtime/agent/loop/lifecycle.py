@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from openprogram.models.providers.utils.event_stream import EventStream
+from openprogram.models.providers.utils.streams.event_stream import EventStream
 from openprogram.runtime.agent.loop.types import (
     AgentEvent,
     AgentMessage,
@@ -35,7 +35,7 @@ def _job_operation_timeout(declared: float | None) -> float | None:
 
 def _finish_interrupted_stream(stream, exc, messages, cancel_event) -> None:
     from openprogram.host.cancellation import CancelledError, check_cancelled
-    from openprogram.models.providers.utils.errors import ExecInterrupt
+    from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
     cancelled = isinstance(exc, (CancelledError, asyncio.CancelledError)) or bool(
         cancel_event is not None and cancel_event.is_set()

@@ -66,19 +66,14 @@
      --chat-column-max，这个下限只在紧凑时起作用。 */
   max-width: min(var(--chat-column-max), calc(100% - 2 * var(--chat-column-gutter)));
   margin: 0 auto;
-  /* Bottom padding gives the latest message room to scroll up to the
-     top of the viewport so the assistant reply lands underneath it
-     (ChatGPT / Claude behaviour). Capped at 25vh — a full
-     `100vh - 220px` was so tall the chat-area could open with the
-     entire viewport empty below the last message even on a fresh
-     short conversation.
-     The composer floats OVER the transcript (absolute, bottom-anchored)
-     and can outgrow 25vh — question panel (goal 挂起 / ask)、attachment
-     chips、multi-line textarea. `--main-composer-height` is its measured
-     real height (published by a ResizeObserver in composer/index.tsx),
-     so the reserve follows whatever the composer stack currently is;
-     normal chats still get the plain 25vh. */
-  padding: 24px 0 max(25vh, calc(var(--main-composer-height, 0px) + 24px)) 0;
+  /* The composer floats OVER the transcript (absolute, bottom-anchored).
+     `--main-composer-height` is its measured real height (published by a
+     ResizeObserver in composer/input/use-composer-input-effects.ts), so the
+     reserve follows whatever the composer stack currently is — question
+     panel、attachment chips、multi-line textarea — and the last row always
+     rests 24px above it, in any window height. The split pane reserves the
+     same way (--peer-composer-h). */
+  padding: 24px 0 calc(var(--main-composer-height, 0px) + 24px) 0;
   display: flex;
   flex-direction: column;
   gap: 0;

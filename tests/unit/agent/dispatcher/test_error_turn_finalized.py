@@ -210,7 +210,7 @@ def test_render_context_skips_the_failed_branch(db: SessionStore):
     The error node stays in the graph and stays reachable; it is simply on
     a branch the new head does not descend from.
     """
-    from openprogram.runtime.context.nodes import render_context
+    from openprogram.runtime.context.session_dag.nodes import render_context
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     sid = "s-err-render"

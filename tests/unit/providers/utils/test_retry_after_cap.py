@@ -9,8 +9,8 @@ import asyncio
 
 import pytest
 
-from openprogram.models.providers.utils import stream_retry
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError, retry_stream
+from openprogram.models.providers.utils.streams import stream_retry
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError, retry_stream
 
 
 def _limited(retry_after_s: float):

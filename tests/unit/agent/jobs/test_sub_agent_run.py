@@ -104,7 +104,7 @@ def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
     """inherit mode: forks off ``caller`` in the SAME session.
     No new session id is minted; no attach pointer is written by
     ``_execute_agent_turn`` itself."""
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     pre_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
 
@@ -139,7 +139,7 @@ def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
 def test_clean_starts_new_root(parent_store, fake_dispatcher):
     """clean mode: caller=None → dispatcher gets history_override=[]
     and the new turn becomes a new root in the same session."""
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     out = _execute_agent_turn(
         session_id="p1",
@@ -161,7 +161,7 @@ def test_label_persists_as_branch_name(parent_store, fake_dispatcher):
     """A spawn with label='X' registers X as the branch name for the
     resulting head — so the right-rail Branches panel shows the label
     instead of the raw commit hash."""
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     out = _execute_agent_turn(
         session_id="p1",
@@ -178,7 +178,7 @@ def test_label_persists_as_branch_name(parent_store, fake_dispatcher):
 
 
 def test_unknown_session_errors(parent_store, fake_dispatcher):
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
     out = _execute_agent_turn(
         session_id="nope",
         prompt="hi",
@@ -191,7 +191,7 @@ def test_unknown_session_errors(parent_store, fake_dispatcher):
 
 def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     from openprogram.runtime.conversation import turn_runtime as disp
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     def boom(req, *, on_event=None, cancel_event=None):
         raise RuntimeError("provider exploded")
@@ -215,7 +215,7 @@ def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
 
 
 def test_the_end_write_reuses_the_running_card_id(parent_store, fake_dispatcher):
-    from openprogram.runtime.conversation.sub_agent_run import (
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
         _execute_agent_turn,
         write_attach_pointer_for_spawn,
     )
@@ -238,7 +238,7 @@ def test_the_end_write_keeps_what_the_runner_wrote_meanwhile(parent_store, monke
     """The job runner settles the card when the job ends, on its own thread.
     Its write landing between the caller reading the card and writing it
     must survive: the caller merges into the card as it is at the write."""
-    from openprogram.runtime.conversation.sub_agent_run import (
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
         AgentTurnResult,
         write_attach_pointer_for_spawn,
         write_attach_placeholder_for_spawn,
@@ -277,7 +277,7 @@ def test_write_attach_pointer_mints_id_when_not_supplied(
 ):
     """node_id is optional — the slash-command path still gets a
     generated id."""
-    from openprogram.runtime.conversation.sub_agent_run import (
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import (
         _execute_agent_turn,
         write_attach_pointer_for_spawn,
     )
@@ -297,7 +297,7 @@ def test_spawn_follows_session_model_pick(parent_store, fake_dispatcher):
     """A same-session spawn runs on the session's picked model: the
     picker's provider_override/model_override in session meta become
     the TurnRequest's model_override, same composition as a chat turn."""
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     parent_store.update_session(
         "p1",
@@ -312,7 +312,7 @@ def test_spawn_follows_session_model_pick(parent_store, fake_dispatcher):
 
 def test_spawn_without_pick_leaves_model_to_profile(parent_store,
                                                     fake_dispatcher):
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     _execute_agent_turn(session_id="p1", prompt="go", agent_id="main",
                         branch_from="a1")
@@ -320,7 +320,7 @@ def test_spawn_without_pick_leaves_model_to_profile(parent_store,
 
 
 def test_a_sub_agent_with_no_parent_turn_uses_the_default(parent_store, fake_dispatcher):
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
 
     _execute_agent_turn(session_id="p1", prompt="go", agent_id="main", branch_from="a1")
     assert fake_dispatcher["calls"][-1]["permission_mode"] == "bypass"
@@ -328,7 +328,7 @@ def test_a_sub_agent_with_no_parent_turn_uses_the_default(parent_store, fake_dis
 
 def test_a_sub_agent_inherits_its_parents_mode_and_rules(parent_store, fake_dispatcher, monkeypatch):
     from openprogram.runtime.agent.turn_request import TurnRequest, reset_turn_request, set_turn_request
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
     from openprogram.runtime.permissions.modes import PermissionRules
 
     rules = PermissionRules(deny=["bash"])
@@ -346,7 +346,7 @@ def test_a_sub_agent_inherits_its_parents_mode_and_rules(parent_store, fake_disp
 def test_a_sub_agent_stopped_before_it_starts_reports_the_stop(parent_store, fake_dispatcher, monkeypatch):
     """A stop that wins the race with the spawn's activation is a stop, not a crash."""
     from openprogram.runtime.conversation.production_driver.shared import STOPPED_BEFORE_START
-    from openprogram.runtime.conversation.sub_agent_run import _execute_agent_turn
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _execute_agent_turn
     from tests.support.stop_before_start import stop_every_turn_before_it_starts
 
     stopped = stop_every_turn_before_it_starts(monkeypatch)

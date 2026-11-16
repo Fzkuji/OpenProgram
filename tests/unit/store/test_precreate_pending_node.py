@@ -319,7 +319,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert "do-not-persist" not in str(store.get_messages("s1"))
     assert hidden_node.metadata["expose"] == "hidden"
     from openprogram.state.store.session.graph.builder import build_session_graph
-    from openprogram.runtime.execution.dag import build_exec_dag_by_id
+    from openprogram.runtime.execution.projections.dag import build_exec_dag_by_id
     graph = build_session_graph("s1")
     assert all(row["id"] != hidden_id for row in graph)
     assert "do-not-persist" not in str(graph)

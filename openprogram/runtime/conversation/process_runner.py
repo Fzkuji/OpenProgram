@@ -1116,7 +1116,7 @@ def _child_entry(
 
         from openprogram.runtime.conversation.turn_runtime.turn_context import _unavailable_runtime
         if model_setup_error is not None:
-            from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+            from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
             rt = _unavailable_runtime(LLMError(
                 message=model_setup_error["message"],
                 reason=ErrorReason(model_setup_error["reason"]),
@@ -1193,7 +1193,7 @@ def _child_entry(
         # AgentSession created inside this tool inherits it.
         from openprogram.runtime.agent.turn_request import set_turn_request
         set_turn_request(req)
-        from openprogram.runtime.conversation.turn_request_context import set_original_owner_input
+        from openprogram.runtime.conversation.turn_admission.turn_request_context import set_original_owner_input
         set_original_owner_input(original_owner_input)
 
         # Bridge child-side on_event into the parent via the queue.

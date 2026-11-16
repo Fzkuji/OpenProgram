@@ -6,8 +6,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from openprogram.interfaces.channels import _transport
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.delivery import _transport
+from openprogram.interfaces.channels.delivery._transport import SendResult
 
 
 @pytest.fixture(autouse=True)

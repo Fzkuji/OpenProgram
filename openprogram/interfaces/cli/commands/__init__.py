@@ -2,16 +2,17 @@
 
 The package entry point keeps the argparse setup, the dispatch chain, the TUI-tty
 globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
-``_dispatch_<group>_verb`` handler bodies live in topic modules here:
+``_dispatch_<group>_verb`` handler bodies live in topic modules, grouped by
+what the commands are for:
 
-    programs.py  — programs list/new/edit/run/app, configure, runtime
-    skills.py    — skills list/doctor/install, install_skills
-    sessions.py  — sessions list/resume
-    agents.py    — agents list/add/rm/show/set-default
-    channels.py  — accounts + bindings + login
-    web.py       — web UI launcher
-    chat.py      — interactive cli chat
-    cron.py      — scheduler-worker
+    capabilities/   — Programs, skills, plugins, MCP servers
+    conversations/  — chat, sessions, agents, sub-agents, executions, Jobs,
+                      permissions, environments
+    services/       — Web server, ACP, cron, channels and channel setup
+    maintenance/    — backup, diagnostics, doctor, logs, rescue, trash
+    updates/        — upgrade, self-update, versions, development instance
+    providers/      — the credential command tree
+    completion.py   — shell completion over the whole parser
 
 ``openprogram.interfaces.cli.application`` re-exports these at module level so external callers
 (``openprogram.interfaces.cli.chat``, tests, ``openprogram.interfaces.cli.ink``) that import

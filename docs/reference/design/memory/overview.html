@@ -16,7 +16,7 @@
   <text class="t-soft" x="200" y="86">or session idle</text>
   <line class="ln" x1="270" y1="33" x2="342" y2="33" marker-end="url(#mem-a)"/>
   <text class="t-big" x="352" y="40">Topics</text>
-  <text class="t-soft" x="352" y="66">one file per subject,</text>
+  <text class="t-soft" x="352" y="66">folders by meaning,</text>
   <text class="t-soft" x="352" y="86">every claim cited</text>
   <line class="ln" x1="422" y1="33" x2="498" y2="33" marker-end="url(#mem-a)"/>
   <text class="t-big" x="508" y="40">Derived</text>
@@ -36,7 +36,7 @@
 <ol class="flow fig-narrow">
   <li><strong>Session store</strong><small>every turn, stable ids; memory keeps no copy</small></li>
   <li><strong>Writer</strong><small>about 16K tokens, or session idle</small></li>
-  <li><strong>Topics</strong><small>one file per subject, every claim cited; 03:00 pass splits, merges, repairs links</small></li>
+  <li><strong>Topics</strong><small>folders follow meaning, every claim cited; 03:00 pass regroups, splits, merges, repairs links</small></li>
   <li><strong>Derived</strong><small>core section, timeline, events, relations</small></li>
   <li class="flow-end"><strong>Model</strong><small>MEMORY.md each session, recall each turn, tools on demand</small></li>
 </ol>
@@ -71,10 +71,61 @@
 <tbody>
 <tr><th scope="row"><code translate="no">^block-id</code></th><td>Address of a paragraph for views and links; survives edits and moves</td></tr>
 <tr><th scope="row">Footnote link</th><td>The chat page's address. Memory page: the message and turns around it. <code translate="no">memory_get</code> reads the same for the model.</td></tr>
-<tr><th scope="row">A subject with parts</th><td>A directory, any depth: <code translate="no">topics/projects/openprogram/</code> with <code translate="no">overview.md</code> and one file per part</td></tr>
+<tr><th scope="row">A thing with several notes</th><td>A folder, any depth: <code translate="no">topics/projects/openprogram/</code> with <code translate="no">overview.md</code> and one file per aspect. See <a href="#filing">Filing</a>.</td></tr>
 <tr><th scope="row">Past <code translate="no">TOPIC_SPLIT_BYTES</code> (16,000)</th><td>Marked with its target directory; new facts go to a part file, the nightly pass splits. Never <code translate="no">topics/core.md</code>: the render budget governs it.</td></tr>
 </tbody>
 </table>
+
+<h2 id="filing">Filing</h2>
+<p>Folders follow meaning: one real-world thing, one folder.</p>
+<pre translate="no" tabindex="0">topics/career/                          topics/career/
+    acme-application.md                     resume.md
+    acme-interview.md                       companies/
+    globex-applications.md        →             acme/      overview.md  interview.md
+    globex-applications/assessment.md           globex/    overview.md  assessment.md
+    initech-application.md                      quant/     overview.md
+    quant-applications.md                           initech/   overview.md
+    resume.md</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">A thing is a folder</th><td>A person, company, paper, trip or project with a second note, or likely to get one: <code translate="no">overview.md</code> and one file per aspect, named by the aspect alone. One short note may stay one file.</td></tr>
+<tr><th scope="row">A kind is a folder</th><td>Things of one kind sit under a folder named for the kind (<code translate="no">companies/</code>, <code translate="no">people/</code>), inside the area they belong to. Where the notes group them, a group folder inside it, with its own <code translate="no">overview.md</code>.</td></tr>
+<tr><th scope="row">No flat run</th><td>More than <code translate="no">FLAT_RUN_LIMIT</code> (8) notes directly in one directory, <code translate="no">overview.md</code> aside: every thing there gets a folder, single notes too.</td></tr>
+<tr><th scope="row">No note beside its folder</th><td><code translate="no">x.md</code> beside <code translate="no">x/</code> is <code translate="no">x/overview.md</code>.</td></tr>
+<tr><th scope="row">Names</th><td>A file name never repeats its folders and never carries a date.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Who</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Code (<code translate="no">management/filing.py</code>)</th><td>Finds flat runs and notes beside folders; lists them as "Filing problems" at the end of the workspace structure every memory agent reads; moves files; makes a note beside its folder the overview. No model.</td></tr>
+<tr><th scope="row">Writer</th><td>Files a new note by the rule. Saving one into a flat run or beside a folder, the Write tool answers with where it belongs.</td></tr>
+<tr><th scope="row">Nightly pass</th><td>The mechanical move first, then one agent run per flat run, each its own commit: the agent decides which note is about which thing and what kind it is, and calls Move.</td></tr>
+<tr><th scope="row"><code translate="no">Move</code> tool</th><td><code translate="no">{from, to}</code> pairs under <code translate="no">topics/</code>, all or nothing: no overwrite, no folder beside a same-named note, two notes may trade places. Emptied folders go.</td></tr>
+<tr><th scope="row">The commit</th><td>Rewrites every relative link that crosses a move; rewrites the moved paths in <code translate="no">MEMORY.md</code> (full paths, whole folders, and a short name such as <code translate="no">visa/materials.md</code> when only one file ended in it); rebuilds Timeline, Recent and Relations, which key on block IDs; search reads the files where they are.</td></tr>
+<tr><th scope="row">A moved file</th><td>Bytes untouched, so it is not a written file: not re-checked, not normalized, same origin in <code translate="no">installed.json</code>. An outside file may be filed this way, and the day each of its paragraphs was first seen moves with it.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram memory regroup</code></th><td>On demand, every workspace or <code translate="no">--root</code>. <code translate="no">--plan moves.json</code> applies a reviewed list of moves with no model, skipping any whose source is gone or target taken; <code translate="no">--dry-run</code> reports.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this rule</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Peer</th><th scope="col">Folders</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw <code translate="no">memory-wiki</code></th><td>Pages filed by kind: <code translate="no">entities/</code>, <code translate="no">concepts/</code>, <code translate="no">syntheses/</code>, <code translate="no">sources/</code></td><td>Kind folders. Ours are named by the notes' own kinds rather than four fixed ones, since one workspace holds companies and another papers.</td></tr>
+<tr><th scope="row">codex-cli</th><td>A named thing with several files is a directory: <code translate="no">skills/&lt;name&gt;/SKILL.md</code> plus its scripts; related work is grouped as Task Groups inside <code translate="no">MEMORY.md</code></td><td>One folder per thing, with a fixed entry file (<code translate="no">overview.md</code>).</td></tr>
+<tr><th scope="row">claude-code</th><td>Flat topic files, read recursively; "organize semantically by topic"; the index is the only structure</td><td>The index follows the files. Not the flat layout: it is what this rule replaces.</td></tr>
+<tr><th scope="row">hermes-agent, openclaw core</th><td>Two files; one file per day</td><td>Nothing: no subject tree.</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>What went wrong before</dt><dd>The prompt asked for "one file per person, relationship or recurring theme", with a folder only for "a subject with distinct parts". Code's one signal was a file past 16,000 bytes: "split into <code translate="no">&lt;name&gt;/</code>". Nothing counted siblings: 28 company notes sat side by side, and a folder appeared only beside a note that had been split.</dd>
+<dt>Why a count</dt><dd>"Likely to get a second note" is a judgment a model skips when the tree already looks flat; a number code can check is shown to it every run, like the size limit.</dd>
+<dt>Why code moves</dt><dd>A model rewriting 30 files to move them costs their footnotes in output and risks each one; a move changes no byte, so it cannot lose a paragraph, and it is tested without a model.</dd>
+<dt>Why outside files move</dt><dd>17 of those 28 notes were written by the chat agent's file tools. A move keeps every byte, which is all the read-only rule protects.</dd>
+</dl>
+</details>
 
 <h2 id="citing-chats">Citing chats</h2>
 <dl class="pairs">
@@ -159,6 +210,7 @@
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">Covers</th><td>The personal workspace, writable Agent spaces and every registered project with memory here. <code translate="no">openprogram memory sleep</code>: on demand, without Agent spaces.</td></tr>
+<tr><th scope="row">Regroups</th><td>First: notes into folders by <a href="#filing">the filing rule</a>, one run per flat directory</td></tr>
 <tr><th scope="row">Splits</th><td>Every file marked oversize into part files; paragraphs keep block IDs</td></tr>
 <tr><th scope="row">Merges</th><td>Paragraphs saying the same thing; a part of a paragraph or two into its parent; repairs links</td></tr>
 <tr><th scope="row">Order</th><td>Each oversized file, largest first, gets its own run before the whole-workspace run; one run over everything stops before a large late file</td></tr>
@@ -182,7 +234,7 @@
 <thead class="sr"><tr><th scope="col">Who</th><th scope="col">Does</th></tr></thead>
 <tbody>
 <tr><th scope="row">Commit that finds none</th><td>Generates it once from the staged tree (<code translate="no">runtime/memory_guide.py</code>): layout, Topics to three levels by title (front matter <code translate="no">name</code> or first heading, never a quoted sentence), files the latest <code translate="no">recent_events</code> touched</td></tr>
-<tr><th scope="row">Every commit</th><td>Drops the lines whose <code translate="no">topics/</code> path the tree no longer has (<code translate="no">drop_removed</code>): a <code translate="no">memory_update</code> delete runs no agent, and the map reaches every session</td></tr>
+<tr><th scope="row">Every commit</th><td>Drops the lines whose <code translate="no">topics/</code> path the tree no longer has (<code translate="no">drop_removed</code>): a <code translate="no">memory_update</code> delete runs no agent, and the map reaches every session. Rewrites the paths of Topics the write moved (<code translate="no">follow_moves</code>).</td></tr>
 <tr><th scope="row">Writer</th><td>Adds a line for a new Topic file or directory</td></tr>
 <tr><th scope="row">Organizer</th><td>Aligns it with the tree; short descriptions replace bare titles</td></tr>
 <tr><th scope="row">Both</th><td>Leave <code translate="no">&lt;!-- core: … --&gt;</code> to <code translate="no">&lt;!-- /core --&gt;</code> alone</td></tr>
@@ -307,7 +359,7 @@
 <tr><th scope="row"><code translate="no">memory_search</code></th><td>Paragraphs by meaning, with chat links (<code translate="no">top_k</code> up to 10, <code translate="no">path_prefix</code>). <code translate="no">exact</code>: a literal string line by line, the only mode under Agent recall.</td></tr>
 <tr><th scope="row"><code translate="no">memory_get</code></th><td>No path: contents, layers, writer health. A path: file, section or block with footnotes. <code translate="no">/s/&lt;session&gt;#&lt;message&gt;</code>: that message and its neighbouring turns.</td></tr>
 <tr><th scope="row"><code translate="no">memory_update</code></th><td>Create, update, delete or move records, in <code translate="no">layer</code> project or personal, for what the user asked to remember now or a visible error. Cites <code translate="no">sources</code>, else the current user message.</td></tr>
-<tr><th scope="row">Writer only</th><td>Read, Write, Edit, Grep, Glob and a sandboxed shell over a staging copy. No "save this" tool: recording is the writer's job.</td></tr>
+<tr><th scope="row">Writer only</th><td>Read, Write, Edit, Move, Grep, Glob and a sandboxed shell over a staging copy. No "save this" tool: recording is the writer's job.</td></tr>
 </tbody>
 </table>
 
@@ -496,7 +548,7 @@
 <tr><th scope="row"><code translate="no">scheduler.py</code></th><td>Daemon thread for the nightly pass</td></tr>
 <tr><th scope="row"><code translate="no">session_watcher.py</code></th><td>Idle-session writes</td></tr>
 <tr><th scope="row"><code translate="no">writing.py</code></th><td>Accumulate, write, verify, reorganize</td></tr>
-<tr><th scope="row"><code translate="no">management/</code></th><td>Transaction, staging, validation, <code translate="no">verification.py</code>; <code translate="no">block_views.py</code> checks new citations</td></tr>
+<tr><th scope="row"><code translate="no">management/</code></th><td>Transaction, staging, validation, <code translate="no">verification.py</code>; <code translate="no">filing.py</code> finds misfiled notes and moves them; <code translate="no">block_views.py</code> checks new citations</td></tr>
 <tr><th scope="row"><code translate="no">retrieval/</code></th><td>BM25, embedding, <code translate="no">fusion.py</code>, <code translate="no">layers.py</code></td></tr>
 <tr><th scope="row"><code translate="no">markdown/</code></th><td>The Topic format</td></tr>
 <tr><th scope="row"><code translate="no">prompts/</code></th><td>What the writer is told</td></tr>
@@ -541,6 +593,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Not yet</th><th scope="col">Effect</th></tr></thead>
 <tbody>
+<tr><th scope="row">Prose that names a moved file</th><td>A sentence such as "see acme-applications.md" inside a note is not a link and keeps the old name; only links and the map follow a move</td></tr>
+<tr><th scope="row">Grouping checked against a model</th><td>The agent run that decides the grouping is covered by tests with a scripted agent; code cannot say whether a grouping is the right one, only that no rule is broken</td></tr>
 <tr><th scope="row">Reordering <code translate="no">topics/core.md</code></th><td>A paragraph arriving past the budget is searchable but never rendered; the nightly pass does not know the budget</td></tr>
 <tr><th scope="row">Render report</th><td>Nothing reads it, so an over-budget block is noticed only by reading the file</td></tr>
 <tr><th scope="row">Tokenizer</th><td>The budget is approximate: <code translate="no">o200k_base</code> is not every model's tokenizer</td></tr>

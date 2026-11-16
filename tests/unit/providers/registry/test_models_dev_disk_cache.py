@@ -2,7 +2,19 @@
 
 import json
 
+import pytest
+
 from openprogram.models.providers.catalog.sources import models_dev
+
+
+@pytest.fixture(autouse=True)
+def _keep_mem_cache():
+    """These tests empty the in-memory catalogue; the next test gets it back,
+    or its first catalogue read would start a background refresh."""
+    saved = dict(models_dev._cache)
+    yield
+    models_dev._cache.clear()
+    models_dev._cache.update(saved)
 
 
 def _reset_mem_cache():

@@ -244,7 +244,7 @@
 <li><code translate="no">layout/geometry.ts</code>：由后端的 lane、tier、depth 算出格点位置，前端只消费（<code translate="no">openprogram/state/store/session/graph/layout/</code>，tier 在 <code translate="no">tier.py</code>）。</li>
 <li><code translate="no">render/edges.ts</code>、<code translate="no">render/nodes.ts</code>、<code translate="no">render/labels/badges.ts</code>，然后是画布（<code translate="no">interaction/view/canvas.ts</code>、<code translate="no">gestures.ts</code>）。<code translate="no">render/seat.ts</code> 读回已绘制组的位置。</li>
 </ol>
-<p class="note">编排：<code translate="no">pipeline.ts</code>。载荷：<code translate="no">openprogram/state/store/session/graph/builder.py</code>。调试：<code translate="no">python scripts/dag_dump.py &lt;session_id&gt;</code> 打印 lane、tier、depth 和 ASCII 网格。每次捕获缓存图标、工具展示和文字宽度；需要窗格尺寸的工作推迟一帧；<code translate="no">applyView</code> 每帧绘制一次；平移只改写位移。150 个节点重绘约 5ms。</p>
+<p class="note">编排：<code translate="no">pipeline.ts</code>。载荷：<code translate="no">openprogram/state/store/session/graph/builder.py</code>。调试：<code translate="no">python scripts/maintenance/dag_dump.py &lt;session_id&gt;</code> 打印 lane、tier、depth 和 ASCII 网格。每次捕获缓存图标、工具展示和文字宽度；需要窗格尺寸的工作推迟一帧；<code translate="no">applyView</code> 每帧绘制一次；平移只改写位移。150 个节点重绘约 5ms。</p>
 
 <h2 id="s8">8. 填充表示上下文覆盖</h2>
 <p>被覆盖的圆片（<code translate="no">is-covered</code>，<code translate="no">render/visibility.ts</code>）属于下一次 LLM 调用。图从不自行推导上下文语义：由 <code translate="no">GET /api/sessions/{id}/context-range</code> 返回，内部使用真实渲染的函数。<code translate="no">enterExclusiveCoverageMode</code>（<code translate="no">dag/index.ts</code>）负责获取。</p>
@@ -263,7 +263,7 @@
 <p class="note">收到 <code translate="no">context_stats</code> 和 <code translate="no">compaction_finished</code> 时重新获取（<code translate="no">chat-handlers.ts</code>）。<code translate="no">spilled</code> 不在渲染签名内，所以新覆盖会清空签名（<code translate="no">setLastSignature(null)</code>）。摘要是普通链成员，分支 id 就是绘制 id，无需转换；只过滤合成桥（<code translate="no">filter.py</code>）。</p>
 
 <h2 id="s9">9. 压缩显示为一个胶囊</h2>
-<p>摘要代表一个区间，所以画成一个带归档图标的圆片，肩部 <code translate="no">+N</code> 为覆盖数量。<code translate="no">metadata.covers_ids</code>（<code translate="no">context/persistence.py</code>）经 <code translate="no">builder.py</code> 加入被覆盖轮次的 caller 子树并去掉不存在的 id，驱动形状、折叠、计数、幽灵和检查器。前端不做 seq 运算，否则会把死分叉算进来。</p>
+<p>摘要代表一个区间，所以画成一个带归档图标的圆片，肩部 <code translate="no">+N</code> 为覆盖数量。<code translate="no">metadata.covers_ids</code>（<code translate="no">context/compaction/persistence.py</code>）经 <code translate="no">builder.py</code> 加入被覆盖轮次的 caller 子树并去掉不存在的 id，驱动形状、折叠、计数、幽灵和检查器。前端不做 seq 运算，否则会把死分叉算进来。</p>
 <table class="stack">
 <thead><tr><th scope="col">查看</th><th scope="col">被覆盖轮次</th><th scope="col">胶囊</th></tr></thead>
 <tbody>
@@ -350,9 +350,9 @@
 <tr><th scope="row">压缩折叠</th><td><code translate="no">apps/web/tests/dag/fold-summaries.test.mjs</code></td></tr>
 <tr><th scope="row">选择</th><td><code translate="no">apps/web/tests/dag/dag-selection.test.mjs</code></td></tr>
 <tr><th scope="row">共用输入框</th><td><code translate="no">apps/web/tests/tabs/center-perspective.test.mjs</code></td></tr>
-<tr><th scope="row">覆盖查询</th><td><code translate="no">tests/unit/context/test_context_range_coverage.py</code></td></tr>
+<tr><th scope="row">覆盖查询</th><td><code translate="no">tests/unit/context/statistics/test_context_range_coverage.py</code></td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code></th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
-<tr><th scope="row">删除</th><td><code translate="no">tests/component/store/test_node_deletion.py</code></td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">tests/component/store/session/test_node_deletion.py</code></td></tr>
 </tbody>
 </table>
 </details>

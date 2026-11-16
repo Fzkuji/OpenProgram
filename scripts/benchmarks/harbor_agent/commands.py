@@ -108,7 +108,7 @@ API_KEY_ENV = "OPENPROGRAM_HARBOR_API_KEY"
 #: which pipes it to ``--print=-``: no instruction text in a command line.
 INSTRUCTION_ENV = "OPENPROGRAM_HARBOR_INSTRUCTION"
 
-DEFAULT_GIT_URL = "https://github.com/FuzzyKuji/OpenProgram"
+DEFAULT_GIT_URL = "https://github.com/Fzkuji/OpenProgram"
 
 #: The variable OpenProgram reads a provider's key from, where it is not
 #: ``<PROVIDER>_API_KEY`` (``openprogram/models/providers/settings/

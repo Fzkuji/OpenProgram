@@ -31,6 +31,8 @@
 <li>仓库契约只读 Git 受跟踪文件，所以干净检出和含忽略文件或嵌套仓库的检出结果相同。通用扫描器的根由调用方提供。</li>
 <li>顶层 <code translate="no">conftest.py</code> 只保留防止访问真实用户状态的隔离；领域 fixture 留在本地。临时 HOME 确定性清理。</li>
 <li>每个测试进程（包括每个 xdist worker）都清掉继承来的 <code translate="no">GIT_DIR</code> 一类变量，并装上审计钩子（<code translate="no">tests/support/host_guard.py</code>）。它拒绝会改动套件所在检出的 git 命令、对其 <code translate="no">.git</code> 或真实 <code translate="no">~/.openprogram*</code> 的任何写入，以及 HOME 未设或指向真实 home 的 Python 子进程。</li>
+<li>把测试文件拷到临时文件夹运行，或带 <code translate="no">--noconftest</code> 运行，HOME 仍是真实的。这时路径层自己拒绝：只要设置了 <code translate="no">PYTEST_CURRENT_TEST</code>，<code translate="no">get_state_dir()</code> 的文件夹位于账户自己的 home 下时就抛错；账户 home 取自账户记录，不取 <code translate="no">HOME</code>。</li>
+<li>所有状态路径和 Worker 的端点文件都经过这个函数，所以这样的测试既不能在 <code translate="no">~/.openprogram*</code> 里登记项目或对话，也找不到稳定版或开发版实例。子进程继承这个变量；<code translate="no">OPENPROGRAM_TEST_REAL_HOME=1</code> 放行真实文件夹。</li>
 <li>被拒绝的测试按名字失败；会话结束时检查 <code translate="no">.git/config</code> 和从本次 HOME 登记进来的 worktree，覆盖子进程。</li>
 <li>产品代码找仓库时从不退回进程的工作目录：worktree 只从调用传入的路径、本轮的 worktree、对话的项目文件夹或配置的默认文件夹创建。</li>
 <li>并发结果用 Event、Condition 或带截止时间的等待。</li>
@@ -77,7 +79,7 @@
 <tr><th scope="row"><code translate="no">windows-core</code>、<code translate="no">windows-desktop</code></th><td>Windows 回归和桌面</td></tr>
 </tbody>
 </table>
-<p class="note">Python 命令用 <code translate="no">uv run --locked</code>。命令见 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md#full-suite">Full suite</a>。</p>
+<p class="note">Python 命令用 <code translate="no">uv run --locked</code>。命令见 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md#full-suite">Full suite</a>。</p>
 
 <h2>验收</h2>
 <ul>

@@ -6,14 +6,14 @@ programs are welcome.
 
 ## Before opening an issue
 
-- Ask usage and design questions in [GitHub Discussions](https://github.com/FuzzyKuji/OpenProgram/discussions).
-- Search [existing issues](https://github.com/FuzzyKuji/OpenProgram/issues) before reporting a duplicate.
-- Report vulnerabilities privately through the repository's [Security Advisories](https://github.com/FuzzyKuji/OpenProgram/security/advisories/new), not in a public issue.
+- Ask usage and design questions in [GitHub Discussions](https://github.com/Fzkuji/OpenProgram/discussions).
+- Search [existing issues](https://github.com/Fzkuji/OpenProgram/issues) before reporting a duplicate.
+- Report vulnerabilities privately through the repository's [Security Advisories](https://github.com/Fzkuji/OpenProgram/security/advisories/new), not in a public issue.
 
 ## Development setup
 
 ```bash
-git clone https://github.com/FuzzyKuji/OpenProgram.git
+git clone https://github.com/Fzkuji/OpenProgram.git
 cd OpenProgram
 uv sync --locked --extra dev
 ```
@@ -123,7 +123,7 @@ done
 - Use type hints and document public APIs.
 - Keep documentation examples executable. Link between documentation pages
   with relative links; elsewhere use the website address in
-  `openprogram/operations/project_site.py` and `github.com/FuzzyKuji/OpenProgram`.
+  `openprogram/operations/project_site.py` and `github.com/Fzkuji/OpenProgram`.
 - Do not commit credentials, private logs, generated build directories, or local paths.
 
 By participating, you agree that your contribution is licensed under the

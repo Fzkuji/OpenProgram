@@ -1,6 +1,6 @@
 """Permission modes and rule sets: the values every permission decision uses.
 
-Session settings (``conversation.session_config``) store these values and
+Session settings (``conversation.session_settings.session_config``) store these values and
 re-export them; the permission package reads them from here, so it never
 imports the conversation package.
 """

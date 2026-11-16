@@ -117,7 +117,7 @@ def test_a_signal_set_without_firing_is_still_seen() -> None:
 def test_a_stop_before_the_producer_ran_still_ends_its_stream() -> None:
     """A stop that comes before the loop's first step cuts the producer
     before its body runs; the reader is not left waiting on the stream."""
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
     from openprogram.runtime.agent.loop.lifecycle import _attach_cancellable_producer
 
     async def turn() -> list:

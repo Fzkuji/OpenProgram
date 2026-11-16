@@ -138,6 +138,7 @@ class MemoryWorkspace(
         from . import ownership
 
         self.outside = ownership.outside_paths(self.memory_dir)
+        self._outside_base = set(self.outside)
         for name in ("recent_events.jsonl", "commitments.jsonl"):
             derived = self.memory_dir / name
             if derived.exists():
@@ -219,17 +220,61 @@ class MemoryWorkspace(
 
         return ownership.contains(self.outside, relative)
 
+    def _stage_renames(self, stage: Path | None = None) -> dict[str, str]:
+        """Topic files this write moved without changing a byte, new path
+        to old (both under ``topics/``): a path the stage adds whose bytes
+        are those of a committed file the stage no longer has."""
+        topics = (stage or self.stage_dir) / "topics"
+        prefix = "topics/"
+        base = {
+            path[len(prefix):]: digest
+            for path, digest in self._base_files.items()
+            if path.startswith(prefix) and path.lower().endswith(".md")
+        }
+        staged = {
+            path.relative_to(topics).as_posix(): path
+            for path in (topics.rglob("*.md") if topics.is_dir() else ())
+            if path.is_file()
+        }
+        gone: dict[str, list[str]] = {}
+        for old in sorted(set(base) - set(staged)):
+            gone.setdefault(base[old], []).append(old)
+        renames: dict[str, str] = {}
+        if not gone:
+            return renames
+        for new in sorted(set(staged) - set(base)):
+            olds = gone.get(hashlib.sha256(staged[new].read_bytes()).hexdigest())
+            if olds:
+                renames[new] = olds.pop(0)
+        return renames
+
+    def _follow_renames(self, stage: Path | None = None) -> dict[str, str]:
+        """Carry what is known about a file to where this write moved it:
+        a file written outside OpenProgram stays one at its new path.
+        Returns the renames, new path to old."""
+        renames = self._stage_renames(stage)
+        base = getattr(self, "_outside_base", self.outside)
+        moved = {old: new for new, old in renames.items()}
+        self.outside = {moved.get(path, path) for path in base}
+        self._renames = renames
+        return renames
+
     def _written_paths(self, stage: Path | None = None) -> set[str]:
         """Topic files (paths under ``topics/``) this write created or
         changed on ``stage``: the files it answers for. Measured against
-        the committed bytes the stage was copied from."""
+        the committed bytes the stage was copied from. A file moved
+        without a changed byte is not written: nobody answers for its
+        contents again because of where it sits."""
         topics = (stage or self.stage_dir) / "topics"
+        renames = self._stage_renames(stage)
         written: set[str] = set()
         for path in topics.rglob("*.md") if topics.is_dir() else ():
             if not path.is_file():
                 continue
             relative = path.relative_to(topics).as_posix()
             if self.is_outside(relative):
+                continue
+            if relative in renames:
                 continue
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if self._base_files.get(f"topics/{relative}") != digest:
@@ -266,16 +311,21 @@ class MemoryWorkspace(
 
     def _refuse_outside_edits(self, stage: Path) -> None:
         """A file written outside OpenProgram is read-only to every
-        transaction but a person's save: changed, deleted or moved on the
-        stage, the whole write is refused."""
+        transaction but a person's save: changed or deleted on the stage,
+        the whole write is refused. Filing it elsewhere with every byte
+        kept is not an edit and passes."""
         from ..policy import owner_editing
 
+        self._renames = self._stage_renames(stage)
         if owner_editing():
             return
         topics = stage / "topics"
+        renames = self._follow_renames(stage)
         for relative in sorted(self.outside):
             staged = topics / relative
-            base = self._base_files.get(f"topics/{relative}")
+            base = self._base_files.get(
+                f"topics/{renames.get(relative, relative)}"
+            )
             current = (
                 hashlib.sha256(staged.read_bytes()).hexdigest()
                 if staged.is_file() else None
@@ -415,6 +465,8 @@ class MemoryWorkspace(
             # Which files are outside is a fact about the disk, which just
             # moved; the stage now holds exactly those bytes.
             self.outside = ownership.outside_paths(self.memory_dir)
+            self._outside_base = set(self.outside)
+            self._follow_renames()
             dangling = sorted(
                 _dangling(read_topic_tree(self.stage_dir / "topics").units)
                 - dangling_before
@@ -651,8 +703,9 @@ class MemoryWorkspace(
                 # Read it for what it says; it is not ours to change.
                 lines.append(
                     relative.as_posix() + "  (written outside OpenProgram: "
-                    "read-only. Read and mention it, but do not edit, move "
-                    "or delete it, and do not link to its paragraphs)"
+                    "read-only. Read and mention it, but do not edit or "
+                    "delete it, and do not link to its paragraphs; the Move "
+                    "tool may file it into the folder it belongs in)"
                 )
                 continue
             lines.append(relative.as_posix() + _topic_size_note(relative, text))
@@ -674,6 +727,13 @@ class MemoryWorkspace(
                     + f"  {summary}"
                 )
                 heading = ""
+        from . import filing
+
+        misfiled = filing.problems(topics)
+        if misfiled:
+            lines.append("")
+            lines.append("Filing problems (fix each with the Move tool):")
+            lines.extend(f"- {line}" for line in misfiled)
         return "\n".join(lines) or "(empty workspace)"
 
 

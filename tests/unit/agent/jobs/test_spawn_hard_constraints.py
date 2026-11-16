@@ -63,7 +63,7 @@ def _text(result) -> str:
 def test_an_owners_agent_runs_worktree_tools_on_bypass(
     owner_authority, tool_name,
 ):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 
     req = _request("agent_spawn", owner_authority)
     wrapped = wrap_with_approval(_echo_tool(tool_name), req, lambda _e: None)
@@ -71,7 +71,7 @@ def test_an_owners_agent_runs_worktree_tools_on_bypass(
 
 
 def test_worktree_tools_still_run_for_an_interactive_owner_turn(owner_authority):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 
     req = _request("web", owner_authority)
     wrapped = wrap_with_approval(_echo_tool("worktree_create"), req,
@@ -87,7 +87,7 @@ def test_worktree_tools_still_run_for_an_interactive_owner_turn(owner_authority)
 def test_mcp_cannot_run_risky_or_worktree_tools_even_on_bypass(
     owner_authority, tool_name,
 ):
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
 
     authority = {**owner_authority, "authority_tier": "paired"}
     authority.update({

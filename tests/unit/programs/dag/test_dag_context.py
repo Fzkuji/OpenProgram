@@ -24,7 +24,7 @@ from openprogram.state.store.session.nodes import (
     ModelCall,
     FunctionCall,
 )
-from openprogram.runtime.context.nodes import (
+from openprogram.runtime.context.session_dag.nodes import (
     last_user_message,
     linear_back_to,
     branch_terminals,

@@ -1,5 +1,5 @@
 /** A worker restart cuts a reply off, and a new turn carries the work on
- *  (runtime/conversation/restart_turn.py). Its prompt is an instruction to
+ *  (runtime/conversation/turn_admission/restart_turn.py). Its prompt is an instruction to
  *  the model, stamped ``trigger: "restart"`` and drawn as nothing, and the
  *  chat draws the two replies as one: the cut-off reply hides, and the
  *  reply that continues it opens with its steps and a "restarted" step

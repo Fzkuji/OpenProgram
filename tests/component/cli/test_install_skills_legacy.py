@@ -22,7 +22,7 @@ def _legacy_install(tmp_path, monkeypatch, *, with_skills: bool):
     import subprocess
 
     import openprogram
-    from openprogram.interfaces.cli.commands.skills import _cmd_install_skills
+    from openprogram.interfaces.cli.commands.capabilities.skills import _cmd_install_skills
 
     checkout = tmp_path / "checkout"
     (checkout / "openprogram").mkdir(parents=True)

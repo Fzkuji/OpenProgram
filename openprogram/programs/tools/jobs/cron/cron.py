@@ -10,6 +10,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import hmac
+import contextlib
 import json
 import os
 import secrets
@@ -200,10 +201,24 @@ def _save(path: str, entries: list[dict[str, Any]]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, 0o600)
+        _keep_previous(path, len(entries))
         replace_file(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+PREVIOUS_SUFFIX = ".previous"
+
+
+def _keep_previous(path: str, count: int) -> None:
+    """Before a save that leaves fewer tasks, keep the list as it was beside
+    it (``tasks.json.previous``), so a task removed by mistake can be read back."""
+    if count >= len(_load(path)):
+        return
+    with contextlib.suppress(OSError):
+        shutil.copyfile(path, path + PREVIOUS_SUFFIX)
+        os.chmod(path + PREVIOUS_SUFFIX, 0o600)
 
 
 @contextmanager
@@ -567,7 +582,7 @@ def execute(
             return "Error: `id` is required for delete."
         from openprogram.runtime.scheduler import service
 
-        if not service.delete_task(entry_id):
+        if not service.delete_task(entry_id, by="the cron tool"):
             return f"Error: no entry with id {entry_id!r}."
         return f"Deleted scheduler task {entry_id!r} from `{path}`."
 

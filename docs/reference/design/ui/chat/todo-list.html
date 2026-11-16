@@ -1,0 +1,82 @@
+<title>Task store</title>
+<meta name="description" content="How a conversation keeps its tasks: a task is one list and a step is one todo in todos.json, with one segment per reply and task for the chat to draw.">
+<h1>Task store</h1>
+
+<p>A task is one list and a step is one todo, kept per conversation in <code translate="no">todos.json</code>. <a href="task-blocks.html">Task blocks</a> draw from it.</p>
+
+<dl class="pairs">
+<dt>Task</dt><dd><code translate="no">T3</code>: title, purpose, open, done or displaced, outcome, whether it ever advanced, the Goal it was started under</dd>
+<dt>Step</dt><dd>A todo whose <code translate="no">plan</code> is the task's id: pending, in progress, completed or dropped, with a half-sentence <code translate="no">result</code></dd>
+<dt>Segment</dt><dd>One per reply and task: the task and all its steps as that reply last left them</dd>
+</dl>
+
+<h2>Board</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">One board per branch</th><td>Tasks, steps and segments. A branch made by a retry, an edit or a fork starts from a copy of the board it left from, so two branches never overwrite each other.</td></tr>
+<tr><th scope="row">One open task per agent</th><td>Starting a task closes the open one. A sub-agent's tasks are its own (<code translate="no">scope</code> <code translate="no">agent:&lt;id&gt;</code>).</td></tr>
+<tr><th scope="row">Ids</th><td>A task is <code translate="no">T&lt;n&gt;</code>, counted per board. A step keeps its todo id; the model names steps by their place in the task, 1 for the first.</td></tr>
+<tr><th scope="row">Dropped step</th><td>Not counted in progress and no Goal requirement. Still listed to the Goal's verifier.</td></tr>
+<tr><th scope="row">Sub-agent without a task</th><td>Ticks a step of the conversation's open task; the parent's latest segment is updated</td></tr>
+</tbody>
+</table>
+
+<h2>Segment</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anchor_id</code>, <code translate="no">plan_id</code></th><td>The reply and the task. A later change in the same reply replaces the segment; a change in a later reply adds one, so earlier replies keep the task as they left it.</td></tr>
+<tr><th scope="row"><code translate="no">state</code></th><td><code translate="no">running</code>, <code translate="no">done</code>, <code translate="no">carried</code> (open, continued in a later turn) or <code translate="no">displaced</code> (another task took its place). A stop or a failure is not stored: the reply's status tells.</td></tr>
+<tr><th scope="row"><code translate="no">current</code></th><td>The step in progress at the last change; kept after a stop</td></tr>
+<tr><th scope="row"><code translate="no">earlier</code></th><td>Steps already finished when the segment began: the "earlier steps done" row</td></tr>
+<tr><th scope="row"><code translate="no">advanced</code></th><td>Whether a step call ever moved the task on</td></tr>
+<tr><th scope="row"><code translate="no">todos</code></th><td>Every step: id, subject, status, result</td></tr>
+<tr><th scope="row"><code translate="no">title</code>, <code translate="no">purpose</code>, <code translate="no">outcome</code>, <code translate="no">started_at</code>, <code translate="no">ended_at</code></th><td>What the header shows</td></tr>
+</tbody>
+</table>
+<p class="note">500 segments are kept per branch; the oldest drop off.</p>
+
+<h2>Sent to the interface</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Frame</th><th scope="col">Carries</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">todos_update</code></th><td><code translate="no">changed</code>: the segments a call or the end of a turn changed. A client replaces its copy of each by reply and task.</td></tr>
+<tr><th scope="row"><code translate="no">session_loaded</code></th><td><code translate="no">todo_plans</code>: every branch's segments</td></tr>
+<tr><th scope="row"><code translate="no">goal_update</code></th><td><code translate="no">progress</code>: the Goal's latest task, the step in progress, steps done and counted, the reply holding its latest block</td></tr>
+<tr><th scope="row">Blocks and text frames</th><td><code translate="no">task</code> and <code translate="no">step</code> on each text, thinking and tool block</td></tr>
+</tbody>
+</table>
+
+<h2>Stored before tasks</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry</th><th scope="col">Read as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Segment without <code translate="no">title</code></th><td>A plain todo list, read as stored. The chat joins the entries of one agent under a reply into one list and draws it once, folded.</td></tr>
+<tr><th scope="row">Todo in no task</th><td>Kept on the board; it still counts for the Goal it was created under</td></tr>
+<tr><th scope="row">File with a single board</th><td>Belongs to the branch selected when it is first read</td></tr>
+</tbody>
+</table>
+
+<h2>Why</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">The todo store is kept under tasks</th><td>Goal acceptance, the Goal's checklist and a sub-agent ticking its parent's step already read todos. A task adds a name and a state on top; none of them changes.</td></tr>
+<tr><th scope="row">A segment per reply</th><td>A reply read later shows the task as that reply left it, and a task spanning turns is drawn in each turn's own part</td></tr>
+<tr><th scope="row">Only changed segments are sent</th><td>A long Goal holds hundreds; a reconnect reloads them all</td></tr>
+<tr><th scope="row">Stop is not a stored state</th><td>The reply already says how it ended; a second copy could disagree</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code</summary>
+<ul>
+<li><code translate="no">openprogram/programs/tools/planning/todo/shared.py</code> (<code translate="no">place_segment</code>, <code translate="no">close_at_turn_end</code>, <code translate="no">turn_owner</code>, <code translate="no">publish</code>)</li>
+<li><code translate="no">openprogram/programs/tools/planning/todo/task_start/task_start.py</code>, <code translate="no">task_step/task_step.py</code></li>
+<li><code translate="no">openprogram/programs/tools/planning/goal/chat.py</code> (<code translate="no">progress</code>)</li>
+<li><code translate="no">apps/web/lib/chat/transcript/task-blocks.ts</code> (<code translate="no">normalizeSegments</code>, <code translate="no">tasksByRow</code>, <code translate="no">oneListPerAgent</code>)</li>
+</ul>
+</details>
+
+<p class="next"><a href="task-blocks.html">Task blocks</a></p>

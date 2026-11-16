@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from openprogram.state.store import reader_floor
-from openprogram.state.store.session.session_lock import registry_file_lock
+from openprogram.state.store.session.files.session_lock import registry_file_lock
 from openprogram.state.store.snapshot.checkpoint.store import CheckpointStore
 
 MAX_BYTES = 64 * 1024 * 1024
@@ -287,7 +287,7 @@ class DocumentHistory:
 
     @staticmethod
     def _model_session(session_id, store):
-        from openprogram.state.store.session.placement import is_deleted
+        from openprogram.state.store.session.files.placement import is_deleted
         if (not isinstance(session_id, str) or not session_id or
                 session_id in {".", ".."} or "/" in session_id or "\\" in session_id):
             return None
@@ -392,7 +392,7 @@ class DocumentHistory:
         while queue and remaining:
             sid, turns = queue[0]
             if not self._model_session(sid, store):
-                from openprogram.state.store.session.placement import is_deleted
+                from openprogram.state.store.session.files.placement import is_deleted
                 if not is_deleted(store.root_path, sid):
                     issues += 1
                 queue.pop(0)
@@ -560,7 +560,7 @@ class DocumentHistory:
         if row is None:
             raise DocumentHistoryError("model version not found", "NOT_FOUND")
         store = self._session_store()
-        from openprogram.state.store.session.session_lock import session_interprocess_lock
+        from openprogram.state.store.session.files.session_lock import session_interprocess_lock
         from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir
         with session_interprocess_lock(row["session_id"], root=store.root_path if store._explicit_root else None):
             if not self._model_session(row["session_id"], store):

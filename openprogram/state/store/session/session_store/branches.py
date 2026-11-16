@@ -392,7 +392,17 @@ class BranchesOperations:
             child = idx.nodes_by_id.get(kid_id)
             return child is not None and _conversation_node(child)
 
+        def _turn_being_written(node_id: str) -> bool:
+            node = idx.nodes_by_id.get(node_id)
+            if node is None or node.role != shared.ROLE_USER or head is None:
+                return False
+            if node.predecessor != head or head not in referenced_heads:
+                return False
+            return not any(_conv_child(k) for k in idx.children_by_predecessor.get(node_id, []))
+
         from ..branch_config import branch_record
+        referenced_heads = {ref.get("head_id") for ref in (idx.meta.get("branch_refs") or {}).values()
+                            if ref.get("status") != "aborted"}
         retained_tips = {ref.get("head_id") for ref in (idx.meta.get("branch_refs") or {}).values()
                          if ref.get("status") != "aborted"}
         merged = self.merged_heads(session_id)
@@ -438,6 +448,12 @@ class BranchesOperations:
         active_id = idx.meta.get("active_branch_id")
         referenced = {ref.get("head_id") for ref in refs.values() if ref.get("status") != "aborted"}
         tips = [tip for tip in tips if tip["head_msg_id"] not in referenced]
+        # A turn's message written under the head of a recorded branch, in
+        # the moment before the branch is moved onto it (the node is in the
+        # index before the head and the record follow), is that branch's
+        # next message, not a branch of its own: listed, it showed for a
+        # moment as a second, unnamed branch beside the one it continues.
+        tips = [tip for tip in tips if not _turn_being_written(tip["head_msg_id"])]
         # A conversation with one recorded branch has no sibling to tell apart:
         # a record the line has since carried on past is only behind, not a tip.
         only_line = len(referenced) == 1
@@ -454,6 +470,7 @@ class BranchesOperations:
             tips.append({"head_msg_id": tip, "branch_id": branch_id, "name": label.get("name"),
                          "created_at": label.get("created_at"), "updated_at": label.get("updated_at"),
                          "archived": bool(label.get("archived")),
+                         **({"scheduled_task_id": ref["scheduled_task_id"]} if ref.get("scheduled_task_id") else {}),
                          **({"agent_id": agent_id} if agent_id else {})})
         # Compaction no longer clones the kept tail (§8): a summary node
         # splices into the chain and the tail keeps its own ids, so the
@@ -600,6 +617,18 @@ class BranchesOperations:
                     idx.head_id = meta.get("head_id")
                 session_log.write_meta(meta)
         return True
+
+
+    def branch_holding(self, session_id: str, node_id: str, *,
+                       prefer: shared.Optional[str] = None) -> shared.Optional[str]:
+        """The recorded branch whose line holds a message
+        (``branch_config.branch_holding``); ``None`` when none does."""
+        pair = self._open(session_id)
+        if pair is None:
+            return None
+        session_log, idx = pair
+        from ..branch_config import branch_holding
+        return branch_holding(session_log.read_meta(), node_id, idx.nodes_by_id, prefer=prefer)
 
 
     def update_branch_fields(self, session_id: str, branch_id: str, **fields: shared.Any) -> bool:

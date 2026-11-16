@@ -11,4 +11,4 @@
 - **`store.py`** — Durable managed-process records, bounded output and supervisor commands
 - **`supervisor.py`** — Detached owner of one managed process and its pipes
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

@@ -54,6 +54,28 @@
 <li><strong>测试</strong>：<code translate="no">tests/component/webui/chat/test_send_after_result.py</code> 在第一轮的 <code translate="no">result</code> 广播的那一刻经真实的聊天处理器发送。</li>
 </ul>
 
+<h2 id="turns-the-runtime-starts">运行时自己发起的轮次</h2>
+<p>没人输入的轮次在运行期间占着和输入的轮次一样的槽：客户端被告知它在跑（<code translate="no">running_task</code>，未选中分支上是 <code translate="no">branch_running_task</code>），停止键指向它，它的分支上不会再起别的轮次。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">轮次</th><th scope="col">怎么占槽</th></tr></thead>
+<tbody>
+<tr><th scope="row">提醒唤醒、移交过来的消息</th><td>准入前先占（<code translate="no">owner_turn.start_owner_turn</code>）；有轮次占着就拒绝</td></tr>
+<tr><th scope="row">后台命令结束的通知</th><td>准入前先占，不等待（<code translate="no">process_notices.deliver</code>）；对话忙就留到下一次扫描</td></tr>
+<tr><th scope="row">Goal 的下一轮、它的验证、从控件启动的 Goal</th><td>先准入（在上一轮内部），再在自己的线程上等这条分支的槽并占住（<code translate="no">run_slot.hold_admitted</code>、<code translate="no">ServerRunSlot.adopt</code>）</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>为什么 Goal 的轮次先准入</strong>：上一轮准入下一轮时自己还占着槽，而准入正是让续跑可恢复的那一步。先占槽就会在负责释放槽的线程上等待。</li>
+<li><strong>占哪个槽</strong>：轮次自己的分支（<code translate="no">branch_id</code>）：选中分支的槽，选中的是别的分支时就是那条分支自己的槽。</li>
+<li><strong>为什么一定要占槽</strong>：不占槽的轮次不会通知任何客户端，加载对一个正在干活的对话回答 <code translate="no">run_active: false</code>；通知和 Goal 的下一轮还可能在同一条分支上同时跑。</li>
+<li><strong>排队等待时被停止或被取代的轮次</strong>什么都不占，也不运行。</li>
+<li><strong>测试</strong>：<code translate="no">tests/component/runtime/test_owner_turn_run_slot.py</code>、<code translate="no">tests/unit/processes/test_exit_notices.py</code>、<code translate="no">tests/unit/agent/workflows/test_chat_goal.py</code>。</li>
+</ul>
+
+<h2 id="a-client-that-connects-mid-turn">中途连上的客户端</h2>
+<p>运行帧在轮次开始时才发，所以新连接问一次：<code translate="no">get_running_sessions</code> 的回答是 <code translate="no">running_sessions</code>，每个有轮次在跑（任何分支）的对话一条运行状态，形状和 <code translate="no">run_state</code> 相同（<code translate="no">run_active</code>、<code translate="no">run_task</code>、<code translate="no">running_branches</code>、<code translate="no">run_seq</code>）。客户端逐条应用（<code translate="no">applyRunState</code>）；它还显示为运行中、回答里却没有的对话，发 <code translate="no">get_run_state</code> 再问，由回答清掉。</p>
+<p class="note">一个可恢复的轮次是不是页面的当前轮次，只有一条规则：它的 <code translate="no">branch_id</code> 和此刻选中的分支比较，服务端（<code translate="no">on_selected_branch</code>）和页面（<code translate="no">onSelectedBranch</code>）一样；准入时冻结的 <code translate="no">side_branch</code> 只在两者之一未知时回答。</p>
+
 <h2 id="run-state-frames-are-ordered-by-run_seq">运行状态帧按 <code translate="no">run_seq</code> 排序</h2>
 <p><code translate="no">running_task</code>、<code translate="no">running_task_clear</code>、<code translate="no">run_state</code> 和 <code translate="no">session_loaded</code>（<code translate="no">run_active</code>、<code translate="no">run_task</code>）都带它：服务端递增数（<code translate="no">server._next_run_seq()</code>，微秒墙钟时间，跨 worker 重启仍递增，在 JSON 里精确），在读取该帧运行状态之前取得。</p>
 <table class="stack fixed">
@@ -81,7 +103,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">机制</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">iter_until_cancelled</code></th><td>位于 <code translate="no">providers/utils/cancelable_stream.py</code>：在一个 <code translate="no">__anext__</code> 未完成时最多每 250ms 轮询取消信号，取消后退出，让 <code translate="no">async with</code> 关闭流。Anthropic 和 OpenAI Completions 适配器使用它。</td></tr>
+<tr><th scope="row"><code translate="no">iter_until_cancelled</code></th><td>位于 <code translate="no">providers/utils/streams/cancelable_stream.py</code>：在一个 <code translate="no">__anext__</code> 未完成时最多每 250ms 轮询取消信号，取消后退出，让 <code translate="no">async with</code> 关闭流。Anthropic 和 OpenAI Completions 适配器使用它。</td></tr>
 <tr><th scope="row">不用 <code translate="no">wait_for</code></th><td>不要对下一块 <code translate="no">wait_for</code>：超时会取消那次读取，杀死 httpx 和 OpenAI 的 SSE 迭代器。Grok 思考时常超过 250ms 没有分块，会结束成空回复。</td></tr>
 <tr><th scope="row"><code translate="no">finish_reason</code></th><td>结束轮次。Grok 和 xAI 常在最后一个 token 后不关闭 SSE，所以用量只收 <code translate="no">USAGE_DRAIN_S</code>（1.5 秒），随后 <code translate="no">EventDone</code>。</td></tr>
 </tbody>

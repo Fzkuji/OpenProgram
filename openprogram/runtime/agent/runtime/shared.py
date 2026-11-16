@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 
 if TYPE_CHECKING:
-    from openprogram.models.providers.utils.errors import (
+    from openprogram.models.providers.utils.failures.errors import (
         ErrorReason,
         LLMError,
         RetryInfo,
@@ -220,7 +220,7 @@ def _build_llm_error(
     RuntimeError. Localised to this helper so the two retry loops
     stay tidy.
     """
-    from openprogram.models.providers.utils.errors import (
+    from openprogram.models.providers.utils.failures.errors import (
         LLMError,
         classify_error,
         had_image as _had_image,
@@ -295,7 +295,7 @@ def _fire_on_retry(
     """
     if on_retry is None:
         return
-    from openprogram.models.providers.utils.errors import (
+    from openprogram.models.providers.utils.failures.errors import (
         RetryInfo,
         classify_error,
     )
@@ -408,7 +408,7 @@ def _exec_system_prompt(inline: str, tools: Optional[list]) -> str:
     if instructions is not None:
         inline = instructions
     try:
-        from openprogram.runtime.context.components import build_system_prompt
+        from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
         from openprogram.runtime.agent.engine_link import default_agent_profile
 
         profile = dict(default_agent_profile())
@@ -458,7 +458,7 @@ def _run_async(coro):
 async def _reap_loop_clients() -> None:
     """Close shared httpx clients bound to the running loop (best-effort)."""
     try:
-        from openprogram.models.providers.utils.http_client import (
+        from openprogram.models.providers.utils.http_transport.http_client import (
             aclose_current_loop_clients,
         )
 

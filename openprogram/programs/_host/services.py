@@ -18,7 +18,7 @@ BUILTIN_SERVICES: dict[str, tuple[str, str]] = {
               "The tool registry: get(name), all_tools(), filter_for(...)"),
     "events": ("openprogram.runtime.events",
                "The event bus: get_event_bus(), make_event(...), EVENTS"),
-    "context": ("openprogram.runtime.context.components",
+    "context": ("openprogram.runtime.context.prompt_assembly.components",
                 "System-prompt components: ContextComponent, register, assemble"),
     "skills": ("openprogram.extensions.skills.loader",
                "Skills: get_skill(name), resolve(...), user_dir()"),

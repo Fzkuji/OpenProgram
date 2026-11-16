@@ -352,25 +352,17 @@ def test_probe_proves_usable_not_auth_only_models():
     assert cr.probe_proves_usable(oauth) is True
 
 
-@pytest.mark.parametrize("probe,previous,usable,expected_persist,expected_display", [
-    (cr.VALID, "", False, None, cr.UNKNOWN),
-    (cr.VALID, "billing_blocked", False, None, "billing_blocked"),
-    (cr.VALID, "valid", False, None, cr.UNKNOWN),
-    (cr.VALID, "billing_blocked", True, cr.VALID, cr.VALID),
-    (cr.VALID_NO_BALANCE, "valid", False, "billing_blocked", "billing_blocked"),
-    (cr.INVALID_CREDENTIAL, "valid", False, "needs_reauth", "needs_reauth"),
-    (cr.VALID_MODEL_UNAVAILABLE, "valid", False, None, cr.VALID_MODEL_UNAVAILABLE),
-    (cr.VALID_MODEL_UNAVAILABLE, "", False, None, cr.VALID_MODEL_UNAVAILABLE),
-    (cr.UNKNOWN, "billing_blocked", False, None, "billing_blocked"),
-    (cr.MISSING, "", False, cr.MISSING, cr.MISSING),
+@pytest.mark.parametrize("probe,usable,expected", [
+    (cr.VALID, False, None),
+    (cr.VALID, True, "ready"),
+    (cr.VALID_NO_BALANCE, False, "quota"),
+    (cr.INVALID_CREDENTIAL, False, "invalid_key"),
+    (cr.VALID_MODEL_UNAVAILABLE, False, None),
+    (cr.UNKNOWN, False, None),
+    (cr.MISSING, False, None),
 ])
-def test_persist_and_display_mapping(probe, previous, usable, expected_persist, expected_display):
-    assert cr.persist_status_from_probe(
-        probe, previous=previous, usable_proven=usable,
-    ) == expected_persist
-    assert cr.display_status_from_probe(
-        probe, previous=previous, usable_proven=usable,
-    ) == expected_display
+def test_the_status_a_check_sets(probe, usable, expected):
+    assert cr.status_from_probe(probe, usable_proven=usable) == expected
 
 
 def test_first_id_from_models_json():
@@ -430,7 +422,7 @@ def test_layer1_401_credits_error_is_no_balance_not_rejected(monkeypatch, stub_b
     _patch_http_get(monkeypatch, (401, _CREDITS_401, 12))
     r = cr.validate_credential("deepseek", api_key="k", use_cache=False)
     assert r.status == cr.VALID_NO_BALANCE
-    assert cr.persist_status_from_probe(r.status) == "billing_blocked"
+    assert cr.status_from_probe(r.status) == "quota"
 
 
 def test_layer2_401_credits_error_is_no_balance(monkeypatch):

@@ -86,7 +86,7 @@ for name in ("memory_get", "memory_search", "read", "bash", "memory_update"):
     register(AgentTool(name=name, description="Fixture " + name,
                        parameters=schema, label=name, execute=execute))
 
-from openprogram.runtime.conversation.session_config import PermissionRules
+from openprogram.runtime.conversation.session_settings.session_config import PermissionRules
 import openprogram.runtime.permissions.rule as permission_module
 permission_module.load_merged_rules = lambda _session_id: PermissionRules(
     deny=["memory_update"], ask=["memory_search"]

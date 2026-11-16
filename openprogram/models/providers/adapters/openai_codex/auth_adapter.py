@@ -293,22 +293,11 @@ def _payload_from_tokens(
 
 
 def _with_payload(cred: Credential, payload: CredentialData) -> Credential:
-    return Credential(
-        provider_id=cred.provider_id,
-        account_id=cred.account_id,
-        kind="oauth",
-        payload=payload,
-        status="valid",
-        created_at_ms=cred.created_at_ms,
-        updated_at_ms=int(time.time() * 1000),
-        source=cred.source,
-        metadata=dict(cred.metadata),
-        cooldown_until_ms=0,
-        last_used_at_ms=cred.last_used_at_ms,
-        use_count=cred.use_count,
-        last_error=None,
-        read_only=False,
-        credential_id=cred.credential_id,
+    import dataclasses
+    return dataclasses.replace(
+        cred, kind="oauth", payload=payload, status="ready", cooldown_until_ms=0,
+        last_error=None, read_only=False, updated_at_ms=int(time.time() * 1000),
+        metadata=dict(cred.metadata), identity=dict(cred.identity),
     )
 
 
@@ -496,11 +485,7 @@ def _iso_now() -> str:
 # Importing from Codex CLI's file
 # ---------------------------------------------------------------------------
 
-def import_from_codex_file(
-    *,
-    account_id: str = "default",
-    auth_path: Optional[Path] = None,
-) -> Optional[Credential]:
+def import_from_codex_file(*, auth_path: Optional[Path] = None) -> Optional[Credential]:
     """Read the Codex CLI's auth.json, produce an ``oauth`` credential.
 
     Returns ``None`` if the file is absent or unusable — callers decide
@@ -550,18 +535,28 @@ def import_from_codex_file(
     # Codex stores expiry inside the JWT, not as a separate field.
     expires_at_ms = jwt_expiry_epoch_ms(access) or 0
     metadata: dict[str, Any] = {"imported_from": "codex_cli", "source_path": str(path)}
+    identity: dict[str, Any] = {}
     if tokens.get("account_id"):
-        metadata["account_id"] = tokens["account_id"]
+        identity["account_id"] = metadata["account_id"] = tokens["account_id"]
     else:
         try:
-            metadata["account_id"] = extract_account_id(access)
+            identity["account_id"] = metadata["account_id"] = extract_account_id(access)
         except RuntimeError:
             pass
+    try:
+        email = _decode_jwt_payload(tokens.get("id_token") or "").get("email")
+    except Exception:
+        email = None
+    if isinstance(email, str) and email:
+        identity["email"] = email
+    plan = plan_of(tokens.get("id_token") or "", access)
+    if plan:
+        identity["plan"] = plan
 
     return Credential(
         provider_id=PROVIDER_ID,
-        account_id=account_id,
         kind="oauth",
+        identity=identity,
         payload=CredentialData(
             kind="oauth",
             auth_value=access,
@@ -573,7 +568,7 @@ def import_from_codex_file(
                 "id_token": tokens.get("id_token", ""),
             },
         ),
-        source="codex_cli_import",
+        source="import",
         metadata=metadata,
         read_only=False,
     )
@@ -589,6 +584,11 @@ _REGISTERED = False
 def _reread_login() -> None:
     from .credentials import reread_login
     reread_login()
+
+
+def _oauth_view(cred: Credential) -> Credential:
+    from .credentials import oauth_view
+    return oauth_view(cred)
 
 
 def _login_plan() -> Optional[str]:
@@ -610,6 +610,7 @@ def register_codex_auth() -> None:
             refresh_skew_seconds=60,
             refresh=_codex_refresh,
             async_refresh=None,
+            view=_oauth_view,
             reread_login=_reread_login,
             plan=_login_plan,
         )

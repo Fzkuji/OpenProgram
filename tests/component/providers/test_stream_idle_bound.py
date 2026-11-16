@@ -33,8 +33,8 @@ from openprogram.models.providers.types import (
     ToolCall,
     UserMessage,
 )
-from openprogram.models.providers.utils.errors import ErrorReason, classify_error
-from openprogram.models.providers.utils.stream_idle import StreamIdleTimeout
+from openprogram.models.providers.utils.failures.errors import ErrorReason, classify_error
+from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
 
 IDLE_S = 0.3
 _API = "idle-bound-test-api"
@@ -102,7 +102,7 @@ class StallingProvider:
 
 async def _read(provider, options: SimpleStreamOptions | None = None):
     # Recovery off: the request is one attempt, so the bound's own outcome shows.
-    from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+    from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
 
     current_recovery.set(RecoveryState(limit=0))
     seen = []
@@ -185,7 +185,7 @@ def registered() -> Iterator[StallingProvider]:
 
 
 def test_a_turn_whose_reply_stalls_is_retried_and_answers(registered, monkeypatch):
-    from openprogram.models.providers.utils import stream_retry
+    from openprogram.models.providers.utils.streams import stream_retry
     from openprogram.runtime.agent.loop.retry import RetrySettings
     from openprogram.runtime.agent.loop.session import AgentSession
 

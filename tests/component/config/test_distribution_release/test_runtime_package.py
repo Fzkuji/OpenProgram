@@ -125,7 +125,7 @@ def test_packaged_worker_uses_isolated_embedded_python() -> None:
 
 def test_packaged_runtime_may_change_programs(monkeypatch, capsys) -> None:
     """The packaged runtime goes on to the real install and reports what happens there."""
-    from openprogram.interfaces.cli.commands import programs
+    from openprogram.interfaces.cli.commands.capabilities import programs
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     monkeypatch.setattr(subprocess, "call", lambda *a, **k: 1)
@@ -748,7 +748,7 @@ def test_package_cli_upgrades_and_uninstalls_a_recorded_clone_in_place(
 ):
     import openprogram.state.paths as paths
     from openprogram.programs._host import sources as program_sources
-    from openprogram.interfaces.cli.commands.programs import _cmd_install, _cmd_uninstall
+    from openprogram.interfaces.cli.commands.capabilities.programs import _cmd_install, _cmd_uninstall
 
     state = tmp_path / "state"
     clone = state / "programs" / "demo_harness"

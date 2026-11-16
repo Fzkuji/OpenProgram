@@ -49,14 +49,15 @@ export interface UpdateResult extends ViewRows {
 /** A turn is held when the window has it or its opener row is drawn: a turn the
  *  old frames drew, and any turn of a sub-agent view, has no window entry. */
 export function viewHoldsTurn(
-  window: { holdsTurn: (turnId: string) => boolean } | undefined,
+  held: { holdsTurn: (turnId: string) => boolean } | undefined,
   rows: Readonly<Record<string, ChatMsg>>,
 ): UpdateContext["holdsTurn"] {
-  return (turnId) => !!window?.holdsTurn(turnId) || !!rows[turnId];
+  return (turnId) => !!held?.holdsTurn(turnId) || !!rows[turnId];
 }
 
-/** Fields the server does not send and a server row never clears. */
-const FRAME_ONLY_FIELDS = ["retryStatus", "autoPreviewFiles"] as const;
+/** Fields a server row does not clear: the server does not send the first
+ *  two, and sends a reply's credential notices only once the reply is stored. */
+const FRAME_ONLY_FIELDS = ["retryStatus", "autoPreviewFiles", "credentialNotices"] as const;
 
 function asRow(row: Row): ChatMsg {
   return withToolBodies(row as unknown as ChatMsg);
@@ -66,7 +67,7 @@ export function withFrameOnlyFields(next: ChatMsg, held: ChatMsg | undefined): C
   if (!held) return next;
   const kept: Partial<ChatMsg> = {};
   for (const field of FRAME_ONLY_FIELDS) {
-    if (held[field] !== undefined) kept[field] = held[field] as never;
+    if (held[field] !== undefined && next[field] === undefined) kept[field] = held[field] as never;
   }
   return Object.keys(kept).length ? { ...next, ...kept } : next;
 }
@@ -141,7 +142,8 @@ function insertAfter(order: string[], afterRowId: string | null, rowId: string):
   order.splice(at >= 0 ? at + 1 : order.length, 0, rowId);
 }
 
-function applyTurn(turn: Turn, rows: Record<string, ChatMsg>, order: string[], context: UpdateContext, out: UpdateResult): void {
+function applyTurn(turn: Turn, afterTurnId: string | null, rows: Record<string, ChatMsg>, order: string[],
+  context: UpdateContext, out: UpdateResult): void {
   const wire = turn.rows.map(asRow);
   for (const row of wire) claimLocalRow(row, rows, order, out);
   if (context.holdsTurn(turn.id)) {
@@ -162,6 +164,11 @@ function applyTurn(turn: Turn, rows: Record<string, ChatMsg>, order: string[], c
     out.turnsPastWindow += 1;
     return;
   }
+  // A turn that follows one this view does not hold is older than what it
+  // shows: a read can already hold writes the update is only now sending
+  // (the read's revision lags the store), and a turn before the window
+  // must not be drawn as the newest.
+  if (afterTurnId !== null && !context.holdsTurn(afterTurnId) && !rows[afterTurnId]) return;
   let at = tailInsertAt(order, rows);
   for (const row of wire) {
     if (rows[row.id]) {
@@ -193,6 +200,9 @@ export interface TextFrame {
   /** What the row's flat text takes before this frame's text: the blank line
    *  between two passages a tool call came between (the server's `reply_text`). */
   separator?: string;
+  /** The task and step the block belongs to, when it has one. */
+  task?: string;
+  step?: string;
 }
 
 const JOIN_FIELD = { text: "content", thinking: "thinking" } as const;
@@ -207,7 +217,9 @@ function placeFrame(held: ChatMsg, frame: TextFrame): FramePlacement {
   if (frame.offset > current.length) return { row: held, gap: true };
   const fresh = frame.text.slice(current.length - frame.offset);
   if (!fresh) return { row: held, gap: false };
-  blocks[frame.itemIndex] = { ...(block ?? { type: frame.type }), id: block?.id ?? frame.itemId, text: current + fresh } as never;
+  // The stamp is fixed when the block is made; the settled row carries the final one.
+  const stamp = block ? {} : { ...(frame.task ? { task: frame.task } : {}), ...(frame.step ? { step: frame.step } : {}) };
+  blocks[frame.itemIndex] = { ...(block ?? { type: frame.type, ...stamp }), id: block?.id ?? frame.itemId, text: current + fresh } as never;
   const field = JOIN_FIELD[frame.type];
   // The frame that opens a block names what separates it from the text before.
   const lead = frame.separator && !current && frame.offset === 0 ? frame.separator : "";
@@ -468,7 +480,7 @@ export function applyTranscriptChanges(view: ViewRows, changes: readonly Transcr
   for (const change of changes) {
     switch (change.kind) {
       case "turn_upsert":
-        applyTurn(change.turn, rows, order, context, out);
+        applyTurn(change.turn, change.afterTurnId ?? null, rows, order, context, out);
         for (const row of change.turn.rows) release(row.id as string, change.turn.id);
         break;
       case "row_upsert": {

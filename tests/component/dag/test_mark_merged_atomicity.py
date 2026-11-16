@@ -1,4 +1,4 @@
-from openprogram.state.store.session.session_log import SessionLog
+from openprogram.state.store.session.files.session_log import SessionLog
 import json
 import threading
 from pathlib import Path

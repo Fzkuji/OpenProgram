@@ -588,6 +588,10 @@ describe("theme diagnostics", () => {
       assert.equal(diagnosticSend(), true);
     } finally {
       delete window.openprogramDesktop;
+      // The two sends hold theme-diagnostic's run slot without an ack; left
+      // in place, its run-state recheck lands in a later test's socket.
+      forget("theme-diagnostic");
+      store().setRunningTaskFor("theme-diagnostic", null, "always");
       openSocket();
     }
   });

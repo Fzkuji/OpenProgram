@@ -71,7 +71,7 @@ def test_a_resident_copy_leaves_the_registered_tool_deferred():
 
 
 def test_programs_list_shows_tiers_and_builtin_settings():
-    from openprogram.interfaces.cli.commands.programs import program_rows
+    from openprogram.interfaces.cli.commands.capabilities.programs import program_rows
     rows = {(r["kind"], r["name"]): r for r in program_rows()}
     assert rows[("tool", "bash")]["tiers"] == {"bash": "resident"}
     browser = rows[("application", "browser")]

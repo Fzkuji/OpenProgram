@@ -76,7 +76,7 @@
 <tr><th scope="row"><code translate="no">start_from</code></th><td><code translate="no">fresh</code> (default): only the prompt. <code translate="no">fork</code>: the caller's history, and the system prompt the caller's branch recorded, byte for byte (<code translate="no">loop_runner.forked_prompt</code>), so the provider's prompt cache is shared; with another Agent it falls back to fresh and says so. <code translate="no">SID:MSG</code>: that node. The older <code translate="no">inherit</code> and <code translate="no">clean</code> still mean fork and fresh.</td></tr>
 <tr><th scope="row"><code translate="no">agent</code></th><td>A saved Agent, or an Agent from a Markdown agent file (<a href="#agent-settings">Saved Agent settings</a>), by id or name from the roster at the end of the tool description. Empty: the caller's own Agent. An Agent with delegation off is refused unless it is the caller's own.</td></tr>
 <tr><th scope="row"><code translate="no">isolation</code></th><td><code translate="no">worktree</code>, <code translate="no">none</code>, or empty for the rule under <a href="#agent-settings">Saved Agent settings</a></td></tr>
-<tr><th scope="row">When to spawn</th><td>The base instructions (<code translate="no">runtime/context/guides/base.md</code>) forbid spawning unless the user, AGENTS.md or a skill asks for sub-agents, delegation or parallel work, as Codex does. This rule is kept as is.</td></tr>
+<tr><th scope="row">When to spawn</th><td>The base instructions (<code translate="no">runtime/context/prompt_assembly/guides/base.md</code>) forbid spawning unless the user, AGENTS.md or a skill asks for sub-agents, delegation or parallel work, as Codex does. This rule is kept as is.</td></tr>
 <tr><th scope="row"><code translate="no">to</code> address</th><td>In order: <code translate="no">SID:HEAD</code>, a branch or helper name, a conversation id or exact title, a saved Agent's name or id (its one conversation). Ambiguous names fail with candidates; a missing target is an error, never a new branch. A message to a running helper the sending turn started reaches it at its next tool step (<a href="#busy-targets">Busy targets</a>).</td></tr>
 <tr><th scope="row">Direct self-delivery</th><td>Refused</td></tr>
 </tbody>
@@ -315,7 +315,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row">Stored hand-offs</th><td><code translate="no">openprogram/runtime/conversation/always_on/handoff_migration.py</code></td></tr>
 <tr><th scope="row">Result shape, relays, roster facts</th><td><code translate="no">openprogram/runtime/jobs/agent_result.py</code>, <code translate="no">notices.py</code>, <code translate="no">agent_status.py</code></td></tr>
 <tr><th scope="row">Spend, stall, hard stop</th><td><code translate="no">openprogram/runtime/jobs/delegation_watch.py</code>, <code translate="no">runner/progress.py</code></td></tr>
-<tr><th scope="row">Inbox</th><td><code translate="no">openprogram/runtime/conversation/inbox.py</code></td></tr>
+<tr><th scope="row">Inbox</th><td><code translate="no">openprogram/runtime/conversation/peer_agents/inbox.py</code></td></tr>
 </tbody>
 </table>
 </details>

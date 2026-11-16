@@ -3,7 +3,7 @@
 <h1>发布源码到 GitHub</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="三条线。dev 接收主 checkout 或 worktree 里 git commit 的每个提交，供给开发版（端口 18200）。stable 与 dev 共享历史，只有 openprogram dev promote 能把它 fast-forward 到某个 dev 提交，稳定版 App（端口 18100）运行它。main 有自己的历史，只有 scripts/publish-github.sh 能添加提交，一个版本一个提交，内容是接在上一版本之后的 stable 文件树。GitHub 只承载 main，用于源码安装、CI 和发布标签。没有 dev 提交是 main 的祖先，几条线永不合并。">
+<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="三条线。dev 接收主 checkout 或 worktree 里 git commit 的每个提交，供给开发版（端口 18200）。stable 与 dev 共享历史，只有 openprogram dev promote 能把它 fast-forward 到某个 dev 提交，稳定版 App（端口 18100）运行它。main 有自己的历史，只有 scripts/publishing/publish-github.sh 能添加提交，一个版本一个提交，内容是接在上一版本之后的 stable 文件树。GitHub 只承载 main，用于源码安装、CI 和发布标签。没有 dev 提交是 main 的祖先，几条线永不合并。">
   <defs>
     <marker id="p-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
   </defs>
@@ -26,7 +26,7 @@
   <circle class="gate" cx="272" cy="158" r="5"/><circle class="gate" cx="368" cy="158" r="5"/><circle class="gate" cx="464" cy="158" r="5"/>
 
   <line class="ln-acc" x1="464" y1="166" x2="464" y2="290" marker-end="url(#p-a)"/>
-  <text class="t-cmd mid" translate="no" x="340" y="232">scripts/publish-github.sh</text>
+  <text class="t-cmd mid" translate="no" x="340" y="232">scripts/publishing/publish-github.sh</text>
   <text class="t-soft mid" x="340" y="252">把文件树压成一个提交</text>
 
   <text class="t-big" translate="no" x="0" y="304">main</text>
@@ -40,7 +40,7 @@
   <li><strong translate="no">dev</strong><small>每个提交，在主 checkout 或 worktree 里 <code translate="no">git commit</code></small><small>开发版，端口 18200</small></li>
   <li class="via"><code translate="no">openprogram dev promote</code></li>
   <li><strong translate="no">stable</strong><small>fast-forward 到 dev 的提交，与 <code translate="no">dev</code> 共享历史</small><small>稳定版 App，端口 18100</small></li>
-  <li class="via"><code translate="no">scripts/publish-github.sh</code></li>
+  <li class="via"><code translate="no">scripts/publishing/publish-github.sh</code></li>
   <li class="flow-end"><strong translate="no">main</strong><small>一个版本一个压缩提交，有自己的历史</small><small>GitHub：源码安装、CI、发布标签</small></li>
 </ol>
 </figure>
@@ -51,11 +51,11 @@
 <p>本地只有这三条。worktree 分支合入 <code translate="no">dev</code> 后删除，放弃时也删除。想留着的放到 <code translate="no">refs/archive/</code>，任何命令都不会把它列为分支，也不会推送。</p>
 
 <h2 id="publishing-a-version">发布一个版本</h2>
-<pre><code translate="no">scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
-scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
+<pre><code translate="no">scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
+scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
 python scripts/release/release-version.py set 1.3.0
-scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
-scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">参数</th><th scope="col">作用</th></tr></thead>
@@ -114,20 +114,22 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 </details>
 
 <h2 id="publishing-identity">发布身份</h2>
-<p>GitHub 上的一切都由一个账号署名：<code translate="no">FuzzyKuji</code>，<code translate="no">9404270+FuzzyKuji@users.noreply.github.com</code>，仓库 <code translate="no">FuzzyKuji/OpenProgram</code>。不论检出用什么身份提交，脚本都把它写到每个版本提交上，并拒绝推送含有其他身份的 <code translate="no">main</code>。<code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code> 的作者和 README 的许可证一行写的也是这个账号。</p>
+<p>仓库是 <code translate="no">Fzkuji/OpenProgram</code>，项目最初的仓库：<code translate="no">main</code> 上先是到 0.9.8 为止的历史，之后从 1.0.0 起一个版本一个提交。</p>
+<p>每个版本提交署名 <code translate="no">FzKuji</code>，<code translate="no">fzkuji@gmail.com</code>，和之前的历史一致；不论检出用什么身份提交，脚本都写这个署名，并拒绝上传含有其他署名的版本。只检查 GitHub 还没有的那一段 <code translate="no">main</code>，因为更早的历史有很多作者。</p>
+<p>1.0.0 到 1.3.0 是在 <code translate="no">FuzzyKuji/OpenProgram</code> 构建的，安装包留在那里。下载链接、安装脚本和 App 的更新检查在 <code translate="no">Fzkuji/OpenProgram</code> 发出一个版本之前仍从那里读取；源码链接已经指向 <code translate="no">Fzkuji/OpenProgram</code>。<code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code> 的作者和 README 的许可证一行保留 1.x 版本发布时的名字。</p>
 
 <h2 id="retired-accounts">停用账号</h2>
-<p>项目曾在现已不再拥有的 GitHub 账号下发布。发布的内容里不出现它们：作者、链接、示例、测试数据、说明都不行。</p>
+<p>项目曾在一个现已不再拥有的 GitHub 账号下发布。发布的内容里不出现它：作者、链接、示例、测试数据、说明都不行。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">位置</th><th scope="col">检查</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">scripts/retired_accounts.py</code></th><td>每个登录名、邮箱地址和账号 id 只以小写形式的 SHA-256 保存，守卫本身不构成提及。文本逐个 token 比较；token 还会在 <code translate="no">/ @ + . _ -</code> 处拆开，并先解码百分号编码（包括两层）、HTML 实体和 <code translate="no">\u</code>/<code translate="no">\x</code> 转义，所以 URL、地址或文件名里的登录名也能找到。主登录名即使嵌在更长的词里也能找到，和 <code translate="no">git grep -i</code> 一样</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/retired_accounts.py</code></th><td>每个登录名、邮箱地址和账号 id 只以小写形式的 SHA-256 保存，守卫本身不构成提及。文本逐个 token 比较；token 还会在 <code translate="no">/ @ + . _ -</code> 处拆开，并先解码百分号编码（包括两层）、HTML 实体和 <code translate="no">\u</code>/<code translate="no">\x</code> 转义，所以 URL、地址或文件名里的登录名也能找到</td></tr>
 <tr><th scope="row"><code translate="no">tests/unit/config/test_no_retired_accounts.py</code></th><td>任何被跟踪的文本文件或路径提到它们就失败</td></tr>
-<tr><th scope="row"><code translate="no">scripts/publish-github.sh</code></th><td>扫描来源提交的文件树（从对象库读取，不读检出）、摘要和 <code translate="no">main</code> 的历史</td></tr>
-<tr><th scope="row"><code translate="no">scripts/update_readme_contributors.py</code></th><td>README 贡献者区块从不列出停用登录名</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/publish-github.sh</code></th><td>扫描来源提交的文件树（从对象库读取，不读检出）、摘要和 <code translate="no">main</code> 里要上传的那一段</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publishing/update_readme_contributors.py</code></th><td>README 贡献者区块从不列出停用登录名</td></tr>
 </tbody>
 </table>
-<p>GitHub 上只有 1.0.0 及之后的版本。<code translate="no">.github/release-notes/</code> 只保存这些版本的说明，1.0.0 的说明不链接任何更早的版本。</p>
+<p><code translate="no">.github/release-notes/</code> 只保存这些版本的说明，1.0.0 的说明不链接任何更早的版本。</p>
 
 <h2 id="website">网站</h2>
 <p>落地页和文档由 docs-pages 工作流发布到 <code translate="no">FuzzyKuji/openprogram-site</code>，由 GitHub Pages 在 <code translate="no">https://fuzzykuji.github.io/openprogram-site/</code> 提供，文档在 <code translate="no">docs/</code> 下。地址只有一处设置：<code translate="no">openprogram/operations/project_site.py</code> 里的 <code translate="no">SITE_URL</code>。</p>
@@ -146,7 +148,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <h2 id="what-a-release-builds">一次发布构建什么</h2>
 <p>Release 工作流由推送的标签触发。每个平台分支彼此独立。</p>
 <p>标签不会移动，所以发版前可以先演练。不带 <code translate="no">--tag</code> 发布 <code translate="no">main</code>，再运行 <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>：每个分支都从 <code translate="no">main</code> 构建，跑同样的检查，什么都不发布。</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。两者都通过后，<code translate="no">scripts/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> 给同一个提交打标签；不带 <code translate="no">--source</code> 时，中间若有过晋升，会变成一个没演练过的新版本。</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> 给同一个提交打标签；不带 <code translate="no">--source</code> 时，中间若有过晋升，会变成一个没演练过的新版本。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
 <tbody>
@@ -197,7 +199,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <tr><th scope="row">App 去哪里找</th><td>先找自己版本的 release，再找 <code translate="no">releases/latest/download/</code>；后者给没有自己 release 的构建用，前提是固定值没变。两处的文件都按固定的大小和 SHA-256 校验</td></tr>
 <tr><th scope="row">为什么不只放最新版本</th><td>最新版本上的固定文件名，会在某个版本换掉资源包那天让所有已安装版本装不上；每个 release 各带一份，只要那个 release 在，那个版本就能装</td></tr>
 <tr><th scope="row">没有任何 release 带它</th><td>安装返回 <code translate="no">office_release_missing</code>：1.3.0 之前的版本提示更新到 1.3.0 或更高，其他版本提示更新到最新版。不把重试当作解决办法</td></tr>
-<tr><th scope="row">发布时从哪里拿</th><td>CI 里重建不了：有授权的字体和固定的编辑器构建是所有者手里的输入（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>）。<code translate="no">office</code> 任务下载最新已发布版本的那一份，没有就取这个 tag 草稿 release 上的那一份，并校验字节</td></tr>
+<tr><th scope="row">发布时从哪里拿</th><td>CI 里重建不了：有授权的字体和固定的编辑器构建是所有者手里的输入（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>）。<code translate="no">office</code> 任务下载最新已发布版本的那一份，没有就取这个 tag 草稿 release 上的那一份，并校验字节</td></tr>
 <tr><th scope="row">第一个带它的版本</th><td><code translate="no">publish-github.sh --tag vX.Y.Z --office-archive /path/to/OfficeAssets-….zip</code> 校验文件，在移动任何东西之前把它放到这个 tag 的草稿 release 上（<code translate="no">office-archive.py seed</code>）。之后每个版本都沿用上一个版本的那份，不用手动上传</td></tr>
 <tr><th scope="row">两处都没有</th><td><code translate="no">office</code> 任务失败，写出文件名、大小、SHA-256 和 seed 命令。所有构建都等它，所以什么都不会构建或发布</td></tr>
 <tr><th scope="row">发布之后</th><td>对公开 latest release 的检查也要求归档恰好一份</td></tr>
@@ -208,12 +210,12 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <h3 id="rebuilding-the-office-archive">重建归档</h3>
 <p>在所有者的机器上、<code translate="no">dev</code> 检出里进行。同一个准备好的资源包，<code translate="no">pack</code> 每次做出同样的 zip。已安装的那份就是准备好的资源包：<code translate="no">~/.openprogram/cache/office/&lt;source&gt;-&lt;patch&gt;/versions/&lt;manifest&gt;</code> 能通过 <code translate="no">office_editor/assets.py</code> 里固定值的校验时，把它拷出来直接做 <code translate="no">pack</code> 这一步，不构建也不下载。</p>
 <ol>
-<li>准备 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a> 列出的输入：<code translate="no">agentbridges-ai/onlyoffice-browser</code> 在 <code translate="no">d15d12b6945be4d8b0f3aa1806120e740d2950ee</code>（包版本 0.3.34）的 git 检出；有授权的字体输入，以及用 <code translate="no">font-generation.mjs</code> 和 Document Server 9.3.0 生成器从它生成的字体包，其清单摘要必须等于 <code translate="no">office_editor/assets.py</code> 里的 <code translate="no">OFFICE_FONT_MANIFEST_DIGEST</code>；<code translate="no">npm ci</code> 需要能访问 npm registry。</li>
+<li>准备 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a> 列出的输入：<code translate="no">agentbridges-ai/onlyoffice-browser</code> 在 <code translate="no">d15d12b6945be4d8b0f3aa1806120e740d2950ee</code>（包版本 0.3.34）的 git 检出；有授权的字体输入，以及用 <code translate="no">font-generation.mjs</code> 和 Document Server 9.3.0 生成器从它生成的字体包，其清单摘要必须等于 <code translate="no">office_editor/assets.py</code> 里的 <code translate="no">OFFICE_FONT_MANIFEST_DIGEST</code>；<code translate="no">npm ci</code> 需要能访问 npm registry。</li>
 <li>把 <code translate="no">office_editor/assets.py</code> 里的 <code translate="no">OFFICE_LOCK_SHA256</code> 设为 <code translate="no">scripts/release/office/package-lock.json</code> 的 SHA-256，也就是 <code translate="no">prepare.py</code> 构建用的审核过的 lock；资源包最后一步校验拒绝其他 lock。</li>
 <li><code translate="no">python scripts/release/office/prepare.py --source … --font-pack … --font-input … --output /path/to/prepared-office</code></li>
 <li><code translate="no">python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out</code> 写出 zip，并把文件名、大小和 SHA-256 写进 <code translate="no">install.py</code>，把下载上限写进 <code translate="no">safe_http.py</code>。</li>
 <li>跑受影响的测试，在 <code translate="no">dev</code> 上提交，部署并晋升。</li>
-<li><code translate="no">scripts/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>，再去掉 <code translate="no">--dry-run</code> 运行一次。</li>
+<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>，再去掉 <code translate="no">--dry-run</code> 运行一次。</li>
 </ol>
 
 <h2 id="the-guards">Hook</h2>
@@ -241,7 +243,7 @@ scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td><code translate="no">scripts/publish-github.sh</code>，含 dry run、<code translate="no">--no-push</code>、<code translate="no">--tag</code>、凭据扫描、停用账号扫描、发布身份检查和 <code translate="no">refs/publish/last</code>；两个 hook；<code translate="no">AGENTS.md</code> 中的规则；Release 工作流的独立分支；每个版本带 Office 归档，App 从自己版本的 release 下载</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">scripts/publishing/publish-github.sh</code>，含 dry run、<code translate="no">--no-push</code>、<code translate="no">--tag</code>、凭据扫描、停用账号扫描、发布身份检查和 <code translate="no">refs/publish/last</code>；两个 hook；<code translate="no">AGENTS.md</code> 中的规则；Release 工作流的独立分支；每个版本带 Office 归档，App 从自己版本的 release 下载</td></tr>
 <tr><th scope="row">尚未运行</th><td>一次完整的 Release 运行。目前唯一的一次是 v1.1.0，发布了 macOS 和 Linux App 以及全部命令行运行时；Windows 安装包构建出来但没有带上，因为 Windows 更新文件失败。1.2.0 的演练跑过一次：发布任务的检查列出了没通过的三个 App（两个 macOS 任务卡在签名，Windows 卡在 App 冒烟）。Windows install smoke 工作流还没有运行过</td></tr>
 <tr><th scope="row">网站未重新发布</th><td>站点仍是地址改为设置之前的构建：链接指向主机根下的 <code translate="no">/docs/</code>，之后新增的页面（例如下载页）要等 docs-pages 工作流再运行一次才有。社交卡片图片上仍写着 <code translate="no">openprogram.io</code></td></tr>
 <tr><th scope="row">等待 1.3.0</th><td>还没有哪个版本带 Office 归档。固定的文件 <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code> 由已安装的资源包<a href="#rebuilding-the-office-archive">打包</a>而成，放在所有者机器的 <code translate="no">~/OpenProgram-release/office/</code>；1.3.0 打 tag 时用 <code translate="no">--office-archive</code> 指向它</td></tr>

@@ -19,7 +19,7 @@
 <table class="stack">
 <thead><tr><th scope="col">层</th><th scope="col">约束</th><th scope="col">重试</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>在 ContextVar（<code translate="no">utils/deadline.py</code>）里设一个绝对期限；每次尝试和等待前检查</td><td><code translate="no">max_retries</code> 3（<code translate="no">OPENPROGRAM_MAX_RETRIES</code>），<code translate="no">1.5·2^n</code> 秒，±25%</td></tr>
+<tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>在 ContextVar（<code translate="no">utils/http_transport/deadline.py</code>）里设一个绝对期限；每次尝试和等待前检查</td><td><code translate="no">max_retries</code> 3（<code translate="no">OPENPROGRAM_MAX_RETRIES</code>），<code translate="no">1.5·2^n</code> 秒，±25%</td></tr>
 <tr><th scope="row"><code translate="no">Runtime._call</code> → <code translate="no">_run_async</code></th><td>无运行中的循环：在当前线程 <code translate="no">asyncio.run</code>。有循环（Web、worker）：放到线程池，转发期限</td><td>无</td></tr>
 <tr><th scope="row"><code translate="no">AgentSession._run_with_retry</code></th><td>消耗本次调用的传输额度</td><td>2、4、8 秒</td></tr>
 <tr><th scope="row"><code translate="no">retry_stream</code>（Codex）、重试循环（completions）</th><td>每次尝试和等待前读期限</td><td>5 次，基数 2 秒，上限 30 秒</td></tr>
@@ -116,7 +116,7 @@
 </details>
 
 <h2 id="classification">分类</h2>
-<p><code translate="no">utils/errors.py</code> 的 <code translate="no">classify_error</code>：</p>
+<p><code translate="no">utils/failures/errors.py</code> 的 <code translate="no">classify_error</code>：</p>
 <table class="stack">
 <thead><tr><th scope="col">顺序</th><th scope="col">依据</th><th scope="col">原因</th><th scope="col">可重试</th></tr></thead>
 <tbody>

@@ -21,9 +21,9 @@ import pytest
 from openprogram.runtime.conversation import turn_runtime as D
 from openprogram.runtime.agent_registry.manager import AgentModelRef
 from openprogram.runtime.context.session_db import SessionDB
-from openprogram.interfaces.channels import _conversation as C
-from openprogram.interfaces.channels._message import ChannelMessage
-from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.inbound import _conversation as C
+from openprogram.interfaces.channels.inbound._message import ChannelMessage
+from openprogram.interfaces.channels.delivery._transport import SendResult
 from openprogram.interfaces.channels.base import Channel
 from openprogram.models.providers.types import (
     AssistantMessage,
@@ -433,9 +433,9 @@ def test_block_stream_sends_paragraphs_as_they_arrive(
     fake_stream = make_delta_stream([first, "\n\n第二段", "收尾。"])
     orig_run = D._run_loop_blocking
     posted: list[str] = []
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text: posted.append(text)
         or SendResult.success(""),
     )
@@ -491,8 +491,8 @@ def test_ambient_room_event_speaks_only_through_chat_send(
     """A room event's final reply stays in the transcript; the model's
     chat_send call is what reaches the room, addressed to this turn's chat.
     The room's /memory setting narrows the turn's memory."""
-    from openprogram.interfaces.channels import _active_turns
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.inbound import _active_turns
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     from openprogram.models.providers.types import ToolCall
 
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
@@ -501,7 +501,7 @@ def test_ambient_room_event_speaks_only_through_chat_send(
     _with_browser_app(monkeypatch)
     posted: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
-        "openprogram.interfaces.channels._transport.post_message",
+        "openprogram.interfaces.channels.delivery._transport.post_message",
         lambda platform, account_id, target, text: posted.append(
             (platform, account_id, target, text)) or SendResult.success(""),
     )
@@ -571,7 +571,7 @@ def test_chat_senders_act_as_owner_in_direct_messages(
     group the caller says whether the sender has full access; without that the
     turn stays on the limited tier."""
     from openprogram.runtime.permissions.authority import owner_principal_id
-    from openprogram.runtime.conversation.session_config import load_session_run_config
+    from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config
 
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     seen = _capture_turn(monkeypatch)
@@ -642,7 +642,7 @@ def test_group_sender_outcomes_reach_the_turn_with_the_right_tier(
     tmp_db: SessionDB, stub_routing, tmp_path: Path, wire,
     monkeypatch: pytest.MonkeyPatch, platform: str, chat_type: str,
 ) -> None:
-    from openprogram.interfaces.channels import _access, _room
+    from openprogram.interfaces.channels.inbound import _access, _room
 
     state = tmp_path / "state"
     state.mkdir(mode=0o700)
@@ -681,7 +681,7 @@ def test_paired_sender_access_keeps_the_paired_tier(
     tmp_db: SessionDB, stub_routing, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.runtime.conversation.session_config import load_session_run_config
+    from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config
 
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     monkeypatch.setattr("openprogram.interfaces.channels.accounts.sender_access",
@@ -698,7 +698,7 @@ def test_paired_sender_access_keeps_the_paired_tier(
 @pytest.fixture
 def wire(monkeypatch: pytest.MonkeyPatch):
     """Fake transport: placeholder posts succeed, edits fail unless told."""
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     calls: dict = {"post": [], "patch": [],
                    "patch_result": SendResult.fail("bad_target", "gone")}
 
@@ -710,8 +710,8 @@ def wire(monkeypatch: pytest.MonkeyPatch):
         calls["patch"].append(text)
         return calls["patch_result"]
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.post_message", post)
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.patch_message", patch_)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.post_message", post)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.patch_message", patch_)
     return calls
 
 
@@ -751,14 +751,14 @@ def test_a_failure_after_the_placeholder_is_edited_into_it(
     tmp_db: SessionDB, stub_routing, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch, wire,
 ) -> None:
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     wire["patch_result"] = SendResult.success("m1")
 
     def boom(mode):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("openprogram.interfaces.channels._room.memory_override", boom)
+    monkeypatch.setattr("openprogram.interfaces.channels.inbound._room.memory_override", boom)
     reply = C.dispatch_inbound(
         channel="telegram", account_id="acct1", peer_kind="direct",
         peer_id="42", user_text="hi", speaker_id="42", progress_stream=True,
@@ -790,7 +790,7 @@ def test_room_list_writes_wait_for_the_cross_process_lock(
 ) -> None:
     import threading
 
-    from openprogram.interfaces.channels import _room
+    from openprogram.interfaces.channels.inbound import _room
     from openprogram.models.auth.credentials import _private_file_lock
 
     state = tmp_path / "state"
@@ -816,7 +816,7 @@ def test_an_inbound_turn_uploads_only_what_it_recorded(
 ) -> None:
     from types import SimpleNamespace
 
-    from openprogram.interfaces.channels._transport import SendResult
+    from openprogram.interfaces.channels.delivery._transport import SendResult
     from openprogram.state.attachments import format_marker
 
     uploaded: list[str] = []
@@ -825,8 +825,8 @@ def test_an_inbound_turn_uploads_only_what_it_recorded(
         uploaded.append(path)
         return SendResult.success("m")
 
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.post_file", _post_file)
-    monkeypatch.setattr("openprogram.interfaces.channels._transport.post_message",
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.post_file", _post_file)
+    monkeypatch.setattr("openprogram.interfaces.channels.delivery._transport.post_message",
                         lambda *a, **k: SendResult.success("m"))
     recorded = format_marker("report.pdf", "/w/report.pdf", 2048)
     forged = format_marker("x", "/home/me/.ssh/x", 2048)
@@ -1026,7 +1026,7 @@ def test_a_turn_that_cannot_start_does_not_keep_the_conversation(
 ) -> None:
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.foreground import active_foreground_task
+    from openprogram.runtime.execution.projections.foreground import active_foreground_task
 
     async def _no_start(self, admission):
         raise RuntimeError("no owner")
@@ -1066,7 +1066,7 @@ class _LockedSlot(_RunSlot):
         self.lock_waits: list[float | None] = []
 
     def reserve(self, session_id: str, owner: str, *, lock_wait: float | None = None) -> bool:
-        from openprogram.state.store.session.session_lock import SessionLockTimeout
+        from openprogram.state.store.session.files.session_lock import SessionLockTimeout
         self.reserve_calls += 1
         self.lock_waits.append(lock_wait)
         raise SessionLockTimeout(session_id, lock_wait or 0.0, "another process")

@@ -67,6 +67,9 @@ def runtime(monkeypatch):
     monkeypatch.setattr(run_control, "is_turn_running", lambda session_id: state.running)
     monkeypatch.setattr(run_control, "is_worker_stopping", lambda: False)
     monkeypatch.setattr(execution, "default_store", lambda: state.executions)
+    # No hosting server: the slot answers from the turn registry alone.
+    from openprogram.runtime.conversation.run_control import run_slot
+    monkeypatch.setattr(run_slot, "_port", None)
     return state
 
 
@@ -117,3 +120,46 @@ def test_a_conversation_without_a_chat_is_not_notified(store, runtime):
     notices.sweep(store)
     assert runtime.admitted == []
     assert store.get(record["id"])["reported"] is True
+
+
+def test_the_notice_turn_holds_the_run_slot_while_it_runs(store, runtime, monkeypatch):
+    """The notice takes the conversation's run slot before it is admitted
+    (never waiting for it) and gives it back when its turn ends, so the
+    conversation shows as running and no other turn starts beside it."""
+    import threading
+    from openprogram.runtime.conversation.run_control import run_slot
+
+    calls = []
+    ended = threading.Event()
+
+    class Port:
+        free = False
+
+        def reserve(self, session_id, owner, *, lock_wait=None, branch_id=None):
+            calls.append(("reserve", session_id, lock_wait))
+            return self.free
+
+        def activate(self, session_id, owner, *, execution_id, status_version, runner):
+            calls.append(("activate", owner, execution_id))
+            return True
+
+        def finish(self, session_id, owner, *, execution_id):
+            calls.append(("finish", owner, execution_id))
+            ended.set()
+
+        def release(self, session_id, owner):
+            calls.append(("release", owner))
+
+    port = Port()
+    monkeypatch.setattr(run_slot, "_port", port)
+    record = _exited(store)
+
+    notices.sweep(store)
+    assert runtime.admitted == [] and store.get(record["id"])["reported"] is False
+
+    port.free = True
+    notices.sweep(store)
+    assert ended.wait(5)
+    owner = runtime.admitted[0]["user_message_id"]
+    assert calls == [("reserve", "conversation", 0), ("reserve", "conversation", 0),
+                     ("activate", owner, "new"), ("finish", owner, "new")]

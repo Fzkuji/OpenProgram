@@ -92,6 +92,22 @@ test("code rain and the gradient theme are exclusive, and a stored pair is read 
   await reread.unmount();
 });
 
+test("a reader that mounts later does not redraw the readers already on the page", async () => {
+  let renders = 0;
+  function Counted() { useWelcomeBackdropPref(); renders++; return null; }
+  const first = await render(h(Counted));
+  await first.act(settle);
+  const before = renders;
+  // Every message row has a reader; a new row re-reads storage as it mounts.
+  const second = await render(h(Probe));
+  await second.act(settle);
+  assert.equal(renders, before, "the same value is not announced again");
+  await second.act(async () => { pref.setDensity(pref.density === 70 ? 71 : 70); });
+  assert.equal(renders, before + 1, "a changed value still reaches every reader");
+  await second.unmount();
+  await first.unmount();
+});
+
 test("the backdrop renders no canvas while the rain is off", async () => {
   const probe = await render(h(Probe));
   await probe.act(async () => { pref.setEnabled(false); });

@@ -64,7 +64,7 @@ def fake_worker(monkeypatch):
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult
         calls.append({
             "session_id": request.session_id, "prompt": request.user_text,
             "agent_id": request.agent_id, "branch_from": request.branch_from,

@@ -28,6 +28,8 @@ A failed write is recorded at the scope of its cause:
 """
 from __future__ import annotations
 
+import contextlib
+
 import hashlib
 import json
 import logging
@@ -283,7 +285,7 @@ def _save_state(state: dict[str, Any]) -> None:
         # like the rest of the profile.
         os.chmod(temporary, 0o600)
         replace_file(temporary, path)
-        from openprogram.state.store.session.atomic_file import _fsync_directory
+        from openprogram.state.store.session.files.atomic_file import _fsync_directory
 
         _fsync_directory(path.parent)
     except BaseException:
@@ -551,12 +553,10 @@ _RETIRED_RECORDS = ("unrepaired-topics.json",)
 def _memory_roots() -> list[Path]:
     """The personal memory and every project memory on this profile."""
     roots = [store.root()]
-    try:
+    with contextlib.suppress(Exception):  # noqa: BLE001 - the personal memory still counts
         from .project_layer import project_roots
 
         roots.extend(project_roots())
-    except Exception:  # noqa: BLE001 - the personal memory still counts
-        pass
     return roots
 
 

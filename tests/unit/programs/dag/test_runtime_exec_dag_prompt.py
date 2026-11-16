@@ -197,7 +197,7 @@ def test_sync_provider_bridge_enforces_silent_stream_deadline(
     rt: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A provider that emits no events must still respect exec's deadline."""
-    from openprogram.models.providers.utils import deadline
+    from openprogram.models.providers.utils.http_transport import deadline
 
     async def stalled(_content, _response_format=None):
         await asyncio.Event().wait()

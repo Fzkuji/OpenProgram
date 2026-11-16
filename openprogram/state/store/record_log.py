@@ -14,7 +14,7 @@ from pathlib import Path
 import threading
 from typing import Any, Iterator, Mapping
 
-from openprogram.state.store.session.session_lock import registry_file_lock
+from openprogram.state.store.session.files.session_lock import registry_file_lock
 from openprogram.host._platform.filesystem import O_BINARY, replace_file
 
 _log = logging.getLogger(__name__)

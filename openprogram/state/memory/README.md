@@ -10,7 +10,7 @@ directory, not a substitute.
 
 Memory is a workspace of Markdown files under `<state>/memory/`:
 
-1. `topics/**/*.md` — the editable semantic memory, one file per subject.
+1. `topics/**/*.md` — the editable semantic memory, in folders that follow meaning: a thing with several notes is a folder (`overview.md` plus one file per aspect), things of one kind sit under a kind folder (`management/filing.py`).
    Every paragraph ends in a stable `^block-id` and cites a footnote
    linking the chat message it rests on, `/s/<session>#<message>`. The
    chat history is the evidence; memory keeps no copy of it.

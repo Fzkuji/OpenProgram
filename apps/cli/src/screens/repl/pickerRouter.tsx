@@ -36,7 +36,7 @@ import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
 import { buildQuestionPicker } from './pickers/question.js';
 import { buildProviderAccountsPicker, type AccountKind } from './pickers/providerAccounts.js';
-import type { AccountsState, AddStarted } from '../../utils/providerAccounts.js';
+import type { CredentialList, AddStarted } from '../../utils/providerAccounts.js';
 import type { ColorTheme } from '../../theme/themes.js';
 import { defaultBindings, helpRows, type ResolvedBindings } from '../../keybindings/resolve.js';
 import type {
@@ -94,7 +94,7 @@ export interface PickerCtx {
    *  action menu, the in-flight code-paste add, and the in-flight login-mode add
    *  (the new account's name + chosen sign-in method). */
   accountsProviderId: string;
-  accountsState: AccountsState;
+  accountsState: CredentialList;
   accountSelected: string | null;
   accountPendingAdd: AddStarted | null;
   accountLogin: { name: string; method: string } | null;
@@ -118,7 +118,7 @@ export interface PickerCtx {
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setSelectedJob: React.Dispatch<React.SetStateAction<JobRow | null>>;
   setAccountsProviderId: React.Dispatch<React.SetStateAction<string>>;
-  setAccountsState: React.Dispatch<React.SetStateAction<AccountsState>>;
+  setAccountsState: React.Dispatch<React.SetStateAction<CredentialList>>;
   setAccountSelected: React.Dispatch<React.SetStateAction<string | null>>;
   setAccountPendingAdd: React.Dispatch<React.SetStateAction<AddStarted | null>>;
   setAccountLogin: React.Dispatch<React.SetStateAction<{ name: string; method: string } | null>>;

@@ -8,7 +8,7 @@ import pytest
 from openprogram.runtime.permissions.policy import match_rule
 
 from openprogram.runtime.permissions.modes import PermissionRules
-from openprogram.runtime.conversation.session_config import SessionRunConfig
+from openprogram.runtime.conversation.session_settings.session_config import SessionRunConfig
 from openprogram.runtime.permissions.rule import (
     load_merged_rules,
     parse_command,
@@ -102,7 +102,7 @@ def test_list_jobs_is_not_a_path_tool():
 
 def _isolate_optional_layers(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.runtime.conversation.session_config.load_session_run_config",
+        "openprogram.runtime.conversation.session_settings.session_config.load_session_run_config",
         lambda _sid: SessionRunConfig(),
     )
     monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})

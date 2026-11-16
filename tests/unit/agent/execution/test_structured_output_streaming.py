@@ -24,7 +24,7 @@ from openprogram.models.providers.types import (
     TextContent,
     UserMessage,
 )
-from openprogram.models.providers.utils.errors import ExecInterrupt
+from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
 
 SCHEMA = {
@@ -398,7 +398,7 @@ def test_eof_recovers_to_complete_value(partial):
 
 @pytest.mark.parametrize('ending', ['length', 'eof', 'invalid'])
 def test_exhausted_recovery_is_paused(ending):
-    from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+    from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
     state = RecoveryState(limit=2)
     calls = []
     async def provider(model, context, options):
@@ -456,7 +456,7 @@ def test_eof_preserves_completed_tool_and_never_executes_partial_tool():
 
 
 def test_cancelled_eof_does_not_retry_and_marks_cancelled():
-    from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+    from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
     state = RecoveryState(limit=2)
     calls = []
     async def run():
@@ -482,7 +482,7 @@ def test_cancelled_eof_does_not_retry_and_marks_cancelled():
 
 
 def test_returned_provider_error_is_not_marked_completed():
-    from openprogram.models.providers.utils.recovery import RecoveryState, current_recovery
+    from openprogram.models.providers.utils.failures.recovery import RecoveryState, current_recovery
     state = RecoveryState(limit=2)
     message = _message('', stop_reason='error').model_copy(update={'error_message': 'network failed'})
     async def run():

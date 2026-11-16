@@ -110,8 +110,8 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   // Move this window by a pixel delta (single-tab drag = move the window).
   moveWindowBy: (dx, dy) => ipcRenderer.send("window:move-by", dx, dy),
   // A snapshot of a region of this page (CSS px): a small thumbnail for the
-  // window overview, or the full-resolution frame for a pane animation.
-  captureRegion: (rect, options) => ipcRenderer.invoke("window:capture-region", rect, options),
+  // window overview.
+  captureRegion: (rect) => ipcRenderer.invoke("window:capture-region", rect),
   webTab: {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
     navigate: (id, url) => ipcRenderer.send("webtab:navigate", id, url),

@@ -17,7 +17,7 @@ def goal_owner(store, session_id: str):
     (``session_lock.remove_session_lock_files``); an owner whose file was
     removed between its open and its lock takes the one at the path.
     """
-    from openprogram.state.store.session.session_lock import lock_file_current
+    from openprogram.state.store.session.files.session_lock import lock_file_current
 
     root = store.root_path.resolve() / ".goal-locks"
     root.mkdir(parents=True, exist_ok=True)

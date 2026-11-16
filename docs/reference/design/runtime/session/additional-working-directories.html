@@ -37,7 +37,7 @@
 <tr><th scope="row">Reload</th><td><code translate="no">session_loaded.data.settings</code></td><td>Restores the list after a refresh or client switch</td></tr>
 <tr><th scope="row">Each turn</th><td><code translate="no">load_session_run_config</code> → <code translate="no">TurnRequest.additional_working_dirs</code></td><td></td></tr>
 <tr><th scope="row">Fence</th><td><code translate="no">_path_is_safe</code> in <code translate="no">runtime/permissions/identity.py</code> → <code translate="no">check_path_safety</code></td><td><code translate="no">[current_worktree_path() or getcwd(), *dirs]</code></td></tr>
-<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/components.py</code></td><td>Line present only when the list is non-empty</td></tr>
+<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/prompt_assembly/components.py</code></td><td>Line present only when the list is non-empty</td></tr>
 </tbody>
 </table>
 <p class="note">The dispatcher binds the real cwd into <code translate="no">current_worktree_path</code> each turn; <code translate="no">getcwd</code> is only a fallback.</p>
@@ -69,10 +69,10 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Covers</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>Round trip, “None leaves it unchanged”, <code translate="no">_as_str_list</code> sanitizing</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_config.py</code></th><td>Round trip, “None leaves it unchanged”, <code translate="no">_as_str_list</code> sanitizing</td></tr>
 <tr><th scope="row"><code translate="no">tests/unit/security/test_permission_rules.py</code></th><td><code translate="no">_path_is_safe</code>: inside, outside, and inside the ContextVar cwd</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/webui/test_ws_working_dirs.py</code></th><td>Valid write and broadcast, whole-frame rejection, <code translate="no">session_loaded</code> round trip</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/store/test_session_main_workdir.py</code></th><td>Freeze, missing-directory resolution, relocate node, and editing additional directories after the freeze</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/webui/chat/test_ws_working_dirs.py</code></th><td>Valid write and broadcast, whole-frame rejection, <code translate="no">session_loaded</code> round trip</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/session/test_session_main_workdir.py</code></th><td>Freeze, missing-directory resolution, relocate node, and editing additional directories after the freeze</td></tr>
 </tbody>
 </table>
 </details>

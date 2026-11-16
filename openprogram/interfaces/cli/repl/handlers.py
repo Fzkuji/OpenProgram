@@ -244,7 +244,7 @@ def _handle_functions_list(console) -> bool:
 
 
 def _handle_programs_list(console) -> bool:
-    from openprogram.interfaces.cli.commands.programs import program_rows
+    from openprogram.interfaces.cli.commands.capabilities.programs import program_rows
     rows = [row for row in program_rows() if row["kind"] != "tool"]
     console.print(f"[bold]{len(rows)} programs[/] [dim](tools: /tools)[/]")
     for row in rows:
@@ -289,7 +289,7 @@ def _handle_profile(args: list[str], console) -> bool:
 
 def _handle_jobs(args: list[str], console, session_id: str) -> bool:
     """Print the same JobResourceView DTO consumed by other surfaces."""
-    from openprogram.interfaces.cli.commands.jobs import job_resource_payload
+    from openprogram.interfaces.cli.commands.conversations.jobs import job_resource_payload
 
     payload = job_resource_payload(
         job_id=args[0] if args else None,
@@ -400,9 +400,9 @@ def _handle_compact(args: list[str], console, session_id: str) -> bool:
 def _handle_context(console, agent, session_id: str) -> bool:
     """Show token distribution across the context window."""
     try:
-        from openprogram.runtime.context.tokens import real_context_window, estimate_message_tokens
-        from openprogram.runtime.context.budget import default_allocator
-        from openprogram.runtime.context.components import build_system_prompt
+        from openprogram.runtime.context.token_accounting.tokens import real_context_window, estimate_message_tokens
+        from openprogram.runtime.context.token_accounting.budget import default_allocator
+        from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
         from openprogram.state.store import _store as _store_var
 
         # agent.model 是 AgentModelRef(provider, id)，没有 context_window
@@ -481,7 +481,7 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
         console.print("[yellow]No active session.[/]")
         return False
     try:
-        from openprogram.runtime.conversation.rewind import (
+        from openprogram.runtime.conversation.rewinds.rewind import (
             list_rewind_points,
             plan_rewind,
             rewind_to,
@@ -906,7 +906,7 @@ def _handle_mcp(args: list[str], console) -> bool:
     Verbs reuse the CLI implementations (which HTTP-hit the running
     worker), so behaviour matches `openprogram mcp ...` exactly.
     """
-    from openprogram.interfaces.cli.commands.mcp import (
+    from openprogram.interfaces.cli.commands.capabilities.mcp import (
         _cmd_mcp_list, _cmd_mcp_show, _cmd_mcp_restart,
         _cmd_mcp_enable, _cmd_mcp_disable, _cmd_mcp_rm,
     )

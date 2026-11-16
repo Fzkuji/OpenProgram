@@ -1,6 +1,8 @@
 """Branch identity carried by local settings requests."""
 from __future__ import annotations
 
+import contextlib
+
 
 def branch_guard(body: dict) -> dict:
     """Omitted identity keeps legacy clients compatible; null is an exact guard."""
@@ -132,10 +134,8 @@ def commit_model(session_id: str, body: dict, provider: str, model: str, conv: d
                 old.model = model
     disposable = old if current and replace_runtime else runtime if not current and replace_runtime else None
     if disposable is not None and disposable is not (runtime if current else old) and hasattr(disposable, "close"):
-        try:
+        with contextlib.suppress(Exception):
             disposable.close()
-        except Exception:
-            pass
     record_last_used_model(provider, model)
     if named and named != row.get("active_branch_id"):
         return {**row, **config_for_branch(row, named), "branch_id": named}
@@ -146,7 +146,7 @@ def resolved_settings(session_id: str, branch_id: str | None, *, strict: bool = 
     """``values``, ``sources`` and ``inherited`` of one branch, as JSON: what
     the composer shows a setting resolves to and where from, and what
     "Agent default" (or a switch turned back) puts it back to."""
-    from openprogram.runtime.conversation.session_config import resolve_branch_settings
+    from openprogram.runtime.conversation.session_settings.session_config import resolve_branch_settings
     from openprogram.state.store.session.branch_config import BranchConfigConflict
     try:
         settings = resolve_branch_settings(session_id, branch_id or None)

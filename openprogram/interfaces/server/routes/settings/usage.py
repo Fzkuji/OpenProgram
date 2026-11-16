@@ -6,7 +6,7 @@ Endpoints:
   GET /api/usage/by-kind           per call_kind breakdown
   GET /api/usage/tuning?days=30    the compaction share and cache lifetime
                                    that would have cost the user's own
-                                   calls the least (runtime/context/tuning.py)
+                                   calls the least (runtime/context/token_accounting/tuning.py)
 
 All queries support ``since`` / ``until`` epoch-seconds query params.
 
@@ -60,7 +60,7 @@ def register(app):
     def api_usage_tuning(days: float = QParam(30.0)):
         if not 1 <= days <= 90:
             return JSONResponse(content={"error": "days must be in [1, 90]"}, status_code=400)
-        from openprogram.runtime.context.tuning import tune
+        from openprogram.runtime.context.token_accounting.tuning import tune
         return JSONResponse(content=tune(days=days, ledger=_ledger()).to_dict())
 
     @app.get("/api/usage/summary")

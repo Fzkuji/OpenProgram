@@ -1,0 +1,217 @@
+<title>Docs site</title>
+<meta name="description" content="How the documentation site renders, routes, builds and serves its sources, and the reading rules it applies.">
+<h1 id="documentation-html-rendering-and-authoring">Docs site</h1>
+
+<h2 id="rendering-paths">Rendering paths</h2>
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Published</th><th scope="col">Author owns</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTML document</th><td>Article on the shared foundation, plus a generated <code translate="no">.html.md</code> copy</td><td>Content only; see <a href="authoring.html">Writing a docs page</a></td></tr>
+<tr><th scope="row">Markdown</th><td>Article in the site layout</td><td>Generated reference pages only; hand-written pages are HTML documents</td></tr>
+<tr><th scope="row">Interactive prototype</th><td>Site page with an iframe, plus a <code translate="no">.raw.html</code> payload</td><td>Own layout, theme and internal navigation</td></tr>
+</tbody>
+</table>
+<p class="note">Only pages in <code translate="no">PROTOTYPE_PAGES</code> (<code translate="no">governance/policy.py</code>) take this path; any other page that breaks the format fails the build. See <a href="governance.html">Docs governance</a>. The iframe separates layout; it is not a sandbox for untrusted scripts.</p>
+
+<h2 id="implementation-ownership">Implementation ownership</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">scripts/docs_site/nav.py</code></th><td>Discovery, language pairing, nine tabs, section placement, <code translate="no">PAGE_ORDER</code></td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/build.py</code></th><td>Rendering, relative links, static assets, search records, redirects, atomic output</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/html_source.py</code></th><td>HTML document parsing, heading ids, Markdown copy</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/template.py</code></th><td>Shared layout and page metadata</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/search.py</code></th><td>Search index</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/site.css</code></th><td>Foundation: type, spacing, responsive layout, light and dark tokens</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/site.js</code></th><td>Navigation, language, search, fullscreen, code copy</td></tr>
+<tr><th scope="row"><code translate="no">scripts/docs_site/assets/theme.js</code></th><td>Theme controller, runs before the body is parsed</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/docs.py</code></th><td>Source or packaged site selection, the default worker's <code translate="no">/docs/</code> mount</td></tr>
+</tbody>
+</table>
+
+<h2 id="reading-and-visual-design">Reading and visual design</h2>
+<p>New pages are HTML documents on one foundation: neutrals with a single blue accent, light and dark. Prototype pages work through <code translate="no">--bg</code>, <code translate="no">--bg-code</code>, <code translate="no">--tx</code>, <code translate="no">--tx-soft</code>, <code translate="no">--acc</code> and <code translate="no">--bd</code>, aliases of the foundation tokens. An article never repeats a fixed light-only palette.</p>
+<ul>
+<li>A page starts from its question, reader, scope and implementation boundary; public entry and data flow come before detail; remaining work closes the page.</li>
+<li>Stable heading <code translate="no">id</code> values feed the page navigation.</li>
+<li>Diagrams have an accessible title and description. Native disclosure holds detailed evidence. Keyboard focus, reduced motion and phone reading are part of acceptance.</li>
+<li>Wide tables stay in keyboard-accessible horizontal scroll regions at a readable column width. Standalone HTML also gets diagram scroll regions and an opaque fallback canvas when it defines no background. These helpers do not certify the implementation a page describes.</li>
+</ul>
+
+<h2 id="navigation-and-bilingual-sources">Navigation and bilingual sources</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tabs</th><td><code translate="no">start</code>, <code translate="no">install</code>, <code translate="no">capabilities</code>, <code translate="no">interfaces</code>, <code translate="no">models</code>, <code translate="no">integrations</code>, <code translate="no">server</code>, <code translate="no">reference</code>, virtual <code translate="no">design</code>. Design sources stay under <code translate="no">docs/reference/design/</code>.</td></tr>
+<tr><th scope="row">Order</th><td><code translate="no">TAB_SECTIONS</code> sets reading order, <code translate="no">PAGE_ORDER</code> page order. An entry naming <code translate="no">topic.md</code> also applies to <code translate="no">topic.html</code> once the Markdown is gone. Other pages group by directory, under configured labels or README titles. The sidebar is not a filesystem tree.</td></tr>
+<tr><th scope="row">Language</th><td>English is default. <code translate="no">topic.zh.md</code> pairs with <code translate="no">topic.md</code>, <code translate="no">topic.zh.html</code> with <code translate="no">topic.html</code>, reached through the language control. Change both together.</td></tr>
+<tr><th scope="row">Same-name companions</th><td>Beside a Markdown source, the HTML output is <code translate="no">topic.viz.html</code> (Chinese <code translate="no">topic.zh.viz.html</code>). A relative <code translate="no">topic.md</code> link targets the text, <code translate="no">topic.html</code> the companion, keeping its anchor. Compatibility only; compare and merge rather than keep two explanations.</td></tr>
+<tr><th scope="row">Excluded</th><td><code translate="no">_site</code>, <code translate="no">_site.tmp</code>, <code translate="no">_site.old</code>, <code translate="no">_static_root</code>, <code translate="no">images</code>, <code translate="no">node_modules</code>. A leading underscore alone excludes nothing.</td></tr>
+</tbody>
+</table>
+
+<h2 id="build-and-serving">Build and serving</h2>
+<pre translate="no"><code>python -m scripts.docs_site.check --all
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.checklang
+python -m scripts.docs_site.check_landing</code></pre>
+<p class="note">Run from the repository root with the docs dependencies; the <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">contributor guide</a> lists the <code translate="no">uv run</code> form. <code translate="no">check</code> needs no build; <code translate="no">checklinks</code> reads built HTML, so build first. <code translate="no">checklang</code> scans default-language sources, not the pairing with Chinese.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Build</th><td>Regenerates CLI, config and provider reference pages, writes <code translate="no">docs/_site.tmp/</code>, then replaces the Git-ignored <code translate="no">docs/_site/</code>.</td></tr>
+<tr><th scope="row"><code translate="no">docs/_static_root/</code></th><td>Copied in, outside navigation and search; <code translate="no">{{SITE_URL}}</code> in its text files becomes the <a href="../distribution/github-publishing.html#website">site address</a>. <code translate="no">.github/workflows/docs-pages.yml</code> moves root files (<code translate="no">robots.txt</code>, <code translate="no">sitemap.xml</code>, <code translate="no">llms.txt</code>, Search Console proof, IndexNow key, and <code translate="no">CNAME</code> when the build writes one for a custom domain) to the site root and checks the proof's contents. The generated <code translate="no">sitemap.xml</code> is the only sitemap.</td></tr>
+<tr><th scope="row">Source checkout</th><td>Serves its <code translate="no">docs/_site/</code>. The worker checks for a rebuild when registering routes; HTTP reads never scan or rebuild. No watch mode.</td></tr>
+<tr><th scope="row">Installed runtime</th><td>Serves the bundle under the Server's <code translate="no">_frontend/docs/</code>. Rebuilding another checkout does not update it: compare the served page before claiming acceptance.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="design-alternatives">Design alternatives</summary>
+<p>The in-repository Python renderer keeps native HTML, SVG and script content and fits the single-port worker. It uses <code translate="no">markdown-it-py</code>, <code translate="no">mdit-py-plugins</code> and Pygments, with no client framework, editor or CMS. This compares against this project's needs, not current external products.</p>
+<table class="stack">
+<thead><tr><th scope="col">Consideration</th><th scope="col">Python renderer</th><th scope="col">VitePress</th><th scope="col">MkDocs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Native visual documents</th><td>Kept as fragments or independent pages</td><td>Component and layout integration to evaluate</td><td>Raw-HTML and theme integration to evaluate</td></tr>
+<tr><th scope="row">Navigation, search</th><td>Maintained here</td><td>Built-in, to evaluate</td><td>Built-in, to evaluate</td></tr>
+<tr><th scope="row">Toolchain</th><td>Python, static browser assets</td><td>Additional Node build</td><td>Python build and theme configuration</td></tr>
+<tr><th scope="row">Maintenance</th><td>Project owns layout, navigation, accessibility</td><td>Framework configuration and upgrades</td><td>Framework, theme configuration and upgrades</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="reader-navigation">Reader navigation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Layout</th><td>Category tabs above grouped page navigation, central reading column, section index. Narrow: page index becomes a drawer; section index sits behind an expandable reading-progress control.</td></tr>
+<tr><th scope="row">Indicator</th><td>One continuous dashed line from the first row to the selected row, rounded at the label center; height changes within a group. Hover and focus preview a separate neutral indicator. Focus is a text underline and subtle row background. Filtering, wrapping, language and resize recompute geometry.</td></tr>
+<tr><th scope="row">Progress</th><td>Tracks the active heading in the current scroll container. The disclosure exposes real anchors; choosing one closes it and moves there; Escape and outside clicks dismiss. SPA navigation rebuilds references. Fullscreen uses the content scroller. Hidden for standalone iframes. Reduced motion disables animated scrolling.</td></tr>
+<tr><th scope="row">Code blocks</th><td>Language header and an always available copy button outside horizontal overflow. Copies code text only and reports success or failure. Authored copy controls stay.</td></tr>
+<tr><th scope="row">Root overview</th><td>Explicit English and Chinese labels, not filename-derived.</td></tr>
+<tr><th scope="row">Dependencies</th><td>No external runtime requests.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Interaction references and acceptance</summary>
+<p><a href="https://www.rareui.com/components/hooksidebar">Rare UI Hook Sidebar</a>, <a href="https://www.rareui.com/components/scrollprogressindicator">Scroll Progress</a> and <a href="https://www.rareui.com/components/codeblock">Code Block</a> inform an independent implementation in the static assets. No Rare UI source or React dependency is included; reusing component source has separate licensing requirements. Decorative orb, proximity scaling and gooey navigation are excluded because stable text targets matter for reading.</p>
+<p>Acceptance: deep links, category and page changes, browser history, language switching, keyboard dismissal, code copying, long and short articles, fullscreen, phone overflow, iframe isolation.</p>
+</details>
+
+<h2 id="design-information-architecture">Design information architecture</h2>
+<p>Three levels: area, module, page. Seven areas: architecture, agents and workflows, context and memory, interfaces, models and external connections, security and engineering, supporting material. The landing page uses the same seven. Architecture lists entry pages directly.</p>
+<ul>
+<li>Each page belongs to one module. Loading or navigating to a page expands its ancestors.</li>
+<li>Filtering matches page and category names, keeps matching ancestors open; clearing restores the prior state at every level. Native details and summary give keyboard operation.</li>
+<li>New pages appear in an Uncategorized area.</li>
+<li>Both languages share hierarchy, order and output mapping.</li>
+<li>Prototypes, implementation records and research stay distinct under Supporting material and do not imply implemented behavior.</li>
+</ul>
+<details>
+<summary>Sidebar hierarchy and acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Label size</th><td>Area 13px, module 12px, page 13px</td></tr>
+<tr><th scope="row">Layout</th><td>Modules indent 12px only; pages align and wrap naturally</td></tr>
+<tr><th scope="row">Counts</th><td>Area level only</td></tr>
+<tr><th scope="row">Selection</th><td>Continuous indicator and accent text, no background fill</td></tr>
+<tr><th scope="row">Hover</th><td>Stays transparent</td></tr>
+<tr><th scope="row">Keyboard focus</th><td>A separate inset ring; no underline on multiline labels</td></tr>
+<tr><th scope="row">Borders</th><td>No redundant vertical borders</td></tr>
+<tr><th scope="row">Scope</th><td>Design navigation only, in both themes and on narrow screens</td></tr>
+</tbody>
+</table>
+<p>Acceptance: complete unique membership, seven top-level entries, ancestor expansion, filter restoration, bilingual and phone behavior, compatibility with other tabs.</p>
+</details>
+
+<h2 id="canonical-documents">Canonical documents and stable URLs</h2>
+<ul>
+<li>One topic, one maintained source. A merge keeps unique diagrams, constraints, status and evidence, and every retired heading as an anchor. Rationale and model-selection analysis sit beside the design contract; usage guides and API references stay separate.</li>
+<li>Filenames are descriptive lowercase hyphenated words, with no dates, TODO or PROBLEM prefixes. Deferred proposals state it in the title.</li>
+<li>Inside a subsystem directory, names and titles omit the subsystem: <code translate="no">context/statistics.html</code>, <code translate="no">memory/editor.html</code>, <code translate="no">runtime/dag/layout.html</code>. Established terms stay when dropping a word changes meaning. A diagram qualifier is used when a text page already owns the shorter name.</li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Redirect aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td><code translate="no">docs/redirects.json</code>, retired output paths to canonical pages, including standalone raw and companion URLs</td></tr>
+<tr><th scope="row">Output</th><td>Redirect-only HTML outside navigation, search and sitemap; query strings and fragments kept</td></tr>
+<tr><th scope="row">Execution</th><td>Same-origin <code translate="no">redirect.js</code> under the worker's CSP; no inline scripts. SPA navigation does a full load, reloading when history already selected that URL</td></tr>
+<tr><th scope="row">Validity</th><td>Targets exist; aliases never replace real pages or point to another alias, or the atomic build aborts. Old aliases flatten to the latest output. Language-specific URLs keep their language when a counterpart exists</td></tr>
+</tbody>
+</table>
+<p class="note">Acceptance: each surviving source discovered once, every old URL resolves directly, unique content retained, links and language pass, navigation and redirects verified on the default local mount. Consolidation does not certify deferred designs.</p>
+
+<h2 id="language-consistency">Language consistency</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authored documents</th><td>Full English and Chinese bodies, including diagrams, code, identifiers, links and status boundaries</td></tr>
+<tr><th scope="row">Headings, visible diagram labels</th><td>Follow the document language</td></tr>
+<tr><th scope="row">Sidebar, breadcrumbs, previous/next, search</th><td>Localized title and destination</td></tr>
+<tr><th scope="row">Language checks</th><td>Cover design notes, HTML, SVG and accessible labels, keeping technical identifiers and compatibility anchors; interactive pages also check script-generated text</td></tr>
+<tr><th scope="row">Feature matrix</th><td>Both versions use the same numeric, detail-row and chart-consistency checks</td></tr>
+</tbody>
+</table>
+
+<h2 id="navigation-names">Navigation names</h2>
+<dl class="pairs">
+<dt>Form</dt><dd>Short noun phrases, separate from the full heading, in sentence case keeping proper nouns and acronyms</dd>
+<dt>English</dt><dd>Prefer two or three words; one if unambiguous; at most four words and 26 characters</dd>
+<dt>Chinese</dt><dd>At most 12 characters</dd>
+<dt>Removed</dt><dd>Product or parent prefixes, completeness claims, code signatures, parentheticals</dd>
+<dt>Modifiers</dt><dd>Diagram, comparison, prototype, used consistently</dd>
+<dt>Uniqueness</dt><dd>Within the same leaf section</dd>
+<dt>Source</dt><dd>One bilingual catalogue, <code translate="no">page_titles.json</code>, keyed by canonical source path, supplies navigation, breadcrumbs, search and previous/next. Generated reference names stay code-derived</dd>
+<dt>Check</dt><dd>Labels fit the sidebar without clipping or ellipsis; bodies, URLs, anchors and hierarchy unchanged</dd>
+</dl>
+
+<h2 id="documentation-completeness">Documentation completeness</h2>
+<p>The repository README, with a Chinese counterpart of the same structure, introduces the project, verified entry commands, examples and citation. The docs homepage directs to the nine tabs rather than repeating it. Reference overviews link to task guides and generated details.</p>
+<p>Reference generation emits English and Chinese pairs from the same argparse tree, settings schema and provider manifests; names, flags, keys, defaults and protocol values stay exact.</p>
+<ul>
+<li>A source-string catalogue (<code translate="no">reference_zh.json</code>) supplies Chinese; a missing translation fails generation.</li>
+<li>Both languages traverse every command depth with the same options, and write only when content changes. Removed command pages go in both.</li>
+<li>Reads schema defaults, never user configuration; no credentials.</li>
+<li>Generators finish before discovery; failure aborts the build.</li>
+</ul>
+<p class="note">Acceptance: all reference pairs, recursive option parity, missing-translation failure, idempotence, stale-page removal, homepage language links, short names, links, language checks, visible language switching on the default local instance.</p>
+
+<h2 id="theme-preference">Theme preference</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Preferences</th><td>System, light, dark, in <code translate="no">op-docs-theme</code>. Missing or invalid values resolve to system</td></tr>
+<tr><th scope="row">System</th><td>Follows <code translate="no">prefers-color-scheme</code> live</td></tr>
+<tr><th scope="row">Cross-tab</th><td>A storage event updates the preference without writing it back</td></tr>
+<tr><th scope="row">Storage failure</th><td>In-memory controls and system following keep working</td></tr>
+<tr><th scope="row">First paint</th><td>Synchronous same-origin <code translate="no">theme.js</code> in the head applies palette, <code translate="no">color-scheme</code> and syntax styles before the body parses; replaces an inline bootstrap the <code translate="no">script-src 'self'</code> policy rejects</td></tr>
+<tr><th scope="row">Controller</th><td>Owns state, media listeners and the accessible, localized three-option menu; survives SPA navigation; dispatches <code translate="no">documentThemeChange</code> on the window</td></tr>
+<tr><th scope="row">Boundary</th><td>Does not change standalone iframes, which do not receive the event, or the operating system appearance</td></tr>
+</tbody>
+</table>
+<p class="note">Acceptance: first load in both palettes, live system change, overrides and return to system, invalid values, unavailable storage, cross-tab, menu keyboard and language, code colors, SPA navigation. Browser media emulation is restored afterwards.</p>
+
+<h2 id="toc-hierarchy">Heading hierarchy</h2>
+<ul>
+<li>A page with no on-page contents hides the empty column and gives it to the article; the fullscreen control stays at the right edge; SPA navigation updates this.</li>
+<li>Nested lists cover h2 through h6. Each heading belongs to the nearest preceding shallower heading; skipped levels make no empty groups. Order, labels and anchors are unchanged.</li>
+<li>Each group has its own indented dashed guide. The selected heading and ancestor path get group-owned indicators; no line spans unrelated depths. Neutral child guides show structure before a child is selected.</li>
+<li>Headings with children use the sidebar's details/summary chevron, which toggles only that subtree; the link still navigates. Leaves have no chevron and keep curved guide endpoints. Groups start expanded and scrolling respects user collapse; a collapsed active descendant marks its parent path, tracking the nearest visible ancestor. No row boxes on hover or selection.</li>
+<li>Endpoints use actual wrapped rows. Previews stay within the sibling group. One <code translate="no">aria-current</code> location. Resize and SPA changes recompute geometry and dispose old observers.</li>
+</ul>
+<p class="note">Acceptance: multiple parent groups, skipped levels, deep headings, wrapped rows, active ancestors, hover, resizing, SPA navigation.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">State</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTML document, generated Markdown and prototype rendering</th><td>Implemented</td><td>Each path has its own layout responsibility</td></tr>
+<tr><th scope="row">Bilingual routing, nine tabs</th><td>Implemented</td><td>Pairing does not translate the body</td></tr>
+<tr><th scope="row">Atomic build, packaged serving</th><td>Implemented</td><td>A successful build does not update an installed bundle</td></tr>
+<tr><th scope="row">Shared foundation</th><td>Applied to HTML document pages</td><td>Remaining standalone pages need individual review</td></tr>
+<tr><th scope="row">Frontmatter <code translate="no">scripts</code>, <code translate="no">styles</code> injection</th><td>Not implemented</td><td>Use supported HTML paths</td></tr>
+<tr><th scope="row">Continuous source watching</th><td>Not implemented</td><td>Rebuild explicitly</td></tr>
+</tbody>
+</table>

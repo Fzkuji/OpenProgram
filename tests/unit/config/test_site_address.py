@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 import pytest
 
 from openprogram.operations import project_site
-from scripts import retired_accounts
+from scripts.publishing import retired_accounts
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -38,7 +38,7 @@ ALLOWED = {
     # published image and changes with it.
     "docs/images/openprogram-social-card.svg",
     # A dotted name in a code sample about module names, not a link.
-    "tests/component/config/test_docs_governance_claims.py",
+    "tests/component/config/docs_site/test_docs_governance_claims.py",
     # This test.
     "tests/unit/config/test_site_address.py",
 }

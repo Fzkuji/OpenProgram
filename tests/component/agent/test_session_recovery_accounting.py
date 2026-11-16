@@ -7,7 +7,7 @@ from openprogram.runtime.agent.loop.session import AgentSession
 from openprogram.runtime.agent.runtime import Runtime
 from openprogram.models.providers.structured_output import StructuredOutputValidationError
 from openprogram.models.providers.types import AssistantMessage, EventDone, EventStart, TextContent, ToolCall
-from openprogram.models.providers.utils.recovery import current_recovery
+from openprogram.models.providers.utils.failures.recovery import current_recovery
 
 SCHEMA = {"type": "object", "properties": {"answer": {"type": "integer"}},
           "required": ["answer"], "additionalProperties": False}
@@ -151,7 +151,7 @@ def test_standalone_agent_session_retains_retry_behavior_without_enclosing_state
 @pytest.mark.parametrize("failures", [1, 3])
 def test_runtime_recovers_responses_reasoning_then_generation_error_without_tool_replay(failures):
     from openprogram.models.providers.shared.openai_responses import process_responses_stream
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
 
     calls, effects, observed = [], [], []
 

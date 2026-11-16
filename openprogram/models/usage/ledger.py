@@ -42,6 +42,7 @@ _COLUMNS = [
     "schema_version", "job_id", "budget_scope_id", "reservation_id",
     "request_id", "goal_id", "goal_revision", "goal_session_id", "execution_id", "tokens_known",
     "first_token_ms", "first_text_ms", "prefix_hash", "break_at", "break_cause", "expected",
+    "credential_id",
 ]
 
 _BOOTSTRAP_BUSY_TIMEOUT_MS = 2_000
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
     ,break_at INTEGER
     ,break_cause TEXT
     ,expected TEXT
+    ,credential_id TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_usage_ts       ON usage_events(ts);
 CREATE INDEX IF NOT EXISTS ix_usage_model_ts ON usage_events(model_id, ts);
@@ -212,6 +214,7 @@ _GROUP_EXPR = {
     "call_label": "call_label",
     "session_id": "session_id",
     "agent_id": "agent_id",
+    "credential_id": "credential_id",
     "day": "CAST(ts / 86400 AS INTEGER)",
     "hour": "CAST(ts / 3600 AS INTEGER)",
 }
@@ -439,7 +442,8 @@ class UsageLedger:
             }
             columns = {name: "TEXT" for name in (
                 "job_id", "budget_scope_id", "reservation_id", "request_id", "goal_id",
-                "goal_session_id", "execution_id", "prefix_hash", "break_cause", "expected")}
+                "goal_session_id", "execution_id", "prefix_hash", "break_cause", "expected",
+                "credential_id")}
             columns.update(goal_revision="INTEGER", tokens_known="INTEGER NOT NULL DEFAULT 1",
                            first_token_ms="INTEGER", first_text_ms="INTEGER", break_at="INTEGER")
             for name, definition in columns.items():
@@ -1055,6 +1059,18 @@ class UsageLedger:
                 "WHERE ts >= ? GROUP BY session_id, parent_session_id, provider, model_id "
                 "ORDER BY last_ts DESC",
                 (since,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def session_costs(self, session_id: str) -> list[dict]:
+        """Every priced provider call of a conversation: when, the execution
+        and Job it was charged to, and its cost in dollars."""
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute(
+                "SELECT ts, execution_id, job_id, cost_total AS cost FROM usage_events "
+                "WHERE session_id = ? AND cost_total IS NOT NULL",
+                (session_id,),
             ).fetchall()
         return [dict(r) for r in rows]
 

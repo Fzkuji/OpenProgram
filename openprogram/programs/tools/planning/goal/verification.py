@@ -28,8 +28,15 @@ def control_snapshot(goal) -> dict:
 
 
 def plan_snapshot(sid, goal) -> list:
-    return [{key: item.get(key) for key in ("id", "subject", "description", "status")}
+    """The Goal's steps as verification reads them. A dropped step stays in,
+    so dropping one changes the fingerprint and the verifier sees it."""
+    return [{key: item.get(key) for key in ("id", "subject", "description", "status", "result")}
             for item in chat.todos(sid, goal)]
+
+
+def _counted(plan: list) -> list:
+    """The steps that are requirements: every one that was not dropped."""
+    return [item for item in plan if item["status"] != "dropped"]
 
 
 def message_snapshot(row) -> dict:
@@ -67,9 +74,9 @@ def managed_work(store, sid, goal) -> list[dict]:
 
 
 def blockers(store, sid, execution_id, goal=None) -> str | None:
-    from openprogram.runtime.execution.chat_recovery import recovery_state
+    from openprogram.runtime.execution.recovery.chat_recovery import recovery_state
     from openprogram.runtime.execution.conversation_scope import conversation_executions
-    from openprogram.runtime.execution.effects import EffectStore
+    from openprogram.runtime.execution.recovery.effects import EffectStore
     from openprogram.runtime.execution.model import TERMINAL_EXECUTION_STATUSES
     observed = recovery_state(store, store.get_execution(execution_id))
     if not observed["can_start_new_turn"]:
@@ -94,12 +101,13 @@ def prepare(store, execution, goal) -> None:
     plan = plan_snapshot(sid, goal)
     fingerprint = digest(plan)
     requested = goal.get("completion_requested") == chat.identity(goal)
-    automatic = bool(plan) and all(item["status"] == "completed" for item in plan)
+    counted = _counted(plan)
+    automatic = bool(counted) and all(item["status"] == "completed" for item in counted)
     if not requested and (not automatic or goal.get("verified_plan") == fingerprint):
         return
     goal.pop("completion_requested", None)
-    if any(item["status"] != "completed" for item in plan):
-        goal["last_reason"] = "Completion deferred: the todo plan changed or is unfinished."
+    if any(item["status"] != "completed" for item in counted):
+        goal["last_reason"] = "Completion deferred: the task's steps changed or are unfinished."
         return
     reason = blockers(store, sid, execution.execution_id, goal)
     if reason:
@@ -114,7 +122,7 @@ def prepare(store, execution, goal) -> None:
     requirements = [{"id": "objective", "text": goal["text"]}]
     requirements.extend({"id": f"todo:{index}", "text": item["subject"],
                          "description": item.get("description")}
-                        for index, item in enumerate(plan))
+                        for index, item in enumerate(counted))
     goal["verification"] = {
         "id": uuid.uuid4().hex, "status": "pending", "control": control_snapshot(goal),
         "plan": plan, "previous_execution_id": execution.execution_id,
@@ -175,7 +183,9 @@ def instructions(sid, request) -> str:
         "these verification rules. Do not edit artifacts, run shell commands, create tasks, "
         "or call Goal controls. Inspect with the available read-only tools. "
         "Assess ALL clauses of the original objective, user corrections and every listed requirement; "
-        "todos cannot narrow the objective. A worker's success claim or checked todo is not proof. "
+        "task steps cannot narrow the objective. A worker's success claim or checked step is not proof. "
+        "A step with status dropped is not a requirement; it is listed so you can judge whether "
+        "dropping it left part of the objective undone. "
         "A stored test receipt only proves the tested version, not a subsequently changed artifact. "
         "Use runtime evidence IDs from the manifest or successful read results; never invent them. "
         "For mutable artifacts, re-read their current contents. If execution/testing/external querying "

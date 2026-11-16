@@ -121,7 +121,7 @@ def classify_memory_write_failure(
     exc: BaseException,
 ) -> MemoryWriteFailureClassification:
     """Map a runtime exception to the closed memory-writer taxonomy."""
-    from openprogram.models.providers.utils.errors import ErrorReason, classify_error
+    from openprogram.models.providers.utils.failures.errors import ErrorReason, classify_error
 
     try:
         from .management.transaction import TransactionError

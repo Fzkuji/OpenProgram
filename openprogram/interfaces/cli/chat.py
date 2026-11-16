@@ -7,8 +7,8 @@ uses, so behaviour stays aligned.
 
 The bulk of this module's logic — banner inventory, slash-command
 handlers, per-turn exec — lives in this application's ``repl`` package and is
-re-exported here so existing call sites (``scripts/profile_startup.py``,
-``openprogram.operations.setup``, ``openprogram.interfaces.cli.commands.chat``, tests) keep
+re-exported here so existing call sites (``scripts/maintenance/profile_startup.py``,
+``openprogram.operations.setup``, ``openprogram.interfaces.cli.commands.conversations.chat``, tests) keep
 working unchanged.
 """
 from __future__ import annotations
@@ -97,12 +97,12 @@ def _print_oneshot_via_worker(endpoint, session_id: str, text: str, *,
     at once. A worker-side error prints to stderr and exits 1; a
     structured-output failure raises the matching ``StructuredOutputError``
     so the command exits with the same code as the in-process path.
-    ``run`` (a :class:`~openprogram.interfaces.cli.print_turn.PrintRun`)
+    ``run`` (a :class:`~openprogram.interfaces.cli.print_mode.print_turn.PrintRun`)
     records how the turn ended for the usage summary.
     """
     import json as _json
-    from openprogram.interfaces.cli import print_turn as _print_turn
-    from openprogram.interfaces.cli.worker_turn import (
+    from openprogram.interfaces.cli.print_mode import print_turn as _print_turn
+    from openprogram.interfaces.cli.print_mode.worker_turn import (
         WorkerTurnCancelled,
         WorkerTurnError,
         WorkerTurnStopped,
@@ -120,6 +120,12 @@ def _print_oneshot_via_worker(endpoint, session_id: str, text: str, *,
         if run is not None:
             run.worker_version = server.get("version")
         _version_warning(server)
+
+    def _on_notice(switch: dict) -> None:
+        # Another of the provider's credentials took over: one line on
+        # stderr (a stream carries it as a ``credential_switch`` event).
+        from openprogram.interfaces.cli.print_mode.print_events import credential_switch_line
+        print(f"[notice] {credential_switch_line(switch)}", file=sys.stderr)
 
     def _on_ack(ack: dict) -> None:
         # The mode the Worker admitted the turn with: ``--permission-mode``,
@@ -144,6 +150,7 @@ def _print_oneshot_via_worker(endpoint, session_id: str, text: str, *,
             # The usage and transcript files name the run's execution.
             on_execution=_on_execution,
             on_ack=_on_ack,
+            on_notice=_on_notice if stream is None else None,
             # The record names the Worker's version, whatever then happens.
             on_server=_on_server,
         )
@@ -236,12 +243,12 @@ def _compact(run, session_id: str, args: dict, *, endpoint=None, agent_id: str |
     here without one, as the Web UI's ``/compact`` does. Stopped, it reads
     as stopped (exit by signal); failed, exit 1."""
     import threading
-    from openprogram.interfaces.cli import print_turn as _print_turn
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.interfaces.cli.print_mode import print_turn as _print_turn
+    from openprogram.runtime.conversation.turn_admission import local_commands
 
     run.local_command = "compact"
     if endpoint is not None:
-        from openprogram.interfaces.cli.worker_turn import WorkerTurnError, compact_via_worker
+        from openprogram.interfaces.cli.print_mode.worker_turn import WorkerTurnError, compact_via_worker
         try:
             text = compact_via_worker(endpoint, session_id, **args)
         except KeyboardInterrupt:
@@ -312,7 +319,7 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
     """Run one ``--print`` turn in this process and print its reply.
 
     A slash command is taken as the Worker takes it
-    (``runtime/conversation/local_commands.py``): a registered command
+    (``runtime/conversation/turn_admission/local_commands.py``): a registered command
     answers here and no model turn runs; one that hands back text goes on
     with it; ``/task`` and ``/merge`` mark the turn; any other text, an
     unknown ``/name`` included, goes to the model as written.
@@ -324,9 +331,9 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
     no model chosen yet, the command says what to run and exits 1.
     """
     import json as _json
-    from openprogram.interfaces.cli import print_turn as _print_turn
+    from openprogram.interfaces.cli.print_mode import print_turn as _print_turn
     from openprogram.runtime.agent_registry.builtin_agents import ensure_default_agent
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.runtime.conversation.turn_admission import local_commands
 
     agent = ensure_default_agent()
     command = local_commands.resolve(text, session_id)
@@ -394,7 +401,7 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
         result = run.result
         code = getattr(result, "structured_error_code", None)
         if response_format is not None and code:
-            from openprogram.interfaces.cli.worker_turn import (
+            from openprogram.interfaces.cli.print_mode.worker_turn import (
                 WorkerTurnError,
                 structured_output_error,
             )
@@ -449,12 +456,11 @@ def _run_oneshot_held(session_id: str | None, text: str, *, new_session: bool,
                       permission_mode: str | None = None, continue_last: bool = False,
                       new_session_id: str | None = None, at: str | None = None,
                       no_project_binding: bool = False, no_web: bool = False) -> None:
-    from openprogram.interfaces.cli import print_events
-    from openprogram.interfaces.cli import print_turn as _print_turn
-    from openprogram.interfaces.cli.print_session import PrintSessionError, resolve_target
-    from openprogram.interfaces.cli.worker_turn import resolve_worker
-    from openprogram.models.providers.settings.env_api_keys import read_env_keys_in_this_process
-    from openprogram.runtime.conversation import local_commands
+    from openprogram.interfaces.cli.print_mode import print_events
+    from openprogram.interfaces.cli.print_mode import print_turn as _print_turn
+    from openprogram.interfaces.cli.print_mode.print_session import PrintSessionError, resolve_target
+    from openprogram.interfaces.cli.print_mode.worker_turn import resolve_worker
+    from openprogram.runtime.conversation.turn_admission import local_commands
 
     fmt = output_format or "text"
     run = _print_turn.PrintRun(session_id=session_id or "", model=model, effort=effort,
@@ -462,9 +468,6 @@ def _run_oneshot_held(session_id: str | None, text: str, *, new_session: bool,
                                output_format=fmt, no_web=no_web)
     stream = (print_events.Stream(partial=include_partial_messages)
               if fmt == "stream-json" else None)
-    # Without a stored key, the provider's standard variable serves this
-    # process; nothing is written to the credential store.
-    read_env_keys_in_this_process()
     try:
         with _print_turn.interrupt_on_terminate():
             try:
@@ -544,8 +547,8 @@ def _finish_output(run, stream, *, usage_file: str | None,
     """After the turn: the refused calls on stderr, the files, and the
     ``json`` record or the rest of the ``stream-json`` events on stdout."""
     import json as _json
-    from openprogram.interfaces.cli import print_events
-    from openprogram.interfaces.cli import print_turn as _print_turn
+    from openprogram.interfaces.cli.print_mode import print_events
+    from openprogram.interfaces.cli.print_mode import print_turn as _print_turn
 
     events: list = []
     if run.execution_id:

@@ -40,7 +40,7 @@ def test_package_spec_names_a_wheel_or_a_git_ref():
     wheel = "/installed-agent/openprogram/wheels/openprogram-1.1.1-py3-none-any.whl"
     assert commands.package_spec(wheel_path=wheel, git_ref=None) == wheel
     assert commands.package_spec(wheel_path=None, git_ref="v1.1.1") == (
-        "openprogram @ git+https://github.com/FuzzyKuji/OpenProgram@v1.1.1"
+        "openprogram @ git+https://github.com/Fzkuji/OpenProgram@v1.1.1"
     )
     assert commands.package_spec(
         wheel_path=None, git_ref="0123abc", git_url="https://example.test/op",
@@ -57,7 +57,7 @@ def test_an_uploaded_wheel_keeps_its_file_name():
 
 def test_install_uses_pinned_uv_and_a_managed_python_under_the_install_root():
     command = commands.install_command(
-        "openprogram @ git+https://github.com/FuzzyKuji/OpenProgram@v1.1.1",
+        "openprogram @ git+https://github.com/Fzkuji/OpenProgram@v1.1.1",
         uv_version="0.11.16", python_version="3.12",
     )
 
@@ -65,7 +65,7 @@ def test_install_uses_pinned_uv_and_a_managed_python_under_the_install_root():
     assert "UV_PYTHON_PREFERENCE=only-managed" in command
     assert ("tool install --python 3.12 "
             "--constraints /installed-agent/openprogram/wheels/constraints.txt "
-            "'openprogram @ git+https://github.com/FuzzyKuji/OpenProgram@v1.1.1'") in command
+            "'openprogram @ git+https://github.com/Fzkuji/OpenProgram@v1.1.1'") in command
     # The versions resolved are recorded for the trial's logs.
     assert ('pip freeze --python "$root/tools/openprogram/bin/python" '
             "> /installed-agent/openprogram/packages.txt") in command

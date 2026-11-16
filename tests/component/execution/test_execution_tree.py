@@ -6,8 +6,8 @@ it as; never another branch of the same conversation.
 """
 from __future__ import annotations
 
-from openprogram.runtime.execution import restart
-from openprogram.runtime.execution.execution_tree import (
+from openprogram.runtime.execution.recovery import restart
+from openprogram.runtime.execution.projections.execution_tree import (
     RESTART_REQUESTED,
     continuation_key,
     execution_tree,

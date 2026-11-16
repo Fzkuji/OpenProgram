@@ -70,8 +70,10 @@ class Runtime(HistoryOperations, QuestionsOperations, ExecutionOperations, Provi
                          up (tunable via ``OPENPROGRAM_RETRY_BACKOFF_BASE``).
                          Permanent errors (bad image, expired auth) are
                          not retried regardless of this value.
-            api_key:     Optional API key. If omitted, resolved from the
-                         provider's standard env var (OPENAI_API_KEY, etc).
+            api_key:     Optional API key sent as given. If omitted, each
+                         request uses the provider's credential list (keys,
+                         sign-ins, the provider's key variable), switching
+                         to the next when one is limited or refused.
             skills:      Skill discovery for the system prompt. Three shapes:
                          - None (default) or False → skills disabled
                          - True → the four external sources

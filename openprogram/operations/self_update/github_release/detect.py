@@ -25,7 +25,7 @@ class UpdateRoute(str, Enum):
     REINSTALL = "reinstall"
 
 
-INSTALL_GUIDE = "https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/install/install.html"
+INSTALL_GUIDE = "https://github.com/Fzkuji/OpenProgram/blob/main/docs/install/install.html"
 UPDATE_GUIDANCE = {
     UpdateRoute.DESKTOP_APP: (
         "This copy runs inside the desktop App, so the App updates it. "

@@ -20,7 +20,7 @@ from openprogram.models.providers.types import (
     ToolCall,
     UserMessage,
 )
-from openprogram.models.providers.utils import prefill, request_repair
+from openprogram.models.providers.utils.failures import prefill, request_repair
 
 REFUSAL = ("This model does not support assistant message prefill. "
            "The conversation must end with a user message.")

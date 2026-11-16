@@ -4,7 +4,7 @@ set -euo pipefail
 # Pack this checkout's Desktop shell into an app.asar, on top of an installed
 # archive: its node_modules (node-pty is native and is not rebuilt here) stay,
 # and every module apps/desktop/package.json build.files names is replaced.
-# scripts/refresh-local-app.sh uses it for the stable App; the development App
+# scripts/local-instances/refresh-local-app.sh uses it for the stable App; the development App
 # is built whole (scripts/release/build-desktop-shell.sh).
 #
 #   pack-desktop-archive.sh INSTALLED_ASAR STAGE_DIR OUTPUT_ASAR

@@ -29,7 +29,7 @@ def conversation_execution_scope(store: Any, session_id: str, *, consulted: set[
     collects the sessions whose graph was read, for callers that reuse the
     answer.
     """
-    from .job_input import JobAgentInputV1
+    from .admission_input.job_input import JobAgentInputV1
     from .store import ExecutionConflict
 
     store.tables.ensure_session(session_id)
@@ -159,7 +159,7 @@ def authorize_conversation_execution(
     session_id: str, bound_session: str | None = None,
 ):
     """Authorize through the caller conversation without changing the target identity."""
-    from .public import project_id_for_session
+    from .projections.public import project_id_for_session
 
     if (bound_session is not None and bound_session != session_id) or not any(
         item.execution_id == execution.execution_id and item.session_id == execution.session_id

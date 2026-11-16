@@ -68,9 +68,9 @@ def test_stopping_conditions(overrides, reason) -> None:
 @pytest.mark.parametrize("path", [
     "pyproject.toml", "apps/web/package.json", "uv.lock",
     "setup.py",
-    "openprogram/runtime/permissions/approval.py",
-    "openprogram/runtime/permissions/state.py", "openprogram/runtime/permissions/classifier.py", "openprogram/runtime/permissions/policy.py",
-    "openprogram/runtime/permissions/lifecycle.py", "openprogram/runtime/permissions/__init__.py", "openprogram/runtime/permissions/authority.py",
+    "openprogram/runtime/permissions/approvals/approval.py",
+    "openprogram/runtime/permissions/state.py", "openprogram/runtime/permissions/auto_mode/classifier.py", "openprogram/runtime/permissions/policy.py",
+    "openprogram/runtime/permissions/approvals/lifecycle.py", "openprogram/runtime/permissions/__init__.py", "openprogram/runtime/permissions/authority.py",
     "openprogram/runtime/conversation/turn_runtime/__init__.py", "openprogram/runtime/conversation/turn_runtime/loop_runner.py",
     "openprogram/runtime/agent/loop/loop.py", "openprogram/runtime/conversation/model_tools.py",
     "openprogram/programs/__init__.py",

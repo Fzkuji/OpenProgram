@@ -479,7 +479,7 @@ def live_chat(root: Path) -> Iterator[LiveChat]:
     from openprogram.operations.worker import lock as worker_lock_module
     from openprogram.runtime.agent import questions
     from openprogram.runtime.context import session_db
-    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.conversation.session_settings import session_config
     from openprogram.runtime.conversation import turn_runtime as dispatcher
     from openprogram.runtime.conversation.production_driver import AgentProductionDriver
     from openprogram.runtime.conversation.turn_runtime import loop_runner
@@ -487,7 +487,7 @@ def live_chat(root: Path) -> Iterator[LiveChat]:
     from openprogram.runtime.execution import AttemptStore, ExecutionStore, RuntimeControlService
     from openprogram.runtime.execution.driver import DriverRegistry
     from openprogram.runtime.execution.event_effects import start_event_effects, stop_event_effects
-    from openprogram.state.store.session import session_log
+    from openprogram.state.store.session.files import session_log
     from openprogram.state.store.session import session_store as session_store_module
     from openprogram.state.store.session.session_store import SessionStore
 

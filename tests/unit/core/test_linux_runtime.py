@@ -178,7 +178,7 @@ def test_headless_browser_open_does_not_invoke_webbrowser(monkeypatch) -> None:
 def test_web_command_explicit_port_overrides_inherited_environment(
     monkeypatch,
 ) -> None:
-    from openprogram.interfaces.cli.commands import web
+    from openprogram.interfaces.cli.commands.services import web
     from openprogram.interfaces.cli import ink
     import openprogram.operations.worker
 

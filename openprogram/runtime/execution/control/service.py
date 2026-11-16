@@ -3,12 +3,12 @@ from __future__ import annotations
 from threading import RLock, Timer
 from typing import Any, Callable, Mapping
 from ..attempts import AttemptConflict, AttemptStore
-from ..checkpoints import ExecutionCheckpointStore
+from ..recovery.checkpoints import ExecutionCheckpointStore
 from ..driver import DriverRegistry, DriverRegistryConflict
-from ..effects import EffectStatus, EffectStore
+from ..recovery.effects import EffectStatus, EffectStore
 from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord, ExecutionStatus, TERMINAL_EXECUTION_STATUSES
 from ..store import CommandConflict, ExecutionStore
-from ..state_blobs import ExecutionStateBlobStore
+from ..recovery.state_blobs import ExecutionStateBlobStore
 
 from .shared import (
     Activator,

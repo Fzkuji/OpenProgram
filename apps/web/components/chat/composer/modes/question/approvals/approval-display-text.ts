@@ -24,7 +24,7 @@ export function approvalDisplayText(
 ): { prompt: string; summary: string } {
   if (!escalation) {
     // The Worker words a tool approval one way, in Chinese
-    // (permissions/approval.py); the card says it in the reader's language.
+    // (permissions/approvals/approval.py); the card says it in the reader's language.
     const worded = tool && prompt === `允许执行 ${tool}？`
       ? text(COMMAND_TOOLS.includes(tool) ? "Run this command?" : `Run ${tool}?`, prompt)
       : prompt;

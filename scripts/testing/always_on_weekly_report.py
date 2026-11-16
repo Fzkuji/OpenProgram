@@ -17,8 +17,8 @@ import time
 from typing import Any
 
 from openprogram.state.store.project.layout import DEFAULT_PROJECT_ID, memory_dir
-from openprogram.state.store.session.session_log import SessionLog
-from openprogram.state.store.session.session_state_file import read_files
+from openprogram.state.store.session.files.session_log import SessionLog
+from openprogram.state.store.session.files.session_state_file import read_files
 
 WEEK_SECONDS = 7 * 24 * 3600
 HOUR_SECONDS = 3600

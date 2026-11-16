@@ -7,7 +7,7 @@ from threading import RLock
 from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
 
 from .attempts import AttemptRecord
-from .checkpoints import CheckpointManifest
+from .recovery.checkpoints import CheckpointManifest
 from .model import CapabilitySet
 from .model import _freeze_json
 

@@ -12,7 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path) => readFileSync(join(root, path), "utf8");
 
 test("every components/ui part names radix-nova, none another style", () => {
-  for (const part of ["command", "popover", "tooltip", "tabs", "kbd", "sidebar", "dialog", "alert-dialog", "breadcrumb", "context-menu", "dropdown-menu"]) {
+  for (const part of ["command", "popover", "tooltip", "tabs", "kbd", "sidebar", "dialog", "alert-dialog", "breadcrumb", "context-menu", "dropdown-menu", "collapsible", "progress"]) {
     const source = read(`components/ui/${part}.tsx`);
     assert.match(source, /radix-nova/, part);
     assert.doesNotMatch(source, /radix-(rhea|luma)/, part);
@@ -83,6 +83,11 @@ const TSX_EXEMPT = new Set([
   "components/sidebar/sessions/sessions-list.tsx h-[24px]", // group header row
   "components/agents/agent-overview.tsx size-[32px]", // Agent avatar tile
   "components/right-sidebar/running/running-panel.tsx size-[22px]", // Agent avatar tile
+  "components/right-sidebar/running/agent-roster.tsx h-[20px]", // one text line of an agent row
+  "components/right-sidebar/running/pages/activity-page-row.tsx size-[22px]", // a row's glyph tile
+  "components/right-sidebar/running/pages/activity-page.tsx h-9", // an Activity page's top line
+  "components/right-sidebar/running/pages/agent-page.tsx h-9", // an Agent page's top line
+  "components/right-sidebar/running/agent-chart/agent-chart.tsx h-9", // the time chart's "more" line
 ]);
 const OWN_SIZES = new Set(["button.tsx", "toggle.tsx", "input.tsx", "select.tsx"].map((name) => `components/ui/${name}`));
 
@@ -116,4 +121,23 @@ test("cn knows every text-fs-* size, so it keeps the text colour beside one", ()
   assert.ok(steps.length > 5);
   const utils = read("lib/utils.ts");
   for (const step of steps) assert.match(utils, new RegExp(`"${step}"`), step);
+});
+
+// The provider settings are built from the kit: a click target is the kit's
+// Button (or a kit part's asChild slot), never a hand-written <button>.
+test("provider settings use the kit's Button, not hand-written buttons", () => {
+  const offenders = [];
+  const walk = function* (dir) {
+    for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) yield* walk(rel);
+      else if (entry.name.endsWith(".tsx")) yield rel;
+    }
+  };
+  for (const file of walk("components/settings/providers")) {
+    read(file).split("\n").forEach((line, i) => {
+      if (/<button\b/.test(line) && !/asChild>\s*<button\b/.test(line)) offenders.push(`${file}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, []);
 });

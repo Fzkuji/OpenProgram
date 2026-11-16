@@ -13,7 +13,7 @@ one backend hiccup into a long doomed retry storm that still crashed the
 run.
 """
 from openprogram.runtime.agent.runtime import _is_permanent_error
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
 
 def test_retryable_false_is_permanent():

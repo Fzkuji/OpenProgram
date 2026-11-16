@@ -515,7 +515,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/files/</code></th><td>根授权、列表、搜索、读取、修改；校验 id 和快照</td><td>Review 计算、浏览器缓存</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/turn_files/</code></th><td>Review 范围、筛选分页、绑定快照的差异</td><td>项目搜索</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/revert.py</code>、<code translate="no">rewind.py</code></th><td>单轮和多轮事务</td><td>Git reset 或 revert；它们有单独入口</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/rewinds/revert.py</code>、<code translate="no">rewind.py</code></th><td>单轮和多轮事务</td><td>Git reset 或 revert；它们有单独入口</td></tr>
 <tr><th scope="row"><code translate="no">apps/web/lib/net/ws/ws-request.ts</code></th><td>请求 id、待处理表、超时、响应校验</td><td>按类型匹配</td></tr>
 <tr><th scope="row"><code translate="no">apps/web/lib/files/files-shared.ts</code></th><td>有界读取缓存、草稿、失效</td><td>Review 分页、socket 监听</td></tr>
 <tr><th scope="row"><code translate="no">FileTree</code>、<code translate="no">FilesPage</code></th><td>服务端分页和搜索结果</td><td>把已加载节点当搜索</td></tr>
@@ -548,8 +548,8 @@
 <thead><tr><th scope="col">领域</th><th scope="col">边界</th><th scope="col">通过公开入口必须成立</th><th scope="col">不含</th></tr></thead>
 <tbody>
 <tr><th scope="row">日志</th><td><code translate="no">programs/tools/files/</code>、轮次收尾、检查点存储</td><td>超过 5 MiB 的已有文件首次编辑不算新建；被忽略的 Bash 日志不进入；失败的编辑没有回执</td><td>Review 界面、用户 Git</td></tr>
-<tr><th scope="row">Undo、Revert</th><td><code translate="no">conversation/revert.py</code>、工作区锁、意图</td><td>后续同文件修改：零写入。摘要不一致不删除。中途 I/O 绝不部分成功。</td><td>多轮 HEAD 移动</td></tr>
-<tr><th scope="row">Rewind</th><td><code translate="no">conversation/rewind.py</code>、head API、意图恢复</td><td>一个文件跨三轮；文件失败保留 HEAD；兄弟分支不受影响；过期计划不写入</td><td>压缩、DAG schema</td></tr>
+<tr><th scope="row">Undo、Revert</th><td><code translate="no">conversation/rewinds/revert.py</code>、工作区锁、意图</td><td>后续同文件修改：零写入。摘要不一致不删除。中途 I/O 绝不部分成功。</td><td>多轮 HEAD 移动</td></tr>
+<tr><th scope="row">Rewind</th><td><code translate="no">conversation/rewinds/rewind.py</code>、head API、意图恢复</td><td>一个文件跨三轮；文件失败保留 HEAD；兄弟分支不受影响；过期计划不写入</td><td>压缩、DAG schema</td></tr>
 <tr><th scope="row">Review</th><td><code translate="no">turn_files/</code>、元数据、中心标签、卡片</td><td>历史不逐消息查询；工作区排除被忽略文件；只挂载一个有界差异；来源一致。普通回复不挂卡片；空结果隐藏；失败可重试。</td><td>第三栏、新窗口</td></tr>
 <tr><th scope="row">共享工作区、归属</th><td>切换、活动谱系折叠、归属</td><td>切换后可正常处理当前文件，编辑前重新读取。运行中的所属子任务阻止父级恢复；结束的纳入。同伴和 worktree 不动。</td><td>工作区克隆</td></tr>
 <tr><th scope="row">查询快照</th><td><code translate="no">files/</code> 查询、<code translate="no">FileTree</code></td><td>搜索能找到未展开的文件。第一页后的目录变化不进入旧游标；拒绝跨项目游标。并发创建或重命名后按稳定顺序重来。</td><td>全文搜索、布局</td></tr>

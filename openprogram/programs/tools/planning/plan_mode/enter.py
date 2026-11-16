@@ -18,7 +18,7 @@ The plan is a tool argument rather than a file.
 from __future__ import annotations
 
 from openprogram.programs._host.runtime import function
-from openprogram.runtime.conversation import plan_mode as _pm
+from openprogram.runtime.conversation.session_settings import plan_mode as _pm
 
 
 _DESCRIPTION = """Switch this conversation into plan mode, where you investigate and agree an approach with the user before changing anything.

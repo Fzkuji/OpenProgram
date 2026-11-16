@@ -3,10 +3,10 @@ from __future__ import annotations
 import inspect
 from typing import Any, Mapping
 from ..attempts import AttemptConflict, AttemptStatus
-from ..checkpoints import CheckpointFragment
+from ..recovery.checkpoints import CheckpointFragment
 from ..model import CommandKind, ExecutionRecord, ExecutionStatus
 from ..store import ExecutionConflict
-from ..safe_points import AgentSafePointConflict
+from ..recovery.safe_points import AgentSafePointConflict
 
 from .shared import (
     ControlDispatch,

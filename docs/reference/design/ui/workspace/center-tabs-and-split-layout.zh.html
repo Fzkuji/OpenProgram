@@ -127,6 +127,7 @@
 <tr><th scope="row">分屏路径不调 <code translate="no">pipOpenMustFork</code></th><td>只检查 agent 所有权，并改写组内网页窗格的 URL。</td></tr>
 <tr><th scope="row"><code translate="no">show</code> 不解组</th><td>别组里的叶子绑定成预览时仍是组成员。</td></tr>
 <tr><th scope="row">区域定义不一致</th><td><code translate="no">surfaceRefForChat</code> 把未分组页面标为 <code translate="no">right</code>，<code translate="no">browserPageInventory</code> 标为 <code translate="no">center</code>。</td></tr>
+<tr><th scope="row">浏览器窗口共用一份布局</th><td>桌面 App 之外没有窗口 id：同源的每个浏览器窗口都存到 <code translate="no">centerTabs</code>。已打开的窗口保持自己的布局，但刷新会取最后保存的那个窗口的。</td></tr>
 <tr><th scope="row">绑定不持久化</th><td>刷新丢失绑定、后台记录和位置，叶子回到普通 Tab，Resources 预览重新应用。</td></tr>
 </tbody>
 </table>
@@ -171,6 +172,7 @@
 <tr id="last-tab"><th scope="row">关闭最后一个 Tab</th><td>允许。窗口和条保留，内容空白，跨路由和刷新保持，不自动建草稿。会话所有的隐藏页留在 Resources，不作回退。关闭在规整分屏组后选可见邻居。</td></tr>
 <tr id="tab-release-resources"><th scope="row">按下与松开</th><td>按下用拖动的背景和模糊，不换页面。未拖动松开走普通点击；拖动、Esc、取消或失焦吞掉点击。焦点环保留。</td></tr>
 <tr><th scope="row">拖动外观</th><td>Tab 和窗格标签的拖动预览共用背景、backdrop-filter 和阴影变量。设置 → 通用：透明度 0–100%、模糊 0–40px、阴影 0–100%，实时预览，可恢复默认。默认 20%、16px、饱和度 1.2、原阴影透明度的 25%。文字和图标保持不透明。</td></tr>
+<tr><th scope="row">移出分组</th><td>只把这个 Tab 移出它的分屏；其余窗格继续并排，只剩一个窗格的分屏自行解散。别的分屏不受影响。</td></tr>
 <tr><th scope="row">新窗口提示</th><td>留在条内、原生页面边界之上：渲染层内容无法盖在 Electron 子视图上。</td></tr>
 <tr><th scope="row">把网页拖到 Resources</th><td>单个网页 Tab 松手时把这个 Page 附到当前可见会话。目标：Resources 导航行，展开时还有其正文，绝不合并成一个矩形。一道与目标外框等大的边框，不模糊内容。组、草稿和其他类型不能作来源或目标。</td></tr>
 </tbody>
@@ -183,6 +185,19 @@
 <li>偏好存本地存储并规整；预绘制主题脚本在 hydrate 前应用；storage 事件同步同源窗口。换主题保留。无效字段用默认，数值夹紧，零表示关闭。普通按钮和 Resources 轮廓不受影响。条内拖动排序，条外沿用窗口转移。</li>
 </ul>
 </details>
+
+<h2 id="per-window">什么属于一个窗口</h2>
+<p>窗口的布局归它自己。一个窗口对 Tab 和分屏做的任何事，都到不了别的窗口。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab、分屏、窗格大小、聚焦的 Tab、后退/前进</th><td>每个窗口一份，存在 <code translate="no">centerTabs:&lt;窗口 id&gt;</code>。窗口只读自己的键，也不监听别的窗口的写入，所以打开、关闭、调整或更改分屏都只留在这个窗口。</td></tr>
+<tr><th scope="row">新窗口</th><td>只带移进来的 Tab，没有自己的分屏，不继承任何布局。</td></tr>
+<tr><th scope="row">重启</th><td>退出时开着的每个窗口用原来的 id 回来（<code translate="no">session-windows.js</code>），恢复各自的布局。</td></tr>
+<tr><th scope="row">未发送的输入</th><td>每个窗口一份，和布局一样按窗口 id 保存。</td></tr>
+<tr><th scope="row">有意共享</th><td>这台设备的偏好：左侧栏是否展开，右侧面板是否展开、它的视图和宽度，折叠的项目。窗口加载时读取；改动不会移动已打开的窗口。外观偏好跟随 storage 事件，所有窗口同时变。</td></tr>
+</tbody>
+</table>
 
 <h2 id="conversation-file-preview">会话文件预览</h2>
 <p>聊天在左、文档在右，复用 Tab 组和 <code translate="no">DocumentWindow</code>。</p>

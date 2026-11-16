@@ -126,7 +126,7 @@ def _apply_add(path: str, body: list[str]) -> str:
     content = _add_content(body)
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.runtime.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.approvals.file_state import write_checked
         write_checked(path, content)
     except Exception as exc:
         if prepared:
@@ -150,7 +150,7 @@ def _apply_delete(path: str) -> str:
         return f"Error: Delete File target not found: {path}"
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.runtime.permissions.file_state import check_current
+        from openprogram.runtime.permissions.approvals.file_state import check_current
         check_current(path)
         os.remove(path)
     except Exception as exc:
@@ -261,7 +261,7 @@ def _apply_update(path: str, body: list[str]) -> str:
 
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.runtime.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.approvals.file_state import write_checked
         write_checked(path, text)
     except Exception as exc:
         if prepared:

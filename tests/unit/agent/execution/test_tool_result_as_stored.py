@@ -60,7 +60,7 @@ def test_images_keep_their_place_and_a_single_block_is_left_alone():
 
 def test_a_tool_search_result_is_bounded_and_keeps_its_load_record(monkeypatch, tmp_path):
     import openprogram.programs._host.runtime as host_runtime
-    from openprogram.state.store.session.spill import result_cap
+    from openprogram.state.store.session.files.spill import result_cap
 
     saved = {}
 

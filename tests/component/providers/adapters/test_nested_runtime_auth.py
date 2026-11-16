@@ -9,33 +9,40 @@ import pytest
 from openprogram.runtime.agent.runtime import Runtime
 from openprogram.models.auth.types import Credential, CredentialData
 from openprogram.models.providers.types import Model
-from openprogram.models.providers.utils.errors import ErrorReason, LLMError
-from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
+from openprogram.models.providers.utils.streams.stream_retry import ProviderStreamError
 
 
-@pytest.mark.parametrize("profile", [None, "pinned-account"])
-def test_codex_runtime_uses_provider_active_account_unless_explicit(monkeypatch, profile):
-    from openprogram.models.auth.account import account_selection
+def test_codex_runtime_sends_the_chatgpt_backend_identity(monkeypatch, tmp_path):
+    # The runtime only needs a ChatGPT sign-in to exist; which one a request
+    # sends is the credential layer's choice, and the adapter sets the
+    # account header from that login's token.
+    from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
     from openprogram.models.providers.catalog import enabled_models, models
     from openprogram.runtime.agent.runtime import factory
     from openprogram.runtime.agent.provider_runtimes import openai_codex as codex
 
-    monkeypatch.setattr(account_selection, "_read", lambda: {"openai-codex": "active-account"})
-    calls = []
-    def acquire(provider, account):
-        calls.append((provider, account))
-        return Credential(provider_id=provider, account_id=account, kind="oauth",
-                          payload=CredentialData(kind="oauth", auth_value="fake-token"),
-                          metadata={"account_id": "fake-chatgpt-account"})
-    monkeypatch.setattr(codex, "get_credential_provider", lambda: SimpleNamespace(acquire_sync=acquire))
+    store = AuthStore(root=tmp_path / "store")
+    set_store_for_testing(store)
+    set_credential_provider_for_testing(CredentialProvider(store=store))
+    store.add_credential(Credential(provider_id="openai-codex", kind="oauth",
+                                    payload=CredentialData(kind="oauth", auth_value="fake-token",
+                                                           data={"refresh_token": "r",
+                                                                 "expires_at_ms": 2**42})))
     monkeypatch.setattr(codex, "codex_client_version", lambda: "0.153.4")
     model = Model(id="test-model", name="Test", provider="openai-codex", api="openai-codex",
                   base_url="https://example.invalid")
     monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {"openai-codex/test-model": model})
     monkeypatch.setattr(models, "ENABLED_MODELS", {"openai-codex/test-model": model})
-    with factory.create_runtime(provider="openai-codex", model="test-model", profile=profile) as runtime:
-        assert calls == [("openai-codex", profile or "active-account")]
-        assert runtime.api_model.headers["chatgpt-account-id"] == "fake-chatgpt-account"
+    try:
+        with factory.create_runtime(provider="openai-codex", model="test-model") as runtime:
+            headers = runtime.api_model.headers
+            assert headers["originator"] == "codex_cli_rs" and headers["version"] == "0.153.4"
+            assert "chatgpt-account-id" not in headers
+    finally:
+        set_store_for_testing(None)
+        set_credential_provider_for_testing(None)
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -43,7 +50,7 @@ def test_codex_runtime_uses_provider_active_account_unless_explicit(monkeypatch,
                                          (ErrorReason.AUTHORIZATION, 403),
                                          (ErrorReason.UNKNOWN, None)])
 def test_runtime_preserves_nonretryable_provider_verdict(monkeypatch, asynchronous, reason, status):
-    from openprogram.models.providers.utils.event_stream import EventStream
+    from openprogram.models.providers.utils.streams.event_stream import EventStream
     from openprogram.runtime.agent.runtime import execution
 
     monkeypatch.setattr(execution, "_retry_sleep_seconds", lambda *_: 0)

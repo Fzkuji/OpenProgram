@@ -154,7 +154,7 @@ class TelegramChannel(Channel):
         )
 
         # Parse platform-native msg → ChannelMessage.
-        from openprogram.interfaces.channels._message import ChannelMessage
+        from openprogram.interfaces.channels.inbound._message import ChannelMessage
         from_user = msg.get("from", {}) or {}
         user_id = str(from_user.get("id") or "")
         user_name = " ".join(
@@ -202,7 +202,7 @@ class TelegramChannel(Channel):
     def _parse_attachments(msg: dict) -> tuple:
         """photo (取最大尺寸)、document 和音视频 → Attachment 元组. 下载时
         经 getFile 解析 URL (_attachments._resolve_telegram_file)."""
-        from openprogram.interfaces.channels._message import Attachment
+        from openprogram.interfaces.channels.inbound._message import Attachment
         out = []
         photos = msg.get("photo") or []
         if photos:

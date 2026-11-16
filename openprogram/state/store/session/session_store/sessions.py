@@ -362,14 +362,22 @@ class SessionsOperations:
         if pair is None:
             return
         session_log, idx = pair
-        from ..branch_config import BRANCH_CONFIG_FIELDS, BRANCH_UNSET, check_branch, sync_active_config, advance_branch
+        from ..branch_config import (
+            BRANCH_CONFIG_FIELDS, BRANCH_UNSET, advance_branch, behind_selected_tip,
+            check_branch, sync_active_config,
+        )
         expected_branch = fields.pop("expected_branch_id", BRANCH_UNSET)
+        # A turn recording its reply as the head when it ends: skipped when
+        # the branch has already carried on past that reply.
+        forward_only = bool(fields.pop("head_forward_only", False))
         with self._head_file_lock(session_log):
             meta = session_log.read_meta()
             check_branch(meta, expected_branch)
             clean = {k: v for k, v in fields.items() if v is not None}
             if "head_id" in clean:
-                advance_branch(meta, session_id, clean.pop("head_id"), idx.nodes_by_id)
+                target = clean.pop("head_id")
+                if not (forward_only and behind_selected_tip(meta, target, idx.nodes_by_id)):
+                    advance_branch(meta, session_id, target, idx.nodes_by_id)
             meta.update(clean)
             if any(key in clean for key in BRANCH_CONFIG_FIELDS):
                 sync_active_config(meta, session_id)

@@ -187,7 +187,7 @@ async def _send_session_loaded(ws, _s, cmd: dict, conv: dict, session_id, transc
 def _session_loaded_data(_s, cmd: dict, conv: dict, session_id, transcript: dict, head, spawned_branch, selection):
     """The ``session_loaded`` frame's data, ``run_task`` and ``refresh_context_after_load``."""
     from openprogram.runtime.context.session_db import default_db as _ddb
-    from openprogram.runtime.conversation.session_config import (
+    from openprogram.runtime.conversation.session_settings.session_config import (
         _config_from_row,
         permission_from_config,
         project_defaults,
@@ -274,7 +274,7 @@ def _running_task_snapshot(_s, session_id):
         # A reservation's release always sends the clear that names it, so
         # this client can hold it as its running task.
         slot_info = dict(task) if task else None
-    return _followup_seq, slot_info, _s._canonical_foreground_task(session_id) or slot_info
+    return _followup_seq, slot_info, _s._reported_run_task(session_id, slot_info)
 
 
 async def _send_running_task_state(ws, _s, session_id, _run_task) -> None:
@@ -556,7 +556,7 @@ async def _handle_load_session(ws, cmd: dict, end_parking) -> None:
     # continuation; canonical execution state must repair that projection
     # before messages are serialized for the client.
     try:
-        from openprogram.runtime.execution.dag import reconcile_session_projection
+        from openprogram.runtime.execution.projections.dag import reconcile_session_projection
         if not is_history_page:
             await _session_io(
                 reconcile_session_projection, session_id

@@ -227,7 +227,7 @@ class ProgramContext:
         ``layer`` is ``L0`` (constant), ``L1`` (session) or ``L2`` (this
         call); ``order`` sorts it within the layer.
         """
-        from openprogram.runtime.context import components
+        from openprogram.runtime.context.prompt_assembly import components
         if layer not in ("L0", "L1", "L2"):
             raise ValueError("layer must be L0, L1 or L2")
         full = f"{self.owner}:{name}"

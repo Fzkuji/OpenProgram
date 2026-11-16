@@ -265,8 +265,60 @@ class BlockViewsMixin:
                     )
         return units
 
+    def _moved_topics(self, units: list[Any]) -> dict[str, str]:
+        """Topic files this write moved, old path to new (under
+        ``topics/``): the ones moved byte for byte, and the ones whose
+        every block ID now sits in one file the tree did not have."""
+        moved = {
+            old: new for new, old in getattr(self, "_renames", {}).items()
+        }
+        before: dict[str, set[str]] = {}
+        for unit in self._committed_units():
+            if not unit.derived_id:
+                before.setdefault(unit.topic_path, set()).add(unit.memory_id)
+        after: dict[str, set[str]] = {}
+        for unit in units:
+            if not unit.derived_id:
+                after.setdefault(unit.topic_path, set()).add(unit.memory_id)
+        holder = {
+            memory_id: path for path, ids in after.items() for memory_id in ids
+        }
+        topics = self.stage_dir / "topics"
+        for old, ids in before.items():
+            if old in moved or (topics / old).exists():
+                continue
+            homes = {holder.get(memory_id) for memory_id in ids}
+            new = next(iter(homes)) if len(homes) == 1 else None
+            if new and new not in before and new not in moved.values():
+                moved[old] = new
+        return moved
+
+    def _carry_first_seen(self, moved: dict[str, str], units: list[Any]) -> None:
+        """A paragraph without an ``^id`` is read under an ID that names
+        its file, so a move renames it; the day memory first read it
+        moves with it."""
+        if not moved:
+            return
+        from ..runtime import first_seen
+
+        def derived(rows: list[Any], path: str) -> list[str]:
+            return [
+                unit.memory_id for unit in rows
+                if unit.topic_path == path and unit.derived_id
+            ]
+
+        committed = self._committed_units()
+        pairs: dict[str, str] = {}
+        for old, new in moved.items():
+            was, now = derived(committed, old), derived(units, new)
+            if len(was) == len(now):
+                pairs.update(zip(was, now))
+        first_seen.carry(self.memory_dir, pairs)
+
     def _synchronize_block_topics(self, units: list[Any]) -> str:
         units = self._check_block_references(units)
+        moved = self._moved_topics(units)
+        self._carry_first_seen(moved, units)
         limit = self.config.recent_limit
         state_store = RuntimeStateStore(self.stage_dir)
         state = state_store.load()
@@ -294,9 +346,10 @@ class BlockViewsMixin:
             self.stage_dir, budget_tokens=self.config.core_max_tokens
         )
         # The map is the memory agents' to keep; the Runtime only writes a
-        # first one for a workspace that has none, and takes out the lines
-        # of Topics this write removed.
+        # first one for a workspace that has none, takes out the lines of
+        # Topics this write removed, and follows the ones it moved.
         memory_guide.ensure(self.stage_dir)
+        memory_guide.follow_moves(self.stage_dir, moved)
         memory_guide.drop_removed(self.stage_dir)
         return self._install_staged_state(len(units), "blocks")
 

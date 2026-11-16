@@ -332,7 +332,7 @@ def test_provider_failover_clients_do_not_share_pool_or_credentials(local_server
     local_server.redirect_to = second_origin + "/api/leak"
 
     async def exercise():
-        from openprogram.models.providers.utils.http_client import (
+        from openprogram.models.providers.utils.http_transport.http_client import (
             aclose_current_loop_clients,
             get_shared_async_client,
         )

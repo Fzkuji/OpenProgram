@@ -22,7 +22,7 @@ import pytest
 
 from openprogram.runtime.conversation import turn_runtime as D
 from openprogram.runtime.agent import turn_request as agent_turn_request
-from openprogram.runtime.permissions import approval as permissions_approval
+from openprogram.runtime.permissions.approvals import approval as permissions_approval
 from openprogram.runtime.context.session_db import SessionDB
 
 
@@ -182,8 +182,8 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
 
 def _overflow_loop(engine):
     """A loop whose first provider call overflows; records each attempt's prompt size."""
-    from openprogram.models.providers.utils.errors import ErrorReason, LLMError
-    from openprogram.runtime.context.tokens import estimate_history_tokens
+    from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
+    from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
     sizes: list[int] = []
 
     def _loop(*, req, history, **_extra):
@@ -571,7 +571,7 @@ def test_cancel_keeps_incomplete_iteration_progress(tmp_db, monkeypatch):
 
 
 def test_failed_turn_preserves_partial_reply_and_error_after_reopen(tmp_db, tmp_path, collector, captured):
-    from openprogram.models.providers.utils.errors import LLMError, ErrorReason
+    from openprogram.models.providers.utils.failures.errors import LLMError, ErrorReason
     from openprogram.interfaces.server.persistence import aggregate_tool_messages
 
     def fail_after_progress(*, req, on_event, **kwargs):
@@ -590,7 +590,7 @@ def test_failed_turn_preserves_partial_reply_and_error_after_reopen(tmp_db, tmp_
     reopened = SessionDB(tmp_path / 'sessions-git')
     try:
         rows = aggregate_tool_messages(reopened.get_messages('failed-reopen'))
-        from openprogram.runtime.context.render import render_dag_messages
+        from openprogram.runtime.context.session_dag.render import render_dag_messages
         from openprogram.state.store import SessionNodeWriter
         graph = SessionNodeWriter(reopened, 'failed-reopen').load()
         context = render_dag_messages(graph, [result.assistant_msg_id])

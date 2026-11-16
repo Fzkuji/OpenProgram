@@ -6,9 +6,9 @@ import json
 from dataclasses import dataclass
 
 from openprogram.state.store.session.nodes import Call, Graph
-from openprogram.runtime.context.nodes import render_context
-from openprogram.runtime.context.render import render_dag_messages
-from openprogram.runtime.context.tokens import estimate_history_tokens
+from openprogram.runtime.context.session_dag.nodes import render_context
+from openprogram.runtime.context.session_dag.render import render_dag_messages
+from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
 
 
 def _text(messages: list) -> str:
@@ -43,7 +43,7 @@ class CompactionView:
     rendered_ids: list[str]
 
     def candidate_messages(self, summary_text: str, cut: int, restored_state: str = '') -> list:
-        from openprogram.runtime.context.persistence import covered_chain_ids, summary_content, SUMMARY_NODE_NAME
+        from openprogram.runtime.context.compaction.persistence import covered_chain_ids, summary_content, SUMMARY_NODE_NAME
         graph = copy.deepcopy(self.graph)
         graph.add(Call(
             id='compaction_candidate', role='llm', name=SUMMARY_NODE_NAME,
@@ -79,10 +79,10 @@ def load_compaction_view(db, session_id: str, head_id: str | None = None,
 
     ``None`` reads the session's head once, here; the view then stays on
     that chain whatever the head does next. ``audience`` is who the render
-    is for (``context.turn_context``); the context panel passes the
+    is for (``context.prompt_assembly.turn_context``); the context panel passes the
     conversation's, so it counts the notes its requests send.
     """
-    from openprogram.runtime.context.persistence import rendered_history
+    from openprogram.runtime.context.compaction.persistence import rendered_history
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     head_id = head_id or (db.get_session(session_id) or {}).get('head_id')

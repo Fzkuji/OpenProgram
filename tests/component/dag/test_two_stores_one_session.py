@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from openprogram.state.store.session.session_log import SessionLog
+from openprogram.state.store.session.files.session_log import SessionLog
 
 
 def test_our_write_does_not_hide_an_earlier_foreign_write(tmp_path: Path) -> None:

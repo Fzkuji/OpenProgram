@@ -104,7 +104,7 @@ class _Tools:
                         )
                     elif self.wait_kind == "approval":
                         from openprogram.runtime.agent.turn_request import TurnRequest
-                        from openprogram.runtime.permissions.approval import (
+                        from openprogram.runtime.permissions.approvals.approval import (
                             await_user_approval,
                         )
 
@@ -241,7 +241,7 @@ def real_agent_chat(tmp_path, monkeypatch):
     import openprogram.runtime.conversation.turn_runtime as dispatcher
     import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
     import openprogram.runtime.agent.questions as questions
-    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.conversation.session_settings.session_config as session_config
     import openprogram.runtime.context.session_db as session_db
     import openprogram.models.providers.catalog.api_registry as api_registry
     import openprogram.state.store.session.session_store as session_store_module
@@ -1123,7 +1123,7 @@ def test_approval_resume_reuses_saved_prompt_after_context_updates(
         ScriptedToolCall,
         ScriptedText,
     )
-    import openprogram.runtime.context.components as components
+    import openprogram.runtime.context.prompt_assembly.components as components
     import openprogram.runtime.conversation.surface_context as surfaces
 
     monkeypatch.setattr(
@@ -1381,7 +1381,7 @@ def test_forced_reconcile_resumes_an_approval_the_new_policy_drops_with_no_versi
 ):
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions import update_permission, reconcile_permission_waits
     from openprogram.runtime.permissions.modes import PermissionRules
     from openprogram.runtime.permissions.session_facts import facts
@@ -1428,7 +1428,7 @@ def test_permission_change_resumes_real_approval_without_repeating_provider(
         ScriptedToolCall,
     )
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions import (
         update_permission,
         reconcile_permission_waits,
@@ -1490,7 +1490,7 @@ def test_permission_change_before_tool_check_applies_to_running_turn(
         ScriptedToolCall,
     )
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions import update_permission
     import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
@@ -1526,7 +1526,7 @@ def test_permission_update_during_wait_publication_is_not_lost(
         ScriptedToolCall,
     )
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.permissions import update_permission
     import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
@@ -1580,7 +1580,7 @@ def test_bypass_update_during_generation_or_batch_needs_no_new_approval(
         ScriptedToolCall,
     )
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.interfaces.server.ws_actions.permissions import handle_set_permission
     import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
@@ -2002,7 +2002,7 @@ def test_approval_in_a_later_turn_resumes_with_the_prompt_named_by_hash(
     records by hash; approving its wait resumes the turn instead of pausing it
     with ``continuation_contract_mismatch``."""
     from tests.component.providers.scripted_provider import ScriptedToolCall, ScriptedText
-    import openprogram.runtime.context.components as components
+    import openprogram.runtime.context.prompt_assembly.components as components
 
     monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "the conversation prompt")
     real_agent_chat.provider.add_response(ScriptedText("first turn done"))

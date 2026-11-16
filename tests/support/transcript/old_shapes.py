@@ -302,11 +302,10 @@ def summary_covers_ids(rows: Rows) -> dict:
              covers_ids=["a", "a_reply"], summarised_count=2)
     rows.turn("b")
     rows.finish()
-    return {"rows": ["a", "a_reply", "summary-1_card", "summary-1_ui", "b", "b_reply"],
-            "order": ["a", "a_reply", "summary-1_card", "summary-1_ui", "b", "b_reply"],
+    return {"rows": ["a", "a_reply", "summary-1_card", "b", "b_reply"],
+            "order": ["a", "a_reply", "summary-1_card", "b", "b_reply"],
             "facts": [["summary-1_card", "kind", "compaction"], ["summary-1_card", "slot", "card"],
                       ["a", "coveredBy", "summary-1_card"], ["a_reply", "coveredBy", "summary-1_card"],
-                      ["summary-1_ui", "kind", "compaction"], ["summary-1_ui", "slot", "event"],
                       ["b_reply", "content", "reply text"], ["a", "siblingTotal", 1]],
             "drawn": [["summary-1_card", "compaction-card"]]}
 

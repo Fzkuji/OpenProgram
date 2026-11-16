@@ -12,7 +12,7 @@ DAY = 86400
 NOW = 1_800_000_000.0
 
 
-def _key(status: str = "valid", *, active: bool = True, cooldown: float | None = None,
+def _key(status: str = "ready", *, active: bool = True, cooldown: float | None = None,
          cred: str = "cred-1") -> dict:
     return {"account": "default", "credential_id": cred, "kind": "api_key", "status": status,
             "active": active, "cooldown_until": cooldown, "last_error": "HTTP 429" if cooldown else None,
@@ -20,25 +20,24 @@ def _key(status: str = "valid", *, active: bool = True, cooldown: float | None =
 
 
 @pytest.mark.parametrize("status, state", [
-    ("valid", "ready"), ("expiring_soon", "ready"),
-    ("needs_reauth", "signed_out"), ("stale", "signed_out"), ("billing_blocked", "no_credit"),
-    ("revoked", "invalid_key"), ("unknown", "unknown"),
+    ("ready", "ready"), ("cooling", "ready"), ("needs_login", "signed_out"),
+    ("quota", "no_credit"), ("invalid_key", "invalid_key"), ("unknown", "unknown"),
 ])
 def test_health_maps_the_credential_status(status, state):
     assert provider_status.health_of([_key(status)], [], NOW)["state"] == state
 
 
 def test_a_cooling_key_reads_rate_limited_until_its_cooldown_ends():
-    health = provider_status.health_of([_key("valid", cooldown=NOW + 120)], [], NOW)
+    health = provider_status.health_of([_key("ready", cooldown=NOW + 120)], [], NOW)
     assert health == {"state": "rate_limited", "until": NOW + 120, "detail": "HTTP 429"}
 
 
 def test_a_throttled_key_reads_ready_once_its_cooldown_has_passed():
-    cooling = provider_status.health_of([_key("rate_limited", cooldown=NOW + 120)], [], NOW)
+    cooling = provider_status.health_of([_key("cooling", cooldown=NOW + 120)], [], NOW)
     assert cooling["state"] == "rate_limited" and cooling["until"] == NOW + 120
-    expired = provider_status.health_of([_key("rate_limited", cooldown=NOW - 37 * 3600)], [], NOW)
+    expired = provider_status.health_of([_key("cooling", cooldown=NOW - 37 * 3600)], [], NOW)
     assert expired == {"state": "ready", "until": None, "detail": None}
-    assert provider_status.health_of([_key("rate_limited")], [], NOW)["state"] == "ready"
+    assert provider_status.health_of([_key("cooling")], [], NOW)["state"] == "ready"
 
 
 def _read(status: int | None, at: float, error: str | None = None) -> dict:
@@ -46,7 +45,7 @@ def _read(status: int | None, at: float, error: str | None = None) -> dict:
 
 
 def test_the_newest_evidence_about_a_key_decides_its_health():
-    blocked = {**_key("billing_blocked"), "last_error": "billing_blocked: HTTP 402", "status_at": NOW - 600}
+    blocked = {**_key("quota"), "last_error": "HTTP 402", "status_at": NOW - 600}
     refused = _read(401, NOW - 30, "HTTP 401")
     # A 401 read after the 402 stop: the key is invalid, not out of credit.
     assert provider_status.health_of([blocked], [], NOW, {"cred-1": refused}) == {
@@ -66,12 +65,12 @@ def test_the_newest_evidence_about_a_key_decides_its_health():
     # A failed read that is not a 401 changes nothing; nor does a throttle outrank a later 401.
     failed = {"cred-1": _read(500, NOW - 30, "HTTP 500")}
     assert provider_status.health_of([blocked], [], NOW, failed)["state"] == "no_credit"
-    cooling = {**_key("rate_limited", cooldown=NOW + 120), "status_at": NOW - 600}
+    cooling = {**_key("cooling", cooldown=NOW + 120), "status_at": NOW - 600}
     assert provider_status.health_of([cooling], [], NOW, {"cred-1": refused})["state"] == "invalid_key"
 
 
 def test_the_best_key_wins():
-    keys = [_key("revoked", cred="a", active=True), _key("valid", cred="b", active=False)]
+    keys = [_key("invalid_key", cred="a", active=True), _key("ready", cred="b", active=False)]
     assert provider_status.health_of(keys, [], NOW)["state"] == "ready"
     assert provider_status.health_of([], [], NOW)["state"] == "unknown"
 
@@ -141,10 +140,28 @@ def test_build_status_puts_it_together(tmp_path, monkeypatch):
     assert openrouter["quota"]["limits"][0]["remaining"] == 18.42
     assert openrouter["spend"]["cost_usd"] == pytest.approx(0.5)
     assert openrouter["default_model"] == "m"
+    assert (openrouter["family"], openrouter["family_label"], openrouter["way_label"]) == ("openrouter", "OpenRouter", None)
     assert mistral["quota"] == {"kind": "none", "account": None, "fetched_at": None, "stale": False, "limits": [],
                                 "read_error": None, "read_at": None}
     assert payload["stale_after_s"] == quota.STALE_AFTER_S
     ledger.close()
+
+
+def test_a_provider_names_its_company_and_its_way_from_the_one_table():
+    assert provider_status.family_of("perplexity-agent", "Perplexity Agent") == {
+        "family": "perplexity", "family_label": "Perplexity",
+        "way_label": {"title": "Agent API · pay as you go", "title_zh": "Agent API · 按量付费",
+                      "short": "Agent", "short_zh": "Agent"},
+    }
+    assert provider_status.family_of("openrouter", "OpenRouter") == {
+        "family": "openrouter", "family_label": "OpenRouter", "way_label": None}
+
+
+def test_a_companys_ways_are_listed_together_where_its_first_one_was():
+    rows = [{"id": pid, **provider_status.family_of(pid, pid)}
+            for pid in ("openai", "deepseek", "opencode-go", "openai-codex", "opencode")]
+    assert [r["id"] for r in provider_status.by_company(rows)] == [  # type: ignore[arg-type]
+        "openai-codex", "openai", "deepseek", "opencode", "opencode-go"]
 
 
 def test_recorded_totals_include_cached_tokens():
@@ -158,3 +175,38 @@ def test_recorded_totals_include_cached_tokens():
     event = build_message_event(model, SimpleNamespace(usage=usage))
     assert event.total_tokens == 707 + 1095 + 73472
     assert event.cache_read_tokens <= event.total_tokens
+
+
+def test_a_provider_connected_by_key_takes_keys_and_a_sign_in_one_does_not():
+    from openprogram.models.usage.provider_status import takes_keys
+    assert takes_keys("deepseek") is True
+    assert takes_keys("openai-codex") is False
+
+
+def test_a_card_with_no_model_picked_names_the_first_model_on(monkeypatch):
+    from types import SimpleNamespace
+
+    from openprogram.models.providers.catalog import enabled_models
+    from openprogram.models.usage.provider_status import first_enabled_model
+    monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {
+        "deepseek/deepseek-chat": SimpleNamespace(id="deepseek-chat", provider="deepseek"),
+        "openai/gpt-x": SimpleNamespace(id="gpt-x", provider="openai")})
+    assert first_enabled_model("openai") == "gpt-x"
+    assert first_enabled_model("groq") is None
+
+
+def test_each_key_says_how_the_web_names_it(tmp_path, monkeypatch):
+    from openprogram.models.auth import Credential, CredentialData
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
+    from openprogram.models.usage.provider_status import keys_of
+
+    store = AuthStore(root=tmp_path / "state")
+    set_store_for_testing(store)
+    try:
+        store.add_credential(Credential(provider_id="openai-codex", kind="oauth", identity={"email": "a@example.com"},
+                                        payload=CredentialData(kind="oauth", auth_value="A", data={})))
+        (row,) = keys_of("openai-codex")
+        assert (row["label"], row["email"], row["key_tail"], row["env_var"], row["signin_name"]) == \
+            ("", "a@example.com", "", None, "ChatGPT")
+    finally:
+        set_store_for_testing(None)

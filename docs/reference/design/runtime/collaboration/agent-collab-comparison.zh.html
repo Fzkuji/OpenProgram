@@ -129,7 +129,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/send_message.py; addressing.py; runtime/conversation/inbox.py</code></td></tr>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/send_message.py; addressing.py; runtime/conversation/peer_agents/inbox.py</code></td></tr>
 <tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/agent-teams">Agent 团队</a>、<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a></td></tr>
 <tr><th scope="row">codex-cli</th><td><code translate="no">handlers/multi_agents_v2/message_tool.rs:11-24,51-131; absolute paths protocol/src/agent_path.rs:59-71; delivery core/src/agent/control.rs:171</code></td></tr>
 <tr><th scope="row">openclaw</th><td><code translate="no">agents/tools/sessions-send-tool.ts:193,249-256; back-and-forth sessions-send-tool.a2a.ts:94; child restriction agents/pi-tools.policy.ts:49-50</code></td></tr>
@@ -195,7 +195,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/inbox.py; self-delivery guard send_message.py</code></td></tr>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/peer_agents/inbox.py; self-delivery guard send_message.py</code></td></tr>
 <tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a>、<a href="https://code.claude.com/docs/en/agent-teams">Agent 团队</a>、<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a></td></tr>
 <tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:212-213,284; concurrency core/src/agent/control/execution.rs:68-76</code></td></tr>
 <tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:3-8; rounds agents/tools/sessions-send-helpers.ts:15-16; rate limit agents/subagent-control.ts:45,507-516; retries agents/subagent-registry-helpers.ts:35</code></td></tr>
@@ -295,7 +295,7 @@
 <table class="stack">
 <thead><tr><th scope="col">领域</th><th scope="col">工具</th><th scope="col">承载</th></tr></thead>
 <tbody>
-<tr><th scope="row">计划</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code></td><td>清单；编辑不运行任何东西</td></tr>
+<tr><th scope="row">计划</th><td><code translate="no">task_start</code>、<code translate="no">task_step</code>、<code translate="no">task_list</code></td><td>一个有名字的任务和它的步骤；编辑不运行任何东西</td></tr>
 <tr><th scope="row">执行</th><td><code translate="no">read_conversation</code>、<code translate="no">close_agent</code></td><td>一个 id、一个状态、保证返回、级联取消</td></tr>
 <tr><th scope="row">实体</th><td><code translate="no">agent</code>、<code translate="no">list_agents</code>、<code translate="no">send_message</code></td><td>agent 是会话图中的一条分支</td></tr>
 <tr><th scope="row">通信</th><td><code translate="no">send_message</code>、<code translate="no">read_conversation</code></td><td>不建任务记录的消息；任意分支的记录</td></tr>

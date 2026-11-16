@@ -12,7 +12,7 @@
 <tr><th scope="row">Port</th><td><code translate="no">18100</code></td><td><code translate="no">18200</code></td></tr>
 <tr><th scope="row">Browser debugging port</th><td><code translate="no">9223</code></td><td><code translate="no">9224</code></td></tr>
 <tr><th scope="row">State</th><td><code translate="no">~/.openprogram</code> (default profile)</td><td><code translate="no">~/.openprogram-dev</code> (<code translate="no">dev</code> profile)</td></tr>
-<tr><th scope="row">Updated by</th><td><code translate="no">openprogram dev promote</code>, then <code translate="no">scripts/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>, then <code translate="no">scripts/refresh-dev-instance.sh</code></td></tr>
+<tr><th scope="row">Updated by</th><td><code translate="no">openprogram dev promote</code>, then <code translate="no">scripts/local-instances/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>, then <code translate="no">scripts/local-instances/refresh-dev-instance.sh</code></td></tr>
 </tbody>
 </table>
 
@@ -20,7 +20,7 @@
 
 <h2 id="deploying-to-the-development-instance">Deploying to the development instance</h2>
 
-<p><code translate="no">openprogram dev deploy [ref]</code> (default <code translate="no">dev</code>) checks the commit out into the detached worktree <code translate="no">~/.openprogram-dev/source</code> and runs <code translate="no">scripts/refresh-dev-instance.sh</code> there. Nothing of stable is stopped or written.</p>
+<p><code translate="no">openprogram dev deploy [ref]</code> (default <code translate="no">dev</code>) checks the commit out into the detached worktree <code translate="no">~/.openprogram-dev/source</code> and runs <code translate="no">scripts/local-instances/refresh-dev-instance.sh</code> there. Nothing of stable is stopped or written.</p>
 
 <ol>
 <li>Refuse uncommitted or untracked files. One deploy runs at a time; a second waits.</li>
@@ -30,7 +30,7 @@
 <li>Set the <code translate="no">dev</code> profile's port and bind the Program catalog.</li>
 <li>Install or restart only the <code translate="no">dev</code> worker as a login service (launchd or systemd; a plain stop and start elsewhere). Wait up to 120 seconds for <code translate="no">/healthz</code>, then record the commit in <code translate="no">runtime/source-revision</code>.</li>
 <li>Keep the wheel and TUI bundle in <code translate="no">~/.openprogram-dev/artifacts</code> for promotion.</li>
-<li>macOS: run <code translate="no">scripts/install-dev-app.sh</code>.</li>
+<li>macOS: run <code translate="no">scripts/local-instances/install-dev-app.sh</code>.</li>
 </ol>
 
 <details>
@@ -104,7 +104,7 @@
 <tr><th scope="row">Backend</th><td>Picked by <code translate="no">openprogram/operations/self_update/control/backend.py</code>; this one is <code translate="no">control/dev_stable.py</code></td></tr>
 <tr><th scope="row">Location</th><td>A private copy of the runtime under <code translate="no">&lt;state&gt;/self-updates/&lt;id&gt;/controller</code>, outside the App and the development runtime: its steps replace both, and the code imports lazily</td></tr>
 <tr><th scope="row">Runs as</th><td>A launchd job on macOS, a detached session elsewhere. A worker start restarts one that died</td></tr>
-<tr><th scope="row">Environment</th><td>No <code translate="no">OPENPROGRAM_SESSION_ID</code>: with it, <code translate="no">scripts/refresh-local-app.sh</code> detaches and reports success at once</td></tr>
+<tr><th scope="row">Environment</th><td>No <code translate="no">OPENPROGRAM_SESSION_ID</code>: with it, <code translate="no">scripts/local-instances/refresh-local-app.sh</code> detaches and reports success at once</td></tr>
 <tr><th scope="row">Restart</th><td>Steps are idempotent. A journal in the update's directory records the landed commit and its rebase base, so a restart continues from its phase</td></tr>
 <tr><th scope="row">Another session's promotion</th><td>It moves <code translate="no">stable</code> once its new worker is healthy; the controller keeps waiting for the App to serve the commit</td></tr>
 <tr><th scope="row">Undo</th><td><code translate="no">self_update(action="undo", target=&lt;commit&gt;)</code> makes a <code translate="no">git revert</code> in a worktree of <code translate="no">dev</code> and submits it as a normal <code translate="no">prepare</code></td></tr>
@@ -130,7 +130,7 @@
 <ol>
 <li>Back up the stable profile (<code translate="no">openprogram backup</code>, label <code translate="no">pre-promote</code>; the newest 5 are kept) while the old worker still serves.</li>
 <li>Check the commit out into <code translate="no">~/.openprogram/release-source</code>.</li>
-<li>Run <code translate="no">scripts/refresh-local-app.sh</code> with <code translate="no">OPENPROGRAM_PROMOTE_FROM</code> set to the <code translate="no">stable</code> tip read above, and wait for it, even from inside a conversation. It reuses the development build of the same commit and installs it as a transaction (below).</li>
+<li>Run <code translate="no">scripts/local-instances/refresh-local-app.sh</code> with <code translate="no">OPENPROGRAM_PROMOTE_FROM</code> set to the <code translate="no">stable</code> tip read above, and wait for it, even from inside a conversation. It reuses the development build of the same commit and installs it as a transaction (below).</li>
 <li>Once the new worker is healthy, the script moves <code translate="no">refs/heads/stable</code> to the commit by compare-and-swap from that tip: two promotions cannot overwrite each other, and <code translate="no">stable</code> only fast-forwards.</li>
 </ol>
 
@@ -145,13 +145,13 @@
 </tbody>
 </table>
 
-<p>This is how the App installer (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>) replaces an App: the whole bundle is staged on the same volume and switched by rename, so the outage covers only the switch and the worker start, and no step that can fail on the new version runs on the installed one.</p>
+<p>This is how the App installer (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>) replaces an App: the whole bundle is staged on the same volume and switched by rename, so the outage covers only the switch and the worker start, and no step that can fail on the new version runs on the installed one.</p>
 
 <p>Promotion only reads the stable stores, to see what is running. Only the process holding <code translate="no">worker.lock</code> writes run state, so the restarted worker takes over on the new code (see <a href="../runtime/execution/control.html#store-schema-ownership">Who owns run state</a>).</p>
 
 <details>
 <summary>Refresh gate and Electron upgrades</summary>
-<p><code translate="no">scripts/refresh-local-app.sh</code> installs only <code translate="no">refs/heads/stable</code> once that branch exists; from any other commit it refuses and points to the development instance. During a promotion it installs the commit being promoted instead, and refuses unless <code translate="no">stable</code> is still the tip the promotion read and the commit contains it, both before building and again right before the App stops.</p>
+<p><code translate="no">scripts/local-instances/refresh-local-app.sh</code> installs only <code translate="no">refs/heads/stable</code> once that branch exists; from any other commit it refuses and points to the development instance. During a promotion it installs the commit being promoted instead, and refuses unless <code translate="no">stable</code> is still the tip the promotion read and the commit contains it, both before building and again right before the App stops.</p>
 <p>A stable refresh replaces <code translate="no">app.asar</code> and keeps the App's Electron. When <code translate="no">apps/desktop/package.json</code> pins another Electron or carries a newer version, the script builds the same shell and moves its frameworks, executable, <code translate="no">Info.plist</code> and locales into the staged App, so promotion brings the Electron the development App already ran.</p>
 </details>
 

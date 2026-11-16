@@ -32,7 +32,7 @@ _CALLBACK_DONE = "__op_worker_callback_done__"
 
 _WORKER_FUNCTIONS = frozenset({
     "openprogram.runtime.jobs.runner.worker_runner:call_runner",
-    "openprogram.runtime.permissions.auto_history:record_in_worker",
+    "openprogram.runtime.permissions.auto_mode.auto_history:record_in_worker",
 })
 
 _PROCESS_CHECK_SECONDS = 1.0

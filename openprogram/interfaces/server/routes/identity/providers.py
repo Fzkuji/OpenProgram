@@ -188,7 +188,7 @@ def register(app):
         omitted it's derived by slugifying ``label`` with collisions auto-
         resolved (``-2``/``-3``…). An explicit ``id`` keeps strict validation
         (kebab-case slug, no collision with an existing provider id or alias).
-        The key for the new provider is added afterwards through the account
+        The key for the new provider is added afterwards through the credentials
         endpoints, so no credential is accepted here."""
         error = check_request_body(
             body, allowed={"id", "label", "base_url", "local"}, required={"base_url"}
@@ -373,7 +373,7 @@ def register(app):
     @app.post("/api/providers/{name}/config")
     async def api_set_provider_config(name: str, body: Any = Body(default=None)):
         """Non-secret provider settings (base_url, label, …). Credentials go
-        through the account endpoints, never here — a key-shaped field would
+        through the credentials endpoints, never here — a key-shaped field would
         land in provider config, which has no rotation or masking contract."""
         error = check_request_body(body, allowed={"base_url", "use_responses_api"})
         if error is not None:
@@ -546,10 +546,7 @@ def register(app):
                 content={"error": "model must be a string"}, status_code=400
             )
         from openprogram.models import listing as _mc
-        from openprogram.models.listing.credentials import (
-            display_status_from_probe,
-            probe_proves_usable,
-        )
+        from openprogram.models.listing.credentials import UNKNOWN, VALID, probe_proves_usable
         # Connectivity Check is an explicit user Validate: prove usable
         # (layer-2 ping when the kind has no billing endpoint). A named
         # model already is layer 2.
@@ -557,9 +554,9 @@ def register(app):
             name, model=model, use_cache=False, prove_usable=model is None,
         )
         usable = probe_proves_usable(res)
-        display = display_status_from_probe(
-            res.status, previous="", usable_proven=usable,
-        )
+        # An auth-only answer (the key is accepted) does not show as valid:
+        # only a check that proved the key can answer does.
+        display = res.status if res.status != VALID or usable else UNKNOWN
         payload = res.to_dict()
         payload["status"] = display
         payload["ok"] = display == "valid"

@@ -52,7 +52,6 @@ import {
 import { refreshHistoryContextRange } from "../dag";
 import { chatAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { visibleSessionIds } from "@/lib/tabs/navigation/shell-session";
-import { writeChatScroll } from "@/lib/chat/history/chat-scroll";
 import { selectRow, useSessionStore } from "@/lib/session-store";
 import { offSelectedBranch } from "@/lib/chat/run/selected-branch";
 import {
@@ -728,6 +727,19 @@ export function handleSessionUpdated(
   mirrorUpsertConv(conv);
 }
 
+/** Whether a durable turn runs on the branch this page shows for its
+ *  conversation: its `branch_id` against the selection when both are
+ *  known, else the `side_branch` flag frozen when it was admitted. */
+export function onSelectedBranch(task: { session_id?: string; branch_id?: string; side_branch?: boolean }): boolean {
+  const selected = task.session_id
+    ? useSessionStore.getState().composerSettingsBySession[task.session_id]?.active_branch_id
+    : undefined;
+  if (typeof task.branch_id === "string" && task.branch_id && typeof selected === "string" && selected) {
+    return task.branch_id === selected;
+  }
+  return task.side_branch !== true;
+}
+
 /** Restore a durable continuation after its initial transport task ended.
  * Called only after the canonical execution update passes ordering checks. */
 export function restoreForegroundExecutionTask(value: unknown, execution?: unknown): void {
@@ -747,11 +759,14 @@ export function restoreForegroundExecutionTask(value: unknown, execution?: unkno
     return;
   }
   if (!value || typeof value !== "object") return;
-  const task = value as { session_id?: string; execution_id?: string; msg_id?: string; status_version?: number; side_branch?: boolean };
+  const task = value as { session_id?: string; execution_id?: string; msg_id?: string; status_version?: number; side_branch?: boolean; branch_id?: string };
   // A turn on a branch that is not selected is not this conversation's
   // foreground turn: the pane shows the selected branch, so its Stop and
-  // its steers must not reach that turn.
-  if (task.side_branch === true) return;
+  // its steers must not reach that turn. Which branch is selected is
+  // read now, the way the server's own run state reads it (a load, a
+  // `run_state`); the flag frozen at admission answers only while this
+  // page does not know the selection or the turn names no branch.
+  if (!onSelectedBranch(task)) return;
   const sid = task.session_id;
   const eid = task.execution_id;
   if (!sid || !eid || !task.msg_id || typeof task.status_version !== "number") return;
@@ -1352,16 +1367,6 @@ export function initChatPage(): void {
   updatePlusBtnIndicator();
   refreshWebSearchProviderLabel();
 }
-
-// beforeunload — persist scroll position. Installed once.
-window.addEventListener("beforeunload", () => {
-  const area = document.getElementById("chatArea");
-  const chatKey =
-    useSessionStore.getState().activeChatKey ?? runtimeState.currentSessionId;
-  if (area && chatKey) {
-    writeChatScroll(sessionStorage, chatKey, area.scrollTop);
-  }
-});
 
 /* ===== inline-handler bridge ===================================== */
 

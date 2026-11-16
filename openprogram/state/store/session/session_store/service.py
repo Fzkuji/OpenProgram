@@ -13,7 +13,7 @@ from .branches import BranchesOperations
 from .node_deletion import NodeDeletionOperations
 
 if TYPE_CHECKING:
-    from openprogram.state.store.session.session_log import SessionLog
+    from openprogram.state.store.session.files.session_log import SessionLog
     from openprogram.state.store.session.memory_index import SessionMemoryIndex
 
 
@@ -321,7 +321,7 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
         agent_id: shared.Optional[str] = None,
         limit: int = 50,
     ) -> list[dict[str, shared.Any]]:
-        from ..search import search_messages as _do_search
+        from ..reading.search import search_messages as _do_search
         return _do_search(
             self, query,
             session_id=session_id, agent_id=agent_id, limit=limit,

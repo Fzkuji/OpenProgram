@@ -227,8 +227,8 @@ class HistoryOperations:
             return None
 
         try:
-            from openprogram.runtime.context.nodes import render_context
-            from openprogram.runtime.context.render import render_dag_messages
+            from openprogram.runtime.context.session_dag.nodes import render_context
+            from openprogram.runtime.context.session_dag.render import render_dag_messages
             from openprogram.runtime.context.scope import _call_id
 
             graph = store.load()
@@ -424,7 +424,7 @@ class HistoryOperations:
                 "provider_request_count": provider_request_count,
                 "agent_iteration_count": agent_iteration_count,
             }
-            from openprogram.models.providers.utils.recovery import current_recovery
+            from openprogram.models.providers.utils.failures.recovery import current_recovery
             recovery = current_recovery.get()
             if recovery is not None:
                 meta["recovery"] = recovery.snapshot()

@@ -86,6 +86,33 @@ def test_only_a_failure_that_would_not_repeat_at_once_is_continued(failure, repe
     assert chat.failure_repeats(failure) is repeats
 
 
+def test_a_turn_the_user_stopped_pauses_the_goal_as_theirs(runtime, monkeypatch):
+    """Stop on a Goal turn is the person pausing it: the pause is recorded as
+    theirs, so neither the failure retry nor an always-on wake takes it up."""
+    from openprogram.runtime.execution.model import ExecutionStatus
+    goals, chat, store = runtime
+    goal = goals.load_goal(SID)
+    goal["execution_id"] = "exec-stopped"
+    goals.save_goal(SID, goal)
+    execution = SimpleNamespace(execution_id="exec-stopped", session_id=SID,
+                                status=ExecutionStatus.CANCELLED, reason_code="cancel.user")
+    monkeypatch.setattr(store, "get_agent_turn_input", lambda _id: {
+        "kind": "chat", "request": {"source": "web", "goal_trigger": True,
+                                    "goal_context": chat.identity(goal)}})
+    monkeypatch.setattr(chat, "start_next", lambda *a, **kw: pytest.fail("a stopped turn starts nothing"))
+
+    chat.after_terminal(store, execution)
+
+    settled = goals.load_goal(SID)
+    assert settled["status"] == "paused_recoverable"
+    assert settled["pause_reason"] == "user"
+    assert settled["last_reason"] == "Goal paused by the user."
+    assert "user" not in chat.AUTOMATIC_RESUME_REASONS
+    monkeypatch.setattr(goals, "goal_execution_state",
+                        lambda goal, session_id="": {"status": "cancelled", "finished": True})
+    assert not chat.continues_after_failure(SID, settled)
+
+
 def test_the_wait_grows_with_each_failure_in_a_row_and_respects_the_provider():
     from openprogram.programs.tools.planning.goal import chat
     waits = [chat.failure_resume_delay({"automatic_resumes": count}) for count in range(4)]

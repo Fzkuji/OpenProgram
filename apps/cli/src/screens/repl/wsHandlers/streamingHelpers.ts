@@ -151,20 +151,20 @@ export function completeToolBlocks(
   return out;
 }
 
-/** Put the saved todo board on the newest todo call of the turn. */
-export function attachTodoBoard(blocks: TurnBlock[], board: TodoItem[]): TurnBlock[] {
+/** Put a task's steps on the newest task call of the turn. */
+export function attachTodoBoard(blocks: TurnBlock[], board: TodoItem[], title?: string): TurnBlock[] {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i];
     if (b?.kind === 'tool' && toolKind(b.call.tool) === 'todo') {
       const out = blocks.slice();
-      out[i] = { kind: 'tool', call: { ...b.call, board } };
+      out[i] = { kind: 'tool', call: { ...b.call, board, ...(title ? { boardTitle: title } : {}) } };
       return out;
     }
   }
   return blocks;
 }
 
-/** A `todos_update` frame's rows as the board a todo call shows. */
+/** A segment's `todos` as the steps a task call shows. */
 export function todoBoard(todos: unknown): TodoItem[] {
   if (!Array.isArray(todos)) return [];
   return todos.flatMap((t) => {
@@ -173,4 +173,19 @@ export function todoBoard(todos: unknown): TodoItem[] {
     const subject = typeof row.subject === 'string' ? row.subject : '';
     return subject ? [{ subject, status: typeof row.status === 'string' ? row.status : 'pending' }] : [];
   });
+}
+
+/** The segment of a `todos_update` frame's `changed` that the shown agent
+ *  draws: the last one of its scope ("" is the conversation's own agent).
+ *  A frame closing one task and starting another lists the new one last. */
+export function changedTask(changed: unknown, scope = ''): { title: string; board: TodoItem[] } | null {
+  if (!Array.isArray(changed)) return null;
+  for (let i = changed.length - 1; i >= 0; i--) {
+    const row = changed[i];
+    if (!row || typeof row !== 'object') continue;
+    const segment = row as Record<string, unknown>;
+    if ((typeof segment.scope === 'string' ? segment.scope : '') !== scope) continue;
+    return { title: typeof segment.title === 'string' ? segment.title : '', board: todoBoard(segment.todos) };
+  }
+  return null;
 }

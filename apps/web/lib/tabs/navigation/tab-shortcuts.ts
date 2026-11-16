@@ -1,6 +1,6 @@
 // Keyboard tab switching, as in a browser: Cmd+1…8 picks the strip entry at
 // that position, Cmd+9 the last one, Cmd+Shift+[ / ] the previous / next one
-// (wrapping), Cmd+Shift+T reopens the last closed tab. A split is one strip
+// (wrapping), Cmd+Shift+T reopens the last closed tab, Cmd+, opens Settings. A split is one strip
 // entry and lands on its focused pane.
 import { topLevelTabs } from "../../browser/web-tab/web-page-management";
 import { centerTabStripEntries, findCenterTabGroup, type CenterTabStripEntry } from "../center-tab-groups";
@@ -11,6 +11,7 @@ type Strip = Pick<CenterTabsState, "tabs" | "groups" | "activeId">;
 export type TabShortcut =
   | { action: "new-chat" }
   | { action: "reopen-tab" }
+  | { action: "open-settings" }
   | { action: "next-tab" }
   | { action: "previous-tab" }
   | { action: "select-tab"; index: number };
@@ -58,6 +59,7 @@ export function shortcutForKey(event: Pick<KeyboardEvent, "key" | "code" | "meta
     return null;
   }
   if (event.key.toLowerCase() === "n") return { action: "new-chat" };
+  if (event.key === "," || event.code === "Comma") return { action: "open-settings" };
   if (/^[1-9]$/.test(event.key)) return { action: "select-tab", index: Number(event.key) };
   return null;
 }

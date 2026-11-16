@@ -95,7 +95,7 @@ _lanes: dict[tuple[int, str], _Lane] = {}
 
 
 def _holds_a_conversation_lock() -> bool:
-    from . import session_lock
+    from .files import session_lock
 
     with session_lock._registry_lock:
         locks = tuple(session_lock._registry.values())

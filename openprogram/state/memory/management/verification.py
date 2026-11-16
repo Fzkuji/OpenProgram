@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from openprogram.state.store.session.atomic_file import atomic_write_text
+from openprogram.state.store.session.files.atomic_file import atomic_write_text
 
 from ..prompts import VERIFY_JUDGE, VERIFY_PROBE, VERIFY_REPAIR, VERIFY_RETRIEVE
 from ..workspace_layout import RUNTIME_DIR_NAMES, TEMPORARY_PREFIX, runtime_dir

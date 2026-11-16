@@ -7,7 +7,6 @@ a ``stream_fn`` injection.
 from __future__ import annotations
 
 import asyncio
-import importlib
 from collections.abc import Iterator
 
 import pytest
@@ -206,8 +205,6 @@ def test_agent_loop_executes_tool_through_registered_scripted_provider(
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
 
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
-    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
-    monkeypatch.setattr(stream_module, "resolve_provider_key", lambda provider: None)
     class EmptyMemory:
         def search(self, query: str) -> str:
             return ""

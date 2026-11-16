@@ -13,10 +13,10 @@ from openprogram.runtime.execution.run_control import (
     set_current_execution_id,
 )
 from openprogram.runtime.permissions.authority import owner_authority
-from openprogram.interfaces.channels._question_commands import (
+from openprogram.interfaces.channels.inbound._question_commands import (
     try_handle_question_command, _map_choice,
 )
-from openprogram.interfaces.channels._question_bridge import _render_question
+from openprogram.interfaces.channels.inbound._question_bridge import _render_question
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.model import CapabilitySet
 from openprogram.runtime.execution.store import ExecutionStore

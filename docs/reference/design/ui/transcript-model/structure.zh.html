@@ -1,0 +1,90 @@
+<title>会话记录的行与归属</title>
+<meta name="description" content="会话记录模型的数据：视图、TranscriptView、Turn、Row、Block、仅浏览器的行和覆盖层，以及每个事实由哪部分代码拥有。">
+<meta name="covers" content="apps/web/lib/session-store/index.ts openprogram/interfaces/server/persistence.py">
+<h1 id="title">会话记录的行与归属</h1>
+<p class="note">属于<a href="overview.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="overview.zh.html#status">实现状态</a>。</p>
+<h2 id="model">模型</h2>
+<p>在 <code translate="no">.../transcript/schema.py</code> 中定义一次。TypeScript 由它生成。</p>
+<h3>视图</h3>
+<p>键：<code translate="no">session_id</code>，或 <code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>。同一对话的两个窗格共享一个视图。</p>
+<ul>
+<li><code translate="no">turns</code>：按序已加载的 Turn。顺序由服务端决定，客户端持有跨度。</li>
+<li><code translate="no">window</code>：<code translate="no">{ head_id, revision, before, after, start, end, total }</code>。与历史 hook 读取的名字相同，去掉 <code translate="no">snapshot</code>，加上 <code translate="no">revision</code>。以轮次计数。<code translate="no">start</code> 和 <code translate="no">end</code> 是轮次索引中的绝对位置，在 head 只前进时保持稳定。</li>
+<li>视图只有在服务端读取或携带窗口的聊天确认之后才有窗口。窗格绝不会把残留行误认为已加载的对话。</li>
+</ul>
+<h3>TranscriptView（服务端）</h3>
+<p>每视图一份，只有 id，没有正文：有序轮次、归属表（节点 id 到轮次、行和槽位）、带块 crc 的未结束行、子节点表、派生字段表、压缩槽位、目标验证锚点，以及 <code translate="no">head_id</code>（主视图）或 <code translate="no">tip</code>（子代理视图）之一。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入集合</th><td>正好是会话记录显示的行：<code translate="no">get_messages</code> 的过滤（没有 <code translate="no">display=root</code>、<code translate="no">rewound</code>、<code translate="no">structural</code> 或隐藏的 <code translate="no">context/*</code>），再减去 <code translate="no">execution_control</code> 行及其 caller 后代闭包。带 assistant caller 的 role=tool 行按 <code translate="no">aggregate_tool_messages</code> 的方式折叠进父行。</td></tr>
+<tr><th scope="row">链与失败</th><td>链是 head 所在分支的分支顺序。被聚合折叠掉的 head 通过 <code translate="no">_resolve_head</code> 遍历解析；断裂的 predecessor 链回退到对同一输入集合的 predecessor 遍历。两者都是 <code translate="no">legacy.py</code> 中的具名情况。其他任何读取失败都返回可重试错误。</td></tr>
+</tbody>
+</table>
+<p><strong>轮次成员</strong>（<code translate="no">turn_index.py</code>）。行按以下顺序分类，第一个匹配的决定结果：</p>
+<ol>
+<li>附属行加入它所依附的行，绝不开启轮次：<code translate="no">function=attach</code>（仅 predecessor 或两条边都有）、运行时占位（<code translate="no">type=status</code>、<code translate="no">display=runtime</code>，且有 predecessor；重建的函数运行没有 predecessor，自己开启轮次）、工具行、caller 后代、带 <code translate="no">covers_ids</code> 的摘要。</li>
+<li>压缩的 <code translate="no">{id}_card</code> 行留在所在轮次内的确切位置。它是压缩添加的唯一一行；压缩发生的位置不留标记。</li>
+<li>插话（<code translate="no">steering</code>）和重启提示（<code translate="no">trigger=restart</code>）加入它们所在的轮次，被截断的回复和续接也一样。</li>
+<li>以下开启轮次：可见的 user 行，包括 <code translate="no">job_followup</code> 和 <code translate="no">display=runtime</code> 提示；顶层函数运行；predecessor 不是当前轮次 user 行的 assistant 行（常驻代理的主动回复）；没有提示的 system 行。</li>
+</ol>
+<p><code translate="no">spawn_branch_root</code> 行绝不通过 caller 边被收进父轮次。caller 后代只匹配 <code translate="no">_collect_exec_rows</code> 的工具和叶子规则。</p>
+<p>索引随 head 前进而扩展，在结构变化时重建。没有 socket 持有的视图放在容量 16 的 LRU 中。socket 持有的视图绝不淘汰。</p>
+<p>存储的转录状态在索引保留而非重新读取的内容变化时前移：重挂，以及对摘要的元数据补丁，因为压缩行由摘要元数据画出。压缩在插入之后才写入 <code translate="no">tokens_before</code>、<code translate="no">tokens_after</code> 和 <code translate="no">compacted_at</code>。其他补丁只改行内容，每次读取都重新取。</p>
+<p>所有非局部内容都从索引元数据计算，因此一个轮次可以单独投影：压缩槽位和 <code translate="no">superseded_summary</code> 来自摘要节点，<code translate="no">spawned_from</code> 来自 attach 节点，同级导航来自子节点表，目标标记来自对该会话执行的一次扫描，保存为 <code translate="no">{assistant id: execution id}</code> 并在新轮次出现时扩展。</p>
+<h3>轮次</h3>
+<p><code translate="no">{ id, rows }</code>。<code translate="no">id</code> 是起始行的 id。放在第一个起始行之前的压缩行加入该轮次，但绝不成为它的 id，因此 id 稳定。</p>
+<h3>行</h3>
+<p>现有的 <code translate="no">ChatMsg</code>，相同的 camelCase 字段，在服务端构建。新增：</p>
+<ul>
+<li><code translate="no">rowKind</code>：<code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>。<code translate="no">dispatch()</code> 的每个分支一个值，它没有默认分支。<code translate="no">silent</code> 覆盖 <code translate="no">display=runtime</code> 提示和内部目标轮次。</li>
+<li><code translate="no">kind</code> 和 <code translate="no">slot</code> 保持现有含义，不算新增：<code translate="no">kind</code> 是 <code translate="no">compaction | snip | event</code>，<code translate="no">slot</code> 是 <code translate="no">card | event</code>。<code translate="no">system_event</code> 行在那里携带子类型；压缩完成不产生这种行。<code translate="no">compaction_card</code> 行总是 <code translate="no">kind: compaction</code>、<code translate="no">slot: card</code>。只有 <code translate="no">SystemEventRow</code> 读取它们；覆盖读取 <code translate="no">coveredBy</code>。</li>
+<li><code translate="no">status</code>：<code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>，来自 <code translate="no">status.py</code> 中的一个映射。</li>
+<li><code translate="no">steeringReplyId</code>、<code translate="no">continuedBy</code>：由服务端盖上，因为机器人视图仍然绘制这些行。</li>
+<li><code translate="no">continues</code>：续接所合并的被截断回复的 id，最旧的在前。</li>
+<li><code translate="no">attachCards</code>、<code translate="no">runtimeChildren</code>、<code translate="no">callRoots</code>：名字不变。每个子项新增 <code translate="no">blockId</code>，即解析出的所属块，未配对时为 null。未配对的子项照样绘制，绝不丢失。</li>
+<li><code translate="no">coveredBy</code>：压缩 id。</li>
+<li>user 行上的 <code translate="no">origin</code>：<code translate="no">person | agent_delivery</code>。</li>
+<li><code translate="no">clientRequestId</code>：<code translate="no">metadata.client_request_id</code>，在插话行上是 <code translate="no">metadata.command_id</code>。</li>
+</ul>
+<h3>块</h3>
+<p>按存储形状，加上 <code translate="no">id</code> 和 <code translate="no">index</code>。</p>
+<ul>
+<li>工具块：<code translate="no">id = tool_call_id</code>；没有 id 的旧工具块用 <code translate="no">tool:N</code>。</li>
+<li>文本和思考：<code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>，其中 <code translate="no">n</code> 统计该类型的段数，一段是连续的同类型已存块。段的第一个块保持 <code translate="no">&lt;type&gt;:&lt;n&gt;</code>，同段后面的块是 <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>。流式 tap 把连续增量合并成一个块，所以它的块与最终分段的第一个块共用 id，未结束的步骤在最终写入重新分段时保持原位。</li>
+<li><code translate="no">index</code> 是在 <code translate="no">blocks</code> 中的存储位置。块总按 <code translate="no">index</code> 排序保存，所以块顺序绝不取决于到达顺序。</li>
+<li><code translate="no">fullOutput</code> 指向真实的行：<code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>。</li>
+<li>文本、思考或工具块上的 <code translate="no">task</code> 和 <code translate="no">step</code> 说明它属于哪个任务和步骤，由它在回复里的位置得出；不属于任何任务时没有（<a href="../chat/task-blocks.zh.html">任务块</a>）。</li>
+</ul>
+<h3>本地行与覆盖层（仅浏览器）</h3>
+<p><strong>本地行</strong>是没有服务端副本的行：待发送、发送失败、乐观的函数占位、<code translate="no">local_command</code> 和无操作提示、压缩提示。它们不属于任何 Turn，并携带一个锚：</p>
+<ul>
+<li><code translate="no">tail</code>（发送和占位）：画在所有轮次之后，按创建顺序。来自别处的 <code translate="no">turn_upsert</code> 插在它们前面。由确认或带相同 <code translate="no">clientRequestId</code> 的服务端行移除。</li>
+<li><code translate="no">afterRowId</code>（提示）：紧跟在提示出现时的最后一行之后绘制。该行在窗口外时不绘制。</li>
+</ul>
+<p>每个本地行都带 <code translate="no">rowKind</code>。待发送或发送失败是 <code translate="no">user</code>，乐观函数占位是 <code translate="no">function_run</code>，<code translate="no">local_command</code> 或无操作提示是 <code translate="no">system_text</code>，压缩提示是带 <code translate="no">kind: compaction</code> 的 <code translate="no">system_event</code>。带类型的本地追加要求这个字段，所以分发绝不会遇到没有它的行。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">覆盖层</th><td><strong>覆盖层</strong>是客户端在服务端发话之前改变服务端行显示内容的唯一方式。每视图：行 id、封闭的字段集（<code translate="no">status</code>、<code translate="no">siblingIndex</code>、<code translate="no">siblingTotal</code>、<code translate="no">contextTree</code>、<code translate="no">chapterPinnedAt</code>、<code translate="no">reverted</code>、<code translate="no">turnFiles</code>、<code translate="no">goalVerification</code>）、清除条件（<code translate="no">until_terminal</code>、<code translate="no">until_field_matches</code>、<code translate="no">until_read</code>、<code translate="no">until_row_gone</code>、<code translate="no">until_command_rejected</code>）和可选的回滚快照。</td></tr>
+<tr><th scope="row">合并</th><td><code translate="no">selectRow</code> 合并行和覆盖层。读取和 upsert 让覆盖层保持到其条件成立。</td></tr>
+<tr><th scope="row">Stop 覆盖层</th><td>Stop 覆盖层是未结束行上的 <code translate="no">status: cancelled</code>。任何服务端终态都会清除它，所以后来的 <code translate="no">cancelling</code> 不能把已停止的气泡拉回思考状态；其取消命令被拒绝时也会清除（<a href="live.zh.html#stop">Stop</a>）。</td></tr>
+</tbody>
+</table>
+<p>服务端行永不清除的仅帧字段：<code translate="no">retryStatus</code>、<code translate="no">autoPreviewFiles</code>。展开状态按视图保存，键为（行 id，块 id）。</p>
+<h2 id="ownership">各事实的归属</h2>
+<table class="stack">
+<thead><tr><th scope="col">事实</th><th scope="col">归属</th><th scope="col">读取方</th></tr></thead>
+<tbody>
+<tr><th scope="row">文本、工具、状态、卡片、顺序</th><td>存储节点，经投影读取</td><td>全部。增量可丢弃。</td></tr>
+<tr><th scope="row">轮次成员、每个节点的归属</th><td><code translate="no">TranscriptView</code></td><td>读取器、发布器</td></tr>
+<tr><th scope="row"><code translate="no">rowKind</code>、块 id、<code translate="no">blockId</code> 配对</th><td><code translate="no">transcript/</code> 投影</td><td>组件</td></tr>
+<tr><th scope="row">修订号</th><td>一个进程级单调计数器；<code translate="no">TranscriptView</code> 保存该视图的最后值</td><td>客户端游标</td></tr>
+<tr><th scope="row">运行回复的终态和暂停</th><td>存储行，由 <code translate="no">event_effects</code> 从规范执行写入或修复</td><td>投影</td></tr>
+<tr><th scope="row"><code translate="no">run_active</code>、<code translate="no">run_task</code>、<code translate="no">run_seq</code>、未决等待、目标、待办、上下文统计</th><td>不变，在会话记录模型之外。运行槽不写行。</td><td>运行级 UI</td></tr>
+<tr><th scope="row">本地行、覆盖层、<code translate="no">retryStatus</code>、<code translate="no">autoPreviewFiles</code>、展开状态</th><td>浏览器</td><td>组件</td></tr>
+<tr><th scope="row">跟随位置</th><td>只有 <code translate="no">useChatAreaStick</code></td><td>会话记录视口</td></tr>
+<tr><th scope="row">锚点</th><td>只有 <code translate="no">history-viewport</code></td><td>会话记录视口</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="reads.zh.html">读取与客户端规则</a></p>

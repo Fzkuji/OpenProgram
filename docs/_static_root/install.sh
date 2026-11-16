@@ -52,7 +52,7 @@ case "$(uname -s)" in
   Linux) platform="linux"; platform_name="Linux" ;;
   *)
     printf 'This command installs OpenProgram on macOS and Linux. On Windows, use the PowerShell command in the install guide:\n' >&2
-    printf 'https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/install/install.html\n' >&2
+    printf 'https://github.com/Fzkuji/OpenProgram/blob/main/docs/install/install.html\n' >&2
     exit 1
     ;;
 esac

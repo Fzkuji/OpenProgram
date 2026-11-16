@@ -254,7 +254,6 @@ def test_the_usage_event_records_the_check(ledger, monkeypatch):
     bodies = [_request("hi").body,
               _request("hi", "next", instructions="base=you help\nopen_work=one promise\n").body]
     monkeypatch.setattr(stream_module, "get_api_provider", lambda api: _Adapter(bodies))
-    monkeypatch.setattr(stream_module, "resolve_provider_key", lambda provider: "k")
 
     async def one():
         async for _event in stream_module.stream_simple(model, Context(), SimpleStreamOptions(session_id="s1")):
