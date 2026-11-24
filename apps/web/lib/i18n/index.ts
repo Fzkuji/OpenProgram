@@ -67,8 +67,8 @@ const DICT = {
   // /settings/general page
   "general.title": { en: "General", zh: "通用" },
   "general.meta": {
-    en: "App-wide preferences. Language is per-browser; version info is read-only. How the interface looks is in Appearance.",
-    zh: "应用级偏好。语言按浏览器保存；版本信息只读。界面外观在「外观」里。",
+    en: "App-wide preferences. Language is per-browser. How the interface looks is in Appearance; the version and updates are in Versions and updates.",
+    zh: "应用级偏好。语言按浏览器保存。界面外观在「外观」里，版本和更新在「版本与更新」里。",
   },
   // /settings/appearance page
   "appearance.title": { en: "Appearance", zh: "外观" },
@@ -100,19 +100,18 @@ const DICT = {
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
-  "settings.tab.providers": { en: "LLM Providers", zh: "LLM 服务商" },
+  "settings.tab.providers": { en: "Model services", zh: "模型服务" },
   "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
   "settings.tab.import": { en: "Import", zh: "导入对话" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
-  "settings.tab.environments": { en: "Environments", zh: "运行环境" },
+  "settings.tab.machines": { en: "Devices", zh: "设备" },
   "settings.tab.voice": { en: "Voice", zh: "语音" },
   "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
   "settings.tab.memory": { en: "Memory", zh: "记忆" },
   "settings.tab.permissions": { en: "Permissions", zh: "权限" },
   "settings.tab.general": { en: "General", zh: "通用" },
   "settings.tab.appearance": { en: "Appearance", zh: "外观" },
-  "settings.tab.system": { en: "System", zh: "系统" },
-  "settings.tab.versions": { en: "Versions", zh: "版本" },
+  "settings.tab.versions": { en: "Versions and updates", zh: "版本与更新" },
   "settings.tab.browser": { en: "Browser", zh: "浏览器" },
 
   // Token usage page
@@ -120,8 +119,6 @@ const DICT = {
     en: "Every LLM call's tokens and cost, recorded at the provider chokepoint across chat, exec, tools, memory and compaction. Cost is estimated from the model catalog's pricing where the model is known.",
     zh: "在 provider 收口处记录的每一次大模型调用的 Token 与成本，覆盖 chat、exec、工具、记忆与压缩。成本按模型目录中的定价估算（仅对已知定价的模型）。",
   },
-  "usage.loading": { en: "Loading…", zh: "加载中…" },
-  "usage.error": { en: "Failed to load usage data.", zh: "加载用量数据失败。" },
   "usage.empty": {
     en: "No per-model usage recorded yet. Models that don't report usage (some OpenAI-compatible backends) won't appear here.",
     zh: "暂无按模型记录的用量。不回报 usage 的模型（部分 OpenAI 兼容后端）不会出现在这里。",
@@ -160,7 +157,7 @@ const DICT = {
   "nav.mcp_short": { en: "MCP", zh: "MCP" },
   "nav.ability": { en: "Abilities", zh: "能力" },
   "nav.memory": { en: "Memory", zh: "记忆" },
-  "nav.scheduler": { en: "Scheduler", zh: "定时任务" },
+  "nav.tasks": { en: "Tasks", zh: "任务" },
   "nav.chats": { en: "Chats", zh: "会话历史" },
   "nav.history": { en: "History", zh: "历史" },
 
@@ -274,7 +271,6 @@ const DICT = {
     en: "No other branches in this session.",
     zh: "当前会话没有其他分支。",
   },
-  "right.loading": { en: "Loading...", zh: "加载中..." },
   "right.merge_ellipsis": { en: "Merge...", zh: "合并..." },
   "right.merge": { en: "Merge", zh: "合并" },
   "right.clear_selection": { en: "Clear selection", zh: "清除选择" },

@@ -5,6 +5,7 @@
 // the Scheduler tasks set from it (GET /api/sessions/{id}/work).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { useChanged } from "@/lib/net/ws/changes";
 import { lastActivityRead, activityReadStart, rememberActivityRead } from "@/lib/execution/activity-reads";
 import type {
   AlwaysOnDelivery, AlwaysOnNotify, AlwaysOnQuietHours, AlwaysOnReportKind, AlwaysOnWakeOutcome,
@@ -171,21 +172,17 @@ export function notifyConversationWorkChanged(sessionId: string): void {
   for (const listener of listeners) listener(sessionId);
 }
 
-/** Calls ``listener`` on every change frame, for any conversation; returns the unsubscribe. */
-export function onConversationWorkChanged(listener: (sessionId: string) => void): () => void {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
-
 /** Reads the conversation's work while the panel is open: on open, on the
- *  worker's change frames, on reconnect and focus, and every 30 seconds
- *  for Scheduler tasks, which publish no event of their own. The last read
- *  of the conversation draws until the new one answers (activity-reads.ts). */
+ *  worker's always-on and open-work frames, when a Scheduler task or its runs
+ *  change (`work`, lib/net/ws/changes.ts), on reconnect and on focus. The
+ *  last read of the conversation draws until the new one answers
+ *  (activity-reads.ts). */
 export function useConversationWork(active: boolean, sessionId: string | null) {
   const [read, setRead] = useState<{ sessionId: string; work: ConversationWork } | null>(null);
   const work = read && read.sessionId === sessionId ? read.work : lastActivityRead<ConversationWork>("work", sessionId);
   const refreshRef = useRef<() => void>(() => {});
   const refresh = useCallback(() => refreshRef.current(), []);
+  useChanged("work", refresh);
   useEffect(() => {
     if (!active || !sessionId) return;
     let disposed = false;
@@ -206,7 +203,6 @@ export function useConversationWork(active: boolean, sessionId: string | null) {
     refreshRef.current = load;
     const onChange = (changed: string) => { if (changed === sessionId) load(); };
     listeners.add(onChange);
-    const timer = setInterval(load, 30000);
     window.addEventListener("focus", load);
     document.addEventListener("visibilitychange", load);
     load();
@@ -215,7 +211,6 @@ export function useConversationWork(active: boolean, sessionId: string | null) {
       refreshRef.current = () => {};
       controller?.abort();
       listeners.delete(onChange);
-      clearInterval(timer);
       window.removeEventListener("focus", load);
       document.removeEventListener("visibilitychange", load);
     };

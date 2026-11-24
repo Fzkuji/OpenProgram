@@ -44,6 +44,27 @@ def application_provider(app: dict) -> ResourceProvider:
             session, _, _ = current_owner()
             if session:
                 arguments = {**arguments, 'session_id': session}
-        return request('/api/resources/' + quote('application.' + app_id, safe='') + '/' + action,
-                       method='POST', body=arguments)
-    return ResourceProvider('application.' + app_id, app.get('display_title') or app['title'], actions, invoke)
+        result = request('/api/resources/' + quote('application.' + app_id, safe='') + '/' + action,
+                         method='POST', body=arguments)
+        if action in _FOLLOWED:
+            _announce(app_id, title, action, arguments, result)
+        return result
+    title = app.get('display_title') or app['title']
+    return ResourceProvider('application.' + app_id, title, actions, invoke)
+
+
+# The actions after which the chat preview follows the instance they name.
+_FOLLOWED = frozenset({'open', 'act', 'observe', 'save'})
+
+
+def _announce(app_id, title, action, arguments, result):
+    """Tell the App which instance the Agent used; a failure never fails the action."""
+    try:
+        instance = arguments.get('instance_id') if isinstance(arguments, dict) else None
+        if not instance and action == 'open' and isinstance(result, dict):
+            instance = result.get('instance_id')
+        if isinstance(instance, str) and instance:
+            from openprogram.host.resources.native_window import note_used_application
+            note_used_application(app_id, instance, title)
+    except Exception:
+        pass

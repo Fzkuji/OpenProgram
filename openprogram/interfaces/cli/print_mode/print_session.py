@@ -75,7 +75,10 @@ def folder_project_ids(cwd: str | os.PathLike) -> set[str]:
         projects = list_projects()
     except Exception:  # noqa: BLE001 - no registry is no project
         projects = []
+    from openprogram.state.store.project.project_store import folder_is_here
     for project in projects:
+        if not folder_is_here(project):
+            continue
         try:
             if Path(project.path).expanduser().resolve() == folder:
                 ids.add(project.id)

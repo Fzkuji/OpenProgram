@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 
 from ..control.projection import _exists
 from ..control.projection import _optional
@@ -13,7 +15,39 @@ from ..types import is_terminal
 from ..verification.verification_channel import _digest
 
 MAX_DELIVERIES = 20
+# Records are checked again this often even when no file changed: a result
+# can also depend on the clock and on files kept outside the store.
+RECHECK_SECONDS = 300.0
 _log = logging.getLogger(__name__)
+_clock = time.monotonic
+# Per store root: the files the store had, the updates with nothing left to
+# deliver under those files, and when that was last checked in full.
+_settled: dict[str, tuple[tuple, set[str], float]] = {}
+
+
+def _fingerprint(root) -> tuple:
+    """Name, size and write time of every JSON file of every update.
+
+    Each result an update can deliver is written as a JSON file in the
+    folder of that update or of another one in its chain, so an update
+    whose results were all delivered has nothing new while these stay the
+    same. Checking them costs a directory listing per update; projecting
+    an update validates its receipts and schemas again.
+    """
+    found = []
+    with os.scandir(root) as updates:
+        for update in updates:
+            if not update.name.startswith("su_"):
+                continue
+            try:
+                with os.scandir(update.path) as files:
+                    for entry in files:
+                        if entry.name.endswith(".json"):
+                            status = entry.stat(follow_symlinks=False)
+                            found.append((update.name, entry.name, status.st_size, status.st_mtime_ns))
+            except OSError:
+                found.append((update.name, "", 0, 0))
+    return tuple(sorted(found))
 
 
 def _results(snapshot):
@@ -55,7 +89,7 @@ def _persist(db, snapshot, kind, node_id):
             "update_id", "attempt", "phase", "candidate_revision", "last_verified_runtime",
             "verifier_verdict", "diagnosis", "source_repair_result", "iteration",
         )}
-        for key in ("dev_stable", "versions"):
+        for key in ("dev_deploy", "versions"):
             if key in snapshot:
                 summary[key] = snapshot[key]
         node = existing or Call(
@@ -69,7 +103,8 @@ def _persist(db, snapshot, kind, node_id):
         return db._open(session_id) is not None
 
 
-def _deliver(store, record, budget) -> int:
+def _deliver(store, record, budget) -> tuple[int, bool]:
+    """Deliver what this update still owes; say whether nothing is left."""
     from openprogram.runtime.context.session_db import default_db
 
     path = store.root / record.request.update_id / "delivery.json"
@@ -84,7 +119,11 @@ def _deliver(store, record, budget) -> int:
         raise ValueError("invalid self-update delivery receipt")
     snapshot = _project(store, record)
     delivered = 0
+    complete = True
     for kind in _results(snapshot):
+        if delivered >= budget:
+            complete = False
+            break
         node_id = f"su_result_{_digest([record.request.update_id, record.state.attempt, kind])[:32]}"
         prior = receipt["delivered"].get(kind)
         if prior is not None:
@@ -95,9 +134,9 @@ def _deliver(store, record, budget) -> int:
             receipt["delivered"][kind] = node_id
             store._write_json(path, receipt)
             delivered += 1
-        if delivered >= budget:
-            break
-    return delivered
+        else:
+            complete = False
+    return delivered, complete
 
 
 def deliver_pending() -> int:
@@ -106,19 +145,32 @@ def deliver_pending() -> int:
     if not _exists(store):
         return 0
     delivered = 0
+    key = str(store.root)
     with store._locked(read_only=True):
+        # Taken before the records are read: a file written meanwhile makes
+        # the next pass look again.
+        files, now = _fingerprint(store.root), _clock()
+        known = _settled.get(key)
+        if known is None or known[0] != files or now - known[2] >= RECHECK_SECONDS:
+            known = (files, set(), now)
+        done = known[1]
+        if done and done == {entry[0] for entry in files}:
+            return 0
         for record in _records(store):
-            if not is_terminal(record.state.phase):
+            update_id = record.request.update_id
+            if update_id in done or not is_terminal(record.state.phase):
                 continue
+            if delivered >= MAX_DELIVERIES:
+                break
             try:
-                count = _deliver(store, record, MAX_DELIVERIES - delivered)
+                count, complete = _deliver(store, record, MAX_DELIVERIES - delivered)
             except ValueError:
                 # Fail closed for this update only; the others still reach
                 # their sessions.
-                _log.warning("self-update result %s not delivered", record.request.update_id, exc_info=True)
+                _log.warning("self-update result %s not delivered", update_id, exc_info=True)
                 continue
-            if count:
-                delivered += count
-            if delivered >= MAX_DELIVERIES:
-                break
+            delivered += count
+            if complete and not count:
+                done.add(update_id)
+        _settled[key] = known
     return delivered

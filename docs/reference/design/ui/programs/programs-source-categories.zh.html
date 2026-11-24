@@ -23,7 +23,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">agents</code></th><td>mixture_of_agents</td><td>agent, send_message</td></tr>
 <tr><th scope="row"><code translate="no">code</code></th><td>execute_code</td><td>lsp, semble</td></tr>
-<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use_agent</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use</td></tr>
 <tr><th scope="row"><code translate="no">files</code></th><td>apply_patch, edit, glob, grep, list, read, terminal_use, write, write_stdin</td><td>bash, worktree</td></tr>
 <tr><th scope="row"><code translate="no">interaction</code></th><td>always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, handoff, send_file</td><td></td></tr>
 <tr><th scope="row"><code translate="no">jobs</code></th><td>routine</td><td>cron</td></tr>
@@ -42,7 +42,7 @@
 <tbody>
 <tr><th scope="row">展开</th><td>惰性，每次 <code translate="no">GET /api/programs/explorer</code> 一层，<code translate="no">tools/…</code> 和 <code translate="no">applications/&lt;name&gt;/…</code> 为可调用项优先的行</td></tr>
 <tr><th scope="row">初始选中</th><td>根响应的 <code translate="no">default_selection</code>：第一个应用，否则第一个工具</td></tr>
-<tr><th scope="row">单一可调用项</th><td><code translate="no">computer_use/computer_use_agent/</code> 多文件但只有一个可调用项，因此只有一行，没有多余外壳</td></tr>
+<tr><th scope="row">单一可调用项</th><td><code translate="no">computer_use/computer_use/</code> 多文件但只有一个可调用项，因此只有一行，没有多余外壳</td></tr>
 <tr><th scope="row">刷新</th><td>重新扫描 Programs 并重载同一接口</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/tools</code></th><td>运行时可调用项，含 MCP 工具和显示分组；不定义 Programs 文件夹</td></tr>
 <tr><th scope="row">MCP</th><td>来源为 <code translate="no">mcp</code> 的行从不出现；MCP Servers 是其唯一页面</td></tr>
@@ -94,7 +94,7 @@
 <summary>验收</summary>
 <ul>
 <li>每份发布的工具源码恰在一个用途目录下，无旧顶层源码。</li>
-<li><code translate="no">computer_use_agent</code> 直接可见，逻辑路径为 <code translate="no">tools/computer_use/computer_use_agent</code>。</li>
+<li><code translate="no">computer_use</code> 直接可见，逻辑路径为 <code translate="no">tools/computer_use/computer_use</code>。</li>
 <li>内置浏览器是应用。每个应用都列在 <code translate="no">applications/</code> 下。</li>
 <li>所有已注册可调用名称仍可用。</li>
 <li>打包后的 <code translate="no">gui_agent</code> 入口能开始桌面运行，无导入错误；应用包不导入已移除的命名空间。</li>

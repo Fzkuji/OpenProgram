@@ -174,7 +174,13 @@ def create_task(
         entries = cron_tool._load(path)
         entries.append(entry)
         cron_tool._save(path, entries)
+    _tasks_changed()
     return entry
+
+
+def _tasks_changed() -> None:
+    from openprogram.runtime.scheduler import task_runs
+    task_runs.tasks_changed()
 
 
 def list_tasks() -> list[dict[str, Any]]:
@@ -288,6 +294,7 @@ def update_task(
             break
         else:
             raise KeyError(task_id)
+    _tasks_changed()
     if updated.get("type") == "once" and _run_minute(updated.get("run_at")) != _run_minute(current.get("run_at")):
         from openprogram.programs.tools.jobs.cron import worker
 
@@ -306,6 +313,7 @@ def delete_task(task_id: str, *, by: str = "") -> bool:
             return False
         gone = next(row for row in entries if row.get("id") == task_id)
         cron_tool._save(path, kept)
+    _tasks_changed()
     logger.info("scheduler task %s (%s, %s) deleted by %s", task_id, gone.get("type") or "task",
                 str(gone.get("title") or "")[:60], by or "an unnamed caller")
     return True

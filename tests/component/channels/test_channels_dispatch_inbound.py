@@ -540,7 +540,7 @@ def test_ambient_room_event_speaks_only_through_chat_send(
 
     assert reply is None
     # The screen tool stays at the end of the array, refused without a Page.
-    assert calls[0] == ["chat_send", "computer_use_agent"]
+    assert calls[0] == ["chat_send", "computer_use"]
     assert posted == [("telegram", "acct1", "-100", "Lunch is at noon.")]
     assert seen["memory"] == {"mode": "off"}
     [session] = tmp_db.list_sessions()

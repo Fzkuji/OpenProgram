@@ -18,8 +18,8 @@
 
 <ol>
 <li><code translate="no">prepare_command</code> 解析 <code translate="no">workdir</code>（worktree、沙箱检查、远程 <code translate="no">cd</code> 防护）。</li>
-<li><code translate="no">session.run</code> 检查会话上限，<code translate="no">processes.start</code> 在独立的 supervisor 下启动命令。</li>
-<li><code translate="no">collect</code> 每 50 毫秒把输出读入 1 MiB 的首尾缓冲，直到命令结束或等待时间到。</li>
+<li><code translate="no">session.run</code> 检查会话上限，<code translate="no">processes.start</code> 在独立的 supervisor 下启动命令，supervisor 在 stdout 上写出一行、说明记录已在运行时返回。</li>
+<li>supervisor 每次响铃（见<a href="#wakeups">唤醒</a>），<code translate="no">collect</code> 就把未读输出读入 1 MiB 的首尾缓冲，直到命令结束或等待时间到。</li>
 <li>已结束：<code translate="no">Process exited with code N</code> 加输出，记录移除。仍在运行：记录设 <code translate="no">background=True</code>，回复 <code translate="no">Process running with session ID &lt;id&gt;</code>。</li>
 </ol>
 
@@ -46,7 +46,7 @@
 <tbody>
 <tr><th scope="row">空</th><td>轮询</td><td>轮询</td></tr>
 <tr><th scope="row"><code translate="no">"\x03"</code></th><td>写入终端，由行规程发送 SIGINT</td><td><code translate="no">interrupt</code> 命令：向进程组发 SIGINT</td></tr>
-<tr><th scope="row">其他</th><td><code translate="no">write</code> 命令，原始字节，读取前等 100 毫秒</td><td>拒绝：stdin 已关闭</td></tr>
+<tr><th scope="row">其他</th><td><code translate="no">write</code> 命令，原始字节</td><td>拒绝：stdin 已关闭</td></tr>
 </tbody>
 </table>
 
@@ -61,13 +61,41 @@
 
 <p class="note">显示退出的回复会把记录标为 <code translate="no">reported</code>。</p>
 
+<h2 id="wakeups">唤醒</h2>
+
+<p>运行中的命令没有任何东西按固定节拍醒来。<code translate="no">processes.db</code> 记着一切（输出、状态、停止和 stdin 行）；唤醒只是说“现在去看”。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">谁在等</th><th scope="col">被什么唤醒</th></tr></thead>
+<tbody>
+<tr><th scope="row">supervisor 的控制循环</th><td>命令结束：进程组组长的 <code translate="no">SIGCHLD</code> 经 <code translate="no">signal.set_wakeup_fd</code> 送来（POSIX）；作业对象的 I/O 完成端口，由一个线程跟着（Windows）。停止、中断或 stdin 行：写入方插入后连上门铃。stdin 管道重新有空间（POSIX）或写线程写完（Windows）。唯一的截止时间：停止后到 SIGKILL 前的 5 秒宽限</td></tr>
+<tr><th scope="row"><code translate="no">collect</code></th><td>supervisor 每写一段输出、每改一次状态后的响铃；它的连接关闭（supervisor 已结束：仍为活动状态的记录转为 <code translate="no">unknown</code>，调用返回）；这一轮被停止（<code translate="no">cancellation.on_cancel</code>）；等待时间到；10 秒一次的重新同步</td></tr>
+<tr><th scope="row">等待确认的 <code translate="no">control</code></th><td>supervisor 执行完后的响铃；停止最多 8 秒，其他 3 秒</td></tr>
+<tr><th scope="row"><code translate="no">processes.start</code></th><td>supervisor 在继承来的 stdout 上写的 <code translate="no">ready</code> 行，或这条管道关闭；最多 10 秒</td></tr>
+<tr><th scope="row">命令的 shell 结束后的 <code translate="no">group_guard</code></th><td>进程组里其余每个成员都交给操作系统看住（kqueue <code translate="no">NOTE_EXIT</code>、pidfd）并等它们退出；然后再列一次进程组，因为成员可能又启动了别的进程。两者都没有时才每 0.1 秒列一次</td></tr>
+</tbody>
+</table>
+
+<p>门铃（<code translate="no">channel.py</code>）是每个 supervisor 自己监听的一个回环 TCP 端口，和一个随机令牌一起记在它的私有记录里。不带令牌的连接被断开。</p>
+
+<p>等待方先连接再读取，连接时发令牌；supervisor 每写一次就给它发一个字节。写入方插入行之后再连接，它的令牌行唤醒 supervisor 去读命令。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">方案</th><th scope="col">为什么不用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">processes.db</code> 的文件事件</th><td>只到得了 Worker（到不了 <code translate="no">--print</code> 或脚本），而且要等 <code translate="no">watchfiles</code> 的去抖，约 0.7 秒：每条很快的命令都得等这么久。它仍然服务窗口和退出通知循环</td></tr>
+<tr><th scope="row">Unix 套接字或 FIFO</th><td>Windows 上的 Python 没有 <code translate="no">AF_UNIX</code>，macOS 上路径限 104 字节；FIFO 只有 POSIX 有</td></tr>
+<tr><th scope="row">一个线程阻塞在 <code translate="no">waitpid</code></th><td><code translate="no">SIGCHLD</code> 写进循环自己的套接字，不需要线程；Windows 上完成端口还能数到比组长活得久的成员，进程句柄做不到</td></tr>
+</tbody>
+</table>
+
 <h2 id="cap">会话上限</h2>
 
 <p>每会话最多 64 个活跃会话。到达上限时，停止最近八个之外最久未用的会话并标为 <code translate="no">reported</code>，新回复会指明它。没有空闲超时。</p>
 
 <h2 id="exit-notices">退出通知</h2>
 
-<p><code translate="no">run_exit_notices</code> 在 worker 中运行，每 2 秒扫描。</p>
+<p><code translate="no">run_exit_notices</code> 在 worker 中运行。进程记录变化时扫描，输出持续写入时最多每 2 秒一次；有通知等着忙碌对话时，在对话可能空下来时扫描。</p>
 
 <ol>
 <li><code translate="no">unreported_exits()</code>：<code translate="no">background</code>、未 <code translate="no">reported</code>、状态 <code translate="no">exited</code> 或 <code translate="no">failed</code>。<code translate="no">stopped</code> 的命令不发通知。</li>
@@ -95,7 +123,7 @@
 <tr><th scope="row"><code translate="no">group_guard</code>，管道</th><td>以 <code translate="no">/dev/null</code> 作 stdin 运行命令</td></tr>
 <tr><th scope="row"><code translate="no">group_guard</code>，tty</th><td>打开 pty 作为自身会话的控制终端，把进程组置前台，设 30×120，并泵送 master 与 supervisor 管道。进程组和会话里其他进程组（<code translate="no">set -m</code> 的作业、调用过 setpgid 的子进程）都空了以后停止读取，最晚在进程组结束两秒后：macOS 上 guard 持有终端时不会报告输出结束，而完全关闭的 pty 会丢弃未读输出</td></tr>
 <tr><th scope="row"><code translate="no">group_guard</code>，信号</th><td>忽略 SIGINT 和 SIGTERM，因此中断到达命令</td></tr>
-<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> 不加换行；<code translate="no">interrupt</code> 向进程组发 SIGINT（Windows：终止进程树）</td></tr>
+<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> 不加换行；<code translate="no">interrupt</code> 向进程组发 SIGINT（Windows：终止进程树）。写入 <code translate="no">running</code> 时一并记下门铃的端口和令牌（从不进 <code translate="no">public_record</code>）</td></tr>
 <tr><th scope="row"><code translate="no">ProcessStore</code></th><td>记录 <code translate="no">tty</code>、<code translate="no">sandboxed</code>、<code translate="no">background</code>、<code translate="no">reported</code>、<code translate="no">last_used</code>。<code translate="no">take()</code> 返回未读输出和读取前丢弃的字节数。</td></tr>
 <tr><th scope="row">tty 支持</th><td>macOS 或 Linux 的本地后端</td></tr>
 </tbody>
@@ -108,7 +136,7 @@
 <thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">Activity</th><td>只列后台会话；第一次等待中的命令是活动工具调用</td></tr>
-<tr><th scope="row">Resources</th><td>运行中的后台会话列在 Terminal 组的 Background terminal；保留的输出在 xterm 中只读显示，带停止；随 3 秒的托管进程轮询刷新</td></tr>
+<tr><th scope="row">Resources</th><td>运行中的后台会话列在 Terminal 组的 Background terminal；保留的输出在 xterm 中只读显示，带停止；进程记录变化时刷新（<code translate="no">processes</code> 变更帧）</td></tr>
 <tr><th scope="row">工具行</th><td><code translate="no">write_stdin</code>：“等待输出”“中断命令”“输入”。<code translate="no">terminal_use</code> 输入：“在终端输入”。</td></tr>
 </tbody>
 </table>

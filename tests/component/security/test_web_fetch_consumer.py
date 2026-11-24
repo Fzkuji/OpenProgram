@@ -197,15 +197,17 @@ def managed_web_fetch(monkeypatch: pytest.MonkeyPatch, server: _Server):
         return (str(ipaddress.ip_address(hostname)),)
 
     clients = []
+    managed = safe_http.safe_client
 
     def factory(consumer: str):
-        client = safe_http.safe_client(
+        client = managed(
             consumer, security=OutboundSecurityConfig(resolver=resolver)
         )
         clients.append(client)
         return client
 
-    monkeypatch.setattr(web_fetch, "safe_client", factory, raising=False)
+    # web_fetch imports the client when it first fetches.
+    monkeypatch.setattr(safe_http, "safe_client", factory)
     return clients
 
 

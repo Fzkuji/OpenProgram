@@ -632,12 +632,22 @@ def run_branch_session(session_id: str | None, msg_id: str | None,
         data.update(error="session_id is required", code="bad_request")
         return data
     try:
+        from openprogram.interfaces.server import server as _srv
+        running = bool(_srv._is_run_active(session_id))
+        forked = False
         if not msg_id:
-            from openprogram.interfaces.server import server as _srv
-            msg_id = copy_tip(session_id, running=bool(_srv._is_run_active(session_id)))
+            msg_id = copy_tip(session_id, running=running)
             data["msg_id"] = msg_id
+        else:
+            # A copy ending at the tip is a whole copy; one ending earlier
+            # is a fork, which the new conversation's banner names.
+            try:
+                forked = msg_id != copy_tip(session_id, running=running)
+            except BranchSessionError:
+                forked = True
         new_id = branch_session(session_id, msg_id,
-                                title=(title or "").strip() or None, **({"branch_id": branch_id} if branch_id is not None else {}))
+                                title=(title or "").strip() or None, forked=forked,
+                                **({"branch_id": branch_id} if branch_id is not None else {}))
     except BranchSessionError as e:
         data.update(error=str(e), code=e.code)
         return data

@@ -1,7 +1,7 @@
 <title>认证存储</title>
 <meta name="description" content="供应商凭据都放在 ~/.openprogram 下的一个存储里，CLI、网页、TUI 共用一张登录注册表。">
 <h1>认证存储</h1>
-<p><code translate="no">AuthStore</code>（<code translate="no">models/auth/store.py</code>）：<code translate="no">~/.openprogram/auth/&lt;provider_id&gt;/credentials.json</code>，每个 provider 一个有序列表，原子写入，跨进程锁从读一直持有到写（<code translate="no">mutate</code>），文件被外部改动时重新加载。</p>
+<p><code translate="no">AuthStore</code>（<code translate="no">models/auth/store.py</code>）：<code translate="no">~/.openprogram/auth/&lt;provider_id&gt;/credentials.json</code>，每个 provider 一个有序列表，原子写入，跨进程锁从读一直持有到写（<code translate="no">mutate</code>），文件被外部改动时重新加载。API key 的密钥存在<a href="credential-model.zh.html">所属厂商的文件</a> <code translate="no">auth/_keys/&lt;company&gt;.json</code> 里，写入方式相同。</p>
 <p>请求计数（使用次数、上次使用、今天用了几次、轮换游标）放在旁边的 <code translate="no">usage.json</code>，所以请求从不重写密钥文件。<code translate="no">CredentialProvider</code> 只提供磁盘上已有的内容，不重新发现；导入是显式步骤。</p>
 <table class="stack">
 <thead><tr><th scope="col">供应商</th><th scope="col">登录方式</th><th scope="col">存储</th><th scope="col">刷新</th></tr></thead>

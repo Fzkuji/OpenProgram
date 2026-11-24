@@ -31,8 +31,6 @@ def test_build_stats_reuses_the_supplied_breakdown_estimate(monkeypatch):
         "total_used": 900,
         "basis": "measured",
         "estimated": 600,
-        "calibration": 1.5,
-        "calibration_source": "graph",
     }
 
 

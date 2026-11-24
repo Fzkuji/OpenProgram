@@ -184,6 +184,29 @@ def test_a_second_visible_window_keeps_it_on_screen(connections):
     assert db.updates == [("s1", {"status": "done", "unread": False})]
 
 
+def test_mark_all_read_clears_each_listed_conversation_without_moving_focus(connections, monkeypatch):
+    """The sidebar Activity's "Mark all as read" clears dot and news of every
+    listed conversation, once each, and leaves the socket's focus alone."""
+    from openprogram.interfaces.server.ws_actions.session import ACTIONS
+    from openprogram.runtime.conversation.always_on import pending
+    import openprogram.runtime.context.session_db as session_db
+
+    _, frames = connections
+    updates: list = []
+    seen: list[str] = []
+    monkeypatch.setattr(session_db, "default_db", lambda: types.SimpleNamespace(
+        update_session=lambda sid, **fields: updates.append((sid, fields))))
+    monkeypatch.setattr(pending, "mark_seen", lambda sid: seen.append(sid) or False)
+    ws = _WS(focused="open")
+
+    asyncio.run(ACTIONS["mark_sessions_read"](ws, {"session_ids": ["a", "b", "a", "", 3]}))
+
+    assert ws._focused_session_id == "open"
+    assert updates == [("a", {"unread": False}), ("b", {"unread": False})]
+    assert seen == ["a", "b"]
+    assert frames == [{"type": "session_updated", "data": {"id": sid, "unread": False}} for sid in ("a", "b")]
+
+
 def test_a_hidden_window_keeps_focus_but_clears_nothing(connections, monkeypatch):
     _, frames = connections
     ws = _WS(focused="other")

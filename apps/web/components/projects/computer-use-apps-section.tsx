@@ -2,7 +2,7 @@
 
 /**
  * The apps this project lets the agent operate without asking: the
- * project's ``computer_use(<app>)`` allow rules, one row per app with its
+ * project's ``computer_use(window <app>)`` allow rules, one row per app with its
  * own icon and name. Removing a row removes the rule, so the next use of
  * that app asks again. "Allow this conversation" grants end with their
  * conversation and are not listed here.

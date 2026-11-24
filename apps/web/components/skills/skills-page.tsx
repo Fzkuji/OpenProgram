@@ -23,7 +23,7 @@ export function SkillsPage({
   onNewClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { skills, fetchSkills, error, loading } = useSkills();
+  const { skills, fetchSkills, ready } = useSkills();
   const [tab, setTab] = useState<Tab>("browse");
   const [localNewOpen, setLocalNewOpen] = useState(false);
   const newOpen = newOpenProp ?? localNewOpen;
@@ -32,15 +32,15 @@ export function SkillsPage({
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
 
   const tabs = [
-    { id: "browse", label: text("Installed", "已安装"), count: skills.length },
+    { id: "browse", label: text("Installed", "已安装"), count: ready ? skills.length : undefined },
     { id: "discovery", label: text("Discover", "发现") },
   ];
   const enabledCount = skills.filter((skill) => skill.enabled).length;
 
+  // Until the first list arrives the panel stays empty: "No skills yet"
+  // then would be untrue. Later visits draw the kept list at once.
   const body = tab === "browse"
-    ? loading && skills.length === 0
-      ? <div className={styles.empty}>{text("Loading skills...", "正在加载技能...")}</div>
-      : <SkillsList externalFilter={query} />
+    ? ready ? <SkillsList externalFilter={query} /> : null
     : <DiscoverySources query={query} />;
 
   const content = (
@@ -49,7 +49,7 @@ export function SkillsPage({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(id) => setTab(id as Tab)}
-        summary={text(`${enabledCount} available`, `可用 ${enabledCount} 个`)}
+        summary={ready ? text(`${enabledCount} available`, `可用 ${enabledCount} 个`) : undefined}
         action={{
           label: text("Add skill", "添加技能"),
           onClick: () => setLocalNewOpen(true),
@@ -59,7 +59,6 @@ export function SkillsPage({
         ariaLabel={text("Skill sections", "技能分区")}
         panelId="skills-panel"
       />
-      {error && <div className={styles.errorBar} role="alert">{error}</div>}
       <div
         id="skills-panel"
         role="tabpanel"

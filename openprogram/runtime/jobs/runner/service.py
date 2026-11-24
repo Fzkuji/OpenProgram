@@ -15,6 +15,19 @@ from openprogram.runtime.jobs.runner.recovery import RecoveryOperations
 from openprogram.runtime.jobs.runner.progress import ProgressOperations
 
 
+
+class _Shutdown(shared.threading.Event):
+    """The runner's shutdown, which also wakes every loop's own event."""
+
+    def __init__(self, *wakes: shared.threading.Event) -> None:
+        super().__init__()
+        self._wakes = wakes
+
+    def set(self) -> None:
+        super().set()
+        for wake in self._wakes:
+            wake.set()
+
 class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, CancellationOperations, DispatchOperations, RecoveryOperations, ProgressOperations):
     """Singleton job pool. Use :func:`get_runner`.
 
@@ -37,7 +50,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         *,
         governor=None,
         monotonic_clock: shared.Callable[[], float] | None = None,
-        budget_poll_seconds: float = 0.25,
+        budget_poll_seconds: float | None = None,
         agent_driver_factory: shared.Callable[[shared.Any, shared.Any], shared.Any] | None = None,
     ) -> None:
         if max_workers is None:
@@ -63,6 +76,10 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         self._governor = governor
         self._agent_driver_factory = agent_driver_factory
         self._monotonic = monotonic_clock or time.monotonic
+        # The budget loop sleeps until the earliest deadline in this clock.
+        # An injected clock (a test) is not real time, so the loop then
+        # looks every ``budget_poll_seconds`` instead.
+        self._budget_real_clock = monotonic_clock is None
         self._budget_poll_seconds = budget_poll_seconds
         # Canonical execution state is authoritative for public Jobs.  The
         # legacy JobStore remains a projection for existing surfaces.
@@ -121,14 +138,19 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             self._queue_wait_resume,
         )
         # Maintenance is read from the same profile as the stores above, for
-        # the runner's whole life: the dispatch loop claims every 0.5 s and
-        # must not follow a state directory that changes after it started.
+        # the runner's whole life: the dispatch loop must not follow a state
+        # directory that changes after it started.
         from openprogram.operations.self_update.store import SelfUpdateStore
         self._self_update_store = SelfUpdateStore()
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = shared.threading.Lock()
         self._dispatch_wake = shared.threading.Event()
-        self._shutdown_event = shared.threading.Event()
+        self._reconcile_wake = shared.threading.Event()
+        self._budget_wake = shared.threading.Event()
+        # The loops sleep on their own wake events: a shutdown wakes them.
+        self._shutdown_event = _Shutdown(
+            self._dispatch_wake, self._reconcile_wake, self._budget_wake,
+        )
         # Canonical recovery is authoritative and startup-fatal.  The
         # projection/legacy reconciliation below must not hide a canonical
         # recovery failure.
@@ -194,11 +216,62 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             name="op-job-budget",
         )
         self._budget_thread.start()
+        self._subscribe_to_changes()
         # A new runner may inherit dispatch-ready jobs from the durable
         # admission ledger.  Trigger the first scan once initialization is
-        # complete instead of depending on the dispatch loop's 500 ms
-        # fallback poll.
+        # complete.
         self._dispatch_wake.set()
+
+
+    #: Run tables whose change can let a queued Job be claimed.
+    _DISPATCH_TABLES = frozenset({
+        "job_admissions", "job_finalizations", "execution_resource_intents",
+    })
+
+    def _subscribe_to_changes(self) -> None:
+        """Wake the dispatcher and the reconciler on the changes they act on.
+
+        Only the worker writes the run tables, so a commit signal is every
+        change; a loop's own commits do not wake it again. Self-update files
+        are written by the update controller's process too, so they are
+        watched.
+        """
+        from openprogram.host._platform import changes
+        from openprogram.operations.self_update.control.watchdog import SELF_UPDATE_TOPIC, watch_store
+
+        from openprogram.models.usage.ledger import ROSTER_TOPIC
+
+        dispatcher, reconciler = self._dispatcher_thread, self._reconciler_thread
+        budget = self._budget_thread
+
+        def on_tables(tables: tuple[str, ...]) -> None:
+            here = shared.threading.current_thread()
+            if here is not dispatcher and not self._DISPATCH_TABLES.isdisjoint(tables):
+                self._dispatch_wake.set()
+            if here is not reconciler:
+                self._reconcile_wake.set()
+            # A stop recorded for a running Job is delivered by the budget
+            # loop, which is otherwise asleep until a budget deadline.
+            if here is not budget and "commands" in tables:
+                self._budget_wake.set()
+
+        def on_usage(_sessions: tuple[str, ...]) -> None:
+            # A helper's usage was written: its delegation tree's spend is
+            # checked again (at most every CHECK_EVERY_S).
+            if shared.threading.current_thread() is not budget:
+                self._delegation_spend_changed = True
+                self._budget_wake.set()
+
+        def on_self_update(_keys: tuple[str, ...]) -> None:
+            self._dispatch_wake.set()
+            self._reconcile_wake.set()
+
+        self._change_subscriptions = [
+            changes.subscribe("run_tables", on_tables),
+            changes.subscribe(SELF_UPDATE_TOPIC, on_self_update),
+            changes.subscribe(ROSTER_TOPIC, on_usage),
+        ]
+        watch_store(self._self_update_store)
 
 
     def _governance_context(self, job: shared.Job) -> shared.JobGovernanceContext:
@@ -503,7 +576,12 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             return []
         out: list[shared.Job] = []
         from openprogram.state.store.session.files.placement import iter_session_dirs
-        for sid, _sdir in iter_session_dirs(store.root_path):
+        for sid, sdir in iter_session_dirs(store.root_path):
+            # Most conversations never ran a Job. The reconcile loop makes
+            # this walk every few seconds, so one without a jobs document is
+            # passed over before its lock is taken and its path resolved.
+            if not store.state_file_at(sdir, "jobs.json").exists():
+                continue
             out.extend(shared._store_list(sid, status_filter=status_filter))
         out.sort(key=lambda t: t.created_at or 0, reverse=True)
         if limit is not None:
@@ -838,7 +916,8 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
     def shutdown(self, wait: bool = True) -> None:
         """Tear down the pool. Used in tests / process shutdown."""
         self._shutdown_event.set()
-        self._dispatch_wake.set()
+        for unsubscribe in getattr(self, "_change_subscriptions", ()):
+            unsubscribe()
         # The loops wake on the event; a waiting caller also outlasts one
         # slow iteration (a store write on a loaded runner), process exit
         # does not.

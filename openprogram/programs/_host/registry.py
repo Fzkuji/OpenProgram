@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional
 
 from openprogram.programs._host.sources import use_dependency_directory
+from openprogram.host._platform.changes import publish, signal
 
 if TYPE_CHECKING:
     from openprogram.programs._host.context import ProgramContext
@@ -55,6 +56,10 @@ logger = logging.getLogger(__name__)
 _contexts: dict[str, "ProgramContext"] = {}
 _contexts_lock = threading.RLock()
 _load_errors: list[dict[str, str]] = []
+
+#: The registered Programs changed (a package loaded or disposed, a rescan):
+#: open Programs pages read their tree and call logic again.
+publish("programs")
 
 
 def program_context(owner: str, name: str, root: str = "") -> "ProgramContext":
@@ -71,7 +76,12 @@ def dispose_program(owner: str) -> list[str]:
     """Undo everything the package ``owner`` registered. Returns the errors."""
     with _contexts_lock:
         ctx = _contexts.pop(owner, None)
-    return ctx.dispose() if ctx is not None else []
+    if ctx is None:
+        return []
+    try:
+        return ctx.dispose()
+    finally:
+        signal("programs")
 
 
 def program_tools(owner: str) -> list[str]:
@@ -177,10 +187,13 @@ def sync_builtin_application(name: str) -> Optional["ProgramContext"]:
     """
     if name not in builtin_application_names():
         raise KeyError(f"{name} is not a built-in application")
-    if not builtin_application_enabled(name):
-        dispose_program(f"application:{name}")
-        return None
-    return load_builtin_application(name)
+    try:
+        if not builtin_application_enabled(name):
+            dispose_program(f"application:{name}")
+            return None
+        return load_builtin_application(name)
+    finally:
+        signal("applications")
 
 
 # Names that should never be treated as external harnesses even if their
@@ -543,4 +556,5 @@ def rescan(programs_dir: Optional[str] = None) -> dict:
         loader.sync()
     after_tools = all_tools()
     after = {t.label for t in after_tools}
+    signal("programs")
     return {"added": sorted(after - before), "total": len(after_tools)}

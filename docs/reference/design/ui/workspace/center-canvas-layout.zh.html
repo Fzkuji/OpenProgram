@@ -34,7 +34,7 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 <tr><th scope="row">绿</th><td>单独打开这个标签</td><td>停留 250ms：贴靠菜单与把手连成一块，指针离开即收起。绿灯上按 <kbd>↓</kbd> 或右键把手：不自动收起的菜单。</td></tr>
 </tbody>
 </table>
-<p class="note">按在按钮上移动 6px 就是拖动，不会点击；拖动开始后才捕获指针。关掉的格子在点击的那一帧消失，相邻格立即接手空间（<a href="#closing">关闭</a>）。</p>
+<p class="note">按在按钮上移动 6px 就是拖动，不会点击；拖动开始后才捕获指针。关掉的格子在点击的那一帧离开布局，随后折叠消失，相邻格展开接手空间（<a href="#closing">关闭</a>）。</p>
 <details>
 <summary>把手动效</summary>
 <table class="stack fixed">
@@ -92,7 +92,7 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 
 <h2 id="split-tab">标签栏里的分屏</h2>
 <p>分屏窗口只占一个标签，宽度与普通标签相同，和 Chrome、Arc 的分屏一样：焦点格的图标和标题、分屏缩略图（焦点格填深色）和格数。关闭按钮作用于整个窗口。</p>
-<p>分屏里关掉一格而分屏仍在时，这一格在点击的同一 tick 移除。焦点变化或刚合并成分屏时，图标和名字 200ms 上浮出现。</p>
+<p>分屏里关掉一格而分屏仍在时，这一格在点击的同一 tick 离开分屏的标签。焦点变化或刚合并成分屏时，图标和名字 200ms 上浮出现。</p>
 
 <h2 id="overview">窗口总览</h2>
 <p>仿 macOS 调度中心和 iPad 后台切换。中间区域退成页面底色，标签栏里每个窗口都成为网格上的卡片，尽量放大，不超过区域宽度的一半。</p>
@@ -100,11 +100,12 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">打开方式</th><th scope="col">模式</th></tr></thead>
 <tbody>
-<tr><th scope="row">标签竖直拖出标签栏，把手开始移动</th><td>拖动</td></tr>
+<tr><th scope="row">把当前窗口里的标签拖出标签栏、移到这个窗口上（它不能和自己分屏；回到标签栏总览就收起），把手开始移动</th><td>拖动</td></tr>
 <tr><th scope="row">主菜单旁的按钮，在中间区域或标签栏上捏合</th><td>浏览</td></tr>
 </tbody>
 </table>
 
+<p>拖出标签栏的其他标签不开总览，直接停在当前窗口旁边分屏（<code translate="no">liveCanvasDropAt</code>），落点和下面的卡片一样。</p>
 <svg class="fig-wide" viewBox="0 0 680 164" role="img" aria-label="卡片的落点。左右各四分之一放在整个窗口旁边。中间一半按指针所在半边放在上方或下方。">
   <rect class="tile" x="1" y="1" width="480" height="162" rx="10"/>
   <line class="ln" x1="121" y1="1" x2="121" y2="163"/>
@@ -208,13 +209,14 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 </details>
 
 <h2 id="layout-animation">布局动画</h2>
-<p>重新排列像 macOS 移动窗口一样带动画：绿灯、贴靠菜单、填满、还原上次布局和拖放（<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>）。“减少动态效果”时跳过；拖动分隔线和关闭不做动画。</p>
+<p>重新排列像 macOS 移动窗口一样带动画：绿灯、贴靠菜单、填满、还原上次布局和拖放（<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>）。关闭格子也带动画（<a href="#closing">关闭</a>）。“减少动态效果”时跳过；拖动分隔线不做动画。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">格子</th><th scope="col">动画</th></tr></thead>
 <tbody>
 <tr><th scope="row">留下</th><td>真实几何（<code translate="no">left</code>、<code translate="no">top</code>、<code translate="no">width</code>、<code translate="no">height</code>），Web Animations，300ms，文字重新换行；内联 <code translate="no">calc()</code> 不动</td></tr>
 <tr><th scope="row">新出现</th><td>淡入</td></tr>
 <tr><th scope="row">被遮挡</th><td>绿灯、填满或格数更少的排列遮住的格子，在放大的格子下淡出</td></tr>
+<tr><th scope="row">被关闭</th><td>向自己所在的一侧折叠，用 <code translate="no">clip-path</code> 裁剪，与展开接手的格子同一条 300ms 曲线，两者之间的边线一起移动</td></tr>
 </tbody>
 </table>
 <details>
@@ -231,27 +233,24 @@ type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: st
 </details>
 
 <h2 id="closing">关闭</h2>
-<p>红灯、黄灯和 <kbd>⌘W</kbd> 像关窗口一样：格子在点击的那一帧离开布局，相邻格立即接手空间，不做动画、不截图、不冻结。收尾工作放在显示结果的那一帧之后。</p>
+<p>红灯和黄灯在点击的那一帧改变布局：标签、标签栏和焦点立即是最终状态。画布上被关的格子随后折叠消失，相邻格展开接手空间。没有任何东西等动画，也没有任何东西等保存。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">细节</th></tr></thead>
 <tbody>
-<tr><th scope="row">布局</th><td>一次 store 提交移除格子；相邻格按新尺寸只排版一次</td></tr>
-<tr><th scope="row">网页格</th><td>保持实时视图：不拍快照，原生视图不隐藏再显示。关掉的标签的视图在提交后销毁（<code translate="no">destroyStaleWebViews</code>）。</td></tr>
-<tr><th scope="row">文件</th><td>有未保存修改的文件、可能还有输入未提交的原生编辑器，或状态还没加载的文件，先保存再关标签，保存失败标签保留。其他文件在标签关掉之后再释放（写出草稿、关闭编辑器）；这一步失败会弹提示。释放期间再次打开同一个文件，会拿到新的文档，释放不会关掉它。</td></tr>
+<tr><th scope="row">布局</th><td>一次 store 提交移除格子。提交前的记录只复制被关的格子，不复制旁边的聊天。</td></tr>
+<tr><th scope="row">折叠</th><td>朝远离接手格的一侧：右格折向右边，下格折向下边。没有格子接手时改为淡出。</td></tr>
+<tr><th scope="row">网页格</th><td>这 300ms 显示快照，与其他布局动画一样。关掉的标签的视图在提交后销毁（<code translate="no">destroyStaleWebViews</code>）。</td></tr>
+<tr><th scope="row">文件</th><td>不管文件需要什么，标签立即关闭。它的格子先在原位折叠，然后保持挂载但不可见（<code translate="no">lib/tabs/panes/held-file-panes.ts</code>），直到文件保存完、编辑器关闭。</td></tr>
+<tr><th scope="row">保存失败</th><td>弹带<strong>打开</strong>按钮的提示，不自动把格子带回来：文件可能已被移走或在磁盘上改过。修改留在草稿库里，打开文件时会提供。</td></tr>
+<tr><th scope="row">没改过的文件</th><td>关闭只写编辑器报告过的改动。没人改过的文件直接关闭，不往回写任何东西。</td></tr>
+<tr><th scope="row">未保存的修改</th><td>文件里还没有的修改（草稿、还没导出的 Office 编辑、保存失败的改动）先询问，和 PowerPoint 一样：<strong>保存</strong>、<strong>不保存</strong>或<strong>取消</strong>。一次关闭涉及的所有文件只问一次。</td></tr>
+<tr><th scope="row">不保存</th><td>丢掉草稿和编辑器里的修改，什么都不写。取消则保留标签。</td></tr>
+<tr><th scope="row">期间再次打开</th><td>释放期间再次打开同一个文件，会拿到新的文档，释放不会关掉它</td></tr>
 <tr><th scope="row">程序</th><td>应用的关闭请求发出即可，不等待</td></tr>
-<tr><th scope="row">旁边的聊天</th><td>从对等格换到聊天外壳，外壳把消息行画一次</td></tr>
+<tr><th scope="row">旁边的聊天</th><td>从对等格换到聊天外壳，标签 id 不变，所以从原位展开</td></tr>
 </tbody>
 </table>
-<p class="note">关闭不做动画的原因：带动画的关闭在 300ms 里每帧重排放大的格子，并把网页格冻结成快照；黄灯还要先等最多 160ms 拍全分辨率静态图，再折叠 600ms。</p>
-<table class="stack">
-<thead><tr><th scope="col">实测，聊天旁的格子</th><th scope="col">带动画关闭</th><th scope="col">立即关闭</th></tr></thead>
-<tbody>
-<tr><th scope="row">格子消失，正常 CPU</th><td>17 到 43ms</td><td>16ms</td></tr>
-<tr><th scope="row">全部结束，正常 CPU</th><td>0.33s；黄灯 0.7s</td><td>16ms</td></tr>
-<tr><th scope="row">全部结束，CPU 慢 4 倍</th><td>0.5 到 0.6s；黄灯 1.2 到 1.5s</td><td>约 70ms</td></tr>
-<tr><th scope="row">长任务，CPU 慢 4 倍</th><td>0.6 到 1.1s</td><td>0.25s</td></tr>
-</tbody>
-</table>
+<p class="note">保存为什么不拦住关闭：Office 文稿关闭时要整份导出并上传，需要几秒；而被 Agent 移走或改写的文件根本存不进去，结果是格子永远关不掉。</p>
 
 <h2 id="drag-lifecycle">拖动的生命周期</h2>
 <p>画布以后要承载各种小窗口应用，每次拖动都要干净结束，不打扰其他格子。</p>

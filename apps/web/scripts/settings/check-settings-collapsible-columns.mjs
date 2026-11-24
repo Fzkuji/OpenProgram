@@ -14,7 +14,7 @@ const tabsBlock = layout.match(/const tabs = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
 const tabs = [...tabsBlock.matchAll(/id: "([^"]+)"[^\n]*?href: "([^"]+)"/g)].map((match) => [match[1], match[2]]);
 assert.deepEqual(
   tabs.map(([id]) => id),
-  ["general", "appearance", "providers", "memory", "search", "browser", "voice", "environments", "channels", "import", "usage", "system", "versions"],
+  ["general", "appearance", "providers", "memory", "search", "browser", "voice", "machines", "channels", "import", "usage", "system", "versions"],
   "Settings tab ids and order",
 );
 for (const [id, href] of tabs) assert.equal(href, `/settings/${id}`, `the ${id} tab lives at /settings/${id}`);

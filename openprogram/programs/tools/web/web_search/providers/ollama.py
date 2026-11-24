@@ -21,6 +21,8 @@ Docs: https://ollama.com/
 
 from __future__ import annotations
 
+from openprogram.models.auth.services import service_key
+
 import os
 from dataclasses import dataclass
 
@@ -39,14 +41,14 @@ def _resolve_base_url() -> str:
     raw = (os.environ.get("OLLAMA_BASE_URL") or "").strip()
     if not raw:
         # If the user only set OLLAMA_API_KEY, assume cloud.
-        if os.environ.get("OLLAMA_API_KEY", "").strip():
+        if _resolve_api_key():
             return CLOUD_BASE_URL
         return DEFAULT_BASE_URL
     return raw.rstrip("/")
 
 
 def _resolve_api_key() -> str:
-    return (os.environ.get("OLLAMA_API_KEY") or "").strip()
+    return service_key("ollama-search")
 
 
 @dataclass

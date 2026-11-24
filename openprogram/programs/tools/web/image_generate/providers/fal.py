@@ -9,7 +9,8 @@ Docs: https://docs.fal.ai/model-endpoints/
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 import time
 from dataclasses import dataclass, field
 
@@ -38,7 +39,7 @@ class FalProvider:
     ])
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("FAL_KEY"))
+        return bool(service_key("fal"))
 
     def generate(
         self,
@@ -48,7 +49,7 @@ class FalProvider:
         size: str = "1024x1024",
         n: int = 1,
     ) -> list[GeneratedImage]:
-        key = os.environ.get("FAL_KEY", "")
+        key = service_key("fal")
         if not key:
             raise RuntimeError("FAL_KEY not set")
         mdl = model or DEFAULT_MODEL

@@ -16,8 +16,7 @@ import { adoptBranchIdentity, adoptStoredControls } from "@/lib/agents/branch-se
 
 import { useSessionStore, type AgentBadgeInfo } from "@/lib/session-store";
 import { refreshBranchTokens } from "./session/conversations";
-import { escAttr, escHtml } from "./helpers";
-import { runtimeState, type ThinkingConfig } from "./state";
+import { runtimeState, THINKING_CONFIG_CHANGED, type ThinkingConfig } from "./state";
 
 interface AgentSide {
   provider?: string;
@@ -52,14 +51,12 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
     if (sessBadge) sessBadge.style.display = "none";
     return;
   }
-  const hadSession = runtimeState._hasActiveSession;
   runtimeState._hasActiveSession = !!info.session_id;
   provBadge.textContent =
     info.provider +
     (info.type ? " · " + info.type : "") +
     (runtimeState._hasActiveSession ? " \u{1F512}" : "");
   provBadge.style.display = "";
-  if (hadSession !== runtimeState._hasActiveSession) loadProviders();
   if (sessBadge) {
     if (info.session_id) {
       const short = info.session_id.split("-").pop() || info.session_id.slice(-8);
@@ -97,7 +94,7 @@ function beginSettingsRead(sid: string) {
   // The read names the pane's branch, so a pane on a branch that is not
   // selected reads its own model back (after a broadcast wiped it, too).
   const query = "?session_id=" + encodeURIComponent(sid) + (branchId ? "&branch_id=" + encodeURIComponent(branchId) : "");
-  const request = requestAgentSettings(query);
+  const request = requestAgentSettings(query) as Promise<AgentSettingsReply>;
   settingsReads.set(sid, request);
   const accept = (data: { branch_id?: unknown; active_branch_id?: unknown }) => settingsReads.get(sid) === request
     && (useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null) === branchId
@@ -106,6 +103,16 @@ function beginSettingsRead(sid: string) {
 }
 
 type AgentSettingsPayload = { chat?: AgentBadgeInfo; exec?: AgentBadgeInfo };
+
+/** GET /api/agent_settings: the conversation's model slots, the branch the
+ *  answer is for, and its stored composer controls. */
+type AgentSettingsReply = {
+  chat?: AgentBadgeInfo & Record<string, unknown>;
+  exec?: AgentBadgeInfo & Record<string, unknown>;
+  branch_id?: unknown;
+  active_branch_id?: unknown;
+  settings?: unknown;
+};
 
 /** Keep one conversation's own model settings, for the composer of the pane
  *  that shows it; a slot without a provider and model hides its chip. */
@@ -156,7 +163,7 @@ export async function loadAgentSettings(options: SettingsReadOptions = {}): Prom
       ?? runtimeState.currentSessionId
       ?? (st.activeChatKey && st.activeChatKey !== "__new__" ? st.activeChatKey : null));
     const read = sid ? beginSettingsRead(sid) : null;
-    const newSettings = await (read ? read.request : requestAgentSettings());
+    const newSettings = await (read ? read.request : requestAgentSettings() as Promise<AgentSettingsReply>);
     if (read && !read.accept(newSettings)) return;
     if (sid) adoptBranchIdentity(sid, useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null, settingsBranch(newSettings));
     if (sid) adoptStoredControls(sid, newSettings.settings);
@@ -200,6 +207,8 @@ export async function loadAgentSettings(options: SettingsReadOptions = {}): Prom
 
   if (as.chat && as.chat.thinking) {
     runtimeState._thinkingConfig = as.chat.thinking;
+    // The composer's effort control redraws from it (use-thinking-effort).
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(THINKING_CONFIG_CHANGED));
     // Lazy: a static `./ui` import would close the cycle
     // ui → functions-panel → chat-handlers → providers → ui.
     void import("./ui").then((m) => m.buildThinkingMenu());
@@ -350,7 +359,7 @@ export async function refreshTokenBadge(): Promise<void> {
       badge.style.display = "none";
       return;
     }
-    renderTokenBadge(await resp.json(), sid);
+    renderTokenBadge(await resp.json() as TokenData, sid);
   } catch {
     badge.style.display = "none";
   }
@@ -359,61 +368,6 @@ export async function refreshTokenBadge(): Promise<void> {
   } catch {
     /* ignore */
   }
-}
-
-/* ===== Provider list ============================================= */
-
-interface Provider {
-  name: string;
-  label?: string;
-  configurable?: boolean;
-  configured?: boolean;
-  available?: boolean;
-}
-
-export async function loadProviders(): Promise<void> {
-  try {
-    const resp = await fetch("/api/providers");
-    renderProviders(await resp.json());
-  } catch {
-    /* ignore */
-  }
-}
-
-function renderProviders(providers: Provider[]): void {
-  const el = document.getElementById("providerList");
-  if (!el) return;
-  el.innerHTML = providers
-    .map((p) => {
-      const isConfigured = p.configurable ? p.configured : p.available;
-      const cls = isConfigured ? "provider-item configured" : "provider-item unavailable";
-      const typeTag = p.configurable ? "API" : "CLI";
-      const badgeCls = isConfigured ? "config-badge configured" : "config-badge";
-      const badgeText = isConfigured ? "Configured" : "Set up";
-      const configBadge =
-        '<a class="' +
-        badgeCls +
-        '" href="/config" target="_blank" onclick="event.stopPropagation()" title="Configure">' +
-        badgeText +
-        "</a>";
-      return (
-        '<div class="' +
-        cls +
-        '" title="' +
-        escAttr(p.label) +
-        '">' +
-        '<span class="provider-dot"></span>' +
-        '<span class="provider-type-tag">' +
-        typeTag +
-        "</span>" +
-        '<span class="provider-name">' +
-        escHtml(p.name) +
-        "</span>" +
-        configBadge +
-        "</div>"
-      );
-    })
-    .join("");
 }
 
 /* No `window.*` bridges: this module generates no inline `onclick=`

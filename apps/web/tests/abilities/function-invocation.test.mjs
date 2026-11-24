@@ -718,7 +718,7 @@ test("real retry handlers settle accepted and rejected dispatches", async (t) =>
   function begin(id) {
     startFunctionRetry({ sessionId: "retry-session", requestId: id,
       apply() { observed.push("pending"); }, restore() { observed.push("restore"); },
-      settled: () => false, send: () => true, toast: text => observed.push(text), timeoutMessage: "unexpected timeout" });
+      settled: () => false, subscribe: () => () => {}, send: () => true, toast: text => observed.push(text), timeoutMessage: "unexpected timeout" });
   }
   begin("real-rejected");
   wsHandleChatResponse({session_id:"retry-session", type:"error", retry_request_id:"real-rejected", content:"Retry failed: missing function"});

@@ -309,23 +309,45 @@ def _workspace_content_state(
         return {"kind": "unavailable"}, None
 
 
+def _staging_allowed(session_id: str) -> bool:
+    """Staging edits the project's own Git index, so it needs a local
+    project: a conversation that runs in an SSH environment works on
+    another machine's checkout, where this index is not the one it sees."""
+    try:
+        from openprogram.host.environments import resolve_for_session
+        return resolve_for_session(session_id).is_local
+    except Exception:
+        return False
+
+
 def _workspace_scope(
-    session_id: str, *, category: str = "All", query: str = "", sort: str = "path",
+    session_id: str, *, segment: str = "unstaged",
+    category: str = "All", query: str = "", sort: str = "path",
 ) -> dict:
+    """Uncommitted changes of the project's Git checkout, one side at a time.
+
+    ``segment`` "unstaged" lists the working tree against the index (with
+    untracked files); "staged" lists the index against HEAD.
+    """
+    if segment not in {"unstaged", "staged"}:
+        raise ValueError(f"unknown workspace segment {segment!r}")
     root = _project_root(session_id)
     if root is None or not (root / ".git").exists():
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": "workspace is not a Git repository",
         }
     try:
         raw_status = _git_output(
             root, "status", "--porcelain=v1", "-z", "--untracked-files=all",
         )
-        raw_stats = _git_output(root, "diff", "--numstat", "-z", "HEAD", "--")
+        raw_stats = _git_output(
+            root, "diff", "--numstat", "-z",
+            *(("--cached", "HEAD") if segment == "staged" else ()), "--",
+        )
     except OSError as exc:
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": str(exc),
         }
     stats: dict[str, tuple[int | None, int | None, str | None]] = {}
@@ -363,16 +385,24 @@ def _workspace_scope(
         if "R" in code or "C" in code:
             old_rel = chunks[position] if position < len(chunks) else None
             position += 1
+        # X is the index against HEAD, Y the working tree against the index.
+        side = code[0] if segment == "staged" else code[1]
+        if code == "??":
+            side = "?" if segment == "unstaged" else " "
+        if side in {" ", "!"} or (segment == "staged" and side == "?"):
+            continue
+        if side not in {"R", "C"}:
+            old_rel = None
         added, removed, stat_old_rel = stats.get(rel, (0, 0, old_rel))
-        old_rel = stat_old_rel or old_rel
+        old_rel = (stat_old_rel or old_rel) if side in {"R", "C"} else None
         binary = added is None or removed is None
         diff_state = "binary" if binary else "available"
         if code == "??":
             added, removed, binary, diff_state = _untracked_stats(root / rel)
         op = (
-            "rename" if "R" in code
-            else "add" if code == "??" or "A" in code
-            else "delete" if "D" in code
+            "rename" if side == "R"
+            else "add" if side in {"?", "A", "C"}
+            else "delete" if side == "D"
             else "modify"
         )
         files.append({
@@ -386,7 +416,7 @@ def _workspace_scope(
         })
     if len(files) > _setting("_MAX_REVIEW_SNAPSHOT_ITEMS"):
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": "REVIEW_SNAPSHOT_LIMIT",
         }
     try:
@@ -396,7 +426,7 @@ def _workspace_scope(
         index_identity = "sha256:" + hashlib.sha256(index_vector).hexdigest()
     except OSError as exc:
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": str(exc),
         }
     candidate_states: dict[str, dict] = {}
@@ -444,17 +474,18 @@ def _workspace_scope(
         snapshot_basis.clear()
         files.clear()
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": "REVIEW_SNAPSHOT_LIMIT",
         }
     except (OSError, ValueError) as exc:
         return {
-            "status": "unavailable", "scope": "workspace", "source": "git",
+            "status": "unavailable", "scope": segment, "source": "git",
             "files": [], "file_count": 0, "error": str(exc),
         }
     return _scope_payload(
-        "workspace", "git", files,
+        segment, "git", files,
         root=str(root), ignored_policy="exclude_standard",
+        staging=_staging_allowed(session_id),
         category=category,
         query=query,
         sort=sort,
@@ -629,22 +660,23 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
 
 
 def _render_workspace_content_diff(
-    content: dict, path: str, cursor: int = 0,
+    content: dict, path: str, cursor: int = 0, segment: str = "unstaged",
 ) -> dict:
-    """Render both base→index and index→worktree segments."""
+    """Render one side of the uncommitted change: the staged side
+    (base→index) or the unstaged side (index→worktree)."""
     before = content.get("base")
     index = content.get("index")
     worktree = content.get("worktree")
-    if before is None or index is None or worktree is None:
+    left_side, right_side = (before, index) if segment == "staged" else (index, worktree)
+    if left_side is None or right_side is None:
         return {"diff": "", "diff_state": "large"}
-    if any(b"\0" in value for value in (before, index, worktree)):
+    if any(b"\0" in value for value in (left_side, right_side)):
         return {"diff": "", "diff_state": "binary"}
 
     name = os.path.basename(path)
     segments: list[str] = []
     for label, left, right in (
-        ("base-to-index", before, index),
-        ("index-to-worktree", index, worktree),
+        ("base-to-index" if segment == "staged" else "index-to-worktree", left_side, right_side),
     ):
         if left == right:
             continue
@@ -715,7 +747,8 @@ def _workspace_file_diff(
     if root is None or snapshot is None:
         return {"diff": "", "diff_state": "unavailable", "error": "workspace unavailable"}
     root = Path(os.path.abspath(root))
-    if snapshot.get("scope") != "workspace" or snapshot.get("owner", {}).get("session_id") != session_id:
+    segment = snapshot.get("scope")
+    if segment not in {"unstaged", "staged"} or snapshot.get("owner", {}).get("session_id") != session_id:
         return {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
     candidate = Path(os.path.abspath(path))
     try:
@@ -724,6 +757,7 @@ def _workspace_file_diff(
         return {"diff": "", "diff_state": "unavailable", "error": "path is outside workspace"}
     scope = _workspace_scope(
         session_id,
+        segment=segment,
         category=snapshot.get("category", "All"),
         query=snapshot.get("query", ""),
         sort=snapshot.get("sort", "path"),
@@ -744,7 +778,7 @@ def _workspace_file_diff(
     content = snapshot.get("workspace", {}).get("candidates", {}).get(member["path"])
     if content is None:
         return {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
-    return _render_workspace_content_diff(content, rel, cursor)
+    return _render_workspace_content_diff(content, rel, cursor, segment)
 
 
 __all__ = [

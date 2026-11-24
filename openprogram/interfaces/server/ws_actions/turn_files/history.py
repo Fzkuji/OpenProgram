@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
+import time
 from typing import Any
+
+from openprogram.state.store import operation_receipts
 
 from .shared import _MAX_DIFF_LINES
 from .shared import _MAX_REVIEW_TEXT_BYTES
@@ -11,6 +16,7 @@ from .shared import _REVIEW_CATEGORIES
 from .shared import _REVIEW_SCOPES
 from .shared import _REVIEW_SORTS
 from .shared import _SCOPE_PAGE_SIZE
+from .shared import _WORKSPACE_SCOPES
 from .shared import _valid_turn_id
 from .scope import _branch_scope
 from .scope import _get_review_snapshot
@@ -21,11 +27,24 @@ from .diff import _bind_diff_page
 from .diff import _branch_file_diff
 from .diff import _resolve_diff_cursor
 from .diff import _review_turn_file_diff
+from .diff import _render_workspace_content_diff
 from .diff import _workspace_file_diff
 from .diff import _workspace_scope
 async def _run(fn) -> Any:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, fn)
+
+
+def _current_scope(session_id: str, scope: str, turn_id: str, *,
+                   category: str, query: str, sort: str) -> dict:
+    """The review scope as it is now, by its name."""
+    if scope == "turn":
+        return _turn_scope(session_id, turn_id, category=category, query=query, sort=sort)
+    if scope == "branch":
+        return _branch_scope(session_id, category=category, query=query, sort=sort)
+    if scope in _WORKSPACE_SCOPES:
+        return _workspace_scope(session_id, segment=scope, category=category, query=query, sort=sort)
+    return {"status": "error", "error": f"unknown review scope {scope!r}"}
 
 
 async def handle_turn_operation_status(ws, cmd: dict) -> None:
@@ -205,20 +224,9 @@ async def handle_review_scope(ws, cmd: dict) -> None:
         result = {"status": "error", "error": "session_id is required"}
     else:
         try:
-            if scope == "turn":
-                result = await _run(lambda: _turn_scope(
-                    session_id, turn_id, category=category, query=query, sort=sort,
-                ))
-            elif scope == "branch":
-                result = await _run(lambda: _branch_scope(
-                    session_id, category=category, query=query, sort=sort,
-                ))
-            elif scope == "workspace":
-                result = await _run(lambda: _workspace_scope(
-                    session_id, category=category, query=query, sort=sort,
-                ))
-            else:
-                result = {"status": "error", "error": f"unknown review scope {scope!r}"}
+            result = await _run(lambda: _current_scope(
+                session_id, scope, turn_id, category=category, query=query, sort=sort,
+            ))
         except Exception as exc:
             result = {"status": "error", "error": str(exc)}
     result = _page_scope(result, cursor, limit, snapshot_id)
@@ -266,21 +274,9 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
         result = {"diff": "", "diff_state": "unavailable", "error": "session_id and path are required"}
     else:
         try:
-            current_scope = (
-                await _run(lambda: _turn_scope(
-                    session_id, turn_id, category=category, query=query, sort=sort,
-                ))
-                if scope == "turn"
-                else await _run(lambda: _branch_scope(
-                    session_id, category=category, query=query, sort=sort,
-                ))
-                if scope == "branch"
-                else await _run(lambda: _workspace_scope(
-                    session_id, category=category, query=query, sort=sort,
-                ))
-                if scope == "workspace"
-                else {"status": "error", "error": f"unknown review scope {scope!r}"}
-            )
+            current_scope = await _run(lambda: _current_scope(
+                session_id, scope, turn_id, category=category, query=query, sort=sort,
+            ))
             saved_snapshot = _get_review_snapshot(snapshot_id)
             member = next(
                 (row for row in current_scope.get("files", []) if row.get("path") == path),
@@ -407,6 +403,8 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
             ))
         finally:
             await _run(lambda: server.release_branches_operation(session_id, owners))
+            # A window whose answer is lost asks for the receipt when told.
+            operation_receipts.changed(cmd.get("idempotency_key"))
     result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "revert_turn_result",
@@ -446,6 +444,8 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
             ))
         finally:
             await _run(lambda: server.release_branches_operation(session_id, owners))
+            # A window whose answer is lost asks for the receipt when told.
+            operation_receipts.changed(cmd.get("idempotency_key"))
     result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "reapply_turn_result",
@@ -479,19 +479,17 @@ async def handle_review_revert_hunk(ws, cmd: dict) -> None:
     snapshot_id = values["snapshot_id"]
     hunk = cmd.get("hunk")
     from openprogram.interfaces.server import server as server
-    if validation_error or scope not in _REVIEW_SCOPES or not session_id or not path or not isinstance(hunk, dict):
+    if (validation_error or scope not in _REVIEW_SCOPES or scope == "staged"
+            or not session_id or not path or not isinstance(hunk, dict)):
+        # A staged hunk lives in the index, not the working file: unstage it.
         result = {"status": "error", "error_code": "INVALID_REQUEST", "error": validation_error or "invalid request"}
     elif await _run(lambda: server._is_run_active(session_id)):
         result = {"status": "blocked", "error_code": "RUN_ACTIVE", "error": "run_active"}
     else:
         try:
             category, query, sort = values["category"], values["query"], values["sort"]
-            current_scope = await _run(lambda: (
-                _turn_scope(session_id, values["assistant_msg_id"], category=category, query=query, sort=sort)
-                if scope == "turn"
-                else _branch_scope(session_id, category=category, query=query, sort=sort)
-                if scope == "branch"
-                else _workspace_scope(session_id, category=category, query=query, sort=sort)
+            current_scope = await _run(lambda: _current_scope(
+                session_id, scope, values["assistant_msg_id"], category=category, query=query, sort=sort,
             ))
             in_scope = any(row.get("path") == path for row in current_scope.get("files", []))
             if current_scope.get("status") != "ready" or current_scope.get("snapshot_id") != snapshot_id:
@@ -514,10 +512,241 @@ async def handle_review_revert_hunk(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_review_stage(ws, cmd: dict) -> None:
+    """Stage (Unstaged scope) or unstage (Staged scope) one hunk, or a whole
+    file when the request carries no hunk.
+
+    Like Revert, only a file of the scope snapshot the client is showing
+    can change, a newer snapshot or a running turn refuses, and a hunk the
+    index no longer matches is a conflict.
+    """
+    values, validation_error = _review_request_values(cmd, include_path=True)
+    session_id = values["session_id"]
+    scope = values["scope"]
+    path = values["path"]
+    snapshot_id = values["snapshot_id"]
+    hunk = cmd.get("hunk")
+    from openprogram.interfaces.server import server as server
+    if (validation_error or scope not in _WORKSPACE_SCOPES or not session_id or not path
+            or (hunk is not None and not isinstance(hunk, dict))):
+        result = {"status": "error", "error_code": "INVALID_REQUEST", "error": validation_error or "invalid request"}
+    elif await _run(lambda: server._is_run_active(session_id)):
+        result = {"status": "blocked", "error_code": "RUN_ACTIVE", "error": "run_active"}
+    else:
+        try:
+            category, query, sort = values["category"], values["query"], values["sort"]
+            current_scope = await _run(lambda: _current_scope(
+                session_id, scope, "", category=category, query=query, sort=sort,
+            ))
+            member = next((row for row in current_scope.get("files", []) if row.get("path") == path), None)
+            if current_scope.get("status") != "ready" or current_scope.get("snapshot_id") != snapshot_id:
+                result = {"status": "error", "error_code": "STALE_SNAPSHOT", "error": "STALE_SNAPSHOT"}
+            elif not current_scope.get("staging"):
+                result = {"status": "error", "error_code": "UNAVAILABLE", "error": "staging is unavailable here"}
+            elif member is None:
+                result = {"status": "error", "error_code": "INVALID_REQUEST", "error": "path is not in review scope"}
+            else:
+                from pathlib import Path as _Path
+                from .stage import stage_change
+                root = _Path(current_scope.get("root") or "")
+                result = await _run(lambda: stage_change(root, scope, member, hunk))
+        except Exception as exc:
+            result = {"status": "error", "error_code": "UNAVAILABLE", "error": str(exc)}
+    await ws.send_text(json.dumps({
+        "type": "review_stage_result",
+        "data": {
+            "session_id": session_id, "scope": scope, "path": path, "snapshot_id": snapshot_id,
+            "request_id": values["request_id"], **result, "action": "review_stage",
+        },
+    }, default=str))
+
+
+_AGENT_REVIEW_FILES = 60
+
+
+def _scope_diff_text(session_id: str, scope: str, member: dict, snapshot: dict) -> str:
+    """One file's whole diff in a review scope, page after page."""
+    from .agent_review import MAX_REVIEW_CHARS
+    pages: list[str] = []
+    offset: int | None = 0
+    used = 0
+    while offset is not None and used < MAX_REVIEW_CHARS:
+        if scope == "turn":
+            page = _review_turn_file_diff(session_id, member, member["path"], offset)
+        elif scope == "branch":
+            page = _branch_file_diff(session_id, member["path"], offset)
+        else:
+            content = snapshot.get("workspace", {}).get("candidates", {}).get(member["path"])
+            if content is None:
+                return ""
+            page = _render_workspace_content_diff(content, member.get("rel") or member["path"], offset, scope)
+        if page.get("diff_state") != "available":
+            break
+        text = page.get("diff") or ""
+        if offset and pages:
+            # A continuation page opens with a synthetic, countless header.
+            text = re.sub(r"\A@@ -\d+ \+\d+ @@\n", "", text)
+        pages.append(text)
+        used += len(text)
+        offset = page.get("next_cursor") if isinstance(page.get("next_cursor"), int) else None
+    return "".join(pages)
+
+
+_agent_review_tasks: set[asyncio.Task] = set()
+# Running reviews by the client's review_id, so Stop review can end one
+# and a client whose socket dropped can wait for it again.
+_agent_reviews_by_id: dict[str, asyncio.Task] = {}
+# Finished answers by review_id. A review takes minutes; the socket that
+# asked may be gone by then, so the answer waits here for the client to
+# come back with review_agent_wait.
+_agent_review_results: dict[str, tuple[float, dict]] = {}
+_AGENT_REVIEW_RESULT_TTL = 3600.0
+_AGENT_REVIEW_RESULTS_MAX = 64
+
+
+def _keep_review_result(review_id: str, data: dict) -> None:
+    now = time.monotonic()
+    for key, (at, _data) in list(_agent_review_results.items()):
+        if now - at > _AGENT_REVIEW_RESULT_TTL:
+            del _agent_review_results[key]
+    while len(_agent_review_results) >= _AGENT_REVIEW_RESULTS_MAX:
+        del _agent_review_results[next(iter(_agent_review_results))]
+    _agent_review_results[review_id] = (now, data)
+
+
+def _review_id(cmd: dict) -> str | None:
+    value = cmd.get("review_id")
+    if isinstance(value, str) and value and len(value.encode("utf-8")) <= _MAX_REVIEW_TEXT_BYTES:
+        return value
+    return None
+
+
+async def handle_review_agent(ws, cmd: dict) -> asyncio.Task:
+    """Review with agent: the session's model reviews the shown scope's diff
+    and answers with findings (path, line, severity, body).
+
+    The model call takes a while, so it runs beside the connection's
+    ordered frames and answers when it is done. ``review_agent_cancel``
+    with the same ``review_id`` stops it."""
+    task = asyncio.create_task(_review_agent(ws, cmd))
+    _agent_review_tasks.add(task)
+    task.add_done_callback(_agent_review_tasks.discard)
+    review_id = _review_id(cmd)
+    if review_id:
+        _agent_reviews_by_id[review_id] = task
+
+        def forget(done: asyncio.Task) -> None:
+            if _agent_reviews_by_id.get(review_id) is done:
+                del _agent_reviews_by_id[review_id]
+
+        task.add_done_callback(forget)
+    return task
+
+
+async def handle_review_agent_wait(ws, cmd: dict) -> asyncio.Task:
+    """A client whose socket dropped during a review asks for its answer
+    again: at once when it is done, when it finishes while it runs, and
+    UNKNOWN_REVIEW when this Worker never ran it (it restarted)."""
+    task = asyncio.create_task(_review_agent_wait(ws, cmd))
+    _agent_review_tasks.add(task)
+    task.add_done_callback(_agent_review_tasks.discard)
+    return task
+
+
+async def _review_agent_wait(ws, cmd: dict) -> None:
+    review_id = _review_id(cmd)
+    running = _agent_reviews_by_id.get(review_id) if review_id else None
+    if running is not None:
+        try:
+            # Shielded: this waiter going away must not cancel the review.
+            await asyncio.shield(running)
+        except asyncio.CancelledError:
+            if not running.cancelled():
+                raise
+        except Exception:
+            pass
+    kept = _agent_review_results.get(review_id) if review_id else None
+    data = dict(kept[1]) if kept else {
+        "status": "error", "error_code": "UNKNOWN_REVIEW", "error": "UNKNOWN_REVIEW",
+    }
+    data.update({"request_id": cmd.get("request_id"), "review_id": review_id, "action": "review_agent_wait"})
+    try:
+        await ws.send_text(json.dumps({"type": "review_agent_result", "data": data}, default=str))
+    except Exception:
+        logging.getLogger(__name__).debug("review findings not delivered", exc_info=True)
+
+
+async def handle_review_agent_cancel(ws, cmd: dict) -> None:
+    """Stop review: cancel the running review and its model request. The
+    client already stopped waiting, so nothing is sent back."""
+    review_id = _review_id(cmd)
+    task = _agent_reviews_by_id.pop(review_id, None) if review_id else None
+    if task is not None:
+        task.cancel()
+
+
+async def _review_agent(ws, cmd: dict) -> None:
+    values, validation_error = _review_request_values(cmd)
+    session_id = values["session_id"]
+    scope = values["scope"]
+    turn_id = values["assistant_msg_id"]
+    snapshot_id = values["snapshot_id"]
+    if validation_error or scope not in _REVIEW_SCOPES or not session_id or not snapshot_id:
+        result = {"status": "error", "error_code": "INVALID_REQUEST", "error": validation_error or "invalid request"}
+    else:
+        try:
+            category, query, sort = values["category"], values["query"], values["sort"]
+            current_scope = await _run(lambda: _current_scope(
+                session_id, scope, turn_id, category=category, query=query, sort=sort,
+            ))
+            saved = _get_review_snapshot(snapshot_id)
+            if (current_scope.get("status") != "ready" or current_scope.get("snapshot_id") != snapshot_id
+                    or saved is None):
+                result = {"status": "error", "error_code": "STALE_SNAPSHOT", "error": "STALE_SNAPSHOT"}
+            else:
+                from .agent_review import normalize_findings, review_context, run_agent_review
+                members = [row for row in current_scope.get("files", [])
+                           if row.get("diff_state") in {None, "available"} and not row.get("binary")]
+                members = members[:_AGENT_REVIEW_FILES]
+
+                def collect() -> list[tuple[str, str]]:
+                    return [(row.get("rel") or row["path"], diff) for row in members
+                            if (diff := _scope_diff_text(session_id, scope, row, saved))]
+
+                diffs = await _run(collect)
+                if not diffs:
+                    result = {"status": "ready", "findings": []}
+                else:
+                    answer = await run_agent_review(session_id, review_context(diffs))
+                    if answer is None:
+                        result = {"status": "error", "error_code": "UNAVAILABLE", "error": "the model did not answer"}
+                    else:
+                        result = {"status": "ready",
+                                  "findings": normalize_findings(answer, {rel for rel, _diff in diffs})}
+        except Exception as exc:
+            result = {"status": "error", "error_code": "UNAVAILABLE", "error": str(exc)}
+    data = {"session_id": session_id, "scope": scope, "snapshot_id": snapshot_id, **result}
+    review_id = _review_id(cmd)
+    if review_id:
+        _keep_review_result(review_id, data)
+    try:
+        await ws.send_text(json.dumps({
+            "type": "review_agent_result",
+            "data": {**data, "request_id": values["request_id"], "action": "review_agent"},
+        }, default=str))
+    except Exception:
+        # The requesting socket closed; the findings were only for it.
+        logging.getLogger(__name__).debug("review findings not delivered", exc_info=True)
+
+
 ACTIONS = {
     "review_scope": handle_review_scope,
     "review_file_diff": handle_review_file_diff,
     "review_revert_hunk": handle_review_revert_hunk,
+    "review_stage": handle_review_stage,
+    "review_agent": handle_review_agent,
+    "review_agent_cancel": handle_review_agent_cancel,
+    "review_agent_wait": handle_review_agent_wait,
     "turn_history_state": handle_turn_history_state,
     "turn_operation_status": handle_turn_operation_status,
     "revert_turn": handle_revert_turn,

@@ -51,6 +51,7 @@ import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import { useResizableRail } from "../layout/use-resizable-rail";
 import { useStableScrollEnd } from "./use-stable-scroll-end";
 import { useNavLinksReturn } from "./use-nav-links-return";
+import { UpdateBadge } from "./update-badge";
 
 // At or below this width the expanded sidebar is a fixed overlay over the
 // page (styles/base/layout.css), so it starts collapsed and closes after navigation.
@@ -251,6 +252,7 @@ export const Sidebar = memo(function Sidebar() {
               Program
             </span>
           </span>
+          <UpdateBadge />
         </div>
         <button
           className={sidebarToggleClass}

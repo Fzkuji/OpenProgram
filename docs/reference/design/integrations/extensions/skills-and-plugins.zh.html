@@ -94,7 +94,7 @@ author: ...
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram/extensions/skills/</code></th><td><code translate="no">loader.py</code> 四来源加载和提示词列表；<code translate="no">tool.py</code> <code translate="no">skill</code> 工具和轨迹；<code translate="no">discovery.py</code> 远程拉取；<code translate="no">watcher.py</code> watchdog 热重载和 WS 广播，无 watchdog 时 5 秒轮询</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/extensions/skills/</code></th><td><code translate="no">loader.py</code> 四来源加载和提示词列表；<code translate="no">tool.py</code> <code translate="no">skill</code> 工具和轨迹；<code translate="no">discovery.py</code> 远程拉取；<code translate="no">watcher.py</code> 按文件事件热重载和 WS 广播；只在拿不到文件事件时每 5 秒查看，另每 300 秒兜底同步</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/extensions/plugins/</code></th><td><code translate="no">manifest.py</code>、<code translate="no">loader.py</code>、<code translate="no">installer.py</code>、<code translate="no">hooks.py</code>、<code translate="no">marketplace.py</code>、<code translate="no">trust.py</code>、<code translate="no">autoupdate.py</code>、<code translate="no">inspect.py</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/</code></th><td><code translate="no">skills.py</code>、<code translate="no">plugins.py</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/state/frontmatter.py</code></th><td><code translate="no">SKILL.md</code> 解析，和输出样式、CLI 共用</td></tr>

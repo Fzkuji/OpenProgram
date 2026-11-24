@@ -18,12 +18,13 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { SolarIcon } from "@/components/solar-icons";
 import { TabFavicon } from "@/components/center-tabs/strip/tab-favicon";
 import { FillIcon } from "@/components/ui/fill-icon";
+import { windowIcons } from "@/lib/desktop/embedded-window/embedded-window";
 
 import { mentionHost, mentionKey, type Mention } from "./mention-sources";
 
 export type FileMatch = Mention;
 
-function kindOf(item: Mention): "tab" | "app" | "file" {
+function kindOf(item: Mention): "tab" | "window" | "app" | "file" {
   return item.kind ?? "file";
 }
 
@@ -84,9 +85,9 @@ export function FileMenu({
           const selected = i === selectedIndex;
           const kind = kindOf(item);
           const heading = kind !== kindOf(items[i - 1] ?? item) || i === 0
-            ? { tab: text("Tabs", "标签页"), app: text("Running apps", "正在运行的应用"), file: text("Files", "文件") }[kind]
+            ? { tab: text("Tabs", "标签页"), window: text("Windows in tabs", "标签页里的窗口"), app: text("Running apps", "正在运行的应用"), file: text("Files", "文件") }[kind]
             : null;
-          // Headings appear only once tabs or apps share the menu with files.
+          // Headings appear only once tabs, windows or apps share the menu with files.
           const grouped = items.some((other) => kindOf(other) !== "file");
           return (
             <React.Fragment key={mentionKey(item)}>
@@ -138,6 +139,10 @@ export function FileMenu({
               >
                 {item.kind === "tab"
                   ? <FillIcon><TabFavicon url={item.faviconUrl} /></FillIcon>
+                  : item.kind === "window"
+                    ? windowIcons.get(item.windowId)
+                      ? <FillIcon><img src={windowIcons.get(item.windowId)} alt="" width={16} height={16} style={{ display: "block" }} /></FillIcon>
+                      : <SolarIcon name="monitor" size={16} fit="fill" />
                   : item.kind === "app"
                     ? item.icon
                       ? <FillIcon><img src={item.icon} alt="" width={16} height={16} style={{ display: "block" }} /></FillIcon>
@@ -149,14 +154,14 @@ export function FileMenu({
                   flex: 1,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  ...(item.kind === "tab" || item.kind === "app" ? { fontFamily: "var(--font-sans)" } : {}),
+                  ...(item.kind === "tab" || item.kind === "app" || item.kind === "window" ? { fontFamily: "var(--font-sans)" } : {}),
                 }}
               >
-                {item.kind === "tab" ? item.title : item.kind === "app" ? item.name : `${item.path}${item.is_dir ? "/" : ""}`}
+                {item.kind === "tab" || item.kind === "window" ? item.title : item.kind === "app" ? item.name : `${item.path}${item.is_dir ? "/" : ""}`}
               </span>
-              {(item.kind === "tab" || item.kind === "app") && (
+              {(item.kind === "tab" || item.kind === "app" || item.kind === "window") && (
                 <span style={{ flexShrink: 0, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-muted)" }}>
-                  {item.kind === "tab" ? mentionHost(item.url) : item.bundle_id}
+                  {item.kind === "tab" ? mentionHost(item.url) : item.kind === "window" ? item.app : item.bundle_id}
                 </span>
               )}
             </div>

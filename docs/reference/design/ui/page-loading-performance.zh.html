@@ -27,6 +27,23 @@
 </tbody>
 </table>
 
+<h2 id="no-waiting-text">等待不配文字</h2>
+<p>页面、面板和卡片都不说“加载中”“正在重试”“读不到”，App 自己发出的读取没有报错页，也没有重试按钮。等待要靠缩短来解决，不靠文字说明。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">还没到</th><td>位置按最终大小留空，数据到了不跳动。只有答复已经到了而且确实为空，才显示空状态（“还没有运行”）。</td></tr>
+<tr><th scope="row">之前看过</th><td>第一帧就画上次的答复，后台再刷新：查询数据保留 30 分钟，TanStack Query 之外的读取在页面存活期间保留上次的答复。</td></tr>
+<tr><th scope="row">第一次打开</th><td>首屏后一秒内预取全部外壳路由和十一个懒加载标签页；每个导航页的第一次读取在空闲时和鼠标移到导航项上时开始。</td></tr>
+<tr><th scope="row">读取失败</th><td>上次的数据留着；按退避重试（1 秒起翻倍到 30 秒），用 <code translate="no">console.warn</code> 记录。页面自己发出的读取失败不弹提示。</td></tr>
+<tr><th scope="row">确定的答复</th><td>4xx、“不存在”或“已删除”结束重试，页面据此处理：东西不在了的详情页回到列表，不存在的会话关闭，服务端拒绝的区块不画。一个来源失败不拖住其他来源。</td></tr>
+<tr><th scope="row">照常显示</th><td>用户刚做的事的结果（保存或密钥被拒、乐观改动被服务端拒绝、自己打开的文件夹读不出来），内容本身的状态（压缩包损坏、图片无法解码），以及登录已过期。</td></tr>
+<tr><th scope="row">服务端数据</th><td>回复体检查前是 <code translate="no">unknown</code>（<code translate="no">apps/web/lib/net/json-unknown.d.ts</code>）；可能是句子、列表或对象的错误字段经 <code translate="no">errorDetailText</code> 变成文字。直接渲染未检查的对象曾让整个窗口崩掉。</td></tr>
+</tbody>
+</table>
+<p class="note">改动前在已安装的默认 App 上实测（快机器）：首次打开 Agents、MCP、Plugins、Applications、History、Scheduler、Programs、Projects、Memory 和五个设置页时“Loading”会闪 10 到 500 ms；冷启动约 850 ms 时、打开会话约 130 ms 时也会出现。</p>
+<p class="note">改动后同样走一遍（冷启动、25 个页面、三个会话及各自的面板标签），没有任何加载或失败文字，也没有页面错误。</p>
+
 <h2 id="data-and-compatibility">必须保持</h2>
 <ul>
 <li>不支持的 Provider 保持不支持。本地 Provider 身份、别名、账号存在性、CLI 回退、环境变量和云认证语义不变。</li>

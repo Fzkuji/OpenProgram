@@ -51,7 +51,7 @@ def _edit_target(arguments: Mapping[str, Any]) -> str | None:
     value = arguments.get("file_path") or arguments.get("path")
     if not isinstance(value, str) or not value:
         return None
-    from openprogram.host.environments.remote import remote_fs
+    from openprogram.host.machines.remote import remote_fs
     from openprogram.state.worktree.path_resolve import resolve_path
 
     if remote_fs() is not None:

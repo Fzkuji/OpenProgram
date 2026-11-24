@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
+const { replaceAppImage } = require("./app-replace");
 
 const REPOSITORY = "Fzkuji/OpenProgram";
 const LATEST_URL = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
@@ -194,14 +195,24 @@ function desktopAssetSpec(version, platform, arch, { linuxFormat = "deb" } = {})
   throw new Error(`unsupported Desktop platform: ${platform}/${arch}`);
 }
 
+/** What a chosen file is: a macOS .zip is the App itself, ready to swap in. */
+function assetKind(name, specKind) {
+  return name && name.endsWith(".zip") ? "app-archive" : specKind;
+}
+
 /**
  * The file names that can serve this computer, the preferred one first. A
  * signed Windows App stays on the signed line, so it never looks at an
  * unsigned installer.
  */
-function desktopAssetNames(version, platform, arch, { linuxFormat, windowsSignedOnly = true } = {}) {
+function desktopAssetNames(version, platform, arch, { linuxFormat, windowsSignedOnly = true, inPlace = false } = {}) {
   const { name } = desktopAssetSpec(version, platform, arch, { linuxFormat });
-  if (platform === "darwin") return [name.replace("-unsigned.dmg", ".dmg"), name];
+  if (platform === "darwin") {
+    const images = [name.replace("-unsigned.dmg", ".dmg"), name];
+    // An App that replaces itself takes the signed .zip, and the disk image
+    // when a release has none.
+    return inPlace ? [`OpenProgram-${version}-mac-${arch}.zip`, ...images] : images;
+  }
   if (platform === "win32" && !windowsSignedOnly) return [name, name.replace(/\.exe$/, "-unsigned.exe")];
   return [name];
 }
@@ -214,7 +225,7 @@ function resolveDesktopRelease(
   platform = "darwin",
   {
     linuxFormat, windowsSignedOnly = true, versionStore = false, repository = REPOSITORY,
-    webRoot = GITHUB_WEB_ROOT,
+    webRoot = GITHUB_WEB_ROOT, inPlace = false,
   } = {},
 ) {
   if (!release || release.draft !== false) throw new Error("draft release is not eligible");
@@ -233,7 +244,7 @@ function resolveDesktopRelease(
   let names = [];
   try {
     spec = desktopAssetSpec(latestVersion, platform, arch, { linuxFormat });
-    names = desktopAssetNames(latestVersion, platform, arch, { linuxFormat, windowsSignedOnly });
+    names = desktopAssetNames(latestVersion, platform, arch, { linuxFormat, windowsSignedOnly, inPlace });
   } catch (error) {
     if (!versionStore) throw new DesktopAssetNotPublished(error.message);
   }
@@ -254,7 +265,7 @@ function resolveDesktopRelease(
     releaseName: typeof release.name === "string" ? release.name : `OpenProgram ${latestVersion} Release`,
     releaseNotes: typeof release.body === "string" ? release.body.slice(0, 20_000) : "",
     releaseUrl: expectedReleaseUrl,
-    artifactKind: spec ? spec.kind : null,
+    artifactKind: spec ? assetKind(name, spec.kind) : null,
     asset: name ? {
       name,
       bytes: entry.bytes,
@@ -678,6 +689,19 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
   }
 }
 
+/** Whether a finished file is already there with the release's size and hash. */
+async function fileMatches(filePath, asset) {
+  try {
+    const info = await fs.promises.stat(filePath);
+    if (!info.isFile() || info.size !== asset.bytes) return false;
+    const hash = crypto.createHash("sha256");
+    for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+    return hash.digest("hex") === asset.sha256;
+  } catch {
+    return false;
+  }
+}
+
 /** What `openprogram upgrade --json` reported: its last line of output. */
 function parseUpgradeOutcome(output, exitCode) {
   const line = String(output || "").trim().split(/\r?\n/).at(-1);
@@ -691,12 +715,6 @@ function parseUpgradeOutcome(output, exitCode) {
     ok: exitCode === 0,
     detail: exitCode === 0 ? "" : `The update stopped with code ${exitCode}. Try again from Settings.`,
   };
-}
-
-/** Put a checked AppImage where the running one lives. */
-function replaceAppImage(downloaded, appImagePath) {
-  fs.chmodSync(downloaded, 0o755);
-  fs.renameSync(downloaded, appImagePath);
 }
 
 function githubSource() {
@@ -721,7 +739,11 @@ class DesktopUpdateService {
     readCurrentVersion = null,
     applyVersionUpdate = null,
     updateSourceKeys = RELEASE_PUBLIC_KEYS,
+    inPlace = null,
   }) {
+    // How this App replaces itself (app-replace.js), or null when an update
+    // is a file the user opens.
+    this.inPlace = inPlace;
     this.currentVersion = currentVersion;
     this.arch = arch;
     this.platform = platform;
@@ -760,7 +782,7 @@ class DesktopUpdateService {
     }
     if (cached !== null) {
       try {
-        const assetOptions = { linuxFormat, windowsSignedOnly: false };
+        const assetOptions = { linuxFormat, windowsSignedOnly: false, inPlace: Boolean(inPlace) };
         const expectedAsset = desktopAssetSpec(cached.latestVersion, platform, arch, assetOptions);
         const expectedNames = desktopAssetNames(cached.latestVersion, platform, arch, assetOptions);
         const hasNoAsset = versionStore && cached.asset === null;
@@ -775,7 +797,7 @@ class DesktopUpdateService {
           ].every((value) => typeof value === "string")
           || cached.currentVersion !== currentVersion
           || cached.releaseNotes.length > 20_000
-          || cached.artifactKind !== expectedAsset.kind
+          || cached.artifactKind !== assetKind(cached.asset?.name, expectedAsset.kind)
           || cached.releaseUrl !== `https://github.com/${REPOSITORY}/releases/tag/v${cached.latestVersion}`
           || (!hasNoAsset && (
             !expectedNames.includes(cached.asset?.name)
@@ -810,12 +832,18 @@ class DesktopUpdateService {
       errorKind: null,
       updateKind: null,
       needsNewShell: null,
+      // The version prepared to swap in on restart; the sidebar's badge.
+      readyVersion: null,
     };
+    // The prepared file of an App that replaces itself: { version, file }.
+    this.prepared = null;
     this.checkPromise = null;
     this.downloadPromise = null;
   }
 
-  getState() { return structuredClone(this.publicState); }
+  getState() {
+    return { ...structuredClone(this.publicState), installsInPlace: this.installsInPlace() };
+  }
 
   publish(patch) {
     Object.assign(this.publicState, patch);
@@ -918,18 +946,23 @@ class DesktopUpdateService {
         versionStore: this.versionStore,
         repository: source.repository,
         webRoot: source.webRoot,
+        inPlace: Boolean(this.inPlace),
       });
       this.source = source;
       this.persisted.lastSuccessAt = now;
       this.persisted.release = resolved;
       this.persist();
+      const stillReady = resolved.status === "available" && this.prepared?.version === resolved.latestVersion;
+      if (!stillReady) this.prepared = null;
       this.publish({
-        status: resolved.status,
+        status: stillReady ? "ready" : resolved.status,
+        readyVersion: stillReady ? resolved.latestVersion : null,
         checkedAt: now,
         release: publicRelease(resolved),
         error: null,
         errorKind: null,
       });
+      this.prepareInBackground();
     } catch (error) {
       if (error instanceof DesktopAssetNotPublished) {
         this.persisted.release = null;
@@ -943,6 +976,26 @@ class DesktopUpdateService {
     return this.getState();
   }
 
+  /**
+   * Whether the verified release is one this App installs itself: its file
+   * matches how this App replaces itself.
+   */
+  installsInPlace(release = this.persisted.release) {
+    return Boolean(this.inPlace && release?.asset && release.artifactKind === this.inPlace.kind);
+  }
+
+  /**
+   * With automatic checks on, a release this App installs itself is fetched
+   * and prepared without asking; "ready" then offers the restart. Called after
+   * each check and once at start, for a release found before the last quit.
+   */
+  prepareInBackground() {
+    const release = this.persisted.release;
+    if (!this.persisted.automaticChecks || release?.status !== "available" || !this.installsInPlace(release)) return;
+    if (this.prepared?.version === release.latestVersion || this.versionStore && !this.publicState.needsNewShell) return;
+    void this.download().catch(() => {});
+  }
+
   async download() {
     if (this.downloadPromise) return this.downloadPromise;
     const release = this.persisted.release;
@@ -954,7 +1007,10 @@ class DesktopUpdateService {
       this.publish({ status: NOT_PUBLISHED, error: null, errorKind: null });
       return this.getState();
     }
-    this.downloadPromise = (takesVersion ? this.runVersionUpdate(release) : this.runDownload(release))
+    const run = takesVersion
+      ? this.runVersionUpdate(release)
+      : this.installsInPlace(release) ? this.runPrepare(release) : this.runDownload(release);
+    this.downloadPromise = run
       .finally(() => { this.downloadPromise = null; });
     return this.downloadPromise;
   }
@@ -994,6 +1050,62 @@ class DesktopUpdateService {
       });
     } catch (error) {
       this.publish({ status: "error", updateKind: null, ...updateErrorFields(error, "update") });
+    }
+    return this.getState();
+  }
+
+  /** Fetch the release file to the App's own folder, check it and get it ready to swap in. */
+  async runPrepare(release) {
+    const targetPath = this.inPlace.downloadPath(release.asset.name);
+    this.publish({
+      status: "downloading",
+      progress: { downloaded: 0, total: release.asset.bytes },
+      updateKind: "app",
+      error: null,
+      errorKind: null,
+    });
+    try {
+      if (!await fileMatches(targetPath, release.asset)) {
+        let lastProgressAt = 0;
+        await downloadVerified(this.fetchImpl, release.asset, targetPath, (downloaded, total) => {
+          const now = Date.now();
+          if (downloaded === total || now - lastProgressAt >= 250) {
+            lastProgressAt = now;
+            this.publish({ progress: { downloaded, total } });
+          }
+        }, { allowedHosts: this.source.allowedHosts });
+      }
+      try {
+        await this.verifyArtifact(targetPath, release.asset);
+        await this.inPlace.prepare(targetPath, release);
+      } catch (error) {
+        await fs.promises.unlink(targetPath).catch(() => {});
+        throw error;
+      }
+      this.prepared = { version: release.latestVersion, file: targetPath };
+      this.publish({ status: "ready", readyVersion: release.latestVersion, progress: null, updateKind: null });
+    } catch (error) {
+      this.publish({ status: "error", progress: null, updateKind: null, ...updateErrorFields(error, "download") });
+    }
+    return this.getState();
+  }
+
+  /** Quit, swap in the prepared copy and start it. */
+  async install() {
+    const release = this.persisted.release;
+    if (!this.prepared || this.prepared.version !== release?.latestVersion) {
+      throw new Error("no prepared update is ready to install");
+    }
+    this.publish({ status: "installing", error: null, errorKind: null });
+    let failure;
+    try {
+      failure = await this.inPlace.install(this.prepared.file, release);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    if (failure) {
+      this.prepared = null;
+      this.publish({ status: "error", readyVersion: null, errorKind: "failed", error: failure });
     }
     return this.getState();
   }

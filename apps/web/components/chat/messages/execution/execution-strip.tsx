@@ -342,6 +342,9 @@ export function StepRow({
       className={"tl-step" + (expanded ? " open" : "")}
       data-msg-id={dataMsgId}
       data-head-id={dataHeadId}
+      // The block this step draws, so a row elsewhere (Activity's task
+      // tree) can scroll to it.
+      data-block-id={expansionId}
     >
       <div
         className="tl-step-head"
@@ -484,6 +487,20 @@ export function toolOutcome(
   return undefined;
 }
 
+/** Whole tool outputs already read, so a remounted row (a conversation
+ *  opened again) shows them at once. Bounded: oldest go first. */
+const fullOutputs = new Map<string, string>();
+const FULL_OUTPUTS_KEPT = 64;
+function rememberFullOutput(key: string, output: string): void {
+  fullOutputs.delete(key);
+  fullOutputs.set(key, output);
+  while (fullOutputs.size > FULL_OUTPUTS_KEPT) {
+    const oldest = fullOutputs.keys().next().value;
+    if (oldest === undefined) break;
+    fullOutputs.delete(oldest);
+  }
+}
+
 /** 普通函数调用步骤：点行 → 右栏详情；有子调用时图标外圈表示可展开。
  *  running：流式中结果还没回来的调用——图标位换呼吸点。 */
 export function FunctionStep({
@@ -502,8 +519,9 @@ export function FunctionStep({
   /** Status of the reply that owns the call. */
   turnStatus?: string;
 }) {
-  const [fullResult, setFullResult] = useState<string>();
-  const [fullError, setFullError] = useState<string>();
+  const fullKey = sessionId && block.message_id && (block.node_id || block.tool_call_id)
+    ? `${sessionId}:${block.message_id}:${block.node_id || block.tool_call_id}` : null;
+  const [fullResult, setFullResult] = useState<string | undefined>(() => (fullKey ? fullOutputs.get(fullKey) : undefined));
   const [loadingFull, setLoadingFull] = useState(false);
   const { text } = useTranslation();
   const isError = !!block.is_error;
@@ -544,7 +562,7 @@ export function FunctionStep({
     params: parseParams(block.input),
     output: result === undefined || result === null
       ? undefined : decodeEscapes(String(result)),
-    error: fullError || (isError && result ? decodeEscapes(String(result)) : undefined),
+    error: isError && result ? decodeEscapes(String(result)) : undefined,
   };
   async function openDetail() {
     const store = useSessionStore.getState();
@@ -555,24 +573,22 @@ export function FunctionStep({
       store.showDetail(detail);
       return;
     }
+    // The head already held shows at once; the whole output replaces it
+    // when it arrives. A read that fails leaves the head in place.
+    store.showDetail(detail);
     if (loadingFull) return;
-    setFullError(undefined);
     setLoadingFull(true);
-    store.showDetail({
-      ...detail,
-      status: "running",
-      output: text("Loading...", "加载中..."),
-      error: undefined,
-    });
     try {
       const response = await fetchFullToolOutput(sessionId, messageId, nodeId);
       if (response && !response.error && response.result !== undefined) {
-        setFullResult(typeof response.result === "object" ? JSON.stringify(response.result) : String(response.result));
+        const full = typeof response.result === "object" ? JSON.stringify(response.result) : String(response.result);
+        if (fullKey) rememberFullOutput(fullKey, full);
+        setFullResult(full);
       } else {
-        setFullError(response?.error || text("Full tool output could not be loaded.", "无法加载完整工具输出。"));
+        console.warn("full tool output read failed", { sessionId, messageId, nodeId, error: response?.error });
       }
-    } catch {
-      setFullError(text("Full tool output could not be loaded.", "无法加载完整工具输出。"));
+    } catch (error) {
+      console.warn("full tool output read failed", { sessionId, messageId, nodeId, error });
     } finally {
       setLoadingFull(false);
     }

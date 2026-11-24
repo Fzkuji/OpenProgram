@@ -58,7 +58,7 @@
 <tr><th scope="row">Telegram</th><td><a href="https://t.me/BotFather">@BotFather</a>，<code translate="no">/newbot</code>，复制 token。不需要 webhook 或公网 IP。</td></tr>
 <tr><th scope="row">Discord</th><td>在 <a href="https://discord.com/developers/applications">Developer Portal</a> 创建应用和 bot。在 <strong>Bot</strong> 页开启 <strong>Message Content Intent</strong>，否则网关拒绝连接。把 bot 邀请到服务器。</td></tr>
 <tr><th scope="row">Slack</th><td>在 <a href="https://api.slack.com/apps">api.slack.com/apps</a> 创建并安装应用。开启 <strong>Socket Mode</strong>。bot token 权限：<code translate="no">chat:write</code>、<code translate="no">app_mentions:read</code> 和所订阅事件需要的 history 权限，如 <code translate="no">im:history</code>。app token 在 <strong>Basic Information → App-Level Tokens</strong>，带 <code translate="no">connections:write</code>。订阅 <code translate="no">message</code> 和 <code translate="no">app_mention</code>，适配器只处理这两种。两个 token 都必须有。</td></tr>
-<tr><th scope="row">微信</th><td>个人微信，不需要公众号。扫描终端二维码并确认。扫码人直接放行，无需配对码。凭证保留到出现 <code translate="no">bot token invalid — relogin required</code>。走腾讯 iLink 后端，其条款限个人使用。</td></tr>
+<tr><th scope="row">微信</th><td>个人微信，不需要公众号。在<strong>设置 → 渠道 → 添加 bot</strong> 里选微信并点<strong>获取二维码</strong>，或运行登录命令；用微信扫码并确认。二维码过期后点<strong>换新码</strong>。扫码人直接放行，无需配对码。凭证保留到出现 <code translate="no">bot token invalid — relogin required</code>。走腾讯 iLink 后端，其条款限个人使用。</td></tr>
 </tbody></table>
 <h2 id="two-ways-to-configure">命令</h2>
 <p>每个 <code translate="no">--id</code> 是一个 bot 登录，有自己的凭证和绑定。</p>
@@ -127,11 +127,11 @@ openprogram channels accounts group-users reset telegram --group -1001234567890 
 <p>该设置已移除，存储值被忽略。之前在群里通过配对码批准的同事只有回复和记忆；他们在允许名单上，现在在群里代表你运行。升级前运行 <code translate="no">openprogram channels access list</code>，然后对每位同事执行 <code translate="no">access revoke</code> 和 <code translate="no">group-users add &lt;channel&gt; &lt;user id&gt; --access chat</code>。</p>
 </details>
 <h2 id="channels-and-environments">渠道和环境</h2>
-<p>渠道决定消息镜像到哪里，对话的<a href="../capabilities/environments.zh.html">环境</a>决定工具在哪里运行。来自渠道的对话用默认环境。</p>
+<p>渠道决定消息镜像到哪里，对话的项目决定工具在哪里运行，即<a href="../capabilities/environments.zh.html">项目所在的机器</a>。来自渠道的对话在主项目里，运行在这台电脑上；绑定的对话保持自己的项目。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">主题</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row">渠道标签</th><td>Web 和 App 输入框上方、环境标签旁：logo 和账号，或 <strong>No channel</strong>。圆点：黄色降级，红色不可达。打开后每个应用一行；选账号绑定或切换，<strong>Disconnect</strong> 停止，<strong>Manage channels</strong> 添加。</td></tr>
+<tr><th scope="row">渠道标签</th><td>Web 和 App 输入框上方、机器标签旁：logo 和账号，或 <strong>No channel</strong>。圆点：黄色降级，红色不可达。打开后每个应用一行；选账号绑定或切换，<strong>Disconnect</strong> 停止，<strong>Manage channels</strong> 添加。</td></tr>
 <tr><th scope="row">绑定微信账号</th><td>你微信发给 bot 的消息到这里，不进单独对话。账号上每个聊天对象只归一个对话；在别处选择同一对象会移走，同账号其他对象的对话不受影响。没有已知对象的选择会占用整个账号。断开或切换后回到平常的对话。</td></tr>
 <tr><th scope="row">绑定对话的回复</th><td>每条助手回复都发出，不管谁启动的轮次：App 里输入、Goal 或提醒。只发回复：你输入的内容、工具进度和思考留在 App。常驻检查和定时任务改发报告，除非 Agent 的<strong>渠道</strong>设置已关闭。</td></tr>
 <tr><th scope="row">审批暂停</th><td>发送之前写的；批准后只发之后的</td></tr>

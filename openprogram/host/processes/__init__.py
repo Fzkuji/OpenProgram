@@ -10,7 +10,11 @@ import sys
 import threading
 import time
 
+from . import channel
 from .store import ACTIVE, ProcessStore
+
+#: How long a start waits for the supervisor to say its command runs.
+LAUNCH_SECONDS = 10
 
 
 def current_owner():
@@ -60,6 +64,7 @@ def start(command, cwd=None, *, store=None, tty=False, run_command=None):
     command shown and recorded (a workdir prefix, for instance).
     """
     from openprogram.host.backend import get_active_backend
+    from openprogram.host.backend.base import spawned_on
     session_id, execution_id, tool_call_id = current_owner()
     if not isinstance(command, str) or not command.strip():
         raise ValueError("start requires a shell command")
@@ -82,48 +87,72 @@ def start(command, cwd=None, *, store=None, tty=False, run_command=None):
     try:
         supervisor = subprocess.Popen(
             _supervisor_command(store, record["id"], launch),
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             **options,
         )
+        # Counted on its machine while it lives, so switching the machine off lets the command finish
+        # before its instance goes.
+        spawned_on(backend.machine_id, supervisor)
         supervisor.stdin.write(json.dumps(launch).encode("utf-8"))
         supervisor.stdin.close()
-        # Reap if the worker remains alive; the supervisor's lifetime and
-        # output are independent of this optional local waiter.
-        threading.Thread(target=supervisor.wait, daemon=True).start()
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            record = store.get(record["id"])
-            if record["status"] != "starting":
-                break
-            if supervisor.poll() is not None:
-                store.update(record["id"], status="unknown", ended_at=None)
-                break
-            time.sleep(0.05)
+        answered = threading.Event()
+        ready = []
+
+        def follow():
+            # The supervisor's one line says its record runs; the pipe
+            # closing first says it ended before that. Then reap it if the
+            # worker remains alive; its lifetime and output do not depend
+            # on this optional local waiter.
+            try:
+                ready.append(supervisor.stdout.readline() == channel.READY_LINE)
+            finally:
+                answered.set()
+                supervisor.stdout.close()
+            supervisor.wait()
+
+        threading.Thread(target=follow, daemon=True).start()
+        answered.wait(LAUNCH_SECONDS)
+        record = store.get(record["id"])
+        if answered.is_set() and not any(ready) and record["status"] == "starting":
+            store.update(record["id"], status="unknown", ended_at=None, lost_at=time.time())
     except Exception:
         # Once a supervisor was created, its child may exist even if the
         # launch acknowledgement was lost. Only failed Popen proves no child.
         store.update(record["id"], status="failed" if supervisor is None else "unknown",
-                     ended_at=time.time() if supervisor is None else None)
+                     ended_at=time.time() if supervisor is None else None,
+                     lost_at=None if supervisor is None else time.time())
         raise
     return store.get(record["id"])
 
 
 def control(store, process_id, kind, text=None, *, wait=True):
+    """Queue a stop, interrupt or stdin write for the supervisor and wake it.
+
+    With ``wait`` the call returns once the supervisor applied it (a stop:
+    once the command ended), woken by the supervisor's ring rather than by
+    looking again; it gives up after 8 s for a stop, 3 s otherwise.
+    """
     command_id = store.command(process_id, kind, text)
     if command_id is None:
         return store.get(process_id)
-    if wait:
-        deadline = time.monotonic() + (8 if kind == "stop" else 3)
-        while time.monotonic() < deadline:
+    if not wait:
+        channel.poke(store.get(process_id))
+        return store.get(process_id)
+    deadline = time.monotonic() + (8 if kind == "stop" else 3)
+    # Connecting after the row is written is what wakes the supervisor.
+    with channel.Watch(store.get(process_id)) as watch:
+        while True:
             result = store.command_result(command_id)
             record = store.get(process_id)
             if result and result["status"] == "failed":
                 raise RuntimeError(result["error"] or "process control failed")
             if result and result["status"] == "applied" and (kind != "stop" or record["status"] not in ACTIVE):
                 return record
-            time.sleep(0.05)
-        raise RuntimeError("process control is pending; inspect status before retrying")
-    return store.get(process_id)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or watch.ended:
+                break
+            watch.wait(min(remaining, channel.RESYNC_SECONDS))
+    raise RuntimeError("process control is pending; inspect status before retrying")
 
 
 def scoped_records(store, session_id):

@@ -3,7 +3,7 @@
 A tab keeps one short id (``tk3fa``) derived from the App's window and tab,
 the same in every turn, sub-agent and process of every conversation. Reading a tab
 returns Playwright's AI snapshot: the page's ARIA tree, each element with a
-ref (``e12``; ``f1e3`` inside a frame). A ref stays valid while its element
+ref (``e12``; ``f1e3`` inside a frame), which ``element`` names. A ref stays valid while its element
 exists, through any number of actions, and every action returns what it
 changed as an incremental snapshot, so there is no separate observe step and
 nothing that expires between calls. A ref whose element is gone is found
@@ -20,7 +20,13 @@ changed since that agent last looked, whoever changed it, and says when
 another agent acted on the tab in between. No write is ever sent twice: a
 failure after the input was sent says the input may have taken effect and
 carries the page as it is. Coordinates belong to one screenshot and stop
-working once the page moved or was acted on. Playwright's sync API
+working once the page moved or was acted on.
+
+The actions and their arguments are the browser family's of
+``computer_use``'s one vocabulary (``get_state``, ``click``,
+``type_text``, ``list_tabs``, ``create_tab``, ...), already checked and in
+our names when they arrive here. Keys arrive in xdotool's spelling and are
+translated to Playwright's. Playwright's sync API
 belongs to one thread, so one owner thread holds the CDP connection to the
 App, reconnects when the App restarts, and runs each page call; waiting
 (``wait``, and settling after an action) happens on the caller's thread in
@@ -40,7 +46,7 @@ the user can see the tab and it has the App's sign-ins. With no App window to
 open it in (the App is closed, or this process cannot reach it), the driver
 starts a browser of its own with no window and a fresh profile
 (``host/resources/background_browser.py``) and the tab opens there, with the
-same id rules, actions and results; ``open`` says so, since such a page has
+same id rules, actions and results; ``create_tab`` says so, since such a page has
 none of the App's sign-ins. Those tabs live in this process: they close with
 it, or once none has been used for ``OWN_IDLE_SECONDS``.
 
@@ -110,9 +116,11 @@ _VIEWPORT_SIZE = "() => ({width: window.innerWidth, height: window.innerHeight})
 
 
 # Actions that only look at the page.
-_READS = {"read", "console", "network"}
+_READS = {"get_state", "find", "read_console_messages", "read_network_requests"}
 # What the conversation's preview follows as a read: it never marks the page as operated.
-_LOOKS = _READS | {"wait", "screenshot"}
+_LOOKS = _READS | {"wait"}
+# The longest a step may hold a button or key, or rest the pointer.
+MAX_HOLD_SECONDS = 10.0
 
 # The file input an element is, or labels. Anything else (an upload button, a drop zone) is
 # clicked, and answered through the file chooser it opens: guessing a nearby input could put
@@ -205,7 +213,7 @@ armed => {
 }
 """
 
-# The page's file fields, for upload(field=n) when a button's click opens no chooser (the page
+# The page's file fields, for upload_file(field=n) when a button's click opens no chooser (the page
 # lost track of its own input, or opens it only after an await that spent the click). They are
 # listed with what tells them apart and never picked for the model: a wrong guess would put the
 # file into another field and still report success.
@@ -275,9 +283,9 @@ class Tab:
     writes: list[tuple[int, str]] = field(default_factory=list)
     seen: dict[str, int] = field(default_factory=dict)
     opener_tab_id: str = ""
-    # The file chooser the page opened during an agent action, waiting for upload(path).
+    # The file chooser the page opened during an agent action, waiting for upload_file(path).
     chooser: Any = field(default=None, repr=False, compare=False)
-    # The page's file fields, numbered, listed when an upload button opened no chooser: upload(field=n).
+    # The page's file fields, numbered, listed when an upload button opened no chooser: upload_file(field=n).
     file_fields: dict[int, Any] = field(default_factory=dict, repr=False, compare=False)
     # Where the current action's click lands, in viewport CSS pixels: {"point": {x, y}, "viewport": {width, height}}.
     aim: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
@@ -313,6 +321,8 @@ class _Acted:
     documents: int
     pending: set
     created: int
+    # Seconds the pointer rests where the action left it, before the page is read.
+    rest: float = 0.0
 
 
 _writes = itertools.count(1)
@@ -571,6 +581,17 @@ def _script_failure(exc: Exception) -> str:
     return first or type(exc).__name__
 
 
+def _seconds(value: Any, default: float) -> float:
+    """How long a step holds a button or a key, or rests the pointer."""
+    try:
+        seconds = float(default if value in (None, "") else value)
+    except (TypeError, ValueError):
+        raise pa.ActionError("invalid_seconds", "seconds must be a number") from None
+    if not 0 <= seconds <= MAX_HOLD_SECONDS:
+        raise pa.ActionError("invalid_seconds", f"seconds must be between 0 and {MAX_HOLD_SECONDS:g}")
+    return seconds
+
+
 def _http_url(url: Any) -> str:
     text = str(url or "").strip()
     if text and "://" not in text and not text.startswith(("about:", "data:")):
@@ -603,11 +624,16 @@ class Driver:
 
     # -- the conversation's side: listing, choosing, opening, closing ------
 
-    def run(self, action: str, args: dict[str, Any], session: str) -> dict[str, Any]:
-        """One action; a failure is a result with ``ok: False``, never an exception."""
-        from openprogram.runtime.execution.run_control import get_current_execution_id
-        execution = get_current_execution_id() or ""
-        token = _VIEWER.set(f"{session}/{execution}" if execution else session)
+    def run(self, action: str, args: dict[str, Any], session: str, agent: str = "") -> dict[str, Any]:
+        """One action; a failure is a result with ``ok: False``, never an exception.
+
+        ``agent`` is who acts, for its own current tab and baseline of changes;
+        without it, the conversation's execution running now."""
+        if not agent:
+            from openprogram.runtime.execution.run_control import get_current_execution_id
+            execution = get_current_execution_id() or ""
+            agent = f"{session}/{execution}" if execution else session
+        token = _VIEWER.set(agent)
         try:
             if _access_disabled():
                 from openprogram.runtime.permissions import refusal
@@ -626,7 +652,7 @@ class Driver:
             _check_cancelled()
             if time.monotonic() >= deadline:
                 raise BrowserError("tab_busy", f"another agent has been acting on tab {tab.id} for "
-                                   f"{TAB_WAIT_SECONDS:g}s; try again, or open a tab of your own")
+                                   f"{TAB_WAIT_SECONDS:g}s; try again, or create a tab of your own")
         if held is not None:
             held.append(tab.lock)
             return False
@@ -636,10 +662,12 @@ class Driver:
         try:
             if action in video.ACTIONS:
                 return video.run(action, args, session)
-            if action == "tabs":
+            if action == "list_tabs":
                 return self._list(session, bool(args.get("all")))
-            if action == "open":
+            if action == "create_tab":
                 return self._open(args, session)
+            if action not in ACTIONS:
+                raise BrowserError("unknown_action", f"the browser has no action {action!r}")
             tab = self._tab(args.get("tab"), session)
             for attempt in (1, 2):
                 release = self._hold(tab)
@@ -668,15 +696,18 @@ class Driver:
         raise AssertionError("unreachable")
 
     def _dispatch(self, tab: Tab, action: str, args: dict[str, Any]) -> dict[str, Any]:
-        if action == "close":
+        if action == "close_tab":
             return self._close(tab)
         if action in _LOOKS:
-            if action == "screenshot":
+            include = str(args.get("include") or "tree") if action == "get_state" else ""
+            if include == "screenshot":
                 result = self._screenshot(tab)
             elif action == "wait":
                 result = self._wait(tab, args)
             else:
                 result = self._on_owner(self._operate, tab, action, args)
+                if include == "all" and result.get("ok") is not False:
+                    result = {**result, "_images": self._screenshot(tab)["_images"]}
             self._publish(tab, result)
             self._report_look(tab, action, result)
             return result
@@ -686,7 +717,7 @@ class Driver:
         operation = self._report_operation(tab, action, args, "dispatched")
         outcome: dict[str, Any] = {"ok": False, "reason_code": "browser_error"}
         try:
-            # A file chooser the page opens while the agent acts is held for upload(path) instead of
+            # A file chooser the page opens while the agent acts is held for upload_file(path) instead of
             # opening a window on the user's screen; the user's own clicks still open it.
             caught = self._on_owner(self._catch_choosers, tab)
             try:
@@ -696,7 +727,7 @@ class Driver:
             finally:
                 self._on_owner(self._release_choosers, tab, caught)
             # An upload answers the chooser its own click opened.
-            if caught.get("chooser") is not None and action != "upload" and result.get("ok", True):
+            if caught.get("chooser") is not None and action != "upload_file" and result.get("ok", True):
                 tab.chooser = caught["chooser"]
                 result["file_chooser"] = caught["detail"]
             self._publish(tab, result)
@@ -743,16 +774,19 @@ class Driver:
     def _after(self, tab: Tab, acted: "_Acted") -> dict[str, Any]:
         """The result of an action already sent: never an error that would send it again."""
         try:
+            if acted.rest:
+                # The pointer rests where it moved: on this thread, so other agents' page calls go on.
+                time.sleep(acted.rest)
             self._settle(tab, acted)
             result = {**self._on_owner(self._report, tab, acted.before_url), "done": acted.done}
         except BrowserError as exc:
             if exc.reason_code != "tab_gone":
                 return {"ok": True, "tab": tab.id, "done": acted.done, "note": f"reading the page after it failed: {exc}"}
             return {"ok": True, "tab": tab.id, "done": acted.done,
-                    "note": "the tab closed or left the App right after the action; tabs lists the tabs now"}
+                    "note": "the tab closed or left the App right after the action; list_tabs lists the tabs now"}
         except Exception as exc:
             return {"ok": True, "tab": tab.id, "done": acted.done,
-                    "note": f"reading the page after it failed ({type(exc).__name__}); read shows it"}
+                    "note": f"reading the page after it failed ({type(exc).__name__}); get_state shows it"}
         if self._created != acted.created:
             opened = self._opened(tab)
             if opened:
@@ -776,7 +810,10 @@ class Driver:
 
     def _wait(self, tab: Tab, args: dict[str, Any]) -> dict[str, Any]:
         """Until a text is on the page, or for some seconds, without holding the browser for others."""
-        seconds = max(0.0, min(float(args.get("seconds") or (10 if args.get("text") else 1)), 30.0))
+        try:
+            seconds = max(0.0, min(float(args.get("seconds") or (10 if args.get("text") else 1)), 30.0))
+        except (TypeError, ValueError):
+            raise pa.ActionError("invalid_seconds", "seconds must be a number") from None
         text = str(args.get("text") or "")
         deadline = time.monotonic() + seconds
         found = False
@@ -876,8 +913,17 @@ class Driver:
         return tab
 
     def _find(self, name: str) -> Tab | None:
+        """The tab with id ``name``, else the one tab whose title holds it (a call may name a tab by title)."""
+        if not name:
+            return None
         with self._lock:
-            return next((tab for tab in self._tabs.values() if tab.id == name), None)
+            tabs = list(self._tabs.values())
+        found = next((tab for tab in tabs if tab.id == name), None)
+        if found is not None:
+            return found
+        wanted = name.casefold()
+        titled = [tab for tab in tabs if wanted in (tab.title or "").casefold()]
+        return titled[0] if len(titled) == 1 else None
 
     def _current(self, session: str) -> str:
         """The tab this agent used last, else the one its conversation used last."""
@@ -888,6 +934,17 @@ class Driver:
         self._last[session] = tab.id
         if _VIEWER.get():
             self._last[_VIEWER.get()] = tab.id
+
+    def forget(self, agent: str) -> None:
+        """The agent ended: drop its current tab and the screenshots kept for it."""
+        with self._lock:
+            self._last.pop(agent, None)
+            for tab in self._tabs.values():
+                tab.shots.pop(agent, None)
+
+    def known(self, name: Any) -> Tab | None:
+        """A tab this process has listed, by its id; nothing is asked of the App."""
+        return self._find(str(name or "").strip())
 
     def tab(self, name: Any, session: str) -> Tab:
         """The tab a conversation names, by the rules its actions follow; ``BrowserError`` when there is none."""
@@ -913,9 +970,9 @@ class Driver:
                     or (listed[0] if listed else None))))
             if tab is None:
                 message = (f"there is no tab {wanted}" if wanted else
-                           "the tab in front is the user's and this turn has none of its own; open(url) opens one "
-                           "behind their work, or name one from tabs(all=true)" if detached else
-                           "no tab is open; open(url) opens one")
+                           "the tab in front is the user's and this turn has none of its own; create_tab(url) opens "
+                           "one behind their work, or name one from list_tabs(all=true)" if detached else
+                           "no tab is open; create_tab(url) opens one")
                 raise BrowserError("tab_not_found", message, tabs=[item.row() for item in listed])
         self._use(tab, session)
         return tab
@@ -982,14 +1039,14 @@ class Driver:
         if own or surfaces[0].get("agent_owned") is True:
             _note_opened(tab, session)
             made_room = self._keep_within_limit(tab, session)
-        result = self._on_owner(self._operate, tab, "read", {"wait_for_load": True})
+        result = self._on_owner(self._operate, tab, "get_state", {"wait_for_load": True, "full": True})
         if own and result.get("ok") is not False:
             result["note"] = _OWN_NOTE
         if made_room and result.get("ok") is not False:
             result["note"] = " ".join(filter(None, [result.get("note"), _ROOM_NOTE.format(count=made_room)]))
         self._publish(tab, result)
         # The tab just opened is the one the conversation's preview follows now.
-        self._report_look(tab, "open", result)
+        self._report_look(tab, "create_tab", result)
         return result
 
     def _close(self, tab: Tab) -> dict[str, Any]:
@@ -1012,8 +1069,8 @@ class Driver:
         from openprogram.host.resources.desktop_link import RESPONSE_TIMEOUT_REASON_CODE
         closed = request_close_tab(tab.binding_id) if tab.binding_id else {"reason_code": "page_context_stale"}
         if closed.get("reason_code") == RESPONSE_TIMEOUT_REASON_CODE:
-            raise BrowserError("close_uncertain", "the App did not answer whether it closed the tab; tabs shows "
-                               "whether it is still open")
+            raise BrowserError("close_uncertain", "the App did not answer whether it closed the tab; list_tabs "
+                               "shows whether it is still open")
         if closed.get("reason_code") == "page_context_stale":
             raise BrowserError("tab_gone", "the tab's binding expired")
         if not closed.get("ok"):
@@ -1024,8 +1081,8 @@ class Driver:
         written = tab.last_write()
         image, url, viewport = self._on_owner(self._capture, tab)
         self._record_shot(tab, image, url, viewport, written)
-        return {"ok": True, "tab": tab.id, "done": "took a screenshot; x,y of pointer actions are its pixels",
-                "_images": [image]}
+        return {"ok": True, "tab": tab.id, "url": url, "title": tab.title,
+                "done": "took a screenshot; x,y of pointer actions are its pixels", "_images": [image]}
 
     def _capture(self, tab: Tab) -> tuple[bytes, str, list[int]]:
         """The tab's image, by the App or else by Playwright, with its url and viewport; on the owner thread."""
@@ -1437,8 +1494,8 @@ class Driver:
         return out
 
     def _locate(self, page, tab: Tab, args: dict[str, Any], prefix: str = ""):
-        """The element named by ref, or by role and name; its locator and how to call it."""
-        ref = str(args.get(f"{prefix}ref") or "").strip().lstrip("@").removeprefix("ref=")
+        """The element named by its ref (``element``), or by role and name; its locator and how to call it."""
+        ref = str(args.get(f"{prefix}element") or "").strip().lstrip("@").removeprefix("ref=")
         role = str(args.get(f"{prefix}role") or "").strip()
         name = str(args.get(f"{prefix}name") or "")
         if ref:
@@ -1454,9 +1511,9 @@ class Driver:
             if count == 1:
                 return locator, f'{role} "{name}"' if name else role
             if count > 1 and not ref:
-                raise BrowserError("ambiguous_element", f'{count} elements are {role} "{name}"; use a ref')
+                raise BrowserError("ambiguous_element", f'{count} elements are {role} "{name}"; name one by its ref')
         if not ref and not role:
-            raise BrowserError("target_required", "name the element with ref (or role and name)")
+            raise BrowserError("target_required", "name the element by its ref (or role and name)")
         raise BrowserError("element_gone", f"{ref or role} is not on the page any more; the page as it is now follows",
                            **self._state(page, tab, full=True))
 
@@ -1480,6 +1537,20 @@ class Driver:
         except Exception:
             return False
 
+    def _outline(self, page, tab: Tab) -> str:
+        """The whole page as an outline, without moving any agent's baseline of changes."""
+        from openprogram.programs.applications.browser.privacy import password_values, redact_password_values
+        impl = page._impl_obj
+        if "mode" in inspect.signature(impl.aria_snapshot).parameters:
+            frame = impl._main_frame
+            text = str(page._sync(frame._channel.send("ariaSnapshot", frame._timeout, {"mode": "ai"})) or "")
+        else:
+            raw = page._sync(impl._channel.send_return_as_dict(
+                "snapshotForAI", impl._timeout_settings.timeout, {"track": f"{_TRACK}:find"}))
+            text = str(raw.get("full") or "")
+        tab.roles.update({ref: (role, name.replace('\\"', '"')) for role, name, ref in _REF_LINE.findall(text)})
+        return redact_password_values(text, password_values(page))
+
     def _report(self, tab: Tab, before_url: str | None) -> dict[str, Any]:
         return self._state(self._page(tab), tab, full=False, before_url=before_url)
 
@@ -1487,21 +1558,27 @@ class Driver:
         """A read, or an action done; the caller waits for an action to settle, then reports."""
         page = self._page(tab)
         watch = self._watches[tab.target_id]
-        if action == "read":
+        if action == "get_state":
             if args.get("wait_for_load"):
                 try:
                     page.wait_for_load_state("domcontentloaded", timeout=ACTION_TIMEOUT_MS)
                 except Exception:
                     # A slow load is still read; the state shows what has rendered.
-                    _log.debug("load wait ended before read tab=%s", tab.id, exc_info=True)
-            return self._state(page, tab, full=not args.get("changes_only"))
-        if action in ("console", "network"):
+                    _log.debug("load wait ended before get_state tab=%s", tab.id, exc_info=True)
+            return self._state(page, tab, full=bool(args.get("full")))
+        if action == "find":
+            text, role = str(args.get("text") or ""), str(args.get("role") or "")
+            if not text.strip() and not role.strip():
+                raise pa.ActionError("text_required", "find needs text, role or both")
+            found = pa.find_lines(self._outline(page, tab), text, role)
+            return {"ok": True, "tab": tab.id, "url": page.url, "title": tab.title, "found": found}
+        if action in ("read_console_messages", "read_network_requests"):
             return self._logs(tab, watch, action, args)
         if action == "evaluate":
             from openprogram.programs.applications.browser.privacy import password_values, redact_password_values
             source = pa.evaluate_source(args)
             # Naming an element hands it to a function script as its argument.
-            on = self._locate(page, tab, args)[0] if args.get("ref") or args.get("role") else page
+            on = self._locate(page, tab, args)[0] if args.get("element") or args.get("role") else page
             try:
                 value = on.evaluate(source)
             except Exception as exc:
@@ -1512,7 +1589,7 @@ class Driver:
             tab.writes.append((next(_writes), _VIEWER.get()))
             return {"ok": True, "tab": tab.id,
                     "result": redact_password_values(pa.evaluation_text(value), password_values(page))}
-        if action != "upload":
+        if action != "upload_file":
             # The page has moved on from a file chooser the agent did not answer, and from the
             # file fields listed when a button opened none.
             tab.chooser, tab.file_fields = None, {}
@@ -1525,7 +1602,7 @@ class Driver:
             # Playwright may have sent the input before failing: count it as a write, and never send it again.
             tab.writes.append((next(_writes), _VIEWER.get()))
             if page.is_closed():
-                raise BrowserError("tab_closed", f"the tab closed during {action}; it may have taken effect") from None
+                raise BrowserError("action_failed", f"the tab closed during {action}; it may have taken effect") from None
             message = str(exc).split("\n", 1)[0]
             if "Timeout" in type(exc).__name__ or "Timeout" in message:
                 message += "; it may have taken effect, so check the page below before trying again"
@@ -1533,7 +1610,9 @@ class Driver:
                                **self._state(page, tab, full=False, before_url=before_url)) from None
         tab.writes.append((next(_writes), _VIEWER.get()))
         del tab.writes[:-50]
-        return _Acted(done=done, before_url=before_url, documents=documents, pending=pending, created=created)
+        rest = _seconds(args.get("seconds"), 0.8) if action == "hover" else 0.0
+        return _Acted(done=done, before_url=before_url, documents=documents, pending=pending, created=created,
+                      rest=rest)
 
     def _act(self, page, tab: Tab, action: str, args: dict[str, Any]) -> str:
         if action == "navigate":
@@ -1546,60 +1625,48 @@ class Driver:
             if response is None and action != "reload":
                 return f"there is no page to go {action} to"
             return {"back": "went back", "forward": "went forward", "reload": "reloaded"}[action]
-        if action == "press":
-            key = str(args.get("key") or "").strip()
-            if not key:
-                raise pa.ActionError("key_required", "press needs key, such as Enter or Control+A")
-            if args.get("ref") or args.get("role"):
-                locator, label = self._locate(page, tab, args)
-                locator.press(key)
-                return f"pressed {key} on {label}"
-            page.keyboard.press(key)
-            return f"pressed {key}"
+        named = bool(args.get("element") or args.get("role"))
+        if action == "press_key":
+            return self._press(page, tab, args, named)
         if action == "scroll":
-            dx, dy = pa.scroll_delta(args)
-            if args.get("ref") or args.get("role"):
+            if named:
                 locator, label = self._locate(page, tab, args)
+                dx, dy = pa.scroll_delta(args, self._box_size(locator))
                 moved = locator.evaluate(pa.SCROLL_SCRIPT, {"dx": dx, "dy": dy})
-            else:
-                moved = page.evaluate(f"(o) => ({pa.SCROLL_SCRIPT.strip()})(document.documentElement, o)",
-                                      {"dx": dx, "dy": dy})
-                label = "the page"
-            return f"scrolled {label} by ({dx}, {dy})px" + ("" if (moved or {}).get("moved") else "; it did not move")
-        if action == "click" and args.get("x") is not None and not args.get("ref") and not args.get("role"):
-            return self._click_point(page, tab, args)
+                return f"scrolled {label} by ({dx}, {dy})px" + ("" if (moved or {}).get("moved") else "; it did not move")
+            dx, dy = pa.scroll_delta(args, self._view_size(page))
+            if args.get("x") is not None:
+                x, y = self._screen_point(page, tab, args)
+                page.mouse.move(x, y)
+                page.mouse.wheel(dx, dy)
+                return f"scrolled by ({dx}, {dy})px at ({args['x']}, {args.get('y')}) of the screenshot"
+            moved = page.evaluate(f"(o) => ({pa.SCROLL_SCRIPT.strip()})(document.documentElement, o)",
+                                  {"dx": dx, "dy": dy})
+            return f"scrolled the page by ({dx}, {dy})px" + ("" if (moved or {}).get("moved") else "; it did not move")
+        if action == "click":
+            return self._click(page, tab, args, named)
+        if action == "hover":
+            if named:
+                locator, label = self._locate(page, tab, args)
+                locator.hover()
+                return f"hovered {label}"
+            x, y = self._screen_point(page, tab, args)
+            page.mouse.move(x, y)
+            return f"hovered ({args['x']}, {args.get('y')}) of the screenshot"
         if action == "drag":
-            source, label = self._locate(page, tab, args)
-            target, to_label = self._locate(page, tab, args, prefix="to_")
-            source.drag_to(target)
-            return f"dragged {label} to {to_label}"
-        if action == "upload" and args.get("field") is not None:
+            return self._drag(page, tab, args, named)
+        if action == "upload_file" and args.get("field") is not None:
             return self._upload_to_field(tab, args)
-        if action == "upload" and not args.get("ref") and not args.get("role"):
+        if action == "upload_file" and not named:
             return self._answer_chooser(tab, args)
-        if action in ("type", "paste") and not args.get("ref") and not args.get("role"):
+        if action in ("type_text", "paste") and not named:
             return self._type_into(page, None, "the focused element", action, args)
         locator, label = self._locate(page, tab, args)
-        if action == "click":
-            click = pa.click_options(args)
-            self._aim(page, tab, locator)
-            self._show_cursor(page, locator)
-            locator.click(**pa.mouse_options(click), **({"modifiers": click["modifiers"]} if click["modifiers"] else {}))
-            words = {1: "clicked", 2: "double-clicked", 3: "triple-clicked"}[click["count"]]
-            return f"{words} {label}" + (f" with the {click['button']} button" if click["button"] != "left" else "")
-        if action == "hover":
-            locator.hover()
-            return f"hovered {label}"
-        if action == "select":
-            values = args.get("value")
-            values = [str(item) for item in values] if isinstance(values, list) else [str(values or "")]
-            if not any(values):
-                raise pa.ActionError("value_required", "select needs value, the option's value or label")
-            chosen = locator.select_option(values)
-            return f"selected {', '.join(chosen) or 'nothing'} in {label}"
-        if action in ("type", "paste"):
+        if action == "set_value":
+            return self._set_value(locator, label, args)
+        if action in ("type_text", "paste"):
             return self._type_into(page, locator, label, action, args)
-        if action == "upload":
+        if action == "upload_file":
             from .file_inputs import file_payload
             payload, problem = file_payload(args.get("path"))
             if problem:
@@ -1619,11 +1686,138 @@ class Driver:
                 raise BrowserError("no_file_chooser", self._no_chooser_message(page, tab, locator, label)) from None
             chosen.value.set_files(payload)
             return f"clicked {label} and chose {payload['name']} in the file chooser it opened"
-        raise BrowserError("unknown_action", f"unknown browser action {action!r}")
+        raise BrowserError("unknown_action", f"the browser has no action {action!r}")
+
+    def _click(self, page, tab: Tab, args: dict[str, Any], named: bool) -> str:
+        click = pa.click_options(args)
+        hold = _seconds(args.get("seconds"), 0.0)
+        words = {1: "clicked", 2: "double-clicked", 3: "triple-clicked"}[click["count"]]
+        button = f" with the {click['button']} button" if click["button"] != "left" else ""
+        if named:
+            locator, label = self._locate(page, tab, args)
+            self._aim(page, tab, locator)
+            self._show_cursor(page, locator)
+            if not hold:
+                locator.click(**pa.mouse_options(click), **({"modifiers": click["modifiers"]} if click["modifiers"] else {}))
+                return f"{words} {label}{button}"
+            point = (tab.aim.get("point") or {})
+            if not point:
+                raise BrowserError("element_gone", f"{label} has no place on the page to press")
+            x, y, shown = point["x"], point["y"], label
+        else:
+            if args.get("x") is None or args.get("y") is None:
+                raise pa.ActionError("target_required", "click needs element (or role and name), or x and y")
+            x, y = self._screen_point(page, tab, args)
+            self._aim(page, tab, None, (x, y))
+            shown = f"({args['x']}, {args.get('y')}) of the screenshot"
+        for key in click["modifiers"]:
+            page.keyboard.down(key)
+        try:
+            if hold:
+                page.mouse.move(x, y)
+                page.mouse.down(button=click["button"])
+                page.wait_for_timeout(hold * 1000)
+                page.mouse.up(button=click["button"])
+            else:
+                page.mouse.click(x, y, **pa.mouse_options(click))
+        finally:
+            for key in reversed(click["modifiers"]):
+                page.keyboard.up(key)
+        return f"pressed {shown} for {hold:g}s{button}" if hold else f"{words} {shown}{button}"
+
+    def _drag(self, page, tab: Tab, args: dict[str, Any], named: bool) -> str:
+        """From an element or a point to an element or a point; points are pixels of this agent's screenshot."""
+        hold = _seconds(args.get("seconds"), 0.0)
+        to_named = bool(args.get("to_element") or args.get("to_role"))
+        if named and to_named and not hold:
+            source, label = self._locate(page, tab, args)
+            target, to_label = self._locate(page, tab, args, prefix="to_")
+            source.drag_to(target)
+            return f"dragged {label} to {to_label}"
+        if named:
+            source, label = self._locate(page, tab, args)
+            start = self._center(source, label)
+        elif args.get("x") is not None and args.get("y") is not None:
+            start, label = self._screen_point(page, tab, args), f"({args['x']}, {args['y']})"
+        else:
+            raise pa.ActionError("target_required", "drag needs element or x,y, and to_element or to_x,to_y")
+        if to_named:
+            target, to_label = self._locate(page, tab, args, prefix="to_")
+            end = self._center(target, to_label)
+        elif args.get("to_x") is not None and args.get("to_y") is not None:
+            end = self._screen_point(page, tab, {"x": args["to_x"], "y": args["to_y"]}, checked=False)
+            to_label = f"({args['to_x']}, {args['to_y']})"
+        else:
+            raise pa.ActionError("target_required", "drag needs to_element or to_x,to_y")
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(*end, steps=12)
+        if hold:
+            page.wait_for_timeout(hold * 1000)
+        page.mouse.up()
+        return f"dragged {label} to {to_label}"
+
+    @staticmethod
+    def _center(locator, label: str) -> tuple[float, float]:
+        locator.scroll_into_view_if_needed(timeout=2000)
+        box = locator.bounding_box(timeout=2000)
+        if not box:
+            raise BrowserError("element_gone", f"{label} has no place on the page")
+        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+    @staticmethod
+    def _view_size(page) -> tuple[float, float]:
+        size = page.evaluate(_VIEWPORT_SIZE) or {}
+        return float(size.get("width") or 0), float(size.get("height") or 0)
+
+    @staticmethod
+    def _box_size(locator) -> tuple[float, float]:
+        size = locator.evaluate("e => [e.clientWidth, e.clientHeight]") or [0, 0]
+        return float(size[0] or 0), float(size[1] or 0)
+
+    def _press(self, page, tab: Tab, args: dict[str, Any], named: bool) -> str:
+        from openprogram.programs.tools.computer_use.computer_use.keynames import playwright
+        written = str(args.get("key") or "").strip()
+        if not written:
+            raise pa.ActionError("key_required", "press_key needs key, such as Return or ctrl+a")
+        key, hold = playwright(written), _seconds(args.get("seconds"), 0.0)
+        label = ""
+        if named:
+            locator, label = self._locate(page, tab, args)
+            if not hold:
+                locator.press(key)
+                return f"pressed {written} on {label}"
+            locator.focus()
+        if hold:
+            parts = key.split("+") if key != "+" else [key]
+            for part in parts:
+                page.keyboard.down(part)
+            page.wait_for_timeout(hold * 1000)
+            for part in reversed(parts):
+                page.keyboard.up(part)
+            return f"held {written} for {hold:g}s" + (f" on {label}" if label else "")
+        page.keyboard.press(key)
+        return f"pressed {written}"
+
+    def _set_value(self, locator, label: str, args: dict[str, Any]) -> str:
+        kind = locator.evaluate(pa.FIELD_KIND_SCRIPT)
+        if kind == "select":
+            chosen = locator.select_option(pa.option_values(args))
+            return f"selected {', '.join(chosen) or 'nothing'} in {label}"
+        if kind == "check":
+            on = pa.checked(args)
+            locator.set_checked(on)
+            return f"{'checked' if on else 'unchecked'} {label}"
+        value = args.get("value")
+        if isinstance(value, (list, dict)):
+            raise pa.ActionError("invalid_value", f"{label} takes text as value")
+        text = "" if value is None else str(value)
+        locator.fill(text)
+        return f"set {label} to {len(text)} character(s)"
 
     @staticmethod
     def _no_chooser_message(page, tab: Tab, locator, label: str) -> str:
-        """Why nothing opened, and the page's file fields for upload(field=n)."""
+        """Why nothing opened, and the page's file fields for upload_file(field=n)."""
         try:
             state = locator.evaluate(ELEMENT_STATE_SCRIPT)
         except Exception:
@@ -1651,7 +1845,7 @@ class Driver:
                      "the only one in the button's section" if fld.get("beside") else ""]
             rows.append(f"  field {n}: " + ", ".join(fact for fact in facts if fact))
         return (message + ". If the page is stuck in an earlier upload, reload it or remove that file first. "
-                "Otherwise put the file straight into the field it belongs to with upload(field=n, path):\n"
+                "Otherwise put the file straight into the field it belongs to with upload_file(field=n, path):\n"
                 + "\n".join(rows))
 
     def _upload_to_field(self, tab: Tab, args: dict[str, Any]) -> str:
@@ -1675,7 +1869,7 @@ class Driver:
         chooser, tab.chooser = tab.chooser, None
         if chooser is None:
             raise BrowserError("no_file_chooser", "no file chooser is open: click the page's upload button first, "
-                                                  "or pass the ref of the button or the file field")
+                                                  "or name the button or the file field as element")
         payload, problem = file_payload(args.get("path"))
         if problem:
             tab.chooser = chooser
@@ -1684,6 +1878,7 @@ class Driver:
         return f"chose {payload['name']} in the file chooser"
 
     def _type_into(self, page, locator, label: str, action: str, args: dict[str, Any]) -> str:
+        """type_text inserts at the caret; clear=true replaces the field's text first."""
         text = args.get("text")
         if not isinstance(text, str):
             raise pa.ActionError("text_required", f"{action} needs text")
@@ -1694,45 +1889,44 @@ class Driver:
             if not (result or {}).get("ok"):
                 raise BrowserError("not_editable", f"{label} does not take text")
             return f"pasted {len(text)} character(s) into {label}"
-        if locator is None:
-            page.keyboard.insert_text(text)
-        elif args.get("clear") is False:
-            locator.focus()
-            page.keyboard.insert_text(text)
-        else:
+        if locator is not None and args.get("clear"):
             locator.fill(text)
+        else:
+            if locator is not None:
+                locator.focus()
+            elif args.get("clear"):
+                page.keyboard.press("ControlOrMeta+A")
+            page.keyboard.insert_text(text)
         done = f"typed {len(text)} character(s) into {label}"
         if args.get("submit"):
             (locator.press if locator is not None else page.keyboard.press)("Enter")
             done += " and pressed Enter"
         return done
 
-    def _click_point(self, page, tab: Tab, args: dict[str, Any]) -> str:
+    def _screen_point(self, page, tab: Tab, args: dict[str, Any], checked: bool = True) -> tuple[float, float]:
+        """x,y of this agent's last screenshot as viewport CSS pixels, while the page still shows what it showed.
+
+        ``checked`` False converts only: the second point of a drag, whose start was checked."""
         shot = tab.shots.get(_VIEWER.get())
         if shot is None:
-            raise BrowserError("screenshot_required", "x,y are pixels of a screenshot; take one first, or use a ref")
+            raise BrowserError("screenshot_required", "x,y are pixels of a screenshot: take one with "
+                                                      "get_state(include=\"screenshot\") first, or name the element")
         scale, written, url, scroll_x, scroll_y, image = shot
-        point = (float(args["x"]), float(args.get("y") or 0))
-        _, now_x, now_y = page.evaluate(_VIEWPORT)
-        if page.url != url or (now_x, now_y) != (scroll_x, scroll_y):
-            raise self._stale(tab, "the page moved or scrolled since your screenshot, so its x,y point elsewhere now")
-        if tab.last_write() != written:
-            # Acted on since the screenshot: the point may still show the same thing (typing elsewhere, a
-            # key that did nothing) or something else (a menu opened, a list scrolled). Its pixels decide.
-            fresh = self._capture(tab)
-            if not _same_around(image, fresh[0], point, max(1, int(POINT_RADIUS_PX / scale))):
-                raise self._stale(tab, "what your screenshot showed at that point has changed since", fresh)
-        click = pa.click_options(args)
-        x, y = point[0] * scale, point[1] * scale
-        self._aim(page, tab, None, (x, y))
-        for key in click["modifiers"]:
-            page.keyboard.down(key)
         try:
-            page.mouse.click(x, y, **pa.mouse_options(click))
-        finally:
-            for key in reversed(click["modifiers"]):
-                page.keyboard.up(key)
-        return f"clicked ({args['x']}, {args.get('y')}) of the screenshot"
+            point = (float(args["x"]), float(args.get("y") or 0))
+        except (TypeError, ValueError):
+            raise pa.ActionError("invalid_point", "x and y are numbers: pixels of the screenshot") from None
+        if checked:
+            _, now_x, now_y = page.evaluate(_VIEWPORT)
+            if page.url != url or (now_x, now_y) != (scroll_x, scroll_y):
+                raise self._stale(tab, "the page moved or scrolled since your screenshot, so its x,y point elsewhere now")
+            if tab.last_write() != written:
+                # Acted on since the screenshot: the point may still show the same thing (typing elsewhere, a
+                # key that did nothing) or something else (a menu opened, a list scrolled). Its pixels decide.
+                fresh = self._capture(tab)
+                if not _same_around(image, fresh[0], point, max(1, int(POINT_RADIUS_PX / scale))):
+                    raise self._stale(tab, "what your screenshot showed at that point has changed since", fresh)
+        return point[0] * scale, point[1] * scale
 
     def _stale(self, tab: Tab, why: str, fresh: tuple[bytes, str, list[int]] | None = None) -> BrowserError:
         """The refusal of a click by x,y, with a new screenshot so that the next one needs no extra call."""
@@ -1741,10 +1935,10 @@ class Driver:
             image, url, viewport = fresh or self._capture(tab)
         except Exception:
             _log.debug("no new screenshot for a stale click tab=%s", tab.id, exc_info=True)
-            return BrowserError("screenshot_stale", f"{why}; take a new screenshot, or use a ref")
+            return BrowserError("screenshot_stale", f"{why}; take a new screenshot, or name the element")
         self._record_shot(tab, image, url, viewport, written)
-        return BrowserError("screenshot_stale", f"{why}. A new screenshot is attached, and x,y of a click are its "
-                            "pixels now; or use a ref", _images=[image])
+        return BrowserError("screenshot_stale", f"{why}. A new screenshot is attached, and x,y are its pixels "
+                            "now; or name the element", _images=[image])
 
     def _aim(self, page, tab: Tab, locator, point: tuple[float, float] | None = None) -> None:
         """Note where a click lands (the element's centre once in view) for the preview's marker."""
@@ -1773,7 +1967,7 @@ class Driver:
     def _logs(self, tab: Tab, watch: _Watch, action: str, args: dict[str, Any]) -> dict[str, Any]:
         pattern = str(args.get("pattern") or "")
         limit = max(1, min(int(args.get("limit") or 50), _LOG_LIMIT))
-        if action == "console":
+        if action == "read_console_messages":
             lines = [line for line in watch.console
                      if (not args.get("only_errors") or line.startswith("[error]")) and pattern in line]
             return {"ok": True, "tab": tab.id, "console": lines[-limit:]}
@@ -1911,6 +2105,13 @@ def acting_on(page_key: str) -> bool:
     return any(tab.lock.locked() for tab in held)
 
 
+def forget(agent: str) -> None:
+    """The agent ended: the driver forgets what it kept for it, without starting a driver."""
+    current = _driver
+    if current is not None and agent:
+        current.forget(agent)
+
+
 def driver() -> Driver:
     global _driver
     with _driver_lock:
@@ -1919,9 +2120,10 @@ def driver() -> Driver:
         return _driver
 
 
-ACTIONS = ("tabs", "open", "read", "click", "type", "paste", "select", "press", "hover", "scroll", "drag",
-           "upload", "navigate", "back", "forward", "reload", "wait", "screenshot", "console", "network",
-           "evaluate", "close", *video.ACTIONS)
+# The browser family's actions, in the vocabulary's names; ``list_tabs`` and ``create_tab`` need no tab.
+ACTIONS = ("get_state", "click", "type_text", "press_key", "scroll", "drag", "hover", "wait", "find", "set_value",
+           "list_tabs", "create_tab", "close_tab", "navigate", "back", "forward", "reload", "paste", "upload_file",
+           "evaluate", "read_console_messages", "read_network_requests", *video.ACTIONS)
 
 __all__ = ["ACTIONS", "BrowserError", "Driver", "Tab", "acting_on", "batch", "close_conversation_tabs",
-           "close_conversation_tabs_soon", "close_run_tabs", "close_run_tabs_soon", "driver"]
+           "close_conversation_tabs_soon", "close_run_tabs", "close_run_tabs_soon", "driver", "forget"]

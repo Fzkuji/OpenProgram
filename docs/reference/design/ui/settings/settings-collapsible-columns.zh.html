@@ -13,7 +13,27 @@
 </table>
 
 <h2>分类</h2>
-<p>通用、外观、LLM Provider、记忆、网络搜索、浏览器、语音、运行环境、频道、导入对话、Token 用量、系统。链接、图标、选中状态和键盘顺序都来自这一个数组。</p>
+<p>十二个分类分成四组，按读者要找的东西命名。链接、图标、选中状态和键盘顺序都来自这一个数组。每组有一个 <code translate="no">RailGroupLabel</code>；导航栏收起时隐藏组名，图标排成一列。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">组</th><th scope="col">分类</th></tr></thead>
+<tbody>
+<tr><th scope="row">个人</th><td>通用、外观</td></tr>
+<tr><th scope="row">模型与能力</th><td>模型服务、Token 用量、记忆、网页搜索、语音</td></tr>
+<tr><th scope="row">电脑与连接</th><td>机器、浏览器、消息渠道</td></tr>
+<tr><th scope="row">数据</th><td>导入对话、版本与更新</td></tr>
+</tbody>
+</table>
+<p>设置放在它所改变的东西的页面上，所以没有大杂烩页面。Codex 和 Cursor 的设置导航也这样分组：平铺列表上方加不显眼的组名。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">页面</th></tr></thead>
+<tbody>
+<tr><th scope="row">schema 组 <code translate="no">Models</code>：备用模型、总结阈值、Anthropic 缓存、密钥脱敏</th><td>模型服务 → 行为</td></tr>
+<tr><th scope="row">schema 组 <code translate="no">Ports</code></th><td>通用 → 网页服务</td></tr>
+<tr><th scope="row">这台电脑的系统权限</th><td>机器</td></tr>
+<tr><th scope="row">应用版本和更新</th><td>“版本与更新”顶部，在 OpenProgram 保留的自身版本之上</td></tr>
+<tr><th scope="row">书签栏</th><td>浏览器</td></tr>
+</tbody>
+</table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
 <tbody>
@@ -24,7 +44,7 @@
 </tbody>
 </table>
 
-<p>LLM Provider 是单列页面，没有自己的列表列：它的列表、添加供应商和每个供应商的页面见<a href="../../providers/provider-management.zh.html">供应商管理</a>。</p>
+<p>模型服务是单列页面，没有自己的列表列：它的列表、添加供应商和每个供应商的页面见<a href="../../providers/provider-management.zh.html">供应商管理</a>。</p>
 
 <details>
 <summary>参考与不做的事</summary>
@@ -42,7 +62,7 @@
 <summary>验收</summary>
 <ul>
 <li>没有单独的全局设置顶栏。</li>
-<li>分类行与主侧栏前几行对齐；收起时第一个图标的 y 不变。</li>
+<li>分类行的行高和间距与主侧栏相同；组名只在导航栏展开时显示。</li>
 <li>分类顺序、URL、图标、选中状态和键盘顺序一致。</li>
 <li>记忆没有重复标题。</li>
 <li>图标操作带 <code translate="no">aria-label</code>。</li>

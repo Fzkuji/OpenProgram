@@ -5,7 +5,8 @@ import { marked as npmMarked, Marked, type Tokens } from "marked";
 import { typesetMath } from "@/lib/runtime-bridge/dom/markdown-render";
 import { renderMermaidLazily } from "@/lib/chat/markdown/mermaid-lazy";
 import { createDocumentMarkdown } from "./document-markdown";
-import { cjkEmphasis } from "@/lib/markdown/cjk-emphasis";
+import { proseMarkdown } from "@/lib/markdown/prose";
+import { mathMarkdown } from "@/lib/markdown/math";
 
 // Markdown + KaTeX rendering. Mirrors `renderMd()` and
 // `renderMathInChat()` from apps/web/public/js/shared/helpers.js.
@@ -17,7 +18,7 @@ import { cjkEmphasis } from "@/lib/markdown/cjk-emphasis";
 export type MarkdownImageResolver = (src: string) => string | null;
 
 function imageResolvingMarked(resolveImage: MarkdownImageResolver): Marked {
-  return new Marked(cjkEmphasis, {
+  return new Marked(...proseMarkdown, mathMarkdown, {
     walkTokens(token) {
       if (token.type !== "image") return;
       const image = token as Tokens.Image;
@@ -26,8 +27,8 @@ function imageResolvingMarked(resolveImage: MarkdownImageResolver): Marked {
   });
 }
 
-/** Replace LaTeX blocks with placeholder tokens so marked doesn't mangle
- * them, then restore the originals after parsing. */
+/** Markdown to HTML. Formulas are found by the lexer and come out as
+ * `.md-math` elements holding their escaped source (lib/markdown/math.ts). */
 function markdownToHtml(src: string, escapeRawHtml?: boolean, parser?: Marked): string {
   let s = typeof src === "string" ? src : String(src ?? "");
   if (escapeRawHtml) {
@@ -35,31 +36,18 @@ function markdownToHtml(src: string, escapeRawHtml?: boolean, parser?: Marked): 
     return '<span class="md-rendered">' + documentParser.parse(s, { breaks: true, async: false }) + "</span>";
   }
 
-  const mathBlocks: string[] = [];
-  const stash = (m: string) => {
-    mathBlocks.push(m);
-    return "%%MATH" + (mathBlocks.length - 1) + "%%";
-  };
-  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (m) => stash(m));
-  s = s.replace(/\\\[([\s\S]*?)\\\]/g, (m) => stash(m));
-  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (m) => stash(m));
-  s = s.replace(/\$([^$\n]+?)\$/g, (m) => stash(m));
-
+  // Formulas are tokens of the shared marked (lib/markdown/math.ts).
   let html: string;
   if (parser) {
     html = parser.parse(s, { breaks: true, async: false });
   } else {
     html = npmMarked.parse(s, { breaks: true }) as string;
   }
-  for (let i = 0; i < mathBlocks.length; i++) {
-    html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
-  }
   return '<span class="md-rendered">' + html + "</span>";
 }
 
-/** Run KaTeX auto-render against a specific container. Memoizes via a
- * `data-math-rendered` attribute so streaming updates don't re-render
- * already-typeset spans. */
+/** Typeset the formulas in a container. Each `.md-math` element is marked
+ * `data-math-rendered`, so streaming updates don't re-render it. */
 export function renderMathIn(el: HTMLElement): void {
   typesetMath(el);
   renderMermaidLazily(el);
@@ -91,7 +79,7 @@ export function Markdown({
     [resolveImage, escapeRawHtml, obsidian]);
   const html = markdownToHtml(source, escapeRawHtml, parser);
 
-  // KaTeX auto-render mutates the DOM after marked has produced HTML.
+  // KaTeX draws the formulas into the DOM after marked has produced HTML.
   // Run it after every render of the host node so streaming text gets
   // typeset as it arrives.
   useEffect(() => {

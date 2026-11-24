@@ -274,6 +274,19 @@ def test_a_retry_or_edit_starts_a_sibling_branch_and_a_retry_without_reply_rerun
     assert missing.value.status == 404
 
 
+def test_a_retry_of_a_turn_that_only_failed_takes_its_place():
+    from openprogram.runtime.conversation.turn_admission.branch_fork import plan_fork
+    failed = {"id": "a1", "role": "assistant", "predecessor": "u1", "status": "error",
+              "content": "[error] ValueError: The selected model does not support image input."}
+    user = {"id": "u1", "role": "user", "content": "hi", "predecessor": None}
+    assert plan_fork([user, failed], "a1", None).replaces
+    # An edit is a new version, and so is a retry of a reply that wrote or ran something.
+    assert not plan_fork([user, failed], "u1", "hello").replaces
+    assert not plan_fork([user, {**failed, "content": "Half an answer"}], "a1", None).replaces
+    assert not plan_fork([user, failed, {"id": "t1", "role": "tool", "caller": "a1"}], "a1", None).replaces
+    assert not plan_fork([user, {**failed, "status": "done", "content": "ok"}], "a1", None).replaces
+
+
 # ---------------------------------------------------------------- step 6 baselines
 
 def test_a_read_baseline_comes_from_the_branchs_own_history(monkeypatch, tmp_path):

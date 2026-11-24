@@ -44,14 +44,10 @@ import { webToolbarButton } from "./toolbar-button";
 function statusLabel(
   state: ReturnType<typeof presentedControlState>,
   text: (en: string, zh: string) => string,
-  connected: boolean,
 ): string {
   if (state === "waiting") return text("Needs your confirmation", "需要你确认");
-  if (state === "unknown") {
-    return connected
-      ? text("Could not confirm status", "无法确认状态")
-      : text("Connection lost", "连接已断开");
-  }
+  // A state not yet confirmed (the link is re-reading it) says nothing.
+  if (state === "unknown") return "";
   if (state === "idle" || state === "closed") return text("Ready to use", "可直接操作");
   return text("Active", "活动中");
 }
@@ -106,7 +102,7 @@ export function BrowserControlBar({
   // history and the action-cue switch stay at hand for the next turn.
   if (!controlButtonVisible(state) && surface === "float") return null;
   const connected = browserConnectionOpen();
-  const shownStatus = statusLabel(state, text, connected);
+  const shownStatus = statusLabel(state, text);
   const takeoverKind = browserTakeoverKind(state);
   const pauseLabel = takeoverKind === "reveal"
     ? text("Review request", "查看请求")

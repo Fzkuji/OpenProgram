@@ -20,6 +20,7 @@ _providers: dict[str, Callable[..., Any]] = {}
 FACTS = frozenset({
     "execution",
     "conversation_execution_ids",
+    "sessions_above_execution",
     "worker_stopping",
     "foreground_turn",
     "current_call_id",
@@ -57,6 +58,13 @@ def conversation_execution_ids(session_id: str) -> list[str]:
     """Ids of the executions that belong to a conversation, its branches included."""
     provider = _provider("conversation_execution_ids")
     return list(provider(session_id)) if provider else []
+
+
+def sessions_above_execution(execution_id: str) -> list[str]:
+    """The run's session and every session above it (a sub-agent's or a
+    called Job's caller), whose windows list what the run uses."""
+    provider = _provider("sessions_above_execution")
+    return list(provider(execution_id)) if provider else []
 
 
 def worker_stopping() -> bool:
@@ -134,6 +142,7 @@ __all__ = [
     "allowed_tool_names",
     "broadcast",
     "conversation_execution_ids",
+    "sessions_above_execution",
     "current_call_id",
     "current_tool_call_id",
     "execution",

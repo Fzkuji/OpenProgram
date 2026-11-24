@@ -382,14 +382,14 @@ def resolve_shell(environment: Any = None, *, sandboxed: bool | None = None,
                   policy: Any = None, platform: str | None = None) -> ShellProfile:
     """The shell a command runs in now.
 
-    ``environment`` is the execution environment (``host.environments``);
-    an SSH host or a Docker container runs commands in its own shell.
+    ``environment`` is the conversation's machine (``host.machines``); a
+    machine other than this computer runs commands in its own shell.
     ``policy`` is the sandbox policy a caller runs the command under, as
     ``host.backend.local`` takes it; without one it is read from the
     configuration. The command is sandboxed when there is a policy and the
     sandbox can run here. ``sandboxed`` states the answer outright.
     """
-    if environment is not None and getattr(environment, "kind", "local") in ("ssh", "docker"):
+    if environment is not None and getattr(environment, "remote_shell", False):
         return ShellProfile("remote", "", "environment")
     platform = platform or sys.platform
     host = host_shell(platform)

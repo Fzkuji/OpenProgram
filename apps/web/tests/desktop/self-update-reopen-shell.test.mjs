@@ -379,7 +379,7 @@ test("returning from Files restores its launcher after visiting a management pag
   });
 });
 
-const managementPaths = ["/agents", "/agents/main", "/settings/general", "/skills/second", "/programs", "/applications", "/chats", "/scheduler"];
+const managementPaths = ["/agents", "/agents/main", "/settings/general", "/skills/second", "/programs", "/applications", "/chats", "/tasks"];
 for (const path of managementPaths) test(`current tab stays on its current page ${path}`, async () => {
   await setup([other], other.id, "detached");
   await mounted(async () => {

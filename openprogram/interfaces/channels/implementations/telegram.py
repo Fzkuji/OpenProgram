@@ -87,11 +87,15 @@ class TelegramChannel(Channel):
 
         while not stop.is_set():
             try:
-                with safe_client("channel.telegram.api") as client:
+                with self.waiting_for_platform(), safe_client("channel.telegram.api") as client:
                     r = client.get(
                         f"{self.base}/getUpdates",
                         params={"offset": self.offset, "timeout": 25},
                     )
+                if stop.is_set():
+                    # The offset stays where it was, so these updates are
+                    # handed out again after the restart.
+                    return
                 if r.status_code in _TOKEN_REJECTED_STATUSES:
                     # 正常 return = 永久停止, 换了凭据 worker 才会重新拉起.
                     _log.error(
@@ -103,7 +107,7 @@ class TelegramChannel(Channel):
                 data = r.json() if r.is_success else {}
                 if not data.get("ok"):
                     _log.warning("[%s] API error %s", tag, r.status_code)
-                    time.sleep(5)
+                    stop.wait(5)
                     continue
                 for upd in data.get("result", []):
                     self.offset = upd["update_id"] + 1
@@ -114,7 +118,7 @@ class TelegramChannel(Channel):
                 raise
             except Exception as e:  # noqa: BLE001
                 _log.info("[%s] poll failed: %s", tag, type(e).__name__)
-                time.sleep(3)
+                stop.wait(3)
 
     def _get_me(self) -> dict[str, Any] | None:
         from openprogram.host.security.safe_http import safe_client

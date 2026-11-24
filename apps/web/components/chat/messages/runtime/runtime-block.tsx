@@ -33,6 +33,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { copyText } from "@/lib/clipboard";
 import { startFunctionRetry } from "@/lib/runtime-bridge/actions/function-retry";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
+import { SECONDS, useNow } from "@/lib/clock/use-now";
 
 import { isLive, isStopped } from "@/lib/chat/transcript/row-status";
 import { SystemAccessRecovery } from "./system-access-recovery";
@@ -83,6 +84,7 @@ function checkoutSibling(
       // The load_session reload rebuilds the transcript with new ids, so
       // this card's id is gone from the store once the switch lands.
       settled: () => !selectRow(sessionId, id)(useSessionStore.getState()),
+      subscribe: useSessionStore.subscribe,
       revert: () => {
         useSessionStore.getState().applyLocalChange(sessionId, { kind: "overlay_clear", rowId: id });
       },
@@ -138,7 +140,6 @@ export function RuntimeBlock({
   const ref = useRef<HTMLDivElement>(null);
   const { text } = useTranslation();
   const [copied, setCopied] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
   useMarkdownReady();
 
   const sessionId = useRowSessionId(sessionIdOverride || undefined);
@@ -156,11 +157,10 @@ export function RuntimeBlock({
     ? <SystemAccessRecovery output={tree?.output} autoOpen={false} /> : null;
   const streaming = running && !systemAccessPaused;
 
-  useEffect(() => {
-    if (nested || !streaming) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [nested, streaming]);
+  // The summary's "mm:ss" counts whole seconds from the call's start.
+  const startedMs = typeof msg.timestamp === "number" && msg.timestamp > 0
+    ? (msg.timestamp > 1e12 ? msg.timestamp : msg.timestamp * 1000) : 0;
+  const now = useNow(!nested && streaming && startedMs ? SECONDS : null, startedMs);
 
   useEffect(() => {
     const el = ref.current;
@@ -234,6 +234,7 @@ export function RuntimeBlock({
         }
       },
       settled: () => !selectRow(sessionId, rid)(useSessionStore.getState()),
+      subscribe: useSessionStore.subscribe,
       restore: () => {
         const current = useSessionStore.getState();
         current.applyLocalChange(sessionId, { kind: "overlay_clear", rowId: rid });

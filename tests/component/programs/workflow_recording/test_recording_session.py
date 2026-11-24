@@ -139,6 +139,53 @@ def test_routes_start_narrate_stop_and_serve_steps(root, monkeypatch):
         assert client.get("/api/recordings/ffffff").status_code == 404
 
 
+def test_a_step_typing_begun_and_the_end_are_signalled_by_recording(root):
+    from openprogram.host._platform import changes
+
+    with changes.listen(session.TOPIC) as listener:
+        rec = session.start("workflow", capture_factory=FakeCapture, root=root)
+        assert listener.wait(0) == set(), "starting is not a change of steps"
+        rec.add({"type": "click", "app": {"name": "Finder"}})
+        assert listener.wait(0) == {f"{session.TOPIC}:{rec.id}"}
+        rec.add({"type": "type", "app": {"name": "Notes"}, "element": ELEMENT, "char": "a"})
+        assert listener.wait(0) == {f"{session.TOPIC}:{rec.id}"}
+        rec.add({"type": "type", "app": {"name": "Notes"}, "element": ELEMENT, "char": "b"})
+        assert listener.wait(0) == set(), "more typing into the same field is the same step"
+        rec.finish()
+        assert listener.wait(0) == {f"{session.TOPIC}:{rec.id}"}
+
+
+def test_the_status_stream_sends_each_change_and_ends_with_the_recording(root, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(routes, "_local_owner", lambda request: None)
+    _services.load_programs()
+    app = FastAPI()
+    routes.register(app)
+    events = next(route.endpoint for route in app.routes
+                  if getattr(route, "path", "") == "/api/recordings/{recording_id}/events")
+    rec = session.start("workflow", capture_factory=FakeCapture, root=root)
+
+    async def read(recording_id, between=()):
+        response = await events(recording_id, None)
+        assert response.media_type == "text/event-stream"
+        steps = list(between)
+        sent = []
+        async for chunk in response.body_iterator:
+            sent.append(json.loads(chunk.removeprefix("data: ")))
+            if steps:
+                steps.pop(0)()
+        return sent
+
+    sent = asyncio.run(asyncio.wait_for(read(rec.id, [
+        lambda: rec.add({"type": "click", "app": {"name": "Finder"}}),
+        rec.finish,
+    ]), 10))
+    assert [(item["state"], item["steps"]) for item in sent] == [
+        ("recording", 0), ("recording", 1), ("finished", 1)], "one status per change, ending with the recording"
+    assert asyncio.run(asyncio.wait_for(read("ffffff"), 10)) == [{"state": "missing"}]
+
+
 def test_events_sharing_a_millisecond_read_back_narration_first_then_in_write_order(tmp_path):
     from openprogram.programs.applications.workflow_recording import describe
 

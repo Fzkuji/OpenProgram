@@ -2,13 +2,16 @@
 paths themselves run against real apps in an X11 container (see the design record)."""
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import backends, linux, ocr
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop.base import ComputerUseError
-from openprogram.programs.tools.computer_use.computer_use_agent.targets import app as tool
+from openprogram.host import machines
+
+from openprogram.programs.tools.computer_use.computer_use.desktop import backends, linux, ocr
+from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
+from openprogram.programs.tools.computer_use.computer_use.providers import desktop as provider
 
 
 def test_tesseract_words_are_joined_into_lines_in_reading_order():
@@ -72,9 +75,12 @@ def test_other_hosts_have_no_backend(monkeypatch):
     assert backends.support() == {"available": False, "reason": "computer_use supports macOS, Linux (X11) and Windows"}
 
 
-def test_linux_guide_replaces_every_macos_only_sentence():
-    for mac, linux_text in tool._LINUX_GUIDE:
-        assert mac in tool._GUIDE or linux_text in tool._GUIDE
+def test_the_linux_note_says_what_the_platform_lacks_and_how_keys_are_named(local_machine):
+    app = provider.AppProvider(local_machine, system="Linux")
+    note = app.note()
+    assert "X11" in note and "Super key" in note and "There is no open_file" in note
+    assert "open_file" not in app.extra_actions()
+    assert "clipboard" not in app.capabilities
 
 
 def test_recording_finds_the_streams_an_app_or_its_children_play(monkeypatch):
@@ -113,3 +119,58 @@ def test_windows_that_stood_over_the_operated_one_are_raised_again_lowest_first(
     ran.clear()
     linux._put_under(99, ["10", "30"])
     assert not ran
+
+
+@pytest.fixture
+def local_machine():
+    return machines.local_machine({})
+
+
+def _linux_apps(monkeypatch, running):
+    computer = object.__new__(linux.LinuxComputer)
+    computer._icons = {}
+    installed = [{"name": "GNOME Terminal", "desktop_id": "org.gnome.Terminal", "executable": "gnome-terminal-server",
+                  "icon": ""},
+                 {"name": "Calculator", "desktop_id": "org.gnome.Calculator", "executable": "gnome-calculator",
+                  "icon": ""}]
+    monkeypatch.setattr(computer, "_installed", lambda: installed, raising=False)
+    monkeypatch.setattr(computer, "_running", lambda: running, raising=False)
+    monkeypatch.setattr(linux.LinuxComputer, "_refused", classmethod(lambda cls, app: False))
+    return computer
+
+
+def test_a_running_app_without_a_desktop_entry_is_named_for_itself_not_for_a_match_in_part(monkeypatch):
+    computer = _linux_apps(monkeypatch, [linux.App(pid=300, name="xterm")])
+    monkeypatch.setattr(linux, "_proc_name", lambda pid: "xterm")
+    info = computer.app_info("term")
+    assert info["running"] and info["name"] == "xterm" and not info["installed"]
+    assert computer.app_info("calc")["name"] == "Calculator"  # not running: the row a launch would start
+
+
+def test_the_rule_name_matches_desktop_entries_exactly_and_reads_no_bus(monkeypatch):
+    computer = _linux_apps(monkeypatch, [])
+    monkeypatch.setattr(computer, "_running", lambda: pytest.fail("the accessibility bus is slow"), raising=False)
+    monkeypatch.setattr(linux, "_proc_name", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
+    monkeypatch.setattr(linux, "_proc_exe", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
+    assert computer.app_name("org.gnome.Calculator") == "Calculator"
+    assert computer.app_name("gnome-calculator") == "Calculator"
+    assert computer.app_name("301") == "Calculator" and computer.app_name("300") == "xterm"
+    assert computer.app_name("term") == "" and computer.app_name("999") == ""
+
+
+
+def test_the_desktop_entries_are_read_again_only_when_a_folder_changes(monkeypatch, tmp_path):
+    (tmp_path / "home" / "applications").mkdir(parents=True)
+    (tmp_path / "shared" / "applications").mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path / "shared"))
+    computer = linux.LinuxComputer()
+    scans = []
+    monkeypatch.setattr(computer, "_scan_installed", lambda: scans.append(1) or [{"name": "A"}])
+    assert computer._installed() == [{"name": "A"}] and computer._installed() == [{"name": "A"}]
+    assert len(scans) == 1
+    folder = tmp_path / "shared" / "applications"
+    stat = os.stat(folder)
+    os.utime(folder, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    computer._installed()
+    assert len(scans) == 2

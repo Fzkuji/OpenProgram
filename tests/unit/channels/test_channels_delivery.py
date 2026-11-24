@@ -446,11 +446,13 @@ def test_the_ticker_recovers_reports_once_per_worker_start(monkeypatch: pytest.M
                         lambda: None)
     monkeypatch.setattr(runtime, "recover_reports", recovered.append)
 
-    def tick() -> None:
+    def tick(outlook=None) -> None:
         ticks.append(True)
+        outlook.soon = True  # something unfinished: look again one interval later
         if len(ticks) == 3:
             stop.set()
     monkeypatch.setattr(ticker, "tick", tick)
+    monkeypatch.setattr(ticker, "_watch_agents", lambda: None)
     before = time.time()
     stop, thread = ticker.start_in_worker(interval=0.001)
     thread.join(5)

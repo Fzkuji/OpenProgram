@@ -147,19 +147,13 @@ describe("ContextBreakdownPanel", () => {
     assert.equal(compactButton().getAttribute("aria-disabled"), "false");
   });
 
-  test("the last compaction is one line under Compact, and absent when the branch has none", async () => {
-    cache.writeContextBreakdownCache("panel-lc", null, { total_used: 29_975, window: 200_000 });
-    view = await render(h(ContextBreakdownPanel, { sessionId: "panel-lc" }));
-    assert.equal(document.querySelector("[data-last-compaction]"), null);
-    await view.unmount();
+  test("the panel states nothing about past compactions", async () => {
     cache.writeContextBreakdownCache("panel-lc", null, {
       total_used: 29_975, window: 200_000,
       last_compaction: { covered: 25, tokens_before: 354_455, tokens_after: 29_975, at: 1_700_000_000 },
     });
     view = await render(h(ContextBreakdownPanel, { sessionId: "panel-lc" }));
-    const note = document.querySelector("[data-last-compaction]");
-    assert.match(note.textContent, /^Last compacted .+: 25 messages, 354\.5k → 30\.0k$/);
-    assert.equal(compactButton().compareDocumentPosition(note) & 4, 4);
+    assert.doesNotMatch(document.body.textContent, /Last compacted|354\.5k/);
   });
 
   test("a turn compacting its own context shows Compacting…", async () => {

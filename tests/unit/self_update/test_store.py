@@ -349,3 +349,54 @@ def test_prune_payloads_skips_owner_repairs_and_the_active_update(tmp_path: Path
     assert not _has_payloads(store, "su_done")
     assert (tmp_path / "su_live" / "artifact").is_dir(), "the active update is never touched"
     assert {p.parent.name for p in removed} == {"su_done"}
+
+
+def test_a_finished_record_is_parsed_again_only_when_its_files_change(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    store = SelfUpdateStore(tmp_path)
+    store.create(_request())
+    store.transition("su_test", UpdatePhase.ABORTED)
+    with store._locked(read_only=True):
+        first = store._load_unlocked("su_test", read_only=True)
+    reads = []
+    read = SelfUpdateStore._read_json
+    monkeypatch.setattr(SelfUpdateStore, "_read_json",
+                        lambda self, path, **kwargs: reads.append(path.name) or read(self, path, **kwargs))
+    with store._locked(read_only=True):
+        assert store._load_unlocked("su_test", read_only=True) is first
+    assert reads == []
+    state = tmp_path / "su_test" / "state.json"
+    state.write_text(state.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with store._locked(read_only=True):
+        assert store._load_unlocked("su_test", read_only=True) == first
+    assert reads == ["request.json", "state.json"]
+
+
+def test_a_settled_restart_record_is_passed_over_until_it_changes(tmp_path: Path, monkeypatch) -> None:
+    from openprogram.operations.self_update.delivery import restart
+
+    store = SelfUpdateStore(tmp_path)
+    store.create(_request())
+    store.transition("su_test", UpdatePhase.ABORTED)
+    record = store.load("su_test")
+    locks = []
+    locked = SelfUpdateStore._locked
+    monkeypatch.setattr(SelfUpdateStore, "_locked",
+                        lambda self, **kwargs: locks.append(1) or locked(self, **kwargs))
+    runner = type("Runner", (), {"_execution_store": None})()
+
+    restart._resume(store, record, runner)
+    assert locks == []  # no restart record: nothing to continue
+
+    path = tmp_path / "su_test" / "restart.json"
+    store._write_json(path, {"schema": 1, "update_id": "su_test", "executions": {
+        "exec-1": {"version": 1, "status": "resumed", "error": ""}}})
+    restart._resume(store, record, runner)
+    restart._resume(store, record, runner)
+    assert locks == [1]
+
+    store._write_json(path, {"schema": 1, "update_id": "su_test", "executions": {
+        "exec-1": {"version": 1, "status": "skipped", "error": ""}}})
+    restart._resume(store, record, runner)
+    assert locks == [1, 1]

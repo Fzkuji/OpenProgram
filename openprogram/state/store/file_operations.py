@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from openprogram.state.store import operation_receipts
 from openprogram.state.store.record_log import RecordLog, record_log
 
 
@@ -152,7 +153,10 @@ class FileOperationStore:
             if row is None or row["status"] != "in_flight":
                 return False
             log.put(operation_id, {**row, **fields, "updated_at": time.time()})
-            return True
+        if fields.get("status", "in_flight") != "in_flight":
+            # A window waiting on this receipt asks for it now.
+            operation_receipts.changed(row["idempotency_key"])
+        return True
 
     def claim_recovery(self, operation_id: str) -> bool:
         instance_id, owner_pid, process_start = current_owner_identity()

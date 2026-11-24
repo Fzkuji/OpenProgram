@@ -155,7 +155,7 @@
 </table>
 <ul>
 <li>受治理的 Provider 调用在访问凭证或网络前经 <code translate="no">BudgetedRequest</code> 预占。生产路径用 <code translate="no">reserve_provider_request</code>，不用单独的 <code translate="no">reserve_tokens</code>、<code translate="no">reserve_cost</code>。</li>
-<li>耗尽在请求和工具边界强制；运行和空闲由每 0.25 秒轮询的预算循环触发取消。不把执行中的操作描述为立刻结束。</li>
+<li>耗尽在请求和工具边界强制；有 Job 运行时，预算循环睡到最早的运行或空闲期限，到时触发取消；记录下的停止或助手的用量写入会提前唤醒它；没有 Job 运行时它休眠。不把执行中的操作描述为立刻结束。</li>
 <li>最长不可抢占区间取声明超时、剩余运行时长和取消宽限的最小值。达不到的进程内同步操作改用可终止的子进程，或在严格预算下被拒绝。<code translate="no">asyncio.wait_for</code> 返回不代表 executor 线程已结束。</li>
 </ul>
 <details>
@@ -196,7 +196,7 @@
 </tbody>
 </table>
 <ul>
-<li>claim 需要 <code translate="no">owner_instance_id</code> 和 worker 锁，通过探测真实 advisory lock 确认。写入由 <code translate="no">lease_generation</code> 隔离。reconcile 循环每 5 秒运行。</li>
+<li>claim 需要 <code translate="no">owner_instance_id</code> 和 worker 锁，通过探测真实 advisory lock 确认。写入由 <code translate="no">lease_generation</code> 隔离。reconcile 循环在其他线程提交运行表和持久等待到期时运行，两次至少相隔 5 秒，另有 60 秒的兜底同步。</li>
 <li>lease 证明 worker 所有权，不代表外部副作用已回滚。</li>
 <li>run table 是持有配置档的进程内的内存表。每个事务向会话日志追加一行，并由日志重建。<code translate="no">budget_scopes</code> 使用一份全局日志。唯一键使 admission 和预占幂等。</li>
 <li><code translate="no">jobs.json</code> 每会话一份，存于其日志中，在会话锁和 <code translate="no">flock</code> 下写入。</li>

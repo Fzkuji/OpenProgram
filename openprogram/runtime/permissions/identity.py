@@ -157,9 +157,10 @@ def page_script(name: str, args: dict | None) -> bool:
     lets a conversation click in a browser lets it run scripts there, and a
     card that asks about one shows the script untruncated. Where nobody
     attends, it does not run (see ``unattended``), as an action or from code."""
-    if name == "computer_use_agent":
-        from openprogram.programs.tools.computer_use.computer_use_agent import evaluates
-        return evaluates(args)
+    if name == "computer_use":
+        # The target's provider says whether a step runs code in a page.
+        from openprogram.programs.tools.computer_use.computer_use import tool as screen
+        return screen.evaluates(args)
     return False
 
 

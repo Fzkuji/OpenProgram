@@ -72,6 +72,28 @@ def test_a_provider_without_a_key_says_so_and_leads_to_connect(store, monkeypatc
     assert state["name"] is None and state["name_zh"] is None
 
 
+def test_opening_the_picker_probes_a_local_server_again(store, monkeypatch):
+    """A local server announces nothing when it starts or stops: background
+    readers reuse a recent probe, the picker opening asks it now."""
+    from openprogram.models.listing import detected
+    asked: list[float] = []
+    running = {"now": False}
+
+    def probe(provider_id, base_url=None, *, max_age=0.0):
+        asked.append(max_age)
+        return running["now"]
+
+    monkeypatch.setattr(detected, "local_server_running", probe)
+    monkeypatch.setattr(provider_views, "keys_of", lambda provider: [])
+    assert provider_views.picker_state("ollama", configured=True, now=NOW)["state"] == "not_running"
+    running["now"] = True
+    state = provider_views.picker_state("ollama", configured=True, now=NOW, probe_local=True)
+    assert state["state"] == "ready"
+    assert asked == [provider_views.LOCAL_PROBE_MAX_AGE_S, 0.0]
+    assert provider_views.picker_states(["ollama"], probe_local=True)["ollama"]["state"] == "ready"
+    assert asked[-1] == 0.0
+
+
 def test_one_way_of_a_company_carries_its_menu_name(store, monkeypatch):
     monkeypatch.setattr(provider_views, "keys_of", lambda provider: [])
     state = provider_views.picker_state("openai-codex", configured=False, now=NOW)

@@ -2,15 +2,18 @@
 
 ``select`` is the one place that decides. The ``self_update`` tool asks it and
 then calls the matching backend through this module, so the tool does not know
-what a stable branch or a packaged App is.
+what the development instance or a packaged App is.
 
-| Backend      | When                                                  |
-| ------------ | ----------------------------------------------------- |
-| ``checkout`` | ``<state>/runtime/developer.json`` exists             |
-| ``versions`` | this interpreter is inside ``<state>/runtime/versions`` |
-| ``dev_stable`` | the source repository has a ``stable`` branch       |
-| ``legacy_app`` | a packaged runtime and no such source repository    |
-| ``checkout`` | a source checkout otherwise                           |
+| Backend        | When                                                    |
+| -------------- | ------------------------------------------------------- |
+| ``checkout``   | ``<state>/runtime/developer.json`` exists               |
+| ``versions``   | this interpreter is inside ``<state>/runtime/versions`` |
+| ``dev_deploy`` | this worker is the development instance (``dev`` profile) and its source repository has a ``dev`` branch |
+| ``legacy_app`` | a packaged runtime otherwise                            |
+| ``checkout``   | a source checkout otherwise                             |
+
+The official App is a packaged runtime with the default profile, so it selects
+``legacy_app``, and ``require_host`` refuses it: its updater installs releases.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import sys
 
 CHECKOUT = "checkout"
 VERSIONS = "versions"
-DEV_STABLE = "dev_stable"
+DEV_DEPLOY = "dev_deploy"
 LEGACY_APP = "legacy_app"
 # Building a new base and running the trial can each take most of an hour.
 VERSIONS_TIMEOUT_SECONDS = 6 * 3600
@@ -52,9 +55,20 @@ def _known_source() -> Path | None:
         return None
 
 
-def _has_stable_branch(source: Path) -> bool:
+def _development_instance() -> bool:
+    """Whether this worker serves the development instance's profile."""
+    from openprogram.operations.worker import dev_instance
+    from openprogram.state.paths import get_active_profile
+
+    return get_active_profile() == dev_instance.DEV_PROFILE
+
+
+def _has_dev_branch(source: Path) -> bool:
+    from openprogram.operations.worker import dev_instance
+
     result = subprocess.run(
-        ["git", "-C", str(source), "rev-parse", "--verify", "--quiet", "refs/heads/stable^{commit}"],
+        ["git", "-C", str(source), "rev-parse", "--verify", "--quiet",
+         f"refs/heads/{dev_instance.DEV_BRANCH}^{{commit}}"],
         capture_output=True, text=True, timeout=10)
     return result.returncode == 0
 
@@ -66,9 +80,10 @@ def select(source: Path | None = None) -> str:
         return CHECKOUT
     if Path(sys.prefix).resolve().is_relative_to((root / "versions").resolve()):
         return VERSIONS
-    repository = source if source is not None else _known_source()
-    if repository is not None and _has_stable_branch(repository):
-        return DEV_STABLE
+    if _development_instance():
+        repository = source if source is not None else _known_source()
+        if repository is not None and _has_dev_branch(repository):
+            return DEV_DEPLOY
     if packaged_runtime():
         return LEGACY_APP
     return CHECKOUT
@@ -130,8 +145,8 @@ def require_host(backend: str) -> None:
 
 def timeout_seconds(backend: str) -> int:
     """How long one update may take, end to end."""
-    if backend == DEV_STABLE:
-        from .dev_stable import TIMEOUT_SECONDS
+    if backend == DEV_DEPLOY:
+        from .dev_deploy import TIMEOUT_SECONDS
         return TIMEOUT_SECONDS
     if backend == VERSIONS:
         return VERSIONS_TIMEOUT_SECONDS
@@ -140,17 +155,17 @@ def timeout_seconds(backend: str) -> int:
 
 def evidence(backend: str) -> tuple[str, ...]:
     """Lines of the immutable request that name its backend, when it matters."""
-    if backend == DEV_STABLE:
-        from .dev_stable import EVIDENCE
+    if backend == DEV_DEPLOY:
+        from .dev_deploy import EVIDENCE
         return (EVIDENCE,)
     return ()
 
 
 def launch(backend: str, store, update_id: str, *, worktree: Path) -> None:
     """Start the out-of-process controller for a saved request."""
-    if backend == DEV_STABLE:
-        from . import dev_stable
-        dev_stable.submit(store, update_id, worktree=worktree)
+    if backend == DEV_DEPLOY:
+        from . import dev_deploy
+        dev_deploy.submit(store, update_id, worktree=worktree)
         return
     if backend == VERSIONS:
         from .switch import launch as launch_version_controller
@@ -161,7 +176,7 @@ def launch(backend: str, store, update_id: str, *, worktree: Path) -> None:
 
 
 __all__ = [
-    "BackendUnavailable", "CHECKOUT", "DEV_STABLE", "LEGACY_APP", "VERSIONS",
+    "BackendUnavailable", "CHECKOUT", "DEV_DEPLOY", "LEGACY_APP", "VERSIONS",
     "checkout_result", "evidence", "launch", "packaged_runtime", "require_host",
     "runtime_root", "select", "timeout_seconds",
 ]

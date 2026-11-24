@@ -98,6 +98,9 @@ OPENPROGRAM_UV_BIN="$uv_bin" "$repo_root/scripts/release/build-base.sh" \
   --embedded-runtime "$runtime_root" --python "$python_bin"
 "$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
   --no-deps "$wheel"
+# Installed above; nothing reads the archive again, and it was 35 MB of every
+# runtime and App download.
+rm -rf "$runtime_root/wheel"
 
 # uv creates a convenience alias whose target is the absolute staging path.
 # Remove only aliases that would escape after the runtime is relocated.
@@ -120,6 +123,8 @@ cp "$repo_root/scripts/release/smoke-ink-tui-pty.py" \
 chmod 0755 "$runtime_root/bin/uv" "$runtime_root/bin/node" \
   "$runtime_root/bin/verify-product-runtime.py" \
   "$runtime_root/bin/smoke-ink-tui-pty.py"
+# One Node in the runtime: Playwright's driver runs on bin/node.
+"$python_bin" -I "$repo_root/scripts/release/share-runtime-node.py" "$runtime_root"
 
 python_relative="${python_bin#"$runtime_root/"}"
 test "$python_relative" != "$python_bin" || {

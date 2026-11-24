@@ -86,7 +86,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     fail quickly and ``run_cli_chat`` restores stdio before using Rich.
     """
     bypass_words = {
-        "agents", "sessions", "channels", "environments", "config", "permissions", "programs", "skills", "plugins", "doctor",
+        "agents", "sessions", "channels", "machines", "config", "permissions", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor",
         "worker", "update", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
@@ -873,6 +873,16 @@ def _dispatch_settings_command(args) -> None:
             from openprogram.interfaces.cli.commands.services.web import _cmd_web_auth_url
 
             sys.exit(_cmd_web_auth_url(args.base_url))
+        if getattr(args, "web_verb", None) == "pair":
+            from openprogram.interfaces.cli.commands.services.web_devices import cmd_web_pair
+
+            sys.exit(cmd_web_pair(args.base_url, args.label))
+        if getattr(args, "web_verb", None) == "devices":
+            from openprogram.interfaces.cli.commands.services.web_devices import cmd_web_devices
+
+            sys.exit(cmd_web_devices(getattr(args, "devices_verb", None),
+                                     getattr(args, "device_id", None),
+                                     as_json=args.json))
         _cmd_web(getattr(args, "web_port", None),
                  False if args.no_browser else None)
         return
@@ -1117,9 +1127,9 @@ def _dispatch_worker_command(args) -> None:
 
 
 def _dispatch_integration_command(args) -> None:
-    """Run the environments, channels and mcp commands."""
-    if args.command == "environments":
-        from openprogram.interfaces.cli.commands.conversations.environments import dispatch
+    """Run the machines, channels and mcp commands."""
+    if args.command == "machines":
+        from openprogram.interfaces.cli.commands.conversations.machines import dispatch
         sys.exit(dispatch(args))
 
     if args.command == "channels":
@@ -1333,7 +1343,7 @@ _COMMAND_DISPATCH = {
     "upgrade": _dispatch_worker_command,
     "status": _dispatch_worker_command,
     "worker": _dispatch_worker_command,
-    "environments": _dispatch_integration_command,
+    "machines": _dispatch_integration_command,
     "channels": _dispatch_integration_command,
     "mcp": _dispatch_integration_command,
     "acp": _dispatch_agent_command,

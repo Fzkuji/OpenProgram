@@ -1,0 +1,144 @@
+<title>Review pane</title>
+<meta name="description" content="The Review tab's scopes, staging, pending line comments and Review with agent, and why each works the way it does.">
+<h1>Review pane</h1>
+
+<p>The Review tab reads a set of changes and acts on it: four scopes, Revert and Stage on each block, line comments that wait and go out together, and a review by the conversation's own model. The layout follows the Codex app's review pane; where the change sets come from is in <a href="../chat/chat-turn-visual-spec.html#review-tab">the chat turn spec</a>.</p>
+
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="The Review pane: a one-row header with the scope menu, This turn +12 −0, on the left and a … menu on the right. Below, a diff block whose header has Revert and Stage. Under one line sits your comment card with Edit and Delete, the line ends in a dot; under another sits an agent finding card with Dismiss and Fix. A floating bar at the bottom says 2 comments with Discard and Send to agent.">
+  <text class="t-big" x="0" y="24">This turn</text>
+  <text class="t-soft" x="80" y="24">+12 −0 ▾</text>
+  <text class="t-soft" x="664" y="24">···</text>
+  <line class="ln-faint" x1="0" y1="48" x2="680" y2="48"/>
+  <text class="t-soft" x="0" y="72">Lines 12–18</text>
+  <text class="t-soft" x="560" y="72">Revert</text>
+  <text class="t-soft" x="626" y="72">Stage</text>
+  <text class="t-cmd" x="0" y="98">14</text>
+  <text class="t-cmd" x="40" y="98">+ return total</text>
+  <circle class="gate" cx="672" cy="94" r="3"/>
+  <rect class="ln" x="40" y="108" width="640" height="48" rx="10"/>
+  <text class="t-big" x="56" y="128">You</text>
+  <text class="t-soft" x="56" y="147">Should this round first?</text>
+  <text class="t-soft" x="574" y="147">Edit · Delete</text>
+  <text class="t-cmd" x="0" y="182">16</text>
+  <text class="t-cmd" x="40" y="182">+ cache[key] = value</text>
+  <rect class="ln-acc" x="40" y="192" width="640" height="48" rx="10"/>
+  <text class="t-big" x="56" y="212">✦ Agent review · high</text>
+  <text class="t-soft" x="56" y="231">The cache never expires.</text>
+  <text class="t-soft" x="568" y="231">Dismiss · Fix</text>
+  <rect class="tile" x="200" y="258" width="280" height="34" rx="17"/>
+  <text class="t-soft" x="220" y="280">2 comments</text>
+  <text class="t-soft" x="306" y="280">Discard</text>
+  <text class="t-big" x="372" y="280">Send to agent</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Header</strong><small>Scope menu with its totals; … menu with Review with agent and File type</small></li>
+  <li><strong>Block header</strong><small>Revert, Stage (Unstage in Staged)</small></li>
+  <li><strong>Your comment</strong><small>under its line, which ends in a dot; Edit, Delete</small></li>
+  <li><strong>Agent finding</strong><small>under its line; Dismiss, Fix</small></li>
+  <li class="flow-end"><strong>Bottom bar</strong><small>N comments, Discard, Send to agent</small></li>
+</ol>
+
+<h2 id="header">Header</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope menu</th><td>The header's title: the scope's name and its +/− totals. The menu lists This turn, then Unstaged and Staged, then Branch, and ends with the source and the file count.</td></tr>
+<tr><th scope="row">… menu</th><td>Review with agent (Stop review while one runs) and File type: All, Code, Tests, Docs, Large</td></tr>
+<tr><th scope="row">Running review</th><td>✦ Reviewing, the elapsed time and a stop button, between the scope menu and the … menu, only while it runs</td></tr>
+<tr><th scope="row">File header</th><td>Stage (or Unstage) and Preview are icons that show while the header is hovered or focused; the n / N file switcher stays</td></tr>
+</tbody>
+</table>
+<p class="note">Why one row: the pane usually sits in a split window about 580 px wide, where the old title row, scope-tab row and a third row for Review with agent took a quarter of the height. The layout follows Codex's Changes pane.</p>
+<table class="stack">
+<thead><tr><th scope="col">Peer</th><th scope="col">Header</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>One row: scope dropdown as title with totals, a … menu; buttons fold into it below 625 px; file actions on hover</td></tr>
+<tr><th scope="row">Claude Code tab</th><td>One row: scope dropdown as title; options in the pane menu</td></tr>
+<tr><th scope="row">OpenCode, Antigravity</th><td>Scope dropdown as title; display options behind icons or a ⋮ menu; Antigravity stages on hover</td></tr>
+<tr><th scope="row">Agent review</th><td>None of these, nor Copilot, puts it in the diff header</td></tr>
+</tbody>
+</table>
+
+<h2 id="scopes">Scopes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scope</th><th scope="col">Shows</th><th scope="col">Acts</th></tr></thead>
+<tbody>
+<tr><th scope="row">This turn</th><td>What one turn changed, from the mutation journal</td><td>Revert a block</td></tr>
+<tr><th scope="row">Unstaged</th><td>Working tree against the index, untracked files included, <code translate="no">.gitignore</code> honoured</td><td>Revert a block; Stage a block or the file</td></tr>
+<tr><th scope="row">Staged</th><td>Index against HEAD</td><td>Unstage a block or the file</td></tr>
+<tr><th scope="row">Branch</th><td>What the conversation's branch changed, from the mutation journal</td><td>Revert a block</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Why Unstaged and Staged</dt><dd>One "Workspace" diff mixed two segments a reader treats differently: what is about to be committed and what is not. Two scopes give each its own action (Stage, Unstage) and keep Revert on the side it writes, the working file.</dd>
+<dt>Git chip</dt><dd>"N uncommitted files" opens Unstaged: the changes not yet in a commit or the index are the ones a person usually checks first.</dd>
+<dt>Snapshot</dt><dd>Each scope is a pinned snapshot (HEAD, index blobs, working file identity). Stage, Unstage and Revert run only against the snapshot on screen; a newer one refuses and the pane reloads.</dd>
+</dl>
+
+<h2 id="staging">Stage and Unstage</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Block</th><td><code translate="no">git apply --cached</code> with that one block; Unstage adds <code translate="no">--reverse</code>. Git checks the block's context against the index, so a block the index no longer matches is a conflict and nothing changes.</td></tr>
+<tr><th scope="row">File</th><td><code translate="no">git add --all</code> or <code translate="no">git restore --staged</code>, with the old path of a rename too</td></tr>
+<tr><th scope="row">Only whole blocks</th><td>A block cut by a page edge or ending without a newline has no Stage; a new or deleted file stages as a file</td></tr>
+<tr><th scope="row">Where</th><td>Only for a local Git project. Not a Git repository, or a conversation in an SSH environment: no Stage buttons, the same places the Git chip is absent, because the index there is not the one the agent works on.</td></tr>
+<tr><th scope="row">During a turn</th><td>Waits, like Revert</td></tr>
+<tr><th scope="row">After</th><td>The scope reloads and the Git chip refreshes</td></tr>
+</tbody>
+</table>
+<p class="note">Git does the patching. The same block that <code translate="no">git add -p</code> would stage is staged, with Git's own context checks, instead of a second patch engine.</p>
+
+<h2 id="comments">Line comments</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Write</th><td>The comment button on the hovered line; ⌘Enter saves, Escape cancels</td></tr>
+<tr><th scope="row">Pinned</th><td>A card under its line: "You", the text, Edit and Delete. The line ends in an accent dot.</td></tr>
+<tr><th scope="row">Kept</th><td>Per conversation in a client store, so a tab switch or a remount keeps them while unsent. A comment belongs to its scope and file.</td></tr>
+<tr><th scope="row">Bottom bar</th><td>Floats over the diff while any wait: "N comments", Discard, Send to agent</td></tr>
+<tr><th scope="row">Send</th><td>One user message in that conversation, each comment as file and line, the quoted line, then the comment. It takes the send queue, so during a turn it waits its turn. The comments clear.</td></tr>
+</tbody>
+</table>
+<p class="note">Why a batch: comments on a change are read together. Sending each one as it is written starts a turn per line; dropping them into the composer mixed them with whatever was being typed. The Codex app collects inline comments the same way and sends them as one request.</p>
+
+<h2 id="agent-review">Review with agent</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Start</th><td>The first item of the … menu. While it runs the header shows ✦ Reviewing, the time so far and a stop button, and the menu item reads Stop review.</td></tr>
+<tr><th scope="row">Stop review</th><td>Ends the review at once: the server cancels the model request, the answer is ignored and the header loses its Reviewing time. A review is named by its <code translate="no">review_id</code>; <code translate="no">review_agent_cancel</code> with that id cancels it.</td></tr>
+<tr><th scope="row">Input</th><td>The whole diff of the scope on screen (up to 60 files and 120,000 characters), each under its path</td></tr>
+<tr><th scope="row">Call</th><td>One structured-output request on the conversation's own model at low reasoning effort, through the runtime that writes conversation titles. It writes nothing to the transcript. Low effort reviewed a 400-line change in 82 seconds with one request; the default effort took nine minutes over two and found no more real problems.</td></tr>
+<tr><th scope="row">Findings</th><td>Path, line, severity (low, medium, high), body. Findings on files outside the scope or with another severity are dropped.</td></tr>
+<tr><th scope="row">Shown</th><td>Cards under their lines: ✦ in accent purple, "Agent review · severity", the body, Dismiss and Fix. A finding on no shown line sits above the diff. A new review of a scope replaces that scope's findings.</td></tr>
+<tr><th scope="row">Fix</th><td>Sends a message asking the agent to fix that finding, then removes the card</td></tr>
+<tr><th scope="row">Waiting</th><td>A review of a large change takes minutes (a 400-line change takes over a minute), so the pane waits up to 30 minutes. The Worker keeps each answer for an hour under its <code translate="no">review_id</code>; when the socket drops while the model works, the pane waits for it to come back and asks again with <code translate="no">review_agent_wait</code>, which answers at once, or when the review finishes.</td></tr>
+<tr><th scope="row">Failure</th><td>The Reviewing time goes and Review with agent can be chosen again; no error page, no banner. A Worker that restarted no longer knows the review and answers <code translate="no">UNKNOWN_REVIEW</code>.</td></tr>
+<tr><th scope="row">Wire</th><td><code translate="no">review_agent</code> runs beside the connection's ordered frames, so a long model call does not hold other requests</td></tr>
+</tbody>
+</table>
+<p class="note">Why the conversation's model: the review then reads with the same model and settings the person chose for this work, and no separate review model needs setting up. The Codex app's <code translate="no">/review</code> works the same way and puts its findings on the lines of the diff.</p>
+
+<h2 id="peers">Compared</h2>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Codex app</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scopes</th><td>Last turn, Unstaged, Staged, Branch, Commit</td><td>This turn, Unstaged, Staged, Branch; no Commit scope</td></tr>
+<tr><th scope="row">Staging</th><td>Stage and unstage per hunk and file</td><td>Same, through Git</td></tr>
+<tr><th scope="row">Inline comments</th><td>Collected, sent as one request</td><td>Same, per conversation</td></tr>
+<tr><th scope="row"><code translate="no">/review</code></td><td>Findings with priority on diff lines</td><td>Findings with severity, Dismiss and Fix</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Implementation map</summary>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scopes, Stage, Review with agent</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>: <code translate="no">diff.py</code> (Unstaged and Staged), <code translate="no">stage.py</code>, <code translate="no">agent_review.py</code>, <code translate="no">history.py</code> (actions)</td></tr>
+<tr><th scope="row">Pane</th><td><code translate="no">components/center-tabs/review/</code>: <code translate="no">review-tab-pane.tsx</code>, <code translate="no">review-diff.tsx</code>, <code translate="no">review-notes-store.ts</code>, <code translate="no">review-diff-rows.ts</code></td></tr>
+<tr><th scope="row">Sending</th><td><code translate="no">sendFromTranscript</code> in <code translate="no">lib/chat/send/send-queue.ts</code></td></tr>
+</tbody>
+</table>
+</details>

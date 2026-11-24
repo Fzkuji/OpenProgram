@@ -271,6 +271,29 @@ _QUOTA_FIELDS = (
 _QUOTA_READ_FIELDS = ("read_at", "status", "error", "held_until", "failure_read_at")
 
 
+#: What a helper Job used changed: Activity's agent roster reads its usage
+#: again (``host/_platform/changes.py``). Keyed by the sessions of the call.
+ROSTER_TOPIC = "roster"
+#: A provider call or a failover switch was recorded: the routing overview
+#: (Settings → Model services) reads again.
+ROUTING_TOPIC = "routing"
+
+
+def _usage_changed(events: Iterable[UsageEvent]) -> None:
+    events = list(events)
+    if not events:
+        return
+    sessions = {sid for event in events if event.job_id
+                for sid in (event.session_id, event.parent_session_id) if sid}
+    try:
+        from openprogram.host._platform import changes
+        changes.signal(ROUTING_TOPIC)
+        if sessions:
+            changes.signal(ROSTER_TOPIC, *sorted(sessions))
+    except Exception:  # noqa: BLE001 - readers read again on their next change
+        pass
+
+
 class UsageLedger:
     def __init__(self, db_path: Optional[Path] = None) -> None:
         self._explicit_path = db_path
@@ -593,6 +616,7 @@ class UsageLedger:
         sql = (f"INSERT OR IGNORE INTO usage_events ({','.join(_COLUMNS)}) "
                f"VALUES ({placeholders})")
         conn.execute(sql, row)
+        _usage_changed((event,))
 
     @staticmethod
     def check_reservation_startable(tables, reservation_id: str) -> None:
@@ -681,6 +705,7 @@ class UsageLedger:
         return event
 
     def append_many(self, events: Iterable[UsageEvent]) -> None:
+        events = list(events)
         rows = [[getattr(e, c) for c in _COLUMNS] for e in events]
         if not rows:
             return
@@ -691,6 +716,7 @@ class UsageLedger:
             conn = self._connect()
             conn.executemany(sql, rows)
             conn.commit()
+        _usage_changed(events)
 
     # read
 
@@ -847,6 +873,8 @@ class UsageLedger:
                  parent_session_id, from_provider, from_model, to_provider, to_model, reason),
             )
             conn.commit()
+        from openprogram.host._platform import changes
+        changes.signal(ROUTING_TOPIC)
 
     def route_events(self, *, since: float, limit: int = 50) -> list[dict]:
         """Failover switches since ``since``, newest first."""
@@ -1035,6 +1063,25 @@ class UsageLedger:
                 tuple(args),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def credential_costs(self, *, since: float) -> dict[str, dict[str, float]]:
+        """Billed cost per provider and credential since ``since``: ``{provider: {credential_id: usd}}``.
+
+        Calls recorded before credentials were stamped on them carry no id
+        and are left out.
+        """
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute(
+                "SELECT provider, credential_id, SUM(cost_total) AS cost FROM usage_events "
+                "WHERE ts >= ? AND credential_id IS NOT NULL AND credential_id != '' "
+                "GROUP BY provider, credential_id",
+                (since,),
+            ).fetchall()
+        out: dict[str, dict[str, float]] = {}
+        for row in rows:
+            out.setdefault(row["provider"], {})[row["credential_id"]] = float(row["cost"] or 0.0)
+        return out
 
     def provider_models(self, *, since: float) -> list[dict]:
         """Calls per provider and model since ``since``, most used first."""

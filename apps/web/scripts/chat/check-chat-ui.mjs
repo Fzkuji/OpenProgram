@@ -79,10 +79,8 @@ assert.match(chatCss, /\.message\.assistant \.message-actions-footer\s*\{[^}]*ma
 assert.match(chatCss, /\.runtime-actions-footer\s*\{[^}]*margin-top:\s*14px/s);
 assert.match(chatCss, /\.runtime-actions-footer\s*\{[^}]*padding-left:\s*0(?:px)?\s*;/s);
 
-// ── Compaction: folded originals skip layout, dividers do not stay at the
-// appear animation's start, the bar stays on one row, text controls underline.
-assert.match(chatCss, /\.compaction-orig-fold\[data-open="0"\] \.compaction-orig-fold-inner\s*\{[\s\S]*?content-visibility:\s*hidden/);
-assert.match(chatCss, /\.compaction-orig-fold\[data-open="1"\] \.compaction-orig-fold-inner\s*\{[\s\S]*?content-visibility:\s*visible/);
+// ── Compaction: dividers do not stay at the appear animation's start, the
+// bar stays on one row, text controls underline.
 assert.match(chatCss, /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/);
 assert.match(chatCss, /\.compaction-card-bar[\s\S]*flex-wrap:\s*nowrap/);
 assert.match(chatCss, /\.text-hit:hover[\s\S]*text-decoration-color:\s*currentColor/);

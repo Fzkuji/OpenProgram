@@ -7,6 +7,11 @@
 .cols::-webkit-scrollbar { display: none; }
 .ch { position: sticky; top: 0; z-index: 3; display: flex; gap: 6px; min-width: 0; height: 30px; box-sizing: border-box; padding: 8px 8px 4px; font-size: var(--fs-sm); line-height: 18.2px; color: var(--text-muted); background: var(--color-sidebar); }
 .ch > span { flex: none; }
+/* The way back: only on the column the view starts on, in place of its name. */
+.ch .chBack { display: none; flex: none; color: var(--text-muted); }
+.ch .chBack:hover { color: var(--text-primary); }
+[data-chart-column][data-lead="1"] .chBack { display: inline-flex; }
+[data-chart-column][data-lead="1"] .chBack + span { display: none; }
 .ch .crumb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 
 .block { position: absolute; left: 0; right: 0; box-sizing: border-box; display: grid; grid-template-columns: 44px 12px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 6px; padding: 0 8px; overflow: clip; font-size: var(--fs-base); line-height: 20px; color: var(--text-secondary); }
@@ -29,7 +34,7 @@
 
 .time { font-size: var(--fs-sm); line-height: 18.2px; white-space: nowrap; color: var(--text-muted); padding-top: 12px; position: sticky; top: 30px; align-self: start; }
 .block[data-small="1"] .time { padding-top: 8px; }
-.bar { display: block; flex: none; width: 5px; margin-top: 3px; border-radius: var(--radius-full); }
+.bar { display: block; flex: none; width: 5px; margin-top: 3px; border-radius: var(--radius-full); transform-origin: top; }
 .block[data-small="1"] .bar { width: 3px; }
 .bar[data-next="1"] { box-sizing: border-box; background: transparent; border: 1px dashed var(--text-muted); }
 .label { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 1px; min-width: 0; padding: 7px 8px; position: sticky; top: 33px; }
@@ -37,12 +42,29 @@
 .title { color: var(--text-bright); line-height: 19.6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line { font-size: var(--fs-sm); line-height: 18.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line[data-strong="1"] { color: var(--text-bright); }
+/* How a sub-agent went, on the line of its name. */
+.after { flex: none; margin-left: -2px; font-size: var(--fs-sm); line-height: 19.6px; white-space: nowrap; color: var(--text-secondary); }
+.after[data-strong="1"] { color: var(--text-bright); }
+/* An agent's glyph on the block that wears it: a button to the agent, with
+   the red count the panel's rows give what waits on the reader. */
+.mark { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; box-shadow: none; }
+.mark:is(button) { cursor: pointer; }
+/* A sub-agent still going: its glyph breathes, the way a running dot does. */
+.live { display: grid; animation: indicatorPulseOpacity 1.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .live { animation: none; } }
+.mark:is(button):hover { background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
+.count { position: absolute; top: -5px; right: -7px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: var(--radius-md); background: var(--accent-red); color: var(--ink-on-fill); font-size: var(--fs-2xs); line-height: 14px; text-align: center; box-shadow: 0 0 0 2px var(--color-sidebar); pointer-events: none; }
 .detail { font-size: var(--fs-sm); line-height: 18.2px; color: var(--text-secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
 .action { height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: inherit; font-size: var(--fs-sm); line-height: 18.2px; color: var(--text-bright); cursor: pointer; }
 .action:hover { background: none; text-decoration: underline; }
 .action:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
-.steer { height: 22px; min-height: 0; padding: 0 6px; font-size: var(--fs-sm); line-height: 18.2px; }
+/* The one button a block may carry: the answer its run waits for, or the pause to lift. */
+.asks { display: flex; padding-top: 4px; }
+/* With no title yet, the agent's glyph leads the block's first line. */
+.lead { display: inline-flex; vertical-align: -3px; margin-right: 6px; }
+/* A topic not named yet: room for its messages, nothing drawn. */
+.block[data-hidden="1"] { visibility: hidden; pointer-events: none; }
 
 .gap { align-items: center; cursor: default; }
 .dash { align-self: stretch; justify-self: center; border-left: 1px dashed color-mix(in srgb, var(--text-primary) 30%, transparent); }

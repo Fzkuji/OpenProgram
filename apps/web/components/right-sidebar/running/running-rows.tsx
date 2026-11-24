@@ -55,8 +55,11 @@ export interface RowDisclosure { open: boolean; onToggle: () => void; label: str
 /** A row: its glyph, with a red count on the corner when something
  *  waits for the reader (the Dock's badge), the name, and one line of
  *  status coloured by its tone (running blue, failed red, else muted). */
-export function Row({ glyph, title, badge, sub, status, tone, onOpen, extra, count = 0, disclosure }: {
+export function Row({ glyph, title, badge, sub, status, tone, onOpen, onIntent, extra, count = 0, disclosure }: {
   glyph: ReactNode; title: string; badge?: ReactNode; sub?: string; status: ReactNode; tone: Tone; onOpen: () => void; extra?: ReactNode;
+  /** The reader is pointing at the row or has moved to it: what its page
+   *  reads can start now, so the page draws it at once. */
+  onIntent?: () => void;
   /** How many things wait for the reader here. */
   count?: number;
   disclosure?: RowDisclosure;
@@ -69,6 +72,7 @@ export function Row({ glyph, title, badge, sub, status, tone, onOpen, extra, cou
     </span>
   </HoverTip> : null;
   return <Button variant="ghost" className={styles.row} aria-expanded={disclosure ? disclosure.open : undefined}
+    onPointerEnter={onIntent} onFocus={onIntent}
     onClick={event => {
       if (disclosure && (event.target as Element).closest?.("[data-disclosure]")) disclosure.onToggle();
       else onOpen();

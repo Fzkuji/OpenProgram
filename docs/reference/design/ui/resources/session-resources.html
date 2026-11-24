@@ -20,12 +20,12 @@
 <thead><tr><th scope="col">Resource</th><th scope="col">Authority</th><th scope="col">Lifetime</th></tr></thead>
 <tbody>
 <tr><th scope="row">Webpages</th><td><code translate="no">CenterTab</code> records and recorded session provenance; a tab the Agent opens carries the trusted runtime session ID through the desktop command</td><td>Until the webpage closes. Agent pages stay in Resources; user-opened and pinned pages stay in the strip.</td></tr>
-<tr><th scope="row">GUI desktop, VM</th><td>Trusted usage registry and configured application or VM endpoint</td><td>Integration attachment</td></tr>
+<tr><th scope="row">Desktop, machine</th><td>Trusted usage registry: what a <code translate="no">computer_use</code> call operates, as its target reports it (<code translate="no">desktop</code>: a window, the screen or the user's browser on this computer; <code translate="no">machine</code>: another machine)</td><td>While a call operates it</td></tr>
 <tr><th scope="row">Other integrations</th><td><code translate="no">resource_use(kind, title, target)</code> with the same trusted context</td><td>The reported period of use</td></tr>
 <tr><th scope="row">Background terminal</th><td>A command a bash call left running (<code translate="no">background</code> set), the one <code translate="no">ProcessStore</code> projection; see <a href="../../runtime/execution/command-sessions.html">command sessions</a></td><td>Until exit; read-only row with Stop</td></tr>
 </tbody>
 </table>
-<p class="note">Integrations must name the actual container, VM, application or remote environment. Per-command Docker invocations and SSH subprocesses do not register, and the registry neither scans the host nor infers objects from shell text.</p>
+<p class="note">Integrations must name the actual application or machine. Per-command Docker invocations and SSH subprocesses do not register, and the registry neither scans the host nor infers objects from shell text.</p>
 
 <details>
 <summary>Authorization and display limits</summary>
@@ -52,6 +52,17 @@
 </tbody>
 </table>
 
+<h2 id="views-on-demand">Views made when wanted</h2>
+<p>A page's native view is a whole browser process, about 100 MB. A window retains the pages of every conversation that opened one: 99 pages measured, 10 GB when each had its view.</p>
+<table class="stack">
+<thead><tr><th scope="col">Page</th><th scope="col">Its view is made</th></tr></thead>
+<tbody>
+<tr><th scope="row">The user's own tab</th><td>When the App starts</td></tr>
+<tr><th scope="row">Page of a conversation on screen</th><td>When the App starts, or when the conversation comes on screen</td></tr>
+<tr><th scope="row">Page of another conversation</th><td>When its conversation comes on screen, a pane shows it, or an Agent lists or uses it</td></tr>
+</tbody>
+</table>
+<p>A page waiting for its view is <code translate="no">dormant</code> in the store and reads as open, with no notice: the renderer's restore inventory names its tab in <code translate="no">dormant_tabs</code>, so the Worker does not call it failed. Its row moves to the new page when the view is made. A dormant page whose tab is gone reads as failed.</p>
 <h2>Closing a tab</h2>
 <table class="stack">
 <thead><tr><th scope="col">Action</th><th scope="col">Page</th><th scope="col">Effect</th></tr></thead>
@@ -85,7 +96,7 @@
 <tr><th scope="row"><code translate="no">close</code></th><td>Request termination, wait for exit</td><td>Only when declared</td></tr>
 </tbody>
 </table>
-<p class="note">Unsupported actions return a capability error; nothing is invented. Web pages are not a provider here: <code translate="no">computer_use_agent(target="browser")</code> lists, opens, operates and closes them. <code translate="no">terminal_use</code> remains a public entry. A resource identifier is not an access grant. Hiding a view, releasing Agent access and terminating an environment are separate.</p>
+<p class="note">Unsupported actions return a capability error; nothing is invented. Web pages are not a provider here: <code translate="no">computer_use(type="browser")</code> lists, opens, operates and closes them. <code translate="no">terminal_use</code> remains a public entry. A resource identifier is not an access grant. Hiding a view, releasing Agent access and terminating an environment are separate.</p>
 
 <details>
 <summary>Trust and failures</summary>

@@ -177,7 +177,6 @@ def test_new_draft_first_send_materializes_exact_accepted_guard(store, monkeypat
     _checkout_server(monkeypatch, store)
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.ws_actions.chat.turn import _save_run_config
-    monkeypatch.setattr("openprogram.host.environments.assign_new_session_environment", lambda *a: "local")
     req = first_send_request()
     cfg, _ = _save_run_config(server, req, {"id": "newdraft"}, "first-user")
     assert cfg.thinking_effort == "high"
@@ -189,7 +188,6 @@ def test_new_draft_open_pins_no_model_then_first_send(store, monkeypatch):
     _checkout_server(monkeypatch, store)
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.ws_actions.chat.turn import _open_session, _save_run_config
-    monkeypatch.setattr("openprogram.host.environments.assign_new_session_environment", lambda *a: "local")
     monkeypatch.setattr("openprogram.runtime.conversation.session_settings.session_model.new_session_chat_model", lambda *_: ("p", "m"))
     monkeypatch.setattr(server, "_user_pinned_provider", None)
     monkeypatch.setattr(server, "_user_pinned_model", None)

@@ -30,6 +30,28 @@ clone_tree() {
   fi
 }
 
+# OPENPROGRAM_INCREMENTAL_ASSETS=1 is for a checkout that is built again and
+# again (the development instance): the bundler's own cache is kept, which
+# tracks every file a page was built from, and the packages are installed
+# again only when a manifest or the lockfile changed. A release build sets
+# nothing and starts from nothing.
+incremental="${OPENPROGRAM_INCREMENTAL_ASSETS:-}"
+dependency_stamp() {
+  (cd "$repo_root" && cat package.json package-lock.json apps/*/package.json | shasum -a 256 | cut -d' ' -f1)
+}
+# Everything the Web export can be built from: every tracked file but Python,
+# the documentation and the tests, with the Node that builds it. Empty when
+# the checkout has changes Git does not hold, and the export is then built.
+web_inputs_stamp() {
+  (
+    cd "$repo_root"
+    test -z "$(git status --porcelain --untracked-files=all 2>/dev/null || echo unknown)" || exit 0
+    { node --version; git ls-tree -r HEAD | grep -v -E '\.py$|	(docs|tests)/'; } |
+      shasum -a 256 | cut -d' ' -f1
+  )
+}
+web_stamp_file="$next_build_dir/cache/.openprogram-export-inputs"
+
 command -v npm >/dev/null 2>&1 || {
   printf 'npm is required to stage release Web assets\n' >&2
   exit 1
@@ -49,11 +71,35 @@ rm -rf "$web_dir/public/document-assets/office"
         mkdir -p "$(dirname "$target")"
         clone_tree "$node_modules_source/$relative" "$target"
       done
+  elif test -n "$incremental" && test -d node_modules \
+    && test "$(dependency_stamp)" = "$(cat node_modules/.openprogram-installed 2>/dev/null)"; then
+    printf 'node_modules matches the lockfile; not installed again\n'
   else
     npm ci --ignore-scripts
+    if test -n "$incremental"; then
+      dependency_stamp > node_modules/.openprogram-installed
+    fi
   fi
-  rm -rf "$source_dir" "$next_build_dir"
-  NEXT_IGNORE_INCORRECT_LOCKFILE=1 npm run build --workspace apps/web
+  web_stamp=""
+  if test -n "$incremental"; then
+    web_stamp="$(web_inputs_stamp)"
+  fi
+  if test -n "$web_stamp" && test -f "$source_dir/index.html" \
+    && test "$web_stamp" = "$(cat "$web_stamp_file" 2>/dev/null)"; then
+    printf 'nothing the Web export is built from changed; the last export is staged\n'
+  else
+    rm -f "$web_stamp_file"
+    rm -rf "$source_dir"
+    if test -n "$incremental" && test -d "$next_build_dir/cache"; then
+      find "$next_build_dir" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
+    else
+      rm -rf "$next_build_dir"
+    fi
+    NEXT_IGNORE_INCORRECT_LOCKFILE=1 npm run build --workspace apps/web
+    if test -n "$web_stamp" && test -d "$next_build_dir/cache"; then
+      printf '%s\n' "$web_stamp" > "$web_stamp_file"
+    fi
+  fi
   npm run build:standalone --workspace apps/cli
   npm run build:release --workspace apps/cli
 )

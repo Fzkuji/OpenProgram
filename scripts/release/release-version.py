@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     if wrong:
         print(
             f"tag {options.tag} does not match this source: {'; '.join(wrong)}. "
-            f"Run `python scripts/release/release-version.py set {version}`, commit and promote, or change the tag.",
+            f"Run `python scripts/release/release-version.py set {version}`, commit it, or change the tag.",
             file=sys.stderr,
         )
         return 1

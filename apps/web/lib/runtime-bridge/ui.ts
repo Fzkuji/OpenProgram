@@ -7,6 +7,7 @@
  * Imported for side effects by AppShell.
  */
 
+import { cachedFetch } from "@/lib/prefs/settings-cache";
 import { useSessionStore, type StatusTone } from "@/lib/session-store";
 import { pushStatusBadge, setLastStatus } from "@/lib/tabs/top-bar-sync";
 import { startChannelHealthPoll, stopChannelHealthPoll } from "./session/conversations";
@@ -359,8 +360,9 @@ export function toggleWebSearchEnabled(e?: Event): void {
 
 export function refreshWebSearchProviderLabel(): void {
   try {
-    fetch("/api/search-providers/list")
-      .then((r) => (r.ok ? r.json() : null))
+    // The same read, and the same copy, as Settings > Search: one request
+    // when both want it as the page opens.
+    cachedFetch<{ default?: string | null; providers?: Array<{ id: string; name: string; tier?: string; available: boolean; is_default?: boolean }> }>("/api/search-providers/list")
       .then((d) => {
         if (!d) return;
         const def = d.default;

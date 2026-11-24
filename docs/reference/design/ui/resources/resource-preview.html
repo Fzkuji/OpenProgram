@@ -23,7 +23,7 @@
 <dl class="pairs">
 <dt>Scope</dt><dd>At most one preview per App window. Preferences belong to the viewed conversation and branch, and resource selection never changes that branch.</dd>
 <dt>Trigger</dt><dd>Only host-admitted operation events in that branch, including observe. Opening a resource, status polling or a screenshot does not switch.</dd>
-<dt>Auto preview</dt><dd>The More checkbox <em>Automatically show the page the Agent is using</em> turns it on and returns to the latest admitted operation. A clicked target stays until the next operated Page replaces it.</dd>
+<dt>Auto preview</dt><dd>The More checkbox <em>Automatically show what the Agent is using</em> turns it on and returns to the latest admitted operation. A clicked target stays until the next operated Page replaces it.</dd>
 <dt>Fixed preview</dt><dd>Checkbox off: the current Page stays. The Agent continues and cannot replace it. Not persisted across reloads.</dd>
 <dt>Child agents</dt><dd>A parent follows its own and its child executions in host dispatch order, naming the active agent. A child window follows only its branch.</dd>
 <dt>Changing branch</dt><dd>Restores that branch's preference; a new one follows its latest target, its unavailable state, or an empty state. Other branches keep running but cannot replace the preview.</dd>
@@ -31,15 +31,17 @@
 <dt>Other branch's resource</dt><dd>Inspecting neither checks that branch out nor grants write access.</dd>
 </dl>
 <details>
-<summary>Native windows and terminals</summary>
-<ul>
-<li>A function result naming <code translate="no">target</code> (<code translate="no">window_id</code>, <code translate="no">pid</code>, <code translate="no">app_name</code>) moves the preview to that app.</li>
-<li>The worker keeps only the latest window and screenshot per conversation, in memory, broadcasts <code translate="no">native.window</code> and serves <code translate="no">/api/session/{id}/native-window/frame</code>.</li>
-<li>A GUI step inside an agentic subprocess forwards the window to the worker, which attributes it to the owning conversation.</li>
-<li>The preview shows what the Agent last saw, not a live view.</li>
-<li>A terminal moves the preview when it starts running or receives input; the preview mirrors its screen read-only.</li>
-<li>Pinning keeps only Pages.</li>
-</ul>
+<summary>App windows, terminals and applications</summary>
+<p>Every kind the Agent uses shows in the same chat preview, with the web page preview's frame, gestures and header: drag, resize, dock, Open in tab, More (Auto preview, Show actions) and Close preview. Open in tab shows the same object in a tab of its own, never a copy.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Kind</th><th scope="col">Moves the preview</th><th scope="col">Inside the preview</th><th scope="col">Open in tab</th></tr></thead>
+<tbody>
+<tr><th scope="row">Another app's window</th><td>A function result naming <code translate="no">window</code> (<code translate="no">window_id</code>, <code translate="no">pid</code>, <code translate="no">app_name</code>); a GUI step in an agentic subprocess is forwarded to the worker and attributed to the owning conversation</td><td>In the desktop App, the live window fitted to the preview, without moving or resizing it; pointer, wheel and keys go to the window where the platform allows (see <a href="../desktop/embedded-windows.html">Embedded windows</a>). Elsewhere, the screenshot the Agent last took, kept in memory per conversation and served at <code translate="no">/api/session/{id}/native-window/frame</code>.</td><td>A window tab holding that window; an existing tab for it is focused</td></tr>
+<tr><th scope="row">Terminal</th><td>Starting to run or receiving input</td><td>The terminal's screen; typing goes to it while it runs</td><td>A terminal tab bound to that terminal; closing the tab leaves the terminal running</td></tr>
+<tr><th scope="row">Built-in application</th><td>An open, observe or act on an application instance (<code translate="no">application.used</code>)</td><td>The application instance itself, as in its tab</td><td>The application's tab for that instance</td></tr>
+</tbody>
+</table>
+<p class="note">Pinning keeps only Pages. A window shown in a tab can be handed to the Agent by naming it with <code translate="no">@</code> in the composer, which writes its title, the target <code translate="no">app</code> and its <code translate="no">window_id</code> into the message.</p>
 </details>
 
 <h2>Target types</h2>
@@ -85,7 +87,7 @@
 <tr><th scope="row"><code translate="no">active</code>, <code translate="no">yielding</code>, <code translate="no">stop_unconfirmed</code></th><td class="run">Active while the conversation runs, otherwise Ready to use</td></tr>
 <tr><th scope="row"><code translate="no">paused</code>, <code translate="no">idle</code>, <code translate="no">closed</code></th><td class="run">Ready to use</td></tr>
 <tr><th scope="row"><code translate="no">waiting</code></th><td class="ask">Needs your confirmation, with Review request</td></tr>
-<tr><th scope="row"><code translate="no">unknown</code></th><td class="review">Could not confirm status, or Connection lost when disconnected</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td class="review">No text while the state is read again</td></tr>
 </tbody>
 </table>
 <p class="note">A stop request unacknowledged for 5 seconds becomes <code translate="no">stop_unconfirmed</code>; new Agent dispatch stays closed. That timeout does not prove stopping.</p>
@@ -93,7 +95,7 @@
 <details>
 <summary>Preview chrome</summary>
 <ul>
-<li>One row that never wraps, at the 240px minimum, the 300×198.75 default (300×168.75 image plus header) and the 720px expanded width: ellipsized title, status, Open page, More, Close preview.</li>
+<li>One row that never wraps, at the 240px minimum, the 300×198.75 default (300×168.75 image plus header) and the 720px expanded width: ellipsized title, status, Open page (Open in tab for other kinds), More, Close preview.</li>
 <li>Show actions and Operation history are in More.</li>
 <li>Failure text is reachable through the status indicator, title tooltip and <code translate="no">aria-live</code>.</li>
 <li>Resizes from four edges and four corners.</li>
@@ -180,7 +182,8 @@
 </details>
 
 <h2 id="desktop-tool-trace">Tool activity in the conversation</h2>
-<p>A <code translate="no">computer_use_agent</code> call appears in the timeline by target and step: application and action, Page action and URL, VM action, code run in an application, or a handed-off task with its brief's first line. Calls from the earlier GUI tools (<code translate="no">gui_agent</code>, <code translate="no">computer_use</code>, <code translate="no">browser_use</code>, <code translate="no">vm_use</code>) open the Details panel with a GUI activity card above the raw parameters and output.</p>
+<p>A <code translate="no">computer_use</code> call appears in the timeline by target and step: application and action, an action on the screen, Page action and URL, or code run on a target; a target on another machine carries the machine's name, and Chrome and Edge their own.</p>
+<p>Calls from the earlier GUI tools (<code translate="no">gui_agent</code>, <code translate="no">computer_use</code>, <code translate="no">browser_use</code>, <code translate="no">vm_use</code>) open the Details panel with a GUI activity card above the raw parameters and output.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Content</th></tr></thead>
 <tbody>

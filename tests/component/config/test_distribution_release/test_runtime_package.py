@@ -56,6 +56,16 @@ def test_packaging_leaves_the_runtime_browser_bytes_alone() -> None:
     staging = (ROOT / "scripts" / "release" / "build-base.sh").read_text(encoding="utf-8")
     install = staging.index("playwright install chromium")
     assert staging.index("codesign --force --deep --sign -", install) > install
+    # macOS and Windows ship the full browser only; every launch asks for it first.
+    assert 'test "$(uname -s)" != Darwin || shell=(--no-shell)' in staging
+    assert "playwright install chromium --no-shell" in (
+        ROOT / "scripts" / "release" / "build-base.ps1").read_text(encoding="utf-8")
+    for launcher in ("openprogram/operations/self_update/verification/ui_checks.py",
+                     "openprogram/operations/self_update/verification/system_probe.py",
+                     "openprogram/operations/self_update/control/supervisor.py",
+                     "scripts/release/verify-product-runtime.py"):
+        text = (ROOT / launcher).read_text(encoding="utf-8")
+        assert "channel=\"chromium\"" in text or "channel='chromium'" in text, launcher
 
 
 @POSIX_SHELL_INTEGRATION
@@ -296,6 +306,17 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "Research-Agent-Harness" not in product_config
     assert "Wiki-Agent-Harness" not in product_config
     assert "programs" not in json.loads(product_config)
+
+
+def test_runtime_build_does_not_ship_the_wheel_it_installed() -> None:
+    release = ROOT / "scripts" / "release"
+    posix = (release / "build-product-runtime.sh").read_text(encoding="utf-8")
+    assert posix.index('--no-deps "$wheel"') < posix.index('rm -rf "$runtime_root/wheel"') \
+        < posix.index('"$runtime_root/bin/verify-product-runtime.py" \\\n  "$runtime_root" \\\n  --write')
+    windows = (release / "build-product-runtime.ps1").read_text(encoding="utf-8")
+    removed = 'Remove-Item -LiteralPath (Join-Path $RuntimeRoot "wheel") -Recurse -Force'
+    assert windows.index("--no-deps $Wheel.FullName") < windows.index(removed)
+    assert windows.index(removed) < windows.index("verify-product-runtime.py", windows.index(removed))
 
 
 def test_posix_runtime_build_has_stable_python_and_bundled_tui_launchers() -> None:

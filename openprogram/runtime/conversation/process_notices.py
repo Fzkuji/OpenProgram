@@ -20,7 +20,9 @@ from types import SimpleNamespace
 from openprogram.host.processes.store import ProcessStore
 from openprogram.runtime.permissions.identity import detached_from_window, inherited_automation
 
-POLL_SECONDS = 2.0
+#: The least time between two looks woken by the process records, which
+#: change with every line a background command prints.
+RECORDS_GAP_SECONDS = 2.0
 _SOURCE = "process_exit"
 _OUTPUT_TAIL = 2000
 _log = logging.getLogger(__name__)
@@ -147,6 +149,9 @@ def deliver(record: dict, processes: ProcessStore) -> bool:
         if not run_slot.reserve(session_id, message_id, lock_wait=0, branch_id=branch_id):
             return False
     except SessionLockTimeout:
+        # Its files are being written: nothing announces the lock's release,
+        # so the loop looks again shortly (``RETRY_SECONDS``).
+        _retry.set()
         return False
     try:
         adapter = CanonicalAgentAdapter(store=store, event_sink=emit_ws_frame)
@@ -186,22 +191,133 @@ def deliver(record: dict, processes: ProcessStore) -> bool:
     return True
 
 
-def sweep(store: ProcessStore | None = None) -> None:
-    """Deliver due notices, then drop records past retention."""
+def sweep(store: ProcessStore | None = None) -> bool:
+    """Deliver due notices, then drop records past retention; whether a
+    notice still waits (its conversation is mid-turn)."""
     store = store or ProcessStore()
+    waiting = False
     for record in store.unreported_exits():
         try:
-            deliver(record, store)
+            if not deliver(record, store):
+                waiting = True
         except Exception:
+            waiting = True
+            _retry.set()
             _log.warning("process exit notice for %s deferred", record["id"], exc_info=True)
     store.prune()
+    return waiting
+
+
+#: The loop looks on its own only this often; otherwise it waits to be told.
+RESYNC_SECONDS = 300.0
+#: A delivery that failed or found the conversation's files locked is tried
+#: again this soon; nothing announces either ending.
+RETRY_SECONDS = 2.0
+_retry = threading.Event()
+#: Signalled when the process records change: a command's supervisor, a
+#: process of its own, writes its exit there.
+PROCESSES_TOPIC = "processes"
 
 
 async def run_exit_notices(stop: asyncio.Event) -> None:
-    """Worker loop: deliver due notices until ``stop`` is set."""
-    while not stop.is_set():
-        await asyncio.to_thread(sweep)
+    """Worker loop: deliver due notices until ``stop`` is set.
+
+    It wakes when the process records change (a supervisor wrote an exit)
+    and, while a notice waits for its conversation to finish a turn, when a
+    conversation may have gone quiet (``run_control/idle.py``). Output
+    streaming into the records wakes it often, so after a record change it
+    looks at most every ``RECORDS_GAP_SECONDS``.
+
+    Each look also follows every live record's supervisor; one that ends
+    without writing its command's end wakes the loop at once, and its
+    record turns ``unknown`` (``record_changes.follow_supervisors``)."""
+    from openprogram.host._platform import changes
+    from openprogram.host.processes import record_changes
+    from openprogram.runtime.conversation.run_control.idle import subscribe_idle
+
+    store = ProcessStore()
+    changes.watch(store.path.parent, PROCESSES_TOPIC,
+                  names={store.path.name, store.path.name + "-wal"})
+    loop = asyncio.get_running_loop()
+    records_changed = asyncio.Event()
+    maybe_quiet = asyncio.Event()
+    supervisor_gone = asyncio.Event()
+    gone_lock = threading.Lock()
+    gone: set[str] = set()
+    waiting = False
+    sweeping = threading.local()
+
+    def poke(event: asyncio.Event) -> None:
         try:
-            await asyncio.wait_for(stop.wait(), POLL_SECONDS)
-        except asyncio.TimeoutError:
+            loop.call_soon_threadsafe(event.set)
+        except RuntimeError:  # the loop is closing
             pass
+
+    def maybe_idle() -> None:
+        # Only while a notice waits, and not for the sweep's own writes (a
+        # notice turn it admits writes executions).
+        if waiting and not getattr(sweeping, "on", False):
+            poke(maybe_quiet)
+
+    def ended(keys) -> None:
+        with gone_lock:
+            gone.update(keys)
+        poke(supervisor_gone)
+
+    def sweep_once() -> bool:
+        sweeping.on = True
+        try:
+            with gone_lock:
+                keys = sorted(gone)
+                gone.clear()
+            try:
+                record_changes.follow_supervisors(store, keys)
+            except Exception:  # noqa: BLE001 - the next look follows them again
+                _retry.set()
+                with gone_lock:
+                    gone.update(keys)
+                _log.warning("command supervisors not followed", exc_info=True)
+            return sweep(store)
+        finally:
+            sweeping.on = False
+
+    unsubscribes = [
+        changes.subscribe(PROCESSES_TOPIC, lambda _keys: poke(records_changed)),
+        changes.subscribe(record_changes.SUPERVISORS_TOPIC, ended),
+        subscribe_idle(maybe_idle),
+    ]
+    try:
+        while not stop.is_set():
+            records_changed.clear()
+            maybe_quiet.clear()
+            supervisor_gone.clear()
+            # Listening while the sweep looks: a turn that ends meanwhile
+            # brings another look.
+            waiting = True
+            _retry.clear()
+            waiting = await asyncio.to_thread(sweep_once)
+            # Without file events nothing tells this loop of an exit: it
+            # looks every RECORDS_GAP_SECONDS.
+            timeout = RESYNC_SECONDS if changes.file_events_available() else RECORDS_GAP_SECONDS
+            if _retry.is_set():
+                timeout = min(timeout, RETRY_SECONDS)
+            await _first(stop, (records_changed, maybe_quiet, supervisor_gone), timeout)
+            if (records_changed.is_set() and not maybe_quiet.is_set()
+                    and not supervisor_gone.is_set() and not stop.is_set()):
+                # Output streaming into the records wakes this often; one
+                # look per RECORDS_GAP_SECONDS is enough. A conversation
+                # going quiet or a supervisor ending meanwhile cuts the gap short.
+                await _first(stop, (maybe_quiet, supervisor_gone), RECORDS_GAP_SECONDS)
+    finally:
+        for unsubscribe in unsubscribes:
+            unsubscribe()
+
+
+async def _first(stop: asyncio.Event, events: tuple[asyncio.Event, ...], timeout: float) -> None:
+    """Wait until ``stop`` or one of ``events`` is set, or ``timeout``."""
+    tasks = {asyncio.ensure_future(event.wait()) for event in (stop, *events)}
+    try:
+        await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()

@@ -10,7 +10,8 @@ Docs: https://documentation.you.com/api-reference/search
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import get_json
@@ -81,4 +82,4 @@ class YouComProvider:
 
 
 def _resolve_key() -> str | None:
-    return os.environ.get("YDC_API_KEY") or os.environ.get("YOU_API_KEY")
+    return service_key("youcom") or None

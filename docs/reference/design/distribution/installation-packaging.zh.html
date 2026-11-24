@@ -33,7 +33,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">包含</th><td>固定的 CPython（3.12.10）、固定的 <code translate="no">uv</code>（0.11.16）、固定的 Git、OpenProgram、预构建 Web、带 Node.js 的独立 Ink 包。能力列在 <code translate="no">scripts/release/product-runtime.json</code>：<code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
+<tr><th scope="row">包含</th><td>固定的 CPython（3.12.10）、固定的 <code translate="no">uv</code>（0.11.16）、固定的 Git、OpenProgram、预构建 Web、带 Node.js 的独立 Ink 包。Node 只有这一份：在 macOS 和 Linux 上，Playwright 的 driver 通过一个链接运行在它上面（<code translate="no">scripts/release/share-runtime-node.py</code>），否则 Playwright 包会再带来约 115 MB 的另一份；Windows 两份都保留。能力列在 <code translate="no">scripts/release/product-runtime.json</code>：<code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
 <tr><th scope="row">不含</th><td>Program、PyTorch、torchvision、OpenCV、EasyOCR、sentence-transformers、triton、NVIDIA/CUDA。Computer use 是内置工具，不带权重</td></tr>
 <tr><th scope="row">Office 编辑器</th><td>在清单里固定版本并标为可选；用户同意后才安装</td></tr>
 <tr><th scope="row">可变数据</th><td><code translate="no">~/.openprogram</code>：配置、会话、缓存、用户添加的 Program。运行时保持只读</td></tr>
@@ -63,7 +63,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">问题</th><th scope="col">答案</th></tr></thead>
 <tbody>
-<tr><th scope="row">为什么用带版本号的名字</th><td>已安装的 v1.2.0 App 在最新发行版里按名字找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>（或 <code translate="no">-unsigned</code>），这个名字必须存在。Codex、OpenCode 和 Goose 只发布不带版本号的名字，同样是一个文件一个名字；我们去掉的是同一份内容的第二个名字</td></tr>
+<tr><th scope="row">为什么用带版本号的名字</th><td>已安装的 v1.2.0 App 在最新发行版里按名字找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>（或 <code translate="no">-unsigned</code>），能替换自己的已签名 App 先找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code>，这些名字必须存在。Codex、OpenCode 和 Goose 只发布不带版本号的名字，同样是一个文件一个名字；我们去掉的是同一份内容的第二个名字</td></tr>
 <tr><th scope="row">最新版下载链接</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>（由 <code translate="no">docs/_static_root/latest.html</code> 发布在文档旁，用相对链接指向） 从 GitHub API 读最新发行版的文件列表，打开对应文件；拿不到答复就打开最新发行版页面。安装页和下载页上的 App 链接都经过它，所以没有哪个安装页写死某个版本，发新版时也不会过时。Claude Code 也是这样解析"最新"：靠指针和清单，而不是重复文件</td></tr>
 <tr><th scope="row">校验值</th><td>GitHub 在发布页上显示每个文件的 SHA-256，<code translate="no">release-manifest.json</code> 列出每个文件的路径、大小和 SHA-256。App 更新器按这份清单校验，发布说明的 App 表格在校验值一栏链接到它</td></tr>
 <tr><th scope="row">仍然上传</th><td>运行时归档的 <code translate="no">.sha256</code>：v1.2.0 的 <code translate="no">openprogram upgrade</code> 更新前要求按名字找到它。更新用的 <code translate="no">SHA256SUMS</code>，签名的更新清单记着它的哈希。种子的 <code translate="no">.sha256</code>，命令行安装器会读</td></tr>
@@ -240,20 +240,6 @@
 </tbody>
 </table>
 </details>
-<details>
-<summary>本地 App 刷新：<code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
-<ul>
-<li>只安装 <code translate="no">refs/heads/stable</code>，晋升时安装要晋升的它的快进提交，健康后再移动 <code translate="no">stable</code>（<a href="dev-instance.zh.html#promoting-to-stable">晋升到稳定版</a>）。没有 <code translate="no">stable</code> 分支时，检出必须包含本地 <code translate="no">main</code> 和已拉取的 <code translate="no">origin/main</code>。</li>
-<li>先解析路径，斜杠、点路径和符号链接别名共用检查和锁。真正的自定义 App 保留自己的源码检查。</li>
-<li>已跟踪修改、已暂存改动或未忽略的新文件，在打包前、打包后和持锁时都会拒绝。打包期间 HEAD 变化则重建；载荷冻结后变化则中止。</li>
-<li>检出、bundle、运行时清单和内置 Python 元数据版本必须相同，只有源码可以比已安装 App 新，此时同时升级其 Electron 和 bundle 元数据。降级被拒绝。</li>
-<li>同步 main、preload、更新器和运行时依赖，不生成覆盖旧模块的 <code translate="no">app.asar</code>。在共用锁内复查源码、wheel 和 App。</li>
-<li>解压会丢失未打包 <code translate="no">node-pty</code> 文件的执行位，暂存时恢复已安装的权限，并强制 <code translate="no">spawn-helper</code> 可执行。不跟随符号链接。</li>
-<li>旧 worker 照常服务时，在已安装 App 旁边的 <code translate="no">.openprogram-refresh.*</code> 里组装、校验并签名新 App，再以改名互换两者。</li>
-<li>只启动一次内嵌 worker；轮询 <code translate="no">:18100/healthz</code> 最多 300 秒，不重复启动。超时报告端点和日志。</li>
-<li>互换后失败则把之前的 App 改名放回，用同样的步骤启动并检查它的 worker。新版本或恢复的版本起来后重开一次 App，并保留主要状态；App 退出前失败则不启动。清理错误绝不报告成功。</li>
-</ul>
-</details>
 
 <h2 id="thin-shell">签名薄壳</h2>
 <p>薄壳 App 只有 <code translate="no">apps/desktop/shell/</code> 里的外壳，加上 <code translate="no">Resources/seed</code> 下的 seed。Windows 和 Linux App 是薄壳。macOS App 保持内嵌，除非打开 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code>。</p>
@@ -339,7 +325,6 @@
 <tr><th scope="row">Linux 桌面</th><td>已实现，v1.1.0 首次发布。Linux 上的更新激活和回退还需要再跑一次端到端验证</td></tr>
 <tr><th scope="row">Release 工作流</th><td>独立任务和未签名形态已实现并作为脚本测试；工作流本身还没有在 GitHub 上运行过</td></tr>
 <tr><th scope="row">每个文件一份</th><td>已实现；第一个不再带无版本号副本和各任务校验文件的发行版是 v1.3.0。等受支持的版本里没有哪个 <code translate="no">openprogram upgrade</code> 还要运行时 <code translate="no">.sha256</code>，它们也可以去掉</td></tr>
-<tr><th scope="row">本地刷新收尾</th><td>回归用例通过；已安装 App 的验收未完成</td></tr>
 <tr><th scope="row"><code translate="no">openprogram update</code></th><td>遗留命令：处理函数导入的辅助函数已不存在，会抛 <code translate="no">ImportError</code>。更新命令是 <code translate="no">upgrade</code></td></tr>
 </tbody>
 </table>

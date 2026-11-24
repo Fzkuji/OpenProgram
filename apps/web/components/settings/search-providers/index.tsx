@@ -5,56 +5,44 @@
  * Tavily, Exa, DuckDuckGo. Originally a 526-line single file;
  * split into one file per subcomponent for maintainability.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { SettingsPage } from "../settings-ui";
 import styles from "../providers/provider-pane.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { jsonFetch } from "@/lib/net/fetch-client";
-import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
+import { invalidate, refreshSettings, setCachedSettings, useSettingsData } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
+import { SEARCH_PROVIDERS_URL } from "@/lib/settings/settings-urls";
 import { SearchProviderDetail } from "./detail";
 import { SearchProviderItem } from "./item";
 import type { SearchProvider } from "./types";
 
+type SearchProviderList = { providers?: SearchProvider[]; default?: string | null };
+
+const NO_PROVIDERS: SearchProvider[] = [];
+
 export function SearchProvidersSection() {
   const { t, text } = useTranslation();
-  const [providers, setProviders] = useState<SearchProvider[]>([]);
-  const [defaultId, setDefaultId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Kept across visits and read as Settings opens: the list shows at once.
+  const data = useSettingsData<SearchProviderList>(SEARCH_PROVIDERS_URL);
+  const providers = data?.providers ?? NO_PROVIDERS;
+  const defaultId = data?.default ?? null;
+  const [picked, setPicked] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const d = await cachedFetch<{ providers?: SearchProvider[]; default?: string | null }>(
-        "/api/search-providers/list",
-      );
-      const list: SearchProvider[] = d.providers || [];
-      const def = d.default ?? null;
-      setProviders(list);
-      setDefaultId(def);
-      // Initial selection: prefer the configured default, then the
-      // first available backend, then the first row. Picking
-      // ``list[0]`` blindly lands on Tavily (priority 100) which is
-      // typically un-configured — confusing.
-      setSelectedId((cur) => {
-        if (cur) return cur;
-        if (def && list.some((p) => p.id === def)) return def;
-        const firstAvailable = list.find((p) => p.available);
-        if (firstAvailable) return firstAvailable.id;
-        return list[0]?.id ?? null;
-      });
-    } catch {
-      setError(text("Could not load the search backends. Reopen this page to retry.", "无法加载搜索后端，请重新打开此页重试。"));
-    } finally {
-      setLoading(false);
-    }
-  }, [text]);
+  // Until a row is picked: the configured default, then the first available
+  // backend, then the first row. Picking ``list[0]`` blindly lands on Tavily
+  // (priority 100) which is typically un-configured — confusing.
+  const selectedId = picked ?? (
+    defaultId && providers.some((p) => p.id === defaultId) ? defaultId
+      : providers.find((p) => p.available)?.id ?? providers[0]?.id ?? null
+  );
+  const setSelectedId = setPicked;
 
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(() => refreshSettings(SEARCH_PROVIDERS_URL).then(() => {}), []);
 
   const setDefault = useCallback(async (id: string | null) => {
     setSaving(true);
@@ -65,12 +53,13 @@ export function SearchProvidersSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: id }),
       });
-      invalidate("/api/search-providers/list");
-      setDefaultId(id);
-      // Refresh `is_default` flags on every row.
-      setProviders((prev) =>
-        prev.map((p) => ({ ...p, is_default: p.id === id })),
-      );
+      // Refresh `is_default` flags on every row, then read the list again.
+      setCachedSettings<SearchProviderList>(SEARCH_PROVIDERS_URL, (prev) => prev && {
+        ...prev,
+        default: id,
+        providers: (prev.providers ?? []).map((p) => ({ ...p, is_default: p.id === id })),
+      });
+      invalidate(SEARCH_PROVIDERS_URL);
     } catch {
       setError(text("Could not save the search provider. Retry after reconnecting.", "无法保存搜索后端，请在重新连接后重试。"));
     } finally {
@@ -96,14 +85,6 @@ export function SearchProvidersSection() {
 
   const selected = providers.find((p) => p.id === selectedId);
 
-  if (loading) {
-    return (
-      <SettingsPage title={t("settings.tab.search")}>
-        <div style={{ opacity: 0.6 }}>{text("Loading...", "加载中...")}</div>
-      </SettingsPage>
-    );
-  }
-
   return (
     <SettingsPage
       title={t("settings.tab.search")}
@@ -114,7 +95,7 @@ export function SearchProvidersSection() {
       bodyClassName="gap-0 overflow-hidden p-0"
     >
       {error && <p role="alert">{error}</p>}
-        <div className={styles.providersLayout}>
+        {data ? <div className={styles.providersLayout}>
           <div className={styles.providersSidebar}>
             <div className="p-[0_0_8px]">
               <div className="flex items-center w-full min-w-0">
@@ -174,7 +155,7 @@ export function SearchProvidersSection() {
               </div>
             )}
           </div>
-        </div>
+        </div> : null}
     </SettingsPage>
   );
 }

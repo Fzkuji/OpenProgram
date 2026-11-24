@@ -142,7 +142,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
         </div>
       </div>
       {notices}
-      {loading ? <LoadingSkeleton /> : detail || (state.viewMode === "edit" ? (
+      {loading ? null : detail || (state.viewMode === "edit" ? (
         <textarea
           className={styles.textarea}
           aria-label={text("Memory source", "记忆源文本")}
@@ -183,16 +183,6 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
 
 function localeTextCount(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-export function LoadingSkeleton() {
-  return (
-    <div className="p-[12px_10px] flex flex-col gap-[8px]">
-      {[100, 70, 85, 60].map((w, i) => (
-        <div key={i} className={styles.skeleton} style={{ width: `${w}%` }} />
-      ))}
-    </div>
-  );
 }
 
 // Both empty treatments use the app-wide ManageEmptyState anatomy: compact

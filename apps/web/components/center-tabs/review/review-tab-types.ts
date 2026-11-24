@@ -1,4 +1,4 @@
-export type ReviewScope = "turn" | "branch" | "workspace";
+export type ReviewScope = "turn" | "unstaged" | "staged" | "branch";
 export type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
 export type ReviewSort = "path" | "alpha" | "category" | "recent";
 
@@ -44,6 +44,8 @@ export interface ScopeState {
   category?: ReviewCategory;
   query?: string;
   sort?: ReviewSort;
+  /** Unstaged and Staged scopes of a local Git project can stage. */
+  staging?: boolean;
 }
 
 export interface DiffState {
@@ -56,4 +58,30 @@ export interface DiffState {
   prev_cursor?: string | null;
   line_count?: number;
   error?: string;
+}
+
+/** A line comment waiting to be sent to the agent. */
+export interface ReviewComment {
+  id: string;
+  scope: ReviewScope;
+  path: string;
+  rel: string;
+  /** "old" for a removed line, numbered in the old file; else "new". */
+  side: "old" | "new";
+  line: number;
+  /** The line's text, without its diff sign. */
+  quote: string;
+  body: string;
+}
+
+export type FindingSeverity = "low" | "medium" | "high";
+
+/** One finding of Review with agent, on a file line of its scope. */
+export interface ReviewFinding {
+  id: string;
+  scope: ReviewScope;
+  rel: string;
+  line: number;
+  severity: FindingSeverity;
+  body: string;
 }

@@ -9,6 +9,13 @@ stores (see ``docs/design/memory/overview.md`` §2):
     project is a long-lived working unit bound to a filesystem
     directory. Agent file edits in that directory get committed here.
 
+A project is a folder on one machine (``machine_id``, ``local`` for this
+computer; see :mod:`openprogram.host.machines`). Its conversations run on
+that machine, in that folder. A folder on a machine whose shell keeps
+files there (an SSH host) is never looked at on this computer's disk:
+:func:`folder_is_here` tells the two apart, and every local check (folder
+identity, relocation, worktrees, git) applies only where it is true.
+
 Every session belongs to exactly one project. Two cases:
 
   * **Bound project** — the user worked in a real directory (their
@@ -49,6 +56,8 @@ from openprogram.host._platform.filesystem import replace_file
 
 
 DEFAULT_PROJECT_ID = "default"
+#: The machine id of this computer (``openprogram.host.machines.LOCAL_ID``).
+LOCAL_MACHINE_ID = "local"
 
 
 _log = logging.getLogger(__name__)
@@ -103,6 +112,7 @@ class Project:
     location_revision: int = 0
     location_state: str = "available"
     migration_error: str = ""
+    machine_id: str = LOCAL_MACHINE_ID
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -128,7 +138,37 @@ class Project:
             location_revision=int(d.get("location_revision") or 0),
             location_state=d.get("location_state", "available") or "available",
             migration_error=d.get("migration_error", "") or "",
+            machine_id=str(d.get("machine_id") or "").strip() or LOCAL_MACHINE_ID,
         )
+
+
+def folder_is_here(project) -> bool:
+    """The project's folder is on this computer's disk.
+
+    True for the home project, a project on this computer, and a project on
+    a machine whose shell reaches this computer's folders (a Docker machine
+    mounts them). False for a folder on a machine that keeps its own files
+    (an SSH host), and for a machine no longer configured: its folder is
+    never looked for here.
+    """
+    if project is None or getattr(project, "is_default", False):
+        return True
+    machine_id = str(getattr(project, "machine_id", "") or "") or LOCAL_MACHINE_ID
+    if machine_id == LOCAL_MACHINE_ID:
+        return True
+    from openprogram.host.machines import get_machine
+    machine = get_machine(machine_id)
+    return machine is not None and not machine.remote_files
+
+
+def _row_folder_is_here(row: dict) -> bool:
+    return folder_is_here(Project.from_dict({"id": row.get("id") or "", **row}))
+
+
+def project_machine(project):
+    """The machine a project's conversations run on (``host.machines.resolve_for_project``)."""
+    from openprogram.host.machines import resolve_for_project
+    return resolve_for_project(project)
 
 
 # ProjectGit: the git wrapper for a project's working directory
@@ -689,7 +729,7 @@ def _upsert(project: Project, *, capture_identity: bool = False, replace_identit
     """
     with _registry_transaction():
         reg = _read_registry()
-        if capture_identity and not project.is_default and project.path:
+        if capture_identity and not project.is_default and project.path and folder_is_here(project):
             from .identity import capture_directory_identity, read_marker
             marker = read_marker(project.path)
             if marker and not replace_identity and any(
@@ -740,16 +780,7 @@ def update_project(project_id: str, patch: dict) -> Project:
         folders = values["source_folders"]
         if not isinstance(folders, list) or len(folders) > 32:
             raise ValueError("source_folders must be a list of at most 32 directories")
-        normalized = []
-        for value in folders:
-            if not isinstance(value, str) or not Path(value).expanduser().is_absolute():
-                raise ValueError("source folder paths must be absolute")
-            path = Path(value).expanduser().resolve()
-            if not path.is_dir():
-                raise ValueError(f"source folder is not a directory: {value}")
-            if str(path) not in normalized:
-                normalized.append(str(path))
-        values["source_folders"] = normalized
+        values["source_folders"] = _normalized_folders(get_project(project_id), folders)
     with _registry_transaction():
         registry = _read_registry()
         if project_id not in registry:
@@ -765,6 +796,33 @@ def update_project(project_id: str, patch: dict) -> Project:
         return project
 
 
+def _normalized_folders(project: Optional[Project], folders: list) -> list[str]:
+    """Absolute folders on the project's machine, each checked there, without repeats."""
+    remote = project is not None and not folder_is_here(project)
+    machine = project_machine(project) if remote else None
+    normalized: list[str] = []
+    for value in folders:
+        if not isinstance(value, str) or not (value.startswith("/") or Path(value).expanduser().is_absolute()):
+            raise ValueError("source folder paths must be absolute")
+        if machine is not None:
+            from openprogram.host.machines.remote import resolve_folder
+            try:
+                found = resolve_folder(machine, value)
+            except ConnectionError as exc:
+                raise ValueError(str(exc)) from None
+            if found is None:
+                raise ValueError(f"source folder is not a directory on {machine.name}: {value}")
+            path = found
+        else:
+            resolved = Path(value).expanduser().resolve()
+            if not resolved.is_dir():
+                raise ValueError(f"source folder is not a directory: {value}")
+            path = str(resolved)
+        if path not in normalized:
+            normalized.append(path)
+    return normalized
+
+
 # ── project-level settings ──────────────────────────────────────────────
 # 项目级配置（权限规则、以后的项目级工具/模型偏好等）。
 # 每个项目 (含主目录项目) 的配置落在 <state>/projects/<id>/settings.json;
@@ -776,7 +834,7 @@ def _settings_path_for(project: Project) -> Path:
     owned = projects_dir() / project.id / "settings.json"
     if owned.exists():
         return owned
-    if project.path:
+    if project.path and folder_is_here(project):
         legacy = Path(project.path).expanduser() / ".openprogram" / "settings.json"
         if legacy.exists() and not owned.exists():
             return legacy
@@ -847,15 +905,34 @@ def get_default_project() -> Project:
     return _upsert(proj)
 
 
-def resolve_project(path: str | Path | None = None, *, name: str | None = None) -> Project:
-    """Resolve (and register) the project for a working directory.
+def _here_projects() -> list[Project]:
+    """Registered projects whose folder is on this computer's disk, the home project left out."""
+    return [project for project in list_projects()
+            if not project.is_default and project.path and folder_is_here(project)]
+
+
+def resolve_project(path: str | Path | None = None, *, name: str | None = None,
+                    machine_id: str | None = None) -> Project:
+    """Resolve (and register) the project for a folder on a machine (this computer by default).
 
     New registrations use opaque UUIDs. Existing path-derived ids are
     never recomputed. Portable folder markers reconnect moved projects.
     A copy opened while the original is present receives a new identity.
+    A folder on this computer is one project, whatever machine runs it:
+    opening it for another machine is refused.
     """
     if path is None:
         return get_default_project()
+    machine_id = (machine_id or "").strip() or LOCAL_MACHINE_ID
+    if machine_id != LOCAL_MACHINE_ID:
+        from openprogram.host.machines import _not_an_environment, get_machine, usable_as_environment
+        machine = get_machine(machine_id)
+        if machine is None:
+            raise ProjectStoreError(f"unknown machine {machine_id!r}")
+        if not usable_as_environment(machine):
+            raise ProjectStoreError(_not_an_environment(machine))
+        if machine.remote_files:
+            return _resolve_remote_project(machine, str(path), name)
 
     p = Path(path).expanduser()
     try:
@@ -865,10 +942,13 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     # The path/token decision and publication are one registry transaction.
     # Session relocation runs after releasing it so readers remain available.
     with _registry_transaction():
-        existing = next((project for project in list_projects()
-                         if not project.is_default and project.path
-                         and Path(project.path).expanduser().resolve() == p.resolve()), None)
+        existing = next((project for project in _here_projects()
+                         if Path(project.path).expanduser().resolve() == p.resolve()), None)
         if existing is not None:
+            if existing.machine_id != machine_id:
+                raise ProjectStoreError(
+                    f"this folder is already the project “{existing.name}”, which runs on "
+                    f"{_machine_label(existing.machine_id)}")
             from .identity import is_portable, captured_identity_matches
             if p.is_dir() and is_portable(existing) and not captured_identity_matches(existing, p):
                 raise ProjectStoreError("project location has changed; locate the original folder or confirm a replacement")
@@ -891,12 +971,49 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
                 path=str(p.resolve()),
                 is_default=False,
                 location_state="available",
+                machine_id=machine_id,
             )
             return _upsert(proj, capture_identity=True, replace_identity=bool(owners))
     owner = owners[0]
     moved = relocate_project(owner.id, p, expected_path=owner.path,
                              expected_revision=owner.location_revision, require_identity=True)
     return _reopened(moved.id, name) if moved.hidden else moved
+
+
+def _machine_label(machine_id: str) -> str:
+    if machine_id == LOCAL_MACHINE_ID:
+        return "this computer"
+    from openprogram.host.machines import get_machine
+    machine = get_machine(machine_id)
+    return f"machine “{machine.name if machine else machine_id}”"
+
+
+def _resolve_remote_project(machine, path: str, name: str | None) -> Project:
+    """The project for a folder on a machine that keeps its own files.
+
+    The folder is checked and made absolute on the machine itself; nothing
+    on this computer's disk is looked at. One folder on one machine is one
+    project: opening it again returns that project.
+    """
+    from openprogram.host.machines.remote import resolve_folder
+    try:
+        folder = resolve_folder(machine, path)
+    except ConnectionError as exc:
+        raise ProjectStoreError(str(exc)) from None
+    if folder is None:
+        raise ProjectStoreError(f"not a folder on {machine.name}: {path}")
+    with _registry_transaction():
+        existing = next((project for project in list_projects()
+                         if not project.is_default and project.machine_id == machine.id
+                         and project.path == folder), None)
+        if existing is not None:
+            return _reopened(existing.id, name) if existing.hidden else existing
+        pid = _new_project_id()
+        while get_project(pid) is not None:
+            pid = _new_project_id()
+        base = folder.rstrip("/").rsplit("/", 1)[-1] or folder
+        return _upsert(Project(id=pid, name=name or base, path=folder, machine_id=machine.id,
+                               location_state="available"))
 
 
 def _reopened(project_id: str, name: str | None) -> Project:
@@ -949,6 +1066,9 @@ def relocate_project(
     from .identity import captured_identity_matches
 
     p = Path(new_path).expanduser()
+    current = get_project(project_id)
+    if current is not None and not folder_is_here(current):
+        raise ProjectStoreError("a project on another machine keeps its folder; open the new folder as a project")
     if not p.is_dir():
         raise ProjectStoreError(f"not a directory: {new_path}")
     with _registry_transaction():
@@ -959,8 +1079,8 @@ def relocate_project(
             raise ProjectStoreError("project changed during location update")
         if expected_revision is not None and int(proj.location_revision) != int(expected_revision):
             raise ProjectStoreError("project changed during location update")
-        owner = next((other for other in list_projects()
-                      if other.id != project_id and other.path
+        owner = next((other for other in _here_projects()
+                      if other.id != project_id
                       and Path(other.path).expanduser().resolve() == p.resolve()), None)
         if owner is not None:
             return _fold_into(proj, owner)
@@ -1009,8 +1129,8 @@ def relocate_project(
 def _missing(project: Project) -> bool:
     from .identity import captured_identity_matches, is_portable
 
-    return (not project.is_default and bool(project.path) and is_portable(project)
-            and not captured_identity_matches(project, project.path))
+    return (not project.is_default and bool(project.path) and folder_is_here(project)
+            and is_portable(project) and not captured_identity_matches(project, project.path))
 
 
 def follow_sibling_moves(old_path: str, new_path: str, *, moved_id: str = "") -> list[str]:
@@ -1135,7 +1255,8 @@ def prune_sessions(alive_ids: set[str]) -> int:
         if all(s in alive_ids for s in d.get("session_ids") or ()):
             continue
         # Missing project storage is unavailable, not evidence of deleted sessions.
-        if not d.get("is_default") and d.get("path") and not Path(d["path"]).is_dir():
+        if (not d.get("is_default") and d.get("path") and _row_folder_is_here(d)
+                and not Path(d["path"]).is_dir()):
             continue
         stale.add(project_id)
     if not stale:
@@ -1172,6 +1293,9 @@ __all__ = [
     "ProjectGit",
     "ProjectStoreError",
     "DEFAULT_PROJECT_ID",
+    "LOCAL_MACHINE_ID",
+    "folder_is_here",
+    "project_machine",
     "projects_dir",
     "list_projects",
     "get_project",
@@ -1215,6 +1339,8 @@ def create_project_worktree(project_id: str, path: str, branch: str, *, progress
     project = get_project(project_id)
     if not project:
         raise ValueError("unknown project")
+    if not folder_is_here(project):
+        raise ValueError("worktrees are made from folders on this computer")
     if not isinstance(path, str) or not Path(path).expanduser().is_absolute():
         raise ValueError("an absolute destination path is required")
     if not isinstance(branch, str) or not branch.strip() or branch.startswith("-"):
@@ -1257,7 +1383,7 @@ def create_project_worktree(project_id: str, path: str, branch: str, *, progress
                 subprocess.run(["git", "-C", str(source), "branch", "-D", branch], capture_output=True, timeout=60)
                 raise
         _report(progress, "open")
-        return resolve_project(target)
+        return resolve_project(target, machine_id=project.machine_id)
 
 
 class WorktreeStopped(Exception):

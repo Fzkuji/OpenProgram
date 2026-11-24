@@ -39,6 +39,9 @@ class ApplicationService:
     def __init__(self):
         self.tasks: dict[str, asyncio.Task] = {}
         self.processes: dict[str, subprocess.Popen] = {}
+        # Runners started ahead per application: (key, process, owner).
+        self.ready: dict[str, list[tuple[tuple, subprocess.Popen, object]]] = {}
+        self.background: set[asyncio.Task] = set()
         self.lock = asyncio.Lock()
         self.attempts = {}
         self.cancel_commands = {}
@@ -137,19 +140,16 @@ class ApplicationService:
         try:
             executable = await asyncio.to_thread(catalog.ensure_environment, app)
             root = Path(app["path"])
-            env = dict(os.environ)
-            # Load only the installed framework package, not arbitrary project
-            # directories inherited through PYTHONPATH.
-            import openprogram
-            env["PYTHONPATH"] = str(Path(openprogram.__file__).resolve().parent.parent)
-            env["PYTHONDONTWRITEBYTECODE"] = "1"
-            # Retain the OS tree handle independently of the leader's lifetime.
-            # Spawn without an await so cancellation cannot lose the new owner.
-            process = owner.popen(
-                [str(executable), "-m", "openprogram.programs._host.ui.runner"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, cwd=str(root), env=env,
-            )
+            # A runner started ahead has Python, the framework and the backend
+            # loaded already; without one, start it now. Either way the next
+            # operation gets a ready one. Taking or spawning happens without an
+            # await so cancellation cannot lose the new owner.
+            taken = self._take_ready(app, executable)
+            if taken:
+                process, owner = taken
+            else:
+                process = owner.popen(**self._runner_args(app, executable))
+            self._refill(app, executable)
             waiter = loop.run_in_executor(io_pool, process.wait)
             self.processes[run_id] = process
             await asyncio.to_thread(self._send, process, {"run_id": run_id, "instance": instance, "definition": app,
@@ -205,6 +205,89 @@ class ApplicationService:
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
 
+    #: Runners kept ready per application: enough for a page that asks for a
+    #: few things at once, few enough that an idle application costs little.
+    READY = 2
+
+    @staticmethod
+    def _ready_key(app, executable) -> tuple:
+        return (str(executable), app["path"], app["digest"], app["backend"]["entry"])
+
+    @staticmethod
+    def _runner_args(app, executable, *, warm: bool = False) -> dict:
+        env = dict(os.environ)
+        # Load only the installed framework package, not arbitrary project
+        # directories inherited through PYTHONPATH.
+        import openprogram
+        env["PYTHONPATH"] = str(Path(openprogram.__file__).resolve().parent.parent)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        if warm:
+            env["OPENPROGRAM_APPLICATION_WARM"] = json.dumps({"root": app["path"], "entry": app["backend"]["entry"]})
+        return {"args": [str(executable), "-m", "openprogram.programs._host.ui.runner"],
+                "stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.DEVNULL,
+                "cwd": app["path"], "env": env}
+
+    def _take_ready(self, app, executable):
+        """A ready runner for this exact application version, or None.
+        Runners for an older version, or that died, are stopped."""
+        key = self._ready_key(app, executable)
+        ready = self.ready.get(app["id"], [])
+        while ready:
+            ready_key, process, owner = ready.pop(0)
+            if ready_key == key and process.poll() is None:
+                return process, owner
+            self._discard(process, owner)
+        return None
+
+    def _refill(self, app, executable):
+        from openprogram.host._platform.process_ownership import ProcessTreeOwner
+        key = self._ready_key(app, executable)
+        ready = self.ready.setdefault(app["id"], [])
+        for stale in [item for item in ready if item[0] != key or item[1].poll() is not None]:
+            ready.remove(stale)
+            self._discard(stale[1], stale[2])
+        while len(ready) < self.READY:
+            owner = ProcessTreeOwner()
+            try:
+                process = owner.popen(**self._runner_args(app, executable, warm=True))
+            except OSError:
+                return
+            ready.append((key, process, owner))
+
+    @staticmethod
+    def _discard(process, owner):
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+        try:
+            owner.terminate()
+        except Exception:  # noqa: BLE001  it is already gone
+            pass
+        import threading
+        threading.Thread(target=process.wait, daemon=True, name="application-runner-reap").start()
+
+    def prepare_soon(self, app: dict):
+        task = asyncio.create_task(self.prepare(app))
+        self.background.add(task)
+        task.add_done_callback(self.background.discard)
+
+    async def prepare(self, app: dict):
+        """Have runners ready for an application a window just opened."""
+        if not app.get("backend") or len(self.ready.get(app["id"], [])) >= self.READY:
+            return
+        try:
+            executable = await asyncio.to_thread(catalog.ensure_environment, app)
+        except ValueError:
+            return  # the first operation reports why
+        self._refill(app, executable)
+
+    def drop_ready(self, app_id: str | None = None):
+        """Stop the ready runners of one application, or of all."""
+        for key in [app_id] if app_id else list(self.ready):
+            for _, process, owner in self.ready.pop(key, []):
+                self._discard(process, owner)
+
     @staticmethod
     def _send(process, value):
         process.stdin.write((json.dumps(value) + "\n").encode())
@@ -246,12 +329,14 @@ class ApplicationService:
             return self.describe(run_id)
 
     async def revoke(self, app_id: str):
+        self.drop_ready(app_id)
         for run_id in list(self.tasks):
             run = self.describe(run_id)
             if state.get_instance(run["instance_id"])["app_id"] == app_id:
                 await self.cancel(run_id)
 
     async def close(self):
+        self.drop_ready()
         run_ids = list(self.tasks)
         tasks = list(self.tasks.values())
         await asyncio.gather(*(self._interrupt(task) for task in tasks))

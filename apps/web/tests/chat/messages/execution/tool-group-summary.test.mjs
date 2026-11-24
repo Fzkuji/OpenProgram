@@ -7,6 +7,7 @@ import {
   parsePatch,
   summarizeToolGroup,
 } from '../../../../components/chat/messages/execution/tool-group-summary.ts';
+import { rememberMachineNames } from '../../../../lib/computer-use/computer-use-call.ts';
 
 const en = (english) => english;
 const zh = (_english, chinese) => chinese;
@@ -217,29 +218,67 @@ test('the line diff finds the changed lines and falls back to plain counts above
   assert.equal(result.removed, LINE_DIFF_CAP + 1);
 });
 
-test('public computer_use calls read as operating the app; the GUI Agent capability stays a GUI call', () => {
+test('computer_use window calls read as operating the app; the GUI Agent capability stays a GUI call', () => {
   const calls = [
-    tool('computer_use', { action: 'get_app_state', app: 'Calculator' }),
-    tool('computer_use', { action: 'click', app: 'Calculator', element_index: 20 }),
+    tool('computer_use', { type: 'window', app: 'Calculator', action: 'get_app_state' }),
+    tool('computer_use', { type: 'window', app: 'Calculator', action: 'click', args: { element_index: 20 } }),
   ];
   assert.equal(summarizeToolGroup(calls, { text: en }).label, 'Operated Calculator');
   assert.equal(summarizeToolGroup(calls, { text: zh }).label, '操作了 Calculator');
-  const two = [...calls, tool('computer_use', { action: 'get_app_state', app: 'Notes' })];
+  const two = [...calls, tool('computer_use', { type: 'window', app: 'Notes', action: 'get_app_state' })];
   assert.equal(summarizeToolGroup(two, { text: en }).label, 'Operated 2 apps');
-  assert.equal(summarizeToolGroup([tool('computer_use', { task: 'inspect', app_name: 'TextEdit' })], { text: en }).label, 'Ran a GUI call');
+  assert.equal(summarizeToolGroup([tool('gui_agent', { task: 'inspect' })], { text: en }).label, 'Ran a GUI call');
 });
 
-test('computer_use_agent groups by its target: apps, built-in browser Pages, a new agent', () => {
+test('computer_use groups by its target: apps and built-in browser Pages', () => {
   const apps = [
-    tool('computer_use_agent', { target: 'app', args: { app: 'Calculator' } }),
-    tool('computer_use_agent', { target: 'app', args: { app: 'Calculator' }, actions: [{ action: 'click', args: { element_index: 3 } }] }),
+    tool('computer_use', { type: 'window', app: 'Calculator' }),
+    tool('computer_use', { type: 'window', app: 'Calculator', actions: [{ action: 'click', args: { element_index: 3 } }] }),
   ];
   assert.equal(summarizeToolGroup(apps, { text: en }).label, 'Operated Calculator');
-  const pages = [tool('computer_use_agent', { target: 'browser', action: 'observe' })];
+  const pages = [tool('computer_use', { type: 'browser', action: 'observe' })];
   assert.equal(summarizeToolGroup(pages, { text: en }).label, summarizeToolGroup([tool('web_use', {})], { text: en }).label);
-  const fresh = [tool('computer_use_agent', { target: 'app', context: 'fresh', brief: 'Sum column B', args: { app: 'Numbers' } })];
-  assert.equal(summarizeToolGroup(fresh, { text: en }).label,
-    summarizeToolGroup([tool('agent', { prompt: 'x' })], { text: en }).label);
+});
+
+test('computer_use names the screen, the user\'s browsers and other devices it operated', () => {
+  const one = (args, text = en) => summarizeToolGroup([tool('computer_use', args)], { text }).label;
+  rememberMachineNames([{ id: 'lab', name: 'Lab VM' }]);
+  assert.equal(one({ type: 'screen', action: 'click', args: { x: 1, y: 2 } }), 'Operated the screen');
+  assert.equal(one({ type: 'screen', action: 'click', args: { x: 1, y: 2 } }, zh), '操作了 屏幕');
+  assert.equal(one({ type: 'screen', device: 'lab', action: 'get_state' }), "Operated Lab VM's screen");
+  assert.equal(one({ type: 'window', device: 'lab', app: 'Files' }), 'Operated Files on Lab VM');
+  assert.equal(one({ type: 'browser', app: 'chrome', action: 'list_tabs' }), 'Operated Chrome');
+  assert.equal(one({ type: 'browser', app: 'edge', action: 'list_tabs' }), 'Operated Edge');
+  assert.equal(one({ type: 'browser', app: 'safari', action: 'list_tabs' }), 'Operated Safari');
+  assert.equal(one({ type: 'browser', app: 'Brave Browser', action: 'list_tabs' }), 'Operated Brave');
+  assert.equal(one({ type: 'browser', device: 'lab', action: 'create_tab', args: { url: 'http://localhost:3000' } }), 'Operated the browser on Lab VM');
+  rememberMachineNames([]);
+});
+
+test('a group over several targets says what it operated', () => {
+  const group = (targets, text = en) => summarizeToolGroup(targets.map((args) => tool('computer_use', args)), { text }).label;
+  rememberMachineNames([{ id: 'lab', name: 'Lab VM' }]);
+  const calculator = { type: 'window', app: 'Calculator' };
+  const notes = { type: 'window', app: 'Notes' };
+  const screen = { type: 'screen', action: 'click', args: { x: 1, y: 2 } };
+  const lab = { type: 'screen', device: 'lab', action: 'get_state' };
+  assert.equal(group([calculator, notes]), 'Operated 2 apps');
+  assert.equal(group([calculator, screen]), 'Operated Calculator and the screen');
+  assert.equal(group([calculator, screen], zh), '操作了 Calculator 和 屏幕');
+  assert.equal(group([calculator, notes, lab]), "Operated Calculator and 2 more");
+  assert.equal(group([calculator, notes, lab], zh), '操作了 Calculator 等 3 项');
+  rememberMachineNames([]);
+});
+
+test('a coded computer_use failure counts as failed, behind its target header too', () => {
+  const failed = (result, extra = {}) => summarizeToolGroup([tool('computer_use', { type: 'screen', device: 'lab', action: 'tap' },
+    { result, ...extra })], { text: en }).failed;
+  assert.equal(failed('[device="lab", type="screen"]\nUNKNOWN_ACTION: lab screen has no action \'tap\'.'), 1);
+  assert.equal(failed('SCREEN_BUSY: another agent has been operating lab screen for 60 s; nothing was sent.'), 1);
+  assert.equal(failed('Error: step 1 (click) failed: no such point.'), 1);
+  assert.equal(failed('[device="lab", type="screen"]\nDone: click.'), 0);
+  // A stored flag decides where there is one.
+  assert.equal(failed('PERMISSION_MISSING: grant Accessibility.', { is_error: false }), 0);
 });
 
 test('task bookkeeping calls say nothing; a stored todo call keeps its phrase', () => {

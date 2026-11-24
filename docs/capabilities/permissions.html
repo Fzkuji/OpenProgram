@@ -50,7 +50,7 @@
 <tr><th scope="row">Question card</th><td>Each question sits above its control. Multiple questions and form fields submit together with <strong>Submit answers</strong>; answers stay paired with their questions. Skipping tells the model it went unanswered.</td></tr>
 <tr><th scope="row">Discuss</th><td>What you write goes to the model in place of an answer, and it responds in the same turn. The card keeps your text.</td></tr>
 <tr><th scope="row">Message box</th><td>Stays available for ordinary messages.</td></tr>
-<tr><th scope="row"><strong>Allow this conversation</strong></th><td>Saves the rule in this session only. Offered today for <a href="computer-use.html#approval"><code translate="no">computer_use_agent</code></a>; the rule names the application, the virtual machine or your browser and covers everything done there, page scripts included.</td></tr>
+<tr><th scope="row"><strong>Allow this conversation</strong></th><td>Saves the rule in this session only. Offered today for <a href="computer-use.html#approval"><code translate="no">computer_use</code></a>; the rule names the application, the whole screen or your Chrome or Edge and covers everything done there, page scripts included. An application name containing <code translate="no">*</code>, <code translate="no">?</code> or <code translate="no">[</code>, or ending in <code translate="no">:*</code>, is only ever allowed once. A machine you set up is operated without asking; a target that cannot be found when the call is decided goes through the mode instead.</td></tr>
 <tr><th scope="row"><strong>Always allow</strong></th><td>When offered, saves the exact supported operation rule in the current project. One-shot requests offer no persistent approval.</td></tr>
 </tbody></table>
 <details>
@@ -166,7 +166,7 @@
 <tr><th scope="row">New owner turn, Bypass permissions or Auto</th><td>Inherits no approval requirement from an interrupted turn. Old effects stay recorded as unknown and are not replayed. Explicit deny and ask rules still apply.</td></tr>
 <tr><th scope="row">Unknown earlier step</th><td>The next non-inspection tool result starts with a notice naming it, once per execution. Nothing is held back; the model decides what to check.</td></tr>
 <tr><th scope="row">Resuming the same execution</th><td>Still needs reconciliation or exact approval</td></tr>
-<tr><th scope="row">Screen step</th><td>An interrupted <a href="computer-use.html"><code translate="no">computer_use_agent</code></a> step tells the agent its outcome is unknown; it looks and goes on, and the step stays in Activity. A step that never reached the app (element hidden or gone) counts as not started.</td></tr>
+<tr><th scope="row">Screen step</th><td>An interrupted <a href="computer-use.html"><code translate="no">computer_use</code></a> step tells the agent its outcome is unknown; it looks and goes on, and the step stays in Activity. A step that never reached the app (element hidden or gone, or stopped while it waited for another agent to finish) counts as not started.</td></tr>
 </tbody></table>
 <p class="note">None of this changes macOS access or makes a read-only volume writable.</p>
 <h2 id="host-capabilities-use-one-setup-path">System access</h2>
@@ -184,9 +184,9 @@
 <thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>Non-prompting checks only</td></tr>
-<tr><th scope="row"><strong>Settings → System access</strong></th><td>Grouped rows. <strong>Set up all OpenProgram access</strong> is the one first-run action, returning one report; <strong>Request authorization</strong> and <strong>Open System Settings</strong> work per row. All need the local owner's click.</td></tr>
+<tr><th scope="row"><strong>Settings → Devices → This computer</strong></th><td>Lists the permissions that can be switched on, each On or <strong>Turn on</strong>; it needs the local owner's click. Screen recording and Accessibility open their System Settings page with a small window to drag OpenProgram into the list; it closes once the switch is on.</td></tr>
 <tr><th scope="row">Never prompts</th><td>Reconnects, polling, history replay, model output, startup checks, ordinary retries</td></tr>
-<tr><th scope="row">Missing capability</th><td>Pauses only the operation that declares it; browser, VM, headless and ordinary chat do not inherit it</td></tr>
+<tr><th scope="row">Missing capability</th><td>Pauses only the operation that declares it; browser, other machines, headless and ordinary chat do not inherit it</td></tr>
 </tbody></table>
 <details>
 <summary>macOS asks for access again after an update</summary>

@@ -77,12 +77,9 @@ export function deriveStatusBadge(): StatusBadgeInfo {
   }
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // The link reconnects by itself and nothing narrates it: only the tone.
     const connecting = ws && ws.readyState === WebSocket.CONNECTING;
-    return {
-      label: connecting ? "connecting…" : "disconnected",
-      tone: connecting ? "connecting" : "err",
-      title: connecting ? "connecting…" : "disconnected",
-    };
+    return { label: "", tone: connecting ? "connecting" : "err", title: "" };
   }
   const source = lastStatusSource || "Local";
   // Strip the trailing ` · title` segment that `refreshStatusSource`

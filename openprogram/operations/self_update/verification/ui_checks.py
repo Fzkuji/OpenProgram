@@ -243,7 +243,10 @@ url = sys.stdin.read().strip()
 try:
     from playwright.sync_api import sync_playwright
     driver = sync_playwright().start()
-    browser = driver.chromium.launch(headless=True)
+    try:  # the full browser; a runtime may ship without the headless shell
+        browser = driver.chromium.launch(headless=True, channel="chromium")
+    except Exception:
+        browser = driver.chromium.launch(headless=True)
 except Exception:
     raise SystemExit(3)
 page = browser.new_page(viewport={"width": 1280, "height": 800})

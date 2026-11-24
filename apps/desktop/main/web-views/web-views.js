@@ -716,6 +716,7 @@ function createWebViews({
   // gets a description of it. The picker runs in its own isolated world, so
   // the page can neither see nor call it; it outlines what is under the
   // pointer, swallows the click that picks, and Escape cancels.
+  // Annotate mode (webtab-annotate.js) runs in this world too.
   const PICKER_WORLD = 1207;
   const PICKER_SOURCE = `(() => new Promise((resolve) => {
     window.__openprogramPick?.cancel();

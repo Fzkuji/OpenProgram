@@ -9,6 +9,7 @@
  * nothing rendered yet, a typing indicator stands in.
  */
 import { RewindErrorActions, useRewindOffered } from "../../rewind/rewind-error-actions";
+import { isLastPrompt } from "@/lib/chat/rewind/rewind-logic";
 import { lazy, memo, Suspense, useLayoutEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChevronDown, CircleAlert, Square } from "lucide-react";
@@ -21,6 +22,7 @@ import {
   type ChatMsg,
 } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { useMachines } from "@/lib/machines/store";
 
 import { AttachCard } from "../cards/attach-card";
 import { RetryStep, RetryStrip, RetryTag } from "../execution/retry-status";
@@ -118,7 +120,7 @@ export function errorHeadline(
         : text("Rate limited — try again shortly.", "请求过于频繁 —— 稍后重试。");
     case "auth":
       return text(
-        "Your API key was rejected — check it in Settings → Providers.",
+        "Your API key was rejected — check it in Settings → Model services.",
         "API 密钥被拒 —— 去 设置 → LLM 服务商 检查。",
       );
     case "authz":
@@ -197,9 +199,6 @@ function StreamingMarkdown({ text }: { text: string }) {
     if (drawn.current?.host !== host) {
       const root = document.createElement("span");
       root.className = "md-rendered";
-      // Each block is typeset as it is drawn; a page-wide pass would
-      // rewrite nodes this component still tracks.
-      root.dataset.mathRendered = "1";
       host.replaceChildren(root);
       drawn.current = { host, root, blocks: [] };
     }
@@ -263,6 +262,9 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
   useMarkdownReady();
+  // Steps name a machine by its name where one is set up (`machineLabel`): subscribed so they read the
+  // names once the list arrives or a machine is renamed, though the row around the bubble is memoized.
+  useMachines((s) => s.items.map((m) => `${m.id}\u0000${m.name ?? ""}`).join("\n"));
   const bubbleSessionId = useRowSessionId(sessionIdOverride || undefined) || undefined;
   const bubbleView = viewKey ?? bubbleSessionId;
   // A reply that carries on work a worker restart cut off draws the cut-off
@@ -275,6 +277,11 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
   // The tasks the agent declared for this reply's work (task-blocks.ts).
   const tasks = useRowTasks(bubbleSessionId, bubbleView, ownMsg.id);
   const rewindOffered = useRewindOffered(bubbleSessionId, msg.errorReason);
+  // A failed reply the reader has already answered with a newer message:
+  // its error says nothing they still act on, so the card is not drawn.
+  const answered = useSessionStore((s) => msg.status === "error" && !embedded && !!bubbleView
+    && !isLastPrompt(s.messageOrder?.[bubbleView], selectViewRows(bubbleView)(s), ownMsg.id)
+    && !!s.messageOrder?.[bubbleView]?.includes(ownMsg.id));
   const quotaCause = msg.status === "error" && msg.errorCause?.cause === "quota_exhausted" ? msg.errorCause : null;
   const { text } = useTranslation();
   const stoppedAs = !msg.goalVerification && isStopped(msg.status) ? msg.status : undefined;
@@ -330,6 +337,10 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
   // Screen readers announce the agent that wrote the reply; nothing is drawn.
   const namedAgent = msg.agentId && msg.agentId !== "main" ? msg.agentId : null;
   const sender = namedAgent ?? text("Assistant", "助手");
+  // Nothing but that error: the row is left out, so the two messages follow
+  // one another.
+  if (answered && !hasContent && !tools.length && !msg.blocks?.length
+      && !msg.attachCards?.length && !msg.callRoots?.length) return null;
   return (
     <div
       className={embedded ? "message assistant sub-agent-reply" : "message assistant"}
@@ -569,7 +580,7 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
                 && !msg.attachCards?.length && !msg.callRoots?.length ? <TypingIndicator /> : null}
             </>
           )}
-          {msg.status === "error" && !msg.goalVerification ? (() => {
+          {msg.status === "error" && !msg.goalVerification && !answered ? (() => {
             const details = (
               <details className="turn-error-details">
                 <summary>{text("Error details", "错误详情")}<ChevronDown size={12} aria-hidden="true" /></summary>

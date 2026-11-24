@@ -16,7 +16,7 @@ const LONG_ITEM = 32;
 export function OpenWorkPage({ target, context }: ActivityPageProps<"work">) {
   const { text, sessionId, work, pendingKey } = context;
   const item = work?.open_work.find(entry => entry.id === target.workId);
-  if (!item) return work ? activityGoneFrame(text) : <ActivityPageFrame kind={<Glyph name="checklist" tone="plan" large />} title={text("Open work", "未完成事项")} status={text("Loading…", "正在读取…")} axis={null}>{null}</ActivityPageFrame>;
+  if (!item) return work ? activityGoneFrame(text) : <ActivityPageFrame kind={<Glyph name="checklist" tone="plan" large />} title={text("Open work", "未完成事项")} axis={null}>{null}</ActivityPageFrame>;
   const done = item.status === "done";
   const statusKey = `work-status:${item.id}`;
   const removeKey = `work-remove:${item.id}`;

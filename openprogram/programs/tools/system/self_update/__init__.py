@@ -307,7 +307,7 @@ def _prepare_update(
     _require_backend_host(backend_name)
     # On the development line the controller rebases the candidate onto `dev`,
     # so it may fork from any earlier commit of that line.
-    rebases = backend_name == backend.DEV_STABLE
+    rebases = backend_name == backend.DEV_DEPLOY
     base_sha = _git(source, "rev-parse", "refs/heads/dev" if rebases else "HEAD")
     if base_sha == candidate_sha:
         raise SelfUpdateToolError("candidate must differ from the source checkout HEAD")
@@ -420,8 +420,9 @@ def _prepare_update(
             "turn_release_pending": True,
             "next": (
                 "After this turn ends the controller rebases the candidate onto dev and lands it, "
-                "deploys it to the development instance on port 18200 and checks it, waits for the "
-                "stable App to go idle, promotes exactly that commit and checks the stable App. "
+                "deploys it to the development instance on port 18200, which restarts this worker, "
+                "and checks the instance on that commit. That is the whole update: the stable App "
+                "is the official release and changes only through its own updater. "
                 "The result arrives in this conversation; self_update() shows progress."
             ),
         }
@@ -653,7 +654,7 @@ def _start_version_update(
 def _undo_on_development_line(
     *, target: str, req: Any, assistant_id: str, manager: Any, store: SelfUpdateStore
 ) -> dict[str, Any]:
-    """On a machine with stable and dev, an undo is a revert on dev going forward."""
+    """In the development instance, an undo is a revert on dev going forward."""
     from openprogram.operations.self_update.control import undo
     from openprogram.operations.worker import dev_instance
 
@@ -743,7 +744,7 @@ def _undo_update(
     backend_name = backend.select()
     if backend_name == backend.CHECKOUT:
         return backend.checkout_result()
-    if backend_name == backend.DEV_STABLE:
+    if backend_name == backend.DEV_DEPLOY:
         return _undo_on_development_line(
             target=target.strip(), req=req, assistant_id=assistant_id, manager=manager, store=store
         )
@@ -833,10 +834,10 @@ def _overview() -> str:
         1. worktree_create a worktree of the OpenProgram repo; edit, test and commit there.
         2. self_update(action="prepare", ...) with that worktree and commit. The supervisor
            rebuilds only the changed parts, installs, verifies the assertions and rolls back
-           on failure. The call returns once the request is saved. On a machine with a stable
-           and a development instance the commit is rebased onto dev, deployed to the
-           development instance, checked, and promoted to the stable App, and a failed
-           promotion is undone by a revert commit on dev.
+           on failure. The call returns once the request is saved. In the development
+           instance the commit is rebased onto dev, landed, deployed to the development
+           instance and checked there, and the update ends; a change that fails is fixed by
+           the next commit on dev.
         3. self_update() reads status. After a rollback the supervisor diagnoses, repairs the
            source in isolation and tests it; a tested repair is installed with action="retry".
         4. self_update(action="cancel") stops the update and everything it started.
@@ -874,8 +875,8 @@ def _prepare_guide() -> str:
 
         - worktree_id: an active worktree of the OpenProgram repo.
         - candidate_sha: the full 40-character lowercase SHA of its clean HEAD; it must
-          change at least one path. It must be based on the source checkout HEAD, except on
-          a machine with a stable branch, where it is rebased onto dev for you.
+          change at least one path. It must be based on the source checkout HEAD, except in
+          the development instance, where it is rebased onto dev for you.
         - goal: one sentence on what the change is for.
         - assertions: non-empty list of observable facts the installed App must satisfy.
           They are numbered acceptance-1, acceptance-2, ... in order.
@@ -924,8 +925,8 @@ def _undo_guide() -> str:
           If later commits changed the same lines the undo stops and names the files.
         - A version that is no longer on disk is built again from its commit.
 
-        On a machine with a stable and a development instance target is a commit, and the
-        revert is landed on dev and promoted like any other change.
+        In the development instance target is a commit, and the revert is landed on dev
+        and deployed like any other change.
         From a terminal, `openprogram versions use <id>` switches at once with no checks.
     """
 
@@ -948,9 +949,8 @@ def _with_progress(run):
     name="self_update",
     description=(
         "Install a committed change to OpenProgram itself and follow it through build, "
-        "verification, rollback and repair. When the repository has a `stable` branch, prepare "
-        "lands the candidate on dev, deploys it to the development instance (port 18200), checks "
-        "it, and promotes it to the stable App once that is idle. "
+        "verification, rollback and repair. In the development instance (port 18200) prepare "
+        "lands the candidate on dev, deploys it to that instance and checks it there. "
         "Actions: status (default), begin, prepare, retry, cancel, versions, undo. "
         "The first result explains the workflow; each action's parameters come from help."
     ),
@@ -1026,9 +1026,9 @@ def self_update(
         backend_name = backend.select()
         if backend_name == backend.CHECKOUT:
             return backend.checkout_result()
-        if backend_name == backend.DEV_STABLE:
+        if backend_name == backend.DEV_DEPLOY:
             raise SelfUpdateToolError(
-                "On this machine a failed update is repaired forward on dev: fix it in a worktree "
+                "In the development instance a failed update is repaired forward on dev: fix it in a worktree "
                 "and call self_update(action=\"prepare\") again.")
         _require_backend_host(backend_name)
         return submit(update_id, candidate_sha, req=req, assistant_id=assistant_id)

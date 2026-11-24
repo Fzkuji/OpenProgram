@@ -84,6 +84,12 @@ def register(app) -> None:
     ):
         """Return up to ``limit`` paths matching ``q`` under ``root``, or
         under the chat's working directory."""
+        # A chat whose project folder is on another machine searches there.
+        if not root:
+            remote = await asyncio.to_thread(_remote_project, session_id, project_id)
+            if remote is not None:
+                matches = await asyncio.to_thread(_remote_matches, remote, q, int(limit), int(max_scan))
+                return JSONResponse(content={"root": remote.root, "matches": matches})
         # Only finding the folder needs the conversation's lane; the walk
         # itself runs outside it, so typing an @-mention never queues a
         # Send or Stop of this chat behind a slow folder.
@@ -328,6 +334,47 @@ def _existing_files(paths: list[str], session_id: str) -> dict[str, str | None]:
         except (OSError, ValueError):
             continue
     return found
+
+
+def _remote_project(session_id: str, project_id: str):
+    """The chat's project when its folder is on a machine that keeps its own files, else None."""
+    try:
+        from openprogram.interfaces.server.ws_actions.files import remote as _remote
+        from openprogram.state.store.project.project_store import project_for_session
+        if not project_id and session_id:
+            project = project_for_session(session_id)
+            project_id = project.id if project is not None else ""
+        return _remote.target(project_id) if project_id else None
+    except Exception:  # noqa: BLE001 - an unknown project searches this computer as before
+        _log.debug("remote project lookup failed", exc_info=True)
+        return None
+
+
+def _remote_matches(remote, needle: str, limit: int, max_scan: int) -> list[dict[str, Any]]:
+    """``_walk`` on the project's machine: one listing there, hidden entries left out, matched here."""
+    try:
+        found, _basis = remote_search(remote, "", max(limit, max_scan))
+    except Exception:  # noqa: BLE001 - an unreachable machine has no matches
+        return []
+    needle_l = needle.lower()
+    out: list[dict[str, Any]] = []
+    for kind, _size, _mtime, rel in sorted(found, key=lambda row: (row[3].count("/"), row[3])):
+        if any(part.startswith(".") or part in _SKIP_DIRS for part in rel.split("/")):
+            continue
+        if not needle_l or needle_l in rel.rsplit("/", 1)[-1].lower() or needle_l in rel.lower():
+            out.append({"path": rel, "is_dir": kind == "dir"})
+            if len(out) >= limit:
+                break
+    return out
+
+
+def remote_search(remote, path: str, limit: int):
+    from openprogram.interfaces.server.ws_actions.files import remote as _remote
+    from openprogram.interfaces.server.ws_actions.files.query import _QueryLimitError
+    try:
+        return _remote.search(remote, path, limit)
+    except _QueryLimitError:
+        return [], ()
 
 
 def _resolve_root(root: str | None, session_id: str = "",

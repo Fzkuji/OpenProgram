@@ -94,6 +94,8 @@ const ICONS = {
   "plug-circle": "bold-duotone",
   "sledgehammer": "bold-duotone",
   "cpu": "bold-duotone",
+  // machines on another computer (project headers, picker, machine chip)
+  "server-2": "bold-duotone",
   // menu rows (components/ui/menu/menu-parts.tsx): every action menu's icons
   "pen": "bold-duotone",
   "pin": "bold-duotone",
@@ -157,6 +159,8 @@ const ICONS = {
   "quit-full-screen-square": "bold-duotone",
   "gps": "bold-duotone",
   "notes": "bold-duotone",
+  // sidebar Activity toggle (the bell beside the Projects filter)
+  "bell": "bold-duotone",
 };
 
 // A few glyphs come from other Iconify sets where Solar has no good fit;
@@ -196,9 +200,19 @@ for (let at = 0; at < ids.length; at += 40) {
   Object.assign(data.icons, batch.icons);
 }
 
+// Iconify now serves a body as loose elements that each carry
+// fill="currentColor"; fold that back into one <g fill> so the stored
+// bodies (and the adjustments above) keep one shape.
+function groupFill(body) {
+  const parts = body.match(/<[a-z]+ [^>]*\/>/g);
+  if (!parts || parts.join("") !== body || !parts.every((p) => p.includes(' fill="currentColor"'))) return body;
+  return `<g fill="currentColor">${parts.map((p) => p.replace(' fill="currentColor"', "")).join("")}</g>`;
+}
+
 const lines = Object.entries(ICONS).map(([name, style]) => {
-  const fetched = data.icons[`${name}-${style}`]?.body;
-  if (!fetched) throw new Error(`Missing body for ${name}-${style}`);
+  const served = data.icons[`${name}-${style}`]?.body;
+  if (!served) throw new Error(`Missing body for ${name}-${style}`);
+  const fetched = groupFill(served);
   const body = ADJUST[name] ? ADJUST[name](fetched) : fetched;
   if (body === fetched && ADJUST[name]) throw new Error(`Adjustment for ${name} no longer matches`);
   return `  /** solar:${name}-${style} */\n  "${name}": ${JSON.stringify(body)},`;

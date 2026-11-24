@@ -250,7 +250,7 @@ def test_agent_profile_tools_field_filters_registry(
     # Only the profile's tools, plus the screen tool, which is always last in
     # the array while the browser application is loaded (refused without a
     # Page) and leaves only when a tools override excludes it.
-    assert [name for name in seen_tools[0] if name != "computer_use_agent"] == ["bash"]
+    assert [name for name in seen_tools[0] if name != "computer_use"] == ["bash"]
     assert seen_tools[0][0] == "bash"
 
 

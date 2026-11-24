@@ -51,7 +51,7 @@ export function normalizeTabPageHistory(tab: CenterTab): CenterTab {
   const valid = history && Array.isArray(history.entries) && history.entries.length > 0
     && Number.isInteger(history.index) && history.index >= 0 && history.index < history.entries.length
     && history.entries.every(page => page && typeof page.id === "string" && typeof page.title === "string"
-      && ["ntp", "builtin", "session", "file", "web", "application"].includes(page.kind)
+      && ["ntp", "builtin", "session", "file", "web", "application", "window"].includes(page.kind)
       && !("pageHistory" in page))
     && history.entries[history.index].id === tab.id && history.entries[history.index].kind === tab.kind;
   return valid ? tab : tabPage(tab);

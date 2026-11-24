@@ -1,0 +1,76 @@
+<title>Browser Annotate</title>
+<meta name="description" content="Annotate mode in the built-in browser: notes pinned on a page, live Adjust previews, and one message to the chat.">
+<h1>Browser Annotate</h1>
+
+<p>Annotate lets the reader mark up a page in a Browser tab and hand the marks to the agent as one message. It follows the Annotate and Adjust tools of the Codex app's browser: point at what is wrong, say what should change, optionally try a size, spacing or colour on the live page, then send.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 640 300" font-size="11" font-family="system-ui, sans-serif" role="img" aria-label="A page in annotate mode: hint pill at the top, a heading with a solid outline and pin 1 with its note card, a dashed region with pin 2, and the bar at the bottom">
+<rect x="1" y="1" width="638" height="298" rx="8" fill="none" stroke="currentColor" stroke-opacity=".25"/>
+<rect x="196" y="12" width="248" height="22" rx="11" fill="#18181b"/>
+<text x="320" y="27" text-anchor="middle" fill="#fff">Click an element or drag a box · Esc to finish</text>
+<rect x="40" y="60" width="240" height="34" rx="3" fill="none" stroke="#3b82f6" stroke-width="2"/>
+<text x="52" y="83" fill="currentColor" font-size="18">Cat</text>
+<circle cx="280" cy="60" r="10" fill="#3b82f6" stroke="#fff" stroke-width="2"/><text x="280" y="64" text-anchor="middle" fill="#fff" font-weight="600">1</text>
+<rect x="300" y="56" width="230" height="118" rx="10" fill="none" stroke="currentColor" stroke-opacity=".3"/>
+<text x="312" y="74" fill="currentColor" fill-opacity=".6" font-family="ui-monospace,monospace">h1#firstHeading</text><text x="500" y="74" fill="currentColor" fill-opacity=".6">Delete</text>
+<rect x="310" y="82" width="210" height="36" rx="6" fill="none" stroke="currentColor" stroke-opacity=".3"/><text x="318" y="98" fill="currentColor">Make it bigger</text>
+<text x="312" y="136" fill="currentColor" fill-opacity=".6">› Adjust</text>
+<text x="312" y="156" fill="currentColor" fill-opacity=".6">Size</text><line x1="360" y1="152" x2="470" y2="152" stroke="#3b82f6" stroke-width="2"/><text x="480" y="156" fill="currentColor" fill-opacity=".6">34px</text>
+<rect x="40" y="130" width="200" height="90" rx="3" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4"/>
+<circle cx="240" cy="130" r="10" fill="#3b82f6" stroke="#fff" stroke-width="2"/><text x="240" y="134" text-anchor="middle" fill="#fff" font-weight="600">2</text>
+<rect x="180" y="248" width="280" height="34" rx="10" fill="none" stroke="currentColor" stroke-opacity=".3"/>
+<text x="194" y="269" fill="currentColor">2 notes on this page</text><text x="330" y="269" fill="currentColor" fill-opacity=".6">Discard</text>
+<rect x="374" y="254" width="80" height="22" rx="6" fill="#3b82f6"/><text x="414" y="269" text-anchor="middle" fill="#fff">Send to chat</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Button</th><td>Solar pen in the address pill, left of the bookmark star; accent-tinted while the page is in annotate mode. Clicking it again leaves the mode.</td></tr>
+<tr><th scope="row">Mode</th><td>A dark pill at the top centre: "Click an element or drag a box · Esc to finish". The element under the pointer is outlined; the page gets no clicks.</td></tr>
+<tr><th scope="row">Element note</th><td>A click gives the element a solid accent outline, a numbered pin at its top-right corner and a card beside it: monospace short selector (<code translate="no">h1#firstHeading</code>), a text field, Delete. Clicking an element that already has a note opens that note.</td></tr>
+<tr><th scope="row">Region note</th><td>A drag of at least 8 px draws a dashed accent box; its card header reads <code translate="no">region 312×100</code>.</td></tr>
+<tr><th scope="row">Adjust</th><td>Folded under an Adjust row in an element card: Size (font size), Spacing (padding), Color. Moving a control previews it on the element as an inline style; the changed values join that note.</td></tr>
+<tr><th scope="row">Bar</th><td>Bottom centre while notes exist: "N notes on this page", Discard, Send to chat.</td></tr>
+<tr><th scope="row">Esc</th><td>Leaves the mode; unsent notes, pins and the bar stay until Discard or Send. With the mode off, Esc closes an open card.</td></tr>
+<tr><th scope="row">Send</th><td>One user message: the page, then each note by number with its selector or region, the text and any Adjust values (<code translate="no">font-size 28px → 34px</code>), plus a screenshot of the page with the pins. Then the notes and preview styles are cleared and the mode ends.</td></tr>
+<tr><th scope="row">Discard</th><td>Removes every note and every preview style, and ends the mode.</td></tr>
+<tr><th scope="row">Navigation</th><td>A new address clears the notes. Leaving the tab only ends the mode.</td></tr>
+</tbody>
+</table>
+
+<h2>Decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">The overlay runs inside the page, in an isolated world, in a closed shadow root</th><td>The desktop page is a native view the App window cannot draw over, so outlines and cards have to be in the page. The isolated world keeps the page's scripts from seeing or calling it; the shadow root and <code translate="no">!important</code> host styles keep the page's CSS from restyling it. It shares the world of the element and region pickers, so starting one ends the other.</td></tr>
+<tr><th scope="row">The App passes its own colours</th><td>The cards take <code translate="no">--bg-primary</code>, <code translate="no">--border-light</code>, <code translate="no">--text-primary</code>, <code translate="no">--text-muted</code> and <code translate="no">--accent-blue</code> from the window when the mode starts, so they look like the App in every theme. The host passes only short colour values under known keys.</td></tr>
+<tr><th scope="row">Pins stay in the screenshot</th><td>Before the capture the cards, hint and bar hide for two frames; the outlines and numbers stay, so the picture and the numbered list line up.</td></tr>
+<tr><th scope="row">The message is sent, not drafted</th><td>Send to chat is the end of the task; the message goes through the conversation's send queue, so it waits its turn when a run is going.</td></tr>
+<tr><th scope="row">The page's own conversation first</th><td>Notes go to the conversation whose agent opened the tab, else the one in focus, else the last one; only an open conversation counts. With none, a tip asks for one and the notes stay.</td></tr>
+<tr><th scope="row">Adjust previews with inline styles</th><td>An inline <code translate="no">!important</code> declaration on the element itself wins over the page's rules and is exactly what has to be undone; the element's own inline values come back on Send, Delete or Discard.</td></tr>
+<tr><th scope="row">Short selectors</th><td>At most four levels, stopping at an id or as soon as the selector is unique; generated class names are skipped. The agent gets something it can search the source for.</td></tr>
+<tr><th scope="row">Not in the browser fallback</th><td>The web UI shows pages in an iframe of another origin, which it may not script. The button stays in place, unavailable, and its tip says annotating needs the desktop App.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code and verification</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Overlay</th><td><code translate="no">apps/desktop/main/web-views/annotate-overlay.js</code></td></tr>
+<tr><th scope="row">Host loop and screenshot</th><td><code translate="no">apps/desktop/main/web-views/webtab-annotate.js</code>, IPC <code translate="no">webtab:annotate</code> and <code translate="no">webtab:annotate-event</code></td></tr>
+<tr><th scope="row">Button and send</th><td><code translate="no">apps/web/components/center-tabs/browser/toolbar/annotate-button.tsx</code>, <code translate="no">pane/use-page-annotate.ts</code></td></tr>
+<tr><th scope="row">Message</th><td><code translate="no">apps/web/lib/browser/capture/annotate.ts</code></td></tr>
+<tr><th scope="row">Tests</th><td><code translate="no">apps/web/tests/browser/annotate.test.mjs</code> (selectors, message, overlay flows), <code translate="no">apps/desktop/tests/web-views/check-webtab-annotate.js</code> (commands, loop, send)</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in the desktop App. The browser fallback has no annotate mode.</p>
+
+<p class="next"><a href="built-in-browser.html">Built-in browser</a></p>

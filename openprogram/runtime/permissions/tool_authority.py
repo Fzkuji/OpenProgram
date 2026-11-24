@@ -76,12 +76,12 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
         return "fs.write"
     if name in _PROCESS_TOOLS:
         return "process.exec"
-    if name == "computer_use_agent":
-        # Built-in browser Pages are browser control; application windows, a
-        # VM and code reach further and stay with the owner.
-        call = args or {}
-        page_only = call.get("target") == "browser" and not call.get("code")
-        return "browser.control" if page_only else "process.exec"
+    if name == "computer_use":
+        # The target's provider says: the conversation's own Pages are browser
+        # control; application windows, the whole screen, the user's own
+        # browser, another machine and code reach further and stay with the owner.
+        from openprogram.programs.tools.computer_use.computer_use import tool as screen
+        return screen.authority(dict(args or {}))
     if name in _NETWORK_TOOLS:
         return "network.send"
     if name in _REPLY_LOCAL_TOOLS:
@@ -93,7 +93,7 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
 
 
 # Their capability depends on the call's arguments, so identity alone cannot hide them.
-_ARGUMENT_DEPENDENT_TOOLS = {"cron", "scheduler", "save_routine", "self_update", "computer_use_agent"}
+_ARGUMENT_DEPENDENT_TOOLS = {"cron", "scheduler", "save_routine", "self_update", "computer_use"}
 
 
 def static_capability(tool_name: str) -> str | None:

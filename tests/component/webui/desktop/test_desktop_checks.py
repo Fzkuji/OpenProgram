@@ -9,6 +9,7 @@ apps/desktop/package.json) means they fail loudly instead of rotting.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -25,16 +26,23 @@ SCRIPTS = (
 
 
 @pytest.mark.parametrize("script", SCRIPTS)
-def test_desktop_check_script_passes(script: str):
+def test_desktop_check_script_passes(script: str, tmp_path):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
+    # The scripts load the real main process code, which reads the profile's
+    # port from the environment and the home folder; they get neither from
+    # this machine, so a running App or a port set here changes nothing.
+    environment = {name: value for name, value in os.environ.items()
+                   if name not in ("OPENPROGRAM_WEB_PORT", "OPENPROGRAM_PROFILE", "OPENPROGRAM_DESKTOP_URL")}
+    environment.update(HOME=str(tmp_path), USERPROFILE=str(tmp_path))
     result = subprocess.run(
         [node, f"tests/{script}"],
         cwd=DESKTOP,
         capture_output=True,
         text=True,
         timeout=300,
+        env=environment,
     )
     assert result.returncode == 0, (
         f"apps/desktop/tests/{script} failed:\n{result.stdout}\n{result.stderr}"
@@ -78,7 +86,7 @@ def _heredoc(script: str, opener: str, terminator: str) -> str:
 
 
 def test_packaging_scripts_list_exactly_the_packaged_files():
-    """The file lists both asar repackers build are the build.files expansion."""
+    """The file list the incremental asar repacker builds is the build.files expansion."""
     package = str(DESKTOP / "package.json")
     lister = _heredoc(
         "apps/desktop/scripts/package-incremental-app.sh",
@@ -92,13 +100,3 @@ def test_packaging_scripts_list_exactly_the_packaged_files():
         )
         assert result.returncode == 0, result.stderr
         assert set(result.stdout.split()) == _packaged_files()
-    lister = _heredoc(
-        "scripts/release/pack-desktop-archive.sh",
-        """"$local_python" - "$repo_root/apps/desktop/package.json" <<'PY'\n""",
-        "PY",
-    )
-    result = subprocess.run(
-        [sys.executable, "-", package], input=lister, capture_output=True, text=True, timeout=30
-    )
-    assert result.returncode == 0, result.stderr
-    assert set(result.stdout.split()) == _packaged_files()

@@ -23,12 +23,12 @@ update_config(mutate, expected_revision=revision)  # with a revision check</code
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">写入方</th><th scope="col">路径</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">settings.set_setting</code></th><td>TUI <code translate="no">/config</code>、网页 System 标签、<code translate="no">openprogram config</code>；<code translate="no">_set_at</code> 和 <code translate="no">tools.disabled</code> 分支</td></tr>
+<tr><th scope="row"><code translate="no">settings.set_setting</code></th><td>TUI <code translate="no">/config</code>、网页 模型服务 → 行为 和 通用 → 网页服务、<code translate="no">openprogram config</code>；<code translate="no">_set_at</code> 和 <code translate="no">tools.disabled</code> 分支</td></tr>
 <tr><th scope="row"><code translate="no">routes/settings/config.py</code></th><td>网页 API key 合并和删除</td></tr>
 <tr><th scope="row"><code translate="no">state/preferences.py</code></th><td><code translate="no">set_ui_ports</code>, <code translate="no">write_search_default_provider</code></td></tr>
 <tr><th scope="row"><code translate="no">interfaces/cli/setup_sections/sections.py</code></th><td><code translate="no">openprogram setup</code> 向导</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/settings/storage.py</code></th><td>providers 部分</td></tr>
-<tr><th scope="row"><code translate="no">models/providers/catalog/last_used.py</code>, <code translate="no">host/environments</code>, <code translate="no">models/providers/recording</code></th><td>最近模型、环境、录制</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/last_used.py</code>, <code translate="no">host/machines</code>, <code translate="no">models/providers/recording</code></th><td>最近模型、机器、录制</td></tr>
 </tbody>
 </table>
 <p class="note">所有配置写入方都经过 <code translate="no">update_config</code>。单元测试断言两个并发 mutator 串行执行，结果同时反映两者。</p>

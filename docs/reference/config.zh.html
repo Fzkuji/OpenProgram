@@ -20,6 +20,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <thead><tr><th scope="col">键</th><th scope="col">含义</th><th scope="col">默认</th><th scope="col">生效</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">search.default_provider</code></th><td><code translate="no">auto</code> 选优先级最高的已配置项</td><td>auto</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">search.google_pse_cx</code></th><td>Google 可编程搜索的引擎 id。为空时读 <code translate="no">GOOGLE_PSE_CX</code>。</td><td>空</td><td>立即</td></tr>
 <tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>，或 <code translate="no">none</code>：无提示记忆、回忆、自动写入、整理器和记忆线程</td><td>local</td><td>下次启动</td></tr>
 <tr><th scope="row"><code translate="no">memory.writer.model</code></th><td>后台写入可选 <code translate="no">provider/model</code>；空则用默认聊天 agent 的</td><td>空</td><td>立即</td></tr>
 <tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>单个工具开关；写入 <code translate="no">tools.disabled</code> 列表</td><td>全部启用</td><td>立即</td></tr>
@@ -60,9 +61,10 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{disabled: [工具名, ...]}</code></td><td><code translate="no">openprogram/operations/setup.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
 <tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}</code></td><td><code translate="no">openprogram/host/sandbox/__init__.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
 <tr><th scope="row"><code translate="no">last_used_model</code></th><td>新对话起始的 <code translate="no">{provider, model}</code>。全新安装时为空。</td><td><code translate="no">openprogram/models/providers/catalog/last_used.py</code></td></tr>
+<tr><th scope="row"><code translate="no">provider_companies</code></th><td>目录条目 id → 厂商 id：内置表里没有的条目归到哪个厂商的卡片和密钥下。写它自己的 id 就单独成一家。</td><td><code translate="no">openprogram/models/auth/login/login_method_registry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">default_workdir</code></th><td>agent 默认工作目录</td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
 <tr><th scope="row"><code translate="no">providers</code></th><td>按 provider 的子树（启用和自定义模型），由 Web UI 模型列表管理</td><td><code translate="no">openprogram/models/providers/settings/config_read.py</code>, <code translate="no">storage.py</code></td></tr>
-<tr><th scope="row"><code translate="no">api_keys</code></th><td>环境变量名 → key，由 setup 向导写入，worker 启动时导出。用于网络搜索和 TTS；LLM key 在凭据库。</td><td><code translate="no">openprogram/interfaces/cli/setup_sections/sections.py</code>, <code translate="no">openprogram/interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">api_keys</code></th><td>不再写入。这里已有的 key 在启动时搬进凭据库，名字从文件里去掉；没有服务读取的名字留在原处。</td><td><code translate="no">openprogram/models/auth/key_move.py</code></td></tr>
 <tr><th scope="row"><code translate="no">spec_migration_version</code></th><td>模型规格迁移的一次性标记</td><td><code translate="no">openprogram/models/providers/settings/storage.py</code></td></tr>
 </tbody>
 </table>

@@ -2,6 +2,7 @@ import { adoptCheckedOutBranch, pendingBranchSettings } from "@/lib/agents/branc
 import { branchSettingsPatch } from "@/lib/session-store/branch-settings";
 import { translateText } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { onChanged } from "@/lib/net/ws/changes";
 import { sendRuntimeCommand } from "./session-load";
 import { registerSessionHistory } from "@/lib/chat/history/session-history";
 import { seedTurnWindow } from "./session-history-loader";
@@ -28,7 +29,7 @@ import {
   setChannelHealth,
   updateContextStats,
 } from "../ui";
-import { loadAgentSettings, loadProviders, updateProviderBadge } from "../providers";
+import { loadAgentSettings, updateProviderBadge } from "../providers";
 import {
   refreshHistoryContextRange,
   renderHistoryGraph,
@@ -97,16 +98,16 @@ export function channelIcon(plat: string): string {
   return '<span class="provider-icon-letter">' + letter + "</span>";
 }
 
-/* ===== Channel health poll ======================================= */
+/* ===== Channel health ============================================ */
 
-let channelHealthTimer: ReturnType<typeof setInterval> | null = null;
+// Read when the Worker says this account's status changed (``channels``
+// frames keyed ``<channel>:<account>``), not on a timer.
+let channelHealthStop: (() => void) | null = null;
 let channelHealthKey: string | null = null;
 
 export function stopChannelHealthPoll(): void {
-  if (channelHealthTimer) {
-    clearInterval(channelHealthTimer);
-    channelHealthTimer = null;
-  }
+  channelHealthStop?.();
+  channelHealthStop = null;
   channelHealthKey = null;
   setChannelHealth("unknown");
 }
@@ -116,6 +117,8 @@ export function startChannelHealthPoll(channel: string, accountId?: string): voi
   if (channelHealthKey === key) return;
   stopChannelHealthPoll();
   channelHealthKey = key;
+  // A "reconnecting" mark runs out on its own; read once more then.
+  let recheck: ReturnType<typeof setTimeout> | null = null;
 
   function probe(): void {
     if (channelHealthKey !== key) return;
@@ -126,13 +129,17 @@ export function startChannelHealthPoll(channel: string, accountId?: string): voi
       encodeURIComponent(accountId || "default") +
       "/status";
     fetch(url, { cache: "no-store" })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<{ alive?: unknown; state?: unknown; recheck_in?: unknown }>)
       .then((data) => {
         if (channelHealthKey !== key) return;
         let state = "err";
         if (data.alive) state = "ok";
         else if (data.state === "unknown") state = "warn";
         setChannelHealth(state);
+        if (recheck) clearTimeout(recheck);
+        recheck = typeof data.recheck_in === "number"
+          ? setTimeout(probe, (data.recheck_in + 0.5) * 1000)
+          : null;
       })
       .catch(() => {
         if (channelHealthKey !== key) return;
@@ -140,7 +147,13 @@ export function startChannelHealthPoll(channel: string, accountId?: string): voi
       });
   }
   probe();
-  channelHealthTimer = setInterval(probe, 5000);
+  const off = onChanged("channels", (keys) => {
+    if (keys === null || keys.includes(key)) probe();
+  });
+  channelHealthStop = () => {
+    off();
+    if (recheck) clearTimeout(recheck);
+  };
 }
 
 /* ===== Channel accounts ========================================== */
@@ -288,10 +301,10 @@ export async function refreshBranchTokens(): Promise<void> {
       "/api/sessions/" + encodeURIComponent(sid) + "/branches/tokens",
     );
     if (!r.ok) return;
-    const d = await r.json();
+    const d = await r.json() as { branches?: Array<{ head_id?: unknown }> };
     const map: Record<string, unknown> = {};
-    (d.branches || []).forEach((b: { head_id: string }) => {
-      map[b.head_id] = b;
+    (Array.isArray(d.branches) ? d.branches : []).forEach((b) => {
+      if (b && typeof b.head_id === "string") map[b.head_id] = b;
     });
     branchTokensByConv[sid] = map;
     renderBranchesPanel();
@@ -463,7 +476,6 @@ export function newSession(draftId?: string): void {
     sessBadge.textContent = "no session";
     sessBadge.title = "";
   }
-  void loadProviders();
   void loadAgentSettings();
   refreshStatusSource();
   Object.keys(branchesByConv).forEach((k) => delete branchesByConv[k]);

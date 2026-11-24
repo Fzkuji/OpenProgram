@@ -9,12 +9,10 @@
 <thead><tr><th scope="col">Label, in panel order</th><th scope="col">Kind</th></tr></thead>
 <tbody>
 <tr><th scope="row">Webpage</th><td><code translate="no">web</code>; sources <code translate="no">web</code> and <code translate="no">browser</code> map here.</td></tr>
-<tr><th scope="row">VM</th><td><code translate="no">vm</code>, declared by the actual integration</td></tr>
-<tr><th scope="row">Desktop</th><td><code translate="no">desktop</code></td></tr>
+<tr><th scope="row">Desktop</th><td><code translate="no">desktop</code>: what a call operates on this computer</td></tr>
+<tr><th scope="row">Machine</th><td><code translate="no">machine</code>: what a call operates on another machine</td></tr>
 <tr><th scope="row">Terminal</th><td><code translate="no">terminal</code></td></tr>
 <tr><th scope="row">Application</th><td><code translate="no">application</code></td></tr>
-<tr><th scope="row">Container</th><td><code translate="no">docker</code></td></tr>
-<tr><th scope="row">Remote environment</th><td><code translate="no">remote</code></td></tr>
 <tr><th scope="row">Other resources</th><td>Any other kind; details keep the original type and source</td></tr>
 </tbody>
 </table>
@@ -25,12 +23,12 @@
 <tbody>
 <tr><th scope="row">Entry title</th><td>The actual resource name. A page-title change updates the entry, not its group.</td></tr>
 <tr><th scope="row">Entry subtitle</th><td>State (operating, running, connection failed), the owning Agent when needed, source, branch and connection. No session-title level.</td></tr>
-<tr><th scope="row">External</th><td>A source, not a type: external VMs stay under VM, external pages under Webpage</td></tr>
+<tr><th scope="row">External</th><td>A source, not a type: external pages stay under Webpage</td></tr>
 <tr><th scope="row">Scope</th><td>Only resources tied to the current session. Same-type resources across branches share one group.</td></tr>
 <tr><th scope="row">Count</th><td>Valid resources of that type. Agent switches and renames do not reorder groups.</td></tr>
 <tr><th scope="row">Closed or exited</th><td>Leave the active list; history may show them in details</td></tr>
 <tr><th scope="row">Uncertain status</th><td>Stays under its type and shows an error; not treated as closed</td></tr>
-<tr><th scope="row">Refresh failure</th><td>Known types and entries stay and the failure shows. No renaming, no selecting another resource, no retrying a close of unknown outcome.</td></tr>
+<tr><th scope="row">Refresh failure</th><td>Known types and entries stay; nothing is said and the status is read again behind them. No renaming, no selecting another resource, no retrying a close of unknown outcome.</td></tr>
 </tbody>
 </table>
 
@@ -45,7 +43,7 @@
 <tr><th scope="row">Preview: Open page</th><td>Full view of the same resource; web pages use the top tabs. Hidden without a full view.</td><td>No duplicate</td></tr>
 <tr><th scope="row">Preview: Close preview (X)</th><td>Preview hidden; entry stays</td><td>Page exists; environment keeps running</td></tr>
 <tr><th scope="row">Preview: Review request</th><td>Shown while the Agent waits for confirmation</td><td>Unchanged</td></tr>
-<tr><th scope="row">More: Automatically show the page the Agent is using</th><td>On: shows the page being operated in this session. Off: keeps the current page.</td><td>Agent targets and tasks unchanged</td></tr>
+<tr><th scope="row">More: Automatically show what the Agent is using</th><td>On: shows the page being operated in this session. Off: keeps the current page.</td><td>Agent targets and tasks unchanged</td></tr>
 <tr><th scope="row">Terminate environment</th><td>Explicit named action in a text menu; only where supported</td><td>Existing confirmation and permission rules apply</td></tr>
 </tbody>
 </table>
@@ -62,7 +60,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">Items on web pages</th><td>Automatically show the page the Agent is using (checkbox, wrapping title, visible description); Show actions (checkbox); Operation history (submenu). VMs, terminals and applications show only what they support.</td></tr>
+<tr><th scope="row">Items on web pages</th><td>Automatically show what the Agent is using (checkbox, wrapping title, visible description); Show actions (checkbox); Operation history (submenu). Desktops, machines, terminals and applications show only what they support.</td></tr>
 <tr><th scope="row">Surface</th><td>The application's own menu. Desktop draws it in the HTML overlay above native pages, through the one native-menu service shared by main-process IPC and control overlays. Web uses the same content and styling.</td></tr>
 <tr><th scope="row">Toggling</th><td>Menu stays open and checks update at once; automatic page switches also keep it open</td></tr>
 <tr><th scope="row">Dismissed by</th><td>Escape, outside click, More again, closing the preview</td></tr>
@@ -77,7 +75,7 @@
 <tr><th scope="row">Preview hidden</th><td>Click an entry</td><td>Shows it. Selecting a page by hand turns follow off.</td></tr>
 <tr><th scope="row">Preview visible</th><td>Close preview</td><td>Hides the view only; selection and mode stay. Later Agent activity does not reopen it.</td></tr>
 <tr><th scope="row">Follow on, preview visible</th><td>Agent switches page</td><td>Preview updates, only to pages allowed in this session</td></tr>
-<tr><th scope="row">Viewing a VM, terminal or application</th><td>Agent switches page</td><td>Page following does not replace it</td></tr>
+<tr><th scope="row">Viewing a desktop, machine, terminal or application</th><td>Agent switches page</td><td>Page following does not replace it</td></tr>
 <tr><th scope="row">Web page reopened</th><td>Reopen</td><td>The session's saved display policy applies; an explicitly chosen page stays</td></tr>
 <tr><th scope="row">Any</th><td>Switch resource</td><td>Replaces the one preview's view</td></tr>
 <tr><th scope="row">Any</th><td>Switch session</td><td>Hides the old preview; restores the new session's own selection and visibility</td></tr>
@@ -93,9 +91,9 @@
 <table class="stack">
 <thead><tr><th scope="col">Part</th><th scope="col">Code</th><th scope="col">Must hold</th></tr></thead>
 <tbody>
-<tr><th scope="row">Type grouping</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/resources/session-resources.ts"><code translate="no">session-resources.ts</code></a>: <code translate="no">groupSessionResources</code>, resource types, preview preferences. <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx"><code translate="no">session-resources-panel.tsx</code></a>: labels, row actions, collapse.</td><td>Pages and VMs are separate groups; renaming changes no group; branches of one type stay together</td></tr>
+<tr><th scope="row">Type grouping</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/resources/session-resources.ts"><code translate="no">session-resources.ts</code></a>: <code translate="no">groupSessionResources</code>, resource types, preview preferences. <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx"><code translate="no">session-resources-panel.tsx</code></a>: labels, row actions, collapse.</td><td>Pages and machines are separate groups; renaming changes no group; branches of one type stay together</td></tr>
 <tr><th scope="row">Preview and menu</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/pip/web-tab-pip.tsx"><code translate="no">web-tab-pip.tsx</code></a></td><td>X hides; the row's Preview button reopens; row buttons unchanged; follow semantics agree</td></tr>
-<tr><th scope="row">Resource-specific views</th><td>Existing Terminal and Application views, provider capabilities</td><td>Shared show and hide semantics; no new VM-control backend; unsupported preview falls back to details</td></tr>
+<tr><th scope="row">Resource-specific views</th><td>Existing Terminal and Application views, provider capabilities</td><td>Shared show and hide semantics; no new machine-control backend; unsupported preview falls back to details</td></tr>
 <tr><th scope="row">State</th><td>Resource store, session selection, saved preferences</td><td>Session isolation, no reopening after hiding, restore on refresh, Close preview unobstructed at minimum width</td></tr>
 <tr><th scope="row">Desktop menu</th><td>Native-menu service</td><td>Popup in authorized windows, selection return, cancellation cleanup</td></tr>
 </tbody>

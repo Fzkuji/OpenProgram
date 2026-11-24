@@ -1,4 +1,5 @@
 "use client";
+import { dispatchChanged, dispatchReconnected } from "@/lib/net/ws/changes";
 import { sameSettingsBranch } from "@/lib/session-store/branch-settings";
 import { requestSessionLoad, acceptSessionLoad, failSessionLoad, disposeSessionLoads } from "@/lib/runtime-bridge/session/session-load";
 
@@ -64,7 +65,6 @@ import { applyProviderQuotaFrame } from "@/lib/models/provider-state";
 import {
   agentSettingsChanged,
   loadAgentSettings,
-  loadProviders,
   updateAgentBadges,
   updateProviderBadge,
 } from "@/lib/runtime-bridge/providers";
@@ -75,7 +75,7 @@ import {
 } from "@/lib/runtime-bridge/actions/functions-panel";
 import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/session/conversations";
-import { onEnvironmentsMessage } from "@/lib/environments/store";
+import { onMachinesMessage } from "@/lib/machines/store";
 import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution/execution-cursor";
 import { pushStatusBadge } from "@/lib/tabs/top-bar-sync";
 import {
@@ -272,6 +272,13 @@ export function useWS(): void {
               detail: (d ?? {}) as PermissionRulesDetail,
             }),
           );
+          return true;
+        }
+        case "changed": {
+          const frame = msg as { topic?: unknown; keys?: unknown };
+          if (typeof frame.topic !== "string") return true;
+          const keys = Array.isArray(frame.keys) ? frame.keys.filter((k): k is string => typeof k === "string") : null;
+          dispatchChanged(frame.topic, keys);
           return true;
         }
         case "skills:changed": {
@@ -499,7 +506,6 @@ export function useWS(): void {
         case "provider_info":
         case "provider_changed":
           updateProviderBadge(d as never);
-          loadProviders();
           if (msg.type === "provider_changed") {
             addSystemMessage(
               "Switched to " + formatProviderLabel(d as never),
@@ -643,8 +649,8 @@ export function useWS(): void {
         case "channel_accounts":
           onChannelAccountsMessage(d as never);
           return true;
-        case "environments":
-          onEnvironmentsMessage(d);
+        case "machines":
+          onMachinesMessage(d);
           return true;
         case "branches_list":
           onBranchesListMessage(d as never);
@@ -767,10 +773,12 @@ export function useWS(): void {
             if (typeof sid === "string" && sid) {
               const previousDecisions = useSessionStore.getState().pendingDecisions.filter((q) => q.sessionId === sid);
               void fetch(`/api/questions?session_id=${encodeURIComponent(sid)}`)
-                .then((r) => (r.ok ? r.json() : null))
+                .then((r) => (r.ok ? r.json() as Promise<{ questions?: unknown }> : null))
                 .then((j) => {
                   if (!j || !Array.isArray(j.questions)) return;
-                  const qs = j.questions;
+                  const qs = j.questions.filter(
+                    (q): q is Record<string, unknown> => !!q && typeof q === "object",
+                  );
                   for (const request of pendingExecutionReplayRequests(qs)) {
                     recovery?.request(request.execution_id, request.after_sequence);
                   }
@@ -1061,6 +1069,9 @@ export function useWS(): void {
         // app-shell route effect — send agent_settings + the initial
         // session load so badges + transcript reflect the right conv.
         loadAgentSettings();
+        // Changes told while the socket was down were lost: every topic
+        // a window listens to reads again.
+        dispatchReconnected();
         // A catalogue change may have happened while this window was
         // disconnected. Re-read active model queries on every reconnect.
         getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
@@ -1085,9 +1096,9 @@ export function useWS(): void {
         // Turns already going announced themselves before this socket
         // opened: ask which conversations run (the `running_sessions` case).
         socket?.send(JSON.stringify({ action: "get_running_sessions" }));
-        // Environment changes broadcast while disconnected were missed;
-        // the reply lands in the `environments` case below.
-        socket?.send(JSON.stringify({ action: "list_environments" }));
+        // Machine changes broadcast while disconnected were missed;
+        // the reply lands in the `machines` case below.
+        socket?.send(JSON.stringify({ action: "list_machines" }));
         if (runtimeState.currentSessionId) {
           clearTimeout(historyDeadline);
           historyDeadline = setTimeout(() => connectionRecovery.start(), 15_000);

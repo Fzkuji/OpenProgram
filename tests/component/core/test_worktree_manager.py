@@ -50,7 +50,7 @@ def isolated_state(tmp_path, monkeypatch):
     # to rebind it too or the sessions-git check uses the user's real
     # ~/.agentic.
     monkeypatch.setattr(
-        "openprogram.state.worktree.manager.get_state_dir",
+        "openprogram.state.paths.get_state_dir",
         lambda: state,
     )
     _reset_manager_for_tests()

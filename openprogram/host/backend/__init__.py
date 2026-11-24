@@ -6,30 +6,25 @@ of calling ``subprocess`` directly. That keeps the tool code
 backend-agnostic.
 
 Three backends ship out of the box:
-    local    — subprocess.run on the host (default, unchanged behavior)
-    docker   — a long-lived container per session (``docker exec``)
+    local    — subprocess.run on this computer
+    docker   — a long-lived container per conversation (``docker exec``)
     ssh      — ``ssh <target> "..."`` per call, one shared connection
 
 Which one runs is decided by the session's environment
-(``openprogram.host.environments``): every conversation picks one when it
-is created, and the backend follows it.
+(``openprogram.host.machines``): every conversation picks a machine when it
+is created, and the backend follows that machine's shell kind. Each backend
+registers as a shell kind at the end of this module.
 """
 from __future__ import annotations
 
 import contextlib
 import re
+import subprocess
 
-from openprogram.host.backend.base import Backend, RunResult
+from openprogram.host.backend.base import Backend, RunResult, wait_idle
 from openprogram.host.backend.local import LocalBackend
 from openprogram.host.backend.docker import DockerBackend
 from openprogram.host.backend.ssh import SshBackend
-
-
-BACKEND_CLASSES: dict[str, type[Backend]] = {
-    "local":  LocalBackend,
-    "docker": DockerBackend,
-    "ssh":    SshBackend,
-}
 
 
 class UnavailableBackend(Backend):
@@ -47,9 +42,17 @@ class UnavailableBackend(Backend):
     def spawn_spec(self, command: str, cwd: str | None = None) -> dict:
         raise RuntimeError(self.reason)
 
+    def spawn(self, command: str, cwd: str | None = None) -> subprocess.Popen:
+        raise RuntimeError(self.reason)
 
-def session_container_name(env_id: str, session_id: str) -> str:
-    raw = f"openprogram-{env_id}-{session_id}"
+
+def container_name(machine_id: str, conversation: str) -> str:
+    """The name of a conversation's container on a Docker machine.
+
+    A machine id never changes, so the name stays valid for the life of the
+    conversation; cleanup finds containers by their labels, not by name.
+    """
+    raw = f"openprogram-{machine_id}-{conversation}"
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)[:120]
 
 
@@ -77,45 +80,189 @@ def _session_mounts(session_id: str | None) -> tuple[str, ...]:
     return tuple(out)
 
 
-def backend_for(env, session_id: str | None = None) -> Backend:
-    """Build the backend that runs ``env`` for ``session_id``."""
-    if env.kind == "ssh":
-        return SshBackend(target=env.ssh_target, workdir=env.workdir)
-    if env.kind == "docker":
-        if not session_id:
-            return DockerBackend(image=env.image)
-        return DockerBackend(
-            image=env.image,
-            container=session_container_name(env.id, session_id),
-            mounts=_session_mounts(session_id),
-        )
-    return LocalBackend()
+def backend_for(machine, session_id: str | None = None) -> Backend:
+    """Build the backend that runs commands on ``machine`` for ``session_id``: its shell kind's."""
+    kind = machine.kind("shell")
+    if kind is None or kind.backend is None:
+        # Never this computer in its place: a machine without a usable shell runs nothing.
+        raise RuntimeError(f"machine {machine.id!r} has no shell commands can run through")
+    backend = kind.backend(machine, session_id)
+    if not machine.is_local:
+        backend.machine_id = machine.id
+    return backend
 
 
 def get_active_backend() -> Backend:
     """The backend for the running session's environment."""
-    from openprogram.host.environments import EnvironmentError, current_environment
+    from openprogram.host.machines import MachineError, current_environment
     try:
-        env = current_environment()
-    except EnvironmentError as exc:
+        machine = current_environment()
+    except MachineError as exc:
         return UnavailableBackend("unavailable", str(exc))
     from openprogram.state.execution_facts import current_session_id
     session_id = current_session_id()
     try:
-        return backend_for(env, session_id)
+        return backend_for(machine, session_id)
     except Exception as exc:
-        return UnavailableBackend(env.kind, f"environment {env.id!r}: {exc}")
+        return UnavailableBackend(machine.shell.kind if machine.shell else "unavailable",
+                                  f"machine {machine.id!r}: {exc}")
+
+
+# -- the shell kinds ------------------------------------------------------------
+
+DEFAULT_DOCKER_IMAGE = "ubuntu:24.04"
+
+
+def _local_backend(machine, session_id: str | None) -> Backend:
+    return LocalBackend()
+
+
+def _ssh_backend(machine, session_id: str | None) -> Backend:
+    return SshBackend(target=machine.shell.get("target"), workdir=machine.shell.get("workdir"))
+
+
+def _docker_backend(machine, session_id: str | None) -> Backend:
+    from openprogram.host.backend.docker import CONVERSATION_LABEL, MACHINE_LABEL
+    image = machine.shell.get("image", DEFAULT_DOCKER_IMAGE)
+    if not session_id:
+        return DockerBackend(image=image)
+    return DockerBackend(image=image, container=container_name(machine.id, session_id),
+                         mounts=_session_mounts(session_id),
+                         labels={MACHINE_LABEL: machine.id, CONVERSATION_LABEL: session_id})
+
+
+def _remove_docker_instances(machine: str | None, conversation: str | None) -> None:
+    from openprogram.host.backend.docker import remove_containers
+    remove_containers(machine=machine, conversation=conversation)
+
+
+def _docker_settings(settings: dict) -> dict:
+    return {**settings, "image": str(settings.get("image") or "").strip() or DEFAULT_DOCKER_IMAGE}
+
+
+def _check_local(machine) -> tuple[bool, str]:
+    return True, "This computer"
+
+
+def _check_ssh(machine) -> tuple[bool, str]:
+    result = SshBackend(machine.shell.get("target"), machine.shell.get("workdir")).run("pwd", timeout=20)
+    if result.exit_code == 0:
+        lines = result.stdout.strip().splitlines()
+        return True, "Connected" + (f" · {lines[-1]}" if lines else "")
+    return False, (result.stderr.strip() or f"ssh exited {result.exit_code}")[:500]
+
+
+def _check_docker(machine) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"],
+                              capture_output=True, text=True, timeout=20)
+    except FileNotFoundError:
+        return False, "Docker is not installed (docker CLI not on PATH)"
+    except subprocess.TimeoutExpired:
+        return False, "Docker did not answer within 20s"
+    if proc.returncode != 0:
+        return False, (proc.stderr.strip() or "Docker is not running")[:500]
+    return True, f"Docker {proc.stdout.strip()} · image {machine.shell.get('image')}"
+
+
+def ssh_host(target: str) -> str:
+    """The host an SSH target names: ``user@host``, ``ssh://user@host:port`` or a bare host."""
+    text = str(target or "").strip()
+    if text.lower().startswith("ssh://"):
+        from urllib.parse import urlsplit
+        return urlsplit(text).hostname or ""
+    return text.rsplit("@", 1)[-1].strip("[]")
+
+
+def _ssh_port(target: str) -> int | None:
+    """The port an ``ssh://`` target names, or None."""
+    if not target.lower().startswith("ssh://"):
+        return None
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(target).port
+    except ValueError:
+        return None
+
+
+def _admit_ssh(settings: dict) -> None:
+    from openprogram.host.machines import here
+    from openprogram.host.machines.kinds import KindError
+    target = str(settings.get("target") or "")
+    if _ssh_port(target) not in (None, 22):
+        # Another port is another sshd: on a loopback address, a virtual machine or a container whose port is
+        # forwarded here, each with its own operating system.
+        return
+    if here.is_this_computer(ssh_host(target)):
+        raise KindError(f"Refused: the SSH target {target} is this computer, which is built in and runs "
+                        "commands without being added as a machine.")
+
+
+def _ssh_where(settings: dict) -> str:
+    """The host, with the folder a conversation starts in when one is set: ``me@devbox:/srv/app``."""
+    target, workdir = str(settings.get("target") or ""), str(settings.get("workdir") or "")
+    return f"{target}:{workdir}" if target and workdir else target
+
+
+def _register_kinds() -> None:
+    from openprogram.host.machines.kinds import Kind, register
+
+    register(Kind(
+        name="local", connection="shell", label="This computer", label_zh="这台电脑", local_only=True,
+        backend=_local_backend, check=_check_local))
+    register(Kind(
+        name="ssh", connection="shell", label="SSH host", label_zh="SSH 主机",
+        settings={
+            "type": "object",
+            "description": "Uses your ssh config and keys; password prompts are not supported.",
+            "x-zh": {"description": "使用你的 ssh 配置和密钥；不支持输入密码。"},
+            "properties": {
+                "target": {"type": "string", "title": "SSH target", "pattern": r"^[^-\s]\S*$",
+                           "description": "user@host, or a host from ~/.ssh/config",
+                           "x-zh": {"title": "SSH 目标", "description": "user@host，或 ~/.ssh/config 里的主机"},
+                           "examples": ["me@devbox"]},
+                "workdir": {"type": "string", "title": "Remote folder", "pattern": r"^[/~]",
+                            "description": "The absolute remote folder where choosing a project folder starts",
+                            "x-zh": {"title": "远程文件夹", "description": "在这台机器上选择项目文件夹时的起始绝对路径"},
+                            "examples": ["/home/me/work"]},
+            },
+            "required": ["target"],
+        },
+        remote_files=True, backend=_ssh_backend, check=_check_ssh, admit=_admit_ssh,
+        where=_ssh_where))
+    register(Kind(
+        name="docker", connection="shell", label="Docker container", label_zh="Docker 容器",
+        settings={
+            "type": "object",
+            "description": "Each conversation gets its own container; the conversation's folders are mounted "
+                           "at the same paths.",
+            "x-zh": {"description": "每个对话有自己的容器；对话的文件夹挂载在相同路径。"},
+            "properties": {
+                "image": {"type": "string", "title": "Image", "pattern": r"^[^-\s]\S*$",
+                          "description": "The Docker image each conversation's container starts from",
+                          "x-zh": {"title": "镜像", "description": "每个对话的容器所用的 Docker 镜像"},
+                          "default": DEFAULT_DOCKER_IMAGE, "examples": [DEFAULT_DOCKER_IMAGE]},
+            },
+        },
+        instance_scope="conversation", backend=_docker_backend, check=_check_docker,
+        remove_instances=_remove_docker_instances,
+        normalize=_docker_settings,
+        where=lambda settings: str(settings.get("image") or DEFAULT_DOCKER_IMAGE)))
+
+
+_register_kinds()
 
 
 __all__ = [
     "Backend",
     "RunResult",
-    "BACKEND_CLASSES",
+    "DEFAULT_DOCKER_IMAGE",
     "LocalBackend",
     "DockerBackend",
     "SshBackend",
     "UnavailableBackend",
     "backend_for",
     "get_active_backend",
-    "session_container_name",
+    "container_name",
+    "wait_idle",
 ]

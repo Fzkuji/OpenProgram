@@ -15,6 +15,7 @@
 
 import { waitForOwnerAuthBootstrap } from "./auth/owner-auth-bootstrap.ts";
 import { recoverOwnerAuth } from "./auth/owner-auth-recovery.ts";
+import { errorDetailCode, errorDetailText } from "./error-text.ts";
 
 export class HttpError extends Error {
   status: number;
@@ -54,10 +55,9 @@ async function jsonFetchOnce<T>(
     if (r.status === 401 && allowRecover && await recoverOwnerAuth()) {
       return jsonFetchOnce(url, init, false);
     }
-    const d = data as { error?: string; detail?: string; code?: string };
-    const message =
-      d.error || d.detail || (text ? `HTTP ${r.status}: ${text.slice(0, 300)}` : `HTTP ${r.status}`);
-    throw new HttpError(message, r.status, d.code, text);
+    const d = data as { error?: unknown; detail?: unknown; code?: string };
+    const message = errorDetailText(d.error || d.detail, text ? `HTTP ${r.status}: ${text.slice(0, 300)}` : `HTTP ${r.status}`);
+    throw new HttpError(message, r.status, d.code ?? errorDetailCode(d.detail), text);
   }
   return data as T;
 }

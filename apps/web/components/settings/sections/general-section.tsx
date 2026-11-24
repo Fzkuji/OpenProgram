@@ -1,16 +1,12 @@
 "use client";
 
-/** General settings — language, suggestions, user, notifications, app metadata.
- *  How the interface looks lives in Appearance (appearance-section.tsx). */
-import { useDesktopBridge } from "@/lib/desktop/use-desktop-bridge";
-import { useEffect, useId, useState, type CSSProperties } from "react";
+/** General settings — language, suggestions, user, notifications and the
+ *  web server. How the interface looks lives in Appearance
+ *  (appearance-section.tsx); the version and updates in Versions and updates. */
+import { useId, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import {
-  type DesktopUpdateState,
-} from "@/lib/desktop/desktop-bridge";
 import { setUserProfile, useUserProfile, type UserProfilePrefs } from "@/lib/prefs/user-profile";
 import {
   Avatar,
@@ -18,6 +14,7 @@ import {
   type AvatarConfig,
 } from "@/components/avatar";
 import { DesktopAttentionSection } from "./desktop-attention-section";
+import { SchemaSettings } from "./schema-settings";
 import { SimpleSelect } from "@/components/ui/select";
 import { setComposerPredictions, useComposerPredictions } from "@/lib/prefs/composer-predictions";
 import { Input } from "@/components/ui/input";
@@ -132,161 +129,6 @@ function UserSection() {
   );
 }
 
-export function ApplicationSection() {
-  const { t, text } = useTranslation();
-  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
-  const [hostVersion, setHostVersion] = useState("unknown");
-  const [rawInstallType, setInstallType] = useState("unknown");
-  // The backend reports an enum (openprogram/updater/detect.py); show words.
-  const installType = rawInstallType === "source_checkout"
-    ? text("Source checkout", "源码检出")
-    : rawInstallType === "managed_release"
-      ? text("Managed release", "托管发行版")
-      : text("Unknown", "未知");
-  const bridge = useDesktopBridge();
-  const [updateActionError, setUpdateActionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const updates = bridge?.updates;
-    if (updates) {
-      let active = true;
-      void updates.getState().then((state) => {
-        if (active && state) setUpdateState(state);
-      }).catch((error: unknown) => {
-        if (active) setUpdateActionError(error instanceof Error ? error.message : String(error));
-      });
-      const unsubscribe = updates.onState((state) => {
-        if (active) setUpdateState(state);
-      });
-      return () => {
-        active = false;
-        unsubscribe();
-      };
-    }
-
-    const controller = new AbortController();
-    void fetch("/api/system/version", { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("version request failed")))
-      .then((payload: { currentVersion?: unknown; installType?: unknown }) => {
-        if (typeof payload.currentVersion === "string") setHostVersion(payload.currentVersion);
-        if (typeof payload.installType === "string") setInstallType(payload.installType);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [bridge]);
-
-  const runUpdateAction = async (action: () => Promise<DesktopUpdateState | null | void>) => {
-    setUpdateActionError(null);
-    try {
-      const state = await action();
-      if (state) setUpdateState(state);
-    } catch (error) {
-      setUpdateActionError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const failedStatusText = text("Update check failed", "更新检查失败");
-  const statusDetail = updateActionError
-    || (updateState?.status === "error" ? updateState.error : null)
-    || undefined;
-  const statusText = (() => {
-    if (updateActionError) return failedStatusText;
-    switch (updateState?.status) {
-      case "checking": return text("Checking…", "正在检查…");
-      case "up-to-date": return text("Up to date", "已是最新版本");
-      case "available": return text(`OpenProgram ${updateState.release?.latestVersion} is available`, `OpenProgram ${updateState.release?.latestVersion} 可用`);
-      case "downloading": {
-        const progress = updateState.progress;
-        const percentage = progress?.total ? Math.floor(progress.downloaded / progress.total * 100) : 0;
-        const downloaded = progress?.downloaded.toLocaleString() || "0";
-        const total = progress?.total.toLocaleString() || "0";
-        return text(
-          `Downloading… ${downloaded} / ${total} bytes (${percentage}%)`,
-          `正在下载… ${downloaded} / ${total} 字节（${percentage}%）`,
-        );
-      }
-      case "downloaded": return text("Installer opened", "安装程序已打开");
-      case "error": return failedStatusText;
-      default: return text("Not checked", "尚未检查");
-    }
-  })();
-
-  const busy = updateState?.status === "checking" || updateState?.status === "downloading";
-  const progress = updateState?.progress;
-
-  return (
-    <SettingsSection title={t("general.section.application")}>
-      <SettingsRow label={t("general.version")}>
-        <span className="text-fs-base text-text-muted">{updateState?.currentVersion || hostVersion}</span>
-      </SettingsRow>
-      {bridge?.updates ? (
-        <>
-          <SettingsRow label={text("Automatically check for updates", "自动检查更新")} htmlFor="automatic-update-checks">
-            <Switch
-              id="automatic-update-checks"
-              checked={updateState?.automaticChecks ?? true}
-              onCheckedChange={(checked) => { void runUpdateAction(() => bridge.updates.setAutomaticChecks(checked)); }}
-            />
-          </SettingsRow>
-          <SettingsRow label={text("Update status", "更新状态")} description={statusDetail}>
-            <span
-              className="text-fs-base text-text-muted"
-              role={updateState?.status === "downloading" ? "progressbar" : "status"}
-              aria-live={updateState?.status === "downloading" ? undefined : "polite"}
-              aria-atomic="true"
-              aria-valuemin={progress ? 0 : undefined}
-              aria-valuemax={progress?.total}
-              aria-valuenow={progress?.downloaded}
-              aria-valuetext={progress ? statusText : undefined}
-            >
-              {statusText}
-            </span>
-          </SettingsRow>
-          {updateState?.release?.publishedAt && updateState.release.status === "available" && (
-            <SettingsRow label={text("Published", "发布时间")}>
-              <span className="text-fs-base text-text-muted">{new Date(updateState.release.publishedAt).toLocaleDateString()}</span>
-            </SettingsRow>
-          )}
-          {updateState?.release?.releaseNotes && updateState.release.status === "available" && (
-            <SettingsRow label={text("Release notes", "版本说明")} stacked>
-              <p className="max-h-60 overflow-y-auto text-fs-base whitespace-pre-wrap text-text-muted">
-                {updateState.release.releaseNotes}
-              </p>
-            </SettingsRow>
-          )}
-          <SettingsRow label={text("Actions", "操作")}>
-            <Button variant="elevated" disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
-              {text("Check now", "立即检查")}
-            </Button>
-            {updateState?.release?.status === "available" && (
-              <Button disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
-                {text("Download and open installer", "下载并打开安装程序")}
-              </Button>
-            )}
-            {updateState?.release && (
-              <Button variant="elevated" onClick={() => { void runUpdateAction(() => bridge.updates.openRelease()); }}>
-                {text("View release", "查看 Release")}
-              </Button>
-            )}
-          </SettingsRow>
-        </>
-      ) : (
-        <>
-          <SettingsRow label={text("Installation", "安装类型")}>
-            <span className="text-fs-base text-text-muted">{installType}</span>
-          </SettingsRow>
-          <SettingsRow label={text("Check for updates", "检查更新")}>
-            <div className="grid gap-1 text-right font-mono text-fs-base text-text-muted">
-              <code>openprogram upgrade --check</code>
-              <code>openprogram upgrade</code>
-            </div>
-          </SettingsRow>
-        </>
-      )}
-    </SettingsSection>
-  );
-}
-
 export function GeneralSection() {
   const { t, text, locale, setLocale } = useTranslation();
   const predictions = useComposerPredictions();
@@ -316,7 +158,8 @@ export function GeneralSection() {
 
       <DesktopAttentionSection />
 
-      <ApplicationSection />
+      <SchemaSettings group="Ports" title={text("Web server", "网页服务")} />
+
     </SettingsPage>
   );
 }

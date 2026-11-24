@@ -20,6 +20,11 @@ CSP = "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inli
 
 def register(app):
     service = ApplicationService()
+    # The CLI installs, enables and removes applications by writing the
+    # catalog; open Launchpads hear of it from the file.
+    from openprogram.host._platform import changes
+    catalog_file = catalog.catalog_store.path()
+    changes.watch(catalog_file.parent, "applications", names={catalog_file.name})
     app.state.applications = service
     previous_lifespan = app.router.lifespan_context
     @asynccontextmanager
@@ -97,8 +102,10 @@ def register(app):
             from pathlib import Path
             from openprogram.runtime.permissions.authority import owner_principal_id
             from openprogram.state.store.project import list_projects
+            from openprogram.state.store.project.project_store import folder_is_here
+            # An application runs on this computer: only folders here can be its project.
             projects = [{"id": p.id, "name": p.name, "path": p.path} for p in list_projects()
-                        if p.path and not p.hidden and Path(p.path).is_dir()]
+                        if p.path and not p.hidden and folder_is_here(p) and Path(p.path).is_dir()]
             valid = {p["id"] for p in projects}
             with state.connect() as db:
                 bindings = [r[0] for r in db.execute("SELECT project_id FROM instances WHERE app_id=? AND owner=? ORDER BY rowid DESC",
@@ -143,6 +150,8 @@ def register(app):
             definition = catalog.get(instance["app_id"])
             with state.connect() as db:
                 ids = [r[0] for r in db.execute("SELECT id FROM operations WHERE instance_id=? ORDER BY rowid DESC LIMIT 100", (key,))]
+            # A window is opening: its first operations should not wait for Python.
+            service.prepare_soon(definition)
             return {"instance": instance, "application": definition, "ui_url": ui_url(key, definition), "runs": [service.describe(i) for i in ids]}
         return await guarded(apply)
 
@@ -172,6 +181,13 @@ def register(app):
                 raise ValueError("storage capability and expected version required")
             return state.data(key, body.get("value"), expected_version=body["version"])
         return await guarded(apply)
+
+    @app.post("/api/application-instances/{key}/conversations")
+    async def conversation(key: str, body: dict):
+        """The conversation the window keeps under ``body.key``, working in
+        ``body.folder`` (``state.conversation``)."""
+        return await guarded(lambda: asyncio.to_thread(
+            state.conversation, key, body.get("key"), body.get("folder") or ""))
 
     @app.get("/api/application-runs/{run_id}")
     async def run(run_id: str, after: int = 0):

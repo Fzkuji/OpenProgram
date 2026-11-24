@@ -20,6 +20,12 @@ import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 import { VoiceRecorder } from "@/lib/voice/recorder";
 import { joinPhrase } from "@/lib/voice/segmenter";
+import { errorDetailText } from "@/lib/net/error-text";
+
+/** POST /api/voice/transcribe. */
+interface TranscribeReply { text?: unknown; error?: unknown; detail?: unknown }
+/** GET /api/voice/status. */
+interface VoiceStatusReply { resolved_engine?: unknown }
 
 export type VoiceState = "idle" | "starting" | "recording" | "finishing";
 
@@ -109,13 +115,13 @@ export function useVoiceInput({ textareaRef, input, setInput, wrapperRef, disabl
         headers: { "Content-Type": "audio/wav" },
         body: wav,
       });
-      const body = await response.json().catch(() => ({}));
+      const body = await response.json().catch(() => ({})) as TranscribeReply;
       if (gen !== generation.current) return;
       if (!response.ok || body.error) {
         results.current.set(seq, "");
-        showToast(body.error || text("Transcription failed.", "转写失败。"), { tone: "error" });
+        showToast(errorDetailText(body.error ?? body.detail, text("Transcription failed.", "转写失败。")), { tone: "error" });
       } else {
-        results.current.set(seq, String(body.text || ""));
+        results.current.set(seq, typeof body.text === "string" ? body.text : "");
       }
       flushResults();
     } catch {
@@ -148,7 +154,7 @@ export function useVoiceInput({ textareaRef, input, setInput, wrapperRef, disabl
     stateRef.current = "starting";
     setState("starting");
     try {
-      const status = await fetch("/api/voice/status").then((r) => r.json());
+      const status = await fetch("/api/voice/status").then(async (r) => await r.json() as VoiceStatusReply);
       if (attempt.current !== mine) return;
       if (!status?.resolved_engine) {
         showToast(text(

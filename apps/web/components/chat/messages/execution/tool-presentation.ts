@@ -8,7 +8,8 @@
 // module without the `@/` alias.
 import type { SolarIconName } from "../../../solar-icons/bodies";
 import { guiCapabilityLabel } from "./gui-tool-view.ts";
-import { appStepArgs, computerUseAgentTarget, isFreshCall, screenStep, userBrowser } from "../../../../lib/computer-use/computer-use-agent-call.ts";
+import { USER_BROWSERS } from "../../../../lib/computer-use/browsers.ts";
+import { callStep, callTarget, machineLabel, presentStep, resultBody, screenStep, type CallTarget } from "../../../../lib/computer-use/computer-use-call.ts";
 import { searchQuery } from "../../../../lib/chat/transcript/web-sources.ts";
 
 export type ToolTone =
@@ -55,15 +56,21 @@ function shortPath(p: string | undefined): string | undefined {
   return parts.length > 3 ? "…/" + parts.slice(-3).join("/") : p;
 }
 
-/** "Clicked in Calculator", "Typed in Notes": the action and the app, never the raw args. */
-function computerUsePresentation(args: Args, text: Text): ToolPresentation {
+/** Where a step lands, as the phrase after its verb: "in Calculator", "on the screen". */
+type Place = { en: string; zh: string } | null;
+
+function placeIn(app: string | undefined): Place {
+  return app ? { en: `in ${app}`, zh: `在 ${app} 中` } : null;
+}
+
+/** "Clicked in Calculator", "Typed on the screen": the action and where, never the raw args. */
+function computerUsePresentation(args: Args, text: Text, place: Place = placeIn(pick(args, "app")),
+  listPlace: Place = null): ToolPresentation {
   const action = pick(args, "action") ?? "";
-  const app = pick(args, "app");
-  const inApp = (en: string, zh: string) =>
-    app ? text(`${en} in ${app}`, `在 ${app} 中${zh}`) : text(en, zh);
   const titles: Record<string, [string, string]> = {
     list_apps: ["Listed apps", "列出应用"],
-    get_app_state: ["Read", "读取"],
+    list_displays: ["Listed displays", "列出显示器"],
+    get_state: ["Read", "读取"],
     click: ["Clicked", "点击"],
     type_text: ["Typed", "输入"],
     press_key: ["Pressed key", "按键"],
@@ -80,6 +87,7 @@ function computerUsePresentation(args: Args, text: Text): ToolPresentation {
     focus: ["Focused", "聚焦"],
     menu: ["Used the menu", "使用菜单"],
     show_window: ["Showed the window", "显示窗口"],
+    open_file: ["Opened a file", "打开文件"],
     batch: ["Ran steps", "执行多步"],
     hover: ["Hovered", "悬停"],
     wait: ["Waited", "等待"],
@@ -87,7 +95,9 @@ function computerUsePresentation(args: Args, text: Text): ToolPresentation {
     stop_audio_recording: ["Stopped recording", "停止录音"],
   };
   const [en, zh] = titles[action] ?? ["Computer use", "电脑操作"];
-  const title = action === "list_apps" ? text(en, zh) : inApp(en, zh);
+  // A list names no application: it says which computer it looked at, if another one.
+  const where = action === "list_apps" || action === "list_displays" ? listPlace : place;
+  const title = where ? text(`${en} ${where.en}`, `${where.zh}${zh}`) : text(en, zh);
   const menuPath = Array.isArray(args.menu_path) ? args.menu_path.map(str).filter(Boolean).join(" › ")
     : pick(args, "menu_path");
   const steps = Array.isArray(args.actions) ? args.actions.length : 0;
@@ -96,7 +106,8 @@ function computerUsePresentation(args: Args, text: Text): ToolPresentation {
       ? firstLine(pick(args, "text")) ?? pick(args, "role")
     : action === "perform_secondary_action" ? pick(args, "action_name")
     : action === "set_value" ? pick(args, "value")
-    : action === "get_app_state" || action === "show_window" ? pick(args, "window")
+    : action === "get_state" || action === "show_window" ? pick(args, "window", "display")
+    : action === "open_file" ? shortPath(pick(args, "path"))
     : action === "menu" ? menuPath
     : action === "batch" && steps ? text(`${steps} steps`, `${steps} 步`)
     : undefined;
@@ -116,28 +127,49 @@ export function parseToolArgs(input?: string): Args {
   }
 }
 
-/** computer_use_agent: an app step reads like the app tool's rows; Pages and the VM like their own. */
-function computerUseAgentPresentation(args: Args, text: Text): ToolPresentation {
-  const target = computerUseAgentTarget(args);
-  const app = appStepArgs(args);
-  if (isFreshCall(args)) {
-    return { icon: "ghost", tone: "agent", title: text("Handed to a new agent", "交给新代理"),
-      target: firstLine(pick(args, "brief")) };
+/** Where a computer_use step lands on its target, for the verb's phrase. */
+function placeOf(call: CallTarget, app: string | undefined): { place: Place; list: Place } {
+  const machine = call.machine ? machineLabel(call.machine) : "";
+  const on: Place = machine ? { en: `on ${machine}`, zh: `在 ${machine} 上` } : null;
+  if (call.family === "window") {
+    if (!app) return { place: on, list: on };
+    return { place: machine ? { en: `in ${app} on ${machine}`, zh: `在 ${machine} 的 ${app} 中` } : placeIn(app), list: on };
   }
-  if (app && app.action === "code") {
-    return { icon: "code-square", tone: "shell", title: pick(app, "app")
-      ? text(`Ran code in ${pick(app, "app")}`, `在 ${pick(app, "app")} 中运行代码`) : text("Ran code", "运行代码"),
-      target: firstLine(pick(app, "code")) };
+  if (call.family === "screen") {
+    const screen: Place = machine ? { en: `on ${machine}'s screen`, zh: `在 ${machine} 的屏幕上` }
+      : { en: "on the screen", zh: "在屏幕上" };
+    return { place: screen, list: on };
   }
-  if (app) return computerUsePresentation(app, text);
+  return { place: on, list: on };
+}
+
+/** The name a browser target goes by: "Browser", "Chrome", "Browser on Lab VM". */
+export function browserTitle(call: CallTarget, text: Text): string {
+  const own = USER_BROWSERS[call.browser];
+  if (own) return own.short;
+  return call.machine ? text(`Browser on ${machineLabel(call.machine)}`, `${machineLabel(call.machine)} 上的浏览器`)
+    : text("Browser", "浏览器");
+}
+
+/** computer_use: application windows and screens read like the app tool's rows, browsers like their own. */
+function computerUseToolPresentation(args: Args, text: Text): ToolPresentation {
+  const call = callTarget(args);
+  const step = callStep(args);
+  const { place, list } = placeOf(call, pick(step, "app"));
+  if (step.action === "code") {
+    return { icon: "code-square", tone: "shell",
+      title: place ? text(`Ran code ${place.en}`, `${place.zh}运行代码`) : text("Ran code", "运行代码"),
+      target: firstLine(pick(step, "code")) };
+  }
+  if (call.family === "window" || call.family === "screen") return computerUsePresentation(step, text, place, list);
   const { action, steps, url } = screenStep(args);
-  const what = action === "code" ? text("code", "代码") : action || (steps ? text(`${steps} steps`, `${steps} 步`) : "");
-  if (target === "vm") {
-    return { icon: "monitor", tone: "system", title: text("Virtual machine", "虚拟机"), target: what || undefined };
+  const what = action || (steps ? text(`${steps} steps`, `${steps} 步`) : "");
+  if (call.family === "browser") {
+    return { icon: "cursor", tone: "web", title: browserTitle(call, text),
+      target: [what, url].filter(Boolean).join(" ") || undefined };
   }
-  const chosen = userBrowser(args);
-  return { icon: "cursor", tone: "web", title: chosen ?? text("Browser", "浏览器"),
-    target: [what, url].filter(Boolean).join(" ") || undefined };
+  return { icon: "monitor", tone: "system", title: text("Computer use", "电脑操作"),
+    target: [call.target, what].filter(Boolean).join(" ") || undefined };
 }
 
 /** Any string-ish argument, for tools without a dedicated rule. */
@@ -173,14 +205,10 @@ export function presentTool(
   const args = parseToolArgs(input);
   const path = shortPath(pick(args, "path", "file_path", "filename", "file"));
   switch (name) {
-    case "computer_use_agent":
-      return computerUseAgentPresentation(args, text);
+    case "computer_use":
+      return computerUseToolPresentation(args, text);
     case "gui_agent":
       return { icon: "monitor", tone: "system", title: guiCapabilityLabel(name, text), target: firstLine(pick(args, "task")) };
-    case "computer_use":
-      // The public tool always names an action; the GUI Agent capability never does.
-      if (typeof args.action === "string") return computerUsePresentation(args, text);
-      // falls through
     case "vm_use":
       return { icon: "monitor", tone: "system", title: guiCapabilityLabel(name, text),
         target: pick(args, "app_name") ?? firstLine(pick(args, "task")) };
@@ -321,8 +349,8 @@ export function presentTool(
 /** One readable line for a tool result. JSON objects and arrays are
  *  summarised by their telling fields instead of printed raw. */
 export function summarizeResult(raw: string, text: Text): string {
-  // Tool guides delivered in front of a result are instructions, not the result.
-  const trimmed = raw.replace(/^(\s*<guide name="[^"]*">[\s\S]*?<\/guide>)+/, "").trim();
+  // The guides and the target header in front of a result are not the result.
+  const trimmed = resultBody(raw);
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return firstLine(trimmed) ?? "";
   let value: unknown;
   try {

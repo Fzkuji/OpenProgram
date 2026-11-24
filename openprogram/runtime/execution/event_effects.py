@@ -79,6 +79,14 @@ class ExecutionEventEffects:
         else:
             self._retries.pop(event.sequence, None)
 
+    def seconds_to_next_retry(self) -> float | None:
+        """How long until the earliest failed effect is tried again."""
+        with self._lock:
+            if not self._retries:
+                return None
+            ready = min(ready_at for _failures, ready_at in self._retries.values())
+        return max(0.0, ready - time.monotonic())
+
     def _retry_due(self) -> int:
         now = time.monotonic()
         due = [(sequence, failures) for sequence, (failures, ready_at) in self._retries.items() if ready_at <= now]
@@ -123,6 +131,7 @@ class ExecutionEventEffects:
             from openprogram.runtime.events import emit_ws_frame
             from openprogram.runtime.execution.projections.public import execution_update_frame
 
+            self._announce_owned_state(execution)
             payload = self._payload(event, execution)
             emit_ws_frame(execution_update_frame(
                 payload["execution"], payload["event_cursor"], data=payload,
@@ -191,6 +200,23 @@ class ExecutionEventEffects:
                 "label": entrypoint or "execution",
             },
         }
+
+    def _announce_owned_state(self, execution: ExecutionRecord) -> None:
+        """What a run's state decides changed with it: the resources list of
+        the conversations above it (a page's control, a run's membership)
+        and their open system-access waits. Every run's lifecycle passes
+        here, also one written by an agentic subprocess."""
+        try:
+            from openprogram.host._platform import changes
+            from openprogram.host.resources import conversation_changes
+            from .conversation_scope import sessions_above_execution
+            from .waits import SYSTEM_ACCESS_WAITS_TOPIC
+
+            sessions = sessions_above_execution(self.store, execution)
+            conversation_changes.changed(*sessions, stored=False)
+            changes.signal(SYSTEM_ACCESS_WAITS_TOPIC, *sessions)
+        except Exception:  # noqa: BLE001 - windows read again when next shown
+            _log.debug("run change not announced", exc_info=True)
 
     @staticmethod
     def _publish_steer_outcome(event: ExecutionEvent) -> None:
@@ -495,7 +521,7 @@ class ExecutionEventEffects:
 class EventEffectsWorker:
     """The one thread applying event effects for one execution store."""
 
-    def __init__(self, store, *, idle_wait_seconds: float = 1.0):
+    def __init__(self, store, *, idle_wait_seconds: float = 300.0):
         self.effects = ExecutionEventEffects(store)
         self.idle_wait_seconds = idle_wait_seconds
         self._wake = threading.Event()
@@ -525,7 +551,13 @@ class EventEffectsWorker:
                 self.effects.drain()
             except Exception:
                 _log.exception("execution event effects failed")
-            self._wake.wait(self.idle_wait_seconds)
+            # Every commit that writes an event wakes this thread
+            # (wake_event_effects), and only this process writes them: the
+            # wait ends at the next retry of a failed effect, or is a
+            # safety net.
+            retry = self.effects.seconds_to_next_retry()
+            self._wake.wait(self.idle_wait_seconds if retry is None
+                            else min(self.idle_wait_seconds, retry))
             self._wake.clear()
 
 

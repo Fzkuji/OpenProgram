@@ -334,6 +334,11 @@ class RunTables:
         self._undo: list[tuple[str, tuple, dict | None]] = []
         self._changed: dict[tuple[str, tuple], dict | None] = {}
         self._loaded: set[str] = set()
+        #: When each loaded session was last asked for, so one that is still
+        #: read is not dropped and read in again (``forget_finished_sessions``).
+        self._asked_at: dict[str, float] = {}
+        #: Which call first read each loaded session in, for the Worker's memory sample.
+        self._loaded_by: dict[str, str] = {}
         # The size is taken first: a line added while reading is read next time.
         self._index_read_at = self._index_size()
         self._index = log.read_index()
@@ -497,6 +502,7 @@ class RunTables:
     # Reading a session in
 
     def ensure_session(self, session_id: str) -> None:
+        self._asked_at[session_id] = time.time()
         if session_id in self._loaded:
             return
         batches = list(self.log.read(session_id))
@@ -504,6 +510,8 @@ class RunTables:
             if session_id in self._loaded:
                 return
             self._loaded.add(session_id)
+            from openprogram.state.store.session.session_store.shared import opening_call
+            self._loaded_by[session_id] = opening_call("/runtime/execution/store/")
             self._fold_batches(batches)
 
     def ensure_execution(self, execution_id: str) -> None:
@@ -513,7 +521,9 @@ class RunTables:
         process may have loaded already, so a lookup that misses reads what
         that process added (:meth:`take_up_other_process_turns`)."""
         with self.lock:
-            if (execution_id,) in self.stored["executions"]:
+            row = self.stored["executions"].get((execution_id,))
+            if row is not None:
+                self._asked_at[row["session_id"]] = time.time()
                 return
         session_id = self._index.get(execution_id) or self._read_newer_index().get(execution_id)
         if session_id is None:
@@ -546,6 +556,8 @@ class RunTables:
         with self.lock:
             self._delete_session_rows(session_id)
             self._loaded.discard(session_id)
+            self._loaded_by.pop(session_id, None)
+            self._asked_at.pop(session_id, None)
             if self.log.session_gone(session_id):
                 self.log.set_active(session_id, False)
 
@@ -610,7 +622,12 @@ class RunTables:
                     break
 
     def forget_finished_sessions(self, idle_seconds: float, *, now: float | None = None) -> int:
-        """Free the memory of sessions with nothing unfinished that have been quiet this long."""
+        """Free the memory of sessions with nothing unfinished that have been quiet this long.
+
+        Quiet means neither written nor asked for: the Job runner asks about
+        every finished Job each pass, and a session dropped between two of
+        its passes was read from its log again on each one.
+        """
         cutoff = (time.time() if now is None else now) - idle_seconds
         ended = {status.value for status in TERMINAL_EXECUTION_STATUSES}
         with self.lock:
@@ -624,6 +641,7 @@ class RunTables:
                     unfinished.add(row["session_id"])
             quiet = [session_id for session_id, updated in newest.items()
                      if session_id not in unfinished and updated < cutoff
+                     and self._asked_at.get(session_id, 0.0) < cutoff
                      and not self._owes_a_restart_answer(session_id)]
             for session_id in quiet:
                 self.forget_session(session_id)
@@ -661,6 +679,7 @@ class RunTables:
             self._undo, self._changed = [], {}
             try:
                 yield self.handle
+                tables = {table for table, _key in self._changed}
                 touched = self._write_changes()
             except BaseException:
                 self._roll_back()
@@ -669,6 +688,11 @@ class RunTables:
                 self._in_transaction = False
                 self._undo, self._changed = [], {}
             self._update_active(touched)
+        if tables:
+            # Only this process writes the run tables, so this is every
+            # change: the job dispatcher and reconciler wait on it.
+            from openprogram.host._platform import changes
+            changes.signal("run_tables", *sorted(tables))
 
     def _session_of(self, table: str, key: list, values: dict | None) -> str | None:
         if values is not None and values.get("session_id"):

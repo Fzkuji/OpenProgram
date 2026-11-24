@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * LLM Providers settings (design: docs/reference/design/providers/provider-management.html).
+ * Model services settings (design: docs/reference/design/providers/provider-management.html).
  *
  * /settings/providers lists the connected providers as cards or compact
  * rows (the switch is remembered), one card or row per company with a
@@ -14,29 +14,30 @@ import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, List, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ManageEmptyState } from "@/components/ui/manage-page";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import { pushPath } from "@/lib/nav/shallow-nav";
-import { invalidate } from "@/lib/prefs/settings-cache";
 import { setProvidersView, useProvidersView, type ProvidersView } from "@/lib/prefs/providers-view";
 import type { FixAction } from "@/lib/settings/provider-status.generated";
 import { settingsSend } from "@/lib/settings/settings-request";
+import { revalidateSettings } from "@/lib/prefs/settings-cache";
 import { cn } from "@/lib/utils";
 
 import { SettingsPage } from "../settings-ui";
 import { AddProviderDialog, type AddStart } from "./add/add-provider-dialog";
-import { CATALOGUE_URL, choiceOf, useAddData } from "./add/data";
+import { choiceOf, DETECTED_URL, useAddData } from "./add/data";
+import { STATUS_URL } from "./status/use-provider-status";
 import { PickProvider } from "./add/pick";
 import { Detail } from "./detail";
 import { AddCredentialDialog } from "./detail/add-credential-dialog";
 import { failingCredential } from "./detail/credential-model";
 import type { CredentialFix } from "./detail/credentials-section";
+import { SchemaSettings } from "../sections/schema-settings";
 import { RoutingOverview } from "./routing-overview";
 import { Masonry } from "./status/masonry";
 import { companyGroups, estimateCardHeight, fmtAgo, updatedAt } from "./status/model";
-import { CompanyCard, ProviderCard } from "./status/provider-card";
+import { CompanyCard } from "./status/provider-card";
 import { ProviderRows } from "./status/provider-rows";
 import styles from "./status/status.module.css";
 import { useProviderStatus } from "./status/use-provider-status";
@@ -46,13 +47,13 @@ import { refreshAgentChip } from "./types";
 export { ApiKey } from "./auth/api-key";
 export type { Provider, Model } from "./types";
 
-type Segment = "providers" | "routing";
+type Segment = "providers" | "routing" | "behavior";
 
 export function ProvidersSection({ initialProviderId }: { initialProviderId?: string } = {}) {
   const { t, text } = useTranslation();
   const queryClient = useQueryClient();
-  const { payload, error, refreshing, reload, refresh, refreshOne } = useProviderStatus();
-  const { detected, detectedFailed, catalogue, reload: reloadCatalogue } = useAddData();
+  const { payload, refreshing, reload, refresh, refreshOne } = useProviderStatus();
+  const { detected, catalogue, reload: reloadCatalogue } = useAddData();
   const view = useProvidersView();
   const [segment, setSegment] = useState<Segment>("providers");
   const [dialog, setDialog] = useState<{ open: boolean; start: AddStart }>({ open: false, start: { step: "pick" } });
@@ -63,17 +64,27 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
   const [fix, setFix] = useState<(CredentialFix & { provider: string }) | null>(null);
   const [adding, setAdding] = useState<{ open: boolean; provider: string }>({ open: false, provider: "" });
 
-  const openProvider = useCallback((id: string, action?: FixAction) => {
+  const openProvider = useCallback((id: string, action?: FixAction, credential?: string | null) => {
     setLeft(null);
     const keys = payload?.providers.find((p) => p.id === id)?.keys ?? [];
     setFix(action === "sign_in" || action === "replace_key" || action === "top_up"
-      ? { provider: id, action, credential: failingCredential(keys, action) }
+      ? { provider: id, action, credential: credential ?? failingCredential(keys, action) }
       : null);
     pushPath(`/settings/providers/${encodeURIComponent(id)}`);
   }, [payload]);
   const showList = useCallback(() => { pushPath("/settings/providers"); }, []);
   const addCredential = useCallback((id: string) => setAdding({ open: true, provider: id }), []);
-  const openAdd = (start: AddStart = { step: "pick" }) => setDialog({ open: true, start });
+  // Local servers (Ollama, LM Studio…) start and stop without telling the
+  // Worker, so opening the page or Add provider asks them again; what was
+  // kept is drawn meanwhile, and an unchanged answer redraws nothing.
+  useEffect(() => {
+    void revalidateSettings(STATUS_URL);
+    void revalidateSettings(DETECTED_URL);
+  }, []);
+  const openAdd = (start: AddStart = { step: "pick" }) => {
+    void revalidateSettings(DETECTED_URL);
+    setDialog({ open: true, start });
+  };
   const connect = (id: string) => {
     const p = catalogue.find((c) => c.id === id);
     if (p) openAdd({ step: "connect", choice: choiceOf(p, detected) });
@@ -96,7 +107,6 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
   }, [catalogueReady]);
 
   const reloadAll = useCallback(() => {
-    invalidate(CATALOGUE_URL);
     void reload(true);
     void reloadCatalogue(true);
     void queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
@@ -121,8 +131,6 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
       open={dialog.open}
       start={dialog.start}
       detected={detected}
-      detectedFailed={detectedFailed}
-      onRetryDetected={() => void reloadCatalogue(true)}
       catalogue={catalogue}
       onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       onConnected={reloadAll}
@@ -200,6 +208,7 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
               <TabsList aria-label={text("Section", "分区")}>
                 <TabsTrigger value="providers" className="px-3">{text("Providers", "服务商")}</TabsTrigger>
                 <TabsTrigger value="routing" className="px-3">{text("Routing", "路由")}</TabsTrigger>
+                <TabsTrigger value="behavior" className="px-3">{text("Behavior", "行为")}</TabsTrigger>
               </TabsList>
             </Tabs>
           ) : null}
@@ -207,19 +216,11 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
       }
       actions={actions}
     >
-      {error && !payload ? (
-        <div role="alert">
-          <ManageEmptyState compact title={text("Couldn't load the providers", "无法读取服务商")} description={error}
-            action={<Button variant="elevated" size="sm" onClick={() => void reload(true)}>{text("Retry", "重试")}</Button>} />
-        </div>
-      ) : null}
       {empty ? (
         <div className="flex flex-col gap-[14px] w-full max-w-[640px] mx-auto mt-[24px]" data-empty>
           <h3 className={styles.emptyTitle}>{text("Connect a model provider", "连接一个模型服务商")}</h3>
           <PickProvider
             detected={detected}
-            detectedFailed={detectedFailed}
-            onRetry={() => void reloadCatalogue(true)}
             catalogue={catalogue}
             onPick={(choice) => openAdd({ step: "connect", choice })}
             onUseEnv={(row) => openAdd({ step: "env", row })}
@@ -228,17 +229,15 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
         </div>
       ) : segment === "routing" ? (
         <RoutingOverview providers={catalogue} onSelectProvider={openProvider} />
+      ) : segment === "behavior" ? (
+        <SchemaSettings group="Models" />
       ) : payload ? (
         <div className={styles.listWrap} data-view={view}>
           {view === "rows" ? (
             <ProviderRows providers={connected} now={now} onOpen={openProvider} onConnect={connect} />
           ) : (
             <Masonry items={companyGroups(connected)} keyOf={(g) => g.family} estimate={estimateCardHeight}>
-              {(group) => group.ways.length > 1 ? (
-                <CompanyCard group={group} now={now} onOpen={openProvider} onConnect={connect} onAddCredential={addCredential} />
-              ) : (
-                <ProviderCard p={group.ways[0]} now={now} onOpen={openProvider} onConnect={connect} onAddCredential={addCredential} />
-              )}
+              {(group) => <CompanyCard group={group} now={now} onOpen={openProvider} onConnect={connect} onAddCredential={addCredential} />}
             </Masonry>
           )}
         </div>

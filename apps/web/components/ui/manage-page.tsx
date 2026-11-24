@@ -39,7 +39,7 @@ export type ManageTabIcon = ForwardRefExoticComponent<
 export interface ManageTab {
   id: string;
   label: string;
-  /** Optional trailing count, rendered as `label (n)`. */
+  /** Optional trailing count: a quiet number after the label (a pill in a subnav). */
   count?: number;
   /** Optional pqoqubbw animated icon; hover is driven by the pill. */
   icon?: ManageTabIcon;
@@ -71,7 +71,6 @@ function ManageTabButton({
     if (active) buttonRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [active]);
   const Icon = tab.icon;
-  const label = tab.count === undefined ? tab.label : `${tab.label} (${tab.count})`;
   return (
     <button
       ref={buttonRef}
@@ -92,12 +91,8 @@ function ManageTabButton({
           <Icon ref={iconRef} size={16} />
         </span>
       ) : null}
-      {secondary ? (
-        <>
-          <span>{tab.label}</span>
-          {tab.count !== undefined && <span className={styles.tabCount}>{tab.count}</span>}
-        </>
-      ) : label}
+      <span>{tab.label}</span>
+      {tab.count !== undefined && <span className={secondary ? styles.tabCount : styles.tabCountQuiet}>{tab.count}</span>}
     </button>
   );
 }
@@ -136,7 +131,7 @@ function ManageActionButton({ a }: { a: ManageAction }) {
 
 /**
  * Outer frame of every top-level management page (Agents, Abilities,
- * Applications, History, Scheduler): the shell's `.main` column plus the
+ * Applications, History, Tasks): the shell's `.main` column plus the
  * full-height flex view. Pages render a ManagePageHeader as the first
  * child so all of them start at the same width, height and padding.
  */
@@ -185,11 +180,6 @@ export function ManageEmptyState({
       {children}
     </div>
   );
-}
-
-/** The loading state that comes before a management page's list or ManageEmptyState. */
-export function ManageLoadingState({ children }: { children: ReactNode }) {
-  return <div className={styles.empty} role="status">{children}</div>;
 }
 
 /** Icon-only row action (pause, delete, ...): a ghost Button with a tooltip. */
@@ -308,6 +298,7 @@ export function ManageSubnav({
   onTabChange,
   summary,
   action,
+  end,
   ariaLabel,
   panelId,
   className,
@@ -317,6 +308,8 @@ export function ManageSubnav({
   onTabChange: (id: string) => void;
   summary?: ReactNode;
   action?: ManageAction;
+  /** A control at the row's end, after the summary (a view switch). */
+  end?: ReactNode;
   ariaLabel: string;
   panelId: string;
   /** Extra class on the bar, e.g. to sit flush inside a padded page body. */
@@ -351,12 +344,13 @@ export function ManageSubnav({
           />
         ))}
       </div>
-      {(summary !== undefined || action) && (
+      {(summary !== undefined || action || end) && (
         <div className={styles.subnavEnd}>
           {summary !== undefined && (
             <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
           )}
           {action && <ManageActionButton a={action} />}
+          {end}
         </div>
       )}
     </div>

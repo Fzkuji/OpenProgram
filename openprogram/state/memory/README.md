@@ -54,8 +54,7 @@ beside the personal one (`layers.*`), and a self-check after each write
 | `markdown/` | The topic format — blocks, footnotes, links |
 | `prompts/` | What the writer, the organizer and the verifier are told |
 | `runtime/` | Node marks, thresholds, derived views, writer status, legacy commitment migration parser |
-| `agent_runtime/` | The Claude Code writer and the writer result types |
-| `writer_agent.py` | The hook the runtime registers its writer through (`OpenProgramAgent`, in `openprogram/runtime/conversation/memory_agent.py`) |
+| `writer_agent.py` | The writer result types and the hook the runtime registers its writer through (`OpenProgramAgent`, in `openprogram/runtime/conversation/memory_agent.py`) |
 
 ## Below the runtime
 

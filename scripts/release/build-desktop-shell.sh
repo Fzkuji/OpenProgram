@@ -3,10 +3,8 @@ set -euo pipefail
 
 # Build the macOS Desktop shell of this checkout: OpenProgram.app with the
 # Electron apps/desktop/package.json pins, its native modules and this
-# checkout's app.asar, but no runtime. The installed Apps take their Electron
-# from it: scripts/local-instances/install-dev-app.sh installs it whole as the development
-# App, and scripts/local-instances/refresh-local-app.sh moves its Electron into the stable App
-# when the pinned version changed.
+# checkout's app.asar, but no runtime. scripts/local-instances/install-dev-app.sh
+# installs it whole as the development App.
 #
 #   build-desktop-shell.sh OUTPUT_DIR    → OUTPUT_DIR/OpenProgram.app
 

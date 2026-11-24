@@ -7,7 +7,7 @@
 <thead><tr><th scope="col"><code translate="no">reason</code></th><th scope="col">枚举</th><th scope="col">可重试</th><th scope="col">对话标题</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">rate_limit</code></th><td><code translate="no">RATE_LIMIT</code></td><td>是</td><td>请求过于频繁 —— {retry_after_s} 秒后重试</td></tr>
-<tr><th scope="row"><code translate="no">auth</code></th><td><code translate="no">AUTHENTICATION</code></td><td>否</td><td>API key 被拒 —— 去 设置 → Providers 检查</td></tr>
+<tr><th scope="row"><code translate="no">auth</code></th><td><code translate="no">AUTHENTICATION</code></td><td>否</td><td>API key 被拒 —— 去 设置 → 模型服务 检查</td></tr>
 <tr><th scope="row"><code translate="no">authz</code></th><td><code translate="no">AUTHORIZATION</code></td><td>否</td><td>无权限 —— 检查该模型的套餐 / 访问权限</td></tr>
 <tr><th scope="row"><code translate="no">blocked</code></th><td><code translate="no">NETWORK_BLOCK</code></td><td>否</td><td>模型服务的网络拒绝了你当前的出口地址 —— 换一个代理节点或关闭 VPN 后重试</td></tr>
 <tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">CONTEXT_LENGTH</code></td><td>否</td><td>对话太长 —— 压缩或新开对话</td></tr>

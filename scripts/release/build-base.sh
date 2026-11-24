@@ -67,8 +67,12 @@ install_packages() {
 # Seal each browser bundle once here. Packaging leaves this tree untouched
 # (signIgnore), so every later build ships these exact bytes.
 install_browsers() {
-  local python="$1" browsers="$2"
-  PLAYWRIGHT_BROWSERS_PATH="$browsers" "$python" -m playwright install chromium
+  local python="$1" browsers="$2" shell=()
+  # Every launch asks for the full browser first, and on macOS it always
+  # starts, so the headless shell (190 MB) would ship unused. Linux keeps it:
+  # it needs fewer system libraries and is what starts on a bare server.
+  test "$(uname -s)" != Darwin || shell=(--no-shell)
+  PLAYWRIGHT_BROWSERS_PATH="$browsers" "$python" -m playwright install chromium ${shell[@]+"${shell[@]}"}
   if test "$(uname -s)" = Darwin; then
     find "$browsers" -type d -name '*.app' -prune -print0 |
       while IFS= read -r -d '' browser_app; do
@@ -237,6 +241,8 @@ cp "$repo_root/uv.lock" "$dest/product-uv.lock"
 cp "$repo_root/scripts/release/verify-product-runtime.py" "$dest/bin/verify-product-runtime.py"
 cp "$repo_root/scripts/release/smoke-ink-tui-pty.py" "$dest/bin/smoke-ink-tui-pty.py"
 chmod 0755 "$dest/bin/node" "$dest/bin/uv" "$dest/bin/verify-product-runtime.py" "$dest/bin/smoke-ink-tui-pty.py"
+# One Node in the base: Playwright's driver runs on bin/node.
+"$base_python" -I "$repo_root/scripts/release/share-runtime-node.py" "$dest"
 
 cat > "$dest/base.json" <<JSON
 {

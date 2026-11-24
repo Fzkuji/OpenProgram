@@ -89,4 +89,25 @@ describe("ways to sign in", () => {
     assert.deepEqual(calls.filter(([m, url]) => m === "POST" && url.endsWith("/login/start")).map(([, , b]) => b), [{ method: "paste_token" }]);
     await view.unmount();
   });
+
+  test("each read waits at the worker for the next change; none is asked on a timer", async () => {
+    const answers = [
+      { events: [], cursor: 0, version: 0, waiting: false, done: false },
+      { events: [{ type: "progress", message: "Completing sign-in…" }], cursor: 1, version: 1, waiting: false, done: false },
+      { events: [], cursor: 1, version: 2, waiting: false, done: true, ok: true, name: "c1" },
+    ];
+    const calls = fakeFetch({
+      "POST /api/providers/openai-codex/login/start": { session: "s1" },
+      "GET /api/providers/openai-codex/login/poll": () => answers.shift(),
+    });
+    const view = await render(h(ProviderLogin, { provider: CODEX, bare: true, method: "pkce_oauth" }));
+    await settle(view, 8);
+    const reads = calls.filter(([m, url]) => m === "GET" && url.includes("/login/poll")).map(([, url]) => url);
+    assert.equal(reads.length, 3, "each read follows the one before at once");
+    assert.doesNotMatch(reads[0], /wait=/, "the first read answers at once");
+    assert.match(reads[1], /cursor=0&version=0&wait=25/);
+    assert.match(reads[2], /cursor=1&version=1&wait=25/);
+    assert.match(view.container.textContent, /Signed in/);
+    await view.unmount();
+  });
 });

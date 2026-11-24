@@ -9,7 +9,8 @@ Docs: https://serper.dev/api-key
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import post_json
@@ -30,10 +31,10 @@ class SerperProvider:
     requires_env: tuple = ("SERPER_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("SERPER_API_KEY"))
+        return bool(service_key("serper"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("SERPER_API_KEY", "")
+        key = service_key("serper")
         if not key:
             raise RuntimeError("SERPER_API_KEY not set")
         data = post_json(

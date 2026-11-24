@@ -9,15 +9,14 @@ Members:
 
 - ``pages``: the page-resource module (``BrowserResourceStore``, the
   per-conversation projections, resource control, human page input).
-- ``tabs``: the tab driver behind ``computer_use_agent(target="browser")``
+- ``tabs``: the tab driver behind ``computer_use(type="browser")``
   (``ACTIONS``, ``driver()``, ``batch()``).
 - ``open_tab(url)``: open a web tab for the running conversation.
 - ``authorized_page(arguments, window_id)``: the App tab an interface
   command names, checked against the App, for a native presentation command.
-- ``browser_of(args)``: ``chrome`` or ``edge`` when a call names the
-  user's own browser, else ``""``; ``user_browser_names`` names them.
-- ``extension``: the user's Chrome or Edge through the Playwright
-  Extension (``ExtensionBrowser``, ``Unavailable``).
+- ``extension``: the user's own browsers, behind
+  ``computer_use(type="browser", app=...)`` (``connect``,
+  ``installed_browsers``, ``label``, ``engine``, ``Unavailable``, ``Lost``).
 """
 from __future__ import annotations
 
@@ -33,18 +32,18 @@ def _session() -> str:
 
 
 def open_tab(url: str) -> dict[str, Any]:
-    """Open ``url`` in a background tab of the App, as ``open`` of the browser target does."""
+    """Open ``url`` in a background tab of the App, as ``create_tab`` of the browser target does."""
     from openprogram.host.resources.providers.builtin import _require_tool
 
-    _require_tool("computer_use_agent")
-    return tabs.driver().run("open", {"url": url}, _session())
+    _require_tool("computer_use")
+    return tabs.driver().run("create_tab", {"url": url}, _session())
 
 
 @contextmanager
 def authorized_page(arguments: Mapping[str, Any], window_id: str):
     """The App tab an interface command acts on, as the App knows it now.
 
-    ``arguments.tab`` names it by its id from the browser target's ``tabs``
+    ``arguments.tab`` names it by its id from the browser target's ``list_tabs``
     (omitted: the tab this conversation used last); the command's first
     argument is that tab and is sent as the App's own tab id.
     """
@@ -53,7 +52,7 @@ def authorized_page(arguments: Mapping[str, Any], window_id: str):
     from openprogram.host.resources.providers.builtin import _require_tool
 
     # Acting on a web tab is the screen tool's; a turn that may not use it may not do it this way either.
-    _require_tool("computer_use_agent")
+    _require_tool("computer_use")
     try:
         tab = tabs.driver().tab(arguments.get("tab"), _session())
     except tabs.BrowserError as exc:
@@ -61,7 +60,7 @@ def authorized_page(arguments: Mapping[str, Any], window_id: str):
     descriptor = desktop_link.binding_page_descriptor(tab.binding_id) if tab.binding_id else {}
     args = arguments.get("arguments") or []
     if not args or args[0] not in (tab.id, tab.tab_id):
-        raise ValueError("the command's first argument is the tab: its id from computer_use_agent's tabs")
+        raise ValueError("the command's first argument is the tab: its id from computer_use's list_tabs")
     if (descriptor.get("tab_id") != tab.tab_id or (window_id and descriptor.get("window_id") != window_id)
             or not desktop_link.request_bound_tab(tab.binding_id).get("ok")):
         raise ValueError("page_context_stale")
@@ -75,14 +74,9 @@ class BrowserService:
     pages = pages
     tabs = tabs
     extension = extension
-    user_browser_names = extension.NAMES
 
     open_tab = staticmethod(open_tab)
     authorized_page = staticmethod(authorized_page)
-
-    @staticmethod
-    def browser_of(args: Mapping[str, Any]) -> str:
-        return extension.browser_of(args)
 
 
 def get() -> BrowserService | None:

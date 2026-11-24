@@ -226,12 +226,7 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           // Spinner + "Loading" label sits where the DOCX badge will
           // land once readDroppedTextFile resolves. Keeps the tile's
           // vertical rhythm so it doesn't jump once the badge appears.
-          <div
-            className="composer-file-tile-skeleton"
-            aria-label={text("Loading...", "加载中...")}
-          >
-            {text("Loading", "加载中")}
-          </div>
+          <div className="composer-file-tile-skeleton" aria-hidden="true" />
         ) : doc.ext && (
           <div
             style={{

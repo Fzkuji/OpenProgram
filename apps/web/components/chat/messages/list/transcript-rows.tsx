@@ -5,12 +5,12 @@
  * pane and a sub-agent's expanded view. It takes the conversation and view
  * from its caller and hands them to every row (TranscriptScopeContext), so
  * no row looks at the focused conversation. Around the rows it places what
- * hangs off them: covered originals folded under their compaction card,
- * goal records, decision receipts and rewind marks.
+ * hangs off them: goal records, decision receipts and rewind marks. Rows a
+ * compaction covered are drawn like any other row.
  */
-import { useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useContext, useMemo, type ReactNode } from "react";
 
-import { selectViewRows, useSessionStore, type ChatMsg } from "@/lib/session-store";
+import { selectViewRows, useSessionStore } from "@/lib/session-store";
 import { rowRenderKeys } from "@/lib/chat/transcript/row-render-key";
 import { placeMarks } from "@/lib/chat/rewind/rewind-logic";
 import { useRewindAllowed, useRewindDisabled } from "@/lib/chat/rewind/use-rewind-disabled";
@@ -18,45 +18,8 @@ import { useRewindAllowed, useRewindDisabled } from "@/lib/chat/rewind/use-rewin
 import { GoalDetails, useSessionGoal } from "../../badges/goal-chip";
 import { RewindMarkers, useRewindMarks } from "../../rewind/rewind-marker";
 import { DecisionOutputs, useDecisionAnchors } from "../runtime/decision-output";
-import { originalsOpen, originalsSubs } from "./rows/system-event-rows";
 import { MessageRow, PlainRow, RecyclableRow } from "./rows/message-rows";
 import { BotViewContext, TranscriptScopeContext, type TranscriptScope } from "./transcript-view-scope";
-
-export interface Covering {
-  /** Rows a compaction card in this list folds. */
-  covered: ReadonlySet<string>;
-  /** Covered rows whose card keeps its originals closed. */
-  hidden: ReadonlySet<string>;
-}
-
-const NO_COVERING: Covering = { covered: new Set(), hidden: new Set() };
-
-/** Which rows fold under a compaction card: those the server marked with
- *  coveredBy a card this list holds. A chat drawn as a bot conversation has
- *  no summary cards, so everything said stays in place. */
-export function coveringOf(ids: readonly string[], rows: Readonly<Record<string, ChatMsg | undefined>>, botView: boolean): Covering {
-  if (botView) return NO_COVERING;
-  const covered = new Set<string>();
-  const hidden = new Set<string>();
-  const held = new Set(ids);
-  for (const id of ids) {
-    const card = rows[id]?.coveredBy;
-    if (!card || !held.has(card)) continue;
-    covered.add(id);
-    if (!originalsOpen.has(card)) hidden.add(id);
-  }
-  return { covered, hidden };
-}
-
-/** Redraw when a compaction card shows or hides its originals. */
-export function useOriginalsToggle(): void {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const redraw = () => setTick((n) => n + 1);
-    originalsSubs.add(redraw);
-    return () => { originalsSubs.delete(redraw); };
-  }, []);
-}
 
 /** The decision anchors this list places under their rows; the caller draws the rest after the list. */
 export function usePlacedDecisions(sessionId: string | null, ids: readonly string[]): ReadonlySet<string> {
@@ -84,9 +47,7 @@ export function TranscriptRows({
 }) {
   const scope = useMemo<TranscriptScope>(() => ({ sessionId, viewKey, embedded }), [sessionId, viewKey, embedded]);
   const botView = useContext(BotViewContext) !== null;
-  useOriginalsToggle();
   const heldRows = selectViewRows(viewKey)(useSessionStore.getState());
-  const { covered, hidden } = coveringOf(ids, heldRows, botView);
   const lastId = ids.length ? ids[ids.length - 1] : null;
   const running = useSessionStore((s) => !embedded && !!sessionId && s.runningTasks[sessionId] != null);
   const goal = useSessionGoal(embedded ? null : sessionId);
@@ -122,36 +83,7 @@ export function TranscriptRows({
     if (marks) nodes.push(<RewindMarkers key={`rewind-${anchor}`} sessionId={sessionId} marks={marks} />);
   };
   addGoalRecords([null]);
-  let i = 0;
-  while (i < ids.length) {
-    const id = ids[i];
-    if (covered.has(id)) {
-      const run: string[] = [];
-      while (i < ids.length && covered.has(ids[i])) {
-        run.push(ids[i]);
-        i += 1;
-      }
-      nodes.push(
-        <div
-          key={`${run[0]}_fold`}
-          className="compaction-orig-fold"
-          data-fold-id={run[0]}
-          data-open={hidden.has(run[0]) ? "0" : "1"}
-        >
-          <div className="compaction-orig-fold-inner">
-            {run.map((cid) => (
-              <div key={cid} className="covered-turn">
-                <MessageRow id={cid} />
-              </div>
-            ))}
-          </div>
-        </div>,
-      );
-      addGoalRecords(run);
-      addDecisionReceipts(run);
-      run.forEach(addRewindMarks);
-      continue;
-    }
+  for (const id of ids) {
     if (embedded) nodes.push(<MessageRow key={keyOf(id)} id={id} />);
     else nodes.push(
       liveRows && chatKey ? (
@@ -169,7 +101,6 @@ export function TranscriptRows({
     addGoalRecords([id]);
     addDecisionReceipts([id]);
     addRewindMarks(id);
-    i += 1;
   }
   return (
     <TranscriptScopeContext.Provider value={scope}>

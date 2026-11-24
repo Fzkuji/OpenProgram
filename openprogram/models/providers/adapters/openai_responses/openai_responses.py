@@ -25,6 +25,10 @@ from openprogram.models.providers.utils.streams.event_stream import EventStream
 if TYPE_CHECKING:
     from openprogram.models.providers.types import Context, Model, SimpleStreamOptions
 
+#: Providers that refuse a function tool named like their built-in search.
+_ONE_TOOL_PER_NAME = frozenset({"xai", "xai-subscription"})
+
+
 def stream_openai_responses(
     model: "Model",
     context: "Context",
@@ -288,6 +292,13 @@ def _build_params(
     # web_search_call items, which the shared processor turns into
     # ServerToolUse blocks.
     if opts.get("web_search"):
+        if getattr(model, "provider", None) in _ONE_TOOL_PER_NAME:
+            # A conversation's own turn keeps the local ``web_search``
+            # function in its array beside the provider's search and refuses
+            # its calls (loop_runner). OpenAI takes both; xAI answers 400
+            # "Duplicate tool names: web_search", so the function is left out.
+            tool_list = [tool for tool in tool_list
+                         if not (tool.get("type") == "function" and tool.get("name") == "web_search")]
         tool_list.append({"type": "web_search"})
     if tool_list:
         params["tools"] = tool_list

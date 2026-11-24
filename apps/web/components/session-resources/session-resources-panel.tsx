@@ -31,7 +31,7 @@ import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop/desktop-bridge"
 import { useSessionResources } from "@/lib/chat/resources/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import { useTerminalResources } from "@/lib/desktop/terminal-resources";
-import { BackgroundTerminalView, TerminalResourceView } from "./terminal-resources";
+import { BackgroundTerminalView, loadXterm, TerminalResourceView } from "./terminal-resources";
 import { useManagedProcesses } from "@/lib/execution/use-managed-processes";
 import { stopProcess } from "@/lib/net/execution/process-client";
 import { ApplicationResourceView } from "./application-resource";
@@ -92,7 +92,6 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
   const backend = useSessionResources(sessionId);
   useBrowserResourceStore(s => s.ingestClock);
   const terminals = useTerminalResources(s => s.rows);
-  const terminalError = useTerminalResources(s => s.error);
   const pendingClose = pendingCloseRequest();
   const collapseKey = `openprogram.resource-groups:${sessionId || "no-session"}`;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
@@ -110,6 +109,9 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
   const programs = useManagedProcesses(active && !!sessionId, sessionId, viewingProcess);
   const rows = sessionResourceRows(tabs, [...backend.rows, ...terminalResourceRows(Object.values(terminals), sessionId),
     ...backgroundTerminalRows(programs.items, sessionId, viewingProcess)], sessionId);
+  // A terminal listed here may be opened next: its code is fetched now, so it draws at once.
+  const listsTerminal = rows.some(row => row.source === "terminal" || row.source === "process");
+  useEffect(() => { if (listsTerminal) void loadXterm().catch(() => undefined); }, [listsTerminal]);
   const selectView = (row: SessionResource) => {
     if (!sessionId) return;
     hideResourcePreview(sessionId, backend.currentBranchId);
@@ -129,8 +131,8 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, requestRevision]);
   const names: Record<string, string> = {
-    application: text("Application", "应用"), terminal: text("Terminal", "终端"), web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
-    remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),
+    application: text("Application", "应用"), terminal: text("Terminal", "终端"), web: text("Webpage", "网页"),
+    desktop: text("Desktop", "桌面"), machine: text("Device", "设备"),
   };
   const viewedBranch = backend.currentBranchId;
   const pref = sessionId ? getPreviewPreference(sessionId, viewedBranch) : null;
@@ -139,7 +141,7 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
   const groups = groupSessionResources(rows, viewedBranch, sessionId ? DEFAULT_GROUPS : []).filter(group => group.rows.length > 0).map(group => ({
     ...group, title: names[group.key] || text("Other resources", "其他资源"),
   }));
-  const icons = { terminal: TerminalSquare, web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
+  const icons = { terminal: TerminalSquare, web: Globe, desktop: Monitor, machine: Server };
   const thumbnails = useWebResourceThumbnails(s => s.shots);
   // A web row shows its page as it was after the Agent's last operation:
   // a settled operation takes a new picture, one still in flight keeps the
@@ -159,12 +161,12 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
     if (!active) return;
     const take = () => { for (const [tabId, operationId] of thumbnailWork) refreshWebResourceThumbnail(tabId, operationId); };
     // A page that finishes loading is pictured at once (the watch); an
-    // operation is pictured after a short paint delay. A page that is
-    // already loaded but has no picture yet is caught by the slow retry.
+    // operation is pictured after a short paint delay. Nothing is pictured
+    // again on a timer: the row changes (conversation.resources) when the
+    // Agent operates the page, and that takes the next picture.
     const stop = watchWebResourceThumbnails(new Map(thumbnailWork.map(([tabId, operationId]) => [tabId, operationId])));
     const timer = window.setTimeout(take, 150);
-    const retry = window.setInterval(take, 4000);
-    return () => { stop(); window.clearTimeout(timer); window.clearInterval(retry); };
+    return () => { stop(); window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thumbnailKey, active]);
   // Showing a page (its preview or its tab) means it is loaded: picture it now.
@@ -197,7 +199,6 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
   };
 
   return <section className={styles.panel} aria-label={text("Session resources", "会话资源")}>
-    {backend.unavailable && <p role="status" className={styles.notice}>{text("Some resource statuses could not be refreshed.", "部分资源状态未能刷新。")}</p>}
     {pendingClose && <p role="status" className={styles.notice}>
       {pendingClose.error
         ? pendingClose.error === "Stop unconfirmed"
@@ -303,7 +304,6 @@ function SessionResourceList({ sessionId, active }: { sessionId: string | null; 
       })}
 
     </div>
-    {terminalError && <p role="status" className={styles.notice}>{text("Terminal status is unavailable.", "暂时无法获取终端状态。")}</p>}
     {selected?.source === "terminal" && sessionId && terminals[selected.sourceId]?.generation === selected.terminalGeneration
       && terminals[selected.sourceId]?.session_ids.includes(sessionId) &&
       <TerminalResourceView key={`${selected.sourceId}:${terminals[selected.sourceId].generation}`}

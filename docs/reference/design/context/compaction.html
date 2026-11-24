@@ -107,13 +107,31 @@
 <thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">1. Freeze the chain's rendered input</th><td><code translate="no">compaction.view.load_compaction_view</code> uses <code translate="no">render_context</code> and <code translate="no">render_dag_messages</code>, with tool results, expose and spill references. Top-level turns define coverage; visible child calls count toward input and budgets</td></tr>
-<tr><th scope="row">2. Select whole turns</th><td>Retain 10% of the window, bounded to 8,000–40,000 tokens (an explicit override wins). Prefer at least four conversational messages at a user boundary; a posted report is a boundary too. Below target: no-op. If the last two turns exceed the target, the cut can advance to the latest user boundary. That latest turn stays intact unless only reports follow it</td></tr>
+<tr><th scope="row">2. Select whole turns</th><td>Retain 10% of the window, bounded to 8,000–40,000 tokens (an explicit override wins). Prefer at least four conversational messages at a user boundary; a posted report is a boundary too. Below target: no-op. If the last two turns exceed the target, or no boundary leaves four messages behind it (one giant turn followed by a short one), the cut can advance to the latest user boundary. That latest turn stays intact unless only reports follow it</td></tr>
 <tr><th scope="row">3. Summarize the whole covered prefix</th><td>With the summary prompt (<a href="#summary-prompt">Summary prompt and role</a>): every replaced turn, the initial request, the chain's previous summary, rendered child calls. Non-text media becomes a reference notice</td></tr>
 <tr><th scope="row">4. Validate before writing</th><td>Reject empty, failed, cancelled, incomplete, capped or non-reducing summaries; a candidate, rendered in memory the same way, must be strictly smaller. After the model call, recheck the chain's rendered nodes; a change is a retryable no-op, other branches and a head moved elsewhere do not count. Provider failure keeps the history, with no lossy structural fallback</td></tr>
 <tr><th scope="row">5. Persist and report</th><td>One write, with the restored state; <code translate="no">covers_ids</code> expands any previous summary to real turn ids. Before: the context panel's reading of the chain; after: that reading less what the candidate saves. No-ops write nothing and do not count</td></tr>
 </tbody>
 </table>
-<p class="note">The context display uses provider input usage. Each request also records a local estimate of the same messages, so a later graph edit scales its estimate by the measured ratio, labelled as an estimate until the next report. Legacy usage with no matched estimate does not calibrate.</p>
+<h3 id="measuring">How large a request is</h3>
+<p>One rule (<code translate="no">runtime/context/token_accounting/measure.py</code>) answers it for the compaction before a turn, the one between its steps, the gate before each request and the context ring, so they never disagree.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Size</th><td>The provider's count of the conversation's last request on the same model (input, cache reads and cache writes), plus the local estimate of what changed since. Without one, the estimate alone</td></tr>
+<tr><th scope="row">What counts as a count</th><td>Only a reply that measured one request. A reply that ran provider-side tools (a web search) reports its passes summed; a failed or stopped reply; a count over the window, or over twice the request's own estimate plus 8,000: none of them is used, and the previous count stays</td></tr>
+<tr><th scope="row">Added, not multiplied</th><td>The count's difference from its own estimate is added to later estimates. It never takes more than half an estimate away</td></tr>
+<tr><th scope="row">The estimate</th><td>The rendered request, reasoning sent back to the model that wrote it included: its summary and its payload</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>Last count plus the change</dt><dd>Follows Claude Code (<code translate="no">tokenCountWithEstimation</code>) and Codex (<code translate="no">get_total_token_usage</code>). Compared: a ratio of count to estimate applied to every later estimate. A Grok reply that searched the web twice reported 339k for a 109k prompt; the ratio of 3.95 refused every later request of that turn although it fit.</dd>
+<dt>Provider tools excluded</dt><dd>Claude Code reads the last of Anthropic's <code translate="no">usage.iterations</code> for the same reason; xAI and OpenAI Responses report no per-pass figures, so such a reply is skipped. Pi drops counts from aborted or failed replies.</dd>
+<dt>Reasoning counted</dt><dd>Twenty reasoning items went back with every request of a Grok conversation and the estimate counted none: the history read 22% short, so compaction came late.</dd>
+</dl>
+</details>
 <p><code translate="no">/compact</code> is the branch's foreground operation (<code translate="no">op_kind: compact</code>, an <code translate="no">op_id</code> on <code translate="no">compaction_started</code>). The page's Stop and the terminal's Ctrl-C both send <code translate="no">operation.cancel</code> with that id; the summary request ends with nothing written and the row reads "stopped". An automatic compaction that fails says nothing; the next request tries again.</p>
 <p class="note">Why: Claude Code, Codex and Kimi Code all cancel a manual compaction with the key that stops a turn; follows Claude Code, whose terminal is also Ink.</p>
 
@@ -227,22 +245,28 @@
 </ul>
 
 <details id="inside-one-message">
-<summary>Request checkpoint</summary>
-<p>Every AgentLoop provider request, tool continuations and function-local <code translate="no">llm()</code> and <code translate="no">agent()</code> included, is budgeted (<code translate="no">compaction/request.py</code>). Over the limit, the request gets a checkpoint; messages and the DAG stay intact.</p>
+<summary>Fitting a request</summary>
+<p>Every AgentLoop provider request, tool continuations and function-local <code translate="no">llm()</code> and <code translate="no">agent()</code> included, is sized by the rule above (<code translate="no">compaction/request.py</code>). Over the limit, it is made to fit for this send only: messages and the DAG stay intact. Each step runs only when the ones before it did not free enough.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">Output cap</th><td>Unspecified: the smallest of model capability, 16,384 and a quarter of the window, used for budgeting and dispatch alike. Explicit caps are never reduced</td></tr>
-<tr><th scope="row">Checkpoint</th><td>Older complete text-only history becomes one task summary. All user messages and the latest assistant segment stay verbatim. Incomplete tool groups, multimodal input and the current turn's signed reasoning are not eligible; a finished turn's reasoning is summarized by its summary text, without the encrypted payloads and ids</td></tr>
-<tr><th scope="row">Reuse</th><td>Within the invocation, for the same model and an unchanged source prefix</td></tr>
-<tr><th scope="row">Summary calls</th><td>Bounded chunks, retried smaller on overflow; at most 32 requests; bypass AgentLoop. Each request runs while its stream keeps producing and fails after 60 seconds without an event; a stop closes it at once. Failures leave history intact</td></tr>
-<tr><th scope="row">Over budget</th><td>Local estimates only. Protected content that cannot fit fails explicitly; a request estimated over budget is not sent</td></tr>
+<tr><th scope="row">1. Earlier media</th><td>Images and other media before the turn's own message become a one-line note</td></tr>
+<tr><th scope="row">2. Checkpoint</th><td>An older complete prefix becomes one task summary, reused within the invocation for the same model and an unchanged source prefix. The newest user messages stay verbatim within 20,000 tokens; older ones are in the summary. Media reaches the summarizer as a note, and a finished turn's reasoning as its summary text. The turn's own signed reasoning and an unanswered call keep their prefix out. A summary that fails is skipped; a stop still stops</td></tr>
+<tr><th scope="row">3. Earlier tool results</th><td>Results before the turn's message keep 1,200 characters of head and 400 of tail</td></tr>
+<tr><th scope="row">4. Oldest steps</th><td>Left out from the front, a whole step at a time, behind a note that says how many</td></tr>
+<tr><th scope="row">5. The turn's own steps</th><td>Results before its latest step shortened, then its media, then those steps left out behind a note, then every result shortened</td></tr>
+<tr><th scope="row">Fails</th><td>Only when the latest message, the system prompt and the tools alone do not fit the window, saying so</td></tr>
+<tr><th scope="row">Summary calls</th><td>Bounded chunks, retried smaller on overflow; at most 32 requests; bypass AgentLoop. Each request runs while its stream keeps producing and fails after 60 seconds without an event; a stop closes it at once</td></tr>
+<tr><th scope="row">What is measured</th><td>The rendered request: each reply with its tool calls and results. The stored rows hold a reply's text only; measured by them, a conversation of mostly tool work read a fifth of its size, never compacted, and had its request refused</td></tr>
 </tbody>
 </table>
 <details>
 <summary>Why this design</summary>
 <dl>
-<dt>No per-result summaries</dt><dd>Codex, OpenCode, Pi and Kimi Code have none, and Hermes turns its own off: replacing tool results one by one rewrites the middle of the request, so every later request misses the prompt cache, and nothing is kept for the next turn. A durable compaction between steps does the work instead.</dd>
+<dt>Fit, then send</dt><dd>No peer refuses a request on its own estimate: Claude Code and Codex compact and send, and fail only after the provider reports an overflow and recovery is spent. Compared: keeping every user message, picture and signed reasoning verbatim and failing when they did not fit, which ended a turn of a 109k conversation in a 256k window.</dd>
+<dt>Cheap steps first</dt><dd>Media before summaries follows Hermes, which keeps only the latest picture, and OpenCode, which strips media to recover. Shortening results before leaving steps out follows OpenClaw; leaving the oldest out follows Codex, whose compaction drops history from the front when it does not fit. User messages kept within 20,000 tokens follows Codex.</dd>
+<dt>No per-result summaries while it fits</dt><dd>Codex, OpenCode, Pi and Kimi Code have none, and Hermes turns its own off: replacing tool results one by one rewrites the middle of the request, so every later request misses the prompt cache. The steps above run only when the request does not fit.</dd>
 <dt>No cache-edit clearing</dt><dd>Anthropic's <code translate="no">clear_tool_uses</code> context edit cleared old results on the provider side with the same effect on the cache and only on one provider; it is not sent.</dd>
 </dl>
 </details>
@@ -250,7 +274,7 @@
 
 <details id="tuning">
 <summary>Choosing the share from the user's own calls</summary>
-<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → System → Models → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
+<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → Model services → Behavior → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
@@ -289,6 +313,8 @@
 <tr><th scope="row">The summary request reuses the last request's prefix; an overflow recovery never forks</th><td><code translate="no">tests/unit/context/compaction/test_compaction_fork.py</code></td></tr>
 <tr><th scope="row">A downshift is summarised by the larger model, then the turn's</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
 <tr><th scope="row">Under the window a turn's requests only grow at the end; over it, one checkpoint and no per-result summary</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
+<tr><th scope="row">A request is sized by the last single-pass count plus the change; a count of several passes, a failed reply's or an implausible one is not used</th><td><code translate="no">tests/unit/context/token_accounting/test_request_measure.py</code></td></tr>
+<tr><th scope="row">A request over the limit is fitted, history untouched; only a latest message over the window fails</th><td><code translate="no">tests/component/context/test_request_checkpoints.py</code></td></tr>
 <tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; on openai-codex one pair before S keeps the tools array the same before and after compaction; any other provider reads S first</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">Compaction never moves HEAD</th><td>Scenario suite</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> never names a node off the summarized chain</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>

@@ -127,7 +127,9 @@ describe("ViewControls", () => {
     assert.equal(useSessionStore.getState().conversations["chat-copy"].title, "Chat one (copy)");
     const active = useCenterTabs.getState().tabs.find((tab) => tab.id === useCenterTabs.getState().activeId);
     assert.equal(active.sessionId, "chat-copy", "the copy opens");
-    assert.equal(sent.length, 0, "the source conversation is not touched");
+    assert.deepEqual(sent.filter((frame) => frame.session_id === "chat-1"), [], "the source conversation is not touched");
+    assert.deepEqual(sent.filter((frame) => frame.action === "load_session").map((frame) => frame.session_id), ["chat-copy"],
+      "the copy is read on the click");
   });
 
   test("a refused copy toasts and opens nothing", async () => {

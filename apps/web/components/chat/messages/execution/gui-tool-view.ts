@@ -2,7 +2,7 @@ import type { TNode } from "./tree-types";
 
 type RecordValue = Record<string, unknown>;
 type Text = (en: string, zh: string) => string;
-export const GUI_TOOL_NAMES = new Set(["gui_agent", "computer_use", "browser_use", "vm_use"]);
+export const GUI_TOOL_NAMES = new Set(["gui_agent", "browser_use", "vm_use"]);
 
 export interface GuiStepView {
   capability: string;
@@ -31,12 +31,9 @@ function string(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** The public `computer_use` tool shares its name with the GUI Agent's internal
- *  desktop capability. Only the capability (task / app_name, no `action`) is a
- *  GUI step; the public tool keeps the ordinary tool renderer. */
-export function isGuiToolCall(name: string, params?: unknown): boolean {
-  if (!GUI_TOOL_NAMES.has(name)) return false;
-  return name !== "computer_use" || typeof object(params).action !== "string";
+/** A step of the GUI Agent's capabilities; ``computer_use`` keeps the ordinary tool renderer. */
+export function isGuiToolCall(name: string, _params?: unknown): boolean {
+  return GUI_TOOL_NAMES.has(name);
 }
 
 export function guiStatus(output: unknown, executionStatus = ""): string {
@@ -68,8 +65,7 @@ export function guiStatusLabel(status: string, text: Text): string {
 }
 
 export function guiCapabilityLabel(name: string, text: Text): string {
-  return name === "computer_use" ? text("Computer Use", "电脑操作")
-    : name === "browser_use" ? text("Browser Use", "浏览器操作")
+  return name === "browser_use" ? text("Browser Use", "浏览器操作")
     : name === "vm_use" ? text("VM Use", "虚拟机操作") : "GUI Agent";
 }
 

@@ -34,9 +34,15 @@ class WorkerLock:
         self.path: Path = lock_path()
         self._fh: Optional[IO[str]] = None
         self.holder_pid: Optional[int] = None
+        self._claimed = False
 
-    def try_acquire(self) -> bool:
-        """Non-blocking acquire. Populates ``holder_pid`` on failure."""
+    def try_acquire(self, *, claim: bool = True) -> bool:
+        """Non-blocking acquire. Populates ``holder_pid`` on failure.
+
+        ``claim=False`` only finds out whether the lock is free: the caller is
+        not the worker, so it writes no PID and does not become the process
+        whose appends land in ``main.jsonl``.
+        """
         fh = open(self.path, "a+", encoding="utf-8")
         try:
             locking.flock(fh.fileno(), locking.LOCK_EX | locking.LOCK_NB)
@@ -52,6 +58,9 @@ class WorkerLock:
             fh.close()
             return False
 
+        if not claim:
+            self._fh = fh
+            return True
         fh.seek(0)
         fh.truncate()
         fh.write(f"{os.getpid()}\n")
@@ -64,6 +73,7 @@ class WorkerLock:
         from openprogram.state.store.session.files import session_log
 
         session_log.claim_main_writer()
+        self._claimed = True
         return True
 
     def release(self) -> None:
@@ -83,12 +93,15 @@ class WorkerLock:
             self._fh.close()
         except OSError:
             pass
+        self._fh = None
+        if not self._claimed:
+            return
+        self._claimed = False
         with _held_paths_lock:
             _held_paths.discard(_lock_key(self.path))
         from openprogram.state.store.session.files import session_log
 
         session_log.release_main_writer()
-        self._fh = None
 
 
 def held_in_this_process(path: Path) -> bool:
@@ -125,7 +138,7 @@ def is_held_by(pid: int) -> bool:
     actual advisory lock first: acquiring it means there is no live holder.
     """
     probe = WorkerLock()
-    if probe.try_acquire():
+    if probe.try_acquire(claim=False):
         probe.release()
         return False
     return probe.holder_pid == pid

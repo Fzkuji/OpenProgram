@@ -1,4 +1,11 @@
-"""One trusted application operation per process, with JSON messages on stdio."""
+"""One trusted application operation per process, with JSON messages on stdio.
+
+A runner may start before its operation exists: the service keeps one or two
+ready per application, started with ``OPENPROGRAM_APPLICATION_WARM`` naming the
+application's directory and backend entry. Such a runner imports the backend
+first and then waits for its request, so an operation starts without paying
+for Python and the framework. It still runs exactly one operation.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -13,10 +20,30 @@ import sys
 import uuid
 
 
+def _warm(value: str) -> tuple[str, str]:
+    """Import the backend this runner will serve; a failure surfaces later, on the request."""
+    warm = json.loads(value)
+    with contextlib.redirect_stdout(sys.stderr):
+        sys.dont_write_bytecode = True
+        sys.path.insert(0, warm["root"])
+        try:
+            importlib.import_module(warm["entry"].split(":")[0])
+            import jsonschema  # noqa: F401
+        except Exception:  # noqa: BLE001  the operation imports it again and reports the error
+            pass
+    return warm["root"], warm["entry"]
+
+
 def main():
     channel = sys.stdout
-    request = json.loads(sys.stdin.readline())
+    warmed = _warm(os.environ["OPENPROGRAM_APPLICATION_WARM"]) if os.environ.get("OPENPROGRAM_APPLICATION_WARM") else None
+    line = sys.stdin.readline()
+    if not line:
+        return  # a ready runner whose service went away
+    request = json.loads(line)
     definition = request["definition"]
+    if warmed and warmed != (request["root"], definition["backend"]["entry"]):
+        raise SystemExit("runner was prepared for another application")
     # The supervisor is the only owner. A hard worker exit must not leave
     # an operation continuing to modify application data unnoticed.
     parent_pid = os.getppid()

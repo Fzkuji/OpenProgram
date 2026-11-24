@@ -265,26 +265,30 @@ class DefaultContextEngine(ContextEngine):
         from openprogram.programs import loaded_tools, split_tools_for_dispatch
         provider_tools, _deferred_catalog = split_tools_for_dispatch(
             tools or [], loaded_tools(agent_messages))
+        # The history is priced as the request carries it: the rendered
+        # messages, with each reply's tool calls and results. The stored
+        # rows hold a reply's text only, and a conversation whose replies
+        # are mostly tool work (one imported from another agent, its calls
+        # kept in the reply) measured a fifth of what was sent, so the
+        # turn never compacted and its request was refused as too large.
         budget = self.budgets.allocate(
             context_window=real_context_window(model),
             system_prompt=system_prompt,
-            history=compacted_history,
+            history=agent_messages,
             tools=provider_tools,
         )
 
-        # 5. Hybridise with provider-reported usage if we have it.
+        # 5. The size by the one rule (``token_accounting.measure``): the
+        #    provider's last count of this conversation's request on this
+        #    model plus the estimated change since, else the estimate.
         usage = self.usage.get(session_id) if session_id else UsageState()
-        if usage.source == "provider" and usage.last_prompt_tokens > 0:
-            # Trust the provider on the prefix; add our estimated delta
-            # for anything added since.
-            blended, src = self.usage.estimated_input(
-                session_id, budget.history,
-            )
-            # Replace history with the blended number.
-            budget.history = blended
-            decision.append(f"usage:source={src}")
+        from openprogram.runtime.context.token_accounting import measure
+        anchor = measure.latest(session_id, model)
+        if anchor is not None:
+            measure.apply(budget, anchor)
+            decision.append("size:anchor+delta")
         else:
-            decision.append(f"usage:source={usage.source}")
+            decision.append("size:estimate")
 
         return TurnPrep(
             system_prompt=system_prompt,
@@ -347,7 +351,7 @@ class DefaultContextEngine(ContextEngine):
         from openprogram.runtime.context.token_accounting.tokens import estimate_history_tokens
         view = load_compaction_view(db, session_id, head_id, audience=_compaction_audience())
         history = view.history
-        tokens_before = self._occupancy_tokens(session_id, history, head_id=view.head_id)
+        tokens_before = self._occupancy_tokens(session_id, history, head_id=view.head_id, model=model)
         reason = "auto" if not user_initiated else "manual"
         trigger = trigger or reason
 
@@ -729,14 +733,16 @@ class DefaultContextEngine(ContextEngine):
         return estimate_history_tokens(history)
 
     def _occupancy_tokens(self, session_id: str, history: list[dict],
-                          *, head_id: Optional[str] = None) -> int:
+                          *, head_id: Optional[str] = None, model: Any = None) -> int:
         """Same total the ring and /context panel use for the chain ending
-        at ``head_id`` (rendered view)."""
+        at ``head_id`` (rendered view): its estimate plus the conversation's
+        last count's difference on ``model`` (``token_accounting.measure``)."""
         try:
+            from openprogram.runtime.context.token_accounting import measure
             from openprogram.runtime.context.token_accounting.session_stats import estimate_total_used
             total, _ = estimate_total_used(session_id, head_id)
             if total > 0:
-                return int(total)
+                return measure.request_size(int(total), measure.latest(session_id, model))
         except Exception:
             _log.debug(
                 "occupancy estimate fell back to history tokens",

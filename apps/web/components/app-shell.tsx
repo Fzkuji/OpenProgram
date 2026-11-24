@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
+import { useHoldsOwnConversation } from "./applications/application-conversation";
 import { ControlTips } from "./control-tips";
 import { CenterTabStrip } from "./center-tabs/strip/center-tab-strip";
 import { CanvasControls } from "./center-tabs/canvas/canvas-controls";
@@ -57,12 +58,11 @@ import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-br
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/dom/scrollbar";
 import { hostPaintsRows } from "@/lib/chat/history/message-window";
 
+/** A tab pane whose chunk is still on its way: the empty pane, no text.
+ *  `preloadDeferredPanes` fetches every pane chunk once the shell has
+ *  painted, so this is normally seen only for a tab restored at start. */
 function DeferredPaneLoading() {
-  return (
-    <div className="flex h-full items-center justify-center text-fs-xs text-text-muted">
-      Loading…
-    </div>
-  );
+  return <div className="h-full" data-pane-pending="" />;
 }
 
 const BuiltinTabPane = dynamic(
@@ -71,6 +71,14 @@ const BuiltinTabPane = dynamic(
 );
 const BrowserHomePage = dynamic(
   () => import("./center-tabs/browser/browser-home-page").then((module) => module.BrowserHomePage),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const WindowTabPane = dynamic(
+  () => import("./center-tabs/window/window-tab-pane").then((module) => module.WindowTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const AgentTerminalTab = dynamic(
+  () => import("./center-tabs/pages/agent-terminal-tab").then((module) => module.AgentTerminalTab),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const ApplicationTabPane = dynamic(
@@ -101,6 +109,58 @@ const WebTabPane = dynamic(
   () => import("./center-tabs/browser/web-tab-pane").then((module) => module.WebTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
+
+/** Every shell route a click can open, most-visited first. /chat and
+ *  /s/<id> are not listed: their UI is mounted inside AppShell itself. */
+const WARM_ROUTES = [
+  "/settings/general",
+  "/functions",
+  "/agents",
+  "/programs",
+  "/applications",
+  "/skills",
+  "/settings/providers",
+  "/memory",
+  "/tasks",
+  "/chats",
+  "/history",
+  "/projects",
+  "/settings/machines",
+  "/settings/voice",
+  "/settings/appearance",
+  "/settings/channels",
+  "/settings/search",
+  "/settings/memory",
+  "/settings/usage",
+  "/settings/browser",
+  "/settings/versions",
+  "/settings/import",
+  "/mcp",
+  "/plugins",
+];
+
+/** Fetch every tab pane's chunk ahead of its first use (the same modules
+ *  the `dynamic` loaders above name, so webpack serves them from the same
+ *  chunks), so opening a tab later shows the pane at once instead of an
+ *  empty frame while its chunk downloads and parses. */
+function preloadDeferredPanes(): void {
+  const chunks = [
+    import("./center-tabs/pages/builtin-tab-pane"),
+    import("./center-tabs/browser/browser-home-page"),
+    import("./center-tabs/window/window-tab-pane"),
+    import("./center-tabs/pages/agent-terminal-tab"),
+    import("./center-tabs/pages/application-tab-pane"),
+    import("./center-tabs/files/file-tab-pane"),
+    import("./center-tabs/review/review-tab-pane"),
+    import("./center-tabs/files/files-page"),
+    import("./center-tabs/pages/new-tab-page"),
+    import("./center-tabs/pages/terminal-page"),
+    import("./center-tabs/browser/web-tab-pane"),
+  ];
+  for (const chunk of chunks) {
+    chunk.catch((error: unknown) => console.warn("[app-shell] pane chunk preload failed", error));
+  }
+}
 
 import { PersistentFilePanes } from "./center-tabs/files/persistent-file-panes";
 import { CodeRainArrivals } from "./chat/welcome/code-rain-arrivals";
@@ -161,60 +221,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Desktop notifications open their session; keep-awake follows running sessions.
   useEffect(() => startAttentionBridge(openSession), []);
 
-  // Background route warm-up. After AppShell paints and the main
-  // thread goes idle, prefetch each commonly-used route in priority
-  // order — most-visited first, one at a time, spaced 800ms apart so
-  // we don't dogpile the dev server's webpack workers. In dev mode
-  // each prefetch kicks off the on-demand compile; in prod it just
-  // primes the chunk cache. Either way, by the time the user clicks
-  // a sidebar item the route is usually already ready and the click
-  // feels instant.
+  // Background warm-up. Once AppShell has painted and the main thread is
+  // idle, prefetch every shell route and every tab pane's chunk, so a
+  // sidebar click or a new tab finds its code already loaded and the
+  // route's loading fallback (an empty page) is never seen. The built
+  // app is served from this machine, so production prefetches them all
+  // at once (about 30 small local requests); the dev server compiles each
+  // route on demand, so there they stay spaced 800ms apart, most-visited
+  // first, to keep its webpack workers free.
   useEffect(() => {
-    // Ordered by observed click frequency. The current pathname is
-    // skipped (already loaded) and /chat / /s/<id> don't need
-    // prefetching (their UI is mounted inside AppShell directly).
-    const WARM_ROUTES = [
-      "/settings/general",
-      "/functions",
-      "/agents",
-      "/programs",
-      "/applications",
-      "/skills",
-      "/settings/providers",
-      "/memory",
-      "/scheduler",
-      "/settings/environments",
-      "/settings/voice",
-      "/settings/appearance",
-      "/settings/channels",
-      "/settings/search",
-      "/mcp",
-      "/plugins",
-      "/chats",
-    ];
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const spacing = process.env.NODE_ENV === "production" ? 0 : 800;
     function warmNext(i: number) {
       if (cancelled) return;
-      if (i >= WARM_ROUTES.length) return;
-      const route = WARM_ROUTES[i];
-      if (route !== pathnameRef.current) {
-        try { router.prefetch(route); } catch { /* ignore */ }
+      if (i === 0) preloadDeferredPanes();
+      while (i < WARM_ROUTES.length) {
+        const route = WARM_ROUTES[i];
+        i += 1;
+        if (route === pathnameRef.current) continue;
+        try {
+          router.prefetch(route);
+        } catch (error) {
+          console.warn("[app-shell] route prefetch failed", route, error);
+        }
+        if (spacing) {
+          const next = i;
+          timer = setTimeout(() => warmNext(next), spacing);
+          return;
+        }
       }
-      timer = setTimeout(() => warmNext(i + 1), 800);
     }
     // Wait until the browser is idle so prefetches don't compete with
-    // the initial render's JS work. Falls back to a 1.5s delay where
-    // requestIdleCallback isn't available (Safari).
+    // the initial render's JS work, but no longer than a second. Falls
+    // back to a 1s delay where requestIdleCallback isn't available (Safari).
     const win = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
       cancelIdleCallback?: (id: number) => void;
     };
     let idleId: number | null = null;
     if (typeof win.requestIdleCallback === "function") {
-      idleId = win.requestIdleCallback(() => warmNext(0), { timeout: 3000 });
+      idleId = win.requestIdleCallback(() => warmNext(0), { timeout: 1000 });
     } else {
-      timer = setTimeout(() => warmNext(0), 1500);
+      timer = setTimeout(() => warmNext(0), 1000);
     }
     return () => {
       cancelled = true;
@@ -275,12 +324,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return !!(composer && welcome && messages);
     }
     if (findMounts()) return;
-    const t = setInterval(() => {
-      if (findMounts()) clearInterval(t);
-    }, 100);
+    // Wait for the chat page to insert them; a route without them waits
+    // without running anything.
+    const observer = new MutationObserver(() => {
+      if (findMounts()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
     return () => {
       cancelled = true;
-      clearInterval(t);
+      observer.disconnect();
     };
   }, [pathname]);
 
@@ -309,7 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ["navAbility", "/programs"],
       ["navApplications", "/applications"],
       ["navHistory", "/chats"],
-      ["navScheduler", "/scheduler"],
+      ["navTasks", "/tasks"],
     ];
     for (const [id, path] of items) {
       const el = document.getElementById(id);
@@ -447,6 +499,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
   const activeTab = tabs.find((tab) => tab.id === activeId);
+  // An application window that is a conversation (Auto Research) has no right sidebar.
+  const applicationHoldsChat = useHoldsOwnConversation(
+    activeTab?.kind === "application" ? activeTab.applicationInstanceId : null);
   const activeKind = activeTab?.kind ?? "session";
   // Session tabs carry their own perspective (transcript / context DAG).
   const activeTabDagView = activeKind === "session" && !!activeTab?.dagView;
@@ -548,6 +603,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (tab.kind === "application" && tab.applicationInstanceId) {
       return <ApplicationTabPane instanceId={tab.applicationInstanceId} />;
     }
+    if (tab.kind === "window") return <WindowTabPane tabId={tab.id} windowId={tab.nativeWindowId} app={tab.nativeWindowApp} />;
     if (tab.kind === "ntp") return <NewTabPage />;
     if (tab.kind === "builtin" && tab.page) {
       if (tab.page === "review") {
@@ -562,6 +618,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
       if (tab.page === "browser") return <BrowserHomePage />;
       if (tab.page === "files") return <FilesPage />;
+      if (tab.page === "terminal" && tab.terminalId) {
+        return <AgentTerminalTab tabId={tab.id} terminalId={tab.terminalId} sessionId={tab.terminalSessionId} />;
+      }
       if (tab.page === "terminal") return <TerminalPage preset="shell" />;
       if (tab.page === "claude") return <TerminalPage preset="claude" />;
       return <BuiltinTabPane page={tab.page} />;
@@ -601,6 +660,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div
         className="center-col"
         data-split={canvasLeaves.length > 1 && !canvas.zoomedPaneId ? "" : undefined}
+        data-right-rail-hidden={applicationHoldsChat ? "" : undefined}
         style={{
           display: showChat ? "flex" : "none",
           flexDirection: "column",
@@ -684,7 +744,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}
-      <div style={{ display: showChat ? "contents" : "none" }}>
+      <div style={{ display: showChat && !applicationHoldsChat ? "contents" : "none" }}>
         <RightSidebar />
       </div>
       {composerMount && createPortal(<FocusedComposer />, composerMount)}

@@ -81,7 +81,7 @@
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Holds</th></tr></thead>
 <tbody>
 <tr><th scope="row">Toolbar</th><td>Back, Forward, Reload or Stop, Home, address field with bookmark star, Bookmarks, open externally, Browser menu. The field dims all but the host; a lock marks HTTPS.</td></tr>
-<tr><th scope="row">Bookmarks bar</th><td>Shown by default. Hide from the Browser menu or <strong>Settings → Appearance → Show bookmarks bar</strong>.</td></tr>
+<tr><th scope="row">Bookmarks bar</th><td>Shown by default. Hide from the Browser menu or <strong>Settings → Browser → Show bookmarks bar</strong>.</td></tr>
 <tr><th scope="row">Narrow pane</th><td>Less frequent actions move into the menu; address, Back, Reload or Stop, star and menu remain</td></tr>
 <tr><th scope="row">Browser menu</th><td>New browser tab, Bookmarks, History, bar visibility, profile import, clear browsing data, Browser settings. Window and pane actions stay in the OpenProgram menu.</td></tr>
 <tr><th scope="row">Loading</th><td>Reload becomes <strong>Stop loading</strong>; a line runs under the toolbar, static with reduced motion</td></tr>
@@ -109,6 +109,16 @@
 </tbody>
 </table>
 <p class="note">Both go to the conversation in focus, else the one whose agent opened the page, else the last you were in. Picking and the selection run in a script context the page cannot see, and the selection never appears in the image.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Annotate (pen, left of the star)</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Click an element</th><td>Outline, numbered pin and a note card with its selector. Write what should change; <strong>Adjust</strong> tries Size, Spacing and Color on the page itself.</td></tr>
+<tr><th scope="row">Drag a box</th><td>A dashed region note</td></tr>
+<tr><th scope="row"><strong>Send to chat</strong></th><td>Sends one message, the page's own conversation first: the address, each note by number with its text and Adjust values, and a screenshot with the pins</td></tr>
+<tr><th scope="row">Esc, <strong>Discard</strong></th><td>Esc stops annotating and keeps the notes; Discard removes them and any previewed styles</td></tr>
+</tbody>
+</table>
+<p class="note">Desktop App only: in a web browser the button is unavailable, since pages from other sites can't be marked up there. See <a href="../reference/design/ui/browser/annotate.html">Browser Annotate</a>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Page action</th><th scope="col">Behavior</th></tr></thead>
 <tbody>
@@ -158,14 +168,15 @@
 </tbody>
 </table>
 <h3>Corner preview</h3>
-<p>Opens when the Agent opens a page while you stay in chat. Default 300×198.75 (16:9 image plus header).</p>
+<p>Opens when the Agent opens a page, uses another application's window, runs a terminal or uses an application while you stay in chat. Default 300×198.75 (16:9 image plus header). Every kind has the same controls; an application's window is shown live and takes clicks and typing where the platform allows, a terminal takes typing.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row"><strong>Close preview (X)</strong></th><td>Hides it; the page stays in <strong>Session resources</strong></td></tr>
 <tr><th scope="row"><strong>Open page</strong></th><td>Shows the same page as a regular tab, where another conversation can acquire it after exclusive control is released. The original preview stays.</td></tr>
+<tr><th scope="row"><strong>Open in tab</strong></th><td>For a window, terminal or application: shows the same one in a tab of its own, not a copy.</td></tr>
 <tr><th scope="row">Header drag; edges and corners</th><td>Move; resize. No visible grip. The underlying page does not resize.</td></tr>
-<tr><th scope="row"><strong>More → Automatically show the page the Agent is using</strong></th><td>Auto preview tracks the Agent's page; off is Fixed preview. It does not change the Agent's target, start the Agent or change page lifetime.</td></tr>
+<tr><th scope="row"><strong>More → Automatically show what the Agent is using</strong></th><td>Auto preview tracks the Agent's page; off is Fixed preview. It does not change the Agent's target, start the Agent or change page lifetime.</td></tr>
 </tbody>
 </table>
 <p class="note">Each preview belongs to its conversation and switches with it. Retained pages are invisible to other Agents. It stays inside its owner pane, over its chat in a split, with controls outside adjacent webpages. The Web UI has no native view and falls back to an iframe or an open-in-new-tab control.</p>
@@ -178,13 +189,41 @@
 <li>Three consecutive failed actions or unmet assertions on one observation stop with the reason. A rejection stops without repeating. A blocker never counts as completion. Action counts measure Page mutations.</li>
 </ul>
 </details>
+<h2 id="app-windows">Other applications' windows</h2>
+<p>A tab can hold a window of another application, such as Notes, Excel or a terminal. On the New tab page choose <strong>App window</strong>, then the window.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="An OpenProgram window with a chat on the left and, in a tab on the right, the window of another application. Closing the tab returns the window to where it was.">
+<rect class="tile" x="0" y="10" width="420" height="130" rx="8"/>
+<line class="ln-faint" x1="170" y1="10" x2="170" y2="140"/>
+<text class="mid" x="85" y="80">Chat</text>
+<rect class="tile" x="186" y="26" width="218" height="98" rx="6"/>
+<text class="mid" x="295" y="72">Another application's</text><text class="mid" x="295" y="92">window</text>
+<text class="t-soft" x="450" y="56">Close the tab</text><text x="450" y="78">the window goes back</text><text x="450" y="98">where it was</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Left</dt><dd>a chat</dd>
+<dt>Right, in a tab</dt><dd>another application's window</dd>
+<dt>Close the tab</dt><dd>the window goes back where it was</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Platform</th><th scope="col">How the window is in the tab</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows, Linux (X11)</th><td>The window itself moves into the App and works there as usual.</td></tr>
+<tr><th scope="row">macOS</th><td>The tab shows the window live and passes clicks, scrolling and typing to it, without bringing that application to the front. The window waits behind the tab, so its menus open where you see it. Text from an input method arrives as a whole. Needs Screen Recording and Accessibility access.</td></tr>
+<tr><th scope="row">Linux (Wayland)</th><td>Not available: Wayland lets no application place another's window.</td></tr>
+</tbody>
+</table>
+<p>To hand a window in a tab to the Agent, type <code translate="no">@</code> in the message box and pick it under <strong>Windows in tabs</strong>; the message names the window so the Agent operates exactly that one.</p>
+<p class="note">Quitting the App gives every window back first. If the window closes, the tab offers the open windows again. On macOS, system shortcuts such as Command+Tab stay with the system, and protected video shows black.</p>
+<p class="next">Design: <a href="../reference/design/ui/desktop/embedded-windows.html">Embedded application windows</a></p>
 <h2>Session resources</h2>
 <p><strong>Resources</strong> in the right sidebar lists what the selected session owns. Clicking a chat in a split selects it for Files, Activity and Resources; clicking a webpage keeps the last chat.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Groups</th><td>Webpage, VM, Desktop, Terminal, Application, Container, Remote environment, Other resources. Empty ones hidden. Collapse is saved per session and type and only hides rows. Each heading is a full-row control.</td></tr>
-<tr><th scope="row">Listed</th><td>Complete software or environment objects. Commands, scripts and output belong in Activity, except a command left running, shown as a Background terminal. During <code translate="no">computer_use_agent</code>, its app or VM. Files stay separate. No search field; views without recorded ownership and new drafts show nothing.</td></tr>
+<tr><th scope="row">Groups</th><td>Webpage, Desktop, Machine, Terminal, Application, Other resources. Empty ones hidden. Collapse is saved per session and type and only hides rows. Each heading is a full-row control.</td></tr>
+<tr><th scope="row">Listed</th><td>Complete software or environment objects. Commands, scripts and output belong in Activity, except a command left running, shown as a Background terminal. During <code translate="no">computer_use</code>, the window, screen or browser it operates on this computer, or the machine it operates elsewhere. Files stay separate. No search field; views without recorded ownership and new drafts show nothing.</td></tr>
 <tr><th scope="row">Attach a webpage</th><td>Keep the conversation visible and drag the tab or pane handle onto <strong>Resources</strong>. A split with several pages needs the page's handle. A blue preview says <strong>Release to add to Resources</strong>; failure shows a retry and leaves the page.</td></tr>
 <tr><th scope="row">Agent-created pages</th><td>Stay out of the top strip unless pinned or split. Pages without an owner stay in it.</td></tr>
 <tr><th scope="row">Closing</th><td>Closing a session page's tab hides the view; <strong>Open in tab</strong> reopens. <strong>Close webpage</strong> actually closes, with the row returning if unconfirmed. A standalone page closes outright.</td></tr>
@@ -274,7 +313,7 @@
 </table>
 <h2>Programs</h2>
 <p>Abilities → Programs has two roots. <strong>Tools</strong>: <code translate="no">openprogram/programs/tools/</code> by category. <strong>Applications</strong>: built in from <code translate="no">openprogram/programs/applications/</code>, and installed in <code translate="no">~/.openprogram/programs/</code>. Each expands to entries and source files; details show disabled state and, for your packages, load failure or not callable. A catalogued application in another's directory is listed alone, naming that directory. Opens on the first application, else the first tool.</p>
-<p class="note">Tree, selection and graph are kept when you leave. They are checked every five seconds while visible and on focus; unchanged files reuse analysis. A failed check keeps the last content.</p>
+<p class="note">Tree, selection and graph are kept when you leave. They are read again when a Program or application changes, on focus and when the window shows; unchanged files reuse analysis. A failed check keeps the last content.</p>
 <details>
 <summary>Long conversations</summary>
 <ul>
@@ -283,4 +322,4 @@
 <li>The DAG loads when opened. Markdown uses a bounded cache. Stored history and model context are unchanged.</li>
 </ul>
 </details>
-<p class="note">Local App refresh preserves permissions of unpacked native dependencies and restores the node-pty helper's execute permission.</p>
+<p class="note">An incremental App package preserves permissions of unpacked native dependencies and restores the node-pty helper's execute permission.</p>

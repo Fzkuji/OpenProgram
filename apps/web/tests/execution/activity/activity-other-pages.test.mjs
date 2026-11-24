@@ -36,15 +36,20 @@ globalThis.localStorage = { getItem() { return null; }, setItem() {}, removeItem
 globalThis.requestAnimationFrame = callback => setTimeout(() => callback(0), 0);
 globalThis.cancelAnimationFrame = clearTimeout;
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+// Pages keep what they read (activity-reads.ts), which watches the session store.
+window.location = { pathname: "/chat", hash: "", search: "" };
+window.history = { replaceState() {}, pushState() {} };
 window.HTMLElement.prototype.focus = function () { document.activeElement = this; };
 window.HTMLElement.prototype.scrollTo = function () {};
 
 const { act, createElement } = await import("react");
+const { dispatchChanged } = await import("../../../lib/net/ws/changes.ts");
 const { createRoot } = await import("react-dom/client");
 const { ActivityPage } = await import("../../../components/right-sidebar/running/pages/activity-page.tsx");
 const { ActivityPageFrame } = await import("../../../components/right-sidebar/running/pages/activity-page.tsx");
 const { AlwaysOnRow, reportForRun, reportNameForRun, ReportInside } = await import("../../../components/right-sidebar/running/pages/always-on-row.tsx");
 const { ActivityPanelReact } = await import("../../../components/right-sidebar/running/pages/activity-page-row.tsx");
+const { forgetActivityReads } = await import("../../../lib/execution/activity-reads.ts");
 
 const now = Math.floor(Date.now() / 1000);
 const program = (extra = {}) => ({ id: "p1", session_id: "session", execution_id: "e1", command: "python  train.py --epochs 3", cwd: "/tmp/x", status: "exited", started_at: now - 100, ended_at: now - 97, pid: 1, exit_code: 0, backend_id: "local", truncated: false, can_stop: false, title: "Train it", ...extra });
@@ -68,7 +73,8 @@ async function page(target, ctx, check) {
     assert.ok(button, label);
     await act(async () => button.click());
   };
-  try { await check(host, click, render); } finally { await act(async () => root.unmount()); host.remove(); }
+  // What one test's pages read is not the next test's.
+  try { await check(host, click, render); } finally { await act(async () => root.unmount()); host.remove(); forgetActivityReads(); }
 }
 const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 test.afterEach(() => { for (const key of ["stopped", "workCalls", "copied", "closed", "navigated", "activityRuns", "activityEvents", "chartQueries", "commands", "taskRuns"]) delete globalThis[key]; });
@@ -163,6 +169,31 @@ test("a command that returned stays and shows what it printed", async () => {
   });
 });
 
+test("a returned command whose step has not landed reads again when its run moves, not on a timer", async () => {
+  let reads = 0, landed = false;
+  globalThis.activityEvents = async () => {
+    reads += 1;
+    return { run_id: "e1", revision: "r", events: landed ? [{ kind: "step", at: now, node_id: "n", tool_call_id: "t1", name: "bash", input: {}, input_truncated: false, result: "late.txt", result_truncated: false, failed: false }] : [] };
+  };
+  const listed = context({ processes: { ...context().processes, calls: [call()] } });
+  const returned = context({ processes: { ...context().processes, calls: [] } });
+  await page({ kind: "command", callId: "c1" }, listed, async (host, click, render) => {
+    await render(returned);
+    await settle();
+    assert.equal(reads, 1);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+    assert.equal(reads, 1, "nothing is read again on a timer");
+    window.dispatchEvent(new CustomEvent("op:execution-update", { detail: { execution: { execution_id: "other" } } }));
+    await settle();
+    assert.equal(reads, 1, "another run's move is not this step");
+    landed = true;
+    window.dispatchEvent(new CustomEvent("op:execution-update", { detail: { execution: { execution_id: "e1" } } }));
+    await settle();
+    assert.equal(reads, 2);
+    assert.match(host.textContent, /late\.txt/);
+  });
+});
+
 test("an interrupted command says the run stopped", async () => {
   await page({ kind: "command", callId: "c1" }, context({ processes: { ...context().processes, calls: [call({ status: "unknown" })] } }), async host => {
     assert.match(host.textContent, /Command · Interrupted/);
@@ -192,13 +223,13 @@ test("open work is marked done, and Remove goes back to level 1", async () => {
 
 const task = (extra = {}) => ({ id: "t1", title: "Watch fares", type: "recurring", enabled: true, created_at: now - 86400, cron: "0 * * * *", prompt: "Look up the fare", notes: "Cheapest seat only", runs: [], ...extra });
 
-test("a scheduled task opens in the Scheduler and keeps its details in the Task row", async () => {
+test("a scheduled task opens in Tasks and keeps its details in the Task row", async () => {
   await page({ kind: "routine", taskId: "t1" }, context({ work: { ...context().work, routines: [task()] } }), async (host, click) => {
     await settle();
     assert.match(host.textContent, /Watch fares/);
     assert.match(host.textContent, /Recurring · 0 \* \* \* \*/);
-    await click("Open in Scheduler");
-    assert.equal(globalThis.navigated, "/scheduler");
+    await click("Open in Tasks");
+    assert.equal(globalThis.navigated, "/tasks?tab=scheduled");
     await click("Task: Look up the fare");
     assert.match(host.textContent, /Cheapest seat only/);
     assert.match(host.textContent, /Task ID/);
@@ -421,16 +452,18 @@ test("the Agent page opens on topics, with every level in its own column", async
   });
 });
 
-test("a finished or failed message has no buttons, a running one does and never Retry", async () => {
-  oneRun(chartRun("a", { execution_id: "e1", execution_status: "failed" }), chartRun("b", { execution_id: "e2", execution_status: "running", ended_at: null, topic_id: "t2", topic_title: "Figures", topic_order: 1 }));
-  const controller = { executions: [snapshotOf("e1", { status: "failed", capabilities: { retry: true } }), snapshotOf("e2")], command: async command => { (globalThis.commands ||= []).push(command); return { status: "accepted", command_id: command.command_id }; } };
+test("a block carries a button only when its run needs the reader: Continue on a pause, nothing while it runs or once it ended", async () => {
+  oneRun(
+    chartRun("a", { execution_id: "e1", execution_status: "failed" }),
+    chartRun("b", { execution_id: "e2", execution_status: "running", ended_at: null, topic_id: "t2", topic_title: "Figures", topic_order: 1 }),
+    chartRun("c", { execution_id: "e3", execution_status: "paused", ended_at: null, topic_id: "t3", topic_title: "Tables", topic_order: 2 }),
+  );
+  const controller = { executions: [snapshotOf("e1", { status: "failed", capabilities: { retry: true } }), snapshotOf("e2"), snapshotOf("e3", { status: "paused", can_continue: true })], command: async command => { (globalThis.commands ||= []).push(command); return { status: "accepted", command_id: command.command_id }; } };
   globalThis.commands = [];
   await page({ kind: "agent", scopeKey: "h" }, agentContext({ controller }), async host => {
     await settle();
     const buttons = [...host.querySelectorAll("button")].map(item => item.textContent);
-    assert.equal(buttons.filter(label => label === "Pause").length, 1);
-    assert.equal(buttons.filter(label => label === "Cancel").length, 1);
-    assert.equal(buttons.filter(label => label === "Add instruction").length, 1);
+    assert.deepEqual(buttons.filter(label => ["Pause", "Cancel", "Add instruction", "Continue", "Retry"].includes(label)), ["Continue"]);
     assert.doesNotMatch(host.textContent, /Retry/);
   });
 });
@@ -476,15 +509,55 @@ test("the next wake opens the always-on setting, and back returns to the chart",
   });
 });
 
-test("while topics are being sorted the chart reads again until they land", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("the Agent page opened again draws its last chart at once, and a read that fails keeps it without a word", async (t) => {
+  const warn = t.mock.method(console, "warn", () => {});
+  const open = async check => {
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(ActivityPage, { target: { kind: "agent", scopeKey: "h" }, context: agentContext() })));
+    try { await check(host); } finally { await act(async () => root.unmount()); host.remove(); }
+  };
+  oneRun(chartRun("a"));
+  try {
+    await open(async host => {
+      await settle();
+      assert.match(host.textContent, /Asked a/);
+    });
+    globalThis.activityRuns = async () => { throw new Error("offline"); };
+    await open(async host => {
+      // The first frame, before any read has answered.
+      assert.match(host.textContent, /Asked a/);
+      await settle();
+      assert.match(host.textContent, /Asked a/);
+      assert.doesNotMatch(host.textContent, /Could not read|Retry|No runs yet|Loading/);
+      assert.ok(warn.mock.callCount() > 0, "the failure goes to the console");
+    });
+  } finally { forgetActivityReads(); }
+});
+
+test("an Agent page whose runs were never read shows no empty state", async (t) => {
+  t.mock.method(console, "warn", () => {});
+  globalThis.activityRuns = async () => { throw new Error("offline"); };
+  await page({ kind: "agent", scopeKey: "h" }, agentContext(), async host => {
+    await settle();
+    assert.doesNotMatch(host.textContent, /No runs yet|Could not read|Retry|Loading/);
+  });
+});
+
+test("while topics are being sorted the chart reads again when the Worker says they landed, not on a timer", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   let reads = 0;
   globalThis.activityRuns = async () => { reads += 1; return { runs: [chartRun("a", reads > 1 ? {} : { topic_id: null, topic_title: null, topic_order: null })], offset: 0, total: 1, topics_sorting: reads === 1 }; };
-  await page({ kind: "agent", scopeKey: "h" }, agentContext(), async host => {
+  await page({ kind: "agent", scopeKey: "h" }, agentContext(), async () => {
     await act(async () => { await Promise.resolve(); });
     await act(async () => { await Promise.resolve(); });
-    await act(async () => { t.mock.timers.tick(4100); await Promise.resolve(); });
+    const first = reads;
+    await act(async () => { t.mock.timers.tick(60000); await Promise.resolve(); });
+    assert.equal(reads, first);
+    await act(async () => { dispatchChanged("runs", ["another"]); await Promise.resolve(); });
+    assert.equal(reads, first);
+    await act(async () => { dispatchChanged("runs", ["session"]); await Promise.resolve(); });
     await act(async () => { await Promise.resolve(); });
-    assert.ok(reads >= 2);
+    assert.ok(reads > first);
   });
 });

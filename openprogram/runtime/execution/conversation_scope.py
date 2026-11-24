@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import closing
 from typing import Any
 
 from .authorization import ExecutionAuthorizationError, authorize_session_action
 from .model import ExecutionRecord
+
+_log = logging.getLogger(__name__)
 
 
 def _caller_session_hint(payload_json: str) -> Any:
@@ -18,6 +21,24 @@ def _caller_session_hint(payload_json: str) -> Any:
     for key in ("job_context", "caller", "session_id"):
         value = value.get(key) if isinstance(value, dict) else None
     return value
+
+
+#: The hint of each execution already read. A stored payload never changes,
+#: and a conversation's resources are asked for every three seconds: parsing
+#: every payload of the session again each time was most of that read.
+_hints: dict[str, Any] = {}
+_HINTS_KEPT = 20_000
+
+
+def _caller_hint_of(execution_id: str, payload_json: str) -> Any:
+    try:
+        return _hints[execution_id]
+    except KeyError:
+        pass
+    if len(_hints) >= _HINTS_KEPT:
+        _hints.clear()
+    hint = _hints[execution_id] = _caller_session_hint(payload_json)
+    return hint
 
 
 def conversation_execution_scope(store: Any, session_id: str, *, consulted: set[str] | None = None):
@@ -41,7 +62,7 @@ def conversation_execution_scope(store: Any, session_id: str, *, consulted: set[
         # These untrusted hints only select candidates. Full immutable input
         # integrity/schema checks happen below, for relevant sessions only.
         caller_hints = {
-            row["execution_id"]: _caller_session_hint(row["payload_json"])
+            row["execution_id"]: _caller_hint_of(row["execution_id"], row["payload_json"])
             for row in connection.rows("execution_agent_turn_inputs")
         }
         caller_sessions = {key: hint for key, hint in caller_hints.items() if isinstance(hint, str)}
@@ -169,3 +190,52 @@ def authorize_conversation_execution(
     return authorize_session_action(actor, action, {
         "project_id": project_id_for_session(session_id), "session_id": session_id,
     })
+
+
+#: How far up a chain of runs is followed; a real chain is a few deep.
+_CHAIN_LIMIT = 32
+
+
+def sessions_above_execution(store, execution) -> list[str]:
+    """The run's session and every session above it: the parent runs', and
+    the caller's of a called Job (with the caller's open runs' own chain).
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+    pending = [execution]
+    callers_read: set[str] = set()
+    while pending and len(seen) < _CHAIN_LIMIT:
+        current = pending.pop()
+        if current is None or current.execution_id in seen:
+            continue
+        seen.add(current.execution_id)
+        if current.session_id and current.session_id not in found:
+            found.append(current.session_id)
+        if current.parent_execution_id:
+            try:
+                pending.append(store.get_execution(current.parent_execution_id))
+            except Exception:  # noqa: BLE001 - the run's own session is still told
+                _log.debug("parent run unreadable", exc_info=True)
+        caller = _caller_session(store, current.execution_id)
+        if caller and caller not in callers_read:
+            callers_read.add(caller)
+            if caller not in found:
+                found.append(caller)
+            # The caller's run waits for the Job, so it is open; its own
+            # chain leads to the conversation on screen.
+            try:
+                pending.extend(store.list_nonterminal(session_id=caller))
+            except Exception:  # noqa: BLE001
+                _log.debug("caller runs unreadable", exc_info=True)
+    return found
+
+
+def _caller_session(store, execution_id: str) -> str | None:
+    try:
+        payload = store.get_job_agent_input(execution_id)
+    except Exception:  # noqa: BLE001 - not a called Job, or unreadable
+        return None
+    value = payload
+    for key in ("job_context", "caller", "session_id"):
+        value = value.get(key) if isinstance(value, dict) else None
+    return value if isinstance(value, str) and value else None

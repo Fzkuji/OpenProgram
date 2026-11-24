@@ -21,9 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-import httpx
 
-from openprogram.host.security.safe_http import safe_client
 from openprogram.host.security.url_policy import normalize_origin
 from openprogram.programs.tools.web._owner_fetch import owner_open
 
@@ -117,6 +115,12 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
             raise refusal.sandbox("image_generate", violation)
         target.write_bytes(img.data)
     elif img.url:
+        # Imported at the first download: the HTTP client takes 0.06 s to
+        # import, and this module is loaded with the Programs by every command.
+        import httpx
+
+        from openprogram.host.security.safe_http import safe_client
+
         safe_error: RuntimeError | None = None
         with tempfile.TemporaryDirectory(
             prefix=f".{stem}_{idx}.", dir=out_dir

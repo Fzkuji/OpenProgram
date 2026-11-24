@@ -1,0 +1,554 @@
+<title>机器与目标</title>
+<meta name="description" content="操控电脑怎样指明操作对象：一份机器注册表，每次调用写明设备和类型，对话旁边的设备说明，一套动作词表，以及新设备种类要实现的约定。">
+<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/">
+<h1>机器与目标</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 558" role="img" aria-label="命令和文件工具运行在对话的环境上，也就是它项目的文件夹所在的那台机器。computer_use 每次调用都写明设备和类型；不写设备就是这台电脑。两者读同一份机器注册表。每台机器有 shell、window、screen、browser 几种连接，除 shell 外每种连接给出同名的一种目标类型：window、screen、browser。在这台电脑上，browser 连接还给出用户的 Chrome 和 Edge。手机会有自己的 mobile 连接。每种连接方式是一个模块，都在同一份约定之后。">
+  <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="120" y="0" width="160" height="56" rx="8"/>
+  <text class="t-cmd mid" x="200" y="24" translate="no">bash, read, edit</text><text class="t-soft mid" x="200" y="44">命令和文件工具</text>
+  <rect class="tile" x="300" y="0" width="380" height="56" rx="8"/>
+  <text class="t-cmd mid" x="490" y="24" translate="no">computer_use</text><text class="t-soft mid" x="490" y="44">一个工具</text>
+  <line class="ln" x1="200" y1="56" x2="200" y2="80" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="490" y1="56" x2="490" y2="80" marker-end="url(#mt-a)"/>
+  <rect class="gate" x="120" y="84" width="160" height="76" rx="8"/>
+  <text class="mid" x="200" y="108">环境</text><text class="t-soft mid" x="200" y="130">项目文件夹</text><text class="t-soft mid" x="200" y="148">所在的机器</text>
+  <rect class="gate" x="300" y="84" width="380" height="76" rx="8"/>
+  <text class="mid" x="490" y="108"><tspan class="t-cmd" translate="no">device</tspan> + <tspan class="t-cmd" translate="no">type</tspan></text><text class="t-soft mid" x="490" y="130">每次调用都写明</text><text class="t-soft mid" x="490" y="148">不写设备：就是这台电脑</text>
+  <line class="ln" x1="200" y1="160" x2="200" y2="192" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="490" y1="160" x2="490" y2="192" marker-end="url(#mt-a)"/>
+  <rect class="tile" x="0" y="196" width="680" height="274" rx="8"/>
+  <text x="16" y="219">机器</text>
+  <text class="t-soft mid" x="162" y="219" translate="no">shell</text><text class="t-soft mid" x="257" y="219" translate="no">window</text><text class="t-soft mid" x="392" y="219" translate="no">screen</text><text class="t-soft mid" x="568" y="219" translate="no">browser</text>
+  <line class="ln-faint" x1="130" y1="230" x2="130" y2="462"/><line class="ln-faint" x1="195" y1="230" x2="195" y2="462"/><line class="ln-faint" x1="320" y1="230" x2="320" y2="414"/><line class="ln-faint" x1="465" y1="230" x2="465" y2="462"/>
+  <line class="ln-faint" x1="10" y1="230" x2="670" y2="230"/>
+  <text class="t-note" x="16" y="250">这台电脑</text><text class="t-soft" x="16" y="268">不写设备</text>
+  <text class="t-soft mid" x="162" y="258" translate="no">local</text><text class="t-cmd mid" x="257" y="258" translate="no">window</text><text class="t-cmd mid" x="392" y="250" translate="no">screen</text><text class="t-soft mid" x="392" y="268">打开整屏时</text><text class="t-cmd mid" x="568" y="250" translate="no">browser</text><text class="t-cmd mid" x="568" y="268" translate="no">browser chrome</text>
+  <line class="ln-faint" x1="10" y1="276" x2="670" y2="276"/>
+  <text class="t-note" x="16" y="296">devbox</text><text class="t-soft" x="16" y="314">SSH 主机</text>
+  <text class="t-soft mid" x="162" y="304" translate="no">ssh</text><text class="t-cmd mid" x="257" y="304" translate="no">window</text><text class="t-cmd mid" x="392" y="304" translate="no">screen</text><text class="t-cmd mid" x="568" y="304" translate="no">browser</text>
+  <line class="ln-faint" x1="10" y1="322" x2="670" y2="322"/>
+  <text class="t-note" x="16" y="342">builder</text><text class="t-soft" x="16" y="360">Docker</text>
+  <text class="t-soft mid" x="162" y="350" translate="no">docker</text><text class="t-cmd mid" x="257" y="350" translate="no">window</text><text class="t-cmd mid" x="392" y="350" translate="no">screen</text><text class="t-cmd mid" x="568" y="350" translate="no">—</text>
+  <line class="ln-faint" x1="10" y1="368" x2="670" y2="368"/>
+  <text class="t-note" x="16" y="388">lab</text><text class="t-soft" x="16" y="406">虚拟机</text>
+  <text class="t-soft mid" x="162" y="396" translate="no">—</text><text class="t-cmd mid" x="257" y="396" translate="no">—</text><text class="t-cmd mid" x="392" y="396" translate="no">screen</text><text class="t-cmd mid" x="568" y="396" translate="no">—</text>
+  <line class="ln-faint" x1="10" y1="414" x2="670" y2="414"/>
+  <text class="t-note" x="16" y="434">pixel-8</text><text class="t-soft" x="16" y="452">手机</text>
+  <text class="t-soft mid" x="162" y="442" translate="no">—</text><text class="t-cmd mid" x="330" y="434" translate="no">mobile</text><text class="t-soft mid" x="330" y="452">它自己的 mobile 连接</text><text class="t-cmd mid" x="568" y="442" translate="no">—</text>
+  <line class="ln" x1="340" y1="470" x2="340" y2="490" marker-end="url(#mt-a)"/>
+  <rect class="tile" x="0" y="494" width="680" height="64" rx="8"/>
+  <text x="16" y="520">每种连接方式一个模块，同一份约定</text><text class="t-soft" x="16" y="542" translate="no">describe · list · get_state · act · approval · lock · resource</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">bash</code>, <code translate="no">read</code>, <code translate="no">edit</code></strong><small>运行在对话的环境上：项目文件夹所在的那台机器</small></li>
+  <li><strong><code translate="no">computer_use</code></strong><small>每次调用都写明设备和类型；不写设备就是这台电脑</small></li>
+  <li><strong>机器</strong><small>这台电脑、SSH 主机、Docker 机器、虚拟机；各有 shell、window、screen 或 browser 连接，每种给出同名的类型</small></li>
+  <li class="flow-end"><strong>提供方</strong><small>每种连接方式一个模块，都在同一份约定之后</small></li>
+</ol>
+</figure>
+
+<h2 id="三条规则">三条规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用写明落点</th><td><code translate="no">device</code> 指明机器，<code translate="no">type</code> 指明操作它上面的什么：<code translate="no">window</code>、<code translate="no">screen</code> 或 <code translate="no">browser</code>。不写 <code translate="no">device</code> 就是这台电脑，也就是 Worker 和 App 所在的那台，任何对话都一样。环境和之前的调用都不会改变一次调用落在哪里。</td></tr>
+<tr><th scope="row">工具从不改变</th><td>工具的说明和参数在整段对话里保持不变。现在能操作什么，写在用户消息旁边的 <code translate="no">&lt;devices&gt;</code> 说明里（<a href="#模型读到什么">模型读到什么</a>）。</td></tr>
+<tr><th scope="row">一个意思一种写法</th><td>同一个动作在所有目标上只有一个动作名和一套参数名。模型从别的工具带来的名字会被改写，不会被拒绝。</td></tr>
+</tbody>
+</table>
+
+<h2 id="概念">概念</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">概念</th><th scope="col">是什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">机器</th><td>一台有自己操作系统的电脑：这台电脑、SSH 主机、Docker 机器、虚拟机、远程桌面、手机、模拟器。只有一份注册表。连接：<code translate="no">shell</code>、<code translate="no">window</code>、<code translate="no">screen</code>、<code translate="no">browser</code>；手机和模拟器有 <code translate="no">mobile</code>。</td></tr>
+<tr><th scope="row">这台电脑</th><td>内置，id 是 <code translate="no">local</code>，不存进配置；调用不写 <code translate="no">device</code> 就是指它。</td></tr>
+<tr><th scope="row">设备</th><td>调用怎样指明一台机器：它的 id（也接受它的名字）。操作系统是设备的属性，写在 <code translate="no">&lt;devices&gt;</code> 里，从不作为调用参数。</td></tr>
+<tr><th scope="row">连接</th><td>够到一台机器某项能力的方式；除 <code translate="no">shell</code> 外，每种连接给出同名的类型（<a href="#连接">连接</a>）。由 <code translate="no">kind</code> 决定用哪段代码。</td></tr>
+<tr><th scope="row">项目</th><td>某台机器上的一个文件夹：（机器，文件夹）。它的对话在那台机器的那个文件夹里运行。</td></tr>
+<tr><th scope="row">环境</th><td>一个角色：对话的命令和文件工具运行在哪台机器上，即它项目的机器。这台机器要有 <code translate="no">shell</code>。</td></tr>
+<tr><th scope="row">类型</th><td>操作的是哪一类东西，它决定动作词表。<code translate="no">window</code>：按元素树操作应用窗口。<code translate="no">screen</code>：整块显示器。<code translate="no">browser</code>：网页；不写 <code translate="no">app</code> 是 OpenProgram 运行的浏览器，写 <code translate="no">app="chrome"</code>、<code translate="no">"safari"</code>、<code translate="no">"firefox"</code> 等是用户自己的浏览器（<a href="user-browsers.zh.html">用户的浏览器</a>）。</td></tr>
+<tr><th scope="row">目标</th><td>一次调用的 <code translate="no">device</code>、<code translate="no">type</code>，以及浏览器的 <code translate="no">app</code> 所指的东西。它的键把三者连起来，略去这台电脑和 OpenProgram 自己的浏览器：<code translate="no">window</code>、<code translate="no">browser chrome</code>、<code translate="no">lab screen</code>。锁、权限规则和资源列表用这个键；模型从不写它。</td></tr>
+<tr><th scope="row">对象</th><td>目标里的哪一个：窗口用 <code translate="no">app</code> 和 <code translate="no">title</code>（窗口标题，是数字时为 <code translate="no">window_id</code>），浏览器用 <code translate="no">title</code>（标签页 id 或标题），整屏用 <code translate="no">display</code>。</td></tr>
+<tr><th scope="row">提供方</th><td>一种连接方式对应的模块。</td></tr>
+</tbody>
+</table>
+<h3 id="连接">连接</h3>
+<table class="stack">
+<thead><tr><th scope="col">连接</th><th scope="col">给出</th><th scope="col">种类</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">shell</code></th><td>命令和文件；没有目标</td><td><code translate="no">local</code>（这台电脑）、<code translate="no">ssh</code>、<code translate="no">docker</code></td></tr>
+<tr><th scope="row"><code translate="no">window</code></th><td><code translate="no">type="window"</code>：按元素树在后台操作应用窗口；<code translate="no">app</code> 指明应用</td><td><code translate="no">desktop</code>（这台电脑）、<code translate="no">screen_server</code>、<code translate="no">cua_driver</code></td></tr>
+<tr><th scope="row"><code translate="no">screen</code></th><td><code translate="no">type="screen"</code>：整块显示器，用真实指针</td><td><code translate="no">desktop</code>（这台电脑，仅在打开 <code translate="no">computer_use.whole_screen</code> 时）、<code translate="no">osworld</code>、<code translate="no">vnc</code>、<code translate="no">screen_server</code>、<code translate="no">cua_driver</code>、<code translate="no">wayland_portal</code></td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td><code translate="no">type="browser"</code>：OpenProgram 运行的浏览器；在这台电脑上还有用户自己的浏览器（<code translate="no">app="chrome"</code>、<code translate="no">app="safari"</code>、<code translate="no">app="firefox"</code> 等）</td><td><code translate="no">built_in</code>（这台电脑）、<code translate="no">chromium</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>另一台 OpenProgram 的项目和对话，在这里列出、在那里运行（<a href="../remote-openprogram.zh.html">远程 OpenProgram</a>）；没有目标</td><td><code translate="no">openprogram</code></td></tr>
+<tr><th scope="row"><code translate="no">mobile</code></th><td><code translate="no">type="mobile"</code>：手机、模拟器（未实现）</td><td><code translate="no">android</code>、<code translate="no">ios_simulator</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">一个种类，多种连接</th><td>种类为它服务的每种连接各登记一次。<code translate="no">desktop</code> 在这台电脑上同时服务 <code translate="no">window</code> 和 <code translate="no">screen</code>；<code translate="no">screen_server</code> 和 <code translate="no">cua_driver</code> 在任何机器上都服务这两种。<code translate="no">osworld</code> 没有元素树，只服务 <code translate="no">screen</code>，写在 <code translate="no">window</code> 连接上会被拒绝：<code translate="no">Refused: the OSWorld server (osworld) cannot be a window connection; it serves screen only.</code></td></tr>
+<tr><th scope="row">一个客户端</th><td>同一台机器的两种连接写了同一种类和同一地址时，运行时只为它们保留一个驱动客户端或会话，所以地址和登录只设一次。<code translate="no">desktop</code> 运行在 Worker 进程里，没有要共享的客户端。</td></tr>
+<tr><th scope="row">这台电脑</th><td><code translate="no">shell: local</code>、<code translate="no">window: desktop</code>、<code translate="no">browser: built_in</code>。只有所有者打开 <code translate="no">computer_use.whole_screen</code> 时才有 <code translate="no">screen: desktop</code>，默认不打开。</td></tr>
+</tbody>
+</table>
+<p class="note">只能通过 <code translate="no">shell</code> 够到的主机没有目标。虚拟机是一台机器：<code translate="no" data-claim="example">vm</code> 不再是类型，<code data-claim="example" translate="no">computer_use.vm_url</code> 删除。</p>
+
+<h2 id="机器和环境">机器和环境</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">注册表</th><td>一份，<code translate="no">machines</code>，取代环境注册表。身份、配置和 shell 连接是共用的。</td></tr>
+<tr><th scope="row">绑定</th><td>两种，互不合并。环境来自项目（项目记录上的 <code translate="no">machine_id</code>，<code translate="no">resolve_for_project</code>），从不来自对话：对话有了 session 后项目就固定，机器也就不变，它保证命令在哪里生效。目标每一轮列一次，每次调用选一次。</td></tr>
+<tr><th scope="row">SSH 或 Docker 对话里</th><td>不写 <code translate="no">device</code> 的调用仍然作用在这台电脑上。工具说明、<code translate="no">&lt;devices&gt;</code> 和 <code translate="no">&lt;environment&gt;</code> 段都会写明，内置浏览器那一行还会写明它的 <code translate="no">localhost</code> 是这台电脑的。</td></tr>
+<tr><th scope="row">既有 shell 又有桌面的机器</th><td>写 <code translate="no">device="&lt;m&gt;"</code>，经 window 连接用 <code translate="no">type="window"</code>，或经 screen 连接用 <code translate="no">type="screen"</code> 来操作。它是环境，也不会因此成为默认。</td></tr>
+<tr><th scope="row">实例</th><td>shell 的种类声明 <code translate="no">instance_scope</code>。<code translate="no">machine</code>：只有一个实例。<code translate="no">conversation</code>（Docker）：每个对话一个，第一次用到时创建，随对话删除。状态、锁和屏幕服务进程都按实例区分。</td></tr>
+<tr><th scope="row">身份</th><td>机器的 id 不变，能改的只有名字。不带 id 添加的机器，id 由名字生成（Dev Box 变成 <code translate="no">dev-box</code>，再有就是 <code translate="no">dev-box-2</code>）。删除或停用一台机器时，先让正在进行的调用结束，再关闭它的提供方，并按标签删除它的实例。</td></tr>
+<tr><th scope="row">选机器</th><td>在打开项目时：<strong>在…上打开文件夹</strong>先选机器，再选那台机器上的文件夹。这台电脑和 Docker 机器（它挂载这台电脑的文件夹）用文件夹选择器；SSH 主机通过它的 shell 浏览（<code translate="no">list_machine_folder</code>），从它的远程文件夹设置开始，文件夹在主机上转成绝对路径（<code translate="no">resolve_folder</code>）。</td></tr>
+<tr><th scope="row">一个文件夹一个项目</th><td>一台机器上的一个文件夹是一个项目；这台电脑上的文件夹不论哪台机器运行，都只属于一个项目。主项目总是这台电脑。没有默认环境，也没有按对话的选择。</td></tr>
+<tr><th scope="row">项目的机器不在了</th><td>被停用、没有 shell 或被删除：它的对话的命令和文件调用被拒绝，绝不换成这台电脑。选择器把它的项目置灰。</td></tr>
+<tr><th scope="row">连接状态</th><td><code translate="no">host/machines/status.py</code>：已连接、连接中（还没有回应）、已断开（已停用）或出错。列出机器时，上次结果超过 60 秒就在回答之后检查一次；它上面每次 shell 文件调用也报告所见。<code translate="no">machines</code> 帧里每台机器带 <code translate="no">status</code>，变化时广播。App 把它显示为机器图标上的点：绿、转圈、灰、红。</td></tr>
+<tr><th scope="row">App 在哪显示机器</th><td>项目选择器按机器分组，这台电脑在前。侧栏的项目标题对另一台机器上的项目显示那台机器的图标（另一台电脑上的机器用 Solar 的 <code translate="no">server-2</code>，和文件夹图标一样大）、点和名称；对话行从不显示机器。输入框的机器胶囊显示项目的机器，不能切换；菜单说明由项目决定。</td></tr>
+<tr><th scope="row">SSH 主机上的项目文件夹</th><td>在主机上读写：文件面板、它的搜索、<code translate="no">@</code> 文件搜索和文件工具都走它的 shell；删除的条目移到主机上的 <code translate="no">~/.openprogram/trash</code>。快照、自动提交、工作树和分支标签需要文件夹在这台电脑上，所以不为它提供。</td></tr>
+<tr><th scope="row">不能是这台电脑</th><td>以下会被拒绝：解析到这台电脑 22 端口的 SSH 目标（回环地址上的其他端口是转发过来的虚拟机或容器，可以添加）；报告自己就是这台电脑的屏幕服务或 cua-driver；回环地址，且添加机器时取到的截图就是这台电脑自己的画面。这台电脑靠不写 <code translate="no">device</code> 来指明。</td></tr>
+<tr><th scope="row">一个地址一台机器</th><td>两台机器不能用同一个 window 或 screen 地址；同一台机器的 window 和 screen 连接可以共用。</td></tr>
+<tr><th scope="row">用词</th><td>设置 → 设备用的是模型在 <code translate="no">device</code> 里写的那个词。<code translate="no">openprogram machines</code>（<code translate="no">list</code>、<code translate="no">add</code>、<code translate="no">remove</code>、<code translate="no">enable</code>、<code translate="no">disable</code>、<code translate="no">test</code>）和配置键 <code translate="no">machines</code> 保留原名。<code translate="no">add</code> 把每个连接写成一个选项，先写种类再写设置（<code translate="no">--shell ssh target=me@devbox</code>；<code translate="no">--window</code>、<code translate="no">--screen</code>、<code translate="no">--browser</code> 同理），值按种类的结构转换类型。设置 → 设备按同样的连接分节：Shell、窗口、整屏、浏览器。项目选择器写<strong>在…上打开文件夹</strong>。</td></tr>
+<tr><th scope="row">代码</th><td><code data-claim="example" translate="no">host/environments</code> 变成 <code translate="no">host/machines</code>。连接种类在那里登记名字和设置结构；shell 种类另带一个后端，其余种类另带一个提供方。解析、校验、设置和 CLI 里不出现任何种类的名字。</td></tr>
+</tbody>
+</table>
+
+<h2 id="目标">目标</h2>
+<table class="stack">
+<thead><tr><th scope="col">调用写</th><th scope="col">落在</th><th scope="col">何时列出</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type="window"</code></th><td>这台电脑的应用窗口，按元素树操作；驱动做得到时在后台进行</td><td>这台电脑的 window 连接是 <code translate="no">desktop</code>（默认），且本机驱动受支持：macOS、Windows、Linux X11</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td>这台电脑的一整块显示器；会移动真实指针</td><td>这台电脑有 screen 连接（只在所有者打开 <code translate="no">computer_use.whole_screen</code> 时才有，默认关闭），且本机驱动受支持或 Wayland 会话带桌面门户</td></tr>
+<tr><th scope="row"><code translate="no">type="browser"</code></th><td>OpenProgram 浏览器里这个对话的页面</td><td>这台电脑的 browser 连接是 <code translate="no">built_in</code>（默认），且浏览器应用已启用</td></tr>
+<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>、<code translate="no">"safari"</code>、<code translate="no">"firefox"</code> 等</th><td>用户自己的浏览器，带着他们的登录状态</td><td>browser 连接是 <code translate="no">built_in</code>，且装了这个浏览器，Chromium 系还要装扩展</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="window"</code></th><td>机器 m 上的应用窗口</td><td>m 有 window 连接</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="screen"</code></th><td>m 的整块屏幕</td><td>m 有 screen 连接</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="browser"</code></th><td>OpenProgram 在 m 上运行的无窗口浏览器；它的 <code translate="no">localhost</code> 是 m 的</td><td>m 有 browser 连接</td></tr>
+</tbody>
+</table>
+<p class="note">一个目标被列出，当且仅当那台机器的某个提供方给出了它。另一台设备上用户的 Chrome 或 Edge 从不列出，所以调用不到；没有元素树的种类不能做 window 连接，所以不会给出 <code translate="no">type="window"</code>。</p>
+<h3 id="列表的规则">列表的规则</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">列出就是已配置</th><td>只有配置变了列表才变：设置、装上的扩展。能力按种类声明，从不探测。关着的机器照样列出，调用时回答 <code translate="no">MACHINE_UNREACHABLE:</code>。每一轮不做网络探测。</td></tr>
+<tr><th scope="row">名字</th><td>配置的机器用它的 id 指明；也接受它的名字，不区分大小写。设备写 <code translate="no">local</code>、<code translate="no">localhost</code> 或 <code translate="no">this computer</code> 都是这台电脑。</td></tr>
+<tr><th scope="row">窗口标题</th><td><code translate="no">title</code> 按标题的一部分选窗口，是数字时按 <code translate="no">window_id</code> 选。标题匹配到多个窗口时拒绝，并列出候选窗口和它们的 id，这样调用不会落到没想要的窗口上。标签页标题匹配到多个标签页时同样拒绝。</td></tr>
+<tr><th scope="row">只有一条路</th><td>有自己目标的表面，不再通过显示它的本机窗口来操作。提供方可以为发起询问的对话认领这类窗口：这个对话的连接已附加其标签页的 Chrome 或 Edge 页面（不报告地址的窗口，如在 Linux 和 Windows 上，仍归 <code translate="no">type="window"</code>）。</td></tr>
+<tr><th scope="row">被认领的窗口</th><td><code translate="no">type="window"</code> 保留窗口自己的控件，略去被认领的内容，并指出该怎么调用它。window 或 screen 连接可以写明 <code translate="no">viewer</code>，也就是显示这台机器的本机应用和窗口。没被认领的内容仍归 <code translate="no">type="window"</code>。</td></tr>
+<tr><th scope="row"><code translate="no">window</code> 还是 <code translate="no">screen</code></th><td><code translate="no">window</code> 用于某一个应用的窗口。<code translate="no">screen</code> 用于桌面、菜单栏、系统对话框、跨窗口拖动，以及不理会后台输入的窗口。两者并存是有意的：如果禁止 <code translate="no">screen</code> 点进窗口，这类窗口就无法操作。</td></tr>
+<tr><th scope="row"><code translate="no">screen</code> 默认关闭</th><td>所有者打开 <code translate="no">computer_use.whole_screen</code> 之前关闭：这台电脑没有 screen 连接，所以 <code translate="no">type="screen"</code> 既不列出也不能调用，调用会在任何审批之前得到 <code translate="no">UNKNOWN_TARGET:</code>。</td></tr>
+<tr><th scope="row">为什么关闭</th><td>一般任务只需要一个应用，所有者决定默认不把整个屏幕交给 agent。Codex 的电脑操作没有整屏这一层（每次调用都指定一个应用，按键只发给这个应用），所以关闭时能做的事和它相同，需要时这条路仍在。</td></tr>
+<tr><th scope="row">替换本机驱动</th><td><code translate="no">machines.local.window</code>、<code translate="no">machines.local.screen</code> 和 <code translate="no">machines.local.browser</code> 可以写成别的、这台电脑自己的种类，比如同时用于 window 和 screen 的 <code translate="no">cua_driver</code>。调用、键和锁都不变；这台电脑不会有第二个名字。</td></tr>
+<tr><th scope="row">停用</th><td>每台机器有启用开关。列表不会被自动裁剪。</td></tr>
+</tbody>
+</table>
+
+<h2 id="模型读到什么">模型读到什么</h2>
+<p>工具本身，整段对话不变：</p>
+<pre translate="no" tabindex="0"><code>computer_use(device?, type, app?, display?, title?, action?, args?, actions?, code?, timeout?)
+
+Operate application windows, a whole screen or web pages, on this computer or on another device.
+
+Where a call lands
+- device: left out for this computer. Another device by its name in &lt;devices&gt;. …
+- type="window": an application's windows, read as an element tree. app names the application (without app the call lists the running ones); title picks one of its windows.
+- type="screen": a whole display, by pixels; it moves the user's pointer. display picks one, the main one without it.
+- type="browser": web pages. Without app, OpenProgram's built-in browser; app="chrome" or app="edge" is the user's own browser with their sign-ins, … title picks a tab.
+&lt;devices&gt; lists what can be operated now; anything else is refused.</code></pre>
+<p>对话里的第一条 <code translate="no">&lt;devices&gt;</code> 说明：</p>
+<pre translate="no" tabindex="0"><code>&lt;devices&gt;
+What computer_use can operate now, by device:
+- this computer (device left out): the user's Mac, where OpenProgram runs; calls may send code.
+  - type="window": application windows, read and operated in the background; app names the application.
+  - type="browser": OpenProgram's built-in browser, this conversation's pages. Its http://localhost is this computer's; for devbox's use device="devbox", type="browser".
+  - type="browser", app="chrome": the user's own Google Chrome with their sign-ins; only when the user names it or the task needs their sign-in.
+- devbox (device="devbox"): SSH host me@devbox; this conversation's shell and files are here.
+  - device="devbox", type="window": …
+  - device="devbox", type="browser": …
+- lab (device="lab"): virtual machine, pixels only.
+  - device="lab", type="screen": virtual machine, pixels only
+A target not listed here is refused. A later message says what changes.
+&lt;/devices&gt;</code></pre>
+<p>之后的一轮，用户在 Edge 里装了扩展：</p>
+<pre translate="no" tabindex="0"><code>&lt;devices&gt;
+Changed devices, as they are now:
+- this computer (device left out): …
+  - type="browser", app="edge": the user's own Microsoft Edge with their sign-ins; …
+&lt;/devices&gt;</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">参数</th><td><code translate="no">device</code>、<code translate="no">type</code>，然后是里面的哪一个：<code translate="no">app</code>（窗口的应用；浏览器写 <code translate="no">chrome</code> 或 <code translate="no">edge</code>）、<code translate="no">display</code>（整屏）、<code translate="no">title</code>（窗口或标签页）；再是做什么：<code translate="no">action</code> 和 <code translate="no">args</code>、<code translate="no">actions</code> 或 <code translate="no">code</code>，以及 <code translate="no">timeout</code>。只有 <code translate="no">type</code> 必填。<code translate="no">actions</code> 里的一步仍可写自己的 <code translate="no">tab</code>。</td></tr>
+<tr><th scope="row">为什么 <code translate="no">device</code> 可以不写</th><td>不写永远是这台电脑，从不是对话的环境，所以默认值不会随项目移动：循环、App 和用户都在这里，用户说“我的屏幕”指的就是它。</td></tr>
+<tr><th scope="row">为什么是 <code translate="no">type</code> 和 <code translate="no">app</code></th><td>每台设备上都是同样三种类型，所以类型和设备是两个独立的词，加一台设备不会多出新名字。用户的浏览器用 <code translate="no">app</code> 指明，意思是“哪个应用”，因为用户就是这么说的（“在我的 Chrome 里”）。操作系统不是参数：它属于设备，模型在 <code translate="no">&lt;devices&gt;</code> 里读到。</td></tr>
+<tr><th scope="row">定义固定不变</th><td>说明和 JSON schema 从不提配置了什么，也没有目标的枚举。请求按工具、系统提示、消息的顺序发送，所以设备连上或权限变化时改写定义，会让整个提示缓存失效。</td></tr>
+<tr><th scope="row"><code translate="no">&lt;devices&gt;</code></th><td>用户消息旁边单独一段，从不放进系统提示（<code translate="no">BESIDE_ONLY_SECTIONS</code> 里的 <code translate="no">devices</code>，紧挨在 <code translate="no">deferred_catalog</code> 之前）。按设备分组：先是这台电脑，再是其他设备；没有可操作内容的设备，只在对话的 shell 在那里时才列出。每个目标一行：调用怎么写它、它是什么、缺什么权限（“Not usable yet: …”）。</td></tr>
+<tr><th scope="row">先整张列表，再只写变化</th><td>看得到的历史里没有更早的说明时发整张列表：对话的第一轮，以及摘要之后的第一轮。之后只发 <strong>Added devices</strong>、<strong>Changed devices, as they are now</strong> 和 <strong>Removed devices</strong>，没有变化就什么都不发。每轮看到的列表存在它的用户消息上，下一轮和看得到的那份比较，机制和延迟工具目录相同（<code translate="no">catalog_shown</code>、<code translate="no">catalog_stored</code> 带上列表的 id）。</td></tr>
+<tr><th scope="row">有自己提示的回合</th><td>签到、验证或为任务启动的 agent 没有更早的说明可比，所以整张列表放进它系统提示的能力段（<code translate="no">components._build_devices</code>）。</td></tr>
+<tr><th scope="row">回合中途连上的设备</th><td>在下一条用户消息旁边出现。在那之前指名它的调用会被拒绝，并附上现在列出的目标，和其他未知目标一样。</td></tr>
+<tr><th scope="row">指南</th><td>某一类型（<code translate="no">window</code>、<code translate="no">screen</code>、<code translate="no">browser</code>）的指南随第一次操作该类型目标的调用送出。某个目标第一次被操作时再送出几行目标说明：它在哪台机器、什么操作系统、缺什么、快捷键是什么。</td></tr>
+<tr><th scope="row">结果抬头</th><td>来自另一台设备的结果以调用对它的写法开头：<code translate="no">[device="lab", type="screen"]</code>。环境是另一台机器的对话里，来自这台电脑的结果也加抬头：<code translate="no">[type="window", this computer]</code>。</td></tr>
+<tr><th scope="row">缺少权限</th><td>目标照样列出并附注；调用时回答 <code translate="no">PERMISSION_MISSING:</code>，并说明在哪里授权。</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">cu</code> 只是这次调用的目标，且限于调用写明的对象；它的授权和一次动作调用完全一样，在 Bypass 下每一步也照样受主人的拒绝和询问规则约束，和一次动作调用一样。无人值守的回合，或依据非主人所写文字工作的回合（交接、自动 Goal 回合），代码不运行页面脚本。</td></tr>
+<tr><th scope="row">在两个目标上用代码</th><td>要操作两个目标就调用两次，解释器里的变量会在两次之间保留。每一步各自取锁。</td></tr>
+<tr><th scope="row"><code translate="no">cu</code></th><td>它的方法就是目标的动作（<code translate="no">await cu.click(element=3)</code>）；用另一个目标命名的属性会报错并给出该发的调用，只提现在列出的目标；用它自己类型命名的属性也会报错，因为 <code translate="no">cu</code> 本身就是这个目标。某一步指定了别的应用、窗口、标签页或显示器，回答 <code translate="no">BAD_ARGUMENT:</code>。</td></tr>
+<tr><th scope="row">隐藏</th><td>一个目标都没有时，不提供这个工具。</td></tr>
+</tbody>
+</table>
+<h3 id="错误">错误</h3>
+<table class="stack">
+<thead><tr><th scope="col">错误码</th><th scope="col">说明什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">UNKNOWN_TARGET:</code></th><td>现在列出的目标，按调用的写法；在权限决定之前检查，所以无论哪种模式，它都先于审批卡片、审查或因无人审批而拒绝</td></tr>
+<tr><th scope="row"><code translate="no">UNKNOWN_ACTION:</code></th><td>这一类型里最接近的动作，或者同一台设备上有这个动作的目标</td></tr>
+<tr><th scope="row"><code translate="no">NOT_SUPPORTED:</code></th><td>这个目标缺什么，以及可以改用的做法</td></tr>
+<tr><th scope="row"><code translate="no">BAD_ARGUMENT:</code></th><td>这个动作的参数写法，再加上这个类型的共用参数；标题匹配到多个窗口或标签页时，附上候选</td></tr>
+<tr><th scope="row"><code translate="no">PERMISSION_MISSING:</code></th><td>缺哪项权限，在哪里授予</td></tr>
+<tr><th scope="row"><code translate="no">DEPENDENCY_MISSING:</code></th><td>那台机器缺什么，以及安装它的命令</td></tr>
+<tr><th scope="row"><code translate="no">MACHINE_UNREACHABLE:</code></th><td>原因；只在什么都没发出去时使用，比如调用找到机器之后机器被关闭或删除</td></tr>
+<tr><th scope="row"><code translate="no">OUTCOME_UNKNOWN:</code></th><td>哪几步已完成，哪一步发出后没有回音；先读状态，不要重发</td></tr>
+<tr><th scope="row"><code translate="no">SCREEN_BUSY:</code></th><td>另一个 agent 已占用 60 秒，按整次调用计；什么都没发出去</td></tr>
+<tr><th scope="row"><code translate="no">ELEMENT_GONE:</code></th><td>元素已不在，或者是别的目标打印的；后面附当前状态</td></tr>
+<tr><th scope="row"><code translate="no">TIMEOUT:</code></th><td>已经生效的步骤，或什么都没发出去；动作调用 300 秒后停止（<code translate="no">registry.FINISH_SECONDS</code>）；代码里的一步在等锁时被停下（到期、停止、授权被收回），回答 <code translate="no">TIMEOUT: stopped while waiting for &lt;target&gt;: …; nothing was sent</code>，并记为没有生效</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">type</code> 和浏览器的 <code translate="no">app</code> 匹配不区分大小写（<code translate="no">Google Chrome</code> 就是 <code translate="no">chrome</code>），调用绝不会被移到另一台设备或另一种类型上。一批步骤的结果会写明完成了几步。</p>
+<p class="note">别的类型的动作回答 <code translate="no">UNKNOWN_ACTION:</code> 并列出有它的目标；本类型里这个目标缺的动作回答 <code translate="no">NOT_SUPPORTED:</code>，并列出同一台设备上有它的其他目标。</p>
+<p class="note"><code translate="no">open</code> 和 <code translate="no">close</code> 从不把模型指向别的目标：每个类型把它们读成自己的操作，目标没有它们时，<code translate="no">UNKNOWN_ACTION:</code> 给出最接近的动作和这个目标自己的动作。</p>
+<p class="note">经 OSWorld 的整屏上，一批步骤在发出第一步之前整体检查：一个参数不对就回答 <code translate="no">BAD_ARGUMENT: step N (action): …</code>，什么都不发出去；其中的 <code translate="no">get_state</code> 一步算作完成，因为屏幕在这些步骤之后读取。</p>
+
+<h2 id="动作">动作</h2>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">参数</th><th scope="col">也有人写成</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">get_state</code></th><td><code translate="no">include=all|tree|screenshot</code>, <code translate="no">full=false</code></td><td><code translate="no">screenshot</code>, <code translate="no">get_app_state</code>, <code translate="no">read</code>, <code translate="no">snapshot</code>, <code translate="no">read_page</code></td></tr>
+<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">element</code> 或 <code translate="no">x,y</code>；<code translate="no">mouse_button</code>；<code translate="no">click_count</code>；<code translate="no">modifiers</code>；<code translate="no">seconds</code></td><td><code translate="no">left_click</code>, <code translate="no">tap</code>, <code translate="no">double_click</code>, <code translate="no">right_click</code>, <code translate="no">long_press</code></td></tr>
+<tr><th scope="row"><code translate="no">type_text</code></th><td><code translate="no">text</code>; <code translate="no">element?</code>; <code translate="no">clear=false</code>; <code translate="no">submit=false</code></td><td><code translate="no">type</code>, <code translate="no">write</code>, <code translate="no">input_text</code></td></tr>
+<tr><th scope="row"><code translate="no">press_key</code></th><td><code translate="no">key</code>; <code translate="no">element?</code>; <code translate="no">seconds?</code></td><td><code translate="no">press</code>, <code translate="no">key</code>, <code translate="no">keypress</code>, <code translate="no">hotkey</code></td></tr>
+<tr><th scope="row"><code translate="no">scroll</code></th><td><code translate="no">element</code> 或 <code translate="no">x,y</code>；<code translate="no">direction</code>；<code translate="no">pages=1</code> 或 <code translate="no">pixels</code></td><td><code translate="no">scroll_at</code></td></tr>
+<tr><th scope="row"><code translate="no">drag</code></th><td><code translate="no">element</code> 或 <code translate="no">x,y</code>；<code translate="no">to_element</code> 或 <code translate="no">to_x,to_y</code>；<code translate="no">seconds?</code></td><td><code translate="no">left_click_drag</code>, <code translate="no">drag_and_drop</code></td></tr>
+<tr><th scope="row"><code translate="no">hover</code></th><td><code translate="no">element</code> 或 <code translate="no">x,y</code>；<code translate="no">seconds=0.8</code></td><td><code translate="no">move</code>, <code translate="no">mouse_move</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">seconds=1</code>; <code translate="no">text?</code></td><td><code translate="no">sleep</code></td></tr>
+<tr><th scope="row"><code translate="no">find</code>, <code translate="no">set_value</code></th><td>有元素树时：<code translate="no">find(text?, role?)</code>、<code translate="no">set_value(element, value)</code></td><td><code translate="no">fill</code>, <code translate="no">select</code>, <code translate="no">select_option</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">共用参数</th><th scope="col">额外动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">window</th><td><code translate="no">app</code>, <code translate="no">window</code>, <code translate="no">window_id</code></td><td><code translate="no">list_apps</code>, <code translate="no">list_windows</code>, <code translate="no">zoom</code>, <code translate="no">focus</code>, <code translate="no">show_window</code>, <code translate="no">menu</code>, <code translate="no">paste</code>, <code translate="no">copy</code>, <code translate="no">select_text</code>, <code translate="no">perform_secondary_action</code>, <code translate="no">open_file</code>, <code translate="no">start_audio_recording</code>, <code translate="no">stop_audio_recording</code></td></tr>
+<tr><th scope="row">screen</th><td><code translate="no">display</code></td><td><code translate="no">list_displays</code>, <code translate="no">zoom</code>, <code translate="no">paste</code></td></tr>
+<tr><th scope="row">browser</th><td><code translate="no">tab</code></td><td><code translate="no">list_tabs</code>、<code translate="no">create_tab</code>、<code translate="no">close_tab</code>、<code translate="no">navigate</code>、<code translate="no">back</code>、<code translate="no">forward</code>、<code translate="no">reload</code>、<code translate="no">paste</code>、<code translate="no">upload_file</code>、<code translate="no">evaluate</code>、<code translate="no">read_console_messages</code>、<code translate="no">read_network_requests</code>；仅内置浏览器：<code translate="no">list_panes</code>、<code translate="no">start_video_recording</code>、<code translate="no">stop_video_recording</code></td></tr>
+<tr><th scope="row">mobile（未实现）</th><td><code translate="no">app</code></td><td><code translate="no">list_apps</code>, <code translate="no">close_app</code>, <code translate="no">open_url</code>, <code translate="no">press_button</code>, <code translate="no">swipe</code>, <code translate="no">pinch</code>, <code translate="no">rotate</code></td></tr>
+</tbody>
+</table>
+<p class="note">调用的 <code translate="no">app</code>、<code translate="no">title</code> 和 <code translate="no">display</code> 会成为每一步的共用参数：<code translate="no">title</code> 在窗口上是 <code translate="no">window</code>（是数字时为 <code translate="no">window_id</code>），在浏览器上是 <code translate="no">tab</code>。</p>
+<h3 id="动作的规则">动作的规则</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">按能力放行</th><td>核心动作需要提供方声明相应的输入能力（<code translate="no">pointer</code>、<code translate="no">hover</code>、<code translate="no">keyboard</code>）；<code translate="no">find</code> 和 <code translate="no">set_value</code> 需要 <code translate="no">tree</code>。缺少时回答 <code translate="no">NOT_SUPPORTED:</code>，并给出可行的做法。</td></tr>
+<tr><th scope="row">元素</th><td><code translate="no">element</code> 填状态里打印的值：元素树里是数字，页面上是 <code translate="no">e12</code>、<code translate="no">f1e3</code> 这样的 <code translate="no">ref</code>。一个 id 只在打印它的目标上有效。页面还接受 <code translate="no">role</code> 和 <code translate="no">name</code>。</td></tr>
+<tr><th scope="row">输入文字</th><td><code translate="no">type_text</code> 在所有表面上都是插入。<code translate="no">clear</code> 先清空字段（字段接受时用 <code translate="no">set_value</code> 设为 <code translate="no">""</code>，否则全选再 BackSpace），<code translate="no">submit</code> 之后按 Return；这个键失败时，文字算作已完成，结果给出错误和状态。替换输入框的内容用 <code translate="no">set_value</code>。</td></tr>
+<tr><th scope="row">等待</th><td>带 <code translate="no">text</code> 的 <code translate="no">wait</code> 反复读状态直到文字出现，最多 <code translate="no">seconds</code> 或 10 秒；文字始终没出现不算错误。在窗口上它也读窗口截图里的文字，照顾元素树很少的窗口。</td></tr>
+<tr><th scope="row">按键</th><td>用 xdotool 的写法：<code translate="no">Return</code>、<code translate="no">Escape</code>、<code translate="no">ctrl+shift+Tab</code>。<code translate="no">super</code> 在 macOS 上是 Command，在别处是 Windows 键。其他写法会被规范化，不是键名的名字回答 <code translate="no">BAD_ARGUMENT:</code>；浏览器提供方再转成它自己的名字。快捷键写在目标说明里，不写在类型指南里。</td></tr>
+<tr><th scope="row">标签页</th><td><code translate="no">tab</code> 在所有浏览器目标上都是稳定的 id。<code translate="no">list_tabs</code> 打印它，每个结果都写明作用在哪个标签页。带 <code translate="no">tab</code> 的步骤先选中那个标签页；不带的作用在这个 agent 在该目标上最后用过的标签页，那个标签页没了就回答 <code translate="no">BAD_ARGUMENT:</code> 并指出它，什么都不发送。填数字或不存在的 id 回答 <code translate="no">BAD_ARGUMENT:</code> 并列出打开的标签页。</td></tr>
+<tr><th scope="row">用户浏览器的标签页</th><td>在用户的 Chrome 和 Edge 里，id 由这边生成（<code translate="no">t</code> 加一个哈希），扩展重新连接后仍跟着原来的页面；还没选过标签页、或已用 <code translate="no">close_tab</code> 关掉自己最后一个标签页的 agent，作用在扩展当前选中的那个上。<code translate="no">close_tab</code> 只关闭这一步写明的标签页。带 <code translate="no">pattern</code> 或 <code translate="no">limit</code> 的 <code translate="no">read_console_messages</code>，以及带 <code translate="no">only_errors</code> 或 <code translate="no">limit</code> 的 <code translate="no">read_network_requests</code>，回答 <code translate="no">NOT_SUPPORTED:</code>。</td></tr>
+<tr><th scope="row">用户浏览器的标签页没了</th><td>别的 agent 关掉了这个 agent 的标签页时，它下一步不带 <code translate="no">tab</code> 就回答 <code translate="no">BAD_ARGUMENT:</code> 并写明那个标签页。<code translate="no">list_tabs</code> 把一步会作用的那个标签页标为当前；agent 的标签页没了时，它会说明这一点，要求每一步都带 <code translate="no">tab</code>，并且不标任何一个。选择或列出标签页时，扩展若已没有连接的标签页，就回答 <code translate="no">MACHINE_UNREACHABLE:</code>，什么都不发出去；紧跟在 <code translate="no">create_tab</code> 之后则回答 <code translate="no">OUTCOME_UNKNOWN:</code>。</td></tr>
+<tr><th scope="row">移动设备（未实现）</th><td><code translate="no">click</code> 就是点按。<code translate="no">scroll</code> 的意思不变：显示那个方向上更远的内容。<code translate="no">swipe</code> 给两个点。<code translate="no">press_button</code> 用提供方声明的按钮名；把 <code translate="no">home</code>、<code translate="no">back</code>、音量键交给 <code translate="no">press_key</code> 时会转到这里。</td></tr>
+<tr><th scope="row">应用</th><td><code translate="no">app</code> 在窗口上指明应用。不写时调用列出正在运行的应用；带它的 <code translate="no">get_state</code> 会在应用没打开时打开它。<code translate="no">open</code>、<code translate="no">open_app</code> 和 <code translate="no">launch_app</code> 是带来的名字，意思相同。</td></tr>
+<tr><th scope="row">类型</th><td>新种类加入某个类型，只动它自己的模块。新类型（既没有指针也没有触摸的设备）在 <code translate="no">vocabulary.py</code> 加一张表、一份指南和 <code translate="no">type</code> 的一个取值。Android 电视会属于 <code translate="no">mobile</code>，只是去掉了指针输入。</td></tr>
+<tr><th scope="row">显示器</th><td><code translate="no">display</code> 是操作系统给显示器的 id，和 <code translate="no">list_displays</code> 打印的一样；不写就是主显示器。截图长边最多 1568 像素，x,y 是那块显示器最近一张截图上的像素。</td></tr>
+<tr><th scope="row">路径</th><td><code translate="no">upload_file</code> 和 <code translate="no">open_file</code> 里的路径是目标所在机器上的路径。</td></tr>
+<tr><th scope="row">带来的名字</th><td>在目标所属的类型里改写。改写会补上它隐含的参数（<code translate="no">double_click</code> 补 <code translate="no">click_count=2</code>），并且不丢内容：一组键合成一个组合键。完整的表在 <code translate="no">vocabulary.py</code>。</td></tr>
+<tr><th scope="row">带来的参数</th><td>也会改写：<code translate="no">click</code> 的 <code translate="no">text</code> 或 <code translate="no">key</code> 为空或只写修饰键时变成 <code translate="no">modifiers</code>，别的文字回答 <code translate="no">BAD_ARGUMENT:</code> 并附 <code translate="no">click</code> 的签名；<code translate="no">scroll_amount</code> 按每格滚轮 100 变成 <code translate="no">pixels</code>；<code translate="no">zoom</code> 的 <code translate="no">region=[x0,y0,x1,y1]</code> 由四个有限的数或数字字符串组成时变成 x、y、宽、高，其他角值（包括布尔值、NaN 和无穷大）回答 <code translate="no">BAD_ARGUMENT: region is [x0, y0, x1, y1] in screenshot pixels.</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="约定">约定</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">一个种类声明</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">kind</code>, <code translate="no">connection</code></th><td>它在配置里的名字，以及它服务哪种连接：<code translate="no">shell</code>、<code translate="no">window</code>、<code translate="no">screen</code>、<code translate="no">browser</code>；服务多种连接的种类每种各登记一次</td></tr>
+<tr><th scope="row"><code translate="no">settings</code></th><td>连接对象的 JSON Schema；属性可以标为机密</td></tr>
+<tr><th scope="row"><code translate="no">capabilities</code></th><td>它能给什么；是声明出来的，从不探测</td></tr>
+<tr><th scope="row"><code translate="no">discover()</code></th><td>可选：不用配置就能发现的机器</td></tr>
+<tr><th scope="row"><code translate="no">open(machine, conversation)</code></th><td>这种连接那一类目标的提供方；一个模块可以登记多个种类</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">一个提供方有</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">family</code>（类型）、<code translate="no">machine</code>、<code translate="no">app</code></th><td>调用怎么写它（<code translate="no">address()</code>）、它的键（<code translate="no">target</code>）和词表</td></tr>
+<tr><th scope="row"><code translate="no">describe()</code></th><td>只看本机，不弹窗，不联网：它在 <code translate="no">&lt;devices&gt;</code> 里的那一行，以及缺哪项权限</td></tr>
+<tr><th scope="row"><code translate="no">note()</code>, <code translate="no">extra_actions()</code></th><td>目标说明；它自己的动作和按钮名</td></tr>
+<tr><th scope="row"><code translate="no">list(kind, args, call)</code></th><td>应用、窗口、标签页、显示器</td></tr>
+<tr><th scope="row"><code translate="no">get_state(subject, options, call)</code></th><td>状态文本和可选的截图</td></tr>
+<tr><th scope="row"><code translate="no">act(subject, steps, call)</code></th><td>按顺序执行步骤，第一次失败就停，已发出的步骤不重发</td></tr>
+<tr><th scope="row"><code translate="no">approval(subject, steps)</code></th><td>给用户看的对象和规则键，或者不需要</td></tr>
+<tr><th scope="row"><code translate="no">authority(steps, code)</code>, <code translate="no">system_access(subject, steps)</code>, <code translate="no">runs_page_script(steps)</code></th><td>权限类别、需要的操作系统授权、是否运行页面代码</td></tr>
+<tr><th scope="row"><code translate="no">lock(subject, steps)</code></th><td>共享锁和独占锁的键</td></tr>
+<tr><th scope="row"><code translate="no">resource(subject)</code></th><td>资源列表里的那一行及其归属；调用新建的对象没有</td></tr>
+<tr><th scope="row"><code translate="no">created(conversation)</code></th><td>它拥有的“创建的”行，从它自己的存储里读出</td></tr>
+<tr><th scope="row"><code translate="no">claims(window, conversation)</code></th><td>可选：向那个对话显示这个目标的本机窗口</td></tr>
+<tr><th scope="row"><code translate="no">environment_note(machine, targets)</code></th><td>可选：对话的 shell 在另一台机器上时，它在 <code translate="no">&lt;devices&gt;</code> 里那一行要补的话</td></tr>
+<tr><th scope="row"><code translate="no">state_scope</code></th><td><code translate="no">agent</code> 或 <code translate="no">conversation</code></td></tr>
+<tr><th scope="row"><code translate="no">frames(subject)</code></th><td>可选的实时画面，只来自能推送的来源</td></tr>
+<tr><th scope="row"><code translate="no">close(call)</code></th><td>agent 或对话结束</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">call</code> 带着 agent、截止时间和 <code translate="no">cancelled()</code>。提供方在步骤之间检查它，到截止时间回答 <code translate="no">TIMEOUT:</code>。<code translate="no">providers/</code> 之外的模块不写任何目标名：<code translate="no">tool.py</code>、权限规则、权限类别表和系统授权都去问提供方。</p>
+<h3 id="能力">能力</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分组</th><th scope="col">能力</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td><code translate="no">pixels</code>, <code translate="no">tree</code>, <code translate="no">windows</code>, <code translate="no">displays</code>, <code translate="no">frames</code></td></tr>
+<tr><th scope="row">输入</th><td><code translate="no">pointer</code>, <code translate="no">hover</code>, <code translate="no">keyboard</code>, <code translate="no">buttons</code>, <code translate="no">multitouch</code>, <code translate="no">clipboard</code></td></tr>
+<tr><th scope="row">对象</th><td><code translate="no">background</code>, <code translate="no">launch</code>, <code translate="no">tabs</code>, <code translate="no">script</code>, <code translate="no">upload</code>, <code translate="no">audio</code>, <code translate="no">video</code></td></tr>
+</tbody>
+</table>
+<p class="note">一次调用能用的，是声明的能力再被策略收窄后的结果：拒绝的应用和每台机器的禁用列表。策略只能收窄。</p>
+<h3 id="约定之外">约定之外</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">不在约定里</th><th scope="col">归谁管</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令和文件</th><td>机器的 shell 连接和文件工具</td></tr>
+<tr><th scope="row">在机器之间传文件</th><td>不提供</td></tr>
+<tr><th scope="row">传感器和个人数据</th><td>不提供</td></tr>
+<tr><th scope="row">创建、启动、停止机器</th><td>用户自己；只有按对话划分的 shell 种类会创建实例（现在是 Docker）</td></tr>
+<tr><th scope="row">在 App 里显示</th><td>资源列表和预览，依据提供方上报的内容</td></tr>
+<tr><th scope="row">当作普通工具添加的 MCP 服务</th><td>不算操控电脑：没有锁、没有资源行、没有共用词表</td></tr>
+</tbody>
+</table>
+<h3 id="配置">配置</h3>
+<pre translate="no" tabindex="0"><code>"machines": {
+  "local": {"window": {"kind": "desktop"}, "browser": {"kind": "built_in"}},
+  "items": [
+    {"id": "devbox", "name": "Dev box",
+     "shell":   {"kind": "ssh", "target": "me@devbox", "workdir": "/srv/app"},
+     "window":  {"kind": "screen_server"},
+     "screen":  {"kind": "screen_server"},
+     "browser": {"kind": "chromium"}},
+    {"id": "builder", "name": "Builder",
+     "shell":  {"kind": "docker", "image": "me/desktop:24.04"},
+     "window": {"kind": "screen_server", "start_display": "Xvfb :99 -screen 0 1280x800x24"},
+     "screen": {"kind": "screen_server", "start_display": "Xvfb :99 -screen 0 1280x800x24"}},
+    {"id": "lab", "name": "Lab VM",
+     "screen": {"kind": "osworld", "url": "http://192.168.64.2:5000"}},
+    {"id": "office-pc", "name": "Office PC",
+     "screen": {"kind": "vnc", "address": "10.0.0.5:5900", "password": {"secret": true}}},
+    {"id": "pixel-8", "name": "Pixel 8",
+     "mobile": {"kind": "android", "serial": "35221FDH2004QZ"}}
+  ]
+}</code></pre>
+<p class="note">机密存在状态目录的 <code translate="no">auth/machines/</code> 下，沙箱里的命令读不到；配置里只留一个标记，返回给界面时会遮住。连接可以把 <code translate="no">via</code> 设成一台有 shell 的机器：它的地址就通过那个 shell 去够。<code translate="no">computer_use.refused_apps</code>、<code translate="no">refuse_password_fields</code> 和 <code translate="no">chrome_extension_token</code> 留在原处。</p>
+
+<h2 id="状态-锁和授权">状态、锁和授权</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">按什么区分</th></tr></thead>
+<tbody>
+<tr><th scope="row">元素 id、上一张截图</th><td>agent 和目标</td></tr>
+<tr><th scope="row">浏览器标签页</th><td>机器实例和对话；每个 agent 的当前标签页留在标签页驱动里</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">共享</th><th scope="col">独占</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">window</code>：后台送达的步骤</th><td>机器</td><td>那个应用</td></tr>
+<tr><th scope="row"><code translate="no">window</code>：可能需要真实指针或前台的步骤（X11、Windows）</th><td>无</td><td>机器</td></tr>
+<tr><th scope="row"><code translate="no">screen</code></th><td>无</td><td>机器</td></tr>
+<tr><th scope="row"><code translate="no">browser</code>，OpenProgram 自己的</th><td>无：页面在后台驱动，整屏和窗口的调用不用等它们</td><td>调用写明的标签页；agent 当前的标签页由标签页驱动自己占住</td></tr>
+<tr><th scope="row"><code translate="no">browser</code> 带 <code translate="no">app="chrome"</code> 或 <code translate="no">"edge"</code></th><td>无</td><td>整个浏览器，每次调用都是，所以任何对话或进程对它的第二次调用都要等</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">指针或前台</th><td>按平台、按动作在任何一步执行前决定：驱动在步骤执行时才选前台送达，所以凡是有这条路的动作都占住机器，按元素的步骤也一样。macOS：没有。X11：<code translate="no">click</code>、<code translate="no">scroll</code>、<code translate="no">press_key</code>、<code translate="no">type_text</code>、<code translate="no">hover</code>、<code translate="no">drag</code>。Windows：<code translate="no">click</code>、<code translate="no">drag</code>、<code translate="no">press_key</code>、<code translate="no">type_text</code>、<code translate="no">paste</code>，还有 <code translate="no">focus</code>，因为 UI Automation 的 SetFocus 可能把窗口带到前台；<code translate="no">scroll</code> 和 <code translate="no">hover</code> 是投递的消息。列表不加锁。</td></tr>
+<tr><th scope="row">顺序</th><td>跨进程先到先得：在等的请求，无论共享还是独占，都排在所有后来的请求前面，排在本进程另一个请求后面的也一样。每个在等的请求从到达起就在这个键的文件夹里持有一个票据文件 <code translate="no">q-*</code>，只有别的进程没有更早的票据还被持有时才去取 gate。一次调用的各次等待共用一个 60 秒的期限，过了就回答 <code translate="no">SCREEN_BUSY:</code>。</td></tr>
+<tr><th scope="row">范围</th><td>锁是状态目录下的文件，所以在 Worker 的各个进程之间都有效。一次调用持有目标所在机器的锁，以及它驱动的本机窗口的锁：通过模拟器窗口操作模拟器时，也要取那个窗口的锁。</td></tr>
+<tr><th scope="row">窗口和整屏</th><td>锁跟着步骤走，不跟着连接走：同一台机器的 window 和 screen 连接唯一会争的是那一个物理指针。</td></tr>
+<tr><th scope="row">系统未知时</th><td>机器的屏幕服务还没报告操作系统之前，它窗口上的指针和按键步骤独占整台机器。</td></tr>
+<tr><th scope="row">取消</th><td>远程调用被取消后，锁会保留到那台机器回应或过去 10 秒。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">调用</th><th scope="col">只问一次</th><th scope="col">规则键</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type="window"</code></th><td><code translate="no">computer_use controls &lt;application&gt;</code>；<code translate="no">list_apps</code> 不问</td><td><code translate="no">window &lt;application&gt;</code>，应用的显示名，靠精确匹配读出，不启动任何东西，保留 5 秒：macOS 上任何精确写法（显示名、文件名、bundle id、<code translate="no">.app</code> 路径、运行时用的名字、运行中的 <code translate="no">pid:N</code>）都得到它，不管运行与否；Linux 上是桌面 id、条目名、可执行文件或 pid；Windows 上 pid 或 exe 得到去掉 <code translate="no">.exe</code> 的文件名。其他名字，包括名字的一部分，按原样保留。</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td><code translate="no">computer_use controls the whole screen of this computer</code>；<code translate="no">list_displays</code> 不问</td><td><code translate="no">screen</code></td></tr>
+<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code></th><td><code translate="no">computer_use controls your Google Chrome</code></td><td><code translate="no">browser chrome</code>, <code translate="no">browser edge</code></td></tr>
+<tr><th scope="row"><code translate="no">type="browser"</code></th><td>对话有 Page 时不问，只有 <code translate="no">upload_file</code> 不在 Page 授权之内：每次都由 Ask 和 Plan 询问、Auto 审查；没有 Page 时由模式决定</td><td>无</td></tr>
+<tr><th scope="row">带 <code translate="no">device</code> 的调用</th><td>不问：配置这台机器就是同意。解析不出的调用在决定之前回答 <code translate="no">UNKNOWN_TARGET:</code>；在这次检查和决定之间变得解析不出的，按模式处理（Ask 和 Plan 询问，Auto 审查）</td><td><code translate="no">&lt;device&gt; &lt;type&gt;</code>（<code translate="no">lab screen</code>），用户自己写的规则可以匹配一台或所有设备</td></tr>
+</tbody>
+</table>
+<p class="note">应用名里含 <code translate="no">*</code>、<code translate="no">?</code> 或 <code translate="no">[</code>，或以 <code translate="no">:*</code> 结尾的规则键不会保存：这样的调用只能允许一次。</p>
+<p class="note"><code translate="no">screen</code> 的授权就是按表面授权，只是这个表面包含了所有应用；没有它，<code translate="no">screen</code> 就绕过了每个应用各自的授权。破坏性步骤仍由说明里的确认段落约束。<code translate="no">screen</code> 和 <code translate="no">window</code> 共用同一项操作系统授权 <code translate="no">computer_use:desktop</code>。用户的浏览器需要 <code translate="no">process.exec</code> 权限，只被允许 <code translate="no">browser.control</code> 的说话者拿不到它。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">screen</code> 上的步骤</th><th scope="col">何时拒绝</th></tr></thead>
+<tbody>
+<tr><th scope="row">指针</th><td>有一个点落在被拒绝的应用上，或落在 OpenProgram 的窗口上；拖动两端都检查，不带 x,y 的滚动按指针当前位置检查</td></tr>
+<tr><th scope="row">按键或文字</th><td>前台应用被拒绝或就是 OpenProgram；<code translate="no">computer_use.refuse_password_fields</code> 打开时焦点在密码框里；或者安全键盘输入开着</td></tr>
+<tr><th scope="row">截图</th><td>不拒绝；被拒绝的应用和 OpenProgram 的窗口不会出现在截图里</td></tr>
+<tr><th scope="row">Bypass 模式下</th><td>OpenProgram 的窗口会出现在截图里，也可以操作；被拒绝的应用仍然排除在外</td></tr>
+</tbody>
+</table>
+
+<h2 id="够到另一台机器">够到另一台机器</h2>
+<table class="stack">
+<thead><tr><th scope="col">种类</th><th scope="col">服务</th><th scope="col">怎么够到</th><th scope="col">能给什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">osworld</code></th><td><code translate="no">screen</code></td><td>HTTP：<code translate="no">GET /screenshot</code>、<code translate="no">POST /execute</code></td><td>像素</td></tr>
+<tr><th scope="row"><code translate="no">vnc</code></th><td><code translate="no">screen</code></td><td>远程帧缓冲协议，由 Worker 去连</td><td>像素、剪贴板、实时画面</td></tr>
+<tr><th scope="row"><code translate="no">screen_server</code></th><td><code translate="no">window</code>、<code translate="no">screen</code></td><td>OpenProgram 的驱动运行在那台机器里，通过机器的 shell 说 MCP，或通过带令牌的 HTTP</td><td>元素树、像素、窗口、后台输入、显示器、启动应用、实时画面</td></tr>
+<tr><th scope="row"><code translate="no">cua_driver</code></th><td><code translate="no">window</code>、<code translate="no">screen</code></td><td>cua-driver 的 MCP 服务，经一个适配模块</td><td>元素树、像素、窗口、后台输入</td></tr>
+<tr><th scope="row"><code translate="no">android</code></th><td><code translate="no">mobile</code></td><td>Worker 上的 <code translate="no">adb</code></td><td>元素树、像素、启动应用、按钮</td></tr>
+<tr><th scope="row"><code translate="no">ios_simulator</code></th><td><code translate="no">mobile</code></td><td><code translate="no">xcrun simctl</code>；输入和元素树走 <code translate="no">idb</code>，没有时走本机驱动操作模拟器窗口</td><td>像素、启动应用、按钮；两者之一给得出时有元素树</td></tr>
+<tr><th scope="row"><code translate="no">chromium</code></th><td><code translate="no">browser</code></td><td>通过机器的 shell 启动 Chromium，每个对话一份新的配置目录；它的调试端口经这个 shell 上的中继到达 Worker</td><td>标签页、元素树、像素、脚本、上传</td></tr>
+<tr><th scope="row"><code translate="no">wayland_portal</code></th><td><code translate="no">screen</code></td><td>本机 Wayland 会话的桌面门户，带它自己的同意对话框</td><td>像素</td></tr>
+</tbody>
+</table>
+<h3 id="屏幕服务">屏幕服务</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">协议</th><td>MCP 工具 <code translate="no">screen_describe</code>、<code translate="no">screen_list</code>、<code translate="no">screen_get_state</code>、<code translate="no">screen_act</code>；通知 <code translate="no">screen/report</code>（字段同 <code translate="no">native.action</code>、<code translate="no">native.window</code>、<code translate="no">native.control</code>）和 <code translate="no">screen/frame</code>。别人写的服务只要说这套协议，填配置就能接入。</td></tr>
+<tr><th scope="row">策略</th><td>随每次列表、读状态和操作调用发送；服务端不保存。元素 id 按 agent 分开保存。</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">computer_use/desktop/</code> 整个移到 <code translate="no">host/desktop/</code>。驱动改为接收一个策略对象（拒绝的应用、密码框、权限模式、取消、录音目录）和一个上报器（<code translate="no">action</code>、<code translate="no">control</code>、<code translate="no">window</code>），不再直接导入 runtime 和资源模块。Linux 和 Windows 驱动现在什么都不上报，改为在和 macOS 相同的位置调用它。</td></tr>
+<tr><th scope="row">分发</th><td>把这部分代码（不含嵌入窗口的部分）打成 zipapp。经 shell 时，第一次使用把它传到机器的缓存目录并在那里启动；摘要变了就重传。按地址连接的服务，由 <code translate="no">machines add</code> 写出 zipapp、令牌和启动命令给用户拷过去；版本旧了回答 <code translate="no">DEPENDENCY_MISSING:</code>。</td></tr>
+<tr><th scope="row">找到会话</th><td>在 Linux 上用配置的 display，没有配置时读用户图形会话的环境变量。没有 X 会话回答 <code translate="no">DEPENDENCY_MISSING:</code>；是 Wayland 会话回答 <code translate="no">NOT_SUPPORTED:</code>；没有无障碍服务时它的窗口类型回答 <code translate="no">DEPENDENCY_MISSING:</code>，它的整屏照样按像素工作。</td></tr>
+<tr><th scope="row">进程</th><td>每个 Worker 进程里每个机器实例一个，空闲五分钟后关闭，由这台机器的 window 和 screen 连接共用；进程之间靠文件锁互斥。它不安装任何东西。</td></tr>
+</tbody>
+</table>
+
+<h2 id="怎么显示">怎么显示</h2>
+<table class="stack">
+<thead><tr><th scope="col">行</th><th scope="col">种类</th><th scope="col">归属</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram 浏览器的页面，在另一台设备上时带设备名</th><td><code translate="no">web</code></td><td>创建的：关闭之前一直列出</td></tr>
+<tr><th scope="row">本机应用窗口、用户浏览器、本机整块屏幕</th><td><code translate="no">desktop</code></td><td>共用的：调用操作它时才列出</td></tr>
+<tr><th scope="row">另一台设备的窗口或整屏</th><td><code translate="no">machine</code></td><td>共用的：操作期间列出</td></tr>
+<tr><th scope="row">对话自己的机器实例</th><td><code translate="no">machine</code></td><td>创建的：对话删除之前一直列出</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">创建的行</th><td>来自拥有它们的提供方的 <code translate="no">created()</code>，所以 Worker 重启后还在。操作对话自己的实例时，只把它那一行标为使用中，不会多出第二行。</td></tr>
+<tr><th scope="row">预览</th><td>另一台机器：调用返回的最后一张截图，提供方能推送时显示实时画面。agent 光标由 App 画在这张画面上。</td></tr>
+<tr><th scope="row">嵌入</th><td>只有本机窗口能嵌进标签页。用 <code translate="no">@</code> 交出的窗口会写明它的应用和 <code translate="no">window_id</code>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="几种情况-各只有一种写法">几种情况，各只有一种写法</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">唯一的写法</th></tr></thead>
+<tbody>
+<tr><th scope="row">本机应用里的一个按钮</th><td><code translate="no">computer_use(type="window", app="Calculator", action="click", args={"element": 12})</code></td></tr>
+<tr><th scope="row">几个窗口中的一个</th><td>带 <code translate="no">app</code> 的 <code translate="no">action="list_windows"</code>，然后把 <code translate="no">title</code> 设为那个窗口的 id</td></tr>
+<tr><th scope="row">内置浏览器里的页面</th><td><code translate="no">type="browser"</code>：<code translate="no">create_tab</code> 带 <code translate="no">url</code>，然后 <code translate="no">click</code> 带 <code translate="no">element</code></td></tr>
+<tr><th scope="row">用户 Chrome 里的页面</th><td><code translate="no">type="browser", app="chrome"</code>：<code translate="no">list_tabs</code>，然后 <code translate="no">click</code>，<code translate="no">title</code> 设为标签页 id，带 <code translate="no">element</code></td></tr>
+<tr><th scope="row">带 OSWorld 服务的虚拟机</th><td>机器 <code translate="no">lab</code>，<code translate="no">screen: osworld</code>：<code translate="no">device="lab", type="screen"</code>，<code translate="no">click</code> 带 <code translate="no">x</code>、<code translate="no">y</code></td></tr>
+<tr><th scope="row">同一台机器装了屏幕服务</th><td><code translate="no">window: screen_server</code> 和 <code translate="no">screen: screen_server</code>：<code translate="no">device="lab", type="window"</code>，以及同一个服务进程给出的 <code translate="no">type="screen"</code>。一台机器只有一个 screen 连接，所以它的屏幕要么是 OSWorld 服务，要么是屏幕服务，不会两者都是。</td></tr>
+<tr><th scope="row">远程 Windows 桌面</th><td>那边装 VNC 服务：<code translate="no">device="office-pc", type="screen"</code>。改装屏幕服务就是上一行。</td></tr>
+<tr><th scope="row">SSH 主机 <code translate="no">localhost</code> 上的网页应用</th><td><code translate="no">device="devbox", type="browser"</code>：<code translate="no">create_tab</code> 带 <code translate="no">http://localhost:3000</code></td></tr>
+<tr><th scope="row">Docker 容器里的桌面</th><td>机器 <code translate="no">builder</code>：<code translate="no">device="builder", type="window"</code>，作用在这个对话的实例里</td></tr>
+<tr><th scope="row">命令在 SSH 主机上，点击在这台电脑上</th><td><code translate="no">bash</code> 在主机上运行；不写 <code translate="no">device</code> 的调用作用在这台电脑上</td></tr>
+<tr><th scope="row">两台虚拟机</th><td><code translate="no">device="lab"</code> 和 <code translate="no">device="lab-2"</code>，都是 <code translate="no">type="screen"</code></td></tr>
+<tr><th scope="row">别人的操控电脑服务</th><td>单独一个种类（<code translate="no">cua_driver</code>）；说屏幕服务协议的用 <code translate="no">screen_server</code>。在这台电脑上它作为 window 和 screen 连接替换本机驱动，调用写法不变。</td></tr>
+<tr><th scope="row">用 <code translate="no">@</code> 交出的窗口</th><td><code translate="no">type="window"</code>，带上提及里给出的应用，<code translate="no">window_id</code> 写进 <code translate="no">title</code></td></tr>
+<tr><th scope="row">没有桌面的 Worker</th><td>内置浏览器以无窗口方式运行；<code translate="no">window</code> 和 <code translate="no">screen</code> 不列出</td></tr>
+<tr><th scope="row">整块屏幕或第二块显示器</th><td><code translate="no">type="screen"</code>：<code translate="no">list_displays</code>，然后用 <code translate="no">display</code></td></tr>
+<tr><th scope="row">多个 agent 并行</th><td>操作不同应用：同时进行，各有各的元素 id；在 X11 和 Windows 上，需要指针或前台的步骤轮流进行。操作同一台虚拟机：一次一个，第二个最多等 60 秒。</td></tr>
+<tr><th scope="row">手机或模拟器</th><td>未实现：它会是一台带 <code translate="no">type="mobile"</code> 的设备。现在 iPhone 通过“iPhone 镜像”窗口，用 <code translate="no">type="window"</code> 按像素操作。</td></tr>
+<tr><th scope="row">本机 Wayland 会话</th><td><code translate="no">type="screen"</code>，经桌面门户，按像素；<code translate="no">window</code> 不列出</td></tr>
+</tbody>
+</table>
+
+<h2 id="决定和依据">决定和依据</h2>
+<table class="stack">
+<thead><tr><th scope="col">决定</th><th scope="col">依据</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">项目决定机器</th><td>Codex 把远程项目绑定到主机：项目在 SSH 主机上打开，它的线程都在那里运行</td><td>对话在哪运行取决于它的文件在哪；按对话选择可能把命令发到没有这个文件夹的机器</td></tr>
+<tr><th scope="row">没有默认环境</th><td>同上；Codex 也没有默认主机</td><td>默认值正是把新对话放到错误电脑上的原因；主项目就是这台电脑</td></tr>
+<tr><th scope="row">先机器，后文件夹</th><td>Codex 的远程项目流程：先选主机，再选上面的文件夹</td><td>文件夹选择器只能显示所选机器的文件夹</td></tr>
+<tr><th scope="row">主机上做不到的就隐藏</th><td>所有者的规则：不放报错页</td><td>快照和工作树在这台电脑的磁盘上运行；为主机上的文件夹提供它们只会失败</td></tr>
+<tr><th scope="row">一种类型一种连接</th><td>所有者的决定</td><td>一个叫 <code translate="no">screen</code> 的连接同时给出窗口，读起来像窗口挂在整屏之下；一种类型一种连接，配置就写明了能操作什么，服务多种连接的种类共用一个客户端</td></tr>
+<tr><th scope="row">机器和屏幕在同一条记录上</th><td>cua 的 <code translate="no">Sandbox</code>、Claude 远程设备、E2B desktop</td><td>跑命令的和被点击的是同一台机器，只该有一个身份</td></tr>
+<tr><th scope="row">每次调用写明设备</th><td>OpenClaw（每次调用写 <code translate="no">node</code>，不猜）。Anthropic 的 computer-use 工具和 OpenAI 的 <code translate="no">computer_use_preview</code> 把显示器或环境写进工具定义，一块屏幕一个工具；Claude in Chrome 用列出和选择工具来选浏览器</td><td>一块屏幕一个定义，屏幕一来一走工具就变；选中的浏览器是后来的调用看不见的状态；写明设备的调用自成一体</td></tr>
+<tr><th scope="row">能操作什么写在消息里</th><td>Claude Code 的延迟工具增量：目录先整份发一次，之后只发增删</td><td>请求里工具排在最前，改任何工具定义都会让整个提示重读；用户消息旁边的说明只改变末尾</td></tr>
+<tr><th scope="row">不写设备就是这台电脑</th><td>产品范围；参考框架都没有把命令和屏幕分在两台机器上，这里是有意不同</td><td>循环、App 和用户都在这台电脑上；含义随对话变就违反了第一条规则</td></tr>
+<tr><th scope="row"><code translate="no">type</code> 代替目标字符串</th><td>Codex Computer Use，每次调用都指名一个应用</td><td>每台设备上都是三种类型；按设备和表面拼字符串（<code data-claim="example" translate="no">screen:lab</code>）名字成倍增加，还得解析</td></tr>
+<tr><th scope="row">一个工具</th><td>Gemini 用一个工具覆盖浏览器、桌面和移动设备</td><td>按表面分工具，正是 Claude 有两套浏览器工具的原因</td></tr>
+<tr><th scope="row">核心动作名</th><td>Codex 的 <code translate="no">sky</code>、cua-driver</td><td>只有 Codex 用一套接口同时覆盖窗口和标签页</td></tr>
+<tr><th scope="row"><code translate="no">get_state</code>, <code translate="no">element</code></th><td>两家都不是这样：Codex 和 Claude 每种表面一个名字</td><td>现在一张表同时服务元素树和页面；两家的写法都会被改写</td></tr>
+<tr><th scope="row">用户的浏览器用 <code translate="no">app</code> 指明</th><td>Claude Code：自带浏览器和 Chrome 是两套工具</td><td>它是单独的目标，有自己的锁和规则键；用户说“在我的 Chrome 里”，而 <code translate="no">app</code> 正是“哪个应用”的那个词</td></tr>
+<tr><th scope="row">不写 <code translate="no">app</code> 就是 OpenProgram 的浏览器</th><td>Claude 桌面 App 把自带的叫“内置浏览器”（built-in browser）</td><td>它在任何对话里都能用，又不带用户的登录状态，所以是安全的默认；作为应用的 Chrome 仍是 <code translate="no">type="window", app="Google Chrome"</code></td></tr>
+<tr><th scope="row">操作系统不是参数</th><td>Anthropic 和 OpenAI 的工具都描述环境，而不是要模型填它</td><td>它是设备的事实；<code translate="no">&lt;devices&gt;</code> 说一次就够</td></tr>
+<tr><th scope="row"><code translate="no">mobile</code> 在同一个工具里，仍用 <code translate="no">click</code></th><td>Gemini 的移动模式；名字取自 Claude 的模拟器工具和 cua</td><td>一个名字在所有屏幕上都能用</td></tr>
+<tr><th scope="row">浏览器额外动作</th><td><code translate="no">create_tab</code>：Codex 和 Claude 一致；控制台和网络的名字：Claude</td><td>模型本来就带着这些名字</td></tr>
+<tr><th scope="row">列出就是已配置</th><td>原来 <code translate="no" data-claim="example">vm</code> 的可用性判断</td><td>每一轮不探测</td></tr>
+<tr><th scope="row">配置过的机器不再授权</th><td>产品规则：少弹窗</td><td>添加它就是同意</td></tr>
+<tr><th scope="row">手机要先添加</th><td>同一条规则</td><td>插上充电的手机不会被意外操作</td></tr>
+<tr><th scope="row">整屏授权</th><td>Claude 对屏幕访问只问一次</td><td>这个表面包含了所有应用</td></tr>
+<tr><th scope="row">权限状态和错误码写成文字</th><td>OpenClaw</td><td>模型能告诉用户该授予什么</td></tr>
+<tr><th scope="row">声明的能力和生效的能力分开</th><td>OpenClaw</td><td>提供方不能给自己加权限</td></tr>
+<tr><th scope="row">屏幕服务说 MCP</th><td>OpenClaw 把 cua-driver 注册为 MCP 服务</td><td>自己的服务和外面的服务走同一个入口</td></tr>
+<tr><th scope="row">由 Worker 去连每台机器</th><td>产品范围</td><td>让设备主动连进来，解决的是这个产品没有的网络问题</td></tr>
+<tr><th scope="row">SSH 和 Docker 桌面只用屏幕服务</th><td>一台机器一个 window 连接和一个 screen 连接</td><td>走 shell 按像素操作会成为第二条路，而且命令输出是文本</td></tr>
+</tbody>
+</table>
+
+<h2 id="不提供">不提供</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">不提供</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">只能通过 shell 够到的主机作为目标</th><td>它没有 window、screen 或 browser 连接；它是环境</td></tr>
+<tr><th scope="row">RDP</th><td>参考框架都没有客户端；Windows 桌面用 VNC 或屏幕服务</td></tr>
+<tr><th scope="row">设备主动连进来、配对</th><td>由 Worker 去连每台机器</td></tr>
+<tr><th scope="row">iPhone 真机</th><td>需要在手机上装签名的测试代理；还没有这个种类</td></tr>
+<tr><th scope="row">远程 Wayland 会话；按元素树操作 XWayland</th><td>不经门户的对话框就没有输入通道</td></tr>
+<tr><th scope="row">watchOS、tvOS、visionOS 模拟器</th><td>没有适合它们的词表</td></tr>
+<tr><th scope="row">多个工具、每台设备一个工具、以环境为默认</th><td>违反那三条规则</td></tr>
+<tr><th scope="row">旧配置和旧的调用写法</th><td>2.0 之前不为旧版本保留兼容：带 <code translate="no" data-claim="example">target</code> 的调用和任何未知参数一样被拒绝</td></tr>
+</tbody>
+</table>
+
+<h2 id="尚未验证">尚未验证</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">未知</th><th scope="col">不如意时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">idb</code> 在当前 Xcode 上是否可用；模拟器窗口是否暴露设备里的元素</th><td>模拟器按像素操作</td></tr>
+<tr><th scope="row">“iPhone 镜像”是否暴露元素</th><td>按像素</td></tr>
+<tr><th scope="row">在 GNOME 和 KDE 上经 SSH 找到正在运行的 X 会话</th><td>在机器的设置里填 display</td></tr>
+<tr><th scope="row">远程在 Windows 会话里启动屏幕服务</th><td>由用户在那边启动；需要有 Python 和 comtypes</td></tr>
+<tr><th scope="row">远程浏览器中继的吞吐</th><td>另一台设备上的浏览器变慢；别的不受影响</td></tr>
+<tr><th scope="row">用哪个 VNC 客户端库；各合成器上 Wayland 门户能否记住同意</th><td>这个种类晚些再做；对话框会再出现</td></tr>
+<tr><th scope="row">模型面对八台以上的机器</th><td>在设置里停用一些机器</td></tr>
+<tr><th scope="row">每个连接一个标签页驱动</th><td>远程浏览器用单独的驱动进程</td></tr>
+</tbody>
+</table>
+
+<h2 id="实现状态">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现：工具</th><td>在 <code translate="no">openprogram/programs/tools/computer_use/computer_use/</code> 下：约定（<code translate="no">contract.py</code>）、注册表和调用解析（<code translate="no">registry.py</code>）、步骤的唯一通路（<code translate="no">dispatch.py</code>）、锁（<code translate="no">locks.py</code>）、词表（<code translate="no">vocabulary.py</code>、<code translate="no">keynames.py</code>、<code translate="no">errors.py</code>）、指南 <code translate="no">guides/window.md</code>、<code translate="no">screen.md</code>、<code translate="no">browser.md</code>、<code translate="no">code.md</code>，以及代码模式（<code translate="no">code.py</code>）。固定的说明和 schema、<code translate="no">devices()</code> 和 <code translate="no">devices_note()</code> 在 <code translate="no">tool.py</code>。</td></tr>
+<tr><th scope="row">已实现：<code translate="no">&lt;devices&gt;</code></th><td><code translate="no">runtime/context/prompt_assembly/turn_context.py</code> 里的 <code translate="no">devices</code> 段（<code translate="no">BESIDE_ONLY_SECTIONS</code>、<code translate="no">LISTS</code>），由 <code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code> 的 <code translate="no">_devices</code> 填入；有自己提示的回合由 <code translate="no">components._build_devices</code> 放入整张列表。</td></tr>
+<tr><th scope="row">已实现：提供方</th><td><code translate="no">providers/desktop.py</code>（窗口）、<code translate="no">local_screen.py</code>（macOS 上的整屏，在打开 <code translate="no">computer_use.whole_screen</code> 之前关闭）、<code translate="no">built_in_browser.py</code>、<code translate="no">user_browser.py</code>（Chrome 和 Edge，标签页 id 稳定；经 <code translate="no">registry.claim</code> 的单一路径规则）、<code translate="no">osworld.py</code>（另一台设备上的整屏）。</td></tr>
+<tr><th scope="row">已实现：机器</th><td><code translate="no">openprogram/host/machines/</code>（注册表、<code translate="no">kinds.py</code>、<code translate="no">check.py</code>、<code translate="no">remote.py</code>、<code translate="no">here.py</code>、<code translate="no">status.py</code>），shell 种类 <code translate="no">local</code>、<code translate="no">ssh</code>、<code translate="no">docker</code>；机密存在 <code translate="no">auth/machines/</code>；一种类型一种连接；删除或停用机器（<code translate="no">registry.release</code>、<code translate="no">registry.operating</code>）；项目在机器上、分组的选择器、<strong>在…上打开文件夹</strong>、主机上的文件面板；设置 → 设备和 <code translate="no">openprogram machines</code>。</td></tr>
+<tr><th scope="row">未实现：设备种类</th><td>屏幕服务（SSH 或 Docker 机器上的窗口和整屏）、另一台设备上的浏览器及其中继、经 <code translate="no">adb</code> 的 Android 手机、经 <code translate="no">simctl</code> 的 iOS 模拟器和 <code translate="no">mobile</code> 类型、<code translate="no">vnc</code>、<code translate="no">cua_driver</code>、<code translate="no">wayland_portal</code>、远程的 OpenProgram agent、<code translate="no">via</code>（经另一台机器的 SSH 够到的连接），以及实时画面。</td></tr>
+<tr><th scope="row">未实现：名字</th><td>这台电脑的 window 和 screen 种类仍叫 <code translate="no">desktop</code>；它要改名为 <code translate="no">local</code>，和它的 shell 一样。</td></tr>
+<tr><th scope="row">未实现：其他</th><td>Linux 和 Windows 上的 <code translate="no">screen</code>：那里还没有能把被拒绝的窗口从整块显示器截图里去掉的驱动。别的目标打印的页面 ref 不会回答 <code translate="no">ELEMENT_GONE:</code>。缺少操作系统授权时，有人值守的调用仍在系统访问等待里暂停（见<a href="../../../../capabilities/computer-use.zh.html">操控电脑</a>）；只有没人能回答的调用才返回 <code translate="no">PERMISSION_MISSING:</code>。</td></tr>
+<tr><th scope="row">未实现：机器和展示</th><td>按机器列表收窄策略；替换本机驱动；同一台机器两种连接共用一个客户端。没有代码调用 <code translate="no">created()</code> 或 <code translate="no">frames()</code>：资源面板的页面来自浏览器应用，不为对话自己的实例列行，也没有另一台机器的预览。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

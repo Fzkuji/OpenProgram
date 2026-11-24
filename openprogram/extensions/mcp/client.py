@@ -30,6 +30,7 @@ from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult, Tool
 
 from openprogram.host.security.url_policy import URLPolicyError, normalize_origin
+from openprogram.host._platform.changes import signal
 
 _log = logging.getLogger(__name__)
 
@@ -258,7 +259,12 @@ class MCPClient:
                 f"{self.config.timeout_seconds}s"
             )
             self._shutdown.set()
+            self._announce()
             return
+
+    def _announce(self) -> None:
+        """Tell the open MCP pages this server's status changed."""
+        signal("mcp", self.config.name)
 
     async def stop(self) -> None:
         """Trigger shutdown and wait for the supervisor to clean up."""
@@ -500,6 +506,7 @@ class MCPClient:
                 if healthy_before and attempt < max_transient_attempts:
                     self.error = "mcp_connection_transient"
                     self.error_kind = "transient"
+                    self._announce()
                     attempt += 1
                     _log.info(
                         "'%s' transient connection failure (attempt %s/%s); retrying in %.1fs",
@@ -525,6 +532,8 @@ class MCPClient:
                 # stale ClientSession reference.
                 if not self._reconnect_signal.is_set() or self._shutdown.is_set():
                     self._session = None
+                # Connected, dropped, retrying or failed: the status changed.
+                self._announce()
 
     async def _run_local(self) -> None:
         params = self._local_parameters()
@@ -670,6 +679,7 @@ class MCPClient:
             self.error = None
             self.error_kind = None
             self._ready.set()
+            self._announce()
             # Hold the session open until either shutdown
             # (stop / worker exit) or a reconnect signal (call_tool
             # caught a session-expired error and wants the supervisor

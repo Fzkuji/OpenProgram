@@ -1,24 +1,67 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applicationRequest, type ApplicationInstance, type ApplicationRun } from "@/lib/net/applications";
-import { useTranslation } from "@/lib/i18n";
+import { useSessionStore } from "@/lib/session-store";
+import { requestSessionLoad } from "@/lib/runtime-bridge/session/session-load";
+import { HISTORY_PROTOCOL } from "@/lib/chat/history/session-history";
+import { setApplicationNote } from "@/lib/chat/send/application-notes";
+import { openSession } from "@/lib/tabs/navigation/open-session";
+import {
+  ApplicationComposer, type ComposerPlace, setOwnConversation, useConversationFeed,
+} from "@/components/applications/application-conversation";
+
+/** Instances already read, so a tab shown again draws its frame at once. */
+const instancesRead = new Map<string, ApplicationInstance>();
+
+function readPlace(value: unknown): ComposerPlace | null {
+  if (!value || typeof value !== "object") return null;
+  const { left, right, bottom } = value as Record<string, unknown>;
+  if (![left, right, bottom].every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n < 100_000)) return null;
+  return { left: left as number, right: right as number, bottom: bottom as number };
+}
 
 export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
-  const { text } = useTranslation();
-  const [instance, setInstance] = useState<ApplicationInstance | null>(null);
-  const [error, setError] = useState("");
+  const [instance, setInstance] = useState<ApplicationInstance | null>(() => instancesRead.get(instanceId) ?? null);
   const channel = useRef<MessageChannel | null>(null);
+  // The conversation the window shows (capability `chat`) and where its composer goes.
+  const [conversation, setConversation] = useState<string | null>(null);
+  const [place, setPlace] = useState<ComposerPlace | null>(null);
+  const conversationRef = useRef<string | null>(null);
   const base = `/api/application-instances/${encodeURIComponent(instanceId)}`;
   useEffect(() => {
     let disposed = false;
-    setInstance(null);
-    setError("");
-    applicationRequest<ApplicationInstance>(base).then(value => {
-      if (!disposed) setInstance(value);
-    }).catch(reason => { if (!disposed) setError(String(reason.message ?? reason)); });
-    return () => { disposed = true; channel.current?.port1.close(); channel.current?.port2.close(); };
-  }, [base]);
+    let failures = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    setInstance(instancesRead.get(instanceId) ?? null);
+    // A read that fails keeps what is drawn and is asked again, quietly.
+    const read = () => {
+      applicationRequest<ApplicationInstance>(base).then(value => {
+        instancesRead.set(instanceId, value);
+        if (!disposed) setInstance(value);
+      }).catch((reason: unknown) => {
+        if (disposed) return;
+        console.warn("application instance read failed; reading again", { instanceId, reason });
+        retry = setTimeout(read, Math.min(30_000, 1000 * 2 ** failures++));
+      });
+    };
+    read();
+    return () => { disposed = true; clearTimeout(retry); channel.current?.port1.close(); channel.current?.port2.close(); };
+  }, [base, instanceId]);
+
+  // A closed window stops telling its conversation what messages are about.
+  useEffect(() => () => { if (conversationRef.current) setApplicationNote(conversationRef.current, null); }, []);
+
+  // A window that declares chat keeps its conversations itself, so the right
+  // sidebar stays away from its first frame, not only once a conversation opens.
+  const holds = Boolean(instance?.application.capabilities?.includes("chat"));
+  useEffect(() => { setOwnConversation(instanceId, holds); }, [instanceId, holds]);
+  useEffect(() => () => setOwnConversation(instanceId, false), [instanceId]);
+
+  const post = useCallback((event: string, value: unknown) => {
+    channel.current?.port1.postMessage({ event, value });
+  }, []);
+  useConversationFeed(conversation, post);
 
   function connect(frame: HTMLIFrameElement) {
     if (!instance || !frame.contentWindow) return;
@@ -27,6 +70,9 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
     const connection = new MessageChannel();
     channel.current = connection;
     const definition = instance.application;
+    const chatAllowed = () => {
+      if (!definition.capabilities?.includes("chat")) throw new Error("application does not declare chat");
+    };
     connection.port1.onmessage = async ({ data }) => {
       if (!data || typeof data.id !== "string" || data.id.length > 128) return;
       const { id, method } = data;
@@ -52,6 +98,40 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
           } else result = await applicationRequest(`${runUrl}/${method === "run.cancel" ? "cancel" : "answer"}`, "POST", {
             request_id: params.request_id, answer: params.answer,
           });
+        } else if (method === "chat.open") {
+          chatAllowed();
+          const opened = await applicationRequest<{ session_id: string; project_id: string; folder: string }>(
+            `${base}/conversations`, "POST", { key: params.key, folder: params.folder });
+          const sid = opened.session_id;
+          const store = useSessionStore.getState();
+          const exists = Boolean(store.conversations[sid]);
+          // A conversation's first message creates it inside the folder.
+          if (!exists) store.setPendingProject(sid, opened.project_id);
+          else requestSessionLoad({ action: "load_session", session_id: sid, history_version: HISTORY_PROTOCOL });
+          if (conversationRef.current && conversationRef.current !== sid) setApplicationNote(conversationRef.current, null);
+          conversationRef.current = sid;
+          setConversation(sid);
+          result = { session_id: sid, folder: opened.folder, exists };
+        } else if (method === "chat.note") {
+          chatAllowed();
+          if (!conversationRef.current) throw new Error("No conversation is open");
+          setApplicationNote(conversationRef.current, typeof params.text === "string" ? params.text.slice(0, 16_000) : null);
+          result = true;
+        } else if (method === "chat.place") {
+          chatAllowed();
+          setPlace(readPlace(params.rect));
+          result = true;
+        } else if (method === "chat.reveal") {
+          chatAllowed();
+          const sid = conversationRef.current;
+          if (!sid || !useSessionStore.getState().conversations[sid]) result = false;
+          else { openSession(sid); result = true; }
+        } else if (method === "chat.close") {
+          chatAllowed();
+          if (conversationRef.current) setApplicationNote(conversationRef.current, null);
+          conversationRef.current = null;
+          setConversation(null);
+          result = true;
         } else throw new Error("Unsupported application request");
         connection.port1.postMessage({ id, result });
       } catch (reason) {
@@ -61,15 +141,26 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
     frame.contentWindow.postMessage({ type: "openprogram.application.connect" }, "*", [connection.port2]);
   }
 
-  if (error) return <div role="alert" className="p-5 text-fs-xs text-text-muted">{error}</div>;
-  if (!instance) return <div className="p-5 text-fs-xs text-text-muted">{text("Loading…", "加载中…")}</div>;
+  if (!instance) return null;
   const definition = instance.application;
-  return <iframe
-    title={definition.display_title || definition.title}
-    src={instance.ui_url}
-    sandbox="allow-scripts"
-    referrerPolicy="no-referrer"
-    className="h-full w-full border-0"
-    onLoad={event => connect(event.currentTarget)}
-  />;
+  return (
+    <div className="relative h-full w-full">
+      <iframe
+        title={definition.display_title || definition.title}
+        src={instance.ui_url}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        className="h-full w-full border-0"
+        onLoad={event => {
+          if (conversationRef.current) setApplicationNote(conversationRef.current, null);
+          conversationRef.current = null; setConversation(null); setPlace(null);
+          connect(event.currentTarget);
+        }}
+      />
+      {conversation && place ? (
+        <ApplicationComposer key={conversation} sessionId={conversation} place={place}
+          onHeight={(height) => post("composer", { height })} />
+      ) : null}
+    </div>
+  );
 }

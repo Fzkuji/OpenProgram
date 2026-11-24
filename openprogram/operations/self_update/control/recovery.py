@@ -135,11 +135,11 @@ def recover_pending_updates() -> bool:
             from ..repair.diagnosis import dispatch_pending
             dispatch_pending()
             return True
-        from . import dev_stable
-        if dev_stable.owns(record):
+        from . import dev_deploy
+        if dev_deploy.owns(record):
             # Its controller works outside this worker and restarts it on
             # purpose; turns keep running on whichever code is installed.
-            dev_stable.ensure_running(store, record)
+            dev_deploy.ensure_running(store, record)
             return True
         repair = load_repair(store, record)
         if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY and repair is None:

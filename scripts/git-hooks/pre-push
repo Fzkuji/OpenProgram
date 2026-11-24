@@ -1,8 +1,8 @@
 #!/bin/sh
 # Installed into .git/hooks by scripts/git-hooks/install.sh, on every deploy and publish.
-# GitHub carries one branch, main, and it only receives local main, the slow
-# line that script builds from promoted versions. Pushing dev or stable, or
-# any other branch, would upload the working history, so it is refused.
+# GitHub carries one branch, main, and it only receives local main, the line
+# that script squashes from dev once per sync. Pushing dev, or any other
+# branch, would upload the working history, so it is refused.
 # A pushed tag starts the Release workflow, so a tag goes up only from that
 # script and only on local main. Deleting a remote branch or tag stays allowed.
 zero=0000000000000000000000000000000000000000

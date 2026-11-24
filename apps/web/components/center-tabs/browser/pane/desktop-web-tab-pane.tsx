@@ -30,6 +30,8 @@ import { AddressField, ToolbarTip } from "../toolbar/browser-chrome";
 import { controlSurfaceVisible } from "@/lib/browser/control/browser-action-cue";
 import { operationHistory, resumeErrorFor, showActionsEnabled, useBrowserControlStore } from "@/lib/browser/control/browser-control";
 import { BookmarkButton, findButton, resourceForLiveTab, usePipCollapseTarget, CollapseToPipButton, WebPaneStage, HomeButton } from "./pane-controls";
+import { AnnotateButton } from "../toolbar/annotate-button";
+import { usePageAnnotate } from "./use-page-annotate";
 
 export function DesktopWebTabPane({
   suspended,
@@ -68,9 +70,7 @@ export function DesktopWebTabPane({
       ? text("Review request", "查看请求")
       : text("I will operate", "我来操作");
     const status = state === "waiting" ? text("Needs your confirmation", "需要你确认")
-      : state === "unknown" ? (connected
-        ? text("Could not confirm status", "无法确认状态")
-        : text("Connection lost", "连接已断开"))
+      : state === "unknown" ? ""
       : text("Active", "活动中");
     const history = operationHistory(control.resourceId);
     const historyItems = history.length === 0
@@ -151,6 +151,7 @@ export function DesktopWebTabPane({
     && typeof bridge.webTab.cancelPick === "function";
   // Region mode: true while the page waits for the user to drag a rectangle.
   const [regionPicking, setRegionPicking] = useState(false);
+  const annotate = usePageAnnotate(bridge, tabId, url);
   const canZoom = typeof bridge.webTab.zoom === "function";
   const canPrint = typeof bridge.webTab.print === "function";
   const collapseTarget = usePipCollapseTarget(tabId);
@@ -374,6 +375,7 @@ export function DesktopWebTabPane({
 
   function startComment() {
     if (!canComment) return;
+    if (annotate.active) annotate.exit();
     setRegionPicking(false);
     const seq = ++pickSeq.current;
     setComment({ picking: true });
@@ -402,6 +404,7 @@ export function DesktopWebTabPane({
   function startRegion() {
     if (!canRegion) return;
     if (comment) closeComment();
+    if (annotate.active) annotate.exit();
     if (!targetChat()) {
       showToast(text("Open a conversation to add the screenshot to", "先打开一个对话，再添加截图"));
       return;
@@ -548,6 +551,20 @@ export function DesktopWebTabPane({
           onSubmit={navigate}
           ariaLabel={text("Address", "地址")}
         >
+          {annotate.supported ? (
+            <AnnotateButton
+              active={annotate.active}
+              onToggle={() => {
+                if (annotate.active) {
+                  annotate.exit();
+                  return;
+                }
+                if (comment) closeComment();
+                if (regionPicking) cancelRegion();
+                annotate.start();
+              }}
+            />
+          ) : null}
           <BookmarkButton tabId={tabId} url={effectiveUrl} title={title || effectiveUrl} />
         </AddressField>
         <ViewSourceButton tabId={tabId} url={effectiveUrl} />

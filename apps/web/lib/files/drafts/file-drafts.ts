@@ -281,6 +281,7 @@ type DocumentControllerLike = {
   identity: { kind: string; projectId?: string; path: string };
   currentDraft(): Blob | null;
   getState(): { status: string; draft: Blob | null };
+  hasUnsavedChanges?(): boolean;
   discard(): Promise<void>;
 };
 
@@ -298,7 +299,8 @@ export async function hasDocumentDraftsForPath(projectId: string, path: string):
   const controllers = await documentControllersForPath(projectId, path);
   if (controllers.some((controller) => {
     const state = controller.getState();
-    return Boolean(controller.currentDraft()) || ["dirty", "saving", "error", "conflict"].includes(state.status);
+    return controller.hasUnsavedChanges?.()
+      || Boolean(controller.currentDraft()) || ["dirty", "saving", "error", "conflict"].includes(state.status);
   })) return true;
   if (typeof indexedDB === "undefined") return false;
   const records = await new IndexedDbDocumentDraftStore().list(projectId, path);

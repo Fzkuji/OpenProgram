@@ -19,8 +19,8 @@
 
 <ol>
 <li><code translate="no">prepare_command</code> resolves <code translate="no">workdir</code> (worktree, sandbox checks, remote <code translate="no">cd</code> guard).</li>
-<li><code translate="no">session.run</code> checks the session cap, and <code translate="no">processes.start</code> launches the command under a detached supervisor.</li>
-<li><code translate="no">collect</code> reads output every 50 ms into a 1 MiB head and tail buffer until the command ends or the yield time passes.</li>
+<li><code translate="no">session.run</code> checks the session cap, and <code translate="no">processes.start</code> launches the command under a detached supervisor and returns when the supervisor's one line on its stdout says the record runs.</li>
+<li><code translate="no">collect</code> reads unread output into a 1 MiB head and tail buffer each time the supervisor rings (<a href="#wakeups">wake-ups</a>), until the command ends or the yield time passes.</li>
 <li>Ended: <code translate="no">Process exited with code N</code> plus output, and the record is removed. Running: the record gets <code translate="no">background=True</code> and the reply is <code translate="no">Process running with session ID &lt;id&gt;</code>.</li>
 </ol>
 
@@ -47,7 +47,7 @@
 <tbody>
 <tr><th scope="row">empty</th><td>poll</td><td>poll</td></tr>
 <tr><th scope="row"><code translate="no">"\x03"</code></th><td>written to the terminal; line discipline sends SIGINT</td><td><code translate="no">interrupt</code> command: SIGINT to the process group</td></tr>
-<tr><th scope="row">other</th><td><code translate="no">write</code> command, raw bytes, 100 ms before reading</td><td>refused: stdin is closed</td></tr>
+<tr><th scope="row">other</th><td><code translate="no">write</code> command, raw bytes</td><td>refused: stdin is closed</td></tr>
 </tbody>
 </table>
 
@@ -62,13 +62,41 @@
 
 <p class="note">A reply that shows the exit marks the record <code translate="no">reported</code>.</p>
 
+<h2 id="wakeups">Wake-ups</h2>
+
+<p>Nothing in a running command wakes on a tick. <code translate="no">processes.db</code> holds everything (output, status, stop and stdin rows); a wake-up only says "look now".</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Who waits</th><th scope="col">Woken by</th></tr></thead>
+<tbody>
+<tr><th scope="row">Supervisor's control loop</th><td>The command's end: <code translate="no">SIGCHLD</code> from its group leader through <code translate="no">signal.set_wakeup_fd</code> (POSIX); the job's I/O completion port, followed by one thread (Windows). A stop, interrupt or stdin row: its writer connects to the doorbell after inserting it. A stdin pipe with room again (POSIX) or the writer thread finishing (Windows). One deadline: a stop's 5 s grace before SIGKILL</td></tr>
+<tr><th scope="row"><code translate="no">collect</code></th><td>The supervisor's ring after each output chunk and status write; its connection closing (the supervisor ended: a record still live turns <code translate="no">unknown</code> and the call returns); a stop fired for the turn (<code translate="no">cancellation.on_cancel</code>); the yield time; a 10 s resync</td></tr>
+<tr><th scope="row"><code translate="no">control</code> waiting for an acknowledgement</th><td>The ring after the supervisor applies it; 8 s for a stop, 3 s otherwise</td></tr>
+<tr><th scope="row"><code translate="no">processes.start</code></th><td>The supervisor's <code translate="no">ready</code> line on its inherited stdout, or that pipe closing; at most 10 s</td></tr>
+<tr><th scope="row"><code translate="no">group_guard</code> after the command's shell ends</th><td>Every other member of its group held by the operating system (kqueue <code translate="no">NOTE_EXIT</code>, a pidfd) and waited on; then the group is listed again, since a member may have started another. Listed every 0.1 s only where neither exists</td></tr>
+</tbody>
+</table>
+
+<p>The doorbell (<code translate="no">channel.py</code>) is a loopback TCP port each supervisor listens on, recorded with a random token in its private record. A connection without the token is dropped.</p>
+
+<p>A waiter connects before it reads, sending the token; the supervisor sends it one byte after every write. A writer connects after inserting its row; its token line wakes the supervisor to read its commands.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Option</th><th scope="col">Why not</th></tr></thead>
+<tbody>
+<tr><th scope="row">File events on <code translate="no">processes.db</code></th><td>Reach only the Worker (not <code translate="no">--print</code> or a script) and arrive after <code translate="no">watchfiles</code>' debounce, about 0.7 s: every quick command would wait that long. They stay for windows and the exit-notice loop</td></tr>
+<tr><th scope="row">Unix socket or FIFO</th><td>No <code translate="no">AF_UNIX</code> in Python on Windows, a 104-byte path limit on macOS; a FIFO is POSIX only</td></tr>
+<tr><th scope="row">A thread in <code translate="no">waitpid</code></th><td><code translate="no">SIGCHLD</code> into the loop's own socket needs no thread; on Windows the completion port also counts members that outlive the leader, which a process handle does not</td></tr>
+</tbody>
+</table>
+
 <h2 id="cap">Session cap</h2>
 
 <p>64 live sessions per conversation. At the cap, the least recently used session outside the eight most recent is stopped and marked <code translate="no">reported</code>, and the new reply names it. There is no idle timeout.</p>
 
 <h2 id="exit-notices">Exit notices</h2>
 
-<p><code translate="no">run_exit_notices</code> runs in the worker and sweeps every 2 s.</p>
+<p><code translate="no">run_exit_notices</code> runs in the worker. It sweeps when the process records change, at most every 2 s while output streams in, and, while a notice waits for a busy conversation, when that conversation may have gone quiet.</p>
 
 <ol>
 <li><code translate="no">unreported_exits()</code>: <code translate="no">background</code>, not <code translate="no">reported</code>, status <code translate="no">exited</code> or <code translate="no">failed</code>. A <code translate="no">stopped</code> command sends nothing.</li>
@@ -96,7 +124,7 @@
 <tr><th scope="row"><code translate="no">group_guard</code>, pipe</th><td>Runs the command with stdin <code translate="no">/dev/null</code></td></tr>
 <tr><th scope="row"><code translate="no">group_guard</code>, tty</th><td>Opens a pty as the controlling terminal of its own session, foregrounds its group, sets 30×120 and pumps master and supervisor pipes. Stops reading once its group and every other group of its session (a <code translate="no">set -m</code> job, a setpgid child) are empty, at most two seconds after the group: on macOS no end of output arrives while it holds the terminal, and a fully closed pty drops unread output</td></tr>
 <tr><th scope="row"><code translate="no">group_guard</code>, signals</th><td>Ignores SIGINT and SIGTERM, so an interrupt reaches the command</td></tr>
-<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> adds no newline; <code translate="no">interrupt</code> sends SIGINT to the group (Windows: terminates the tree)</td></tr>
+<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> adds no newline; <code translate="no">interrupt</code> sends SIGINT to the group (Windows: terminates the tree). Records its doorbell's port and token (never in <code translate="no">public_record</code>) with <code translate="no">running</code></td></tr>
 <tr><th scope="row"><code translate="no">ProcessStore</code></th><td>Records <code translate="no">tty</code>, <code translate="no">sandboxed</code>, <code translate="no">background</code>, <code translate="no">reported</code>, <code translate="no">last_used</code>. <code translate="no">take()</code> returns unread output and bytes dropped before reading.</td></tr>
 <tr><th scope="row">tty support</th><td>Local backend on macOS or Linux</td></tr>
 </tbody>
@@ -109,7 +137,7 @@
 <thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">Activity</th><td>Background sessions only; a command in its first wait is an active tool call</td></tr>
-<tr><th scope="row">Resources</th><td>Running background sessions in the Terminal group as Background terminal; retained output read-only in xterm with Stop; refreshes on the 3 s managed-process poll</td></tr>
+<tr><th scope="row">Resources</th><td>Running background sessions in the Terminal group as Background terminal; retained output read-only in xterm with Stop; refreshes when the process records change (the <code translate="no">processes</code> change frame)</td></tr>
 <tr><th scope="row">Tool rows</th><td><code translate="no">write_stdin</code>: "Waited for output", "Interrupted", "Typed". <code translate="no">terminal_use</code> input: "Typed in terminal".</td></tr>
 </tbody>
 </table>

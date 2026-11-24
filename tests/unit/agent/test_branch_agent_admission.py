@@ -218,7 +218,6 @@ def chat_request(session_id, branch_id, **fields):
 def test_a_send_stores_fast_and_not_the_skill_whitelist_or_the_agent(store, monkeypatch):
     _checkout_server(monkeypatch, store)
     a, b = two_branches(store)
-    monkeypatch.setattr("openprogram.host.environments.assign_new_session_environment", lambda *a: "local")
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.server_runtime.session_persistence import _save_session
     from openprogram.interfaces.server.ws_actions.chat.turn import _save_run_config

@@ -37,8 +37,8 @@ const {
   DesktopUpdateService,
   desktopUpdateFetch,
   parseUpgradeOutcome,
-  replaceAppImage,
 } = require("./main/self-update/update-service");
+const { appImageInPlace, macInPlace, windowsInPlace } = require("./main/self-update/app-replace");
 const { DesktopAttentionService } = require("./main/windows/attention-service");
 const {
   killWindowsProcessTree,
@@ -138,7 +138,14 @@ const UPDATE_INITIAL_DELAY_MS = 30_000;
 let desktopUpdates = null;
 let updateTimer = null;
 
+let menuReadyVersion = null;
+
 function broadcastUpdateState(state) {
+  // The menu offers the restart while a prepared version waits.
+  if ((state.readyVersion || null) !== menuReadyVersion) {
+    menuReadyVersion = state.readyVersion || null;
+    if (app.isReady()) buildMenu();
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
@@ -189,15 +196,6 @@ function updateFileFilters() {
     : [{ name: "Debian Package", extensions: ["deb"] }];
 }
 
-function canWriteBeside(file) {
-  try {
-    fs.accessSync(path.dirname(file), fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** A sealed version updates through its own Python, which holds the fetcher. */
 function runVersionStoreUpdate() {
   const launch = shellContext.resolveWorker();
@@ -220,6 +218,32 @@ function runVersionStoreUpdate() {
   });
 }
 
+/**
+ * How this App installs an update itself (main/self-update/app-replace.js),
+ * or null when it can only open the installer for the user.
+ */
+function desktopInPlace(appImage) {
+  const quit = () => setTimeout(() => app.quit(), 300);
+  try {
+    if (process.platform === "darwin") {
+      return macInPlace({ execPath: process.execPath, userData: app.getPath("userData"), quit });
+    }
+    if (process.platform === "win32") return windowsInPlace({ userData: app.getPath("userData"), quit });
+    if (appImage) {
+      return appImageInPlace({
+        appImage,
+        relaunch: () => setTimeout(() => {
+          app.relaunch(shellContext?.relaunchOptions?.());
+          app.exit(0);
+        }, 300),
+      });
+    }
+  } catch (error) {
+    console.error(`[desktop] updates cannot install in place: ${error.message}`);
+  }
+  return null;
+}
+
 function initializeDesktopUpdates() {
   const appImage = process.platform === "linux" ? process.env.APPIMAGE : "";
   const versionStore = Boolean(shellContext?.versionId);
@@ -239,8 +263,8 @@ function initializeDesktopUpdates() {
     versionStore,
     readCurrentVersion: versionStore ? runningReleaseVersion : null,
     applyVersionUpdate: versionStore ? runVersionStoreUpdate : null,
+    inPlace: desktopInPlace(appImage),
     chooseSavePath: async (name) => {
-      if (appImage && canWriteBeside(appImage)) return path.join(path.dirname(appImage), `.${name}.download`);
       const result = await dialog.showSaveDialog({
         title: "Download OpenProgram Update",
         defaultPath: path.join(app.getPath("downloads"), name),
@@ -252,24 +276,13 @@ function initializeDesktopUpdates() {
       line: process.platform === "win32" ? await readLine() : null,
     }),
     openPath: async (filePath) => {
-      if (appImage && path.dirname(filePath) === path.dirname(appImage)) {
-        try {
-          replaceAppImage(filePath, appImage);
-        } catch (error) {
-          return `The new version could not replace ${appImage}: ${error.message}`;
-        }
-        setTimeout(() => {
-          app.relaunch(shellContext?.relaunchOptions?.());
-          app.exit(0);
-        }, 300);
-        return "";
-      }
       if (filePath.endsWith(".AppImage")) fs.chmodSync(filePath, 0o755);
       return shell.openPath(filePath);
     },
     emit: broadcastUpdateState,
   });
   scheduleAutomaticUpdateCheck(true);
+  desktopUpdates.prepareInBackground();
   powerMonitor.on("resume", () => scheduleAutomaticUpdateCheck());
 }
 
@@ -299,6 +312,7 @@ function registerUpdateIpc() {
     return state;
   });
   ipcMain.handle("updates:download", () => desktopUpdates?.download() || null);
+  ipcMain.handle("updates:install", () => desktopUpdates?.install() || null);
   ipcMain.handle("updates:open-release", () => {
     const releaseUrl = desktopUpdates?.getState().release?.releaseUrl;
     return releaseUrl ? shell.openExternal(releaseUrl) : null;
@@ -959,6 +973,9 @@ const {
 });
 
 const tabTransfers = makeTransferCoordinator();
+// Other applications' windows inside tabs; made once the app is ready.
+let embeddedWindows = null;
+let appQuitting = false;
 
 function contextForSender(event) {
   const win = event?.sender
@@ -1147,6 +1164,14 @@ const {
   safeRecordVisit: (...args) => safeRecordVisit(...args),
   withDebugger: (...args) => withDebugger(...args),
   tabTransfers,
+});
+
+// Annotate mode runs in the pickers' isolated world (PICKER_WORLD in
+// web-views.js), so starting either one ends the other.
+const { annotateView } = require("./main/web-views/webtab-annotate").createWebTabAnnotate({
+  ownerOf: (...args) => ownerOf(...args),
+  recordFor: (...args) => recordFor(...args),
+  world: 1207,
 });
 
 const {
@@ -1476,6 +1501,11 @@ function registerWebTabIpc() {
   ipcMain.on("webtab:cancel-pick", (event, id) => {
     const ctx = contextForSender(event);
     if (ctx && typeof id === "string") cancelPickInView(ctx, id);
+  });
+  ipcMain.handle("webtab:annotate", (event, id, action, options) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" && typeof action === "string"
+      ? annotateView(ctx, id, action, options) : false;
   });
   ipcMain.handle("webtab:zoom", (event, id, action) => {
     const ctx = contextForSender(event);
@@ -1879,12 +1909,22 @@ function goBackMenuItem() {
   return { label: "Go back to a previous version", click: () => void shellContext.openRecovery("menu") };
 }
 
+/** "Restart to Update" while a downloaded version waits for a restart. */
+function restartToUpdateItems() {
+  if (!menuReadyVersion) return [];
+  return [{
+    label: `Restart to Update to ${menuReadyVersion}`,
+    click: () => { void desktopUpdates?.install().catch(() => {}); },
+  }];
+}
+
 function applicationMenu(settingsItem) {
   return {
     label: INSTANCE.name,
     submenu: [
       { role: "about", label: `About ${INSTANCE.name}` },
       ...(shellContext?.openRecovery ? [goBackMenuItem()] : []),
+      ...restartToUpdateItems(),
       { type: "separator" },
       settingsItem,
       { type: "separator" },
@@ -1933,7 +1973,7 @@ function buildMenu() {
         { type: "separator" },
         { role: "close", accelerator: "Shift+CmdOrCtrl+W" },
         // Windows and Linux have no application menu: Settings sits here.
-        ...(!isMac ? [{ type: "separator" }, settingsItem] : []),
+        ...(!isMac ? [{ type: "separator" }, settingsItem, ...restartToUpdateItems()] : []),
         ...(!isMac && shellContext?.openRecovery ? [{ type: "separator" }, goBackMenuItem()] : []),
       ],
     },
@@ -1943,6 +1983,9 @@ function buildMenu() {
       // every web view; the renderer reloads the active page instead.
       label: "View",
       submenu: [
+        // The sidebar's bell: the list switches to Activity and back.
+        { label: "Activity", accelerator: "Alt+CmdOrCtrl+U", click: shortcut({ action: "toggle-activity" }) },
+        { type: "separator" },
         { label: "Reload", accelerator: "CmdOrCtrl+R", click: send("menu:reload") },
         { label: "Force Reload", accelerator: "Shift+CmdOrCtrl+R", click: send("menu:force-reload") },
         { role: "toggleDevTools" },
@@ -2096,6 +2139,11 @@ async function createWindow(options = {}) {
   win.on("blur", () => closeMainMenu(ctx));
   win.on("resize", () => closeMainMenu(ctx));
   win.on("close", (event) => {
+    // Windows embedded in the page go back to the desktop before it closes.
+    if (embeddedWindows && embeddedWindows.windowClosing(ctx, event, () => {
+      if (appQuitting) app.quit();
+      else if (!win.isDestroyed()) win.close();
+    })) return;
     tabTransfers.windowClosing(ctx, event);
   });
   win.on("closed", () => cleanupWindowContext(ctx));
@@ -2230,6 +2278,7 @@ ${themeChrome.directoryListingCss(currentChrome)}
 // tabs (each window's tabs persist under its id in the renderer).
 const sessionWindowsFile = () => path.join(app.getPath("userData"), sessionWindows.FILE_NAME);
 app.on("before-quit", () => {
+  appQuitting = true;
   try {
     sessionWindows.recordOpenWindows(sessionWindowsFile(), [...windows.values()]
       .filter((ctx) => ctx.id !== "main" && !ctx.pendingTransferToken && !ctx.win.isDestroyed())
@@ -2335,6 +2384,10 @@ const registerMainWindow = () => registerSingleMainWindow({
     require("./main/windows/recording-bar").createRecordingBar({
       BrowserWindow, ipcMain, path, screen: require("electron").screen,
       uiOrigin: overlayUiOrigin,
+    });
+    embeddedWindows = require("./main/windows/embedded-windows").createEmbeddedWindows({
+      ipcMain, desktopCapturer: require("electron").desktopCapturer, screen: require("electron").screen,
+      contextForSender, platform: process.platform, pid: process.pid, setTimeout, clearTimeout,
     });
     require("./main/windows/pane-recording").createPaneRecording({
       ipcMain, session: session.defaultSession, fs, path, homeDir: app.getPath("home"),

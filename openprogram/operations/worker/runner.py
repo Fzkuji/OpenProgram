@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import signal as _signal
+import sys
 import threading
 import time
 
@@ -65,22 +66,54 @@ class _ChannelSupervisor:
     (``openprogram channels setup``, the Web UI's QR login) must start
     receiving without a worker restart, a re-login replaces a stopped
     adapter, and a disabled or removed account stops. ``sync`` reconciles
-    the running set with the account files; a watcher thread calls it
-    every few seconds and stamps the heartbeats the status endpoint reads.
+    the running set with the account files; a watcher thread calls it when
+    they change and keeps the running marks the status endpoint reads.
+
+    It wakes on the ``channels`` topic (an account written in this process,
+    an adapter that stopped, ended or is reconnecting) and on file events
+    under ``<state>/channels`` for ``account.json`` and ``credentials.json``
+    (:data:`FILES_TOPIC`: the CLI's ``openprogram channels setup``). It
+    looks again every :data:`RESYNC_S` in case an event was lost, every
+    :data:`POLL_S` where file events cannot be had, and retries an adapter
+    that failed to start after :data:`RETRY_S`, doubling up to the resync.
+    An adapter thread says when it ends (:func:`_safe_run_channel`), so a
+    running adapter's mark is set once when it starts and cleared when it
+    ends; nothing wakes on a timer to look at the threads.
     """
 
-    INTERVAL_S = 5.0
+    FILES_TOPIC = "channels.files"
+    POLL_S = 5.0
+    RESYNC_S = 300.0
+    RETRY_S = 5.0
 
     def __init__(self) -> None:
         self.stop = threading.Event()
         self._lock = threading.Lock()
         # label -> (thread, its own stop event, credentials stamp)
         self._running: dict[str, tuple[threading.Thread, threading.Event, float]] = {}
+        self._adapters: dict[str, object] = {}
         self._reported: dict[str, str] = {}
+        #: Whether the last sync could not build an adapter it should run.
+        self.init_failed = False
+        self._listener = None
+        #: Labels whose running mark is set.
+        self._marked: set[str] = set()
+        #: label -> set by its adapter thread as it ends.
+        self._ended: dict[str, threading.Event] = {}
 
     def threads(self) -> list[tuple[str, threading.Thread]]:
         with self._lock:
             return [(label, entry[0]) for label, entry in self._running.items()]
+
+    def threads_holding_work(self) -> list[tuple[str, threading.Thread]]:
+        """The adapter threads a stopping worker waits for.
+
+        One inside a long poll holds nothing: it ends with the process, and
+        what the platform would have answered is handed out after the restart.
+        """
+        with self._lock:
+            return [(label, entry[0]) for label, entry in self._running.items()
+                    if not getattr(self._adapters.get(label), "awaiting_platform", False)]
 
     def _report(self, label: str, message: str) -> None:
         # Say each skip once, not every sync.
@@ -96,7 +129,9 @@ class _ChannelSupervisor:
             from openprogram.interfaces.channels import build_channel, list_status
             rows = list_status()
         except Exception:  # noqa: BLE001
+            self.init_failed = True
             return []
+        self.init_failed = False
         started: list[str] = []
         wanted: set[str] = set()
         with self._lock:
@@ -123,7 +158,7 @@ class _ChannelSupervisor:
                     thread, _own_stop, old_stamp = current
                     # A stopped adapter (expired login) restarts only after
                     # new credentials arrive, not in a loop.
-                    if thread.is_alive() or stamp == old_stamp:
+                    if self._live(label, thread) or stamp == old_stamp:
                         continue
                 try:
                     ch = build_channel(channel, account_id)
@@ -131,52 +166,93 @@ class _ChannelSupervisor:
                         continue
                 except Exception as e:  # noqa: BLE001
                     self._report(label, f"init failed: {type(e).__name__}: {e}")
+                    self.init_failed = True
                     _heartbeats.record_stop(channel, account_id, _heartbeats.STOP_FAILED)
                     continue
                 own_stop = threading.Event()
+                ended = threading.Event()
                 thread = threading.Thread(
                     target=_safe_run_channel,
-                    args=(label, ch, own_stop),
+                    args=(label, ch, own_stop, ended),
                     daemon=True,
                     name=f"channel-{channel}-{account_id}",
                 )
                 _heartbeats.clear_stop(channel, account_id)
                 thread.start()
                 self._running[label] = (thread, own_stop, stamp)
+                self._ended[label] = ended
+                self._adapters[label] = ch
                 self._reported.pop(label, None)
                 started.append(label)
             for label in [k for k in self._running if k not in wanted]:
                 _thread, own_stop, _stamp = self._running.pop(label)
+                self._ended.pop(label, None)
+                self._adapters.pop(label, None)
                 own_stop.set()
                 print(f"[{label}] stopped — account disabled or removed.")
         return started
 
     def shutdown(self) -> None:
         self.stop.set()
+        if self._listener is not None:
+            self._listener.wake()
         with self._lock:
             for _thread, own_stop, _stamp in self._running.values():
                 own_stop.set()
 
-    def start_watcher(self) -> threading.Thread:
+    def _live(self, label: str, thread: threading.Thread) -> bool:
+        ended = self._ended.get(label)
+        return thread.is_alive() and not (ended is not None and ended.is_set())
+
+    def mark_running(self) -> None:
+        """Set the running mark of each live adapter once and clear the
+        mark of one whose thread ended or that no longer runs."""
         from openprogram.interfaces.channels._heartbeats import clear, heartbeat
 
-        def _beat() -> None:
-            for label, thread in self.threads():
-                channel, _, account = label.partition(":")
-                if thread.is_alive():
-                    heartbeat(channel, account or "default")
-                else:
-                    clear(channel, account or "default")
+        live = {label for label, thread in self.threads() if self._live(label, thread)}
+        with self._lock:
+            marked = self._marked
+            self._marked = set(live)
+        for label in live - marked:
+            channel, _, account = label.partition(":")
+            heartbeat(channel, account or "default")
+        for label in marked - live:
+            channel, _, account = label.partition(":")
+            clear(channel, account or "default")
+
+    def start_watcher(self) -> threading.Thread:
+        from openprogram.host._platform import changes
+        from openprogram.state.paths import get_state_dir
+
+        changes.watch(get_state_dir() / "channels", self.FILES_TOPIC, recursive=True,
+                      names={"account.json", "credentials.json"})
+        self._listener = listener = changes.listen(self.FILES_TOPIC)
+        watcher: threading.Thread | None = None
+
+        def on_channels(_keys: tuple[str, ...]) -> None:
+            # Not for the marks this loop sets itself.
+            if threading.current_thread() is not watcher:
+                listener.wake()
 
         def _loop() -> None:
-            while not self.stop.wait(self.INTERVAL_S):
-                for label in self.sync():
-                    worker_print(f"channels: started {label}")
-                _beat()
+            retry = self.RETRY_S
+            unsubscribe = changes.subscribe("channels", on_channels)
+            try:
+                while not self.stop.is_set():
+                    due = time.time() + retry if self.init_failed else None
+                    changes.wait_for(listener, resync=self.RESYNC_S, poll=self.POLL_S, due=due)
+                    if self.stop.is_set():
+                        break
+                    for label in self.sync():
+                        worker_print(f"channels: started {label}")
+                    retry = min(retry * 2, self.RESYNC_S) if self.init_failed else self.RETRY_S
+                    self.mark_running()
+            finally:
+                unsubscribe()
 
-        # Prime the heartbeats so a status query right after startup
-        # already sees the adapters that just started.
-        _beat()
+        # Mark the adapters the first sync started, so a status query right
+        # after startup already sees them.
+        self.mark_running()
         watcher = threading.Thread(
             target=_loop, name="channel-supervisor", daemon=True,
         )
@@ -184,7 +260,8 @@ class _ChannelSupervisor:
         return watcher
 
 
-def _safe_run_channel(label: str, channel, stop: threading.Event) -> None:
+def _safe_run_channel(label: str, channel, stop: threading.Event,
+                      ended: threading.Event | None = None) -> None:
     from openprogram.interfaces.channels import _heartbeats
 
     platform, _, account_id = label.partition(":")
@@ -199,6 +276,13 @@ def _safe_run_channel(label: str, channel, stop: threading.Event) -> None:
         import traceback
         print(f"[{label}] crashed: {type(e).__name__}: {e}")
         print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
+    finally:
+        # The thread is ending: the supervisor clears its running mark now
+        # instead of finding the dead thread on a timer.
+        if ended is not None:
+            ended.set()
+        from openprogram.host._platform import changes
+        changes.signal("channels", label)
 
 
 def _raise_open_file_limit() -> None:
@@ -366,23 +450,42 @@ def _settle_managed_version(port: int) -> None:
         worker_print(f"direct edits could not be reported: {exc}")
 
 
+#: The stop request file was written (``request_stop``).
+_STOP_TOPIC = "worker.stop"
+#: Where file events cannot be had, the request file is read this often, so
+#: the shutdown fits in the five seconds ``stop_worker`` waits before it kills.
 _STOP_POLL_SECONDS = 0.25
+#: How long the main thread waits at a time. A signal interrupts a blocking
+#: wait on POSIX, so there it only has to look in case an event was lost; on
+#: Windows a lock wait does not return for Ctrl-C, so it wakes every second
+#: to let the interrupt through.
+_STOP_WAKE_SECONDS = 1.0 if sys.platform == "win32" else 300.0
 
 
-def _wait_for_stop(sleep=time.sleep) -> None:
+def _wait_for_stop(wait=None) -> None:
     """Hold the main thread until the worker is asked to stop.
 
-    A signal raises ``KeyboardInterrupt`` out of the sleep. A stop request
-    file does the same where no signal can be sent (``request_stop``): it
-    is looked for often enough that the shutdown fits in the five seconds
-    ``stop_worker`` waits before it kills.
+    A signal raises ``KeyboardInterrupt`` out of the wait. A stop request
+    file does the same where no signal can be sent (``request_stop``): its
+    file event wakes the wait at once (``host/_platform/changes``), and
+    without file events it is read every :data:`_STOP_POLL_SECONDS`.
+    ``wait(listener)`` replaces the wait in tests.
     """
-    from .lifecycle import stop_requested
+    from openprogram.host._platform import changes
 
-    while True:
-        sleep(_STOP_POLL_SECONDS)
-        if stop_requested():
-            raise KeyboardInterrupt
+    from .lifecycle import stop_requested
+    from .paths import stop_request_path
+
+    request = stop_request_path()
+    changes.watch(request.parent, _STOP_TOPIC, names={request.name})
+    if wait is None:
+        def wait(listener):
+            return changes.wait_for(listener, resync=_STOP_WAKE_SECONDS, poll=_STOP_POLL_SECONDS)
+    with changes.listen(_STOP_TOPIC) as listener:
+        while True:
+            if stop_requested():
+                raise KeyboardInterrupt
+            wait(listener)
 
 
 def run_foreground() -> int:
@@ -435,6 +538,13 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         worker_print(f"open permissions migration failed: {type(exc).__name__}: {exc}")
 
+    try:
+        from openprogram.operations.migrations.computer_use_rename import run as migrate_computer_use_names
+        if migrate_computer_use_names():
+            worker_print("computer_use: stored tool names and rules updated")
+    except Exception as exc:  # noqa: BLE001
+        worker_print(f"computer_use rename failed: {type(exc).__name__}: {exc}")
+
     # This process now owns the profile: read the sessions that were still
     # running before anything can ask about them.
     try:
@@ -475,6 +585,10 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         worker_print(f"session migration deferred: {exc}")
 
+    # File events from the operating system, for every loop that waits on
+    # a change instead of looking every few seconds (host/_platform/changes).
+    from openprogram.host._platform import changes as _changes
+    _changes.start_watching()
     get_job_runner()
     from openprogram.operations.worker import subsystems as _subsystems
     _subsystems.record("job_runner", _subsystems.RUNNING)
@@ -696,7 +810,7 @@ def run_foreground() -> int:
         # 3s each already blew that window — every stop ended in SIGKILL.
         # Threads that don't stop in time drop on process exit anyway.
         _join_deadline = time.time() + 2.0
-        for label, t in channels.threads():
+        for label, t in channels.threads_holding_work():
             t.join(timeout=max(0.1, _join_deadline - time.time()))
             if t.is_alive():
                 print(f"[{label}] still running; drops on process exit")

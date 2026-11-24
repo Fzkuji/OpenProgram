@@ -21,7 +21,7 @@ interface Props {
 function describeStatus(
   status: ChannelHealthStatus | undefined,
   text: (english: string, chinese: string) => string,
-): { dot: string; label: string; hint?: string; needsSignIn?: boolean } {
+): { dot: string; label: string; hint?: string; needsSignIn?: boolean } | null {
   switch (status?.state) {
     case "alive":
       return { dot: styles.dotGreen, label: text("Running", "运行中") };
@@ -81,7 +81,8 @@ function describeStatus(
         ),
       };
     default:
-      return { dot: styles.dotGray, label: text("Checking", "检查中") };
+      // Not read yet: the cell stays empty until it is.
+      return null;
   }
 }
 
@@ -162,10 +163,14 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
                       <td>{PLATFORM_LABEL[a.channel] || a.channel}</td>
                       <td><code>{a.account_id}</code></td>
                       <td>
-                        <span className={`${styles.statusDot} ${shown.dot}`} />
-                        {shown.label}
-                        {shown.hint && <div className={styles.statusHint}>{shown.hint}</div>}
-                        {shown.needsSignIn && <div className={styles.statusHint}><code>{signIn}</code></div>}
+                        {shown ? (
+                          <>
+                            <span className={`${styles.statusDot} ${shown.dot}`} />
+                            {shown.label}
+                            {shown.hint && <div className={styles.statusHint}>{shown.hint}</div>}
+                            {shown.needsSignIn && <div className={styles.statusHint}><code>{signIn}</code></div>}
+                          </>
+                        ) : null}
                       </td>
                       <td>
                         <Button

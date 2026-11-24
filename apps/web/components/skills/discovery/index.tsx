@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useSkills, type Skill } from "@/lib/abilities/skills-store";
+import { isAbort, readUntilAnswered } from "@/lib/abilities/kept-read";
 import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -51,9 +52,14 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
   const [checkingUrl, setCheckingUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
+  // Both lists are read until they answer, quietly and after a growing
+  // pause; a refused read (HTTP 4xx) is not asked again.
   useEffect(() => {
-    fetchDiscoverySources();
-    fetchDiscoverySuggested();
+    const controller = new AbortController();
+    const quiet = (what: string) => (cause: unknown) => { if (!isAbort(cause)) console.warn(`[skills] ${what} read refused`, cause); };
+    readUntilAnswered("skills:discovery-sources", fetchDiscoverySources, controller.signal).catch(quiet("discovery sources"));
+    readUntilAnswered("skills:discovery-suggested", fetchDiscoverySuggested, controller.signal).catch(quiet("suggested sources"));
+    return () => controller.abort();
   }, [fetchDiscoverySources, fetchDiscoverySuggested]);
 
   // Merge suggested + custom into one list, suggested first.
@@ -129,7 +135,7 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
       try {
         const r = await fetch(`/api/skills/discovery/diff?url=${encodeURIComponent(url)}`);
         if (r.ok) {
-          const d: { outdated?: string[] } = await r.json();
+          const d = await r.json() as { outdated?: string[] };
           outdated = new Set(d.outdated || []);
         }
       } catch { /* ignore */ }
@@ -176,7 +182,7 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
         `/api/skills/discovery/diff?url=${encodeURIComponent(source.url)}`,
       );
       if (r.ok) {
-        const d: { outdated?: string[] } = await r.json();
+        const d = await r.json() as { outdated?: string[] };
         const newOutdated = new Set(d.outdated || []);
         setCatalogs((c) => {
           const prev = c[source.url] ?? {
@@ -238,7 +244,7 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
           `/api/skills/discovery/diff?url=${encodeURIComponent(source.url)}`,
         );
         if (r.ok) {
-          const d: { outdated?: string[] } = await r.json();
+          const d = await r.json() as { outdated?: string[] };
           setCatalogs((c) => ({
             ...c,
             [source.url]: { ...c[source.url], outdated: new Set(d.outdated || []) },
@@ -505,9 +511,6 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
                 </div>
                 {open && (
                   <div className="border-t border-border p-3 bg-bg-secondary/40">
-                    {cat?.loading && (
-                      <div className="text-fs-2xs text-text-secondary">{text("Loading catalog...", "正在加载目录...")}</div>
-                    )}
                     {cat?.error && (
                       <div className="text-fs-2xs text-accent-red">{cat.error}</div>
                     )}

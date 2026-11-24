@@ -567,5 +567,7 @@
   "reference/design/ui/chat/transcript-model-delivery.html": "reference/design/ui/transcript-model/delivery.html",
   "reference/design/ui/chat/transcript-model-delivery.zh.html": "reference/design/ui/transcript-model/delivery.zh.html",
   "reference/design/ui/chat/transcript-model-limits.html": "reference/design/ui/transcript-model/limits.html",
-  "reference/design/ui/chat/transcript-model-limits.zh.html": "reference/design/ui/transcript-model/limits.zh.html"
+  "reference/design/ui/chat/transcript-model-limits.zh.html": "reference/design/ui/transcript-model/limits.zh.html",
+  "reference/design/integrations/computer-use/screen-providers.html": "reference/design/integrations/computer-use/machines-and-targets.html",
+  "reference/design/integrations/computer-use/screen-providers.zh.html": "reference/design/integrations/computer-use/machines-and-targets.zh.html"
 }

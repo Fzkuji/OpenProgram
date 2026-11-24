@@ -185,6 +185,11 @@ class TurnRequest:
     # Told to the model with this turn's message and not shown as part of it:
     # a scheduled run's last result and how to say there is nothing new.
     run_note: Optional[str] = None
+    # Told to the model with this turn's message and not shown as part of it:
+    # what the application the person typed in says the message is about
+    # (the research task open in Auto Research, its deliverable and its
+    # failing checks). Sent by the composer an application window shows.
+    application_note: Optional[str] = None
     # The scheduled task whose run this turn is (``id`` and ``title``), kept in
     # the admitted input: a turn resumed after a restart still ends as that run.
     scheduled_task: Optional[dict[str, Any]] = None

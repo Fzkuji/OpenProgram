@@ -123,8 +123,25 @@ test("event rows read the way the prototype words them", () => {
 });
 
 test("a browser step says what it did", () => {
-  const step = patch => eventLabel({ kind: "step", at: 0, node_id: "n", tool_call_id: null, name: "computer_use_agent", input: {}, input_truncated: false, result: null, result_truncated: false, failed: false, ...patch }, text).label;
-  assert.equal(step({ input: { actions: [{ action: "navigate", args: { url: "https://gomami.io/store/x" } }, { action: "evaluate", args: {} }] } }), "Browser: navigate gomami.io, evaluate");
-  assert.equal(step({ result: "<guide>how to use</guide>" }), "Browser: guide");
-  assert.equal(step({ failed: true, input: JSON.stringify({ action: "navigate", args: { url: "http://vps.hosting/" } }) }), "Failed · Browser: navigate vps.hosting");
+  const step = patch => eventLabel({ kind: "step", at: 0, node_id: "n", tool_call_id: null, name: "computer_use", input: {}, input_truncated: false, result: null, result_truncated: false, failed: false, ...patch }, text).label;
+  assert.equal(step({ input: { type: "browser", actions: [{ action: "navigate", args: { url: "https://gomami.io/store/x" } }, { action: "evaluate", args: {} }] } }), "Browser: navigate gomami.io, evaluate");
+  assert.equal(step({ input: { type: "browser" }, result: "<guide>how to use</guide>" }), "Browser: guide");
+  assert.equal(step({ failed: true, input: JSON.stringify({ type: "browser", action: "navigate", args: { url: "http://vps.hosting/" } }) }), "Failed · Browser: navigate vps.hosting");
+  assert.equal(step({ input: { type: "browser", app: "chrome", action: "goto", args: { url: "https://example.com/a" } } }), "Chrome: navigate example.com");
+  assert.equal(step({ input: { type: "browser", device: "lab", action: "create_tab", args: { url: "http://localhost:3000" } } }), "Browser on lab: create_tab localhost:3000");
+  assert.equal(step({ input: { type: "browser", app: "edge" }, result: "[type=\"browser\", app=\"edge\", this computer]\n<guide name=\"computer_use.browser\">x</guide>" }), "Edge: guide");
+});
+
+test("an application or screen step reads as the chat row, never as a browser step", () => {
+  const step = input => eventLabel({ kind: "step", at: 0, node_id: "n", tool_call_id: null, name: "computer_use", input, input_truncated: false, result: null, result_truncated: false, failed: false }, text).label;
+  assert.equal(step({ type: "window", app: "Calculator", action: "click", args: { element: 3 } }), "Clicked in Calculator");
+  assert.equal(step({ type: "screen", action: "press_key", args: { key: "Escape" } }), "Pressed key on the screen Escape");
+  assert.equal(step({ type: "screen", device: "lab", action: "left_click", args: { x: 1, y: 2 } }), "Clicked on lab's screen");
+});
+
+test("a reply that opens with a code block is titled by the first line that says something", () => {
+  assert.equal(runTitle(run({ reply: "```text\n1. This week\n```" }), text), "1. This week");
+  assert.equal(runTitle(run({ reply: "~~~\nplain\n~~~" }), text), "plain");
+  // A line that is code, not a fence, is still a first line.
+  assert.equal(runTitle(run({ reply: "```js const a = 1```" }), text), "```js const a = 1```");
 });

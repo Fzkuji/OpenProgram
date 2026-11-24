@@ -52,7 +52,7 @@ TIMEOUT_S = 10.0
 
 REASONS = ("open", "manual", "failure", "key_added")
 
-_MODULES = ("openrouter", "codex_usage", "zai", "minimax", "opencode_go", "github_copilot")
+_MODULES = ("openrouter", "codex_usage", "zai", "minimax", "opencode_go", "github_copilot", "deepseek")
 
 
 @dataclass
@@ -234,7 +234,7 @@ def fetch_one(module: Any, cred: FetchCredential, *, http_get: HttpGet = _http_g
     if status != 200:
         _note_read(*account, read_at=now, status=status, error=f"HTTP {status}")
         if status == 401 and cred.account and getattr(module, "VERIFIED", False) \
-                and not _is_spent_balance(body):
+                and getattr(module, "REFUSAL_IS_THE_KEYS", True) and not _is_spent_balance(body):
             _refused_key(cred)
         return None
     try:
@@ -262,12 +262,17 @@ def _refused_key(cred: FetchCredential) -> None:
     """A key its own quota endpoint refused is marked on its row, so the
     provider's list says what its card does. Only a verified endpoint's 401
     marks: an unverified one (a plan endpoint a plain key may not reach, a
-    region the key is not for) only records its read error."""
+    region the key is not for) only records its read error. A key already
+    marked stays as it is: its endpoint is asked again every ten minutes a
+    page shows it, and each mark told every open window the provider's keys
+    had changed."""
     try:
         from openprogram.models.auth.selection import mark
         from openprogram.models.auth.store import get_store
         row = get_store().find(cred.provider, cred.account)
         if row is None or row.kind not in ("api_key", "credential_process"):
+            return
+        if row.status == "invalid_key":
             return
         mark(cred.provider, cred.account, "invalid_key", code="invalid_key",
              message="quota endpoint answered 401")

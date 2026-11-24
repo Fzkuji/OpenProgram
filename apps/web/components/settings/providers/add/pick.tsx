@@ -6,7 +6,6 @@ import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldTitle } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
 import type { DetectedEnvKey, DetectedPayload } from "@/lib/settings/provider-status.generated";
@@ -47,12 +46,10 @@ export function EnvKeyRow({
  *  each with Use; the popular providers as one-click tiles; local servers
  *  that answer; Custom; and a search across the whole catalogue. */
 export function PickProvider({
-  detected, detectedFailed = false, onRetry, catalogue, onPick, onUseEnv, onCustom, autoFocus = false, usingEnv = null,
+  detected, catalogue, onPick, onUseEnv, onCustom, autoFocus = false, usingEnv = null,
 }: {
+  /** Null until read (read as Settings opens; nothing shows in its place). */
   detected: DetectedPayload | null;
-  /** The popular providers could not be read; Retry reads them again. */
-  detectedFailed?: boolean;
-  onRetry?: () => void;
   catalogue: Provider[];
   onPick: (choice: Choice) => void;
   onUseEnv: (row: DetectedEnvKey) => void;
@@ -88,7 +85,7 @@ export function PickProvider({
       {query.trim() || all ? (
         <div className="flex flex-col gap-[1px] max-h-[280px] overflow-y-auto" role="list" aria-label={text("All providers", "全部服务商")}>
           {results.length === 0 ? (
-            <FieldDescription>{text("No provider matches", "没有匹配的服务商")}</FieldDescription>
+            catalogue.length ? <FieldDescription>{text("No provider matches", "没有匹配的服务商")}</FieldDescription> : null
           ) : results.map((p) => (
             <Button key={p.id} variant="ghost" role="listitem" className="justify-start gap-2.5 font-normal text-text-primary" onClick={() => onPick(choiceOf(p, detected))}>
               <ProviderIcon id={p.id} size={20} />
@@ -108,16 +105,6 @@ export function PickProvider({
               <FieldTitle>{text("In your environment", "环境变量里已有")}</FieldTitle>
               {env.map((row) => <EnvKeyRow key={row.env_var} row={row} usingEnv={usingEnv} onUse={onUseEnv} />)}
             </>
-          ) : null}
-          {detected === null ? (
-            detectedFailed ? (
-              <div className="flex items-center gap-[8px]" role="alert">
-                <FieldDescription>{text("Couldn't read the popular providers", "无法读取常用服务商")}</FieldDescription>
-                {onRetry ? <Button variant="ghost" size="xs" onClick={onRetry}>{text("Retry", "重试")}</Button> : null}
-              </div>
-            ) : (
-              <div className="flex justify-center py-[16px]" role="status" aria-label={text("Loading providers", "正在读取服务商")}><Spinner /></div>
-            )
           ) : null}
           {(detected?.popular.length ?? 0) > 0 ? (
             <>

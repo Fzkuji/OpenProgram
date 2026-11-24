@@ -6,19 +6,19 @@
 
 ## 本地运行实例
 
-本机有两个实例，从同一个仓库构建（关系见 `openprogram/operations/worker/dev_instance.py`）：
+本机有两个实例（开发版的部署见 `openprogram/operations/worker/dev_instance.py`）：
 
 | | 稳定版 | 开发版 |
 | --- | --- | --- |
-| 代码 | `stable` 分支，只靠晋升移动 | `dev` 上部署过去的提交 |
+| 代码 | GitHub 上最新的正式 Release | `dev` 上部署过去的提交 |
 | 运行 | `/Applications/OpenProgram.app`，端口 `18100` | `/Applications/OpenProgram Dev.app`，端口 `18200`，运行时在 `~/.openprogram-dev/runtime` |
 | 数据 | `~/.openprogram` | `~/.openprogram-dev`（`dev` profile） |
+| 怎么更新 | 只靠 App 自己的更新：后台下载，侧边栏出现 NEW，点“重启以更新” | 提交后运行 `openprogram dev deploy` |
 
-- 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；它不碰稳定版的 App、运行时和 worker，可以在稳定版的对话里运行。
-- 稳定版只通过晋升更新：`openprogram dev promote` 要求提交正是开发版正在服务、且健康的那个，只做 fast-forward，先等稳定版没有运行中的工作（最多 10 分钟，超时拒绝并列出还在跑什么），再备份 `~/.openprogram` 并运行 `scripts/local-instances/refresh-local-app.sh`：新 App 先在旁边构建、校验、签名，再停旧 worker 改名切换；新 worker 健康后才快进 `stable`，任何一步失败都放回原来的 App 和 worker，`stable` 不动，不重试。
-- `scripts/local-instances/refresh-local-app.sh` 只安装 `refs/heads/stable`（晋升时安装要晋升的那个快进提交）；从 `dev` 或其他提交运行会被拒绝。禁止手动移动 `stable` 绕过晋升。
+- 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。现在机器上的稳定版还是本地构建的，等下一个正式版（1.5.0）发布后用它的 DMG 覆盖安装一次完成切换；切换前不动它，也不要装比它旧的正式版（旧代码读不了新代码写过的数据）。
+- 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；可以在稳定版的对话里运行。改动做完就停在开发版，不再往稳定版推。
 - 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/local-instances/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
-- 禁止在 `post-commit` 中自动刷新任一实例；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
+- 禁止在 `post-commit` 中自动刷新开发版；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
 - 本地只保留这两份可见 App；更新时覆盖现有内容，不创建按 commit 命名的 App 副本。
 - CLI 的 profile 功能属于产品能力；本仓库的本地运行只用默认 profile（稳定版）和 `dev` profile（开发版），不再起其他 profile 或端口。
 
@@ -33,16 +33,16 @@
 
 ## 分支与 GitHub 发布
 
-本地只有三条线，设计见 `docs/reference/design/distribution/github-publishing.html`：
+本地只有两条线，设计见 `docs/reference/design/distribution/github-publishing.html`：
 
 | 分支 | 作用 | 谁移动它 |
 | --- | --- | --- |
 | `dev` | 开发线，所有会话往这里提交，开发版从它部署 | `git commit` |
-| `stable` | 晋升线，稳定版 App 运行它 | 只有 `openprogram dev promote` |
-| `main` | 慢线，GitHub 上唯一的分支，积累很多次晋升后才出一个版本，一个版本一个提交 | 只有 `scripts/publishing/publish-github.sh` |
+| `main` | GitHub 上唯一的分支，历史和 `dev` 分开，每次同步一个压缩提交 | 只有 `scripts/publishing/publish-github.sh` |
 
-- 日常提交只进 `dev`。禁止在 `main` 上提交（`pre-commit` 会拒绝），禁止把 `main` 合进 `dev` 或 `stable`，两边历史本来就不同。
-- 发布只用 `scripts/publishing/publish-github.sh -m "版本摘要"`：它把 `stable` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，再推送 `main`。先加 `--dry-run` 看提交说明；`--no-push` 只更新本地 `main`。发版时加 `--tag vX.Y.Z`：推送 `main` 后给这个提交打标签并推送标签，由此启动 Release 工作流；版本号或发布说明对不上会先拒绝，`--dry-run` 能看到这些检查和标签。
+- 日常提交只进 `dev`。禁止在 `main` 上提交（`pre-commit` 会拒绝），禁止把 `main` 合进 `dev`，两边历史本来就不同。
+- **每天同步一次代码**：当天 `dev` 有新提交时运行 `scripts/publishing/publish-github.sh -m "今天的改动摘要"`（不带 `--tag`），把 `dev` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，再推送 `main`。推送 `main` 不触发任何 GitHub Action（除 Release 外的工作流都只能手动运行），不用问。先加 `--dry-run` 看提交说明；`--no-push` 只更新本地 `main`。
+- **发版低频**：只有用户说要发版时才加 `--tag vX.Y.Z`：推送 `main` 后给这个提交打标签并推送标签，由此启动 Release 工作流（构建、签名、公证、发布 Release）；版本号、发布说明或 Office 包对不上会先拒绝，`--dry-run` 能看到这些检查和标签。想先验证安装包而不发布，用 Release 工作流的 `rehearse` 手动运行。Release 发布后，稳定版在 App 里收到更新。
 - 禁止手动 `git push`；`.git/hooks/pre-push` 只放行脚本推送的 `main` 和指向它的标签，其他分支一律拒绝。不要从本地分支向 GitHub 开 PR。
 - worktree 分支合入 `dev` 或放弃后删除，想留着的放到 `refs/archive/`。
 

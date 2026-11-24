@@ -274,19 +274,20 @@ export function FolderSize({ projectId, path }: { projectId: string; path: strin
 function VisibleFolderSize({ projectId, path }: { projectId: string; path: string }) {
   const { text } = useTranslation();
   const { value } = useFolderSize(projectId, path, true);
-  return <span className={value.state === "scanning" && value.bytes != null ? styles.folderSizeScanning : undefined} data-tip={value.error ?? text("Approximate logical size. Open details to calculate or continue.", "文件逻辑大小估计。打开详情可计算或继续统计。")}>{value.bytes == null ? "" : formatFileBytes(value.bytes)}</span>;
+  return <span className={value.state === "scanning" && value.bytes != null ? styles.folderSizeScanning : undefined} data-tip={text("Approximate logical size. Open details to calculate or continue.", "文件逻辑大小估计。打开详情可计算或继续统计。")}>{value.bytes == null ? "" : formatFileBytes(value.bytes)}</span>;
 }
 interface FileInfo { type: string; name: string; absolute_path: string; size: number | null; mtime: number; created_at: number | null; permissions: string; link_target?: string; link_status?: string; error?: string }
+/** Details already read, so the panel opened again shows them at once. */
+const detailsRead = new Map<string, FileInfo>();
 export function FileDetails({ projectId, path, onClose, inline = false }: { projectId: string; path: string; onClose: () => void; inline?: boolean }) {
   const { text } = useTranslation();
-  const [info, setInfo] = useState<FileInfo | null>(null);
-  const [error, setError] = useState("");
+  const detailsKey = `${projectId}\n${path}`;
+  const [info, setInfo] = useState<FileInfo | null>(() => detailsRead.get(detailsKey) ?? null);
+  // A read that fails is asked again, quietly, with backoff.
   const [attempt, setAttempt] = useState(0);
   const origin = useRef<HTMLElement | null>(typeof document === "undefined" ? null : document.activeElement as HTMLElement);
   const panel = useRef<HTMLElement>(null);
   const closeDetails = useEffectEvent(onClose);
-  // Read the message when a load fails; a language switch does not reload.
-  const message = useEffectEvent(text);
   useEffect(() => {
     if (!inline) return;
     panel.current?.focus();
@@ -298,23 +299,28 @@ export function FileDetails({ projectId, path, onClose, inline = false }: { proj
   }, [inline]);
   useEffect(() => {
     const controller = new AbortController();
-    setError("");
+    let timer: ReturnType<typeof setTimeout> | undefined;
     void fileManagementQuery<FileInfo>("project_file_info", projectId, path, {}, controller.signal).then(value => {
       if (controller.signal.aborted) return;
-      if (!value || value.error) setError(value?.error ?? message("Unable to load details", "无法读取详情"));
-      else setInfo(value);
+      if (!value || value.error) {
+        console.warn("file details read failed; reading again", { path, error: value?.error });
+        timer = setTimeout(() => setAttempt(n => n + 1), Math.min(30_000, 1000 * 2 ** attempt));
+        return;
+      }
+      detailsRead.set(detailsKey, value);
+      setInfo(value);
     });
-    return () => controller.abort();
-  }, [projectId, path, attempt]);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [projectId, path, attempt, detailsKey]);
   const folder = useFolderSize(projectId, path, info?.type === "dir", true);
   const field = (label: string, value: string) => <div><dt>{label}</dt><dd>{value}</dd></div>;
   const date = (value: number | null) => value == null ? text("Unavailable", "不可用") : new Date(value * 1000).toLocaleString(undefined, { timeZoneName: "short" });
   const content = <>
     <h3>{info?.name ?? path}</h3>
-    {error ? <div role="alert">{error}<Button variant="elevated" size="xs" onClick={() => setAttempt(value => value + 1)}>{text("Retry", "重试")}</Button></div> : !info ? <p>{text("Loading…", "加载中…")}</p> : <>
+    {!info ? null : <>
       <dl>{field(text("Type", "类型"), info.type)}{info.type === "symlink" ? field(text("Link", "符号链接"), info.link_target ?? info.link_status ?? text("Unavailable", "不可用")) : null}{field(text("Relative path", "相对路径"), path || ".")}{field(text("Path", "路径"), info.absolute_path)}{field(text("Modified", "修改时间"), date(info.mtime))}{field(text("Created", "创建时间"), date(info.created_at))}{field(text("Permissions", "权限"), info.permissions)}
       {info.type !== "dir" ? field(text("Size", "大小"), `${formatFileBytes(info.size ?? 0)} (${info.size ?? 0} B)`) : field(text("Folder size", "文件夹大小"), folder.value.bytes == null ? text("Not calculated", "未计算") : `${folder.value.complete ? "≈ " : "≥ "}${formatFileBytes(folder.value.bytes)}`)}</dl>
-      {info.type === "dir" ? <div className={styles.folderSizeDetails} aria-live="polite"><p>{({ unknown: text("Waiting to calculate", "等待计算"), scanning: text("Calculating…", "正在计算…"), complete: text("Complete scan", "完整统计"), cached: folder.value.complete ? text("Cached result · may be outdated", "缓存结果 · 可能已过期") : text("Cached partial result · incomplete", "缓存的部分统计 · 尚未完成"), partial: text("Partial scan · continue to count the remaining entries", "部分统计 · 可继续扫描剩余条目"), incomplete: text("Incomplete · some entries were skipped", "统计不完整 · 部分条目已跳过"), cancelled: text("Cancelled · partial result", "已取消 · 部分统计"), error: folder.value.error } as Record<string, string | undefined>)[folder.value.state]}</p>
+      {info.type === "dir" ? <div className={styles.folderSizeDetails} aria-live="polite"><p>{({ unknown: text("Waiting to calculate", "等待计算"), scanning: text("Calculating…", "正在计算…"), complete: text("Complete scan", "完整统计"), cached: folder.value.complete ? text("Cached result · may be outdated", "缓存结果 · 可能已过期") : text("Cached partial result · incomplete", "缓存的部分统计 · 尚未完成"), partial: text("Partial scan · continue to count the remaining entries", "部分统计 · 可继续扫描剩余条目"), incomplete: text("Incomplete · some entries were skipped", "统计不完整 · 部分条目已跳过"), cancelled: text("Cancelled · partial result", "已取消 · 部分统计"), error: undefined } as Record<string, string | undefined>)[folder.value.state]}</p>
         {folder.value.entries != null ? <p>{text("Entries scanned", "已扫描条目")}: {folder.value.entries} · {text("Skipped", "跳过")}: {folder.value.skipped ?? 0}</p> : null}
         {folder.value.updated_at ? <p>{date(folder.value.updated_at)}</p> : null}
         <small>{text("Sums file bytes, including hidden files. Does not follow symbolic links; restricted directories and unreadable entries are skipped. This is not disk usage.", "累计文件字节数，包含隐藏文件。不跟随符号链接；受限目录和不可读条目会跳过。这不是磁盘占用量。")}</small>

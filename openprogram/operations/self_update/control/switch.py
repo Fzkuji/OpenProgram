@@ -20,7 +20,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import threading
 import time
 from typing import Any, Iterator
 
@@ -38,14 +37,15 @@ from openprogram.host._platform import filesystem
 _log = logging.getLogger(__name__)
 
 JOURNAL = "switch.json"
-HEARTBEAT = "heartbeat"
+# The process controlling an update says who it is here, once, while it holds the update.
+CONTROLLER = "controller.json"
 # The running shell says where it is here, and is asked to relaunch there.
 SHELL_RECORD = "shell.json"
 SHELL_RELAUNCH = "shell-relaunch"
 SHELL_HANDSHAKE_SECONDS = 30.0
 CHECKPOINT_REQUESTED = "checkpoint-requested"
-HEARTBEAT_SECONDS = 5.0
-HEARTBEAT_STALE_SECONDS = 30.0
+# A controller just launched has this long to say who it is before it is launched again.
+CONTROLLER_START_SECONDS = 30.0
 TURN_RELEASE_SECONDS = 1800
 QUIET_SECONDS = 600
 QUIESCE_LIMIT_SECONDS = 1800
@@ -342,11 +342,8 @@ class LiveHost:
         return gate["worker_pid"]
 
     def migrating(self, version: str) -> bool:
-        """Whether a store is still migrating: its marker moved in the last 15 s."""
-        try:
-            return time.time() - (self.layout.boot / f"{version}.migrating").stat().st_mtime < 15
-        except OSError:
-            return False
+        """Whether a store is still migrating: its marker names a process that still runs."""
+        return sealed.migrating_process(self.layout.migrating(version)) is not None
 
     def probe_candidate(self, record: UpdateRecord, version: str, commit: str, reference: dict) -> dict:
         """Observe the candidate under the regression rule."""
@@ -893,45 +890,46 @@ def reconcile_at_start(store: SelfUpdateStore, record: UpdateRecord | None) -> N
         take_next(store)
 
 
-def controller_stale(store: SelfUpdateStore, record: UpdateRecord, *, now: float | None = None) -> bool:
-    """Whether a live update's controller has stopped writing its heartbeat."""
+def controller_process(store: SelfUpdateStore, record: UpdateRecord) -> tuple[int, str] | None:
+    """``(pid, start token)`` of the process controlling a live update, while
+    it still runs; ``None`` when none says it controls the update or the one
+    that said so has ended."""
+    from openprogram.host._platform.processes import process_start_token
+
     try:
-        beat = (store.root / record.request.update_id / HEARTBEAT).stat().st_mtime
-    except OSError:
-        return True
-    return (time.time() if now is None else now) - beat > HEARTBEAT_STALE_SECONDS
+        said = json.loads((store.root / record.request.update_id / CONTROLLER).read_text(encoding="utf-8"))
+        pid, started = int(said["pid"]), str(said["started"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (pid, started) if process_start_token(pid) == started else None
 
 
 # Controller entry ----------------------------------------------------------------
 
 
-def _heartbeat(path: Path, stop: threading.Event) -> None:
-    while True:
-        try:
-            path.write_text(f"{os.getpid()}\n", encoding="ascii")
-        except OSError:
-            _log.warning("heartbeat not written", exc_info=True)
-        if stop.wait(HEARTBEAT_SECONDS):
-            return
-
-
 @contextmanager
 def controlling(directory: Path) -> Iterator[bool]:
-    """Hold an update's controller lock and write its heartbeat; yields whether it was free."""
+    """Hold an update's controller lock and say which process holds it; yields whether it was free.
+
+    The Worker's watchdog follows that process and learns from the operating
+    system when it ends (``watchdog.tick``); it writes nothing while it lives.
+    """
+    from openprogram.host._platform.processes import process_start_token
     from .supervisor import _controller_lock
 
     with _controller_lock(directory) as acquired:
         if not acquired:
             yield False
             return
-        stop = threading.Event()
-        beat = threading.Thread(target=_heartbeat, args=(directory / HEARTBEAT, stop), daemon=True, name="heartbeat")
-        beat.start()
+        said = directory / CONTROLLER
+        staged = directory / f".{CONTROLLER}.{os.getpid()}"
+        staged.write_text(json.dumps({"pid": os.getpid(), "started": process_start_token(os.getpid())}),
+                          encoding="utf-8")
+        filesystem.replace_file(staged, said)
         try:
             yield True
         finally:
-            stop.set()
-            beat.join(timeout=2)
+            said.unlink(missing_ok=True)
 
 
 def run(update_id: str, *, store: SelfUpdateStore | None = None, host: Any = None) -> int:
@@ -959,6 +957,6 @@ def run(update_id: str, *, store: SelfUpdateStore | None = None, host: Any = Non
 __all__ = [
     "CommitIncomplete", "Failed", "JOURNAL", "LiveHost", "RebaseConflict", "SNAPSHOT_FOLDERS", "SwitchController", "candidate_commit",
     "candidate_version", "clear_finished_admission",
-    "controller_stale", "controlling", "launch", "owns", "reconcile_at_start", "record_guard_rollback", "result_summary", "run",
+    "controller_process", "controlling", "launch", "owns", "reconcile_at_start", "record_guard_rollback", "result_summary", "run",
     "take_next",
 ]

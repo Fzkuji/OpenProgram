@@ -46,12 +46,17 @@ from . import summary as _summary
 from . import system_audio as _system_audio
 from . import transcript as _transcript
 from openprogram.host._platform.filesystem import replace_file
+from openprogram.host._platform.changes import publish, signal
 
 TRACKS = ("mic", "system")
 MAX_SECONDS = 4 * 3600
 MAX_CHUNK_BYTES = 16 * 1024 * 1024
 MAX_SEQ = 100_000
 LIVE_STATES = ("recording", "transcribing", "summarizing")
+
+#: A meeting's state, counts or files changed (key: its id); the Meetings
+#: window reads the list and the live status again.
+publish("meetings")
 
 #: ``transcriber(wav, duration_ms, language)``; ``language`` ``""`` detects it.
 Transcriber = Callable[[bytes, int, str], dict]
@@ -228,6 +233,7 @@ class Meeting:
         self._queue.put(None)
         shutil.rmtree(self.directory, ignore_errors=True)
         self.settled.set()
+        signal("meetings", self.id)
 
     # ------------------------------------------------------------------ audio
     def append(self, track: str, seq: int, t_ms: int, data: bytes, suffix: str = "webm") -> dict:
@@ -440,6 +446,7 @@ class Meeting:
         if self.state == "discarded" or not self.directory.is_dir():
             return
         _write_json(self.directory / "meta.json", self.meta())
+        signal("meetings", self.id)
 
     def _write_transcript(self) -> None:
         if self.state == "discarded" or not self.directory.is_dir():
@@ -576,6 +583,7 @@ def delete(meeting_id: str, *, root: Path | None = None) -> None:
     if meeting is not None:
         meeting.discard()
     shutil.rmtree(directory, ignore_errors=True)
+    signal("meetings", meeting_id)
 
 
 def stop_all(reason: str = "disabled") -> None:

@@ -16,8 +16,7 @@ hold live secrets in file form and are skipped unless the user passes
 ``--include-credentials``, which prints a plaintext-credential warning.
 
 Archives land in ``<state>/backups/`` as ``<profile>-<timestamp>.tar.gz``
-with mode 0600. ``openprogram backup`` and ``openprogram dev promote`` both
-create their snapshots here.
+with mode 0600. ``openprogram backup`` creates its snapshots here.
 """
 
 from __future__ import annotations
@@ -97,12 +96,14 @@ REGENERATED: tuple[str, ...] = (
     "tool_results", "browser-states", "chrome-profile", "computer-use", "cli-questions",
     "trash", "shadow-git", "logs", "user_errors.jsonl", "run-state", "mutation-locks",
     "file_operations.jsonl", "file_operations.lock",  # retry receipts, seven days
-    "processes.db", "session-resources.db",  # what is running now
+    "processes.db", "session-resources.db", "session-resources.changed",  # what is running now
     "executions.db", "active", "delivery", "gui_harness",  # left by earlier versions, not written now
+    "release-source", "artifacts",
     "cron", ".scheduler-store-migration",  # moved into scheduler
     # the installation itself
-    "backups", "runtime", "self-updates", "release-source", "source-repo", "upgrade-state.json",
-    "migrations", "worktrees", "system-access-grant.json", "ssh", "source", "artifacts",
+    "backups", "runtime", "self-updates", "source-repo", "upgrade-state.json",
+    "migrations", "worktrees", "system-access-grant.json", "ssh", "source",
+    "desktop-shell",  # the development App's shell, built again when it is missing
     # live process files and secrets that are issued again
     "web", "web.lock", "mcp_server_token", "browser-cdp-port", "browser-cdp.lock",
     "worker.lock", "worker.log", "worker.pid", "worker.port", "worker.stop",
@@ -182,6 +183,11 @@ def _entries_to_archive(state: Path, include_credentials: bool) -> list[str]:
     if include_credentials:
         names += list(CREDENTIAL_ENTRIES)
     return [n for n in names if (state / n).exists()]
+
+
+# Most of an archive is conversation logs. At this level they come out
+# 1% larger than at the strongest one and take half the time to write.
+COMPRESS_LEVEL = 6
 
 
 def create_backup(
@@ -334,7 +340,7 @@ def create_backup(
         tar.add(str(source), arcname=arcname, recursive=False)
 
     def _write_archive(handle) -> None:
-        with tarfile.open(fileobj=handle, mode="w:gz") as tar:
+        with tarfile.open(fileobj=handle, mode="w:gz", compresslevel=COMPRESS_LEVEL) as tar:
             for name in _entries_to_archive(state, include_credentials):
                 _add_path(tar, state / name, name)
             manifest = {

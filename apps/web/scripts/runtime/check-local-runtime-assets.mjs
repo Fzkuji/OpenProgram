@@ -39,8 +39,8 @@ assert.match(
 );
 assert.match(
   read("lib/runtime-bridge/dom/markdown-render.ts"),
-  /from ["']katex\/contrib\/auto-render["']/,
-  "chat math rendering must use bundled KaTeX auto-render",
+  /from ["']katex["']/,
+  "chat math rendering must use bundled KaTeX",
 );
 assert.match(
   read("app/layout.tsx"),

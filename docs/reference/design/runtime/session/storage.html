@@ -49,13 +49,21 @@
 <li>Reading folds every file in timestamp order and skips a line whose <code translate="no">crc</code> fails, which only a stopped writer's last line can be.</li>
 <li>A process keeps its fold and reads what was appended since. It refolds from the start if a known file was replaced or shrank, or a new line sorts before what it has.</li>
 <li>A reply's trace (<code translate="no">metadata.extra</code>) is worked out once, when the fold is handed out: from the last line that stored it whole (compressed when large) and the <code translate="no">node.stream</code> lines after it. A version a later line replaced is never decompressed or parsed.</li>
+<li>A read for a fold hands a replaced version back without its trace, so the copies of one growing trace are not held together. Log files are read a line at a time.</li>
 <li>Text that <code translate="no">node.stream</code> lines add to a block or to the output is kept as pieces and joined once, there. Folding a reply costs its length, however many lines it streamed in.</li>
 <li>A fold that read at least 4 MB, and at least as much as the last checkpoint weighs, writes <code translate="no">checkpoint/fold.json</code> (folded nodes, metadata, state files, run rows) and <code translate="no">checkpoint/records.json</code> (state files and run rows). Each records, per file, the offset it covers and the bytes that end there. Checkpoints never cost more than twice the log they cover.</li>
 <li>A cold open reads the checkpoint and only the lines after it. A file whose inode, length or covered end no longer matches is read from the start.</li>
-<li>State files and run rows are read together, in one pass over only their lines, from the records checkpoint on.</li>
+<li>State files and run rows are read together, in one pass over only their lines, from the records checkpoint on. A first read that went through at least 256 KB of log writes <code translate="no">checkpoint/records.json</code> itself: a conversation too small for a fold's checkpoint is otherwise read whole by every process that looks for its jobs.</li>
 <li>Only realtime push fragments are not kept.</li>
 </ul>
 <p>Streaming once rewrote the reply's whole trace on every delta: one log reached 731 MB, 675 MB of it rewrites, and a cold open took 8 s. Now a line holds what was added. pi-mono, Claude Code and Codex write one line per finished entry and opencode updates a part in place; none rewrites a message per delta.</p>
+<p>Logs written before that keep the rewrites. <code translate="no">log_compaction.compact_session</code> removes them from a session nothing is writing:</p>
+<ul>
+<li>In each file, every <code translate="no">node.patch</code> that sets a trace loses it, except a node's last one. A patch that sets the trace replaces what came before, so the fold is the same.</li>
+<li>The new file is written beside the old one. The whole session is folded from the old files and from the new ones, and a file is replaced only when both folds are equal.</li>
+<li>The checkpoint is removed; the next open writes one for the new files.</li>
+</ul>
+<p>Measured on a copy of one profile: 66 conversations, 2621 MB to 693 MB in 30 s, every fold equal. It is the one place a log file is rewritten, which is why it never runs under a Worker.</p>
 
 <h3 id="turn-weight">What a turn adds besides its reply</h3>
 <p>A line holds what cannot be worked out again, once.</p>
@@ -63,7 +71,7 @@
 <thead><tr><th scope="col">Line</th><th scope="col">Holds</th><th scope="col">Left out, and where it comes from</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">turn.snapshot</code></th><td>Once per turn: model, request settings, the prompt or its hash, and per tool its name with two digests, <code translate="no">declaration_sha256</code> (description, parameters, cache control, permission, approval) and <code translate="no">implementation_sha256</code> (the code that runs)</td><td>Tool descriptions and schemas. A resume resolves the live tools again and compares digests; a mismatch names the tool and which of the two changed</td></tr>
-<tr><th scope="row"><code translate="no">meta.patch</code> <code translate="no">_last_context_stats</code></th><td>After each provider request: the measured total, its basis, the estimate and the calibration</td><td>The per-category breakdown with its tool and prompt rows. It is counted from the conversation's nodes, prompt and tools; a first open counts it again and the panel fetches it</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code> <code translate="no">_last_context_stats</code></th><td>After each provider request: the measured total, its basis, the estimate and the offset</td><td>The per-category breakdown with its tool and prompt rows. It is counted from the conversation's nodes, prompt and tools; a first open counts it again and the panel fetches it</td></tr>
 </tbody>
 </table>
 <p>Measured on a turn of six provider requests with 81 tools: 27 KB beyond the reply and its journal, 18 KB of it the snapshot and 4 KB the context stats. With tool schemas and the breakdown copied into these lines the same turn writes 224 KB (127 KB and 97 KB).</p>
@@ -133,7 +141,6 @@
 <tr><th scope="row"><code translate="no">group</code></th><td>str?</td><td>Yes</td><td>Group label</td></tr>
 <tr><th scope="row"><code translate="no">status</code></th><td>str</td><td>Yes</td><td>See below</td></tr>
 <tr><th scope="row"><code translate="no">unread</code></th><td>bool</td><td>Yes</td><td>Unread marker</td></tr>
-<tr><th scope="row"><code translate="no">environment_id</code></th><td>str?</td><td>Yes</td><td><a href="environments.html#conversation-binding">Environment</a></td></tr>
 <tr><th scope="row"><code translate="no">sort_at</code></th><td>float</td><td>Yes</td><td><a href="operations.html#place-in-project-list">Place in the project list</a>; 0 = none</td></tr>
 <tr><th scope="row"><code translate="no">sort_since</code></th><td>float</td><td>Yes</td><td><code translate="no">updated_at</code> when placed; later activity ends it</td></tr>
 <tr><th scope="row"><code translate="no">_auto_titled</code></th><td>bool</td><td>No</td><td>Internal, never returned to the frontend</td></tr>

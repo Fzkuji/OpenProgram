@@ -42,7 +42,7 @@ def _seed(store: SessionStore, sid: str = "src") -> dict[str, str]:
         provider_override="openai-codex", model_override="gpt-6.1-sol",
         thinking_effort="high", permission_mode="bypass",
         tools_override=["bash", "read"], web_search=True, sandbox_enabled=True,
-        environment_id="local", additional_working_dirs=["/tmp/extra"],
+        additional_working_dirs=["/tmp/extra"],
         _title_gen_count=2, parent_session_id="not-copied",
     )
     w = SessionNodeWriter(store, sid)
@@ -146,7 +146,7 @@ def test_lineage_title_and_run_config(store):
     src = store.get_session("src")
     for key in ("provider_override", "model_override", "thinking_effort",
                 "permission_mode", "tools_override", "web_search",
-                "sandbox_enabled", "environment_id", "additional_working_dirs"):
+                "sandbox_enabled", "additional_working_dirs"):
         assert key in RUN_CONFIG_FIELDS
         assert row.get(key) == src.get(key), key
     # Sub-session wiring of the source is not inherited.
@@ -339,14 +339,54 @@ def test_rest_route_without_a_message_copies_up_to_head(store, broadcasts):
 
 
 def test_session_load_reports_lineage(store):
+    """A whole copy reports no message; a fork names the prompt it
+    branched at and the start of its text."""
     from openprogram.interfaces.server.ws_actions.session.load import _branched_from
 
     _seed(store)
-    new = branch_session("src", "u2_reply", store=store)
-    assert _branched_from(store.get_session(new)) == {
+    copy = branch_session("src", "u3_reply", store=store)
+    assert _branched_from(store.get_session(copy)) == {
+        "session_id": "src", "msg_id": None, "title": "Trip plan", "exists": True,
+        "at_msg_id": None, "msg_preview": None,
+    }
+    fork = branch_session("src", "u2_reply", store=store, forked=True)
+    assert store.get_session(fork)["branched_from"] == {
+        "session_id": "src", "msg_id": "u2_reply", "forked": True}
+    assert _branched_from(store.get_session(fork)) == {
         "session_id": "src", "msg_id": "u2_reply", "title": "Trip plan", "exists": True,
+        "at_msg_id": "u2", "msg_preview": "plan it",
     }
     assert _branched_from(store.get_session("src")) is None
     store.delete_session("src")
-    gone = _branched_from(store.get_session(new))
-    assert gone["exists"] is False and gone["title"] == ""
+    gone = _branched_from(store.get_session(fork))
+    assert gone["exists"] is False and gone["title"] == "" and gone["at_msg_id"] is None
+
+
+def test_fork_point_preview_and_missing_prompt(store):
+    from openprogram.runtime.context.session_dag.branch_session import fork_point
+
+    _seed(store)
+    w = SessionNodeWriter(store, "src")
+    w.append(Call(id="u4", role=ROLE_USER, caller="ROOT", predecessor="u3_reply",
+                  output="Check current flight prices for the Kyoto trip dates\nand report"))
+    point = fork_point("src", "u4", store=store)
+    assert point == {"msg_id": "u4", "preview": "Check current flight prices for the Kyot…"}
+    assert fork_point("src", "u1_reply", store=store) == {"msg_id": "u1", "preview": "hello"}
+    assert fork_point("src", "nope", store=store) is None
+    store.update_session("src", rewind_hidden_nodes=["u4"])
+    assert fork_point("src", "u4", store=store) is None
+
+
+def test_route_marks_a_fork_but_not_a_copy_to_the_tip(store, monkeypatch):
+    from openprogram.interfaces.server import server as _srv
+    from openprogram.interfaces.server.ws_actions.branch import run_branch_session
+
+    monkeypatch.setattr(_srv, "_broadcast", lambda *a, **k: None)
+    monkeypatch.setattr(_srv, "_is_run_active", lambda _sid: False)
+    _seed(store)
+    fork = run_branch_session("src", "u1_reply")["new_session_id"]
+    assert store.get_session(fork)["branched_from"].get("forked") is True
+    tip = run_branch_session("src", "u3_reply")["new_session_id"]
+    assert "forked" not in store.get_session(tip)["branched_from"]
+    whole = run_branch_session("src", None)["new_session_id"]
+    assert "forked" not in store.get_session(whole)["branched_from"]

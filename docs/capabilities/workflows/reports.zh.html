@@ -91,7 +91,7 @@
 <tr><th scope="row">仅填写</th><td>只允许观察到的记录导航和确切的文本框值；在浏览器执行前拒绝提交和保存的点击、按键、坐标及过期观察</td></tr>
 <tr><th scope="row">读回</th><td>完整比较实际值，包括换行和连续空格。仅 ARIA 文本或没有实际值的浏览器 schema 不能返回 <code translate="no">FILLED</code></td></tr>
 <tr><th scope="row">标签</th><td>原生后端支持表单标签和 contenteditable 字段周围唯一可见的标签。标签缺失或歧义时在写入前停止</td></tr>
-<tr><th scope="row">工具</th><td>只用 <code translate="no">computer_use_agent</code> 操作内置浏览器里的网页；需要真实工具回执，模型文本里引用的调用不算操作</td></tr>
+<tr><th scope="row">工具</th><td>只用 <code translate="no">computer_use</code> 操作内置浏览器里的网页；需要真实工具回执，模型文本里引用的调用不算操作</td></tr>
 <tr><th scope="row">限制</th><td>没有硬编码的总超时或轮次上限，部署限制仍适用</td></tr>
 <tr><th scope="row">提交和更新</th><td>同样的字段绑定和读回。最后一次尝试在派发前记录，结果不确定时不重复</td></tr>
 <tr><th scope="row">占位</th><td>空的五维占位不算进展</td></tr>

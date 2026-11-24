@@ -1,9 +1,15 @@
 """JobRunner projection operations."""
 from __future__ import annotations
+import time
 from openprogram.runtime.execution.model import RESTART_NOT_CONTINUED, UNFINISHED_BEFORE_SESSION_LOGS
 from openprogram.runtime.jobs.runner import shared
 
 _ENDED_BY_RESTART = "Stopped after a restart: the run that started this agent has ended."
+# A Job that had ended and was closed here is closed again this often: its
+# release is a durable intent the resource pass replays on its own, and an
+# empty worktree is removed on the first close.
+RECLOSE_SECONDS = 300.0
+_clock = time.monotonic
 
 
 def _written_reply(execution_store, execution) -> str | None:
@@ -265,7 +271,11 @@ class ProjectionOperations:
                 pending_ids.add(job_id)
                 if self._project_pending_canonical_terminal(intent):
                     completed.append((job_id, str(intent[1])))
-        for job in self.list_jobs():
+        jobs = self.list_jobs()
+        # The notice pass that follows reads again only the conversations
+        # this listing shows it could have work in.
+        self.__dict__["_pass_jobs"] = jobs
+        for job in jobs:
             if job.id in pending_ids:
                 continue
             execution = self._execution_store.get_execution(job.id)
@@ -279,6 +289,15 @@ class ProjectionOperations:
                         "failed to reconcile terminal cancel command for %s",
                         execution.execution_id,
                     )
+                # Every Job a profile ever ran is listed on every pass; one
+                # already closed in this state has nothing new to close.
+                closed = self.__dict__.setdefault("_closed_terminals", {})
+                was_ended = shared.is_terminal(job.status)
+                state, now = (execution.status_version, job.status), _clock()
+                known = closed.get(job.id)
+                if (was_ended and known is not None and known[0] == state
+                        and now - known[1] < RECLOSE_SECONDS):
+                    continue
                 fence = getattr(self._governor, "admission_fence", None)
                 owner_generation = fence(job.id) if fence is not None else None
                 self._project_canonical_terminal(
@@ -290,7 +309,9 @@ class ProjectionOperations:
                         owner_generation[1] if owner_generation is not None else None
                     ),
                 )
-                if not shared.is_terminal(job.status):
+                if was_ended:
+                    closed[job.id] = (state, now)
+                else:
                     projected = shared._store_load(execution.session_id, job.id)
                     if projected is not None and shared.is_terminal(projected.status):
                         completed.append((job.id, execution.session_id))

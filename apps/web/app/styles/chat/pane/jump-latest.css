@@ -1,4 +1,4 @@
-/* "跳到最新" 悬浮按钮。
+/* "跳到最新" 圆形悬浮按钮。
    对应组件：components/chat/messages/list/message-list.tsx */
 
 /* 钉在 #chatView（列，不滚）上，贴着输入框上方。
@@ -23,11 +23,27 @@
   opacity: 0;
   pointer-events: none;
 }
-/* The chip itself is the shadcn Button (variant "elevated", size "sm"),
-   like the composer's pills; this file only places and animates it. */
+/* The button is the shadcn Button (variant "elevated", an icon size,
+   round); this file only places and animates it. */
 .jump-latest {
+  position: relative;
   pointer-events: auto;
   animation: jumpLatestIn 180ms ease-out;
+}
+/* While a turn runs the bars stand in for the arrow; the arrow comes
+   back under the pointer or keyboard focus. */
+.jump-latest-arrow,
+.jump-latest-live {
+  transition: opacity var(--motion-slow) var(--ease-standard);
+}
+.jump-latest[data-live] .jump-latest-arrow,
+.jump-latest[data-live]:hover .jump-latest-live,
+.jump-latest[data-live]:focus-visible .jump-latest-live {
+  opacity: 0;
+}
+.jump-latest[data-live]:hover .jump-latest-arrow,
+.jump-latest[data-live]:focus-visible .jump-latest-arrow {
+  opacity: 1;
 }
 .jump-latest-anchor.is-leaving .jump-latest {
   opacity: 0;
@@ -37,11 +53,16 @@
   pointer-events: none;
 }
 .jump-latest-live {
-  display: inline-flex;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: flex;
   align-items: flex-end;
+  justify-content: center;
   gap: 2px;
   height: 12px;
   width: 14px;
+  pointer-events: none;
 }
 .jump-latest-live i {
   display: block;

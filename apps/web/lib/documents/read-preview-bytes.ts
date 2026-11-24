@@ -1,8 +1,17 @@
 /** Bound decoder input even when the server omits Content-Length. */
 export const MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
+/** A read the server answered with an error status; `status` tells a
+ *  refusal (4xx) from a read worth asking again. */
+export class PreviewReadError extends Error {
+  readonly status: number;
+  constructor(status: number) { super("PREVIEW_READ_FAILED"); this.status = status; }
+}
 export async function readPreviewBytes(sourceUrl: string, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(sourceUrl, { signal });
-  if (!response.ok) throw new Error("PREVIEW_READ_FAILED");
+  if (!response.ok) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new PreviewReadError(response.status);
+  }
   const advertised = Number(response.headers.get("content-length"));
   if (advertised > MAX_PREVIEW_BYTES) {
     await response.body?.cancel();

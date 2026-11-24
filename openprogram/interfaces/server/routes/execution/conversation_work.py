@@ -6,12 +6,21 @@ The writes are the panel's own controls: wake now, add or remove a report
 preference, and finish, reopen or drop an open-work item. One more read,
 across conversations, lists the reports still waiting for the user (the
 pending inbox).
+
+Open windows read these again when told, not on a timer: ``work`` when a
+Scheduler task or its runs change (``scheduler/task_runs.py``; the
+always-on state and open work have frames of their own), ``inbox`` when the
+pending inbox may have changed (``always_on/pending.py``).
 """
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi.responses import JSONResponse
+
+from openprogram.host._platform import changes
+
+changes.publish("work", "inbox")
 
 _OPEN_WORK_STATUSES = ("open", "done")
 
@@ -75,6 +84,14 @@ def snapshot(session_id: str) -> dict[str, Any] | None:
 
 
 def register(app) -> None:
+    from openprogram.runtime.scheduler import task_runs
+
+    try:
+        task_runs.watch_files()
+    except Exception:  # noqa: BLE001 - the Worker's own writes still signal
+        import logging
+        logging.getLogger(__name__).warning("scheduler files are not watched", exc_info=True)
+
     @app.get("/api/always-on/pending")
     def get_pending():
         from openprogram.runtime.conversation.always_on import pending

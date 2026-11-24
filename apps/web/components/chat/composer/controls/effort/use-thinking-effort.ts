@@ -4,15 +4,14 @@
  * Thinking-effort selector state.
  *
  * `lib/runtime-bridge/providers.ts` writes `runtimeState._thinkingConfig
- * = { options, default }` whenever the chat-agent provider changes. We
- * poll for that (500ms is plenty since it only changes on agent switch)
- * and re-pick a default if the previously-selected effort isn't valid
- * for the new provider.
+ * = { options, default }` whenever the chat-agent provider changes and
+ * sends THINKING_CONFIG_CHANGED; we redraw then and re-pick a default if
+ * the previously-selected effort isn't valid for the new provider.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { runtimeState } from "@/lib/runtime-bridge/state";
+import { runtimeState, THINKING_CONFIG_CHANGED } from "@/lib/runtime-bridge/state";
 
 import {
   useBoundComposerSettings,
@@ -96,21 +95,23 @@ export function useThinkingEffort(): ThinkingEffortHook {
   // answers until they arrive.
   const own = useSessionAgentSettings().chat?.thinking;
   const [menuOpen, setMenuOpen] = useState(false);
-  // `_thinkingConfig` is mutated in place by providers.ts when the
-  // agent/model changes, so it has to be polled. The poll re-renders
+  // `_thinkingConfig` is replaced by providers.ts when the agent/model
+  // changes, which then sends THINKING_CONFIG_CHANGED. This re-renders
   // ONLY when the config actually changed: this hook lives inside the
-  // Composer, and an unconditional tick re-rendered that whole subtree
-  // twice a second for the life of the page.
+  // Composer, and a blind re-render redraws that whole subtree.
   const [, forceTick] = useState(0);
   useEffect(() => {
     let seen = configFingerprint();
-    const id = setInterval(() => {
+    const changed = () => {
       const now = configFingerprint();
       if (now === seen) return;
       seen = now;
       forceTick((t) => t + 1);
-    }, 500);
-    return () => clearInterval(id);
+    };
+    // It may have changed between the first render and this effect.
+    changed();
+    window.addEventListener(THINKING_CONFIG_CHANGED, changed);
+    return () => window.removeEventListener(THINKING_CONFIG_CHANGED, changed);
   }, []);
 
   // Read live every render so a model switch is reflected immediately

@@ -12,14 +12,6 @@
   from { opacity: 1; }
   to { opacity: 0; }
 }
-@keyframes slashOpen {
-  from { transform: translateX(-50%) translateY(100%); }
-  to   { transform: translateX(-50%) translateY(0); }
-}
-@keyframes slashClose {
-  from { transform: translateX(-50%) translateY(0); }
-  to   { transform: translateX(-50%) translateY(100%); }
-}
 
 /* ===== Running indicator keyframes (sidebar rows) =======================
    Same turbopack workaround as above: keep keyframe names global so the

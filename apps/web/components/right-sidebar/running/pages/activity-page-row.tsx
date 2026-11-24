@@ -51,16 +51,20 @@ export const ActivityRowStoreReact = createContext<ActivityRowStore | null>(null
 export const ActivityInListReact = createContext(false);
 /** Set by a run list so the page head can say what the bars mean. */
 
-export function useActivityPanel(): ActivityPanelContext {
-  const context = useContext(ActivityPanelReact);
-  if (!context) throw new Error("Activity rows need an ActivityPage above them.");
-  return context;
+/** What rows and frames read of the page they are on. */
+export type ActivityPanelView = Pick<ActivityPanelContext, "text" | "connected" | "close" | "pull" | "actionError">;
+
+/** Drawn outside a page, a row still draws, in English and doing nothing,
+ *  rather than taking the window down with it. */
+const NO_PANEL: ActivityPanelView = { text: english => english, connected: false, close: () => {}, pull: undefined, actionError: null };
+const NO_STORE = createActivityRowStore();
+
+export function useActivityPanel(): ActivityPanelView {
+  return useContext(ActivityPanelReact) ?? NO_PANEL;
 }
 
 export function useActivityRowStore(): ActivityRowStore {
-  const store = useContext(ActivityRowStoreReact);
-  if (!store) throw new Error("Activity rows need an ActivityPageFrame above them.");
-  return store;
+  return useContext(ActivityRowStoreReact) ?? NO_STORE;
 }
 
 const join = (...names: unknown[]) => names.filter(Boolean).join(" ");
@@ -172,10 +176,11 @@ export function ActivityKeyValue({ label, value, mono, clamp = 8, indent }: Acti
 
 /** A row that does something: icon in the glyph column, no chevron. */
 export function ActivityActionRow({ icon: Icon, label, note, disabled, busy, indent, onClick }: ActivityActionRowProps) {
-  const { connected, text } = useActivityPanel();
+  const { text } = useActivityPanel();
   const inList = useContext(ActivityInListReact);
   const off = Boolean(disabled || busy);
-  const status = disabled && !connected ? text("Not connected", "未连接") : busy ? text("Working…", "正在处理…") : note;
+  // Working… answers the reader's own press; a row that cannot act yet just waits, without a word.
+  const status = busy ? text("Working…", "正在处理…") : note;
   const cell = <ActivityCell action glyph={<Icon size={20} strokeWidth={1.8} aria-hidden="true" />} title={label} status={status} />;
   const activate = () => { if (!off) onClick(); };
   return <div className={join(styles.ln, LINE, styles.nor)} style={indentStyle(indent)} data-act={off ? undefined : ""} onClick={activate}>

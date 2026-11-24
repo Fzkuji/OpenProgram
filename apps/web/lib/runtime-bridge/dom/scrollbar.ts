@@ -330,6 +330,9 @@ export function initOverlayScrollbars(): void {
     if (!(el instanceof HTMLElement) || installed.has(el)) return;
     // A canvas ghost is a still copy of a leaving pane, gone in a moment.
     if (el.closest("[data-canvas-ghost]")) return;
+    // A box that asks for none gets none: the message rail, whose ticks
+    // are its position.
+    if (el.dataset.scrollbar === "none") return;
     // A box whose first scroll comes from a sidebar drag is no scroll either.
     install(el, ["y", "x"], !document.querySelector('.rail-resize-handle[data-resizing="true"]'));
   }, { capture: true, passive: true });

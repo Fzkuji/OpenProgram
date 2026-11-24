@@ -2,10 +2,11 @@
 <meta name="description" content="什么算更新，Desktop 和托管 CLI 如何校验并应用更新。">
 <h1>稳定版自动更新</h1>
 <p>更新是一个按清单校验过的完整稳定 GitHub Release。新提交不是更新。更新单位是整个产品：wheel、Web、Program、OCR、Browser 和模型都不单独更新。macOS App 和终端安装接收完整安装包；Windows 和 Linux App 接收已签名的<a href="#official-replay">封存版本</a>。</p>
+<p>能替换自己的 App 在后台下载并校验新版本，然后在侧栏标志旁显示 <strong>New</strong>；点一次<strong>重启以更新</strong>就换上新版本。</p>
 
 <h2 id="architecture">从 Release 到平台</h2>
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest 只接受非草稿、非预发布的 vX.Y.Z 标签。Release 关卡要求资产唯一。清单关卡校验版本、字节数和 SHA-256。随后按安装类型和架构分流。macOS 的 Desktop，以及外壳需要变化时的 Windows 或 Linux Desktop，选中确切的安装包，流式写入可续传的 .part 文件，校验字节数和 SHA-256，Windows 再按本 App 的更新线检查 Authenticode，然后打开安装包由用户确认。macOS、Linux 或 Windows 的托管 CLI 从不可变标签取安装器，校验归档和能力清单，运行版本探测和隔离的 worker 冷启动，然后 macOS 和 Linux 切换 current，Windows 替换启动器；运行中的 worker 由用户重启。">
+<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest 只接受非草稿、非预发布的 vX.Y.Z 标签。Release 关卡要求资产唯一。清单关卡校验版本、字节数和 SHA-256。随后按安装类型和架构分流。macOS 的 Desktop，以及外壳需要变化时的 Windows 或 Linux Desktop，选中确切的安装包，流式写入可续传的 .part 文件，校验字节数和 SHA-256，Windows 再按本 App 的更新线检查 Authenticode，然后在能替换自己的 App 上准备好新版本并提供重启以更新，否则打开安装包由用户确认。macOS、Linux 或 Windows 的托管 CLI 从不可变标签取安装器，校验归档和能力清单，运行版本探测和隔离的 worker 冷启动，然后 macOS 和 Linux 切换 current，Windows 替换启动器；运行中的 worker 由用户重启。">
   <defs><marker id="au-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="34">GitHub latest</text>
   <text class="t-soft" x="0" y="58">非草稿、非预发布</text>
@@ -26,7 +27,7 @@
   <text class="t-note" x="16" y="268">2  流式写入可续传的 .part 文件</text>
   <text class="t-note" x="16" y="292">3  校验字节数和 SHA-256</text>
   <text class="t-note" x="16" y="316">4  Windows：按本 App 的更新线检查 Authenticode</text>
-  <text class="t-note" x="16" y="340">5  打开安装包，用户确认</text>
+  <text class="t-note" x="16" y="340">5  准备好后重启以更新；或打开安装包</text>
   <rect class="tile" x="348" y="156" width="332" height="224" rx="8"/>
   <text class="t-big" x="364" y="190">托管 CLI 和服务端</text>
   <text class="t-soft" x="364" y="212">macOS · Linux · Windows</text>
@@ -41,7 +42,7 @@
   <li><strong>GitHub latest</strong><small>非草稿、非预发布、<code translate="no">vX.Y.Z</code></small></li>
   <li><strong>Release 关卡</strong><small>资产唯一</small></li>
   <li><strong>清单关卡</strong><small>版本、字节数、SHA-256</small></li>
-  <li><strong>桌面</strong><small>macOS；外壳变化时的 Windows 和 Linux</small><small>选中确切的安装包；流式写入可续传的 <code translate="no">.part</code> 文件；校验字节数和 SHA-256；Windows 上按本 App 的更新线检查 Authenticode；打开安装程序由用户确认</small></li>
+  <li><strong>桌面</strong><small>macOS；外壳变化时的 Windows 和 Linux</small><small>选中确切的安装包；流式写入可续传的 <code translate="no">.part</code> 文件；校验字节数和 SHA-256；Windows 上按本 App 的更新线检查 Authenticode；准备好后提供重启以更新，App 不能替换自己时打开安装程序</small></li>
   <li class="flow-end"><strong>托管 CLI 和服务端</strong><small>macOS、Linux、Windows</small><small>从不可变标签取安装器；校验归档和能力清单；版本探测和隔离 worker 冷启动；macOS、Linux：切换 <code translate="no">current</code>；Windows：替换启动器；运行中的 worker 由用户重启</small></li>
 </ol>
 </figure>
@@ -60,14 +61,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">平台</th><th scope="col">资产</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td><code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>，回退到 <code translate="no">-unsigned.dmg</code>。保存到用户选择的位置。运行中的 App 不会被替换</td></tr>
-<tr><th scope="row">Windows</th><td>只在发行版需要更新的外壳时：<code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>；未签名构建的 App 用 <code translate="no">-unsigned.exe</code>。打开按用户 NSIS 向导</td></tr>
+<tr><th scope="row">macOS</th><td>Developer ID 签名、文件夹可写的 App 在数据目录里解包 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code>，只有 <code translate="no">codesign --verify --deep --strict</code> 通过、团队是自己的、版本等于发行版时才保留。重启时一个脱离的 shell 等 App 退出，用两次改名调换新旧包（第二次失败就撤回第一次），再打开 App</td></tr>
+<tr><th scope="row">macOS，其他情况</th><td>本地构建（没有团队）、被转移或只读的 App、没有 <code translate="no">.zip</code> 的发行版：<code translate="no">-mac-&lt;arch&gt;.dmg</code>，再回退到 <code translate="no">-unsigned.dmg</code>，保存到用户选择的位置</td></tr>
+<tr><th scope="row">Windows</th><td>只在发行版需要更新的外壳时：<code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>；未签名构建的 App 用 <code translate="no">-unsigned.exe</code>。下载到 App 的数据目录并校验；重启以更新会退出 App，以 <code translate="no">/S --updated --force-run</code> 运行它，静默安装后启动新 App</td></tr>
 <tr><th scope="row">Linux deb</th><td>只在发行版需要更新的外壳时。App 装在 <code translate="no">/opt</code> 下，自己写不了，所以它不替换任何东西：<code translate="no">.deb</code> 保存到用户选择的位置，用系统的软件包安装器打开，由它询问管理员密码</td></tr>
-<tr><th scope="row">Linux AppImage</th><td>只在发行版需要更新的外壳时。下载到运行中文件的旁边，校验，设为可执行，一步改名覆盖；运行中的副本仍打开着旧文件，App 从新文件重启。所在文件夹不可写时，保存到用户选择的位置</td></tr>
+<tr><th scope="row">Linux AppImage</th><td>只在发行版需要更新的外壳时。下载到运行中文件的旁边，校验，设为可执行；重启以更新时一步改名覆盖运行中的文件，App 从新文件重启。所在文件夹不可写时，保存到用户选择的位置</td></tr>
 </tbody>
 </table>
 
-<h2 id="desktop-states">设置 → 通用 → 应用</h2>
+<h2 id="desktop-states">设置 → 版本与更新 → 应用信息</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">状态</th><th scope="col">显示</th></tr></thead>
 <tbody>
@@ -76,6 +78,7 @@
 <tr><th scope="row">已是最新</th><td>版本相同或更低。不提供稳定版降级</td></tr>
 <tr><th scope="row">有更新</th><td>版本、日期、纯文本说明摘要。完整说明只打开固定的 GitHub Release 页</td></tr>
 <tr><th scope="row">下载中</th><td>字节数和百分比，最快 250 ms 发布一次，保证有最终状态</td></tr>
+<tr><th scope="row">已就绪</th><td>已下载、校验并准备好，由 <code translate="no">readyVersion</code> 标明。设置页显示<strong>重启以更新</strong>；侧栏标志旁显示 <strong>New</strong>，菜单里有同样的操作和更新说明；App 菜单（Windows 和 Linux 上是 File）增加 <strong>Restart to Update to X</strong>。有任务在运行时菜单会说明，因为新 App 会重启 worker。之后再检查到同一版本仍保持就绪</td></tr>
 <tr><th scope="row">可重试错误</th><td>保留已验证的 release metadata，重试不需要重新检查。<code translate="no">errorKind</code> 为 <code translate="no">rate-limited</code>、<code translate="no">network</code> 或 <code translate="no">failed</code></td></tr>
 <tr><th scope="row">未发布</th><td>有更新的版本，但没有这台电脑的文件。当前 App 继续可用</td></tr>
 </tbody>
@@ -83,7 +86,7 @@
 <p class="note">普通 Web 显示 CLI 指令。</p>
 
 <h2>调度</h2>
-<p>自动检查只负责发现。手动检查总是刷新。开发模式不自动检查。</p>
+<p>自动检查负责发现；在能替换自己的 App 上还会下载并准备新版本，上次退出前已发现的版本在启动时继续准备。用户重启之前什么都不安装。手动检查总是刷新。开发模式不自动检查。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">时机</th><th scope="col">下次检查</th></tr></thead>
 <tbody>
@@ -133,7 +136,7 @@
 <tbody>
 <tr><th scope="row"><a href="https://docs.github.com/en/rest/releases/releases#get-the-latest-release">GitHub Releases API</a></th><td>采用：元数据、说明和资产；客户端仍独立校验</td></tr>
 <tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron 更新生命周期</a></th><td>改造：检查、可用、下载、错误；以打开已校验的安装包结束</td></tr>
-<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron <code translate="no">autoUpdater</code></a></th><td>不用。没有内置 Linux 更新器，也不适合打开已校验安装包的流程</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron <code translate="no">autoUpdater</code></a></th><td>不用。没有内置 Linux 更新器；它在 macOS 上做的调换（Squirrel）这里几行就够，并且按清单哈希和运行中 App 的团队校验</td></tr>
 <tr><th scope="row"><a href="https://www.electron.build/docs/features/auto-update/"><code translate="no">electron-updater</code></a></th><td>不用。不加新的更新依赖：Electron、Node、Python 和 shell 已够用</td></tr>
 </tbody>
 </table>
@@ -145,10 +148,12 @@
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/update-service.js"><code translate="no">update-service.js</code></a></th><td>元数据、状态、缓存、调度、资产选择、下载、哈希、公开投影</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>重启时替换 App：macOS 解包、验签和调换；静默 NSIS；AppImage 改名</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/windows-signature.js"><code translate="no">windows-signature.js</code></a></th><td>Authenticode 状态、主体、指纹</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><code translate="no">apps/desktop/main.js</code></a></th><td>定时器、唤醒、IPC、多窗口广播</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/preload.js"><code translate="no">main/preload.js</code></a></th><td>固定的渲染进程桥</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/settings/sections/general-section.tsx"><code translate="no">general-section.tsx</code></a></th><td>设置页状态和 Web 回退</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/sidebar/update-badge.tsx"><code translate="no">update-badge.tsx</code></a></th><td>标志旁的 New 和它的重启菜单</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/cli/commands/updates/upgrade.py"><code translate="no">commands/updates/upgrade.py</code></a></th><td>安装类型路由、Release 关卡、dry-run、JSON、执行安装器</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/github_release/github.py"><code translate="no">github_release/github.py</code></a></th><td>稳定版元数据、清单、不可变安装器获取</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><code translate="no">scripts/install-release.sh</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><code translate="no">.ps1</code></a></th><td>已发布的兼容入口；从同一标签取真正的安装器</td></tr>
@@ -182,11 +187,11 @@
 <tr><th scope="row">托管 CLI 路径</th><td>已实现。<code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code></td></tr>
 <tr><th scope="row">安全和失败路径</th><td>已验证。<code translate="no">apps/desktop/tests/self-update/check-update-service.js</code></td></tr>
 <tr><th scope="row">Release 关卡</th><td>每个稳定版发布前都通过运行时、CLI、Desktop、清单和校验和检查。它们证明发布了什么，不代表运行中客户端的表现</td></tr>
-<tr><th scope="row">已安装的客户端</th><td>待完成：在真实安装上操作发现、打开安装程序、长时间运行和睡眠唤醒；官方 runner 上用真实证书的 Authenticode；真实的 GitHub 响应和真实代理</td></tr>
+<tr><th scope="row">已安装的客户端</th><td>待完成：在已发布版本的真实安装上走一遍后台下载、macOS 调换和 Windows 静默安装；长时间运行和睡眠唤醒；官方 runner 上用真实证书的 Authenticode；真实的 GitHub 响应和真实代理</td></tr>
 <tr><th scope="row">版本库 release 资源与重放</th><td>已实现，以本地目录作为 release 来源测试。<code translate="no">pytest -q tests/component/self_update/official/test_replay.py</code></td></tr>
 <tr><th scope="row">版本库发布路径</th><td>已实现，在 macOS 上对模拟 GitHub 的本地服务器端到端通过（更新、续传、回退、拒绝）。已安装的副本信任官方签名密钥。Release 工作流只为 Linux 发布过签名的更新文件（v1.1.0）；macOS 和 Windows 的资产步骤在那次运行中失败，此后没有再运行。Linux 激活还需要再验证一次</td></tr>
 <tr><th scope="row">从 v0.6.6 或更早升级</th><td>v0.7.0 之前没有更新器：手动装一次当前 DMG。CLI 和服务端重新运行一次公开安装器</td></tr>
 </tbody>
 </table>
 
-<p class="note">不在范围内：Windows 沙箱、PyPI 产品安装、在后台替换运行中的应用。</p>
+<p class="note">不在范围内：Windows 沙箱、PyPI 产品安装、在运行中替换 App：调换只在点重启以更新时发生。</p>

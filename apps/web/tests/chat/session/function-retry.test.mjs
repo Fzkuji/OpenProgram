@@ -12,7 +12,7 @@ await build({entryPoints:['lib/runtime-bridge/actions/function-retry.ts'],bundle
 const {startFunctionRetry, settleFunctionRetry} = await import(pathToFileURL(file));
 function begin(id, send=()=>true) {
  const calls=[];
- startFunctionRetry({sessionId:'s',requestId:id,apply:()=>calls.push('pending'),restore:()=>calls.push('restore'),settled:()=>false,send,toast:m=>calls.push(m),timeoutMessage:'timeout'});
+ startFunctionRetry({sessionId:'s',requestId:id,apply:()=>calls.push('pending'),restore:()=>calls.push('restore'),settled:()=>false,subscribe:()=>()=>{},send,toast:m=>calls.push(m),timeoutMessage:'timeout'});
  return calls;
 }
 test('accepted retry waits for function without a second timeout', t=>{

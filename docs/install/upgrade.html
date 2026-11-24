@@ -6,10 +6,10 @@
 <table class="stack" id="by-install">
 <thead><tr><th scope="col">Installed as</th><th scope="col">Update</th><th scope="col">Go back</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS App</th><td data-label="Update"><strong>Settings → General → Application → Check now</strong> (also checked automatically), then <strong>Download and open installer</strong>. Save the DMG, quit OpenProgram with Command-Q, drag it onto the copy in Applications and choose <strong>Replace</strong>.</td><td data-label="Go back">Download that version's DMG from <a href="https://github.com/Fzkuji/OpenProgram/releases">GitHub Releases</a> and replace the App the same way.</td></tr>
-<tr><th scope="row">Windows or Linux App</th><td data-label="Update">Same two buttons; the new version installs in place. When a release needs a newer App:<br>Windows: run the installer the button opens.<br>deb: <code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage: the file replaces itself and restarts.</td><td data-label="Go back"><strong>Settings → Versions → Go back</strong>. <a href="#app-recovery">If the App can't start</a>.</td></tr>
+<tr><th scope="row">macOS App</th><td data-label="Update">A new version downloads by itself and <strong>New</strong> appears beside the OpenProgram name at the top left. Click it, then <strong>Restart to update</strong>. To look sooner: <strong>Settings → Versions and updates → Application → Check now</strong>. An App outside a folder it can write gets <strong>Download and open installer</strong> instead: save the DMG, quit with Command-Q, drag it onto the copy in Applications and choose <strong>Replace</strong>.</td><td data-label="Go back">Download that version's DMG from <a href="https://github.com/Fzkuji/OpenProgram/releases">GitHub Releases</a> and replace the App the same way.</td></tr>
+<tr><th scope="row">Windows or Linux App</th><td data-label="Update">Same buttons; the new version installs in place. When a release needs a newer App:<br>Windows and AppImage: it downloads by itself; click <strong>New</strong>, then <strong>Restart to update</strong>.<br>deb: <code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code></td><td data-label="Go back"><strong>Settings → Versions and updates → Go back</strong>. <a href="#app-recovery">If the App can't start</a>.</td></tr>
 <tr><th scope="row">Terminal or server, every system</th><td data-label="Update"><code translate="no">openprogram upgrade</code>, then <code translate="no">openprogram worker restart</code></td><td data-label="Go back"><a href="install.html#exact-version">Install the older version</a> with its exact number, then <code translate="no">openprogram worker restart</code></td></tr>
-<tr><th scope="row">Source checkout</th><td data-label="Update"><a href="development-checkout.html"><code translate="no">openprogram dev deploy</code>, then <code translate="no">promote</code></a>, or <a href="../server/upgrading.html"><code translate="no">openprogram upgrade</code></a>. Restarts by itself.</td><td data-label="Go back"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></td></tr>
+<tr><th scope="row">Source checkout</th><td data-label="Update"><a href="development-checkout.html"><code translate="no">openprogram dev deploy</code></a> for the development instance, or <a href="../server/upgrading.html"><code translate="no">openprogram upgrade</code></a>. Restarts by itself.</td><td data-label="Go back"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></td></tr>
 </tbody>
 </table>
 <p class="note">Stable installations move only between published versions and never follow <code translate="no">origin/main</code>. State under <code translate="no">~/.openprogram</code> is left unchanged. If the terminal command itself is broken, reinstall the latest version:</p>
@@ -43,7 +43,7 @@ irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></pre>
 <ul>
 <li>Lists the versions kept on the computer, as Settings does. Pick one and the App restarts with it. Conversations and files are not touched.</li>
 <li>Shows the log path, <code translate="no">recovery.log</code> in the same folder. With an empty code folder it offers to restore the bundled code; it never overwrites existing code.</li>
-<li>Apps with a built-in runtime have neither page nor menu item: every macOS App published so far and those <code translate="no">scripts/local-instances/refresh-local-app.sh</code> installs.</li>
+<li>Apps with a built-in runtime have neither page nor menu item: every macOS App published so far and the development App.</li>
 </ul>
 </details>
 
@@ -145,6 +145,6 @@ openprogram upgrade --from &lt;directory&gt;     # files already on this compute
 <tr id="recovering-a-conversational-self-update"><th scope="row"><a href="conversational-self-update.html#recovering-a-conversational-self-update">Recover a chat update</a></th><td>App stuck in maintenance, or cannot start</td></tr>
 <tr id="undoing-a-change"><th scope="row"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></th><td>Back to a version, or revert one commit</td></tr>
 <tr id="what-an-update-restarts"><th scope="row"><a href="conversational-self-update.html#what-an-update-restarts">What an update restarts</a></th><td>Changed paths, rebuild and restart</td></tr>
-<tr id="development-checkout"><th scope="row"><span id="macos-signing"></span><a href="development-checkout.html">Development checkout</a></th><td><code translate="no">openprogram dev deploy</code>, then <code translate="no">promote</code>; macOS signing</td></tr>
+<tr id="development-checkout"><th scope="row"><span id="macos-signing"></span><a href="development-checkout.html">Development checkout</a></th><td><code translate="no">openprogram dev deploy</code> to the development instance; macOS signing</td></tr>
 </tbody>
 </table>

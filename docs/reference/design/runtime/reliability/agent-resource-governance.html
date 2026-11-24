@@ -156,7 +156,7 @@
 </table>
 <ul>
 <li>Governed provider calls reserve through <code translate="no">BudgetedRequest</code> before credentials or network access. Production uses <code translate="no">reserve_provider_request</code>, not the standalone <code translate="no">reserve_tokens</code> or <code translate="no">reserve_cost</code>.</li>
-<li>Exhaustion is enforced at request and tool boundaries; a budget loop polling every 0.25 s triggers cancellation for runtime and idle. An executing operation is not described as instantly ended.</li>
+<li>Exhaustion is enforced at request and tool boundaries; while a Job runs, a budget loop sleeps until the earliest runtime or idle deadline and triggers cancellation then; a recorded stop or a helper usage write wakes it sooner; with none running it sleeps. An executing operation is not described as instantly ended.</li>
 <li>The longest non-preemptible interval is the least of declared timeout, remaining runtime and cancel grace. In-process synchronous work that cannot meet that moves to a terminable subprocess or is refused under strict budgets. <code translate="no">asyncio.wait_for</code> returning does not mean the executor thread ended.</li>
 </ul>
 <details>
@@ -197,7 +197,7 @@
 </tbody>
 </table>
 <ul>
-<li>A claim needs <code translate="no">owner_instance_id</code> and the worker lock, checked by probing the real advisory lock. Writes are fenced by <code translate="no">lease_generation</code>. The reconcile loop runs every 5 seconds.</li>
+<li>A claim needs <code translate="no">owner_instance_id</code> and the worker lock, checked by probing the real advisory lock. Writes are fenced by <code translate="no">lease_generation</code>. The reconcile loop runs after another thread commits to the run tables and at durable-wait deadlines, passes at least 5 seconds apart, with a 60-second resync.</li>
 <li>A lease proves worker ownership, not rollback of external side effects.</li>
 <li>Run tables are in-memory tables in the process that owns the profile. Each transaction appends one line to the session's log, and tables are rebuilt from it. <code translate="no">budget_scopes</code> use one global log. Unique keys make admission and reservation idempotent.</li>
 <li><code translate="no">jobs.json</code> is one document per session, in its log, written under a per-session lock and <code translate="no">flock</code>.</li>

@@ -160,6 +160,14 @@
   text-align: center;
 }
 
+/* The compaction row: the one-line bar, and under it the summary when open. */
+.message.compaction-row {
+  background: transparent;
+  padding: 4px 0;
+  animation: none;
+  opacity: 1;
+  overflow-anchor: auto;
+}
 .message.compaction-card {
   background: transparent;
   padding: 0 16px 6px;
@@ -194,29 +202,6 @@
   border-radius: var(--radius-md);
   background: var(--bg-subtle, transparent);
 }
-.compaction-card-md-clip {
-  /* Match .message-content: 15px / 1.7. Pixel lh keeps the 7-line clip
-     and the “… Show all” overlay on a whole last line (15 × 1.7 = 25.5). */
-  --comp-md-lh: 25.5px;
-  position: relative;
-  font-size: var(--fs-chat);
-  line-height: var(--comp-md-lh);
-  max-height: calc(var(--comp-md-lh) * 7);
-  overflow: hidden;
-}
-.compaction-card-md-clip[data-full="1"] {
-  max-height: 200rem;
-}
-.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"])::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 9em;
-  height: var(--comp-md-lh);
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 40%);
-}
 .compaction-card-md,
 .compaction-card-md :is(p, h1, h2, h3, h4, h5, li, ul, ol, code, pre, strong, em, a, blockquote) {
   font-size: var(--fs-chat) !important;
@@ -226,12 +211,6 @@
 }
 .compaction-card-md {
   color: var(--text-muted);
-}
-.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"]) .compaction-card-md {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 7;
-  overflow: hidden;
 }
 .text-hit {
   cursor: pointer;
@@ -248,71 +227,12 @@
 .text-hit:active {
   opacity: 0.65;
 }
-.compaction-card-more {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-size: var(--fs-sm);
-  line-height: var(--comp-md-lh, 25.5px);
-}
-.compaction-card-md-clip:not([data-full="1"]) .compaction-card-more {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  padding-left: 1.5em;
-  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 28%);
-}
-.compaction-card-md-clip[data-full="1"] .compaction-card-more {
-  display: block;
-  margin: 8px 0 0 auto;
-  width: max-content;
-}
-.compaction-orig-toggle {
+.compaction-summary-toggle {
   border: 0;
   background: transparent;
   padding: 0;
   font: inherit;
   flex-shrink: 0;
-}
-.compaction-orig-fold {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 900ms var(--ease-standard);
-}
-.compaction-orig-fold[data-open="1"] {
-  grid-template-rows: 1fr;
-}
-.compaction-orig-fold-inner {
-  overflow: hidden;
-  min-height: 0;
-  opacity: 0;
-  transition: opacity 900ms var(--ease-standard);
-}
-.compaction-orig-fold[data-open="1"] .compaction-orig-fold-inner {
-  opacity: 1;
-  content-visibility: visible;
-}
-/* Skip layout of already-clipped originals. Delay the skip so the 0fr
-   close can still measure real inner height; opening lifts skip immediately. */
-.compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
-  content-visibility: hidden;
-  transition:
-    opacity 900ms var(--ease-standard),
-    content-visibility 0s 900ms allow-discrete;
-}
-.covered-turn {
-  opacity: 0.55;
-  filter: saturate(0.65);
-  overflow-anchor: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .compaction-card-md-clip,
-  .compaction-orig-fold,
-  .compaction-orig-fold-inner,
-  .compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
-    transition: none;
-  }
 }
 
 .message-content {

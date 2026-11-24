@@ -105,8 +105,8 @@ export function useFolderPicker(): {
             <DialogTitle>{text("Open folder on server", "打开服务器上的文件夹")}</DialogTitle>
             <DialogDescription>
               {text(
-                "This OpenProgram worker has no graphical folder picker. Enter an absolute path on the machine running the worker.",
-                "这个 OpenProgram worker 没有图形文件夹选择器。请输入运行 worker 的机器上的绝对路径。",
+                "This OpenProgram worker has no graphical folder picker. Enter an absolute path on the device running the worker.",
+                "这个 OpenProgram worker 没有图形文件夹选择器。请输入运行 worker 的设备上的绝对路径。",
               )}
             </DialogDescription>
           </DialogHeader>

@@ -46,8 +46,8 @@ def _tool(name, calls):
     ("exit_plan_mode", {}),
     ("bash", {"command": "openprogram programs install owner/repo"}),
     ("bash", {"command": "ls", "sandbox_permissions": "require_escalated", "justification": "needs it"}),
-    ("computer_use_agent", {"target": "app", "action": "click", "args": {"app": "Keychain Access"}}),
-    ("computer_use_agent", {"target": "app", "action": "type_text", "args": {"app": "Notes", "text": "x"}}),
+    ("computer_use", {"type": "window", "action": "click", "args": {"app": "Keychain Access"}}),
+    ("computer_use", {"type": "window", "action": "type_text", "args": {"app": "Notes", "text": "x"}}),
     ("web_fetch", {"url": "http://127.0.0.1:8080/"}),
 ])
 def test_the_owner_in_unrestricted_runs_each_former_gate(owner, name, args):
@@ -73,7 +73,9 @@ def test_a_scheduled_turn_with_a_missing_macos_grant_ends_with_an_error(owner, m
     """A wait has no timeout and nobody is there to answer one."""
     import sys
     from openprogram.host import system_access
+    from tests.support import screen_targets
 
+    screen_targets.install(monkeypatch, screen_targets.App())
     monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(system_access, "_native_probe", lambda: {
         "identity": {"executable": sys.executable}, "capabilities": {
@@ -81,11 +83,12 @@ def test_a_scheduled_turn_with_a_missing_macos_grant_ends_with_an_error(owner, m
             "accessibility": {"status": "not_granted", "detail": "fresh"}}})
     calls = []
     request = owner("scheduler", interaction="non-interactive", speaker_kind="runtime")
-    wrapped = wrap_with_approval(_tool("computer_use_agent", calls), request, lambda _event: None)
-    click = {"target": "app", "action": "click", "args": {"app": "Notes", "element_index": 3}}
+    wrapped = wrap_with_approval(_tool("computer_use", calls), request, lambda _event: None)
+    click = {"type": "window", "action": "click", "args": {"app": "Notes", "element": 3}}
     assert wrapped._interaction_manifest("call-1", click) is None
     result = asyncio.run(wrapped.execute("call-1", click, None, None))
-    assert result.is_error and "macOS has not granted" in str(result.content)
+    assert result.is_error and "PERMISSION_MISSING: macOS has not granted" in str(result.content)
+    assert result.details["reason_code"] == "PERMISSION_MISSING"
     assert calls == []
 
 
@@ -127,15 +130,15 @@ def test_the_tool_list_of_a_turn_is_not_cut_by_its_starting_mode():
 
 
 def test_a_saved_rule_does_not_put_unrestricted_back_inside_the_grant(owner, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use_agent import code
+    from openprogram.programs.tools.computer_use.computer_use import code
     from openprogram.runtime.agent import turn_request
     from openprogram.runtime.permissions.modes import PermissionRules
 
     calls = []
-    tool = _tool("computer_use_agent", calls)
+    tool = _tool("computer_use", calls)
     monkeypatch.setattr("openprogram.programs.get_agent_tool", lambda _name: tool)
-    args = {"target": "app", "args": {"app": "Safari"}}
-    rules = PermissionRules(allow=["computer_use_agent"])
+    args = {"type": "window", "args": {"app": "Safari"}}
+    rules = PermissionRules(allow=["computer_use"])
     def request(mode):
         found = owner(mode=mode)
         found.permission_rules = rules

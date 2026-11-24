@@ -43,6 +43,8 @@
 - **2026-11-14 · v1.2.0** — Las ramas de una conversación se ejecutan en paralelo, Detener actúa al instante y llega la App para Windows.
 - **2026-11-10 · v1.1.0** — Rebobinar desde cualquier mensaje enviado; la App llega a Linux.
 - **2026-11-06 · v1.0.0** — Primera versión de la línea 1.x: App de escritorio con vistas divididas, uso del ordenador en segundo plano, reuniones y un planificador siempre activo.
+- **2026-08-17 · v0.7.0** — Un navegador integrado junto a los archivos, el chat y la terminal, que los agentes pueden leer y manejar.
+- **2026-03-31 · v0.1.0** — Primera versión pública: funciones agénticas, funciones de Python cuyos pasos ejecuta un modelo, registradas en un árbol de contexto.
 
 <a id="install"></a>
 

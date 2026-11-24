@@ -7,9 +7,29 @@ import { TerminalContextMenu } from "@/components/center-tabs/pages/terminal-con
 import { useTranslation } from "@/lib/i18n";
 import { terminalResourceApi,
   type TerminalResource, type TerminalReply } from "@/lib/desktop/terminal-resources";
+import { followTerminalOutput, outputFor, type OutputFollower, type OutputRead } from "@/lib/desktop/terminal-output";
 import { processIsActive, type ManagedProcess } from "@/lib/net/execution/process-client";
 import styles from "./terminal-resources.module.css";
 import { Button } from "@/components/ui/button";
+
+/** How soon a view that could not be drawn, or whose input may have been
+ *  lost, connects again; and the longest wait between failed reads. Output
+ *  itself is read when the native host says the terminal wrote some
+ *  (lib/desktop/terminal-output.ts), never on a timer. */
+const RECONNECT_MS = 3000;
+const RECONNECT_MAX_MS = 10000;
+
+let xtermChunks: Promise<[typeof import("@xterm/xterm"), typeof import("@xterm/addon-fit")]> | null = null;
+/** The terminal's code, fetched once. Started as soon as the resource list
+ *  shows a terminal, so opening one draws it without waiting for the chunk. */
+export function loadXterm() {
+  if (!xtermChunks) {
+    xtermChunks = Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+    // A chunk that failed to arrive is asked for again next time.
+    xtermChunks.catch(() => { xtermChunks = null; });
+  }
+  return xtermChunks;
+}
 
 export function terminalTheme(): ITheme {
   const probe = document.createElement("span");
@@ -78,10 +98,18 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
   const control = async (action: string, extra: Record<string, unknown> = {}) => {
     try {
       const result = await send(action, extra);
-      if (!result?.ok) setError(result?.error || "terminal_unavailable");
+      if (!result?.ok) setError(action === "input" ? "terminal_input_unconfirmed" : result?.error || "terminal_unavailable");
       else { setError(""); setConfirmClose(false); }
-    } catch { setError("terminal_result_unconfirmed"); }
+    } catch { setError(action === "input" ? "terminal_input_unconfirmed" : "terminal_result_unconfirmed"); }
   };
+
+  // Input that may not have arrived blocks more input: the reader is told,
+  // and the view reconnects on its own a moment later. Nothing is re-sent.
+  useEffect(() => {
+    if (error !== "terminal_input_unconfirmed") return;
+    const timer = setTimeout(() => setRetry(value => value + 1), RECONNECT_MS);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   useEffect(() => {
     if (!api || !host.current) return;
@@ -90,6 +118,7 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
     let disposed = false, terminal: Terminal | undefined, inputBlocked = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let resize: ResizeObserver | undefined, theme: MutationObserver | undefined;
+    let follower: OutputFollower | undefined, stopPush: (() => void) | undefined;
     let cursor = 0, initialRead = true;
     const input = (data: string) => {
       if (disposed || inputBlocked) return;
@@ -101,7 +130,7 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
       });
     };
     void (async () => {
-      const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+      const [{ Terminal: XTerm }, { FitAddon }] = await loadXterm();
       if (disposed || !host.current) return;
       terminal = new XTerm({ allowProposedApi: false, disableStdin: true, cursorBlink: true,
         fontSize: 13, scrollback: 5000, theme: terminalTheme() });
@@ -117,34 +146,57 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
       resize = new ResizeObserver(fitView); resize.observe(host.current); fitView();
       theme = new MutationObserver(() => { if (terminal && !disposed) terminal.options.theme = terminalTheme(); });
       theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
-      const poll = async () => {
-        if (disposed || !terminal) return;
+      // A read that fails is tried again a little later each time, without a
+      // word; input waits until output flows again. A terminal that became
+      // another instance is redrawn by its row, so this view stops reading.
+      const failed = (reason: unknown): OutputRead => {
+        if (disposed || !terminal) return "stop";
+        console.warn("Terminal: could not read output", reason);
+        terminal.options.disableStdin = true;
+        return "failed";
+      };
+      const poll = async (): Promise<OutputRead> => {
+        if (disposed || !terminal) return "stop";
+        // Not shown: the read waits, from the same cursor, until it is.
+        if (!activeRef.current) { parked.current = () => follower?.poke(); return "idle"; }
         try {
           const reply = await api.resource("read", { ...identity, cursor });
-          if (disposed) return;
-          if (!reply.ok || reply.generation !== identity.generation) {
-            terminal.options.disableStdin = true; setError(reply.error || "terminal_instance_changed"); return;
+          if (disposed) return "stop";
+          if (reply.ok && reply.generation !== identity.generation) {
+            terminal.options.disableStdin = true;
+            console.warn("Terminal: the terminal became another instance", reply.generation);
+            return "stop";
           }
+          if (!reply.ok) return failed(reply.error);
           if (reply.truncated) terminal.writeln(text("[Older output was discarded]", "[较早的输出已被丢弃]"));
           if (reply.data) await new Promise<void>(resolve => terminal!.write(reply.data!, resolve));
-          if (disposed) return;
+          if (disposed) return "stop";
           cursor = reply.next_cursor ?? cursor;
           if (initialRead) { inputUnconfirmed.current = false; initialRead = false; setViewReady(true); }
           terminal.options.disableStdin = inputBlocked || reply.status !== "running";
-          timer = setTimeout(read, reply.has_more ? 0 : 350);
-        } catch {
-          if (!disposed) { setError("terminal_read_unavailable"); terminal.options.disableStdin = true; }
-        }
+          return reply.has_more ? "more" : "idle";
+        } catch (reason) { return failed(reason); }
       };
-      const read = () => {
-        if (disposed) return;
-        if (activeRef.current) void poll();
-        else parked.current = read;
+      follower = followTerminalOutput(poll, { maxDelay: RECONNECT_MAX_MS });
+      // New output, or the terminal's state changed (it exited): read now.
+      const pushed = (chunk: unknown) => {
+        if (outputFor(chunk, identity.terminal_id, identity.generation)) follower?.poke();
       };
-      read();
-    })().catch(() => { if (!disposed) setError("terminal_view_unavailable"); });
+      const offData = api.onData?.(pushed);
+      const offResource = api.onResource(resource => {
+        if (resource?.terminal_id === identity.terminal_id && resource.generation === identity.generation) follower?.poke();
+      });
+      stopPush = () => { offData?.(); offResource(); };
+      follower.poke();
+    })().catch(reason => {
+      // The view itself could not be drawn: it is drawn again shortly.
+      if (disposed) return;
+      console.warn("Terminal: could not draw the view", reason);
+      timer = setTimeout(() => setRetry(value => value + 1), RECONNECT_MS);
+    });
     return () => {
-      disposed = true; clearTimeout(timer); resize?.disconnect(); theme?.disconnect(); terminal?.dispose();
+      disposed = true; clearTimeout(timer); follower?.dispose(); stopPush?.();
+      resize?.disconnect(); theme?.disconnect(); terminal?.dispose();
       xterm.current = null;
       parked.current = null;
       // Hide only detaches this viewer, never closes/releases the native terminal.
@@ -164,8 +216,9 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
       onPaste={() => void navigator.clipboard.readText().then(data => { if (data) void control("input", { data }); })}>
       <div className="flex-1 min-h-0 overflow-hidden" ref={host} />
     </TerminalContextMenu>
-    {error && <div role="alert"><p>{error} · {text("Input was not retried.", "没有自动重发输入。")}</p>
-      <Button type="button" variant="elevated" size="sm" onClick={() => setRetry(value => value + 1)}>{text("Reconnect view", "重新连接视图")}</Button></div>}
+    {error && <div role="alert"><p>{error === "terminal_input_unconfirmed"
+      ? text("Your input may not have reached the terminal. It was not sent again.", "输入可能没有送达终端，没有自动重发。")
+      : text("That did not go through.", "没有生效。")}</p></div>}
     <footer>
       <span>{text("Pause the Agent with the conversation task control.", "需要暂停 Agent 时，请使用会话的任务暂停按钮。")}</span>
       <Button type="button" variant="elevated" size="sm" disabled={resource.status !== "running" || !viewReady || !!error} onClick={() => void control("input", { data: "\x03" })}>Ctrl+C</Button>
@@ -182,57 +235,89 @@ export function TerminalResourceView({ resource, sessionId, active = true, onHid
   </section>;
 }
 
-/** A read-only mirror of the SAME native PTY for the chat preview: it reads
- *  output and never sends input, resizes the terminal or replays anything. */
-export function TerminalMirror({ resource }: { resource: TerminalResource }) {
+/** A mirror of the SAME native PTY for the chat preview: it reads output and
+ *  never resizes the terminal or replays anything. `interactive` lets what is
+ *  typed into it reach the terminal, in order, while the terminal runs. */
+export function TerminalMirror({ resource, interactive = false }: { resource: TerminalResource; interactive?: boolean }) {
   const { text } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState("");
+  // Bumped to draw the view again after it could not be drawn.
+  const [attempt, setAttempt] = useState(0);
+  // What the reader typed last did not reach the terminal.
+  const [inputLost, setInputLost] = useState(false);
   const xterm = useRef<Terminal | null>(null);
   const api = terminalResourceApi();
 
   useEffect(() => {
     if (!api || !host.current) return;
-    setError("");
     const identity = { terminal_id: resource.terminal_id, generation: resource.generation };
-    let disposed = false, terminal: Terminal | undefined, cursor = 0;
+    let disposed = false, terminal: Terminal | undefined, cursor = 0, typing = Promise.resolve();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let resize: ResizeObserver | undefined;
+    let follower: OutputFollower | undefined, stopPush: (() => void) | undefined;
     void (async () => {
-      const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+      const [{ Terminal: XTerm }, { FitAddon }] = await loadXterm();
       if (disposed || !host.current) return;
-      terminal = new XTerm({ allowProposedApi: false, disableStdin: true, cursorBlink: false,
+      terminal = new XTerm({ allowProposedApi: false, disableStdin: !interactive, cursorBlink: interactive,
         fontSize: 11, scrollback: 1000, theme: terminalTheme() });
       const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(host.current); fit.fit();
       resize = new ResizeObserver(() => { if (!disposed) fit.fit(); }); resize.observe(host.current);
       xterm.current = terminal;
-      const poll = async () => {
-        if (disposed || !terminal) return;
+      if (interactive) terminal.onData((data) => {
+        // One at a time, so keys reach the terminal in the order typed.
+        typing = typing.then(async () => {
+          if (disposed) return;
+          const reply = await api.resource("input", { ...identity, data }).catch(() => null);
+          if (!disposed) setInputLost(!reply?.ok);
+        });
+      });
+      // A read that fails is tried again a little later each time; the
+      // output read so far stays. Another instance is drawn by a new mirror.
+      const failed = (reason: unknown): OutputRead => {
+        if (disposed) return "stop";
+        console.warn("Terminal: could not read output", reason);
+        return "failed";
+      };
+      const poll = async (): Promise<OutputRead> => {
+        if (disposed || !terminal) return "stop";
         try {
           const reply = await api.resource("read", { ...identity, cursor });
-          if (disposed) return;
-          if (!reply.ok || reply.generation !== identity.generation) {
-            setError(reply.error || "terminal_instance_changed"); return;
-          }
+          if (disposed) return "stop";
+          if (reply.ok && reply.generation !== identity.generation) return "stop";
+          if (!reply.ok) return failed(reply.error);
           if (reply.truncated) terminal.writeln(text("[Older output was discarded]", "[较早的输出已被丢弃]"));
           if (reply.data) await new Promise<void>(resolve => terminal!.write(reply.data!, resolve));
           cursor = reply.next_cursor ?? cursor;
-          timer = setTimeout(() => { void poll(); }, reply.has_more ? 0 : 500);
-        } catch {
-          if (!disposed) setError("terminal_read_unavailable");
-        }
+          if (interactive) terminal.options.disableStdin = reply.status !== "running";
+          return reply.has_more ? "more" : "idle";
+        } catch (reason) { return failed(reason); }
       };
-      void poll();
-    })().catch(() => { if (!disposed) setError("terminal_view_unavailable"); });
-    return () => { disposed = true; clearTimeout(timer); resize?.disconnect(); terminal?.dispose(); xterm.current = null; };
+      follower = followTerminalOutput(poll, { maxDelay: RECONNECT_MAX_MS });
+      const offData = api.onData?.(chunk => {
+        if (outputFor(chunk, identity.terminal_id, identity.generation)) follower?.poke();
+      });
+      const offResource = api.onResource(resource => {
+        if (resource?.terminal_id === identity.terminal_id && resource.generation === identity.generation) follower?.poke();
+      });
+      stopPush = () => { offData?.(); offResource(); };
+      follower.poke();
+    })().catch(reason => {
+      if (disposed) return;
+      console.warn("Terminal: could not draw the view", reason);
+      timer = setTimeout(() => setAttempt(value => value + 1), RECONNECT_MS);
+    });
+    return () => {
+      disposed = true; clearTimeout(timer); follower?.dispose(); stopPush?.();
+      resize?.disconnect(); terminal?.dispose(); xterm.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, resource.terminal_id, resource.generation]);
+  }, [api, resource.terminal_id, resource.generation, interactive, attempt]);
 
   return <div className={styles.mirror}>
     <TerminalContextMenu terminal={() => xterm.current}>
       <div className="absolute inset-[4px_6px]" ref={host} />
     </TerminalContextMenu>
-    {error && <p className={styles.mirrorError} role="status">{text("Terminal output is unavailable", "终端输出不可用")}</p>}
+    {inputLost && <p className={styles.mirrorError} role="status">{text("Your input may not have reached the terminal. It was not sent again.", "输入可能没有送达终端，没有自动重发。")}</p>}
   </div>;
 }
 
@@ -245,25 +330,32 @@ export function BackgroundTerminalView({ process, output, onStop, onHide }: {
   const { text } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<{ terminal: Terminal; written: string } | null>(null);
-  const [error, setError] = useState("");
+  // Bumped once the view is drawn, so the output is written into it at once,
+  // and to draw it again after it could not be drawn.
+  const [, setDrawn] = useState(0);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!host.current) return;
-    let disposed = false, resize: ResizeObserver | undefined;
+    let disposed = false, resize: ResizeObserver | undefined, timer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
-      const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+      const [{ Terminal: XTerm }, { FitAddon }] = await loadXterm();
       if (disposed || !host.current) return;
       const terminal = new XTerm({ allowProposedApi: false, disableStdin: true, cursorBlink: false,
         convertEol: !process.tty, fontSize: 13, scrollback: 5000, theme: terminalTheme() });
       const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(host.current); fit.fit();
       resize = new ResizeObserver(() => { if (!disposed) fit.fit(); }); resize.observe(host.current);
       view.current = { terminal, written: "" };
-      setError("");
-    })().catch(() => { if (!disposed) setError("terminal_view_unavailable"); });
-    return () => { disposed = true; resize?.disconnect(); view.current?.terminal.dispose(); view.current = null; };
+      setDrawn(value => value + 1);
+    })().catch(reason => {
+      if (disposed) return;
+      console.warn("Terminal: could not draw the view", reason);
+      timer = setTimeout(() => setAttempt(value => value + 1), RECONNECT_MS);
+    });
+    return () => { disposed = true; clearTimeout(timer); resize?.disconnect(); view.current?.terminal.dispose(); view.current = null; };
     // One view per command; output updates are appended below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [process.id]);
+  }, [process.id, attempt]);
 
   useEffect(() => {
     const current = view.current;
@@ -288,7 +380,6 @@ export function BackgroundTerminalView({ process, output, onStop, onHide }: {
     <TerminalContextMenu terminal={() => view.current?.terminal}>
       <div className="flex-1 min-h-0 overflow-hidden" ref={host} />
     </TerminalContextMenu>
-    {error && <div role="alert"><p>{error}</p></div>}
     <footer>
       <span>{text("The agent started this command and reads its output.", "这条命令是 agent 启动的，它会读取输出。")}</span>
       <Button type="button" variant="destructive" size="sm" disabled={!active || process.can_stop === false} onClick={onStop}>{text("Stop", "停止")}</Button>

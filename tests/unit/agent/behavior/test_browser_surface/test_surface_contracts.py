@@ -406,10 +406,10 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
         return AgentToolResult(content=[TextContent(text="ok")])
 
     tool = AgentTool(
-        name="computer_use_agent",
+        name="computer_use",
         description="Operates the built-in browser's tabs",
         parameters={"type": "object"},
-        label="computer_use_agent",
+        label="computer_use",
         execute=execute,
     )
     req = TurnRequest(
@@ -438,7 +438,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
 
     result = asyncio.run(
         wrap_with_approval(tool, req, lambda _event: None).execute(
-            "call-1", {"target": "browser", "action": "click", "args": {"ref": "e1"}}, SimpleNamespace(), lambda _event: None,
+            "call-1", {"type": "browser", "action": "click", "args": {"ref": "e1"}}, SimpleNamespace(), lambda _event: None,
         )
     )
 

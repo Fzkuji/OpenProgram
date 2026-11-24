@@ -107,7 +107,7 @@ export const PIP_ICON = "size-[14px]";
 /** How far a pressed pointer may wander and still be a click. */
 const PIP_PRESS_SLOP = 3;
 
-type PipDrag = {
+export type PipDrag = {
   kind: "move" | "resize";
   /** The frame has started to move or change size. Until it does, a press
    *  is only a press: the live page stays up and nothing is redrawn. */
@@ -226,16 +226,12 @@ function resourceForTab(tabId: string): SessionResource | undefined {
 function statusLabel(
   state: ReturnType<typeof presentedControlState>,
   text: (en: string, zh: string) => string,
-  connected: boolean,
 ): string {
   // The page's edge glows while the Agent holds it; the header speaks only
   // when the reader is needed or the state cannot be told.
   if (state === "waiting") return text("Needs your confirmation", "需要你确认");
-  if (state === "unknown") {
-    return connected
-      ? text("Could not confirm status", "无法确认状态")
-      : text("Connection lost", "连接已断开");
-  }
+  // A state not yet confirmed (the link is re-reading it) says nothing.
+  if (state === "unknown") return "";
   return "";
 }
 
@@ -277,15 +273,16 @@ function PipActionMark({
   );
 }
 
-function PipMoreMenu({
+export function PipMoreMenu({
   historyItems,
   historyLabel,
   showLabel,
   following,
   onToggleFollow,
 }: {
-  historyItems: SidebarMenuItem[];
-  historyLabel: string;
+  /** The operation history, where the preview's kind keeps one. */
+  historyItems?: SidebarMenuItem[];
+  historyLabel?: string;
   showLabel: string;
   following: boolean;
   onToggleFollow: () => void;
@@ -298,16 +295,16 @@ function PipMoreMenu({
   const trigger = useRef<HTMLButtonElement>(null);
   const dispatch = useRef<(id: string) => void>(() => {});
   const moreLabel = text("More", "更多");
-  const followLabel = text("Automatically show the page the Agent is using", "自动显示 Agent 正在操作的网页");
+  const followLabel = text("Automatically show what the Agent is using", "自动显示 Agent 正在操作的内容");
   const description = text(
-    "When enabled, the preview switches to the page the Agent is using. When disabled, it keeps the current page. This only changes the preview, not the Agent's actions.",
-    "开启后，小窗随 Agent 的操作切换网页；关闭后，保持当前网页。只改变显示内容，不影响 Agent 执行。",
+    "When enabled, the preview switches to the page, window, terminal or application the Agent is using. When disabled, it keeps the current one. This only changes the preview, not the Agent's actions.",
+    "开启后，小窗随 Agent 的操作切换到它正在用的网页、窗口、终端或应用；关闭后，保持当前这个。只改变显示内容，不影响 Agent 执行。",
   );
   const items: SidebarMenuItem[] = [
     { id: `${prefix}follow-page`, glyph: "eye", label: followLabel, description, checked: following, keepOpen: true, onSelect: onToggleFollow },
     { id: `${prefix}show-actions`, glyph: "cursor", label: showLabel, checked: showActionsEnabled(), keepOpen: true, onSelect: () => { toggleShowActions(); } },
-    { id: `${prefix}history`, glyph: "history", label: historyLabel, separatorBefore: true,
-      children: historyItems.map(item => ({ glyph: "clock-circle" as const, ...item, id: `${prefix}history:${item.id}` })) },
+    ...(historyItems ? [{ id: `${prefix}history`, glyph: "history" as const, label: historyLabel ?? "", separatorBefore: true,
+      children: historyItems.map(item => ({ glyph: "clock-circle" as const, ...item, id: `${prefix}history:${item.id}` })) }] : []),
   ];
   const serializedItems = JSON.stringify(items);
   useEffect(() => {
@@ -333,7 +330,8 @@ function PipMoreMenu({
     };
   }, [overlay, prefix]);
   const tip = <TipBody title={moreLabel}
-    detail={text("Auto-follow, action markers and operation history", "自动跟随、操作标记与操作历史")} />;
+    detail={historyItems ? text("Auto-follow, action markers and operation history", "自动跟随、操作标记与操作历史")
+      : text("Auto-follow and action markers", "自动跟随与操作标记")} />;
   const button = <button ref={trigger} type="button" className={PIP_ICON_BUTTON}
     aria-label={moreLabel} aria-haspopup="menu" aria-expanded={open}
     onClick={overlay ? () => {
@@ -355,12 +353,12 @@ function PipMoreMenu({
         role="menuitemcheckbox" aria-checked={item.checked} className={itemCls(false)} onSelect={event => { event.preventDefault(); item.onSelect?.(); }}>
         <MenuOptionContent glyph={item.glyph} label={item.label} description={item.description} checked={item.checked} />
       </DropdownMenuItem>)}
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger className={itemCls(false)}><MenuRow glyph="history" label={historyLabel} submenu /></DropdownMenuSubTrigger>
+      {historyItems ? <DropdownMenuSub>
+        <DropdownMenuSubTrigger className={itemCls(false)}><MenuRow glyph="history" label={historyLabel ?? ""} submenu /></DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={`${MENU_PANEL} max-w-[calc(100vw-16px)]`}>
           {historyItems.map(item => <DropdownMenuItem key={item.id} disabled className={itemCls(false)}><MenuRow glyph="clock-circle" label={item.label} /></DropdownMenuItem>)}
         </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      </DropdownMenuSub> : null}
     </DropdownMenuContent>
   </DropdownMenu>;
 
@@ -372,7 +370,7 @@ function PipMoreMenu({
  *  surface inside are the `children` WebTabPip rendered, the same elements
  *  from one move to the next, so React leaves them alone while the frame
  *  follows a sidebar or panel frame by frame. */
-function PipFrame({
+export function PipFrame({
   frameRef,
   dragRef,
   presentedRef,
@@ -386,6 +384,7 @@ function PipFrame({
   dockSlot,
   title,
   state,
+  kind = "web",
   children,
 }: {
   frameRef: React.RefObject<HTMLDivElement>;
@@ -401,6 +400,8 @@ function PipFrame({
   dockSlot: HTMLElement | null;
   title: string;
   state: string;
+  /** What the preview shows: a web page, an app window, a terminal or an application. */
+  kind?: "web" | "native-window" | "terminal" | "application";
   children: React.ReactNode;
 }) {
   const rect = useWebTabPip((s) => s.rect);
@@ -540,6 +541,7 @@ function PipFrame({
       className={cn(styles.webPip, PIP_FRAME, expanded && styles.webPipExpanded)}
       data-pip="true"
       data-pip-host="chat"
+      data-pip-kind={kind}
       data-pip-owner-tab-id={ownerTabId ?? undefined}
       data-pip-docked={dockedHere ? "true" : undefined}
       data-pip-clipped={clipped ? "true" : undefined}
@@ -608,14 +610,9 @@ export function WebTabPip() {
   const live = !overview && pipHostMode(tabId, ownerTabId, center) === "chat";
   const expanded = !!pref?.expanded;
   const rootRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<PipDrag | null>(null);
-  const pendingRectRef = useRef<WebTabPipRect | null>(null);
-  const rafRef = useRef(0);
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
   const captureLoopRef = useRef<WebTabCaptureLoop | null>(null);
-  const dragFinishingRef = useRef(false);
-  const endActiveDragRef = useRef<(persist: boolean) => void>(() => {});
   const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
   /** Where the frame is drawn, as PipFrame last committed it. */
   const presentedRef = useRef<WebTabPipRect | null>(null);
@@ -640,13 +637,8 @@ export function WebTabPip() {
     img.style.display = "none";
   };
 
-  useEffect(() => () => {
-    endActiveDragRef.current(false);
-  }, []);
-
   useEffect(() => {
     if (live) return;
-    endActiveDragRef.current(false);
     captureGenRef.current += 1;
   }, [live]);
 
@@ -694,24 +686,6 @@ export function WebTabPip() {
       if (captureGenRef.current === gen) captureGenRef.current += 1;
     };
   }, [bridge, tabId, live, ownerSessionId, interactive]);
-
-  useEffect(() => {
-    // A native page can take the release before React's captured pointer sees
-    // it. Finish at the window boundary as well so the next gesture can start.
-    const finish = () => endActiveDragRef.current(true);
-    const released = (event: MouseEvent) => { if (event.buttons === 0) finish(); };
-    window.addEventListener("pointerup", finish);
-    window.addEventListener("mouseup", finish);
-    window.addEventListener("blur", finish);
-    window.addEventListener("mousemove", released, true);
-    return () => {
-      window.removeEventListener("pointerup", finish);
-      window.removeEventListener("mouseup", finish);
-      window.removeEventListener("blur", finish);
-      window.removeEventListener("mousemove", released, true);
-      endActiveDragRef.current(false);
-    };
-  }, [tabId]);
 
   const motion = useWebTabPip((s) => s.motion);
   // The frame folds into the composer's web page chip before it closes,
@@ -772,6 +746,11 @@ export function WebTabPip() {
   }, [motion]);
 
   const dockedHere = live && docked && !expanded && !!dockSlot && dockSlotShown;
+  const { dragRef, endActiveDragRef, onDragPointerDown, onDragPointerMove, onDragPointerUp, onDragPointerCancel } = usePipGestures({
+    rootRef, presentedRef, live, expanded, dockedHere, subject: tabId ?? "", busy: !!motion,
+    onGestureStart: () => captureLoopRef.current?.pause(),
+    onGestureEnd: () => captureLoopRef.current?.resume(),
+  });
   if (!tabId || !tab || !live) return null;
 
   // A record names the page it last saw; once the tab has navigated away
@@ -796,14 +775,14 @@ export function WebTabPip() {
   };
   const pinned = pref?.mode === "manual";
   const controlState = control ? presentedControlState(control) : null;
-  const stateText = controlState ? statusLabel(controlState, text, connected) : "";
+  const stateText = controlState ? statusLabel(controlState, text) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
   const freshLabel = frameState === "live"
     ? text("Read-only image mirror", "只读图像镜像")
     : frameState === "last-frame"
       ? text("Last frame", "最后一帧")
-      : text("Image preview unavailable", "无法预览图像");
+      : "";
   const takeoverKind = browserTakeoverKind(controlState);
   const history = control ? operationHistory(control.resourceId) : [];
   const historyLabel = text("Operation history", "操作历史");
@@ -827,264 +806,6 @@ export function WebTabPip() {
       selectResourcePreview(sessionId, branchId, resource.id);
     }
     render(value => value + 1);
-  };
-
-  const liveRect = (el: HTMLElement) => presentedRef.current ?? useWebTabPip.getState().rect ?? measuredRect(el);
-
-  const previewRect = (
-    el: HTMLElement,
-    drag: PipDrag,
-    next: WebTabPipRect,
-  ) => {
-    drag.shown = next;
-    if (drag.kind === "move" && !drag.fromDock && !drag.lag && drag.snapped === undefined
-        && next.width === drag.origin.width && next.height === drag.origin.height) {
-      el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
-      el.dispatchEvent(new Event("op:pip-geometry"));
-      return;
-    }
-    el.style.transform = "";
-    el.style.left = `${next.x}px`;
-    el.style.top = `${next.y}px`;
-    el.style.width = `${next.width}px`;
-    el.style.height = `${next.height}px`;
-    el.style.right = "auto";
-    el.style.bottom = "auto";
-    el.dispatchEvent(new Event("op:pip-geometry"));
-  };
-
-  const applyInlineRect = (el: HTMLElement, next: WebTabPipRect) => {
-    el.style.transform = "";
-    el.style.willChange = "";
-    el.classList.remove(styles.webPipDragging);
-    el.style.left = `${next.x}px`;
-    el.style.top = `${next.y}px`;
-    el.style.width = `${next.width}px`;
-    el.style.height = `${next.height}px`;
-    el.style.right = "auto";
-    el.style.bottom = "auto";
-    el.dispatchEvent(new Event("op:pip-geometry"));
-  };
-
-  const persistRect = (
-    el: HTMLElement | null,
-    next: WebTabPipRect,
-    kind: "move" | "resize",
-  ) => {
-    if (el) applyInlineRect(el, next);
-    const rect = useWebTabPip.getState().rect;
-    const collapsed = {
-      x: next.x,
-      y: next.y,
-      width: rect?.width ?? PIP_DEFAULT_WIDTH,
-      height: rect?.height ?? PIP_DEFAULT_HEIGHT,
-    };
-    if (expanded) {
-      if (kind === "resize") {
-        useWebTabPip.setState({
-          rect: collapsed,
-          expandedSize: { width: next.width, height: next.height },
-        });
-        return;
-      }
-      setRect(collapsed);
-      return;
-    }
-    setRect(next);
-  };
-
-  const finishDrag = (persist: boolean) => {
-    const drag = dragRef.current;
-    if (!drag || dragFinishingRef.current) return;
-    dragFinishingRef.current = true;
-    dragRef.current = null;
-    drag.spring?.stop();
-    if (rafRef.current) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
-    const next = pendingRectRef.current;
-    pendingRectRef.current = null;
-    const el = rootRef.current;
-    if (drag.target.hasPointerCapture(drag.pointerId)) {
-      drag.target.releasePointerCapture(drag.pointerId);
-    }
-    const pip = useWebTabPip.getState();
-    const commit = persist && !!next && live && pip.tabId === drag.tabId;
-    if (commit && pip.dockHover) {
-      // Dropped at the column: it docks, and keeps its free place for later.
-      // Land exactly on the slot: React may not restyle a preview whose
-      // docked place did not change while it was dragged.
-      useWebTabPip.setState({ docked: true, dockHover: false });
-      const slot = useWebTabPip.getState().dockSlot;
-      const parent = el?.offsetParent as HTMLElement | null;
-      if (el && slot && parent) {
-        const box = slot.getBoundingClientRect();
-        const origin = parent.getBoundingClientRect();
-        applyInlineRect(el, { x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height });
-      } else if (el) {
-        applyInlineRect(el, drag.place ?? next ?? drag.origin);
-      }
-    } else if (commit && next && !drag.docked) {
-      if (drag.fromDock) useWebTabPip.setState({ docked: false });
-      persistRect(el, clampPipRect(next, el ? containerBox(el) : drag.bounds), drag.kind);
-    } else if (el) {
-      // Let go before it came out of the dock: back into its place.
-      applyInlineRect(el, drag.origin);
-    }
-    if (pip.dockHover) useWebTabPip.setState({ dockHover: false });
-    el?.dispatchEvent(new Event("op:pip-gesture-end"));
-    if (persist) captureLoopRef.current?.resume();
-    dragFinishingRef.current = false;
-  };
-  endActiveDragRef.current = finishDrag;
-
-  const onDragPointerDown = (
-    kind: "move" | "resize",
-    event: React.PointerEvent<HTMLElement>,
-    dir?: PipResizeDir,
-  ) => {
-    if (event.button !== 0 || dragRef.current || motion) return;
-    const el = rootRef.current;
-    if (!el) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const fromDock = kind === "move" && dockedHere;
-    const rect = useWebTabPip.getState().rect;
-    dragRef.current = {
-      kind,
-      docked: fromDock,
-      fromDock,
-      freeSize: fromDock
-        ? { width: rect?.width ?? PIP_DEFAULT_WIDTH, height: rect?.height ?? PIP_DEFAULT_HEIGHT }
-        : undefined,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      origin: liveRect(el),
-      bounds: containerBox(el),
-      tabId,
-      target: event.currentTarget,
-      dir,
-    };
-    pendingRectRef.current = dragRef.current.origin;
-    el.classList.add(styles.webPipDragging);
-    captureLoopRef.current?.pause();
-  };
-
-  /** Draw the drag's current place: where it belongs plus the spring's lag. */
-  const drawDrag = (drag: PipDrag) => {
-    const node = rootRef.current;
-    if (!node || !drag.place || dragRef.current !== drag) return;
-    const next = withLag(drag.place, drag.lag);
-    pendingRectRef.current = next;
-    previewRect(node, drag, next);
-  };
-
-  /** Start a spring from `from` (where it is drawn) to `to` (where it now
-   *  belongs): the lag between them decays to nothing while `to` keeps
-   *  following the pointer. */
-  const springFrom = (drag: PipDrag, from: WebTabPipRect, to: WebTabPipRect) => {
-    drag.spring?.stop();
-    const start = { x: from.x - to.x, y: from.y - to.y, width: from.width - to.width, height: from.height - to.height };
-    drag.lag = start;
-    drag.place = to;
-    drag.spring = animate(1, 0, {
-      ...PIP_DOCK_SPRING,
-      onUpdate: (k) => {
-        drag.lag = { x: start.x * k, y: start.y * k, width: start.width * k, height: start.height * k };
-        drawDrag(drag);
-      },
-      onComplete: () => { drag.lag = { x: 0, y: 0, width: 0, height: 0 }; drawDrag(drag); },
-    });
-  };
-
-  const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = dragRef.current;
-    const el = rootRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !el) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (!drag.moved) {
-      // A press moves nothing until the pointer has gone past a click's
-      // jitter, or a docked preview's pull distance; then the page's
-      // picture stands in for it (the surface's `gesture` hold).
-      if (drag.docked ? !pulledOut(dx, dy) : Math.hypot(dx, dy) < PIP_PRESS_SLOP) return;
-      drag.moved = true;
-      el.style.willChange = drag.kind === "move" ? "transform" : "left, top, width, height";
-      el.dispatchEvent(new Event("op:pip-gesture-start"));
-    }
-    if (drag.docked) {
-      // Docked: it holds still until the pointer has gone the pull
-      // distance, then comes out at its free size and springs to the
-      // pointer, keeping the pointer's offset in the header where it fits.
-      const free = drag.freeSize ?? { width: drag.origin.width, height: drag.origin.height };
-      const offset = drag.startX - (el.offsetParent as HTMLElement).getBoundingClientRect().left - drag.origin.x;
-      // The store stays docked until the drop, so the column keeps the
-      // place open and nothing re-lays the preview out under the drag.
-      drag.docked = false;
-      drag.armed = false;
-      drag.origin = { x: drag.origin.x + offset - Math.min(offset, free.width - 24), y: drag.origin.y, ...free };
-      springFrom(drag, drag.shown ?? drag.origin, clampPipRect(
-        { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }, drag.bounds));
-    }
-    const column = drag.kind === "move" && el.offsetParent
-      ? dockColumn(ownerPane(el, el.offsetParent as HTMLElement))
-      : null;
-    const free = drag.kind === "move"
-      ? clampPipRect(
-        { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy },
-        drag.bounds,
-      )
-      : null;
-    const target = column && free && !expanded
-      ? dockTarget(column, (el.offsetParent as HTMLElement).getBoundingClientRect())
-      : null;
-    if (target && free && drag.armed === false && !nearDock(free, target)) drag.armed = true;
-    const snapping = drag.armed !== false && !!target && !!free && nearDock(free, target, !!drag.snapped);
-    if (drag.kind === "move" && snapping !== !!drag.snapped) {
-      // Snapping in or coming off: spring from where it is drawn.
-      const was = drag.shown ?? drag.origin;
-      drag.snapped = snapping;
-      springFrom(drag, was, snapping && target ? target : free!);
-    }
-    if (snapping !== useWebTabPip.getState().dockHover) useWebTabPip.setState({ dockHover: snapping });
-    const base = drag.kind === "move"
-      ? (snapping && target ? target : free!)
-      : resizePipRect(
-        drag.origin,
-        dx,
-        dy,
-        drag.bounds,
-        PIP_MIN_WIDTH,
-        PIP_MIN_HEIGHT,
-        drag.dir ?? "se",
-      );
-    drag.place = base;
-    const next = withLag(base, drag.lag);
-    pendingRectRef.current = next;
-    if (rafRef.current) return;
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = 0;
-      const liveDrag = pendingRectRef.current;
-      const current = dragRef.current;
-      const node = rootRef.current;
-      if (!liveDrag || !current || !node) return;
-      previewRect(node, current, liveDrag);
-    });
-  };
-
-  const onDragPointerUp = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    onDragPointerMove(event);
-    finishDrag(true);
-  };
-
-  const onDragPointerCancel = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    finishDrag(true);
   };
 
   return (
@@ -1217,4 +938,327 @@ export function WebTabPip() {
       ))}
     </PipFrame>
   );
+}
+
+/** Moving, resizing and docking a chat preview by its header and edges,
+ *  shared by every kind of preview (a web page, an app window, a terminal,
+ *  an application). `subject` names what the preview shows; a gesture whose
+ *  preview moved on to something else is not committed. */
+export function usePipGestures({
+  rootRef,
+  presentedRef,
+  live,
+  expanded,
+  dockedHere,
+  subject,
+  busy = false,
+  onGestureStart,
+  onGestureEnd,
+}: {
+  rootRef: React.RefObject<HTMLDivElement>;
+  presentedRef: React.MutableRefObject<WebTabPipRect | null>;
+  live: boolean;
+  expanded: boolean;
+  dockedHere: boolean;
+  subject: string;
+  busy?: boolean;
+  onGestureStart?: () => void;
+  onGestureEnd?: () => void;
+}) {
+  const setRect = useWebTabPip((s) => s.setRect);
+  const dragRef = useRef<PipDrag | null>(null);
+  const pendingRectRef = useRef<WebTabPipRect | null>(null);
+  const rafRef = useRef(0);
+  const dragFinishingRef = useRef(false);
+  const endActiveDragRef = useRef<(persist: boolean) => void>(() => {});
+  const subjectRef = useRef(subject);
+  subjectRef.current = subject;
+  const gestureRef = useRef({ start: onGestureStart, end: onGestureEnd });
+  gestureRef.current = { start: onGestureStart, end: onGestureEnd };
+
+  useEffect(() => () => {
+    endActiveDragRef.current(false);
+  }, []);
+
+  useEffect(() => {
+    if (!live) endActiveDragRef.current(false);
+  }, [live]);
+
+  useEffect(() => {
+    // A native page can take the release before React's captured pointer sees
+    // it. Finish at the window boundary as well so the next gesture can start.
+    const finish = () => endActiveDragRef.current(true);
+    const released = (event: MouseEvent) => { if (event.buttons === 0) finish(); };
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("mouseup", finish);
+    window.addEventListener("blur", finish);
+    window.addEventListener("mousemove", released, true);
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("mouseup", finish);
+      window.removeEventListener("blur", finish);
+      window.removeEventListener("mousemove", released, true);
+      endActiveDragRef.current(false);
+    };
+  }, [subject]);
+
+  const liveRect = (el: HTMLElement) => presentedRef.current ?? useWebTabPip.getState().rect ?? measuredRect(el);
+
+  const previewRect = (
+    el: HTMLElement,
+    drag: PipDrag,
+    next: WebTabPipRect,
+  ) => {
+    drag.shown = next;
+    if (drag.kind === "move" && !drag.fromDock && !drag.lag && drag.snapped === undefined
+        && next.width === drag.origin.width && next.height === drag.origin.height) {
+      el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
+      el.dispatchEvent(new Event("op:pip-geometry"));
+      return;
+    }
+    el.style.transform = "";
+    el.style.left = `${next.x}px`;
+    el.style.top = `${next.y}px`;
+    el.style.width = `${next.width}px`;
+    el.style.height = `${next.height}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    el.dispatchEvent(new Event("op:pip-geometry"));
+  };
+
+  const applyInlineRect = (el: HTMLElement, next: WebTabPipRect) => {
+    el.style.transform = "";
+    el.style.willChange = "";
+    el.classList.remove(styles.webPipDragging);
+    el.style.left = `${next.x}px`;
+    el.style.top = `${next.y}px`;
+    el.style.width = `${next.width}px`;
+    el.style.height = `${next.height}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    el.dispatchEvent(new Event("op:pip-geometry"));
+  };
+
+  const persistRect = (
+    el: HTMLElement | null,
+    next: WebTabPipRect,
+    kind: "move" | "resize",
+  ) => {
+    if (el) applyInlineRect(el, next);
+    const rect = useWebTabPip.getState().rect;
+    const collapsed = {
+      x: next.x,
+      y: next.y,
+      width: rect?.width ?? PIP_DEFAULT_WIDTH,
+      height: rect?.height ?? PIP_DEFAULT_HEIGHT,
+    };
+    if (expanded) {
+      if (kind === "resize") {
+        useWebTabPip.setState({
+          rect: collapsed,
+          expandedSize: { width: next.width, height: next.height },
+        });
+        return;
+      }
+      setRect(collapsed);
+      return;
+    }
+    setRect(next);
+  };
+
+  const finishDrag = (persist: boolean) => {
+    const drag = dragRef.current;
+    if (!drag || dragFinishingRef.current) return;
+    dragFinishingRef.current = true;
+    dragRef.current = null;
+    drag.spring?.stop();
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    const next = pendingRectRef.current;
+    pendingRectRef.current = null;
+    const el = rootRef.current;
+    if (drag.target.hasPointerCapture(drag.pointerId)) {
+      drag.target.releasePointerCapture(drag.pointerId);
+    }
+    const pip = useWebTabPip.getState();
+    const commit = persist && !!next && live && subjectRef.current === drag.tabId;
+    if (commit && pip.dockHover) {
+      // Dropped at the column: it docks, and keeps its free place for later.
+      // Land exactly on the slot: React may not restyle a preview whose
+      // docked place did not change while it was dragged.
+      useWebTabPip.setState({ docked: true, dockHover: false });
+      const slot = useWebTabPip.getState().dockSlot;
+      const parent = el?.offsetParent as HTMLElement | null;
+      if (el && slot && parent) {
+        const box = slot.getBoundingClientRect();
+        const origin = parent.getBoundingClientRect();
+        applyInlineRect(el, { x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height });
+      } else if (el) {
+        applyInlineRect(el, drag.place ?? next ?? drag.origin);
+      }
+    } else if (commit && next && !drag.docked) {
+      if (drag.fromDock) useWebTabPip.setState({ docked: false });
+      persistRect(el, clampPipRect(next, el ? containerBox(el) : drag.bounds), drag.kind);
+    } else if (el) {
+      // Let go before it came out of the dock: back into its place.
+      applyInlineRect(el, drag.origin);
+    }
+    if (pip.dockHover) useWebTabPip.setState({ dockHover: false });
+    el?.dispatchEvent(new Event("op:pip-gesture-end"));
+    if (persist) gestureRef.current.end?.();
+    dragFinishingRef.current = false;
+  };
+  endActiveDragRef.current = finishDrag;
+
+  const onDragPointerDown = (
+    kind: "move" | "resize",
+    event: React.PointerEvent<HTMLElement>,
+    dir?: PipResizeDir,
+  ) => {
+    if (event.button !== 0 || dragRef.current || busy) return;
+    const el = rootRef.current;
+    if (!el) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const fromDock = kind === "move" && dockedHere;
+    const rect = useWebTabPip.getState().rect;
+    dragRef.current = {
+      kind,
+      docked: fromDock,
+      fromDock,
+      freeSize: fromDock
+        ? { width: rect?.width ?? PIP_DEFAULT_WIDTH, height: rect?.height ?? PIP_DEFAULT_HEIGHT }
+        : undefined,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: liveRect(el),
+      bounds: containerBox(el),
+      tabId: subject,
+      target: event.currentTarget,
+      dir,
+    };
+    pendingRectRef.current = dragRef.current.origin;
+    el.classList.add(styles.webPipDragging);
+    gestureRef.current.start?.();
+  };
+
+  /** Draw the drag's current place: where it belongs plus the spring's lag. */
+  const drawDrag = (drag: PipDrag) => {
+    const node = rootRef.current;
+    if (!node || !drag.place || dragRef.current !== drag) return;
+    const next = withLag(drag.place, drag.lag);
+    pendingRectRef.current = next;
+    previewRect(node, drag, next);
+  };
+
+  /** Start a spring from `from` (where it is drawn) to `to` (where it now
+   *  belongs): the lag between them decays to nothing while `to` keeps
+   *  following the pointer. */
+  const springFrom = (drag: PipDrag, from: WebTabPipRect, to: WebTabPipRect) => {
+    drag.spring?.stop();
+    const start = { x: from.x - to.x, y: from.y - to.y, width: from.width - to.width, height: from.height - to.height };
+    drag.lag = start;
+    drag.place = to;
+    drag.spring = animate(1, 0, {
+      ...PIP_DOCK_SPRING,
+      onUpdate: (k) => {
+        drag.lag = { x: start.x * k, y: start.y * k, width: start.width * k, height: start.height * k };
+        drawDrag(drag);
+      },
+      onComplete: () => { drag.lag = { x: 0, y: 0, width: 0, height: 0 }; drawDrag(drag); },
+    });
+  };
+
+  const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    const el = rootRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !el) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved) {
+      // A press moves nothing until the pointer has gone past a click's
+      // jitter, or a docked preview's pull distance; then the page's
+      // picture stands in for it (the surface's `gesture` hold).
+      if (drag.docked ? !pulledOut(dx, dy) : Math.hypot(dx, dy) < PIP_PRESS_SLOP) return;
+      drag.moved = true;
+      el.style.willChange = drag.kind === "move" ? "transform" : "left, top, width, height";
+      el.dispatchEvent(new Event("op:pip-gesture-start"));
+    }
+    if (drag.docked) {
+      // Docked: it holds still until the pointer has gone the pull
+      // distance, then comes out at its free size and springs to the
+      // pointer, keeping the pointer's offset in the header where it fits.
+      const free = drag.freeSize ?? { width: drag.origin.width, height: drag.origin.height };
+      const offset = drag.startX - (el.offsetParent as HTMLElement).getBoundingClientRect().left - drag.origin.x;
+      // The store stays docked until the drop, so the column keeps the
+      // place open and nothing re-lays the preview out under the drag.
+      drag.docked = false;
+      drag.armed = false;
+      drag.origin = { x: drag.origin.x + offset - Math.min(offset, free.width - 24), y: drag.origin.y, ...free };
+      springFrom(drag, drag.shown ?? drag.origin, clampPipRect(
+        { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }, drag.bounds));
+    }
+    const column = drag.kind === "move" && el.offsetParent
+      ? dockColumn(ownerPane(el, el.offsetParent as HTMLElement))
+      : null;
+    const free = drag.kind === "move"
+      ? clampPipRect(
+        { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy },
+        drag.bounds,
+      )
+      : null;
+    const target = column && free && !expanded
+      ? dockTarget(column, (el.offsetParent as HTMLElement).getBoundingClientRect())
+      : null;
+    if (target && free && drag.armed === false && !nearDock(free, target)) drag.armed = true;
+    const snapping = drag.armed !== false && !!target && !!free && nearDock(free, target, !!drag.snapped);
+    if (drag.kind === "move" && snapping !== !!drag.snapped) {
+      // Snapping in or coming off: spring from where it is drawn.
+      const was = drag.shown ?? drag.origin;
+      drag.snapped = snapping;
+      springFrom(drag, was, snapping && target ? target : free!);
+    }
+    if (snapping !== useWebTabPip.getState().dockHover) useWebTabPip.setState({ dockHover: snapping });
+    const base = drag.kind === "move"
+      ? (snapping && target ? target : free!)
+      : resizePipRect(
+        drag.origin,
+        dx,
+        dy,
+        drag.bounds,
+        PIP_MIN_WIDTH,
+        PIP_MIN_HEIGHT,
+        drag.dir ?? "se",
+      );
+    drag.place = base;
+    const next = withLag(base, drag.lag);
+    pendingRectRef.current = next;
+    if (rafRef.current) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const liveDrag = pendingRectRef.current;
+      const current = dragRef.current;
+      const node = rootRef.current;
+      if (!liveDrag || !current || !node) return;
+      previewRect(node, current, liveDrag);
+    });
+  };
+
+  const onDragPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    onDragPointerMove(event);
+    finishDrag(true);
+  };
+
+  const onDragPointerCancel = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    finishDrag(true);
+  };
+
+  return { dragRef, endActiveDragRef, onDragPointerDown, onDragPointerMove, onDragPointerUp, onDragPointerCancel };
 }

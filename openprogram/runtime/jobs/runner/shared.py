@@ -103,10 +103,26 @@ _CANCEL_ESCALATION_SECS = 30.0
 
 
 _RECONCILE_SECS = 5.0
+#: The reconciler and the dispatcher are woken by changes
+#: (host/_platform/changes.py); with none, they look again this often in case
+#: one was missed, and a crashed process's leftovers are repaired by then.
+_RECONCILE_RESYNC_SECS = 60.0
+_DISPATCH_RESYNC_SECS = 60.0
 
 
 #: How long a session with nothing unfinished stays in memory after its last change.
 _FINISHED_SESSION_MEMORY_SECS = 3600.0
+
+
+#: How long a conversation read whole stays in memory after it was last
+#: asked for: long enough to go back and forth between a few conversations
+#: without reading one again.
+_IDLE_SESSION_MEMORY_SECS = 1800.0
+
+
+#: How long the run rows read beside a session's documents stay in memory
+#: after they were last read.
+_IDLE_RUN_ROWS_MEMORY_SECS = 600.0
 
 
 _RUNNERS_BY_EXECUTION_PATH: dict[str, "JobRunner"] = {}

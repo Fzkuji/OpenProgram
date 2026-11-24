@@ -39,6 +39,9 @@ export const useWebResourceThumbnails = create<ThumbnailState>(() => ({
 useWebResourceThumbnails.subscribe((state, previous) => { if (state.shots !== previous.shots) save(state.shots); });
 
 const inFlight = new Set<string>();
+/** Pictures asked for while one of the same tab was being taken: taken
+ *  right after it, so the request is not lost. */
+const askedAgain = new Map<string, { operationId: string | null; force: boolean }>();
 
 /** Scale a page capture down to the thumbnail size, cropped from the top
  *  so the page's header stays in view. */
@@ -65,7 +68,12 @@ export function refreshWebResourceThumbnail(tabId: string, operationId: string |
   const current = useWebResourceThumbnails.getState().shots[tabId];
   if (!force && current && current.operationId === operationId) return;
   const capture = desktopBridge()?.webTab?.capture;
-  if (!capture || inFlight.has(tabId)) return;
+  if (!capture) return;
+  if (inFlight.has(tabId)) {
+    const earlier = askedAgain.get(tabId);
+    askedAgain.set(tabId, { operationId, force: force || !!earlier?.force });
+    return;
+  }
   inFlight.add(tabId);
   // "presentation" is the page as laid out in its own tab, also when the
   // tab is not on screen. A page that is not loaded gives no picture, and
@@ -76,7 +84,12 @@ export function refreshWebResourceThumbnail(tabId: string, operationId: string |
     useWebResourceThumbnails.setState(state => ({
       shots: { ...state.shots, [tabId]: { url, at: Date.now(), operationId } },
     }));
-  }).catch(() => undefined).finally(() => { inFlight.delete(tabId); });
+  }).catch(() => undefined).finally(() => {
+    inFlight.delete(tabId);
+    const again = askedAgain.get(tabId);
+    askedAgain.delete(tabId);
+    if (again) refreshWebResourceThumbnail(tabId, again.operationId, again.force);
+  });
 }
 
 /** Forget thumbnails of tabs that are gone. An empty tab list is the

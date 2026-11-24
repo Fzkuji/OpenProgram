@@ -26,12 +26,16 @@ def _project_name_map() -> tuple[dict[str, str], str]:
         return {}, ""
 
 
-def build_sessions_list() -> list[dict]:
+def build_sessions_list(*, local_only: bool = False) -> list[dict]:
     """Build the sidebar session list payload from the registry.
 
     Shared by ``handle_list_sessions`` (per-client reply) and the
     fn-form REST path (broadcast on new-session creation), so both
-    produce identical rows.
+    produce identical rows. Each connected remote OpenProgram machine's
+    conversations follow, marked with its ``machine_id``
+    (``remote_machines.links``), unless ``local_only``: what another
+    computer asks for, so two paired computers never list each other's
+    lists back.
     """
     from openprogram.runtime.context.session_db import default_db
     _proj_map, _default_proj = _project_name_map()
@@ -56,7 +60,6 @@ def build_sessions_list() -> list[dict]:
             "peer_display": row.get("peer_display"),
             "channel": row.get("channel"),
             "account_id": row.get("account_id"),
-            "environment_id": row.get("environment_id"),
             "peer": row.get("peer_id"),
             "preview": preview or None,
             "pinned": bool(row.get("pinned")),
@@ -68,6 +71,9 @@ def build_sessions_list() -> list[dict]:
             "sort_since": row.get("sort_since") or 0,
             "project": _proj_map.get(sid, _default_proj),
         })
+    if not local_only:
+        from openprogram.interfaces.server.remote_machines.links import remote_session_rows
+        conv_list += remote_session_rows({row["id"] for row in conv_list})
     conv_list.sort(key=lambda c: c.get("updated_at") or 0, reverse=True)
     return conv_list
 
@@ -83,5 +89,5 @@ def broadcast_sessions_list() -> None:
 async def handle_list_sessions(ws, cmd: dict):
     """List sessions from registry (pure memory, no disk I/O)."""
     await ws.send_text(json.dumps({
-        "type": "sessions_list", "data": build_sessions_list(),
+        "type": "sessions_list", "data": build_sessions_list(local_only=cmd.get("local_only") is True),
     }, default=str))

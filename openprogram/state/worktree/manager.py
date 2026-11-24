@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from openprogram.state.paths import get_state_dir
+from openprogram.state import paths as state_paths
 from openprogram.state.worktree.include_sync import sync_include_files
 from openprogram.state.worktree.pr_ref import PrRefError, fetch_pr_branch, parse_pr_ref
 from openprogram.state.worktree.store import (
@@ -136,7 +136,7 @@ def _sessions_git_root() -> Path:
     """Directory that OpenProgram uses for its own conversation storage,
     ``<state>/projects``. Worktrees MUST NOT be created inside this tree.
     """
-    return get_state_dir() / "projects"
+    return state_paths.get_state_dir() / "projects"
 
 
 def _is_inside_sessions_dir(path: Path) -> bool:
@@ -153,7 +153,7 @@ def _is_inside_sessions_dir(path: Path) -> bool:
 
 
 def _worktrees_root() -> Path:
-    return get_state_dir() / "worktrees"
+    return state_paths.get_state_dir() / "worktrees"
 
 
 class WorktreeManager:

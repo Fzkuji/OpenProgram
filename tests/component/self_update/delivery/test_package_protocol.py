@@ -190,34 +190,6 @@ def test_validator_accepts_legacy_protocol_four_for_rollback(package_factory):
     assert validate_ui_package(app)["protocol"] == 4
 
 
-def test_refresh_copies_installer_and_regenerates_packaged_protocol(package_factory, tmp_path):
-    app = package_factory()
-    resources = app / "Contents/Resources"
-    installer = resources / "update/install-app.sh"
-    installer.write_text("old installed controller")
-    archive = tmp_path / "app.asar"
-    shutil.copyfile(resources / "app.asar", archive)
-    staged_installer = tmp_path / "install-app.sh"
-    shutil.copyfile(ROOT / "apps/desktop/scripts/install-app.sh", staged_installer)
-    # Execute the real archive/resource replacement statements over fixture files;
-    # deliberately exclude worker stop/start and OS App opening from this check.
-    source = (ROOT / "scripts/local-instances/refresh-local-app.sh").read_text()
-    block = source[source.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"'):source.index('revision="$build_revision"')]
-    assets = tmp_path / "runtime-assets"
-    assets.mkdir()
-    (assets / "icon.icns").write_bytes(b"staged App icon")
-    setup = ('staged_app="$1"; desktop_asar="$2"; '
-             'installer_stage="$3"; repo_root="$4"; runtime_assets_stage="$5";\n')
-    result = subprocess.run(["bash", "-euc", setup + block, "fixture", str(app), str(archive),
-                             str(staged_installer), str(ROOT), str(assets)],
-                            capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
-    assert (resources / "app.asar").read_bytes() == archive.read_bytes()
-    assert installer.read_bytes() == staged_installer.read_bytes()
-    assert (resources / "icon.icns").read_bytes() == b"staged App icon"
-    validate_reopen_package(app)
-
-
 def test_validator_accepts_previous_flat_package_layout_for_rollback(package_factory):
     from openprogram.operations.self_update.delivery.package_protocol import validate_ui_package
     app = package_factory("flat-layout", ui=True)

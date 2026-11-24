@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.broker import GuiBroker
-from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.runner import GuiPythonRunner, GuiRunnerError
+from openprogram.programs.tools.computer_use.computer_use.sandbox.broker import GuiBroker
+from openprogram.programs.tools.computer_use.computer_use.sandbox.runner import GuiPythonRunner, GuiRunnerError
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.recovery.effects import EffectStatus, EffectStore
 from openprogram.runtime.execution.model import CapabilitySet
@@ -104,6 +104,27 @@ def test_a_refused_action_applied_nothing_and_leaves_nothing_to_resolve(environm
     }, validate=lambda *args: None)
     with GuiPythonRunner(broker=broker) as runner:
         assert "no reply" in runner.execute(f"await ui.call({handle!r}, 'press')").error
+    assert effects.list_unresolved("exec") == []
+
+
+def test_a_step_refused_because_the_call_stopped_applied_nothing(environment):
+    # The stop that refused the step still holds after it returns; the refusal decides, not the check.
+    from openprogram.programs import ToolReturn
+    broker, effects, _ = environment
+    stopped = [False]
+
+    def validate(*args):
+        if stopped[0]:
+            raise PermissionError("GUI operation cancelled or revoked")
+
+    def click(args, observation, context):
+        stopped[0] = True
+        return ToolReturn(text="TIMEOUT: stopped while waiting; nothing was sent", is_error=True,
+                          json_data={"action_dispatched": False})
+
+    handle = broker.register(target="owned-window", methods={"click": click}, validate=validate)
+    with GuiPythonRunner(broker=broker) as runner:
+        assert "cancelled" in runner.execute(f"await ui.call({handle!r}, 'click')").error
     assert effects.list_unresolved("exec") == []
 
 

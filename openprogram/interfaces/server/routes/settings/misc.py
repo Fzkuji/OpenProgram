@@ -151,9 +151,8 @@ def register(app):
             })
         return JSONResponse({"waits": visible}, headers={"Cache-Control": "no-store"})
 
-    @app.post("/api/system/access/setup")
-    def setup_system_access_api(request: Request):
-        """Explicitly initialize all native capabilities for this executor."""
+    def _local_owner_refusal(request: Request) -> JSONResponse | None:
+        """Refuse anyone but the local owner on the execution computer."""
         from openprogram.host.security.backend_endpoint import is_loopback_host
         from openprogram.operations.self_update.control.projection import ProjectionAccessError
         from ..self_updates import require_owner
@@ -169,6 +168,45 @@ def register(app):
                 raise ProjectionAccessError("Authorize on the execution computer.")
         except ProjectionAccessError:
             return JSONResponse({"error": "System access setup requires the local owner on the execution computer."}, status_code=403)
+        return None
+
+    @app.post("/api/system/access/guide")
+    async def guide_system_access_api(request: Request):
+        """Open each missing capability's System Settings pane with the drag guide.
+
+        Body ``{"capabilities": [id, ...]}``, taken in order in the background:
+        a dialog capability gets macOS's own dialog, a list capability its pane
+        and the accessory window that closes itself once the switch is on.
+        Returns ``{"ok": true, "started": [ids it will take]}``.
+        """
+        refusal = _local_owner_refusal(request)
+        if refusal is not None:
+            return refusal
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        capabilities = body.get("capabilities") if isinstance(body, dict) else None
+        if (not isinstance(capabilities, list) or not capabilities
+                or not all(isinstance(item, str) for item in capabilities)):
+            return JSONResponse({"error": "capabilities must be a non-empty list of capability ids."}, status_code=400)
+        from starlette.concurrency import run_in_threadpool
+        from openprogram.host.system_access import guide
+        try:
+            started = await run_in_threadpool(guide.start, capabilities)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except Exception:
+            _log.warning("system settings guide could not start", exc_info=True)
+            return JSONResponse({"error": "System Settings could not be opened on the execution computer."}, status_code=503)
+        return JSONResponse({"ok": True, "started": started}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/system/access/setup")
+    def setup_system_access_api(request: Request):
+        """Explicitly initialize all native capabilities for this executor."""
+        refusal = _local_owner_refusal(request)
+        if refusal is not None:
+            return refusal
         try:
             from openprogram.host.system_access import setup_all_access
             return JSONResponse(setup_all_access(), headers={"Cache-Control": "no-store"})
@@ -177,22 +215,10 @@ def register(app):
 
     @app.post("/api/system/access/{capability}")
     def request_system_access_api(capability: str, request: Request):
-        from openprogram.host.security.backend_endpoint import is_loopback_host
-        from openprogram.operations.self_update.control.projection import ProjectionAccessError
         from openprogram.host.system_access import request_access
-        from ..self_updates import require_owner
-        try:
-            require_owner(request)
-            from urllib.parse import urlsplit
-            origin = urlsplit(request.headers.get("origin", ""))
-            forwarded = any(key.lower() == "forwarded" or key.lower().startswith("x-forwarded-") for key in request.headers)
-            if (not request.client or not is_loopback_host(request.client.host)
-                    or not is_loopback_host(request.url.hostname or "")
-                    or origin.scheme not in {"http", "https"}
-                    or not is_loopback_host(origin.hostname or "") or forwarded):
-                raise ProjectionAccessError("Authorize on the execution computer.")
-        except ProjectionAccessError:
-            return JSONResponse({"error": "System access setup requires the local owner on the execution computer."}, status_code=403)
+        refusal = _local_owner_refusal(request)
+        if refusal is not None:
+            return refusal
         try:
             open_settings = request.query_params.get("open_settings", "false").lower() in {"1", "true", "yes"}
             return JSONResponse(request_access(capability, open_settings=open_settings), headers={"Cache-Control": "no-store"})

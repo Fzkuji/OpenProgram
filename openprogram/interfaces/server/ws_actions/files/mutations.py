@@ -12,8 +12,12 @@ from .shared import _WRITE_MAX_BYTES
 from .shared import _open
 from .shared import _resolve_entry
 from .shared import _resolve
+from . import remote as _remote
 
 def _read_file(project_id: str, path: str) -> dict:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.read_file(remote, path)
     target, error = _resolve(project_id, path)
     if error:
         return {"error": error}
@@ -50,6 +54,9 @@ def _write_file(project_id: str, path: str, content: str,
                 expected_revision: str | None = None,
                 idempotency_key: str | None = None,
                 editor_id: str = "manual") -> dict:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.write_file(remote, path, content, expected_revision)
     target, error = _resolve(project_id, path)
     if error:
         return {"error": error}
@@ -78,6 +85,9 @@ def _write_file(project_id: str, path: str, content: str,
 def _create_entry(project_id: str, path: str, kind: str) -> dict:
     if kind not in ("file", "dir"):
         return {"error": "kind must be 'file' or 'dir'"}
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.create_entry(remote, path, kind)
     target, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
@@ -97,6 +107,9 @@ def _create_entry(project_id: str, path: str, kind: str) -> dict:
 
 
 def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.rename_entry(remote, path, new_path)
     src, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
@@ -142,6 +155,9 @@ def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
 
 
 def _copy_entry(project_id: str, path: str, new_path: str) -> dict:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.copy_entry(remote, path, new_path)
     src, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
@@ -165,6 +181,9 @@ def _copy_entry(project_id: str, path: str, new_path: str) -> dict:
 
 
 def _delete_entry(project_id: str, path: str) -> dict:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.delete_entry(remote, path)
     target, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
@@ -186,6 +205,8 @@ def _delete_entry(project_id: str, path: str) -> dict:
 
 
 def _reveal_entry(project_id: str, path: str) -> dict:
+    if _remote.target(project_id) is not None:
+        return {"error": "the folder is on another machine; this computer's file manager cannot show it"}
     target, error = _resolve(project_id, path)
     if error:
         return {"error": error}

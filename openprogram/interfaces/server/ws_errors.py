@@ -40,6 +40,7 @@ _MESSAGES = {
     "invalid_request": "Invalid request",
     "cursor_not_on_branch": "That part of the conversation is no longer on this branch",
     "unknown_action": "Unknown action",
+    "machine_unreachable": "That computer is not connected",
 }
 
 _ACTION_SCOPES = {
@@ -58,11 +59,13 @@ _ACTION_SCOPES = {
     "list_session_aliases": "channel",
     "attach_session": "channel",
     "detach_session": "channel",
-    "list_environments": "settings",
-    "save_environment": "settings",
-    "delete_environment": "settings",
-    "set_default_environment": "settings",
-    "test_environment": "settings",
+    "list_machines": "settings",
+    "save_machine": "settings",
+    "delete_machine": "settings",
+    "set_machine_enabled": "settings",
+    "test_machine": "settings",
+    "connect_openprogram": "settings",
+    "list_ssh_hosts": "settings",
 }
 
 

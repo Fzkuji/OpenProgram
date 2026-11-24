@@ -15,6 +15,7 @@ from openprogram.models.usage.quota import QuotaStore
 from openprogram.models.usage.quota_fetchers import (
     FetchCredential,
     codex_usage,
+    deepseek,
     github_copilot,
     minimax,
     opencode_go,
@@ -89,13 +90,60 @@ def test_minimax_token_plan():
     assert limits["speech:interval"].status == "exhausted"
 
 
+def test_minimax_reads_the_plan_of_the_token_plan_providers():
+    # The shape of a recorded response: an unused plan.
+    start = 1794936124659
+    payload = {"model_remains": [{
+        "start_time": start, "end_time": start + 18000000, "remains_time": 17999990,
+        "current_interval_total_count": 0, "current_interval_usage_count": 0, "model_name": "general",
+        "current_weekly_total_count": 0, "current_weekly_usage_count": 0,
+        "weekly_start_time": start, "weekly_end_time": start + 604800000, "weekly_remains_time": 604799990,
+        "current_interval_status": 1, "current_interval_remaining_percent": 100,
+        "current_weekly_status": 1, "current_weekly_remaining_percent": 100,
+    }], "base_resp": {"status_code": 0, "status_msg": "success"}}
+    limits = {limit.limit_key: limit for limit in minimax.parse(payload, NOW)}
+    assert limits["general:interval"].label == "5h" and limits["general:interval"].used_fraction == 0
+    assert limits["general:weekly"].resets_at == pytest.approx((start + 604800000) / 1000)
+    # A key the plan does not know answers 200 with no plan in it.
+    assert minimax.parse({"base_resp": {"status_code": 2049, "status_msg": "invalid api key"}}, NOW) == []
+    url, _, _ = minimax.request(FetchCredential("minimax-cn-coding-plan", "k", "sk"))
+    assert url == "https://api.minimaxi.com/v1/token_plan/remains"
+    assert quota_fetchers.fetcher_for("minimax-coding-plan") is minimax
+    assert quota_fetchers.fetcher_for("minimax") is None, "pay as you go has no plan to read"
+
+
 def test_opencode_go_windows():
-    payload = {"usage": {"rolling": {"percent": 12, "status": "ok", "resetsAt": "2027-01-01T00:00:00Z"},
-                         "weekly": {"percent": 100, "status": "rate-limited", "resetsAt": "2027-01-03T00:00:00Z"},
-                         "monthly": {"percent": 3, "status": "ok", "resetsAt": "2027-01-20T00:00:00Z"}}}
+    # A recorded response.
+    payload = {"usage": {"rolling": {"status": "ok", "percent": 0, "resetsAt": "2026-11-17T22:21:19.475Z"},
+                         "weekly": {"status": "ok", "percent": 13, "resetsAt": "2026-11-23T00:00:00.000Z"},
+                         "monthly": {"status": "rate-limited", "percent": 100, "resetsAt": "2026-11-28T19:23:26.000Z"}}}
     limits = {limit.limit_key: limit for limit in opencode_go.parse(payload, NOW)}
-    assert limits["primary"].label == "5h" and limits["secondary"].status == "exhausted"
-    assert limits["monthly"].window_minutes is None
+    assert limits["primary"].label == "5h" and limits["secondary"].used_fraction == pytest.approx(0.13)
+    assert limits["monthly"].status == "exhausted" and limits["monthly"].window_minutes is None
+
+
+def test_deepseek_balance():
+    # A recorded response: an account that owes, which cannot pay for a call.
+    payload = {"is_available": False, "balance_infos": [
+        {"currency": "CNY", "total_balance": "-0.26", "granted_balance": "0.00", "topped_up_balance": "-0.26"}]}
+    (balance,) = deepseek.parse(payload, NOW)
+    assert (balance.limit_key, balance.unit, balance.remaining, balance.status) == ("balance", "cny", -0.26, "exhausted")
+    assert quota.report_kind([balance]) == "balance"
+    two = deepseek.parse({"is_available": True, "balance_infos": [
+        {"currency": "CNY", "total_balance": "110.00"}, {"currency": "USD", "total_balance": "5.50"}]}, NOW)
+    assert [(l.limit_key, l.remaining, l.status) for l in two] == [("cny:balance", 110.0, "ok"), ("usd:balance", 5.5, "ok")]
+    assert deepseek.parse({"error": "nope"}, NOW) == []
+
+
+def test_codex_usage_of_a_spent_week_with_credits():
+    # The shape of a recorded response (identity fields left out).
+    payload = {"plan_type": "prolite", "rate_limit": {"allowed": False, "limit_reached": True, "primary_window": {
+        "used_percent": 100, "limit_window_seconds": 604800, "reset_after_seconds": 147604, "reset_at": 1795083766},
+        "secondary_window": None}, "additional_rate_limits": None,
+        "credits": {"has_credits": True, "unlimited": False, "balance": "26871.6297055000"}}
+    limits = {limit.limit_key: limit for limit in codex_usage.parse(payload, NOW)}
+    assert limits["primary"].label == "Weekly" and limits["primary"].status == "exhausted"
+    assert limits["credits"].remaining == pytest.approx(26871.6297055)
 
 
 def test_copilot_premium_requests():
@@ -111,11 +159,13 @@ def test_copilot_premium_requests():
 
 def test_only_verified_fetchers_are_sent():
     assert quota_fetchers.fetcher_for("openrouter") is openrouter
-    for provider in ("openai-codex", "zai", "minimax", "opencode-go", "github-copilot", "deepseek"):
+    for provider in ("openai-codex", "opencode-go", "deepseek", "minimax-cn-coding-plan"):
+        assert quota_fetchers.fetcher_for(provider) is not None
+    for provider in ("zai", "github-copilot"):
         assert quota_fetchers.fetcher_for(provider) is None
     listed = {row["provider"]: row["verified"] for row in quota_fetchers.sources()}
-    assert listed["openrouter"] is True and listed["openai-codex"] is False
-    assert "deepseek" not in listed and "moonshotai" not in listed
+    assert listed["openrouter"] is True and listed["zai"] is False
+    assert "moonshotai" not in listed
 
 
 @pytest.fixture
@@ -189,7 +239,7 @@ def test_a_429_from_the_endpoint_holds_the_key(fake):
 
 
 def test_unverified_and_unknown_providers_send_nothing(fake):
-    assert quota_fetchers.refresh(["openai-codex", "deepseek", "zai"], reason="manual",
+    assert quota_fetchers.refresh(["github-copilot", "moonshotai", "zai"], reason="manual",
                                   http_get=fake.http_get, now=NOW) == {}
     assert fake.sent == []
 
@@ -207,7 +257,7 @@ def test_after_failure_schedules_only_for_quota_failures(monkeypatch):
     quota_fetchers.after_failure("openrouter", Failed(402))
     quota_fetchers.after_failure("openrouter", Failed(None, "insufficient_quota"))
     quota_fetchers.after_failure("openrouter", Failed(500))
-    quota_fetchers.after_failure("deepseek", Failed(402))  # nothing to read
+    quota_fetchers.after_failure("moonshotai", Failed(402))  # nothing to read
     assert scheduled == [(("openrouter",), "failure"), (("openrouter",), "failure")]
 
 
@@ -282,12 +332,24 @@ def test_a_key_its_quota_endpoint_refuses_is_marked_on_its_row(fake, tmp_path):
         row = auth.find("openrouter", cred.id)
         assert row.status == "invalid_key"
         assert "401" in (row.last_error or {}).get("message", "")
+
+        from openprogram.models.auth import selection
+        marked = []
+        mark = selection.mark
+        selection.mark = lambda *args, **kwargs: marked.append(args)
+        try:
+            fake.answers.append((401, '{"error": "no key"}', {}))
+            quota_fetchers.refresh(["openrouter"], reason="manual", http_get=fake.http_get, now=NOW + 700)
+        finally:
+            selection.mark = mark
+        assert len(fake.sent) == 2, "the endpoint is still asked: the key may have been put right"
+        assert marked == [], "a key already marked refused is not marked, and announced, again"
     finally:
         set_store_for_testing(None)
 
 
 @pytest.mark.parametrize("module, body", [
-    (minimax, '{"error": "no token plan"}'),  # an unverified endpoint
+    (minimax, '{"error": "no token plan"}'),  # a plan's endpoint, which does not speak for the key
     (openrouter, '{"type": "error", "error": {"type": "CreditsError", "message": "Insufficient balance"}}'),
 ])
 def test_a_401_that_does_not_say_the_key_is_refused_leaves_its_row(fake, tmp_path, module, body):

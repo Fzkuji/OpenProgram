@@ -210,6 +210,8 @@ def enqueue(
         _write(path, entries)
         with _locks_master:
             _due.add(target_session_id)
+            from openprogram.runtime.jobs.notices import announce_due
+            announce_due()
     if dropped is not None:
         preview = str(dropped.get("message") or "").replace("\n", " ")[:200]
         _notify_sender(dropped, (
@@ -356,6 +358,9 @@ def drain(session_id: str) -> int:
         try:
             _deliver(session_id, entry)
         except Exception:
+            # Nothing announces that a failed submission may now work.
+            from openprogram.runtime.jobs.notices import retry_soon
+            retry_soon()
             continue
         delivered += 1
         with _session_lock(session_id):
@@ -417,6 +422,12 @@ def _ready(session_id: str, entry: dict[str, Any]) -> bool:
     return not is_turn_running(session_id)
 
 
+def has_due() -> bool:
+    """Whether a queued message still waits for its agent."""
+    with _locks_master:
+        return bool(_due)
+
+
 def sweep() -> None:
     """Deliver whatever has become deliverable, wherever it is queued.
     Turn end drains its own session; this catches the rest: a branch
@@ -439,6 +450,8 @@ def sweep() -> None:
         try:
             drain(session_id)
         except Exception:
+            from openprogram.runtime.jobs.notices import retry_soon
+            retry_soon()
             continue
         if pending_count(session_id) == 0:
             with _locks_master:

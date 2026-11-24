@@ -51,6 +51,8 @@ export {
   reconcileRestoredWebUrl,
   restoreRetainedWebViews,
   retryRestoreWebTab,
+  wakeShownWebViews,
+  webViewWanted,
   destroyStaleWebViews,
 } from "./bridge/bridge-restoration";
 export {

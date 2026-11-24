@@ -87,7 +87,6 @@ class _ChatRequest:
     recording_meta: Any = None
     recording_images: list = field(default_factory=list)
     agent_invocation: dict | None = None
-    requested_environment: str | None = None
     project_id: str | None = None
     # Server-only guard for a draft that materializes during first-send admission.
     initial_branch_id: str | None = None
@@ -256,21 +255,6 @@ async def _prepare_agent_and_environment(ws, req: _ChatRequest) -> bool:
             ws, req.session_id, exc.code, str(exc), retry_query=req.text,
         )
         return False
-    # Environment pick for a brand-new conversation. Validated before any
-    # state changes; an existing conversation ignores it (environments are
-    # chosen once, at creation).
-    requested_environment = (cmd.get("environment_id") or "").strip() or None
-    req.requested_environment = requested_environment
-    if requested_environment is not None:
-        from openprogram.host.environments import get_environment
-        if get_environment(requested_environment) is None:
-            await _send_chat_error(
-                ws, req.session_id, "unknown_environment",
-                (f"Environment {requested_environment!r} no longer exists. "
-                 "Pick another one in the composer."),
-                retry_query=req.text,
-            )
-            return False
     if req.agent_invocation is not None:
         # A new Agent conversation starts from its configuration. Unrelated
         # composer defaults must not replace the Agent's effort or tools.

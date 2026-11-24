@@ -26,7 +26,7 @@ the listing is for discovery, the ``skill`` tool loads the full body.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Iterable
 
@@ -78,10 +78,19 @@ def register_plugin_skills(name: str, directory: str | os.PathLike) -> None:
     """Register a plugin's skill root. Plugin loader calls this when a
     plugin with ``entrypoints.skills`` is enabled."""
     _PLUGIN_SKILL_DIRS[name] = Path(directory)
+    _roots_changed()
 
 
 def unregister_plugin_skills(name: str) -> None:
     _PLUGIN_SKILL_DIRS.pop(name, None)
+    _roots_changed()
+
+
+def _roots_changed() -> None:
+    """The skills watcher watches the new set of roots and looks again."""
+    from openprogram.host._platform import changes
+    from .watcher import TOPIC
+    changes.signal(TOPIC)
 
 
 # --- source directories ---------------------------------------------------
@@ -167,21 +176,74 @@ def _parse_skill_md(path: Path, source: str, root: Path) -> Skill | None:
     )
 
 
+#: What a walk of one source found, with what it saw: every directory's and
+#: every ``SKILL.md``'s change time. A listing is asked for by each turn, each
+#: context breakdown and each skills request, and a source can hold hundreds
+#: of directories for a handful of skills.
+_walked: dict[tuple[str, str], tuple[dict[str, int], dict[str, tuple[int, int]], list[Skill]]] = {}
+
+
+def _unchanged(directories: dict[str, int], files: dict[str, tuple[int, int]]) -> bool:
+    """Whether a walk would find the same files with the same content.
+
+    A ``SKILL.md`` that appears, disappears or is replaced changes its
+    directory's time; one edited in place changes its own.
+    """
+    try:
+        for path, changed in directories.items():
+            if os.stat(path).st_mtime_ns != changed:
+                return False
+        for path, (changed, size) in files.items():
+            found = os.stat(path)
+            if (found.st_mtime_ns, found.st_size) != (changed, size):
+                return False
+    except OSError:
+        return False
+    return True
+
+
 def _iter_source_skills(source: str, root: Path) -> Iterable[Skill]:
     """Yield every ``SKILL.md`` found anywhere under ``root``.
 
     The skill's hierarchical name is its containing directory's path
     relative to ``root``, joined by ``/``. Example: ``root/research/lit/survey/SKILL.md``
     becomes name ``research/lit/survey``.
+
+    The source is walked again only when a directory or a ``SKILL.md`` in it
+    has changed since the last walk.
     """
     if not root.exists() or not root.is_dir():
         return
-    for md in sorted(root.rglob("SKILL.md")):
-        if not md.is_file():
-            continue
-        skill = _parse_skill_md(md, source, root)
-        if skill is not None:
-            yield skill
+    key = (source, str(root))
+    known = _walked.get(key)
+    if known is None or not _unchanged(known[0], known[1]):
+        directories: dict[str, int] = {}
+        files: dict[str, tuple[int, int]] = {}
+        found: list[Path] = []
+        for folder, _names, names in os.walk(root):
+            try:
+                directories[folder] = os.stat(folder).st_mtime_ns
+            except OSError:
+                continue
+            if "SKILL.md" in names:
+                found.append(Path(folder) / "SKILL.md")
+        skills: list[Skill] = []
+        for md in sorted(found):
+            if not md.is_file():
+                continue
+            try:
+                seen = md.stat()
+            except OSError:
+                continue
+            files[str(md)] = (seen.st_mtime_ns, seen.st_size)
+            skill = _parse_skill_md(md, source, root)
+            if skill is not None:
+                skills.append(skill)
+        known = _walked[key] = (directories, files, skills)
+    for skill in known[2]:
+        # Each caller gets its own: a skill's lists are filtered in place.
+        yield replace(skill, allowed_tools=list(skill.allowed_tools),
+                      triggers=dict(skill.triggers), aliases=list(skill.aliases))
 
 
 def list_skills(cwd: str | os.PathLike | None = None) -> list[Skill]:

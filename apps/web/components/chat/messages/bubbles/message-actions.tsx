@@ -56,6 +56,7 @@ import {
   UndoIcon,
 } from "@/components/animated-icons";
 import { useRowSessionId } from "../list/transcript-view-scope";
+import { errorDetailText } from "@/lib/net/error-text";
 
 /** Commands go out as they are; a `load_session` goes through the managed
  *  session read, since the transcript applies only the reply to a read it
@@ -95,7 +96,8 @@ function postJson(url: string, body: unknown): Promise<unknown> {
   }).then((r) => {
     if (!r.ok) {
       return r.json().then((e) => {
-        throw new Error(e.error || r.statusText);
+        const reply = e as { error?: unknown; detail?: unknown } | null;
+        throw new Error(errorDetailText(reply?.error ?? reply?.detail, r.statusText));
       });
     }
     return r.json();

@@ -22,8 +22,54 @@ def _card_attach(node) -> tuple[dict, dict]:
 
 class ProgressOperations:
     def _budget_loop(self) -> None:
-        while not self._shutdown_event.wait(self._budget_poll_seconds):
-            self._budget_tick()
+        # Nothing here is looked at on a fixed tick. A pass runs when a Job
+        # starts, a stop is recorded for one (a ``commands`` commit), a
+        # helper's usage is written, or the earliest budget deadline comes;
+        # with no Job it sleeps until one starts.
+        while not self._shutdown_event.is_set():
+            self._budget_wake.clear()
+            if self._shutdown_event.is_set():
+                break
+            with self._lock:
+                busy = bool(self._jobs)
+            if busy:
+                self._budget_tick()
+            self._budget_wake.wait(self._budget_timeout() if busy else shared._DISPATCH_RESYNC_SECS)
+
+
+    def _budget_timeout(self) -> float:
+        """Seconds until the next pass: the earliest runtime, idle, stall or
+        hard-stop deadline of a running Job, the next spend check a usage
+        write asked for, or the resync."""
+        resync = shared._DISPATCH_RESYNC_SECS
+        poll = self._budget_poll_seconds
+        if not getattr(self, "_budget_real_clock", True):
+            return poll if poll is not None else resync
+        now = self._monotonic()
+        due = self._budget_due()
+        timeout = resync if due is None else max(0.0, due - now) + 0.01
+        if poll is not None:
+            timeout = min(timeout, poll)
+        return min(timeout, resync)
+
+
+    def _budget_due(self) -> shared.Optional[float]:
+        """The earliest monotonic time a pass has something to do."""
+        deadlines: list[float] = []
+        with self._lock:
+            for entry in self._jobs.values():
+                started = entry.get("started_monotonic")
+                if started is None or entry.get("budget_cancelled"):
+                    continue
+                runtime_limit, idle_limit = entry.get("time_limits", (None, None))
+                if runtime_limit is not None:
+                    deadlines.append(started + float(runtime_limit))
+                if idle_limit is not None:
+                    deadlines.append(entry.get("last_activity_monotonic", started) + float(idle_limit))
+        delegation = self._delegation_due()
+        if delegation is not None:
+            deadlines.append(delegation)
+        return min(deadlines, default=None)
 
 
     def _budget_tick(self) -> None:
@@ -88,24 +134,58 @@ class ProgressOperations:
             shared._log.warning("delegation bounds check failed", exc_info=True)
 
 
-    def _delegation_tick(self, now: float) -> None:
-        """The default bounds on agent Jobs (runtime/jobs/delegation_watch.py):
-        hard stop, stall notice, and spend per delegation tree. Runs every
-        few seconds, not every tick, because it reads Job files and the
-        ledger."""
-        from openprogram.runtime.jobs import delegation_watch as watch
-        last = getattr(self, "_delegation_checked_at", None)
-        if last is not None and now - last < watch.CHECK_EVERY_S:
-            return
-        self._delegation_checked_at = now
+    def _delegation_entries(self) -> list[tuple[str, str, float, float]]:
         with self._lock:
-            entries = [
+            return [
                 (job_id, entry["session_id"], entry["started_monotonic"],
                  entry.get("last_activity_monotonic", entry["started_monotonic"]))
                 for job_id, entry in self._jobs.items()
                 if entry.get("started_monotonic") is not None
                 and not entry.get("budget_cancelled") and entry.get("session_id")
             ]
+
+
+    def _delegation_due(self) -> shared.Optional[float]:
+        """When the delegation bounds next need a look: a Job's stall or
+        hard-stop deadline, a spend check a usage write asked for (at least
+        CHECK_EVERY_S after the last), or None."""
+        from openprogram.runtime.jobs import delegation_watch as watch
+        entries = self._delegation_entries()
+        if not entries:
+            return None
+        last = getattr(self, "_delegation_checked_at", None)
+        if last is None:
+            return self._monotonic()
+        if getattr(self, "_delegation_spend_changed", False):
+            return last + watch.CHECK_EVERY_S
+        memory = getattr(self, "_delegation_memory", None) or {}
+        stopped, told = memory.get("stopped", set()), memory.get("stalled", set())
+        run_limit, stall_limit = watch.max_run_seconds(), watch.stall_seconds()
+        deadlines: list[float] = []
+        for job_id, _session, started, last_activity in entries:
+            if job_id in stopped:
+                continue
+            if run_limit:
+                deadlines.append(started + run_limit)
+            if stall_limit and job_id not in told:
+                deadlines.append(last_activity + stall_limit)
+        return min(deadlines, default=None)
+
+
+    def _delegation_tick(self, now: float) -> None:
+        """The default bounds on agent Jobs (runtime/jobs/delegation_watch.py):
+        hard stop, stall notice, and spend per delegation tree. They read Job
+        files and the ledger, so they run only when a Job is new to them, a
+        stall or hard-stop deadline came, a helper's usage was written (at
+        most every CHECK_EVERY_S), or a resync passed."""
+        from openprogram.runtime.jobs import delegation_watch as watch
+        last = getattr(self, "_delegation_checked_at", None)
+        due = self._delegation_due()
+        if last is not None and now - last < shared._DISPATCH_RESYNC_SECS and (due is None or now < due):
+            return
+        self._delegation_checked_at = now
+        self._delegation_spend_changed = False
+        entries = self._delegation_entries()
         if not entries:
             return
         memory = getattr(self, "_delegation_memory", None)

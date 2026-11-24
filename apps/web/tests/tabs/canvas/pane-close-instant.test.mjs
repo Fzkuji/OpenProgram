@@ -1,6 +1,6 @@
 /** Closing a pane of a split is instant: it leaves the layout in the
- *  click's frame, nothing animates or freezes the panes, and releasing its
- *  document runs after the tab has gone. Only unsaved edits hold a close. */
+ *  click's frame, and saving and releasing its document run after the tab
+ *  has gone. Nothing holds a close, unsaved edits and a failed save included. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {existsSync,readFileSync} from 'node:fs';
@@ -12,6 +12,7 @@ const ts=require('typescript');
 const {parseHTML}=require('linkedom');
 registerHooks({resolve(specifier,context,next){
  if(specifier==='next/navigation')return {url:'data:text/javascript,export const usePathname=()=>"/chat"; export const useRouter=()=>({push(){}});',shortCircuit:true};
+ if(specifier==='@/components/ui/confirm-dialog')return {url:'data:text/javascript,export const chooseAction=async()=>"confirm";export const confirmAction=async()=>true;',shortCircuit:true};
  if(specifier==='@/lib/external-libs')return {url:'data:text/javascript,export const externalLibsReady=async()=>{};',shortCircuit:true};
  if(specifier.endsWith('.module.css'))return {url:'data:text/javascript,export default new Proxy({}, {get: (_t, k) => String(k)});',shortCircuit:true};
  const base=specifier.startsWith('@/')?new URL(specifier.slice(2),root).href:specifier.startsWith('.')&&!/\.[a-z]+$/i.test(specifier)?new URL(specifier,context.parentURL).href:null;
@@ -35,7 +36,6 @@ const {CanvasControls}=await import(new URL('components/center-tabs/canvas/canva
 const {useCenterTabs}=await import(new URL('lib/tabs/center-tabs-store.ts',root));
 const {findCenterTabGroup}=await import(new URL('lib/tabs/center-tab-groups.ts',root));
 const {leaves}=await import(new URL('lib/tabs/canvas/canvas-layout.ts',root));
-const {canvasPanesMoving}=await import(new URL('lib/tabs/canvas/canvas-motion.ts',root));
 const {useSessionStore}=await import(new URL('lib/session-store/index.ts',root));
 const {getOrCreateDocumentController}=await import(new URL('lib/files/document/document-controller.ts',root));
 const {setDraftStoreAdapterForTests}=await import(new URL('lib/files/drafts/file-drafts.ts',root));
@@ -78,7 +78,7 @@ test('a saved preview leaves the split at once and its document is released afte
   }finally{await split.done();}
 });
 
-test('unsaved edits are saved before the tab goes, and a failed save keeps it open', async()=>{
+test('a save never holds the close: once Save is chosen the tab goes, a failed save is reported and the edit stays a draft', async()=>{
   const split=await previewSplit('draft.md');
   let disk='original',fail=true;
   const controller=getOrCreateDocumentController({projectId:'p',path:'draft.md',draftStore,fetchImpl:async(_url,init)=>{
@@ -89,16 +89,21 @@ test('unsaved edits are saved before the tab goes, and a failed save keeps it op
   const retained=controller.subscribe(noop);
   try{
     controller.update('edited');
-    await act(async()=>split.lifecycle().onTabsClose({stopPropagation(){}},[split.preview]));
-    assert.equal(open(split.preview.id),true,'a save that failed keeps the tab open');
-    fail=false;
-    await act(async()=>split.lifecycle().onTabsClose({stopPropagation(){}},[split.preview]));
-    assert.equal(disk,'edited','the edit was saved before the tab went');
-    assert.equal(open(split.preview.id),false);
+    const toasts=[];const onToast=event=>toasts.push(event.detail);
+    window.addEventListener('op:toast',onToast);
+    await act(async()=>{await split.lifecycle().onTabsClose({stopPropagation(){}},[split.preview]);});
+    assert.equal(open(split.preview.id),false,'the tab is gone with the answer, before the save is tried');
+    await act(async()=>{for(let i=0;i<20&&!toasts.length;i++)await new Promise(resolve=>setTimeout(resolve,5));});
+    window.removeEventListener('op:toast',onToast);
+    assert.equal(toasts.length,1,'the failed save is reported once');
+    assert.equal(toasts[0].tone,'error');
+    assert.equal(open(split.preview.id),false,'and it does not bring the pane back');
+    assert.equal(disk,'original');
+    assert.equal(await controller.getState().draft.text(),'edited','the edit is kept as a draft');
   }finally{retained();await split.done();}
 });
 
-test('red and yellow take a pane off the canvas in the click, without animating or freezing the panes', async()=>{
+test('red and yellow take a pane off the canvas in the click', async()=>{
   for(const light of ['minimize','close']){
     useCenterTabs.setState({tabs:[{id:'s:a',kind:'session',sessionId:'a',title:'A'}],groups:[],activeId:'s:a'});
     useCenterTabs.getState().openPagePreview('a',{url:'https://example.com/',title:'Example'});
@@ -117,8 +122,6 @@ test('red and yellow take a pane off the canvas in the click, without animating 
       act(()=>{button.dispatchEvent(new window.Event('click',{bubbles:true}));});
       const after=findCenterTabGroup(useCenterTabs.getState().groups,'s:a');
       assert.equal(after,undefined,`${light}: the chat is alone in the same frame`);
-      assert.equal(canvasPanesMoving(),false,`${light}: no capture, so no web pane freezes to a snapshot`);
-      assert.equal(document.querySelector('[data-canvas-ghost]'),null,`${light}: no ghost plays out`);
       if(light==='close')assert.deepEqual(closed,[web]);
       else assert.equal(open(web),true,'yellow keeps the tab in the strip');
     }finally{window.removeEventListener('op-close-center-tabs',onClose);await act(async()=>view.unmount());canvasRoot.remove();}

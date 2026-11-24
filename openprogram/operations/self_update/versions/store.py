@@ -16,7 +16,6 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
-import threading
 import time
 from typing import Iterable, Iterator
 import zipfile
@@ -248,40 +247,51 @@ def recent_attempts(layout: Layout, version_id: str, *, now: float | None = None
     return sum(1 for line in lines if line.isdigit() and moment - int(line) < ATTEMPT_WINDOW_SECONDS)
 
 
-MIGRATION_TOUCH_SECONDS = 5
-
-
 @contextmanager
 def migration_progress() -> Iterator[None]:
-    """Show, while stores migrate at start, that this version is not stuck.
+    """Say, while stores migrate at start, which process is migrating.
 
-    The controller and the trial extend their start limits for as long as
-    ``boot/<id>.migrating`` keeps moving. Outside a version store this is a no-op.
+    ``boot/<id>.migrating`` names this process once; the controller and the
+    trial extend their start limits while it exists and that process still
+    runs (:func:`migrating_process`). It is removed when the migration ends,
+    and a process that dies leaves a marker naming a process that no longer
+    runs. Outside a version store this is a no-op.
     """
+    from openprogram.host._platform.processes import process_start_token
+
     runtime = paths.current_runtime()
     if runtime is None:
         yield
         return
     marker = runtime.layout.migrating(runtime.version)
-    done = threading.Event()
-
-    def touch() -> None:
-        while not done.wait(MIGRATION_TOUCH_SECONDS):
-            with contextlib.suppress(OSError):
-                marker.touch()
-
     with contextlib.suppress(OSError):
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.touch()
-    thread = threading.Thread(target=touch, name="migration-progress", daemon=True)
-    thread.start()
+        staged = marker.with_name(f".{marker.name}.{os.getpid()}")
+        staged.write_text(json.dumps({"pid": os.getpid(), "started": process_start_token(os.getpid())}),
+                          encoding="utf-8")
+        filesystem.replace_file(staged, marker)
     try:
         yield
     finally:
-        done.set()
-        thread.join(timeout=1)
         with contextlib.suppress(OSError):
             marker.unlink()
+
+
+def migrating_process(marker: Path) -> int | None:
+    """The pid a ``.migrating`` marker names, while that process still runs.
+
+    A process that could not read its own start (a sandbox without ``ps``)
+    is checked by its pid alone."""
+    from openprogram.host._platform.processes import process_alive, process_start_token
+
+    try:
+        said = json.loads(marker.read_text(encoding="utf-8"))
+        pid, started = int(said["pid"]), said.get("started")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    if started is None:
+        return pid if process_alive(pid) else None
+    return pid if process_start_token(pid) == started else None
 
 
 def forget_last_attempt(layout: Layout, version_id: str) -> None:

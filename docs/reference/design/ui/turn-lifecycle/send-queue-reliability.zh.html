@@ -47,7 +47,7 @@
 <tr><th scope="row">命令携带</th><td>只有消息、精确执行身份、版本、幂等键。不改权限、模型、工具或程序</td></tr>
 <tr><th scope="row">发送前</th><td>客户端保留不可变的信封</td></tr>
 <tr><th scope="row">确认丢失</th><td>投递未确认：该行保持可见，普通排空不能重发，确认重试复用信封</td></tr>
-<tr><th scope="row">确认定时器</th><td>每行一个；1.5 秒，传输失败后退避到 30 秒。明确回执清除</td></tr>
+<tr><th scope="row">确认</th><td>每行一个，在它的执行变化（<code translate="no">op:execution-update</code>）、会话的运行槽变化或连接重新打开时再问一次；只有传输失败才等定时器，翻倍到 30 秒。明确回执清除</td></tr>
 <tr><th scope="row">版本过期拒绝</th><td>针对同一执行的新快照发一个新信封</td></tr>
 <tr><th scope="row">目标</th><td>在用户请求时绑定。版本重试只刷新版本，不能换成另一个执行</td></tr>
 <tr><th scope="row">不支持或已结束</th><td>条目保持排队；空闲对账按 FIFO 排空普通后续消息。执行结束时未投递的插话被拒绝，这些行可恢复排队</td></tr>

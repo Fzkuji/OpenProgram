@@ -13,7 +13,7 @@ import { requestFileSection } from "../panes/file-section-requests";
 import type { CenterTab, CenterTabsState } from "./types";
 import { closedTabSessionIds, rememberClosedTab } from "./closed-tabs";
 
-export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openFilePreview" | "openPagePreview" | "openFileTab" | "openBuiltinTab" | "openApplicationTab" | "openReviewTab" | "setTabDirty" | "setTabDagView" | "retargetFileTab" | "openNewTabPage" | "closeTab" | "reopenClosedTab"> {
+export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openFilePreview" | "openPagePreview" | "openFileTab" | "openBuiltinTab" | "openTerminalResourceTab" | "openApplicationTab" | "openReviewTab" | "setTabDirty" | "setTabDagView" | "retargetFileTab" | "openNewTabPage" | "closeTab" | "reopenClosedTab"> {
   // Shared by file and page previews: both open beside their chat.
   const openPreview = (sessionId: string, target: FilePreviewTarget | PagePreviewTarget, automatic: boolean, section?: string) => {
     let opened = false;
@@ -97,6 +97,11 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
           [],
         );
       }),
+
+    openTerminalResourceTab: (terminalId, title, sessionId) => set((s) => focusOrCreate(
+      s, `b:terminal:${terminalId}`,
+      () => ({ id: `b:terminal:${terminalId}`, kind: "builtin", page: "terminal", title, terminalId, terminalSessionId: sessionId || undefined }), [],
+    )),
 
     openApplicationTab: (appId, instanceId, title, sessionId) => set((s) => focusOrCreate(
       s, `app:${instanceId}`,

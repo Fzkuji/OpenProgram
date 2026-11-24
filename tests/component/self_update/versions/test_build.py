@@ -446,7 +446,7 @@ if [ "$1" = --version ]; then echo "uv 0.11.16"; exit 0; fi
 if [ "$1 $2" = "python install" ]; then
   dir="$UV_PYTHON_INSTALL_DIR/cpython-x"
   mkdir -p "$dir/bin"
-  printf '#!/bin/sh\\n{_RUN_TARGET_PRINTF}echo "python $*" >> "{log}"\\nmkdir -p "$PLAYWRIGHT_BROWSERS_PATH/chromium" 2>/dev/null\\n' > "$dir/bin/python3"
+  printf '#!/bin/sh\\n{_RUN_TARGET_PRINTF}echo "python $*" >> "{log}"\\nmkdir -p "$PLAYWRIGHT_BROWSERS_PATH/chromium" 2>/dev/null || true\\n' > "$dir/bin/python3"
   chmod +x "$dir/bin/python3"
   ln -s "$dir" "$UV_PYTHON_INSTALL_DIR/cpython-alias"
   exit 0
@@ -496,7 +496,7 @@ def recipe(tmp_path):
     root = tmp_path / "recipe"
     (root / "scripts/release").mkdir(parents=True)
     for name in ("build-base.sh", "runtime-wheels.py", "stage-release-assets.sh", "verify-product-runtime.py",
-                 "smoke-ink-tui-pty.py"):
+                 "smoke-ink-tui-pty.py", "share-runtime-node.py"):
         shutil.copy2(REPOSITORY / "scripts/release" / name, root / "scripts/release" / name)
     shutil.copy2(REPOSITORY / "scripts/release/product-runtime.json", root / "scripts/release/product-runtime.json")
     (root / "uv.lock").write_text('[[package]]\nname = "playwright"\nversion = "1.50.0"\n')

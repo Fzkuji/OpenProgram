@@ -1,0 +1,58 @@
+<title>任务页</title>
+<meta name="description" content="无人值守工作的一个页面：常驻 Agent 和定时任务留给用户的收件箱，加上定时任务本身。">
+<meta name="covers" content="apps/web/components/tasks/ apps/web/components/scheduler/ apps/web/components/sidebar/sidebar-primary-nav.tsx openprogram/runtime/conversation/always_on/pending.py">
+<h1>任务页</h1>
+
+<p>不用人盯着的工作有两头，设好要跑的和跑回来的，它们共用一个页面。</p>
+<p class="note">参考：Codex 的 Automations，把定时自动化和需要查看的结果放在同一个入口下。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="侧栏的任务一行带收件箱数字，打开任务页。页头有两个标签。收件箱列出常驻 Agent 的汇报和定时任务运行的结果，读收件箱查询。定时任务以列表或日历列出任务，读 scheduler 接口。">
+  <defs><marker id="tp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="55" width="150" height="60" rx="8"/>
+  <text class="t-big" x="16" y="82">任务一行</text>
+  <text class="t-soft" x="16" y="102">收件箱数字</text>
+  <line class="ln" x1="150" y1="85" x2="238" y2="85" marker-end="url(#tp-a)"/>
+  <rect class="tile" x="250" y="10" width="190" height="65" rx="8"/>
+  <text class="t-big" x="266" y="38">收件箱</text>
+  <text class="t-soft" x="266" y="60">先决定，后新消息</text>
+  <rect class="tile" x="250" y="95" width="190" height="65" rx="8"/>
+  <text class="t-big" x="266" y="123">定时任务</text>
+  <text class="t-soft" x="266" y="145">列表或日历</text>
+  <line class="ln" x1="560" y1="42" x2="452" y2="42" marker-end="url(#tp-a)"/>
+  <line class="ln" x1="560" y1="127" x2="452" y2="127" marker-end="url(#tp-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="566" y="46">/api/always-on/pending</text>
+  <text class="t-cmd notranslate" translate="no" x="566" y="131">/api/scheduler/tasks</text>
+</svg>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧栏</th><td>一行<strong>任务</strong>，日历图标，在主导航末尾，原来定时任务的位置。右边一个淡色数字是收件箱条数；为零时不显示。</td><td>待处理和定时任务是同一类工作的两行。数字说明有事等用户，不用彩色徽章。</td></tr>
+<tr><th scope="row">页头</th><td><code translate="no">ManagePageHeader</code>：标题<strong>任务</strong>和两个标签<strong>收件箱</strong>、<strong>定时任务</strong>，各在名字后跟淡色数字。工具栏随标签变：收件箱显示“N 项等你处理”；定时任务显示概况、搜索、刷新和<strong>新建任务</strong>。</td><td>搜索和新建任务只作用于定时任务。</td></tr>
+<tr><th scope="row">打开时的标签</th><td>链接指定了标签（<code translate="no">/tasks?tab=inbox</code> 或 <code translate="no">scheduled</code>）就用它；否则收件箱有内容时打开收件箱；否则打开上次选的标签（存在 <code translate="no">localStorage</code>）；第一次是定时任务。</td><td>有事等着，用户就是为它来的；没有事时，页面保持离开时的样子。</td></tr>
+<tr><th scope="row">收件箱</th><td>“等你决定”（审批）在前，“新发现”（发现、已完成的工作、定时结果）在后，<code translate="no">ManageRow</code> 行带<strong>打开</strong>。图标是 Agent 头像，定时任务的结果用日历图标，说明以“定时任务”开头。为空时：“没有等你处理的事”。</td><td>汇报从哪来决定怎么回应。</td></tr>
+<tr><th scope="row">定时结果</th><td>有话要说的定时运行照样在聊天里发一条消息，它的汇报（<code translate="no">task_id</code>）也是收件箱的一条，直到打开该对话。收件箱除了常驻 Agent 的对话，也扫描任务汇报进去的对话（<code translate="no">always_on/pending.py</code>）。</td><td>用户没看到的结果和 Agent 的发现一样需要他；只留在聊天里，就藏在设任务的那个对话里了。</td></tr>
+<tr><th scope="row">定时任务</th><td>原定时任务页的内容不变：类型一行（全部、一次性、周期、监控），末尾是列表 / 日历切换（<code translate="no">ToggleGroup</code>）；视图照旧记住。</td><td>页头标签属于整个页面；视图是一个标签里的选择。</td></tr>
+<tr><th scope="row">旧路由</th><td><code translate="no">/pending</code> 跳到 <code translate="no">/tasks?tab=inbox</code>，<code translate="no">/scheduler</code> 跳到 <code translate="no">/tasks?tab=scheduled</code>。命令面板、标签页名称和图标、运行记录里的<strong>在任务中打开</strong>都用 <code translate="no">/tasks</code>。</td><td>保存的标签页和书签照样能到。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>定时任务标签的布局</summary>
+<ul>
+<li>共用页头和主题 token；<code translate="no">ManageRow</code> 行保留计划、状态和操作，按可见顺序编号。</li>
+<li>类型筛选在页头下一排，没有侧栏；窄时换行。</li>
+<li>空状态：介绍和创建任务居中；三张建议卡在最宽 960px 的居中网格里，窄时单列，每张有标题、计划、提示词和使用。</li>
+<li>创建和使用打开现有表单，不创建任务；Escape 返回。</li>
+</ul>
+</details>
+
+<ul>
+<li><strong>代码</strong>：<code translate="no">apps/web/components/tasks/</code>（<code translate="no">tasks-page.tsx</code>、<code translate="no">tasks-inbox.tsx</code>、<code translate="no">tasks-tabs.ts</code>），<code translate="no">apps/web/components/scheduler/scheduler-page.tsx</code>（定时任务标签），<code translate="no">apps/web/lib/agents/pending-inbox.ts</code>（收件箱查询）。</li>
+<li><strong>测试</strong>：<code translate="no">apps/web/tests/agents/pending-inbox.test.mjs</code>、<code translate="no">apps/web/tests/settings/scheduler/scheduler-page.test.mjs</code>、<code translate="no">tests/unit/agent/test_always_on.py</code>。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。定时运行只汇报发现；要用户决定的定时运行还没有自己的类型。</p>

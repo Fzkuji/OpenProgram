@@ -1,6 +1,7 @@
 import type { ThemeId, ThemeMode, ThemeStyle } from "@/lib/prefs/appearance/theme-pref";
 import type { PickedElement } from "@/lib/browser/capture/page-comment";
 import type { PickedRegion } from "@/lib/browser/capture/region-shot";
+import type { AnnotateEvent, AnnotateLabels, AnnotateTheme } from "@/lib/browser/capture/annotate";
 import type { MenuGlyph, MenuKeys } from "@/components/ui/menu/menu-parts";
 
 export interface DesktopThemeChrome {
@@ -175,6 +176,15 @@ export interface DesktopWebTabApi {
   /** Let the user drag a rectangle over the page; its pixels, or null when cancelled. */
   pickRegion?(id: string): Promise<PickedRegion | null>;
   cancelPick?(id: string): void;
+  /** Annotate mode on the page (apps/desktop/main/web-views/webtab-annotate.js):
+   *  "start" enters it, "exit" leaves it keeping the notes, "discard" clears
+   *  them, and "sent" / "unsent" answer a send event. */
+  annotate?(
+    id: string,
+    action: "start" | "exit" | "discard" | "sent" | "unsent",
+    options?: { labels: AnnotateLabels; theme: AnnotateTheme },
+  ): Promise<boolean>;
+  onAnnotateEvent?(cb: (event: AnnotateEvent) => void): () => void;
   zoom?(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
   print?(id: string): Promise<boolean>;
   /** Snapshot of the native page as a data URL, for PiP drag placeholders. */
@@ -254,13 +264,19 @@ export interface DesktopUpdateRelease {
 }
 
 export interface DesktopUpdateState {
-  status: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+  status:
+    | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded"
+    | "ready" | "installing" | "not-published" | "error";
   currentVersion: string;
   automaticChecks: boolean;
   checkedAt: number | null;
   release: DesktopUpdateRelease | null;
   progress: { downloaded: number; total: number } | null;
   error: string | null;
+  /** The version downloaded, checked and waiting for a restart to install; null otherwise. Older shells lack it. */
+  readyVersion?: string | null;
+  /** Whether this App downloads the update and installs it on restart, instead of opening an installer. */
+  installsInPlace?: boolean;
 }
 
 export interface DesktopAttentionPrefs {
@@ -288,6 +304,8 @@ export interface DesktopUpdateApi {
   check(): Promise<DesktopUpdateState | null>;
   setAutomaticChecks(enabled: boolean): Promise<DesktopUpdateState | null>;
   download(): Promise<DesktopUpdateState | null>;
+  /** Quit, swap in the prepared version and start it. Older shells lack it. */
+  install?(): Promise<DesktopUpdateState | null>;
   openRelease(): Promise<void>;
   onState(cb: (state: DesktopUpdateState) => void): () => void;
 }

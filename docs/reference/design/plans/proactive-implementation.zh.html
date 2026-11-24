@@ -49,7 +49,7 @@
 <p><code translate="no">@function</code> 工具执行不写 DAG 节点，只有 <code translate="no">Agent</code> 方法写。DAG 作为因果记录不完整，审计依靠 <code translate="no">events.jsonl</code> 里的完整事件集。</p>
 
 <h2 id="verification">检查接线改动</h2>
-<p><code translate="no">py_compile</code>、相关单元测试、文档规定的本地刷新、<code translate="no">/healthz</code> 健康、通过 Web UI 发一条真实消息（前端改动先 <code translate="no">npm --prefix apps/web run build</code>）。顺序检查：跑一轮带工具调用的对话，读该会话的 <code translate="no">events.jsonl</code>：</p>
+<p><code translate="no">py_compile</code>、相关单元测试、部署到开发版、<code translate="no">/healthz</code> 健康、通过 Web UI 发一条真实消息（前端改动先 <code translate="no">npm --prefix apps/web run build</code>）。顺序检查：跑一轮带工具调用的对话，读该会话的 <code translate="no">events.jsonl</code>：</p>
 <pre translate="no" tabindex="0"><code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed</code></pre>
 <p class="note">每条的 metadata 都带 session 和 turn。</p>
 

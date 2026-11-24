@@ -30,7 +30,8 @@
  * <DropdownMenu> in `index.tsx`; this file renders its rows.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
 import { useBoundChat } from "../bound-chat";
@@ -97,10 +98,24 @@ export function AgentSelector({
 }) {
   const { sessionId: currentSessionId, chatKey } = useBoundChat();
   const { t, text } = useTranslation();
-  const { data, isError: modelsFailed } = useQuery({
+  // The top bar reads the same key on mount, so the menu opens on cached
+  // models. A failed read is asked again quietly with the app's default
+  // (TanStack's backoff; a 4xx answer is final).
+  const { data } = useQuery({
     queryKey: PICKER_QUERY_KEY,
     queryFn: api.listPickerModels,
   });
+  // Opening is when a local server's state can have changed unannounced:
+  // the menu draws the kept answer at once and asks local servers again;
+  // an unchanged answer keeps the same data, so nothing redraws.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    void queryClient.fetchQuery({
+      queryKey: PICKER_QUERY_KEY,
+      queryFn: api.listPickerModelsProbingLocal,
+      staleTime: 0,
+    }).catch(() => {});
+  }, [queryClient]);
   const models = data?.models;
   const states = data?.providers ?? {};
   // Quota rows for the submenu headers, and whether any provider is
@@ -108,7 +123,6 @@ export function AgentSelector({
   const { data: status, isError: statusFailed } = useQuery({
     queryKey: PICKER_LIMITS_QUERY_KEY,
     queryFn: fetchStatus,
-    staleTime: 60_000,
   });
   const limitsOf = (id: string) => status?.providers.find((p) => p.id === id)?.quota?.limits ?? [];
   // Group headings name the provider as Settings does: the enabled list
@@ -176,10 +190,9 @@ export function AgentSelector({
   const keys = (id: string) => <ProviderKeys provider={id} sessionId={currentSessionId || null} onClose={onClose} />;
 
   const noProvider = !!status && status.providers.length === 0;
-  const body = !models ? (
-    // The read failed: say so rather than show an empty menu.
-    modelsFailed ? <div className={MENU_NOTE} data-picker-error>{text("Could not load models.", "未能读取模型。")}</div> : null
-  ) : models.length === 0 ? (
+  // No models read yet (or the read is being asked again): no rows and no
+  // "nothing enabled" note, which would be untrue.
+  const body = !models ? null : models.length === 0 ? (
     noProvider ? (
       // Nothing connected: say so, and open Add provider (the Providers
       // page's empty state offers the common providers and any env keys).
@@ -214,8 +227,11 @@ export function AgentSelector({
     </SingleProvider>
   ) : (
     // One grid for every provider row: the model names start after the
-    // longest provider name, so the columns never overlap row to row.
-    <div className="grid grid-cols-[max-content_minmax(0,1fr)_auto]">
+    // longest provider name, so the columns never overlap row to row. The
+    // trailing column is as wide as its widest entry, and a state word
+    // never gives way: when the panel is at its widest, the provider name
+    // is what shortens.
+    <div className="grid grid-cols-[minmax(0,max-content)_auto_auto]">
       {byProvider.map((group) => (
         <ProviderRow
           key={group.provider}
@@ -268,10 +284,15 @@ function fixTip(state: PickerProvider, text: Text): string {
   }
 }
 
+/** The panel a provider list opens in: wide enough for the longest provider
+ *  name beside the longest state word ("Rate limited · Thu 02:22"). */
+export const PICKER_PANEL = "max-w-[360px]";
+
 /** What a provider row shows right of its name: the ring when half a
  *  window is used, then the state word, or the current model / count.
- *  Inline on the row's text baseline, so the smaller text sits on the
- *  label's line; the model name truncates first. */
+ *  Centred on the row like the icon and the chevron, so the smaller text
+ *  sits at the middle of the name's height and not on its baseline, where
+ *  it reads as dropped; a long model name truncates, a state word is whole. */
 function RowTrail({ state, current, count, text }: {
   state?: PickerProvider; current?: string; count: number; text: Text;
 }) {
@@ -281,7 +302,7 @@ function RowTrail({ state, current, count, text }: {
     <span
       className={cn(
         "truncate justify-self-end pl-6 text-fs-xs",
-        ring ? "max-w-[186px]" : "max-w-[164px]",
+        word ? "min-w-max" : ring ? "max-w-[186px]" : "max-w-[164px]",
         current ? "text-text-secondary" : "text-text-muted",
       )}
     >
@@ -302,10 +323,10 @@ function ProviderRow({ id, name, state, current, count, header, text, onClose, c
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const rowCls = cn(itemCls(false), MENU_ITEM_STATES, "col-span-3 grid grid-cols-subgrid items-baseline gap-0");
+  const rowCls = cn(itemCls(false), MENU_ITEM_STATES, "col-span-3 grid grid-cols-subgrid items-center gap-0");
   const label = (
-    <span>
-      {/* Inline in the label's line, so the row keeps its text baseline. */}
+    <span className="truncate">
+      {/* Inline in the label's line, at the middle of the text. */}
       <ModelMark provider={id} className="mr-2 align-[-3px]" />
       {name}
     </span>
@@ -321,8 +342,8 @@ function ProviderRow({ id, name, state, current, count, header, text, onClose, c
           <a href={fix.href} onClick={onClose} data-tip={fixTip(state, text)} data-picker-fix={state.state}>
             {label}
             {trail}
-            {/* The chevron's slot, centred like the chevron: on the text
-                baseline the empty box stood 1px above the line. */}
+            {/* The chevron's slot, so a row without a submenu ends where
+                the others do. */}
             <span className="ml-1.5 size-4 self-center" aria-hidden="true" />
           </a>
         </DropdownMenuItem>

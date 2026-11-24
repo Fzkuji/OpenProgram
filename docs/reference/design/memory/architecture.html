@@ -7,7 +7,7 @@
 <thead><tr><th scope="col">Entry</th><th scope="col">Trigger</th><th scope="col">Call</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row">End of each turn</th><td><code translate="no">runtime/conversation/turn_runtime</code></td><td><code translate="no">write(session_id=…)</code></td><td>One pass, only once <code translate="no">memory.writer.trigger_tokens</code> have accumulated (8,000, 16,000 or 32,000; default 16,000)</td></tr>
-<tr><th scope="row">Session idle</th><td><code translate="no">state/memory/session_watcher</code>: scan every 5 minutes, idle after 30</td><td><code translate="no">write(…, force=True)</code></td><td>Passes until nothing remains. A finished session has no later batch.</td></tr>
+<tr><th scope="row">Session idle</th><td><code translate="no">state/memory/session_watcher</code>: idle after 30 minutes; scans when the next known conversation goes idle or a retry is due, at most 5 minutes apart</td><td><code translate="no">write(…, force=True)</code></td><td>Passes until nothing remains. A finished session has no later batch.</td></tr>
 <tr><th scope="row">Daily at 03:00</th><td><code translate="no">state/memory/scheduler</code>; by hand <code translate="no">openprogram memory sleep</code></td><td><code translate="no">reorganize(model=…)</code></td><td>Reorganizes Topics on disk, adds no content</td></tr>
 </tbody>
 </table>

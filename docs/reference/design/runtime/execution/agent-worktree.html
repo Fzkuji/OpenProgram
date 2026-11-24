@@ -122,7 +122,7 @@
 <tbody>
 <tr><th scope="row">Input box, environment row (<code translate="no">worktree-chip.tsx</code>)</th><td>A chip beside the environment chip: Checkout, or the worktree's branch with its changed-file count. Its menu chooses Checkout or Own worktree, and for an open worktree offers Merge into checkout, Squash into one commit, Keep as a git branch and Discard. Discard opens the confirmation dialog. Shown once the conversation's folder is in a git repository, or while any worktree of the branch is open. Merge, keep and discard wait while the branch is running</td></tr>
 <tr><th scope="row">Transcript (<code translate="no">worktree-branch-marker.tsx</code>)</th><td>One line at the top of the branch: where it runs and how many files changed, or that its worktree was merged, kept or discarded</td></tr>
-<tr><th scope="row">Activity (<code translate="no">running-panel.tsx</code>)</th><td>A Worktree tag on the branch's agent row and the changed-file count on its status line</td></tr>
+<tr><th scope="row">Activity (<code translate="no">running-panel.tsx</code>)</th><td>The changed-file count of the branch's worktree, in the tip of its main agent's glyph on the work chart</td></tr>
 </tbody>
 </table>
 <p class="note">All three read one copy of the conversation's worktrees (<code translate="no">lib/worktrees/session-worktrees.ts</code>), re-read on every <code translate="no">worktree_status</code> broadcast.</p>

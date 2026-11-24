@@ -15,8 +15,20 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping
 
+from openprogram.host._platform import changes as _changes
+
 from .model import CommandKind, CommandStatus, ControlCommand, ExecutionStatus, _json
 from .store import ExecutionConflict, ExecutionStore
+
+
+#: A conversation's open system-access waits changed. A wait opens and closes
+#: with its run's pause and resume, so the run's lifecycle signals it
+#: (``event_effects``) for the run's session and the sessions above it.
+SYSTEM_ACCESS_WAITS_TOPIC = "system_access.waits"
+#: The operating system announces no permission grant, so while a
+#: system-access wait is open the reconciler probes this often.
+SYSTEM_ACCESS_PROBE_SECONDS = 5.0
+_changes.publish(SYSTEM_ACCESS_WAITS_TOPIC)
 
 
 class WaitStatus(str, Enum):
@@ -519,6 +531,24 @@ class DurableWaitStore:
                 claim_generation=generation,
             )
             return changed == 1
+
+    def next_due(self) -> float | None:
+        """The earliest time an open wait expires or a claim on one runs
+        out: when the reconciler must look next, nothing else changing.
+        An open system-access wait is due every
+        ``SYSTEM_ACCESS_PROBE_SECONDS``: nothing tells of its grant."""
+        found: float | None = None
+        probe = time.time() + SYSTEM_ACCESS_PROBE_SECONDS
+        for row in self.executions._connect().rows("execution_waits", status=["open", "claimed"]):
+            times = [row["expires_at"] or 0]
+            if row["kind"] == "system_access" and row["status"] == "open":
+                times.append(probe)
+            if row["status"] == "claimed":
+                times.append(row["claim_expires_at"] or 0)
+            for at in times:
+                if at > 0 and (found is None or at < found):
+                    found = float(at)
+        return found
 
     def reclaim_expired_claims(self, *, now: float | None = None) -> int:
         current = time.time() if now is None else float(now)

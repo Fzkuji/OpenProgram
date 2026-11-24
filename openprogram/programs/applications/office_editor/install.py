@@ -17,7 +17,6 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from openprogram.host.security import safe_http
 
 from .assets import (
     MAX_ASSETS, OfficeAssetPack, _safe_relative, install_office_pack,
@@ -107,8 +106,21 @@ def _download(client, url: str, archive: Path) -> bool:
     return True
 
 
+def __getattr__(name: str):
+    """``safe_http``, imported at the first download: the HTTP client takes
+    0.06 s to import, and this module is loaded with the Programs by every command."""
+    if name == "safe_http":
+        from openprogram.host.security import safe_http
+
+        globals()["safe_http"] = safe_http
+        return safe_http
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def download_office_pack() -> OfficeAssetPack:
     """Download only after explicit consent; publish only fully verified bytes."""
+    from openprogram.host.security import safe_http
+
     target = prepared_office_cache()
     target.parent.mkdir(parents=True, exist_ok=True)
     version = installed_version()

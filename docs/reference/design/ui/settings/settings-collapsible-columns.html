@@ -14,7 +14,27 @@
 </table>
 
 <h2>Categories</h2>
-<p>General, Appearance, LLM Providers, Memory, Web Search, Browser, Voice, Environments, Channels, Import, Token Usage, System. Links, icons, active state and keyboard order follow this one array.</p>
+<p>Twelve categories in four groups, named by what the reader is looking for. Links, icons, active state and keyboard order follow this one array. Each group has a <code translate="no">RailGroupLabel</code>; a collapsed rail hides the labels and keeps the icons in one column.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Group</th><th scope="col">Categories</th></tr></thead>
+<tbody>
+<tr><th scope="row">Personal</th><td>General, Appearance</td></tr>
+<tr><th scope="row">Models and abilities</th><td>Model services, Token Usage, Memory, Web Search, Voice</td></tr>
+<tr><th scope="row">Computers and connections</th><td>Machines, Browser, Channels</td></tr>
+<tr><th scope="row">Data</th><td>Import, Versions and updates</td></tr>
+</tbody>
+</table>
+<p>A setting sits on the page of the thing it changes, so there is no catch-all page. Codex and Cursor group their settings rail the same way, with quiet group labels over a flat list.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Page</th></tr></thead>
+<tbody>
+<tr><th scope="row">Schema group <code translate="no">Models</code>: fallback models, summarize threshold, Anthropic cache, secret redaction</th><td>Model services → Behavior</td></tr>
+<tr><th scope="row">Schema group <code translate="no">Ports</code></th><td>General → Web server</td></tr>
+<tr><th scope="row">This computer's system access</th><td>Machines</td></tr>
+<tr><th scope="row">App version and updates</th><td>Top of Versions and updates, above the versions OpenProgram keeps of itself</td></tr>
+<tr><th scope="row">Bookmarks bar</th><td>Browser</td></tr>
+</tbody>
+</table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
@@ -25,7 +45,7 @@
 </tbody>
 </table>
 
-<p>LLM Providers is one column with no list column of its own: its list, Add provider and each provider's page are described in <a href="../../providers/provider-management.html">Provider management</a>.</p>
+<p>Model services is one column with no list column of its own: its list, Add provider and each provider's page are described in <a href="../../providers/provider-management.html">Provider management</a>.</p>
 
 <details>
 <summary>References and exclusions</summary>
@@ -43,7 +63,7 @@
 <summary>Acceptance</summary>
 <ul>
 <li>No separate global Settings topbar.</li>
-<li>Category rows line up with the main sidebar's first rows; the first icon keeps its y when collapsed.</li>
+<li>Category rows have the main sidebar's row height and gap; group labels show only when the rail is expanded.</li>
 <li>Category order, URLs, icons, active state and keyboard order agree.</li>
 <li>Memory has no duplicate title.</li>
 <li>Icon actions carry <code translate="no">aria-label</code>.</li>

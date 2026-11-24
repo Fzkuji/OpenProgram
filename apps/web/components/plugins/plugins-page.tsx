@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
-import { ManagePageHeader, ManageSubnav, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,7 +26,7 @@ export function PluginsPage({
   onInstallClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { tab, setTab, refresh, plugins, errors, loadError, loading } = usePluginsStore();
+  const { tab, setTab, refresh, plugins, errors, ready } = usePluginsStore();
   const [localInstallOpen, setLocalInstallOpen] = useState(false);
   const installOpen = installOpenProp ?? localInstallOpen;
   const closeInstall = onInstallClose ?? (() => setLocalInstallOpen(false));
@@ -43,18 +43,18 @@ export function PluginsPage({
   const enabledCount = plugins.filter((p) => p.enabled && p.loaded && !p.error).length;
 
   const tabs = [
-    { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
+    { id: "installed", label: text("Installed", "已安装"), count: ready ? plugins.length : undefined },
     { id: "marketplace", label: text("Discover", "发现") },
-    { id: "errors", label: text("Issues", "问题"), count: errCount },
+    { id: "errors", label: text("Issues", "问题"), count: ready ? errCount : undefined },
   ];
 
   const body = (
     <>
-      {tab === "installed" && (loading && plugins.length === 0
-        ? <ManageLoadingState>{text("Loading plugins…", "正在加载插件…")}</ManageLoadingState>
-        : <InstalledList externalFilter={query} />)}
+      {/* Until the first list arrives the panel stays empty: an empty-state
+          line then would be untrue. Later visits draw the kept list at once. */}
+      {tab === "installed" && ready && <InstalledList externalFilter={query} />}
       {tab === "marketplace" && <MarketplaceBrowser externalFilter={query} />}
-      {tab === "errors" && <PluginErrors filter={query} />}
+      {tab === "errors" && ready && <PluginErrors filter={query} />}
     </>
   );
 
@@ -64,10 +64,10 @@ export function PluginsPage({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(id) => setTab(id as typeof tab)}
-        summary={text(
+        summary={ready ? text(
           `${enabledCount} available · ${errCount} ${errCount === 1 ? "issue" : "issues"}`,
           `可用 ${enabledCount} 个 · ${errCount} 个问题`,
-        )}
+        ) : undefined}
         action={{
           label: text("Add plugin", "添加插件"),
           onClick: () => setLocalInstallOpen(true),
@@ -77,7 +77,6 @@ export function PluginsPage({
         ariaLabel={text("Plugin sections", "插件分区")}
         panelId="plugins-panel"
       />
-      {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
       <div
         id="plugins-panel"
         role="tabpanel"

@@ -10,7 +10,7 @@
 <tr><th scope="row">Key</th><td>每个 provider 一个有序的 key 和登录列表。对话固定用一个；被限流或被拒时换到下一个。</td></tr>
 <tr><th scope="row">失败</th><td>所有错误映射到同一分类，按类别重试或故障转移，受超时约束，以结构化错误到达界面。</td></tr>
 <tr><th scope="row">目录</th><td>来自 <code translate="no">provider.json</code>、订阅目录和 models.dev。思考强度和 Fast 档按厂商声明。</td></tr>
-<tr><th scope="row">管理</th><td><code translate="no">openprogram providers</code>（<code translate="no">login</code>、<code translate="no">list</code>、<code translate="no">use</code>、<code translate="no">status</code>、<code translate="no">doctor</code>、<code translate="no">accounts</code>），或 设置 → Providers</td></tr>
+<tr><th scope="row">管理</th><td><code translate="no">openprogram providers</code>（<code translate="no">login</code>、<code translate="no">list</code>、<code translate="no">use</code>、<code translate="no">status</code>、<code translate="no">doctor</code>、<code translate="no">accounts</code>），或 设置 → 模型服务</td></tr>
 </tbody>
 </table>
 
@@ -34,6 +34,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">记录</th><th scope="col">内容</th></tr></thead>
 <tbody>
+<tr><th scope="row"><a href="auth/credential-model.zh.html">厂商、接入点和凭据</a></th><td>单个厂商的架构：凭据从哪来、存在哪、谁读它</td></tr>
 <tr><th scope="row"><a href="auth/credential-validation-unification.html">凭据校验</a></th><td>校验入口</td></tr>
 <tr><th scope="row"><a href="auth/credential-status-redesign.html">凭据状态</a></th><td>可用或已停止</td></tr>
 <tr><th scope="row"><a href="auth/api-key-resolution-unification.zh.html">API key 解析</a></th><td>key 从哪里来</td></tr>

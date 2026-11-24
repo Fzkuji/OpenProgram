@@ -11,10 +11,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   closeSubAgentView,
-  loadSubAgentTranscript,
+  readSubAgentTranscript,
   subAgentChatKey,
 } from "@/lib/chat/transcript/sub-agent-transcripts";
 import { useTranslation } from "@/lib/i18n";
+import { Markdown } from "@/lib/format-utils/markdown";
 import { isAgentRunning } from "@/lib/chat/transcript/row-status";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 
@@ -41,7 +42,9 @@ export function SubAgentTranscript({ card, sessionId, onTip }: {
   const status = attach.status || "completed";
   const chatKey = subAgentChatKey(sessionId, key);
   const order = useSessionStore((s) => s.messageOrder[chatKey]);
-  const [loading, setLoading] = useState(false);
+  // Whether the server has answered for this agent (its rows, or that there
+  // is no transcript to read): until it has, an empty body says nothing.
+  const [read, setRead] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   // A running agent opens at its newest output; a finished one at its task.
   const followRef = useRef(isAgentRunning(status));
@@ -50,15 +53,23 @@ export function SubAgentTranscript({ card, sessionId, onTip }: {
 
   useEffect(() => {
     let live = true;
-    const load = () => {
-      setLoading(true);
-      void loadSubAgentTranscript(sessionId, key, { jobId, headId })
-        .then((tip) => { if (live && tip) tipRef.current?.(tip); })
-        .finally(() => { if (live) setLoading(false); });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Rows read before stay on screen from the store; this read refreshes
+    // them. A read that failed is asked again, quietly, with backoff; one
+    // the server refused ends here and the card shows what it already has.
+    const load = (attempt: number) => {
+      void readSubAgentTranscript(sessionId, key, { jobId, headId }).then((result) => {
+        if (!live) return;
+        if (result.tip) tipRef.current?.(result.tip);
+        if (result.read || !result.retry) { setRead(true); return; }
+        console.warn("sub-agent transcript read failed; retrying", { sessionId, key, attempt });
+        timer = setTimeout(() => load(attempt + 1), Math.min(30_000, 1000 * 2 ** attempt));
+      });
     };
-    load();
+    load(0);
     return () => {
       live = false;
+      if (timer) clearTimeout(timer);
       closeSubAgentView(sessionId, key);
     };
   }, [sessionId, key, jobId, headId]);
@@ -91,14 +102,11 @@ export function SubAgentTranscript({ card, sessionId, onTip }: {
           <PromptTurn msg={{ id: `${card.id}_prompt`, role: "user", rowKind: "user", content: attach.prompt }} />
         ) : null}
         <TranscriptRows sessionId={sessionId} viewKey={chatKey} ids={ids} embedded />
-        {ids.length === 0 ? (
-          <div className="sub-agent-empty" role="status">
-            {loading
-              ? text("Loading…", "加载中…")
-              : isAgentRunning(status)
-                ? text("Waiting for output…", "等待输出…")
-                : text("No output.", "没有输出。")}
-          </div>
+        {/* No transcript to draw: the agent's reply the card already holds. */}
+        {ids.length === 0 && read && !isAgentRunning(status) ? (
+          card.content
+            ? <Markdown source={card.content} escapeRawHtml />
+            : <div className="sub-agent-empty">{text("No output.", "没有输出。")}</div>
         ) : null}
       </div>
     </div>

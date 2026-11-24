@@ -42,6 +42,8 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { SettingsHeading } from "@/components/settings/settings-ui";
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
+import { refreshSettings, revalidateSettings, setCachedSettings, useSettingsData } from "@/lib/prefs/settings-cache";
 import type { FixAction } from "@/lib/settings/provider-status.generated";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +52,7 @@ import type { CredentialList, CredentialRow, CredentialStrategy, LoginMethod, Pr
 import { AddCredentialDialog, type CredentialIntent } from "./add-credential-dialog";
 import {
   CREDENTIALS_CHANGED, KEY_METHOD, credentialBadge, credentialName, credentialUrl, credentialsUrl, failureLine, isSignIn,
-  maskedTail, nextExpiry, readCredentials, rowMeters, strategyLabel, todayLine, usableNow,
+  maskedTail, nextExpiry, rowMeters, strategyLabel, todayLine, usableNow,
 } from "./credential-model";
 
 type Text = (en: string, zh: string) => string;
@@ -81,8 +83,8 @@ async function send(method: "POST" | "PATCH" | "DELETE", url: string, failure: s
       ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     });
     if (r.ok) return true;
-    const d = await r.json().catch(() => ({}));
-    showToast(String(d.error || failure), { tone: "error" });
+    const d = await r.json().catch((): { error?: unknown } => ({})) as { error?: unknown };
+    showToast(errorDetailText(d.error, failure), { tone: "error" });
   } catch {
     showToast(failure, { tone: "error" });
   }
@@ -293,23 +295,22 @@ export function CredentialsSection({
   onChanged: () => void;
 }) {
   const { text } = useTranslation();
-  const [list, setList] = useState<CredentialList | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Kept for the visit: reopening a provider shows its credentials at once and
+  // reads them again behind; a failed read keeps them and retries quietly.
+  const listUrl = credentialsUrl(provider.id);
+  const list = useSettingsData<CredentialList>(listUrl) ?? null;
+  const setList = useCallback((next: (previous: CredentialList | undefined) => CredentialList | undefined) =>
+    setCachedSettings<CredentialList>(listUrl, next), [listUrl]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; intent: CredentialIntent }>({ open: false, intent: { mode: "add" } });
   const root = useRef<HTMLElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: rowByRow }));
 
-  const load = useCallback(async () => {
-    try {
-      setList(await readCredentials(provider.id));
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, [provider.id]);
-  useEffect(() => { void load(); }, [load]);
+  const load = useCallback(async () => { await refreshSettings(listUrl); }, [listUrl]);
+  // Sign-ins and quotas change on their own: every visit reads the list
+  // again behind the kept one, joining a read already on its way.
+  useEffect(() => { void revalidateSettings(listUrl); }, [listUrl]);
   useEffect(() => {
     const onChange = (event: Event) => {
       const changed = (event as CustomEvent<{ provider?: string }>).detail?.provider;
@@ -431,12 +432,7 @@ export function CredentialsSection({
       />
       <Card className="gap-0 py-0">
         <CardContent className="px-0">
-        {!list ? (
-          failed ? (
-            <ManageEmptyState compact title={text("Could not load the credentials.", "无法加载凭据。")}
-              action={<Button variant="elevated" size="sm" onClick={() => void load()}>{text("Retry", "重试")}</Button>} />
-          ) : null
-        ) : rows.length === 0 ? (
+        {!list ? null : rows.length === 0 ? (
           <ManageEmptyState
             dense
             icon={signIns ? <UserRound /> : <KeyRound />}

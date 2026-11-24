@@ -1,7 +1,8 @@
-"""Argument parsing and page scripts the browser target's two drivers share.
+"""Argument parsing and page scripts the browser targets' two drivers share.
 
-The built-in browser's tab driver and the user's Chrome or Edge read the
-same arguments here, so an action means the same in both. Clicks sent as
+The built-in browser's tab driver and the user's own browsers (Chromium
+through Playwright MCP, Safari and Firefox through ``script_page``) read the
+same arguments here, so an action means the same in each. Clicks sent as
 events, element scrolling, inserting text at the caret and pasting run as
 small scripts inside the page, so a tab is driven without being focused.
 Each script takes ``(element, options)``; ``element`` is ``null`` for the
@@ -80,19 +81,69 @@ def mouse_options(options: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def scroll_delta(arguments: dict[str, Any]) -> tuple[int, int]:
-    """(dx, dy) in CSS pixels; ``amount`` keeps its old meaning (signed, vertical) without a direction."""
-    try:
-        amount = int(arguments.get("amount") if arguments.get("amount") is not None else 500)
-    except (TypeError, ValueError) as exc:
-        raise ActionError("invalid_amount", "amount must be a whole number of pixels") from exc
-    direction = str(arguments.get("direction") or "").lower()
-    if not direction:
-        return 0, amount
+# One page of a scroll is this share of the visible width or height, so a line of what was seen stays in view.
+PAGE_SHARE = 0.9
+
+
+def scroll_delta(arguments: dict[str, Any], viewport: tuple[float, float] = (0, 0)) -> tuple[int, int]:
+    """(dx, dy) in CSS pixels: ``pixels``, else ``pages`` (1 by default) of ``viewport`` (width, height),
+    towards ``direction`` (down by default)."""
+    direction = str(arguments.get("direction") or "down").lower()
     if direction not in DIRECTIONS:
         raise ActionError("invalid_direction", "direction must be down, up, right or left")
-    amount = abs(amount)
+    across = direction in ("left", "right")
+    try:
+        if arguments.get("pixels") not in (None, ""):
+            amount = abs(int(arguments["pixels"]))
+        else:
+            size = float(viewport[0] if across else viewport[1]) or 800.0
+            amount = int(round(abs(float(arguments.get("pages") or 1)) * size * PAGE_SHARE))
+    except (TypeError, ValueError) as exc:
+        raise ActionError("invalid_amount", "pages and pixels are numbers") from exc
     return {"down": (0, amount), "up": (0, -amount), "right": (amount, 0), "left": (-amount, 0)}[direction]
+
+
+# What set_value does to an element: choose options of a select box, check or uncheck a box, or replace text.
+FIELD_KIND_SCRIPT = """e => e instanceof HTMLSelectElement ? "select"
+  : (e instanceof HTMLInputElement && (e.type === "checkbox" || e.type === "radio")) ? "check" : "text\""""
+
+
+def option_values(arguments: dict[str, Any]) -> list[str]:
+    """set_value on a select box: one option, or several, by value or label."""
+    value = arguments.get("value")
+    values = [str(item) for item in value] if isinstance(value, (list, tuple)) else [str(value if value is not None else "")]
+    if not any(values):
+        raise ActionError("value_required", "set_value needs value: the option's value or label")
+    return values
+
+
+def checked(arguments: dict[str, Any]) -> bool:
+    """set_value on a checkbox or radio button: whether it ends up checked."""
+    value = arguments.get("value")
+    if isinstance(value, bool):
+        return value
+    text = str(value if value is not None else "").strip().lower()
+    if text in ("true", "on", "yes", "1", "checked"):
+        return True
+    if text in ("false", "off", "no", "0", "unchecked", ""):
+        return False
+    raise ActionError("invalid_value", "a checkbox or radio button takes value true or false")
+
+
+def find_lines(outline: str, text: str = "", role: str = "") -> list[str]:
+    """The lines of a page outline that hold ``text`` (any case) and are elements of ``role``."""
+    import re
+    wanted, kind = text.strip().lower(), role.strip().lower()
+    found = []
+    for line in outline.splitlines():
+        head = re.match(r"^\s*- (?:<changed> )?([\w-]+)", line)
+        if kind and (head is None or head.group(1).lower() != kind):
+            continue
+        if wanted and wanted not in line.lower():
+            continue
+        if head is not None:
+            found.append(line.strip())
+    return found
 
 
 def paste_payload(arguments: dict[str, Any]) -> dict[str, str]:
@@ -306,7 +357,8 @@ def bound_call(script: str, options: dict[str, Any], *, with_element: bool = Tru
 
 
 __all__ = [
-    "ActionError", "EVALUATE_ACTION", "HOVER_SCRIPT", "INSERT_TEXT_SCRIPT", "MAX_RESULT_CHARS", "MAX_SCRIPT_CHARS",
-    "PASTE_SCRIPT", "POINTER_SCRIPT", "SCROLL_SCRIPT", "bound_call", "click_options", "evaluate_source",
-    "mouse_options", "evaluation_text", "modifiers", "paste_payload", "scroll_delta",
+    "ActionError", "EVALUATE_ACTION", "FIELD_KIND_SCRIPT", "HOVER_SCRIPT", "INSERT_TEXT_SCRIPT", "MAX_RESULT_CHARS",
+    "MAX_SCRIPT_CHARS", "PAGE_SHARE", "PASTE_SCRIPT", "POINTER_SCRIPT", "SCROLL_SCRIPT", "bound_call", "checked",
+    "click_options", "evaluate_source", "evaluation_text", "find_lines", "modifiers", "mouse_options",
+    "option_values", "paste_payload", "scroll_delta",
 ]

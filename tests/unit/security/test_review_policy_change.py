@@ -43,7 +43,7 @@ def _run(tool, call_id, args, between):
 
 def test_rule_for_another_tool_leaves_the_review_standing(live):
     tool, rules, _, calls = live
-    result = _run(tool, "c1", {"action": "add"}, lambda: rules.allow.append("computer_use_agent(app)"))
+    result = _run(tool, "c1", {"action": "add"}, lambda: rules.allow.append("computer_use(app)"))
     assert not result.is_error
     assert calls == ["c1"]
 

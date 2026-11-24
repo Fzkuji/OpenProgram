@@ -8,15 +8,28 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./memory-page.module.css";
 import { useMemoryUrl } from "./data/api";
 import type { TopicOrigins } from "./markdown/origin-marks";
+import { errorDetailText } from "@/lib/net/error-text";
 
 interface Revision { revision: string; timestamp: string; message: string }
-export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPreviewClick, onSaved, onRemovedChange }: {
+/** A memory file as the server answers it. */
+interface FileReply { content?: string; origin?: TopicOrigins["origin"]; paragraphs?: TopicOrigins["paragraphs"]; error?: unknown }
+/** A page of a file's history, one revision's diff, or a failure. */
+interface HistoryReply { entries?: Revision[]; has_more?: boolean; diff?: string; error?: unknown }
+
+async function readHistory(response: Response): Promise<HistoryReply> {
+  const data = await response.json() as HistoryReply;
+  if (!response.ok) throw new Error(errorDetailText(data.error, `HTTP ${response.status}`));
+  return data;
+}
+export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPreviewClick, onSaved, onRemovedChange, onGone }: {
   path: string; url: string; title: string; badge?: React.ReactNode; meta: string[];
   /** ``removed``: a save already removed the file, so nothing is left to delete on the server. */
   onDelete?: (target: { removed: boolean }) => void | Promise<void>; onPreviewClick?: (e: React.MouseEvent) => void;
   onSaved?: () => void;
   /** A save removed the file (headings only) or brought it back. */
   onRemovedChange?: () => void;
+  /** The file is not there (deleted elsewhere): the page closes this editor. */
+  onGone?: () => void;
 }) {
   const { text, locale } = useTranslation();
   const api = useMemoryUrl();
@@ -37,8 +50,8 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
   useEffect(() => {
     let active = true;
     fetch(url)
-      .then(async response => (response.ok ? response.json() : null))
-      .then(data => { if (active) setOrigins(data && (data.origin || data.paragraphs) ? { origin: data.origin, paragraphs: data.paragraphs } : null); })
+      .then(async response => (response.ok ? await response.json() as FileReply : null))
+      .then(data => { if (active) setOrigins(data && (data.origin || data.paragraphs) ? { origin: data.origin, paragraphs: data.paragraphs } as TopicOrigins : null); })
       .catch(() => { if (active) setOrigins(null); });
     return () => { active = false; };
   }, [url, state.base]);
@@ -63,6 +76,7 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
   useEffect(() => {
     if (state.loaded && !state.saving && state.content === state.base) onSaved?.();
   }, [state.base, state.saving, state.loaded, onSaved, state.content]);
+  useEffect(() => { if (state.gone) onGone?.(); }, [state.gone, onGone]);
   const removed = useRef(state.removed);
   useEffect(() => {
     if (removed.current === state.removed) return;
@@ -74,8 +88,8 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
     let active = true;
     setBusy(true); setError(""); setEntries([]); setRevision(""); setDiff("");
     fetch(api("/api/memory/history?" + new URLSearchParams({ path })))
-      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; })
-      .then(data => { if (active) { setEntries(data.entries); setMore(data.has_more); setRevision(data.entries[0]?.revision || ""); } })
+      .then(readHistory)
+      .then(data => { if (active) { const list = data.entries ?? []; setEntries(list); setMore(data.has_more === true); setRevision(list[0]?.revision || ""); } })
       .catch(error => { if (active) setError(String(error)); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
@@ -87,8 +101,8 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
     const request = latest !== null
       ? fetch(api("/api/memory/diff"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ before: latest, after: state.content }) })
       : fetch(api("/api/memory/history?" + new URLSearchParams({ path, revision })));
-    request.then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; })
-      .then(data => { if (active) setDiff(data.diff); })
+    request.then(readHistory)
+      .then(data => { if (active) setDiff(data.diff ?? ""); })
       .catch(error => { if (active) setError(String(error)); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
@@ -97,17 +111,16 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
     setBusy(true); setError("");
     try {
       const response = await fetch(api("/api/memory/history?" + new URLSearchParams({ path, offset: String(entries.length) })));
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setEntries(previous => [...previous, ...data.entries]); setMore(data.has_more);
+      const data = await readHistory(response);
+      setEntries(previous => [...previous, ...(data.entries ?? [])]); setMore(data.has_more === true);
     } catch (error) { setError(String(error)); } finally { setBusy(false); }
   }
   async function reviewLatest() {
     try {
       const response = await fetch(url);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not load memory");
-      setLatest(data.content); setMode("history");
+      const data = await response.json() as FileReply;
+      if (!response.ok) throw new Error(errorDetailText(data.error, "Could not load memory"));
+      setLatest(data.content ?? ""); setMode("history");
     } catch (error) { setError(String(error)); }
   }
   async function restore() {
@@ -118,12 +131,13 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, revision, base_content: draft.state.base }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not restore version");
+      const data = await response.json() as FileReply & { warning?: unknown };
+      if (!response.ok) throw new Error(errorDetailText(data.error, "Could not restore version"));
       draft.undoStack.push(draft.state.content);
       draft.redoStack = [];
       draft.editVersion++;
-      draft.publish({ content: data.content, base: data.content, error: "", warning: data.warning || "" });
+      const restored = data.content ?? "";
+      draft.publish({ content: restored, base: restored, error: "", warning: typeof data.warning === "string" ? data.warning : "" });
       draft.persist();
       setMode("preview");
     } catch (error) { setError(String(error)); } finally { setRestoring(false); draft.publish({ restoring: false }); }
@@ -162,7 +176,7 @@ export function MemoryDocument({ path, url, title, badge, meta, onDelete, onPrev
           }}>{text("Replace latest with this draft", "用当前草稿替换最新版本")}</Button> :
             revision && <Button type="button" disabled={busy || restoring || state.saving || state.content !== state.base || !!state.error} onClick={restore}>{text("Restore this version", "恢复此版本")}</Button>}
           {error && <p role="alert">{error}</p>}
-          {busy ? <p>{text("Loading…", "加载中…")}</p> : diff ? <UnifiedDiff diff={diff} /> : <p>{text("No changes.", "没有修改。")}</p>}
+          {busy ? null : diff ? <UnifiedDiff diff={diff} /> : <p>{text("No changes.", "没有修改。")}</p>}
         </div>
       </div> : undefined}
     />

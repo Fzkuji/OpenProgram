@@ -14,7 +14,7 @@
  * dragging; the torn-off window is created at RELEASE.
  */
 import { useLayoutEffect, useRef, useState } from "react";
-import { clearDropPreview, commitCanvasDrop, liveCanvasDropAt, showLiveCanvasDrop, showResourceDrop, setCanvasDragging } from "@/lib/tabs/canvas/canvas-drag";
+import { clearDropPreview, commitCanvasDrop, draggingOverOwnWindow, liveCanvasDropAt, showLiveCanvasDrop, showResourceDrop, setCanvasDragging } from "@/lib/tabs/canvas/canvas-drag";
 import { closeOverview, holdOverviewLanding, openOverview, overviewDropAt, overviewOpen } from "@/lib/tabs/canvas/canvas-overview";
 import { captureVisiblePanes, useWindowSnapshots } from "@/lib/tabs/canvas/window-snapshots";
 
@@ -86,6 +86,9 @@ interface PointerDragState {
    *  drop-to-place, so the torn-off window is only created at release. */
   stripTop: number;
   stripBottom: number;
+  /** This drag opened the overview (the tab was dragged over its own
+   *  window); coming back to the strip closes it again. */
+  openedOverview?: boolean;
   teardown(): void;
 }
 
@@ -575,9 +578,17 @@ export function useTabPointerDrag({
       const tx = outsideBand ? dx : Math.min(Math.max(dx, drag.minTx), drag.maxTx);
       drag.lastTy = outsideBand ? dy : 0;
       drag.lastTx = tx;
-      // Leaving the strip keeps the window on screen: the tab can dock
-      // beside it there (liveCanvasDropAt). The overview opens only from
-      // its button or a pinch.
+      // Leaving the strip keeps the window on screen: another tab docks
+      // beside it there (liveCanvasDropAt). The window's own tab cannot
+      // dock beside itself, so over it the overview opens, and back in the
+      // strip that overview closes again.
+      if (drag.openedOverview && !outsideBand) {
+        drag.openedOverview = false;
+        closeOverview();
+      } else if (outsideBand && !overviewOpen() && draggingOverOwnWindow(e.clientX, e.clientY, drag.subject.tabIds)) {
+        drag.openedOverview = true;
+        openOverview("drag", drag.subject.tabIds);
+      }
       updateDragPreview(drag, outsideBand);
       drag.element.style.transform = `translate(${tx}px, ${drag.lastTy}px)`;
     }

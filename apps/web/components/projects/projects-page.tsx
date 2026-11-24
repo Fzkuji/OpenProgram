@@ -13,13 +13,19 @@ import { FolderSearch } from "lucide-react";
 
 import shell from "./projects-shell.module.css";
 import { SearchInput } from "@/components/ui/search-input";
-import { useFolderPicker } from "@/components/ui/folder-picker";
+import { MachineChoiceRows, useOpenFolderOn } from "@/components/machines/open-folder-on";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { MENU_PANEL } from "@/components/ui/menu/menu-styles";
+import { LOCAL_ID, ensureMachines, environmentMachines, findMachine, useMachines, type MachineInfo } from "@/lib/machines/store";
 import styles from "./projects-page.module.css";
-import { ManageEmptyState, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, managePageStyles as shared } from "@/components/ui/manage-page";
+import { isAbort, keep, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
+import { HISTORY_PROJECTS_KEY, readHistoryProjects, systemFirst } from "@/lib/projects/history-projects";
 import { RailBadge, RailItem, RailSeparator, RailSplit, SecondaryRail } from "@/components/ui/secondary-rail";
 import { useTranslation } from "@/lib/i18n";
 import { SolarIcon } from "@/components/solar-icons";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { onReconnected } from "@/lib/net/ws/changes";
 import { canConfirmInPlace, confirmProjectFolder, locationMessage, locationProblem, notifyProjectLocationChanged, relocateProject, type RelocateReply } from "@/lib/projects/project-location";
 import { ProjectEditor, type EditableProject } from "@/components/sidebar/projects/project-editor";
 import { Button } from "@/components/ui/button";
@@ -66,10 +72,8 @@ function cls(...xs: (string | false | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
-/** The home project leads; the rest keep the registry's order. */
-function systemFirst(projects: Project[]): Project[] {
-  return [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default));
-}
+/** The project picked last, so a return visit opens on it. */
+let lastSelectedProject: string | null = null;
 
 export function ProjectsPage({
   embedded,
@@ -84,43 +88,60 @@ export function ProjectsPage({
   const params = useSearchParams();
   const requestedProject = params?.get("project");
   const requestedTab = tabParam(params?.get("tab"));
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The kept list draws at once and is read again behind it.
+  const [projects, setProjects] = useState<Project[]>(() => lastKept<Project[]>(HISTORY_PROJECTS_KEY) ?? []);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const kept = lastKept<Project[]>(HISTORY_PROJECTS_KEY);
+    if (!kept) return null;
+    return kept.find((p) => p.id === lastSelectedProject)?.id ?? kept[0]?.id ?? null;
+  });
   const [tab, setTab] = useState<ProjectTab>(requestedTab ?? initialTab);
   const conversations = useSessionStore((state) => state.conversations);
   const [editing, setEditing] = useState(false);
+  // Only the outcome of the person's own change; reads fail quietly.
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => lastKept(HISTORY_PROJECTS_KEY) !== undefined);
   const [localQuery, setLocalQuery] = useState("");
-  const { pickFolder, folderPickerDialog } = useFolderPicker();
+  const { pickFolder, openOn, dialogs } = useOpenFolderOn();
+  const machines = useMachines((s) => s.items);
+  // A new project picks its machine first when there is more than this computer.
+  const [choosingMachine, setChoosingMachine] = useState(false);
+  useEffect(() => { void ensureMachines(); }, []);
   const query = queryProp !== undefined ? queryProp : localQuery;
   const setQuery = setLocalQuery;
 
-  const refresh = useCallback(async () => {
-    for (let i = 0; i < 10; i++) {
-      const data = await wsRequest<{ projects: Project[] | null }>(
-        "list_projects", {}, "projects_list",
-      );
-      // `projects: null` means the registry could not be read, not that
-      // there are no projects; retry instead of showing the empty state.
-      if (data && Array.isArray(data.projects)) {
-        const list = systemFirst(data.projects);
-        setProjects(list);
-        setSelectedId((cur) => cur ?? (list[0]?.id ?? null));
-        setLoaded(true);
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    setError(text("Could not load projects", "无法加载项目"));
-  }, [text]);
+  const show = useCallback((list: Project[]) => {
+    keep(HISTORY_PROJECTS_KEY, list);
+    setProjects(list);
+    setSelectedId((cur) => cur ?? (list[0]?.id ?? null));
+    setLoaded(true);
+  }, []);
 
+  // After a change: a fresh read. No answer (the socket is down) or
+  // `projects: null` (the registry could not be read, not "no projects")
+  // keeps the last list and only warns; the socket opening again or the
+  // next change reads again.
+  const refresh = useCallback(async () => {
+    const data = await wsRequest<{ projects: Project[] | null }>(
+      "list_projects", {}, "projects_list",
+    );
+    if (data && Array.isArray(data.projects)) show(systemFirst(data.projects));
+    else console.warn("[projects] list read failed");
+  }, [show]);
+
+  // Opening: the sidebar's list (usually already here), tried again
+  // quietly until it comes.
   useEffect(() => {
-    function onChanged() { refresh(); }
+    const controller = new AbortController();
+    readUntilAnswered(HISTORY_PROJECTS_KEY, () => readHistoryProjects<Project>(), controller.signal)
+      .then(show)
+      .catch((cause) => { if (!isAbort(cause)) console.warn("[projects] list read failed", cause); });
+    function onChanged() { void refresh(); }
     window.addEventListener("project-changed", onChanged);
-    refresh();
-    return () => window.removeEventListener("project-changed", onChanged);
-  }, [refresh]);
+    const offOpen = onReconnected(onChanged);
+    return () => { controller.abort(); offOpen(); window.removeEventListener("project-changed", onChanged); };
+  }, [refresh, show]);
+  useEffect(() => { if (selectedId) lastSelectedProject = selectedId; }, [selectedId]);
 
   useEffect(() => { if (requestedProject) setSelectedId(requestedProject); }, [requestedProject]);
   useEffect(() => { setTab(initialTab); }, [initialTab]);
@@ -183,13 +204,14 @@ export function ProjectsPage({
     }
   }, [pickFolder, repairProject]);
 
-  const addProject = useCallback(async () => {
+  const addProjectOn = useCallback(async (machine: MachineInfo) => {
+    setChoosingMachine(false);
     setError(null);
     try {
-      const path = await pickFolder();
-      if (!path) return;
+      const chosen = await openOn(machine);
+      if (!chosen) return;
       const d = await wsRequest<{ ok: boolean; project?: Project; error?: string }>(
-        "create_project", { path }, "project_created",
+        "create_project", { path: chosen.path, machine_id: chosen.machineId }, "project_created", undefined, 30_000,
       );
       if (d?.error) setError(d.error);
       if (d?.project) setSelectedId(d.project.id);
@@ -197,7 +219,12 @@ export function ProjectsPage({
     } catch (e) {
       setError(String(e));
     }
-  }, [pickFolder, refresh]);
+  }, [openOn, refresh]);
+
+  const addProject = useCallback(() => {
+    if (environmentMachines(machines).length > 1) setChoosingMachine(true);
+    else void addProjectOn(findMachine(machines, LOCAL_ID) ?? machines[0]);
+  }, [addProjectOn, machines]);
 
   // Arrow/Home/End keyboard model shared with ManageSubnav.
   function moveProjectTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -214,7 +241,7 @@ export function ProjectsPage({
 
   const view = (
       <div className="h-full flex flex-col overflow-visible" style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
-        {folderPickerDialog}
+        {dialogs}
         {editing && selected && <ProjectEditor key={selected.id} project={selected} onClose={()=>setEditing(false)} onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}/>}
         {(!embedded || queryProp === undefined) && (
           <div className={shell.topbar}>
@@ -260,24 +287,35 @@ export function ProjectsPage({
               );
             })}
             <RailSeparator />
-            <RailItem
-              quiet
-              icon={<SolarIcon name="add-folder" size={16} motionPreset="none" aria-hidden="true" />}
-              label={text("Add project folder…", "添加项目文件夹…")}
-              onClick={addProject}
-            />
+            <Popover open={choosingMachine} onOpenChange={setChoosingMachine}>
+              <PopoverAnchor asChild>
+                <div>
+                  <RailItem
+                    quiet
+                    icon={<SolarIcon name="add-folder" size={16} motionPreset="none" aria-hidden="true" />}
+                    label={text("Add project folder…", "添加项目文件夹…")}
+                    onClick={addProject}
+                  />
+                </div>
+              </PopoverAnchor>
+              <PopoverContent side="right" align="start" sideOffset={8}
+                className="w-auto border-0 bg-transparent p-0 shadow-none">
+                <div className={MENU_PANEL}>
+                  <MachineChoiceRows onPick={(machine) => void addProjectOn(machine)}
+                    onAddMachine={() => setChoosingMachine(false)} />
+                </div>
+              </PopoverContent>
+            </Popover>
           </SecondaryRail>
 
           {/* 右栏：选中项目的内容 */}
           <div className={cls(shell.content, styles.content, selected ? styles.contentFill : undefined)}>
-            {!selected && !loaded ? (
-              <ManageLoadingState>{text("Loading…", "加载中…")}</ManageLoadingState>
-            ) : !selected ? (
+            {!selected && !loaded ? null : !selected ? (
               <ManageEmptyState
                 compact
                 icon={<ProjectGlyph size={20} />}
                 title={projects.length ? text("Select a project", "选择一个项目") : text("No projects yet", "还没有项目")}
-                description={text("A project is a folder on disk. Its chats, default settings and permission rules travel with it.", "项目对应磁盘上的一个文件夹，其会话、默认设置和权限规则随项目保存。")}
+                description={text("A project is a folder on a device, and its chats run there. Its chats, default settings and permission rules travel with it.", "项目对应某台设备上的一个文件夹，其会话在那里运行。会话、默认设置和权限规则随项目保存。")}
                 action={projects.length ? undefined : <Button onClick={addProject}><SolarIcon name="add-folder" size={16} motionPreset="none" aria-hidden="true" />{text("Add project folder…", "添加项目文件夹…")}</Button>}
               />
             ) : (

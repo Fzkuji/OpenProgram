@@ -6,8 +6,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Installation</th><th scope="col"><code translate="no">self_update(action="prepare")</code></th></tr></thead>
 <tbody>
-<tr><th scope="row">Source repository with a <code translate="no">stable</code> branch</th><td>Lands the commit on <code translate="no">dev</code>, deploys and checks it on the development instance, promotes it to the stable App. <a href="development-checkout.html">Development checkout</a></td></tr>
-<tr><th scope="row">Packaged App on macOS</th><td>Builds and installs into the App, below</td></tr>
+<tr><th scope="row">Development instance (<code translate="no">dev</code> profile, source repository with a <code translate="no">dev</code> branch)</th><td>Lands the commit on <code translate="no">dev</code>, deploys it to the development instance and checks it there; that is the whole update. <a href="development-checkout.html">Development checkout</a></td></tr>
+<tr><th scope="row">Official App (Developer ID signed)</th><td>Says it cannot rebuild the published App and points to <strong>Check for updates</strong> in Settings, before creating a request</td></tr>
+<tr><th scope="row">Other packaged App on macOS</th><td>Builds and installs into the App, below</td></tr>
 <tr><th scope="row">Packaged App or release install on Windows or Linux</th><td>Says this host has no source-update controller, before creating a request</td></tr>
 <tr><th scope="row">Plain developer checkout</th><td>Says it activates nothing; restart the worker from the checkout</td></tr>
 </tbody>
@@ -59,7 +60,7 @@
 <tbody>
 <tr><th scope="row">Version id</th><td>Returns to exactly that version; everything after it stops running. Commits left behind stay under <code translate="no">refs/openprogram/undone/</code>. A version no longer on disk is rebuilt from its commit.</td></tr>
 <tr><th scope="row">Commit</th><td>Reverts that one commit and keeps later ones. If later commits changed the same lines, it stops and names the files.</td></tr>
-<tr><th scope="row">On a machine with <code translate="no">stable</code></th><td>The target is a commit: the revert lands on <code translate="no">dev</code> and is promoted, because <code translate="no">stable</code> only moves forward.</td></tr>
+<tr><th scope="row">In the development instance</th><td>The target is a commit: the revert lands on <code translate="no">dev</code> and is deployed like any other change.</td></tr>
 </tbody>
 </table>
 <p>From a terminal, even when the running version is broken:</p>

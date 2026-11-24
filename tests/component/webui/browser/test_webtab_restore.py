@@ -153,3 +153,68 @@ def test_trusted_restore_skips_without_native_target(tmp_path, monkeypatch):
     })
     webtab.restore_window_pages(owner, "win")
     assert store.get_resource("page:dead:1")["lifecycle"] == "restore_failed"
+
+
+def test_a_tab_with_no_view_yet_keeps_its_page_open(tmp_path, monkeypatch):
+    from openprogram.programs.applications.browser import pages
+    from openprogram.runtime.permissions.authority import local_owner_authority
+
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    store = pages.BrowserResourceStore()
+    for tab in ("tab-waiting", "tab-gone"):
+        store.retain(
+            page_key=f"page:dead:{tab}", window_id="win", tab_id=tab,
+            title="X", target="https://example.test/",
+            session_id="parent", conversation_session_id="parent", live=True,
+        )
+        store.mark_unavailable(f"page:dead:{tab}")
+    owner = _WS()
+    owner.scope = {"state": {"authority": local_owner_authority()}}
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "win"
+    listing = {"ok": True, "pages": [], "dormant_tabs": ["tab-waiting"]}
+    monkeypatch.setattr(webtab, "request_on_ws", lambda *a, **k: listing)
+
+    webtab.restore_window_pages(owner, "win")
+    waiting = store.get_resource("page:dead:tab-waiting")
+    assert waiting["lifecycle"] == "dormant"
+    assert pages._public_row(waiting, {}, waiting, "parent", None, None)["status"] == "open"
+    assert store.get_resource("page:dead:tab-gone")["lifecycle"] == "restore_failed"
+
+    # A later pass leaves it as it is, and it never reads as being restored.
+    webtab.restore_window_pages(owner, "win")
+    assert store.get_resource("page:dead:tab-waiting")["lifecycle"] == "dormant"
+
+    # Its view is made: the page it becomes takes over the retained one.
+    binding_id = webtab.register_binding(owner, "win", "tab-waiting", "target-live")
+    assert store.get_resource("page:dead:tab-waiting")["lifecycle"] == "superseded"
+    assert store.get_resource(webtab.binding_page_key(binding_id))["lifecycle"] == "connected"
+    webtab.release_binding(binding_id)
+
+    # Its tab is closed while it waits: the page is gone.
+    listing["dormant_tabs"] = []
+    store.retain(
+        page_key="page:dead:later", window_id="win", tab_id="tab-later",
+        title="X", target="https://example.test/",
+        session_id="parent", conversation_session_id="parent", live=True,
+    )
+    store.mark_unavailable("page:dead:later")
+    store.mark_tabs_dormant("win", ["tab-later"])
+    webtab.restore_window_pages(owner, "win")
+    assert store.get_resource("page:dead:later")["lifecycle"] == "restore_failed"
+
+
+def test_the_reply_to_a_list_carries_the_tabs_with_no_view_yet():
+    import threading
+
+    owner = _WS()
+    done, holder = threading.Event(), {}
+    webtab._pending["req-dormant"] = (done, holder, owner)
+    try:
+        asyncio.run(webtab.handle_webtab_result(owner, {
+            "req_id": "req-dormant", "ok": True, "pages": [],
+            "dormant_tabs": ["tab-waiting", 7, ""],
+        }))
+    finally:
+        webtab._pending.pop("req-dormant", None)
+    assert holder["result"]["dormant_tabs"] == ["tab-waiting"]

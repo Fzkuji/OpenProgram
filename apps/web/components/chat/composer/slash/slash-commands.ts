@@ -40,6 +40,9 @@ export interface SlashCommand {
   name: string;
   args?: string;
   description: string;
+  /** Where the command comes from: "builtin" (also when absent), "skill",
+   *  "plugin", "user", "project" — picks the menu's default icon. */
+  source?: string;
   /** Changes the conversation's history, so it waits for an idle chat. */
   needsIdle?: boolean;
   /** While a turn runs the command does nothing and says nothing. */
@@ -210,10 +213,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       (async () => {
         try {
           const r = await fetch("/api/doctor");
-          const data: {
+          const data = await r.json() as {
             results: Array<{ ok: boolean; label: string; detail: string }>;
             all_ok: boolean;
-          } = await r.json();
+          };
           const lines = data.results.map(
             (x) => `${x.ok ? "✓" : "✗"} ${x.label} - ${x.detail}`,
           );

@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { Plus } from "lucide-react";
 import { SolarIcon } from "@/components/solar-icons";
+import { MachineIcon } from "@/components/machines/machine-icon";
+import { LOCAL_ID, ensureMachines, findMachine, useMachines } from "@/lib/machines/store";
 import { activateOnKey } from "@/lib/utils";
 import { sidebarNavIconClass, sidebarNavItemClass, sidebarNavLabelClass, sidebarProjectActionClass, SIDEBAR_ROW_ACTION_ICON } from "../nav-classes";
 import styles from "../sidebar.module.css";
@@ -13,10 +16,13 @@ import styles from "../sidebar.module.css";
  * is collapsed (the row's only expand/collapse cue), normal-weight label
  * — plus the new-session ＋ and the options ⋯ at the row end, the same
  * size and right edge as a chat row's ⋯. The project's path lives in the
- * row's title tooltip. */
+ * row's title tooltip. A project on another machine shows that machine
+ * right of its name: the machine's icon with its connection dot, then its
+ * name in small muted text. Chat rows never show a machine. */
 export function ProjectGroupHeader({
   name,
   path,
+  machineId,
   collapsed,
   onToggle,
   onNewSession,
@@ -28,6 +34,8 @@ export function ProjectGroupHeader({
 }: {
   name: string;
   path: string;
+  /** The machine the folder is on; nothing is shown for this computer. */
+  machineId?: string;
   collapsed: boolean;
   onToggle: () => void;
   onNewSession: () => void;
@@ -38,6 +46,13 @@ export function ProjectGroupHeader({
   icon?: string;
   menuTrigger: React.ReactNode;
 }) {
+  const remote = !!machineId && machineId !== LOCAL_ID;
+  const machines = useMachines((s) => s.items);
+  const kinds = useMachines((s) => s.kinds);
+  const machine = remote ? findMachine(machines, machineId) : null;
+  useEffect(() => {
+    if (remote) void ensureMachines();
+  }, [remote]);
   return (
     <div
       {...dragProps}
@@ -67,6 +82,12 @@ export function ProjectGroupHeader({
           : <SolarIcon name={collapsed ? "folder" : "folder-open"} size={20} motionPreset="none" className="text-[var(--folder-color)]" aria-hidden="true" />}
       </span>
       <span className={sidebarNavLabelClass}>{name}</span>
+      {remote ? (
+        <span className="flex min-w-0 max-w-[45%] shrink items-center gap-[4px] text-fs-xs text-text-muted" data-project-machine={machineId}>
+          <MachineIcon machine={machine} kinds={kinds} size={20} />
+          <span className="truncate">{machine?.name ?? machineId}</span>
+        </span>
+      ) : null}
       {/* -mr-[4px]: the buttons end 4px inside the row, where a chat
           row's ⋯ sits, so both columns line up. */}
       <div className="-mr-[4px] flex shrink-0 items-center gap-[2px]">

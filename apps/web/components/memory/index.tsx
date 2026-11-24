@@ -13,9 +13,14 @@
  *   - format.ts          formatSize / formatDate / groupByFolder
  *   - icons.tsx          TYPE_COLORS, TypeBadge, DocIcon, ClockIcon
  *   - parts.tsx          TabButton, TreeGroup, EditorPanel,
- *                        LoadingSkeleton, EmptyState, Placeholder
+ *                        EmptyState, Placeholder
+ *   - data/reads.ts      the four reads, kept across visits
+ *
+ * Each list draws the kept answer at once and is read again behind it;
+ * until a first answer comes its place stays empty, and a failed read is
+ * tried again quietly.
  */
-import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +41,6 @@ import {
   DocGlyph,
   EmptyState,
   FolderGlyph,
-  LoadingSkeleton,
   Placeholder,
   TabButton,
   TreeGroup,
@@ -56,6 +60,23 @@ import { MemoryProjectContext, memoryUrl } from "./data/api";
 import { WriterHealthBanner } from "./writer-health";
 import { confirmAction } from "@/components/ui/confirm-dialog";
 import { showToast } from "@/lib/format-utils/toast";
+import { errorDetailText } from "@/lib/net/error-text";
+import { isAbort, lastKept, readKept, readUntilAnswered } from "@/lib/abilities/kept-read";
+import { readCore, readRecent, readTimeline, readTimelineDay, readTopics, type CoreState } from "./data/reads";
+
+/** The folders a topic list opens with: every top-level folder. */
+function topicFolders(pages: TopicPage[]): Set<string> {
+  const folders = new Set<string>();
+  for (const p of pages) {
+    const parts = p.path.split("/");
+    if (parts.length > 1) folders.add(parts[0]);
+  }
+  return folders;
+}
+
+function quiet(what: string) {
+  return (cause: unknown) => { if (!isAbort(cause)) console.warn(`[memory] ${what} read failed`, cause); };
+}
 
 export function MemoryPage({
   embedded,
@@ -79,114 +100,85 @@ export function MemoryPage({
     setTimelineOpen((current) => ({ ...current, [key]: !(current[key] ?? fallback) }));
 
   // Topics state
-  const [topicPages, setTopicPages] = useState<TopicPage[]>([]);
-  const [topicsLoading, setTopicsLoading] = useState(true);
+  const [topicPages, setTopicPages] = useState<TopicPage[]>(() => lastKept<TopicPage[]>(api("/api/memory/topics")) ?? []);
+  const [topicsLoading, setTopicsLoading] = useState(() => lastKept(api("/api/memory/topics")) === undefined);
   const [selectedTopic, setSelectedTopic] = useState<TopicPage | null>(null);
   // Bumped when a topic save or delete lands, so the banner re-reads which
   // files are still held aside after the person fixes one in the editor.
   const [statusRevision, setStatusRevision] = useState(0);
   const refreshStatus = useCallback(() => setStatusRevision((value) => value + 1), []);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => topicFolders(topicPages));
   const [search, setSearch] = useState("");
   const searchValue = query !== undefined ? query : search;
 
   // Timeline state
-  const [timelineDays, setTimelineDays] = useState<TimelineDay[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(true);
+  const [timelineDays, setTimelineDays] = useState<TimelineDay[]>(() => lastKept<TimelineDay[]>(api("/api/memory/timeline")) ?? []);
+  const [timelineLoading, setTimelineLoading] = useState(() => lastKept(api("/api/memory/timeline")) === undefined);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [timelineContent, setTimelineContent] = useState("");
 
   // Recent state
-  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
-  const [recentLimit, setRecentLimit] = useState(50);
-  const [recentLoading, setRecentLoading] = useState(true);
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>(() => lastKept<{ events: RecentEvent[] }>(api("/api/memory/recent"))?.events ?? []);
+  const [recentLimit, setRecentLimit] = useState(() => lastKept<{ limit: number | null }>(api("/api/memory/recent"))?.limit ?? 50);
+  const [recentLoading, setRecentLoading] = useState(() => lastKept(api("/api/memory/recent")) === undefined);
 
   // Core state
   const [coreView, setCoreView] = useState<"injected" | "records">("injected");
-  const [coreInjected, setCoreInjected] = useState("");
-  const [coreMeta, setCoreMeta] = useState<{
-    size: number;
-    mtime: number;
-    renderedSize: number;
-    renderedMtime: number;
-    renderedTokens: number;
-    injectedTokens: number;
-    injectionEnabled: boolean;
-    budgetTokens: number;
-  } | null>(null);
-  const [coreLoading, setCoreLoading] = useState(true);
+  const [core, setCore] = useState<CoreState | null>(() => lastKept<CoreState>(api("/api/memory/core")) ?? null);
+  const coreInjected = core?.injected ?? "";
+  const coreMeta = core?.meta ?? null;
+  const coreLoading = core === null;
 
+  const showTopics = useCallback((pages: TopicPage[]) => {
+    setTopicPages(pages);
+    setExpandedFolders(topicFolders(pages));
+    setTopicsLoading(false);
+  }, []);
+  // Refresh, and after a change here: one read; a failure keeps the list.
   const fetchTopics = useCallback(() => {
-    setTopicsLoading(true);
-    fetch(api("/api/memory/topics"))
-      .then((r) => r.json())
-      .then((pages) => {
-        const content = Array.isArray(pages) ? pages : [];
-        setTopicPages(content);
-        const folders = new Set<string>();
-        for (const p of content) {
-          const parts = p.path.split("/");
-          if (parts.length > 1) folders.add(parts[0]);
-        }
-        setExpandedFolders(folders);
-        setTopicsLoading(false);
-      })
-      .catch(() => setTopicsLoading(false));
-  }, [api]);
+    const url = api("/api/memory/topics");
+    readKept(url, () => readTopics(url)).then(showTopics).catch(quiet("topic list"));
+  }, [api, showTopics]);
   const refreshTopics = (
     <RailAction label={t("sidebar.refresh")} onClick={fetchTopics}>
       <RefreshCwIcon size={14} />
     </RailAction>
   );
 
-  useEffect(() => { fetchTopics(); }, [fetchTopics]);
-
+  // Opening: the four reads side by side, each tried again until it answers.
   useEffect(() => {
-    fetch(api("/api/memory/timeline"))
-      .then((r) => r.json())
-      .then((data) => { setTimelineDays(Array.isArray(data) ? data : []); setTimelineLoading(false); })
-      .catch(() => setTimelineLoading(false));
-  }, [api]);
+    const controller = new AbortController();
+    const { signal } = controller;
+    const topics = api("/api/memory/topics");
+    const timeline = api("/api/memory/timeline");
+    const recent = api("/api/memory/recent");
+    const coreUrl = api("/api/memory/core");
+    readUntilAnswered(topics, () => readTopics(topics), signal).then(showTopics).catch(quiet("topic list"));
+    readUntilAnswered(timeline, () => readTimeline(timeline), signal)
+      .then((days) => { setTimelineDays(days); setTimelineLoading(false); })
+      .catch(quiet("timeline"));
+    readUntilAnswered(recent, () => readRecent(recent), signal)
+      .then(({ events, limit }) => { setRecentEvents(events); if (limit) setRecentLimit(limit); setRecentLoading(false); })
+      .catch(quiet("recent"));
+    readUntilAnswered(coreUrl, () => readCore(coreUrl), signal).then(setCore).catch(quiet("core"));
+    return () => controller.abort();
+  }, [api, showTopics]);
 
-  useEffect(() => {
-    fetch(api("/api/memory/recent"))
-      .then((r) => {
-        const limit = Number(r.headers.get("X-Memory-Recent-Limit"));
-        if (Number.isInteger(limit) && limit > 0) setRecentLimit(limit);
-        return r.json();
-      })
-      .then((data) => { setRecentEvents(Array.isArray(data) ? data : []); setRecentLoading(false); })
-      .catch(() => setRecentLoading(false));
-  }, [api]);
-
+  // After Core is saved: one read; a failure keeps what is shown.
   const fetchCore = useCallback(() => {
-    return fetch(api("/api/memory/core"))
-      .then((r) => {
-        if (!r.ok) throw new Error(`Core request failed: ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        setCoreInjected(data.injected_content ?? "");
-        setCoreMeta({
-          size: data.size ?? 0,
-          mtime: data.mtime ?? 0,
-          renderedSize: data.rendered_size ?? 0,
-          renderedMtime: data.rendered_mtime ?? 0,
-          renderedTokens: data.rendered_tokens ?? 0,
-          injectedTokens: data.injected_tokens ?? 0,
-          injectionEnabled: data.injection_enabled ?? true,
-          budgetTokens: data.budget_tokens ?? 2000,
-        });
-        setCoreLoading(false);
-      })
-      .catch(() => setCoreLoading(false));
+    const url = api("/api/memory/core");
+    return readKept(url, () => readCore(url)).then(setCore).catch(quiet("core"));
   }, [api]);
-
-  useEffect(() => { void fetchCore(); }, [fetchCore]);
 
   const openTopic = useCallback((page: TopicPage) => {
     setSelectedTopic(page);
   }, []);
+  // A topic deleted elsewhere closes, and the list is read again without it.
+  const closeGoneTopic = useCallback(() => {
+    setSelectedTopic(null);
+    fetchTopics();
+  }, [fetchTopics]);
+  const showInjectedCore = useCallback(() => setCoreView("injected"), []);
 
   // Resolve a wikilink target to a known page (match by slug or title)
   const resolveWikilink = useCallback((target: string): TopicPage | null => {
@@ -220,17 +212,22 @@ export function MemoryPage({
       // A refused delete says why (a block another topic still links to,
       // for one), so show the reason instead of swallowing it — same as
       // the PUT path above.
-      const detail = await r.json().catch(() => ({}));
-      showToast(detail.error || text("Delete failed", "删除失败"), { tone: "error" });
+      const detail = await r.json().catch(() => ({})) as { error?: unknown };
+      showToast(errorDetailText(detail.error, text("Delete failed", "删除失败")), { tone: "error" });
     }
   }
 
+  const selectedDay = useRef(selectedDate);
+  selectedDay.current = selectedDate;
+  // A day's record: the kept one at once, then read again.
   function openTimelineDay(date: string) {
+    selectedDay.current = date;
+    const url = api(`/api/memory/timeline/${date}`);
     setSelectedDate(date);
-    setTimelineContent("");
-    fetch(api(`/api/memory/timeline/${date}`))
-      .then((r) => r.json())
-      .then((data) => setTimelineContent(data.content ?? ""));
+    setTimelineContent(lastKept<string>(url) ?? "");
+    readKept(url, () => readTimelineDay(url))
+      .then((content) => { if (selectedDay.current === date) setTimelineContent(content); })
+      .catch(quiet("timeline day"));
   }
 
   function toggleFolder(folder: string) {
@@ -310,7 +307,7 @@ export function MemoryPage({
                   {!topicsLoading && <RailCount>{filteredTopics.length}</RailCount>}
                 </RailGroupLabel>
               )}
-              {topicsLoading ? <LoadingSkeleton /> : filteredTopics.length === 0 ? (
+              {topicsLoading ? null : filteredTopics.length === 0 ? (
                 // Only the search miss lives in the rail; the plain empty
                 // state is the right pane's emptyPanel — showing both said
                 // "no topics" twice side by side.
@@ -354,6 +351,7 @@ export function MemoryPage({
                     onDelete={deleteTopic}
                     onSaved={refreshStatus}
                     onRemovedChange={fetchTopics}
+                    onGone={closeGoneTopic}
                     onPreviewClick={handlePreviewClick}
                   />
                 ) : !topicsLoading && topicPages.length === 0 && !searchValue ? (
@@ -381,7 +379,7 @@ export function MemoryPage({
           {tab === "timeline" && (
             <>
               <SecondaryRail as="aside" className={styles.tree} label={text("Timeline", "时间线")}>
-              {timelineLoading ? <LoadingSkeleton /> : timelineGroups.length === 0 ? (
+              {timelineLoading ? null : timelineGroups.length === 0 ? (
                 <EmptyState
                   icon="clock"
                   text={text("No timeline yet", "还没有时间线")}
@@ -464,7 +462,7 @@ export function MemoryPage({
                       </div>
                     </div>
                     <div className="flex-1 overflow-y-auto min-h-0">
-                      <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: timelineContent ? renderMarkdown(timelineContent) : `<em>${text("Loading...", "加载中...")}</em>` }} />
+                      <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: timelineContent ? renderMarkdown(timelineContent) : "" }} />
                     </div>
                   </div>
                 ) : (
@@ -479,9 +477,7 @@ export function MemoryPage({
             <>
               <SecondaryRail as="aside" className={`${styles.tree} ${styles.treeEmpty}`} label={text("Recent", "最近")}>{null}</SecondaryRail>
               <div className={styles.rightPane}>
-                {recentLoading ? (
-                  <LoadingSkeleton />
-                ) : recentEvents.length === 0 ? (
+                {recentLoading ? null : recentEvents.length === 0 ? (
                   <Placeholder icon="clock" text={text("Nothing written yet", "还没有写入任何内容")} />
                 ) : (
                   <div className={styles.editor}>
@@ -569,9 +565,7 @@ export function MemoryPage({
                     </div>
                   )}
                 </div>
-                {coreLoading ? (
-                  <LoadingSkeleton />
-                ) : coreView === "records" ? (
+                {coreLoading ? null : coreView === "records" ? (
                   <MemoryDocument
                     title={text("Core source records", "核心源记录")}
                     meta={["topics/core.md"]}
@@ -579,6 +573,7 @@ export function MemoryPage({
                     path="core.md"
                     url={api("/api/memory/core")}
                     onSaved={fetchCore}
+                    onGone={showInjectedCore}
                   />
                 ) : (
                   <div className={styles.editor}>

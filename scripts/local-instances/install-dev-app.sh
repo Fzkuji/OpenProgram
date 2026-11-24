@@ -8,7 +8,7 @@ set -euo pipefail
 # ~/.openprogram-dev/runtime, and Resources/instance.json points the shell at
 # it (apps/desktop/main/instance.js). The shell is built whole from this
 # checkout (scripts/release/build-desktop-shell.sh), Electron included, so a
-# new Electron runs here before promotion brings it to the stable App. The
+# new Electron runs here before a release brings it to the stable App. The
 # stable App, its runtime and its worker are never touched.
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -36,10 +36,33 @@ work_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-dev-app.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 stage="$work_dir/$dev_name.app"
 
-stamp "building the Desktop shell of ${revision:0:10}"
-OPENPROGRAM_LOCAL_PYTHON="$local_python" \
-  "$repo_root/scripts/release/build-desktop-shell.sh" "$work_dir/shell"
-mv "$work_dir/shell/OpenProgram.app" "$stage"
+# The shell is built from apps/desktop and the installed packages. A deploy
+# that changed neither takes the shell the last one built, kept beside the
+# runtime, and goes on to name, sign and install it as before.
+shell_cache="$state_dir/desktop-shell"
+shell_inputs=""
+if test -z "$(git -C "$repo_root" status --porcelain --untracked-files=all 2>/dev/null || echo unknown)"; then
+  shell_inputs="$({ node --version; git -C "$repo_root" ls-tree -r HEAD -- apps/desktop package.json \
+    package-lock.json scripts/release/build-desktop-shell.sh; } | shasum -a 256 | cut -d' ' -f1)"
+fi
+if test -n "$shell_inputs" && test -d "$shell_cache/OpenProgram.app" \
+  && test "$shell_inputs" = "$(cat "$shell_cache/inputs" 2>/dev/null)"; then
+  stamp "the Desktop shell is unchanged; installing it for ${revision:0:10}"
+  cp -c -R -p "$shell_cache/OpenProgram.app" "$stage" 2>/dev/null \
+    || { rm -rf "$stage"; cp -R -p "$shell_cache/OpenProgram.app" "$stage"; }
+else
+  stamp "building the Desktop shell of ${revision:0:10}"
+  OPENPROGRAM_LOCAL_PYTHON="$local_python" \
+    "$repo_root/scripts/release/build-desktop-shell.sh" "$work_dir/shell"
+  rm -rf "$shell_cache"
+  if test -n "$shell_inputs"; then
+    mkdir -p "$shell_cache"
+    cp -c -R -p "$work_dir/shell/OpenProgram.app" "$shell_cache/OpenProgram.app" 2>/dev/null \
+      || { rm -rf "$shell_cache/OpenProgram.app"; cp -R -p "$work_dir/shell/OpenProgram.app" "$shell_cache/OpenProgram.app"; }
+    printf '%s\n' "$shell_inputs" > "$shell_cache/inputs"
+  fi
+  mv "$work_dir/shell/OpenProgram.app" "$stage"
+fi
 plist="$stage/Contents/Info.plist"
 plutil -replace CFBundleIdentifier -string "$dev_identifier" "$plist"
 # CFBundleName stays: Electron finds "<CFBundleName> Helper.app" by it.

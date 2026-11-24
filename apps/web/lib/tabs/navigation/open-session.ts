@@ -8,11 +8,13 @@ import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useSessionStore } from "@/lib/session-store";
 import { isDraftSession, sessionWasSent, useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
 import { pushPath } from "@/lib/nav/shallow-nav";
+import { preloadSession } from "./preload-session";
 
 /** Mirrors a sidebar row click: the active session tab navigates (a web or
  *  file tab gets a session tab), then the route follows. ``newTab`` keeps
  *  the active tab and opens the session beside it. */
 export function openSession(sessionId: string, options?: { newTab?: boolean }): void {
+  preloadSession(sessionId);
   const conv = useSessionStore.getState().conversations[sessionId];
   useCenterTabs.getState().openSessionTab(sessionId, (conv && displayTitle(conv)) || "", options);
   pushPath("/s/" + sessionId);

@@ -1,20 +1,25 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
-import { setQueryClient } from "@/lib/query-client";
-import { waitForOwnerAuthBootstrap } from "@/lib/net/auth/owner-auth-bootstrap";
+import { createAppQueryClient, followQueryTopics, setQueryClient } from "@/lib/query-client";
+import { PAIRING_FAILURE, waitForOwnerAuthBootstrap } from "@/lib/net/auth/owner-auth-bootstrap";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 
+const OWNER_AUTH_FAILURE =
+  "Owner authentication failed. Open a new authenticated URL and try again.";
+
 function OwnerAuthBoundary({ children }: { children: ReactNode }) {
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     void waitForOwnerAuthBootstrap().then(
       () => {},
-      () => {
-        if (active) setFailed(true);
+      (error: unknown) => {
+        if (!active) return;
+        const pairing = error instanceof Error && error.message === PAIRING_FAILURE;
+        setFailed(pairing ? PAIRING_FAILURE : OWNER_AUTH_FAILURE);
       },
     );
     return () => {
@@ -22,28 +27,22 @@ function OwnerAuthBoundary({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  if (failed) {
-    return (
-      <main role="alert">
-        Owner authentication failed. Open a new authenticated URL and try again.
-      </main>
-    );
+  if (failed !== null) {
+    return <main role="alert">{failed}</main>;
   }
   return children;
 }
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(() => {
-    const c = new QueryClient({
-      defaultOptions: {
-        queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 },
-      },
-    });
+    const c = createAppQueryClient();
     // Publish for non-React callers (use-ws invalidates query caches on
     // server pushes, e.g. agent_settings_changed -> models-enabled).
     setQueryClient(c);
     return c;
   });
+  // Cached answers stay fresh until the Worker says what they read changed.
+  useEffect(() => followQueryTopics(client), [client]);
   return (
     <OwnerAuthBoundary>
       <QueryClientProvider client={client}>

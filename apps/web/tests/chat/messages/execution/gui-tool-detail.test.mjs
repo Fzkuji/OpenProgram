@@ -32,7 +32,7 @@ const { DetailPanel } = await import(pathToFileURL(file));
 const en = s => s;
 const output = {
   status: 'infeasible', blocker: 'Window closed', handoff_instruction: 'Reopen TextEdit',
-  history: [{type: 'capability_call', step: 1, capability: 'computer_use', input: {app_name: 'TextEdit'},
+  history: [{type: 'capability_call', step: 1, capability: 'vm_use', input: {app_name: 'TextEdit'},
     output: {status: 'applied', success: true, step: {plan: {call: 'window_press'}, screenshot_artifact: '/tmp/recorded.png'}}}],
 };
 function render(value = output, extra = {}) {
@@ -53,7 +53,7 @@ test('Details renders recorded GUI steps and handoff in place of the transport s
   assert.match(html, /aria-label="GUI activity"/);
   assert.match(html, /Needs takeover/);
   assert.match(html, /Reopen TextEdit/);
-  assert.match(html, /Computer Use/);
+  assert.match(html, /VM Use/);
   assert.doesNotMatch(html, /detail-badge/, 'a completed transport status would contradict the GUI outcome');
   assert.doesNotMatch(html, /<img|<button/);
   assert.match(render(output, {name: 'custom_tool'}), /detail-badge/);
@@ -69,7 +69,7 @@ test('a summary that repeats the handoff is shown once', () => {
 test('failed steps carry their reason; applied steps stay one line', () => {
   const view = guiToolView({name: 'gui_agent', status: 'completed', output: {history: [
     {type: 'capability_call', capability: 'browser_use', input: {url: 'https://a.test'}, output: {status: 'failed', summary: 'Page is private'}},
-    {type: 'capability_call', capability: 'computer_use', input: {app_name: 'Photos'}, output: {status: 'applied', success: true, summary: 'Pressed'}},
+    {type: 'capability_call', capability: 'vm_use', input: {app_name: 'Photos'}, output: {status: 'applied', success: true, summary: 'Pressed'}},
   ]}});
   assert.deepEqual(view.steps.map(s => [s.target, s.status, s.reason]),
     [['https://a.test', 'failed', 'Page is private'], ['Photos', 'applied', '']]);
@@ -82,21 +82,21 @@ test('the timeline note uses the same status as Details', () => {
 });
 
 test('history is ordered and takes precedence over duplicated capability children', () => {
-  const history = ['computer_use', 'browser_use', 'vm_use'].map((capability, step) => ({
+  const history = ['vm_use', 'browser_use'].map((capability, step) => ({
     type: 'capability_call', capability, step: step + 1, output: { status: 'applied', success: true },
   }));
   const view = guiToolView({ name: 'gui_agent', status: 'completed', output: {history},
-    tree_root: {children: [{name: 'computer_use', output: {status: 'applied'}}]} });
-  assert.deepEqual(view.steps.map(step => step.capability), ['computer_use', 'browser_use', 'vm_use']);
+    tree_root: {children: [{name: 'vm_use', output: {status: 'applied'}}]} });
+  assert.deepEqual(view.steps.map(step => step.capability), ['vm_use', 'browser_use']);
   assert.equal(view.status, 'unknown', 'completed function is not a verified task');
 });
 
 test('running calls use visible capability results without duplicating nested planners', () => {
   const view = guiToolView({ name: 'gui_agent', status: 'running', tree_root: {children: [
-    { name: 'computer_use', status: 'completed', params: {app_name: 'TextEdit'},
-      output: {status:'applied',success:true}, children:[{name:'computer_use'}] },
+    { name: 'vm_use', status: 'completed', params: {app_name: 'TextEdit'},
+      output: {status:'applied',success:true}, children:[{name:'vm_use'}] },
     { name: 'browser_use', status: 'running', params: {url: 'https://example.com'} },
-    { name: 'vm_use', expose: 'hidden' },
+    { name: 'browser_use', expose: 'hidden' },
   ]} });
   assert.equal(view.status, 'running');
   assert.deepEqual(view.steps.map(s => s.status), ['applied', 'running']);
@@ -108,7 +108,7 @@ test('failure, cancellation and takeover do not become successful completion', (
   assert.equal(guiStatus({status: 'succeeded'}, 'cancelled'), 'cancelled');
   assert.equal(guiStatus({status: 'infeasible', success: false}), 'infeasible');
   assert.equal(guiStatus({success: true}, 'completed'), 'unknown');
-  const view = guiToolView({name:'computer_use',status:'completed',output:{status:'applied',step:{exec_result:{success:false,error:'Control unavailable'}}}});
+  const view = guiToolView({name:'vm_use',status:'completed',output:{status:'applied',step:{exec_result:{success:false,error:'Control unavailable'}}}});
   assert.equal(view.status, 'failed');
   assert.equal(view.summary, 'Control unavailable');
   assert.equal(view.steps.length, 0, 'a direct call is its own header, not a one-item list');
@@ -139,6 +139,4 @@ test('the public computer_use tool is not a GUI Agent step', () => {
   const output = 'Done: pressed button "7".\n\nApp: Calculator';
   assert.equal(guiToolView({name: 'computer_use', status: 'completed', output, params}), null);
   assert.equal(guiResultNote('computer_use', output, 'completed', (e) => e, params), '');
-  assert.notEqual(guiToolView({name: 'computer_use', status: 'completed', output: {status: 'applied'},
-    params: {task: 'inspect', app_name: 'TextEdit'}}), null);
 });

@@ -19,7 +19,7 @@ bounded time, until
 the worker says the execution has ended. The command then says whether
 the turn stopped or may still be running.
 
-The turn outlives the socket. A worker restart (a refresh, a promote)
+The turn outlives the socket. A worker restart (a deploy, an update)
 closes every connection while the execution checkpoints and resumes on
 the worker that comes back; once the ack has named the execution, the
 relay reconnects, reads where the execution stands and follows the same
@@ -984,7 +984,7 @@ def run_turn_via_worker(
     text deltas as they arrive; ``ask`` answers a ``follow_up_question``
     frame, ``None`` meaning no answer.
 
-    A worker restart (a refresh, a promote) closes the socket while the
+    A worker restart (a deploy, an update) closes the socket while the
     execution goes on, or resumes, on the worker that comes back. Once the
     ack has named the execution, the relay reconnects (``reconnect`` finds
     the worker again, :func:`resolve_worker` by default), reads where the

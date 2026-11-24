@@ -156,15 +156,37 @@ def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonS
         raise StructuredOutputSchemaError(
             "max_validation_retries must be 0, 1 or 2", code="invalid_schema"
         )
+    _check_schema(output.schema)
+    return output
+
+
+# Schemas the metaschema has already passed, by their canonical text. One
+# schema is normalized again for every request and every stored record that
+# carries it (a Worker start checked the verifier's 60 times, 5 ms each);
+# the check depends on nothing but the schema, so a pass is kept.
+_CHECKED_SCHEMAS: dict[str, None] = {}
+_CHECKED_SCHEMAS_KEPT = 256
+
+
+def _check_schema(schema: dict[str, Any]) -> None:
     try:
-        validator_cls = validators.validator_for(output.schema)
-        validator_cls.check_schema(output.schema)
+        key: str | None = json.dumps(schema, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError, RecursionError):
+        key = None  # not plain JSON: checked every time
+    if key is not None and key in _CHECKED_SCHEMAS:
+        return
+    try:
+        validator_cls = validators.validator_for(schema)
+        validator_cls.check_schema(schema)
     except (SchemaError, RecursionError) as exc:
         message = getattr(exc, "message", "recursive metaschema validation failed")
         raise StructuredOutputSchemaError(
             f"Invalid JSON Schema: {message}", code="invalid_schema"
         ) from exc
-    return output
+    if key is not None:
+        if len(_CHECKED_SCHEMAS) >= _CHECKED_SCHEMAS_KEPT:
+            _CHECKED_SCHEMAS.pop(next(iter(_CHECKED_SCHEMAS)))
+        _CHECKED_SCHEMAS[key] = None
 
 
 def _reject_constant(value: str) -> None:

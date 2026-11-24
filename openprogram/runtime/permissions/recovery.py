@@ -28,7 +28,7 @@ def is_inspection_tool(tool) -> bool:
 # Tools that operate a screen. What an interrupted step of theirs changed can
 # be read off the screen, and the report of the interruption tells the model
 # to look before repeating it, so it needs no notice of its own.
-SCREEN_TOOLS = frozenset({"computer_use_agent", "computer_use"})
+SCREEN_TOOLS = frozenset({"computer_use"})
 
 
 def _stuck_effects(connection) -> list[dict]:
@@ -149,8 +149,8 @@ def uncertain_operations(request) -> list[dict[str, str]]:
         if kind == "provider.before":
             continue
         if name is None and kind == "gui.primitive":
-            # A step of computer_use_agent code, recorded by its GUI broker.
-            name = "computer_use_agent"
+            # A step of computer_use code, recorded by its GUI broker.
+            name = "computer_use"
         result.append({"effect_id": row["effect_id"], "execution_id": row["execution_id"],
                        "action_id": row["action_id"], "tool": name if isinstance(name, str) else "unknown"})
     return result

@@ -14,9 +14,9 @@ import threading
 import time
 from typing import Any
 
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import keys as keymap
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop.macos import _Frameworks
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop.tree import role_name
+from openprogram.programs.tools.computer_use.computer_use.desktop import keys as keymap
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import _Frameworks
+from openprogram.programs.tools.computer_use.computer_use.desktop.tree import role_name
 
 from .session import Recording, RecordingError
 

@@ -42,8 +42,8 @@ STALL_MINUTES = 10
 MAX_AGENT_HOURS = 2
 TREE_COST_REASON = "budget.tree_cost_exhausted"
 RUNTIME_REASON = "budget.runtime_exhausted"
-# How often the runner's budget loop runs these checks; they read Job
-# files and the ledger, so they do not run on every 0.25 s tick.
+# The least time between two spend checks: each helper usage write asks for
+# one, and they read Job files and the ledger.
 CHECK_EVERY_S = 5.0
 
 

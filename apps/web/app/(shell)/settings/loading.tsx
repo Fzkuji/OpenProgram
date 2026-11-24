@@ -1,52 +1,12 @@
-"use client";
-
-import { usePathname } from "next/navigation";
-import { useTranslation } from "@/lib/i18n";
 import styles from "../../../components/settings/settings-page.module.css";
 
 /**
- * Suspense fallback for /settings/<tab>. Renders immediately when the
- * router transitions, before the next page.tsx's chunk is fetched +
- * compiled. The OLD page is unmounted right away — no more "click,
- * nothing happens for a second, snap to new page" jank.
- *
- * The generic skeleton keeps the destination page's stable chrome:
- *
- * 1. The real page TITLE is rendered synchronously (no JS work — it's
- *    just a string keyed off pathname). The user sees "Channels"
- *    appear the instant they click the Channels tab, instead of a
- *    grey rectangle. The body is still a skeleton until the page
- *    chunk lands.
+ * Suspense fallback for /settings/<tab>, shown only while the tab's chunk
+ * is still on its way: the settings page's empty surface, with no title,
+ * no "Loading…" and no skeleton. Every settings tab is prefetched once the
+ * first page has painted (components/app-shell.tsx), so a tab click
+ * normally finds its chunk loaded and this never shows.
  */
-const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"|"settings.tab.memory"|"settings.tab.usage"|"settings.tab.system"|"settings.tab.browser"> = {
-  providers: "settings.tab.providers",
-  search: "settings.tab.search",
-  channels: "settings.tab.channels",
-  general: "settings.tab.general",
-  memory: "settings.tab.memory",
-  usage: "settings.tab.usage",
-  system: "settings.tab.system",
-  browser: "settings.tab.browser",
-};
-
 export default function SettingsLoading() {
-  const { t } = useTranslation();
-  const pathname = usePathname() || "";
-  const tab = pathname.split("/")[2] || "general";
-  const key = TAB_KEYS[tab];
-  const title = key ? t(key) : t("settings.title");
-
-  return (
-    <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>{title}</h2>
-        <div className={styles.skelMeta} />
-      </div>
-      <div className={styles.pageBody}>
-        <div className={styles.skelBlock} />
-        <div className={styles.skelBlock} />
-        <div className={styles.skelBlockShort} />
-      </div>
-    </div>
-  );
+  return <div className={styles.page} data-route-pending="" />;
 }

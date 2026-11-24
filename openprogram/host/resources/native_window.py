@@ -1,10 +1,14 @@
 """The native app window an Agent operates, for the conversation's preview.
 
 A GUI step that acted on a macOS window returns that window's identity as
-``target`` (window_id, pid, app_name) together with the screenshot it
-observed. The worker keeps the latest frame per conversation and tells the
+``window`` (window_id, pid, app_name) together with the screenshot it
+observed. ``target`` is not used for it: that word is the address a
+computer-use call writes (``type="window"``, ``device="lab"``). The worker keeps the latest frame per conversation and tells the
 App, so the chat preview follows desktop apps the way it follows web pages.
 Frames live in memory only: they are what the Agent saw, not a record.
+
+A built-in application an Agent uses through its resource provider is
+announced the same way (``application.used``), so the preview follows it too.
 """
 from __future__ import annotations
 
@@ -27,10 +31,10 @@ def operated_window(output: Any) -> dict[str, Any] | None:
     """The window a function result says it acted on, if it names one."""
     if not isinstance(output, Mapping):
         return None
-    target = output.get("target")
-    if not isinstance(target, Mapping):
+    window = output.get("window")
+    if not isinstance(window, Mapping):
         return None
-    window_id, pid, app_name = target.get("window_id"), target.get("pid"), target.get("app_name")
+    window_id, pid, app_name = window.get("window_id"), window.get("pid"), window.get("app_name")
     if type(window_id) is not int or type(pid) is not int or not isinstance(app_name, str):
         return None
     return {"window_id": window_id, "pid": pid, "app_name": app_name[:120]}
@@ -106,7 +110,7 @@ def record_operated_window(
 
     The caller names the conversation; a subprocess's own claim is not used.
     """
-    window = operated_window({"target": observed})
+    window = operated_window({"window": observed})
     if window is None or not session_id:
         return
     frame = observed.get("frame")
@@ -218,6 +222,60 @@ def record_action_point(observed: Mapping[str, Any], *, session_id: str) -> None
         _log.debug("native action broadcast failed", exc_info=True)
 
 
+_application_sequences: dict[str, int] = {}
+
+
+def note_used_application(application_id: str, instance_id: str, title: str = "") -> None:
+    """Tell the App that an Agent step used an instance of a built-in application.
+
+    Never raises: the step it reports has already happened.
+    """
+    try:
+        if not isinstance(application_id, str) or not isinstance(instance_id, str):
+            return
+        if not application_id or not instance_id:
+            return
+        session_id, execution_id = _owner()
+        observed = {"kind": "application", "application_id": application_id[:200],
+                    "instance_id": instance_id[:200], "title": str(title or "")[:200],
+                    "execution_id": execution_id or ""}
+        if _forward is not None:
+            _forward(observed)
+            return
+        if session_id:
+            record_used_application(observed, session_id=session_id)
+    except Exception:
+        _log.debug("used application not announced", exc_info=True)
+
+
+def record_used_application(
+    observed: Mapping[str, Any], *, session_id: str, execution_id: str | None = None,
+) -> None:
+    """Announce the application instance a conversation's Agent used.
+
+    The caller names the conversation; a subprocess's own claim is not used.
+    """
+    application_id, instance_id = observed.get("application_id"), observed.get("instance_id")
+    if not session_id or not isinstance(application_id, str) or not isinstance(instance_id, str):
+        return
+    if not application_id or not instance_id:
+        return
+    with _lock:
+        sequence = _application_sequences.get(session_id, 0) + 1
+        _application_sequences[session_id] = sequence
+    data = {
+        "session_id": session_id,
+        "execution_id": str(execution_id or observed.get("execution_id") or ""),
+        "application_id": application_id[:200], "instance_id": instance_id[:200],
+        "title": str(observed.get("title") or "")[:200], "sequence": sequence, "at": time.time(),
+    }
+    try:
+        from openprogram.host import runtime_facts
+        runtime_facts.broadcast({"type": "application.used", "data": data})
+    except Exception:
+        _log.debug("used application broadcast failed", exc_info=True)
+
+
 def public_window(entry: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: entry[key]
@@ -233,6 +291,6 @@ def latest_window(session_id: str) -> dict[str, Any] | None:
 
 __all__ = [
     "control_owner", "forward_to_parent", "latest_window", "note_action_point", "note_control",
-    "note_operated_window", "operated_window", "public_window", "record_action_point", "record_control",
-    "record_operated_window",
+    "note_operated_window", "note_used_application", "operated_window", "public_window", "record_action_point",
+    "record_control", "record_operated_window", "record_used_application",
 ]

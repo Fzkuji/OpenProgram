@@ -22,10 +22,10 @@ def test_records_past_retention_are_dropped_with_their_output(store):
     now = 1_000_000.0
     old = now - RETENTION_SECONDS - 1
     gone = _record(store, status="exited", exit_code=0, ended_at=old, background=True, reported=True)
-    silent = _record(store, status="unknown", ended_at=None, heartbeat=old)
+    silent = _record(store, status="unknown", ended_at=None, lost_at=old)
     recent = _record(store, status="exited", exit_code=0, ended_at=now - 60, reported=True)
     unseen = _record(store, status="exited", exit_code=1, ended_at=old, background=True, reported=False)
-    running = _record(store, status="running", heartbeat=now)
+    running = _record(store, status="running")
 
     # A notice a day late is stale, so an unseen exit goes too.
     assert store.prune(now) == 3

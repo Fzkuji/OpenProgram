@@ -259,7 +259,7 @@ class MacWindow:
         if self.capture_only:
             name = str((plan or {}).get("call") or "action")
             return {"success": False, "action_status": "refused", "reason_code": "window_controls_unavailable",
-                    "target": self.identity, "control_id": None,
+                    "window": self.identity, "control_id": None,
                     "error": f"{name} refused: this window is observed by screenshot only."}
         self._deadline = time.monotonic() + 10
         try:
@@ -301,7 +301,7 @@ class MacWindow:
         if code != 0:
             raise WindowUnavailable(f"Accessibility action failed ({code}); no foreground fallback")
         self.element_bounds[token] = bounds
-        return {"success": True, "action_status": "applied", "target": self.identity,
+        return {"success": True, "action_status": "applied", "window": self.identity,
                 "control_id": token, "control_bounds": bounds}
 
 

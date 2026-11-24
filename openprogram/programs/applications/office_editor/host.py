@@ -10,7 +10,9 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi.responses import Response, StreamingResponse
+# starlette, not fastapi.responses: the same classes without importing the whole of FastAPI
+# (0.05 s) into every process that loads the Programs.
+from starlette.responses import Response, StreamingResponse
 
 from openprogram.host.security.backend_endpoint import OwnerAuthError, canonicalize_origin, is_loopback_host
 

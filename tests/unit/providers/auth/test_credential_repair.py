@@ -114,7 +114,7 @@ def test_adding_a_key_a_variable_holds_stores_it(tmp_path, monkeypatch):
         out = manage.add_api_key("openai", ENV_VALUE, validate=False)
     finally:
         set_store_for_testing(None)
-    keys = [c.payload.auth_value for c in store.stored("openai").credentials if c.source != "env"]
+    keys = [c.payload.auth_value for c in store.get("openai").credentials if c.source != "env"]
     assert out["ok"] and keys == [ENV_VALUE]
     assert [c.id for c in store.get("openai").credentials] == [out["credential"]["id"]], "listed once"
 

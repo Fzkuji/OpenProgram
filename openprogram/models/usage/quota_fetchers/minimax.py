@@ -1,6 +1,7 @@
 """MiniMax token plan: windows from ``GET /v1/token_plan/remains``.
 
-Unverified: the shape is Oh My Pi's (``packages/ai/src/usage/minimax-code.ts``)
+The plan belongs to the Token Plan providers; the pay-as-you-go ids have no
+such endpoint. The shape is Oh My Pi's, confirmed by a real response (``packages/ai/src/usage/minimax-code.ts``)
 and MiniMax Code's: ``model_remains[]`` buckets, each with an interval
 (``start_time``, ``end_time``, ``current_interval_remaining_percent``,
 ``current_interval_status``) and a week (``weekly_*``). Status 2 is spent;
@@ -14,15 +15,18 @@ from urllib.parse import urlsplit
 
 from ..quota import SOURCE_ENDPOINT, STATUS_EXHAUSTED, QuotaLimit, window_label
 
-PROVIDERS = ("minimax", "minimax-cn")
-VERIFIED = False
+PROVIDERS = ("minimax-coding-plan", "minimax-cn-coding-plan")
+VERIFIED = True
+#: A 401 here says the plan does not know this key or sign-in, not that
+#: requests with it fail, so it marks nothing on the credential.
+REFUSAL_IS_THE_KEYS = False
 ENDPOINT = "GET https://api.minimax.io/v1/token_plan/remains"
 SHAPE_FROM = "oh-my-pi packages/ai/src/usage/minimax-code.ts"
-_ORIGINS = {"minimax": "https://api.minimax.io", "minimax-cn": "https://api.minimaxi.com"}
+_ORIGINS = {"minimax-coding-plan": "https://api.minimax.io", "minimax-cn-coding-plan": "https://api.minimaxi.com"}
 
 
 def request(cred: Any) -> tuple[str, dict, Optional[str]]:
-    origin = _ORIGINS.get(cred.provider, _ORIGINS["minimax"])
+    origin = _ORIGINS.get(cred.provider, _ORIGINS["minimax-coding-plan"])
     if cred.base_url:
         parts = urlsplit(cred.base_url)
         if parts.scheme and parts.netloc:

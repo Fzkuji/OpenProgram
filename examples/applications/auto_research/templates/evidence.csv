@@ -1,0 +1,2 @@
+id,claim,statement,source,script
+E1,C1,The number or observation as it will appear in the paper,analysis/file.csv,scripts/make_file.py

@@ -1,6 +1,7 @@
 import { decodeHTMLAttribute } from "entities";
-import { Marked, type TokenizerExtension, type RendererExtension } from "marked";
-import { cjkEmphasis } from "@/lib/markdown/cjk-emphasis";
+import { Marked } from "marked";
+import { proseMarkdown } from "@/lib/markdown/prose";
+import { mathMarkdown } from "@/lib/markdown/math";
 import { markdownTokenDestination } from "@/lib/files/markdown-paths";
 import { obsidianExtensions, sectionKey } from "./obsidian-document";
 
@@ -9,27 +10,13 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-// Extensions run on lexer input, so code tokens remain literal. Math produces
-// escaped text nodes for KaTeX, never a post-parse raw HTML replacement.
-function mathExtension(block: boolean): TokenizerExtension & RendererExtension {
-  const name = block ? "documentBlockMath" : "documentInlineMath";
-  const pattern = block ? /^(?:\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\])(?:\n|$)/
-    : /^(?:\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/;
-  return {
-    name, level: block ? "block" : "inline",
-    ...(!block ? { start(source: string) { const index = source.search(/\$|\\[([]/); return index < 0 ? undefined : index; } } : {}),
-    tokenizer(source) { const match = pattern.exec(source); if (match) return { type: name, raw: match[0], text: match[0] }; },
-    renderer(token) { const tag = block ? "div" : "span"; return `<${tag}>${escapeHtml(token.text)}</${tag}>`; },
-  };
-}
-
 /** `obsidian` adds Obsidian's reading-view syntax (callouts, highlights,
  *  tags, wikilinks) for file previews. */
 export function createDocumentMarkdown(resolveImage?: (src: string) => string | null, obsidian = false): Marked {
   const headings = new Set<string>();
-  return new Marked(cjkEmphasis, {
+  return new Marked(...proseMarkdown, mathMarkdown, {
     hooks: { preprocess(source) { headings.clear(); return source; } },
-    extensions: [mathExtension(true), mathExtension(false), ...(obsidian ? obsidianExtensions(resolveImage) ?? [] : [])],
+    extensions: obsidian ? obsidianExtensions(resolveImage) ?? [] : [],
     renderer: {
       heading(token) {
         const label = this.parser.parseInline(token.tokens);

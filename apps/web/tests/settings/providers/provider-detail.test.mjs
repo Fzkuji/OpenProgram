@@ -29,6 +29,8 @@ installDom();
 
 const { createElement: h } = await import("react");
 const { Detail } = await import("../../../components/settings/providers/detail.tsx");
+const { invalidateAllSettings } = await import("../../../lib/prefs/settings-cache.ts");
+console.warn = () => {};
 
 const realNow = Date.now;
 Date.now = () => NOW * 1000;
@@ -90,7 +92,7 @@ async function open(props = {}) {
 const posts = (calls) => calls.filter(([m]) => m === "POST").map(([, u, b]) => [u, b]);
 const panel = (view, name) => view.container.querySelector(`section[aria-label="${name}"]`);
 
-afterEach(() => { document.body.innerHTML = ""; globalThis.confirmRequests = []; globalThis.confirmAnswer = true; globalThis.switched = []; });
+afterEach(() => { document.body.innerHTML = ""; invalidateAllSettings(); globalThis.confirmRequests = []; globalThis.confirmAnswer = true; globalThis.switched = []; });
 
 describe("header", () => {
   test("back, the health chip, when it was read, Refresh and the on switch", async () => {
@@ -99,7 +101,7 @@ describe("header", () => {
     assert.match(view.container.querySelector("h2").textContent, /OpenRouter/);
     assert.match(view.container.querySelector("[data-state]").textContent, /^Rate limited · \d\d:\d\d$/);
     assert.match(view.container.textContent, /Updated 2 min ago/);
-    await view.act(() => button(view.container, "LLM Providers").click());
+    await view.act(() => button(view.container, "Model services").click());
     await view.act(() => button(view.container, "Refresh").click());
     const toggle = view.container.querySelector('[aria-label="Enable this provider"]');
     assert.equal(toggle.getAttribute("aria-checked"), "true");
@@ -178,10 +180,27 @@ describe("usage panel", () => {
     await view.unmount();
   });
 
-  test("a failed read says so", async () => {
-    serve({ "GET /api/providers/openrouter/usage": { status: 500, body: {} } });
+  test("a failed read says nothing; the panel stays and fills in when a quiet retry answers", async () => {
+    let fail = true;
+    serve({ "GET /api/providers/openrouter/usage": (_, url) => (fail ? { status: 500, body: {} } : USAGE(Number(new URL(url, "http://x").searchParams.get("days")))) });
     const { view } = await open();
-    assert.match(panel(view, "Usage").querySelector('[role="alert"]').textContent, /Couldn't read the usage/);
+    assert.equal(panel(view, "Usage").querySelector('[role="alert"]'), null);
+    assert.doesNotMatch(panel(view, "Usage").textContent, /Couldn't/);
+    fail = false;
+    await view.act(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+    await settle(view);
+    assert.equal(panel(view, "Usage").querySelector("b").textContent, "$12.50");
+    await view.unmount();
+  });
+
+  test("reopening the provider draws its usage and models in the first render", async () => {
+    serve();
+    let { view } = await open();
+    await view.unmount();
+    globalThis.fetch = () => new Promise(() => {});
+    view = await render(h(Detail, { provider: PROVIDER, status: STATUS, onToggle() {}, onChanged() {} }));
+    assert.equal(panel(view, "Usage").querySelector("b").textContent, "$12.50");
+    assert.ok(view.container.textContent.includes("anthropic/claude-sonnet-4.5"));
     await view.unmount();
   });
 });
@@ -494,19 +513,14 @@ describe("credentials", () => {
 
   test("a key provider offers Add key only, straight to the key step", async () => {
     let reads = 0;
-    let release;
-    const gate = new Promise((resolve) => { release = resolve; });
-    serve({ [`GET ${BASE}`]: async () => { reads += 1; if (reads > 1) await gate; return LIST([WORK]); } });
+    serve({ [`GET ${BASE}`]: async () => { reads += 1; if (reads > 1) await new Promise(() => {}); return LIST([WORK]); } });
     const { view } = await open();
     const labels = [...section(view).querySelectorAll("button")].map((b) => b.textContent);
     assert.ok(labels.includes("Add key"));
     assert.ok(!labels.includes("Sign in"), "no sign-in for a provider whose only way is a key");
     await view.act(() => button(section(view), "Add key").click());
-    assert.equal(dialog().querySelector("[data-step]").dataset.step, "loading", "nothing is offered before this provider's ways are read");
-    assert.equal(dialog().querySelector('[role="radiogroup"]'), null);
-    await view.act(async () => { release(); await gate; });
-    await settle(view);
-    assert.equal(dialog().querySelector("[data-step]").dataset.step, "key");
+    assert.equal(dialog().querySelector("[data-step]").dataset.step, "key", "the kept ways open the dialog at once, while they are read again");
+    assert.equal(reads, 2);
     assert.equal(dialog().querySelector('[role="radiogroup"]'), null, "one way: no list of one");
     await view.unmount();
   });

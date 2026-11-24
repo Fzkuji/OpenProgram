@@ -17,7 +17,8 @@ import {
   ITEM_DESC, ITEM_TITLE, ITEM_TWO_LINE, MENU_ITEM_STATES, MENU_PANEL, MENU_SEPARATOR, itemCls,
 } from "@/components/ui/menu/menu-styles";
 import { BoxesIcon, FolderOpenIcon, RefreshCwIcon } from "@/components/animated-icons";
-import { ManageEmptyState, ManagePage, ManagePageHeader, ManageSummary, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManagePage, ManagePageHeader, ManageSummary, managePageStyles as shared } from "@/components/ui/manage-page";
+import { retryDelay } from "@/lib/abilities/kept-read";
 import { useFolderPicker } from "@/components/ui/folder-picker";
 import { requestProgramSelection } from "@/components/programs/programs-selection";
 import { ApplicationIcon } from "./application-icon";
@@ -46,7 +47,21 @@ export function ApplicationsPage() {
   const [notice, setNotice] = useState("");
   const [uninstalling, setUninstalling] = useState<ApplicationRow | null>(null);
   const refresh = useCallback(() => refreshApplications({ fresh: true }), []);
-  useEffect(() => { void refreshApplications().catch(reason => setError(String(reason.message ?? reason))); }, []);
+  // The kept list (localStorage) draws at once and is read again behind it;
+  // a failed read keeps it and is tried again quietly.
+  useEffect(() => {
+    let stopped = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const read = (attempt: number) => {
+      refreshApplications().catch((reason) => {
+        if (stopped) return;
+        console.warn("[applications] list read failed; trying again", reason);
+        retry = setTimeout(() => read(attempt + 1), retryDelay(attempt));
+      });
+    };
+    read(0);
+    return () => { stopped = true; clearTimeout(retry); };
+  }, []);
 
   const rows = useMemo(() => applicationRows(listed, builtin), [listed, builtin]);
   const shown = rows.filter(row => filter === "all" || (filter === "builtin") === row.builtin);
@@ -105,17 +120,8 @@ export function ApplicationsPage() {
     <div className={shared.body}>
       <div className="flex flex-col gap-[24px] w-full">
         {launcher.dialog}{folderPickerDialog}
-        {!loaded && !error ? (
-          <ManageLoadingState>{text("Loading applications…", "正在加载应用…")}</ManageLoadingState>
-        ) : !loaded ? (
-          <ManageEmptyState
-            compact
-            icon={<BoxesIcon size={20} />}
-            title={text("Applications are unavailable", "暂时无法加载应用")}
-            description={text("Check the error above, then try again.", "请查看上方错误后重试。")}
-            action={<Button variant="elevated" disabled={busy} onClick={() => void change(refresh, "")}>{text("Retry", "重试")}</Button>}
-          />
-        ) : shown.length === 0 ? (
+        {/* Nothing until the first list arrives: an empty state then would be untrue. */}
+        {!loaded ? null : shown.length === 0 ? (
           <ManageEmptyState
             compact
             icon={<BoxesIcon size={20} />}

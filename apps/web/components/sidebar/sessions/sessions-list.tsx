@@ -58,13 +58,19 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { sessionsWithBranchRun, useOtherBranchRuns } from "@/lib/chat/run/other-branch-runs";
 import { buildSections } from "./sections";
 import { ProjectGroupHeader } from "./project-group-header";
-import { ConvRow, type ConvRowSource } from "./conv-item";
+import { ConvRow, type ConvRowActivity, type ConvRowSource } from "./conv-item";
+import { ActivityBell, ActivityMenu } from "./activity-header";
+import { activitySections, unreadIds, type ActivityState } from "./activity";
+import { markSessionReadLocally } from "@/lib/runtime-bridge/session/chat-handlers";
+import { formatRelativeTime } from "@/lib/format-utils/format";
 
 interface SidebarProject extends EditableProject {
   id: string;
   name: string;
   path: string;
   is_default: boolean;
+  /** The machine the project's folder is on. */
+  machine_id?: string;
   session_count: number;
   session_ids?: string[];
   custom_name?: boolean;
@@ -117,7 +123,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
 
-  const projectMode = view.groupBy === "project";
+  // Activity (the bell) takes the list's place; its rows are not dragged
+  // between projects.
+  const activityMode = view.activity;
+  const projectMode = view.groupBy === "project" && !activityMode;
   const [orderNotice, setOrderNotice] = useState("");
   const [selection, setSelection] = useState<ChatSelection>(EMPTY_SELECTION);
   // Rows in the order this render lays them out, for Shift-click runs.
@@ -162,20 +171,14 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // WS reconnect's list_sessions replay produces); that read is the shared
   // one, so it costs a request only when no answer is kept. A new binding
   // is broadcast as `project-changed`, which drops the kept answer and
-  // refetches here. On a fresh page the
-  // WebSocket may not be OPEN yet, so retry (~6s) until it answers —
-  // same pattern as the topbar ProjectBadge.
+  // refetches here. On a fresh page the WebSocket may not be open yet: a
+  // read that got no answer is asked again when the socket opens.
   const convIdsKey = Object.keys(conversations).sort().join(",");
+  const projectsAnswered = useRef(false);
+  const socketOpen = useSessionStore(s => s.wsStatus === "open");
   useEffect(() => {
     let cancelled = false;
-    let tries = 0;
-    const attempt = () => {
-      if (cancelled) return;
-      refreshProjects().then((ok) => {
-        if (!ok && !cancelled && tries++ < 20) setTimeout(attempt, 300);
-      });
-    };
-    attempt();
+    refreshProjects().then((ok) => { if (!cancelled) projectsAnswered.current = ok; });
     const onChanged = () => void refreshProjects();
     window.addEventListener("project-changed", onChanged);
     return () => {
@@ -183,6 +186,12 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
       window.removeEventListener("project-changed", onChanged);
     };
   }, [projectMode, convIdsKey, refreshProjects]);
+  useEffect(() => {
+    if (!socketOpen || projectsAnswered.current) return;
+    let cancelled = false;
+    refreshProjects().then((ok) => { if (!cancelled) projectsAnswered.current = ok; });
+    return () => { cancelled = true; };
+  }, [socketOpen, refreshProjects]);
 
   // Per-project collapse state, persisted per browser.
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
@@ -279,6 +288,14 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     run: () => void;
   } | null>(null);
 
+  // Activity's times are relative ("3m ago"): count on while it is shown.
+  const [, setMinute] = useState(0);
+  useEffect(() => {
+    if (!activityMode) return;
+    const timer = setInterval(() => setMinute((n) => n + 1), 60_000);
+    return () => clearInterval(timer);
+  }, [activityMode]);
+
   /* ---- action senders (optimistic patch + WS) ------------------- */
 
   // Optimistically patch BOTH the store (drives this sidebar) and the
@@ -329,6 +346,14 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         : `Are you sure you want to delete "${title}"?`,
       run: () => deleteSessionAndRefocus(id),
     });
+  }
+
+  // Activity's "Mark all as read": the dots go at once, the server clears
+  // the flags and tells every other window.
+  function markAllRead(ids: string[]) {
+    if (!ids.length) return;
+    for (const id of ids) markSessionReadLocally(id);
+    wsSend({ action: "mark_sessions_read", session_ids: ids });
   }
 
   function clearAll() {
@@ -517,7 +542,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // render again (ConvRow), and runs these handlers when one is used.
   const rowSource = useRef<ConvRowSource["current"]>(new Map());
   rowSource.current = new Map();
-  const renderRow = (c: LegacyConv) => {
+  const renderRow = (c: LegacyConv) => renderConvRow(c);
+  function renderConvRow(c: LegacyConv, activity?: ConvRowActivity) {
     const label = labelFor(c, t("sidebar.untitled"));
     const home = projectOf(c.id);
     rowOrder.push(c.id);
@@ -545,6 +571,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         projects={projects.length > 1 ? projects.filter((p) => p.id !== home && !p.hidden).map((p) => ({ id: p.id, name: p.name })) : undefined}
         onMoveToProject={(projectId) => void moveChat(c.id, projectId)}
         dragProps={projectMode ? rowProps(c.id, home) : undefined}
+        activity={activity}
         onClick={(event) => {
           if (event && (event.metaKey || event.ctrlKey || event.shiftKey)) {
             setSelection(pickChat(lastRowOrder.current, selection, currentId, c.id, event.shiftKey ? "range" : "toggle"));
@@ -567,7 +594,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     const { source: _source, ...given } = row.props;
     rowSource.current.set(c.id, given);
     return row;
-  };
+  }
 
   // Build the sectioned list. Each section is { key, label, items };
   // an empty label renders a flat (header-less) run of rows. Mirrors
@@ -609,9 +636,69 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const PROJECTS_SECTION_KEY = "__projects__";
   const projectSectionKey = (section: string) => section ? `project-section:${section}` : PROJECTS_SECTION_KEY;
   const visibleProjectGroups = groupedProjects.filter(group => !collapsedGroups.has(projectSectionKey(projectSection(group.key))));
+  // The bell rides beside the filter wherever the filter sits.
+  const listActions = (
+    <span className="flex items-center gap-[2px]">
+      <ActivityBell />
+      <RecentsFilter projects={projects} />
+    </span>
+  );
   const projectLists = sectionOrder.map(section => ({ section, groups: groupedProjects.filter(group => projectSection(group.key) === section) }))
     .filter(({ section, groups }) => section !== "__pinned__" || groups.length > 0);
-  const body = projectMode ? (
+  const activityWord: Record<ActivityState, string> = {
+    needs_input: text("Needs input", "等待输入"),
+    failed: text("Failed", "运行失败"),
+    working: text("Running", "运行中"),
+    unread: "",
+  };
+  const activityList = activityMode
+    ? activitySections(convArr, {
+        nowTs, locale, isRunning,
+        labels: { today: t("sidebar.today"), yesterday: t("sidebar.yesterday") },
+      })
+    : [];
+  const activityRow = (conv: LegacyConv, state: ActivityState) => {
+    const project = projects.find((p) => p.id === projectOf(conv.id));
+    return renderConvRow(conv, {
+      project: project?.name,
+      status: activityWord[state] ? { label: activityWord[state], tone: state } : undefined,
+      time: formatRelativeTime(conv.updated_at || conv.created_at || 0, locale === "zh" ? "zh" : "en", nowTs),
+    });
+  };
+  const toMarkRead = activityMode ? unreadIds(convArr) : [];
+  const body = activityMode ? (
+    // The list in place: Activity's own header, then its days.
+    <>
+      <SectionHeader
+        name={text("Activity", "动态")}
+        collapsible={false}
+        collapsed={false}
+        onToggle={() => {}}
+        actions={<span className="flex items-center gap-[2px]">
+          <ActivityBell />
+          <ActivityMenu unread={toMarkRead.length} onMarkAllRead={() => markAllRead(toMarkRead)} />
+        </span>}
+      />
+      {activityList.length === 0 ? (
+        <div className="px-[8px] py-[6px] text-fs-xs text-text-muted">
+          {text("Nothing needs you", "没有要处理的对话")}
+        </div>
+      ) : activityList.map((sec) => {
+        const key = "activity:" + sec.key;
+        return (
+          <div key={key} className="group/sec flex flex-col [&>*+*+*]:mt-px">
+            <SectionHeader
+              name={sec.label}
+              collapsible
+              collapsed={collapsedGroups.has(key)}
+              onToggle={() => toggleGroupCollapse(key)}
+            />
+            {!collapsedGroups.has(key) && sec.items.map((item) => activityRow(item.conv, item.state))}
+          </div>
+        );
+      })}
+    </>
+  ) : projectMode ? (
     <>
       {projectLists.map(({ section, groups }) => {
         const key = projectSectionKey(section);
@@ -625,7 +712,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               section={section}
               collapsed={folded}
               onToggle={() => toggleGroupCollapse(key)}
-              actions={section === "" ? <RecentsFilter projects={projects} /> : undefined}
+              actions={section === "" ? listActions : undefined}
             />
             {!folded && (projects.length === 0 && section === ""
               ? visible.map(renderRow)
@@ -663,6 +750,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                       reorderHint={text("Drag to reorder; Alt+Up/Down to move", "拖动排序；Alt+上下方向键移动")}
                       name={g.name}
                       path={g.path}
+                      machineId={project.is_default ? undefined : project.machine_id}
                       collapsed={!expanded}
                       onToggle={() => toggleProjectCollapse(g.key)}
                       onNewSession={() => newSessionInProject(g.key)}
@@ -717,11 +805,11 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
           collapsible={false}
           collapsed={false}
           onToggle={() => {}}
-          actions={<RecentsFilter projects={projects} />}
+          actions={listActions}
         />
       ) : !firstHasHeader ? (
         <div className="flex h-[24px] items-center justify-end px-[8px]">
-          <RecentsFilter projects={projects} />
+          {listActions}
         </div>
       ) : null}
       {sections.map((sec, i) =>
@@ -738,7 +826,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               collapsible={collapsible}
               collapsed={collapsedGroups.has(sec.key)}
               onToggle={() => toggleGroupCollapse(sec.key)}
-              actions={i === 0 ? <RecentsFilter projects={projects} /> : undefined}
+              actions={i === 0 ? listActions : undefined}
             />
             {(!collapsible || !collapsedGroups.has(sec.key)) &&
               sec.items.map(renderRow)}
@@ -754,7 +842,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
       <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
       {/* Hide Clear all when every project list is folded. */}
-      {!isEmpty && !(projectMode && projectLists.every(({ section }) => collapsedGroups.has(projectSectionKey(section)))) ? (
+      {!activityMode && !isEmpty && !(projectMode && projectLists.every(({ section }) => collapsedGroups.has(projectSectionKey(section)))) ? (
         <div className={styles.clearAll} onClick={clearAll}>
           {t("sidebar.clear_all")}
         </div>

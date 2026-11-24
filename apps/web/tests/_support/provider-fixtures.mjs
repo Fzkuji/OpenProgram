@@ -1,5 +1,5 @@
 /**
- * Fixtures and Radix stand-ins for the LLM Providers page tests: status
+ * Fixtures and Radix stand-ins for the Model services page tests: status
  * payloads in each state the design names, the add-provider catalogue, a
  * provider's credential list, a fetch that answers by "METHOD /path", and
  * inline versions of the Nova parts linkedom cannot run (Switch, Tabs,
@@ -121,13 +121,35 @@ export function limit(overrides = {}) {
   };
 }
 
-export function status(id, overrides = {}) {
-  const { quota, health, spend: s, ...rest } = overrides;
+const KEY_STATE = { cooling: "rate_limited", quota: "no_credit", needs_login: "signed_out", invalid_key: "invalid_key" };
+
+/** A credential as the status route lists it, with its own health, quota,
+ *  plan and spend (a partial one is filled from its pool status). */
+export function cred(id, overrides = {}) {
+  const { quota, health, ...rest } = overrides;
+  const state = KEY_STATE[rest.status] ?? "ready";
   return {
+    account: id, credential_id: id, kind: "api_key", label: "", email: "", key_tail: "", env_var: null, signin_name: "",
+    status: "ready", enabled: true, active: false, cooldown_until: null, last_error: null, last_used_at: null, use_count: 0,
+    status_at: null, plan: null, spend_usd: null, ...rest,
+    health: { state, until: null, detail: null, ...(health ?? {}) },
+    quota: { kind: "none", account: id, fetched_at: NOW - 120, stale: false, limits: [], read_error: null, read_at: NOW - 120, ...(quota ?? {}) },
+  };
+}
+
+/** `p` with one credential in use that holds its quota and health. */
+function withKey(p, overrides = {}) {
+  return { ...p, keys: [cred(`${p.id}-key`, { active: true, quota: p.quota, health: p.health, kind: p.billing === "subscription" ? "oauth" : "api_key", ...overrides })] };
+}
+
+export function status(id, overrides = {}) {
+  const { quota, health, spend: s, keys, ...rest } = overrides;
+  return {
+    keys: (keys ?? []).map((k) => ("health" in k ? k : cred(k.credential_id ?? k.account ?? "k", k))),
     id, label: id[0].toUpperCase() + id.slice(1), billing: "api_key", enabled: true,
     health: { state: "ready", until: null, detail: null, ...(health ?? {}) },
     quota: { kind: "none", account: null, fetched_at: NOW - 120, stale: false, limits: [], read_error: null, read_at: NOW - 120, ...(quota ?? {}) },
-    spend: spend(s), default_model: null, keys: [], fix: null, console_url: null,
+    spend: spend(s), default_model: null, fix: null, console_url: null,
     plan: null, checked_at: null, takes_keys: (rest.billing ?? "api_key") === "api_key",
     family: id, family_label: rest.label ?? id[0].toUpperCase() + id.slice(1), way_label: null,
     ...rest,
@@ -136,34 +158,34 @@ export function status(id, overrides = {}) {
 
 /** One provider in each state the cards and rows draw. */
 export const STATES = {
-  windowed: status("openai-codex", {
+  windowed: withKey(status("openai-codex", {
     label: "OpenAI Codex", billing: "subscription", default_model: "gpt-5.5",
     spend: { included: true, cost_usd: null, list_price_usd: 41.2 },
     quota: { kind: "windowed", limits: [limit(), limit({ limit_key: "week", label: "Week", used_fraction: 0.85, left_fraction: 0.15, window_minutes: 10080, resets_at: NOW + 3 * 86400 })] },
-  }),
-  balance: status("deepseek", {
+  })),
+  balance: withKey(status("deepseek", {
     label: "DeepSeek",
     spend: { series: days(Array.from({ length: 30 }, () => 0.1)) },
     quota: { kind: "balance", limits: [limit({ limit_key: "balance", label: "Balance", unit: "usd", remaining: 18.42, used_fraction: null, left_fraction: null, window_minutes: null, resets_at: null })] },
-  }),
-  rate: status("groq", {
+  })),
+  rate: withKey(status("groq", {
     label: "Groq",
     quota: { kind: "rate_limit", limits: [limit({ limit_key: "rpm", label: "rpm", unit: "requests", limit: 50, remaining: 46, used_fraction: 0.08, left_fraction: 0.92, window_minutes: 1, resets_at: null })] },
-  }),
-  limited: status("openrouter", {
+  })),
+  limited: withKey(status("openrouter", {
     label: "OpenRouter", health: { state: "rate_limited", until: NOW + 1800 },
     quota: { kind: "balance", limits: [limit({ limit_key: "key_limit", label: "Key limit", unit: "usd", limit: 20, remaining: 0.6, used_fraction: 0.97, left_fraction: 0.03, window_minutes: null, resets_at: null })] },
-  }),
-  signedOut: status("google", {
+  })),
+  signedOut: withKey(status("google", {
     label: "Google", billing: "subscription", health: { state: "signed_out", detail: "token expired" },
     fix: { action: "sign_in", url: null },
     quota: { kind: "windowed", stale: true, fetched_at: NOW - 3 * 3600, limits: [limit()] },
-  }),
-  noCredit: status("moonshotai", {
+  })),
+  noCredit: withKey(status("moonshotai", {
     label: "Moonshot", health: { state: "no_credit" }, fix: { action: "top_up", url: "https://platform.example.test/billing" },
     quota: { kind: "balance", limits: [limit({ limit_key: "balance", label: "Balance", unit: "usd", remaining: 0, used_fraction: null, left_fraction: null, window_minutes: null, resets_at: null })] },
-  }),
-  unread: status("xai", { label: "xAI", quota: { kind: "none", read_error: "HTTP 500 from the usage endpoint" } }),
+  })),
+  unread: withKey(status("xai", { label: "xAI", quota: { kind: "none", read_error: "HTTP 500 from the usage endpoint" } })),
   local: status("ollama", { label: "Ollama", billing: "local", health: { state: "not_running" }, fix: { action: "start_server", url: null }, spend: { cost_usd: 0, list_price_usd: 0, total_tokens: 0, cache_share: null, series: [] } }),
 };
 

@@ -207,10 +207,10 @@ def _project(store, record):
         verifier_verdict=None if verifier is None else verifier["verdict"], verifier=verifier,
         diagnosis=stage(diagnostic), source_repair_result=repair_summary, iteration=iteration,
     )
-    from .dev_stable import result_summary
+    from .dev_deploy import result_summary
     outcome = result_summary(record)
     if outcome is not None:
-        result["dev_stable"] = outcome
+        result["dev_deploy"] = outcome
     from .switch import result_summary as version_summary
     versions = version_summary(record)
     if versions is not None:

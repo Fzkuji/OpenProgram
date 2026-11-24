@@ -215,6 +215,41 @@ def test_a_sign_in_adds_a_row_and_signing_in_again_renews_it(client, monkeypatch
 
 # ---- changes ------------------------------------------------------------
 
+def test_a_held_sign_in_read_answers_when_the_sign_in_moves(client, monkeypatch):
+    """A window reads the next step of a sign-in held at the worker, not on a timer."""
+    import time
+    from openprogram.models.auth.login import login_driver
+    import openprogram.models.listing as listing
+    c, _store = client
+    monkeypatch.setattr(listing, "fetch_models_remote", lambda name: None)
+
+    async def slow_login(provider, method, ui, *, api_key=None, label="", source="web"):
+        await asyncio.sleep(0.3)  # the browser callback arriving
+        await ui.show_progress("Completing sign-in…")
+        return Credential(provider_id=provider, kind="oauth", label=label, source=source,
+                          identity={"email": "me@example.com"},
+                          payload=CredentialData(kind="oauth", auth_value="access"))
+
+    monkeypatch.setattr(login_driver, "run_login", slow_login)
+    sid = c.post("/api/providers/openai-codex/login/start", json={"method": "pkce_oauth"}).json()["session"]
+    first = c.get("/api/providers/openai-codex/login/poll", params={"session": sid}).json()
+    assert first["done"] is False and first["events"] == []
+    started = time.monotonic()
+    held = c.get("/api/providers/openai-codex/login/poll", params={
+        "session": sid, "cursor": first["cursor"], "version": first["version"], "wait": 20}).json()
+    assert time.monotonic() - started < 10, "answered when the sign-in moved, not at the end of the wait"
+    assert held["events"] and held["version"] > first["version"]
+    last = held
+    while not last["done"]:
+        last = c.get("/api/providers/openai-codex/login/poll", params={
+            "session": sid, "cursor": last["cursor"], "version": last["version"], "wait": 20}).json()
+    assert last["ok"] is True
+    started = time.monotonic()
+    again = c.get("/api/providers/openai-codex/login/poll", params={
+        "session": sid, "cursor": last["cursor"], "version": last["version"], "wait": 20}).json()
+    assert again["done"] is True and time.monotonic() - started < 5, "a finished sign-in is never held"
+
+
 def test_rename_and_turn_off(client):
     c, store = client
     cid = _key(store, "a", "sk-aaaa-0000001")

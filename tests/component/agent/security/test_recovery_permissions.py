@@ -123,7 +123,7 @@ def test_the_notice_comes_before_the_tools_own_output(recovery):
     assert content[0].text.startswith("[notice]") and content[1].text == '{"ok": true}'
 
 
-@pytest.mark.parametrize("kind,name", [("gui.primitive", None), ("tool.before", "computer_use_agent")])
+@pytest.mark.parametrize("kind,name", [("gui.primitive", None), ("tool.before", "computer_use")])
 def test_an_interrupted_screen_step_is_not_reported(recovery, kind, name):
     # What the step changed is on the screen, and its report tells the model to look.
     _, effect = orphan(recovery, name=name, kind=kind)
@@ -137,7 +137,7 @@ def test_a_screen_step_beside_another_unknown_outcome_names_only_that_one(recove
     orphan(recovery, name="bash")
     tool, req, _ = operation("write", mode="bypass")
     notice = lookup.uncertain_notice(req, tool)
-    assert "bash" in notice and "computer_use_agent" not in notice
+    assert "bash" in notice and "computer_use" not in notice
 
 
 def test_lookup_follows_admissions_and_reads_no_unrelated_payload(recovery, monkeypatch):

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>使用流程</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2563eb}a:hover{color:#1d4ed8}
+</style>
+</helmet>
+<div style="width: 1760px; height: 880px; box-sizing: border-box; padding: 56px 64px; background: #f5f6f8; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: #16181d; display: flex; flex-direction: column; gap: 32px">
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <h1 style="margin: 0; font-size: 34px; font-weight: 650; letter-spacing: -0.01em">Auto Research：从打开到接受改动</h1>
+    <p style="margin: 0; font-size: 17px; color: #5b616e">先选项目，再在项目里做事。每一步只要求用户做一个决定，下一步该点什么总是最显眼的那个按钮。</p>
+  </div>
+
+  <div style="display: flex; align-items: stretch; gap: 12px">
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #eaf1fe; color: #1d4ed8; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">1</span><b style="font-size: 18px">打开应用</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">看到：欢迎页</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">最近打开过的项目排成列表，点一下就进入。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">新项目点「打开文件夹…」，弹出系统自己的选择窗口，不用输路径。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px; color: #5b616e">选的不是 Git 仓库：在列表上方就地提示，可以直接换一个。</p>
+    </div>
+    <div style="display: flex; align-items: center; color: #9aa1ad; font-size: 22px" aria-hidden="true">›</div>
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #eaf1fe; color: #1d4ed8; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">2</span><b style="font-size: 18px">进入项目</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">看到：概览</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">左边是任务，按研究 / 写作 / 发布分组，每个带状态：通过、有问题、没跑过。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">中间「接下来」只列最该做的几件事，每件一个按钮。待审阅的轮次也在这里。</p>
+    </div>
+    <div style="display: flex; align-items: center; color: #9aa1ad; font-size: 22px" aria-hidden="true">›</div>
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #eaf1fe; color: #1d4ed8; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">3</span><b style="font-size: 18px">选一个任务</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">看到：任务页</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">一句话说清它查什么。只显示这个任务要的输入，默认值已填好，章节从下拉里选。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">主按钮随状态变：没跑过是「检查」，有问题是「让 agent 修」。</p>
+    </div>
+    <div style="display: flex; align-items: center; color: #9aa1ad; font-size: 22px" aria-hidden="true">›</div>
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #eaf1fe; color: #1d4ed8; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">4</span><b style="font-size: 18px">运行</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">看到：实时进度</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">每个阶段一行，完成打勾、显示耗时，正在做的那行在转。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">可以去看别的任务；底部状态栏显示在跑什么，跑完弹提示，点一下回到结果。</p>
+    </div>
+    <div style="display: flex; align-items: center; color: #9aa1ad; font-size: 22px" aria-hidden="true">›</div>
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #c7d7fb; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #2563eb; color: #ffffff; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">5</span><b style="font-size: 18px">审阅</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">看到：这一轮的 PDF</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">PDF 上删的标红、加的标绿。在哪里不满意就点哪里，写一句批注。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">右边是改过的文件，默认全勾，可以点开看逐词对比。</p>
+    </div>
+    <div style="display: flex; align-items: center; color: #9aa1ad; font-size: 22px" aria-hidden="true">›</div>
+    <div style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #c7d7fb; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 10px"><span style="width: 28px; height: 28px; border-radius: 14px; background: #2563eb; color: #ffffff; font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center">6</span><b style="font-size: 18px">决定</b></div>
+      <div style="font-size: 13px; color: #5b616e; font-weight: 600">三个选择</div>
+      <p style="margin: 0; font-size: 14px; line-height: 22px"><b>有批注时</b>，主按钮是「带着批注再改一轮」，回到第 4 步。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px"><b>没有批注时</b>，主按钮是「接受选中的文件」：写回项目，不提交。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px; color: #5b616e">「放弃这一轮」收在更多菜单里。</p>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 12px; align-self: flex-end; width: 560px; background: #eaf1fe; color: #1e3a8a; border-radius: 10px; padding: 12px 16px; font-size: 14px; line-height: 20px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"></path><path d="M3 21v-5h5"></path></svg>
+    <span>4 → 5 → 6 可以反复，每一轮接着上一轮的草稿改，直到满意。</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+    <div style="background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px">
+      <b style="font-size: 16px">任何时候都在的</b>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">顶栏左边是项目名：点开是最近项目、打开文件夹…、关闭项目（回欢迎页）。⌘O 打开文件夹。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">底部状态栏：分支和提交、有没有未提交改动、正在运行的任务、待审阅的轮次数。</p>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px">
+      <b style="font-size: 16px">守住的几条规矩</b>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">每页只有一个主按钮。路径、章节、文件都是点选，不让手输。</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px">agent 只改草稿副本，项目文件只在用户点「接受」后才变。被前置条件挡住时，说明原因，并给出去做那件事的按钮。</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":880}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

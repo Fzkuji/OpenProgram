@@ -238,7 +238,10 @@ def _probe(
 
         with sync_playwright() as playwright:
             browser_executable = Path(playwright.chromium.executable_path).resolve()
-            chromium = playwright.chromium.launch(headless=True)
+            try:  # the full browser; macOS and Windows runtimes ship without the headless shell
+                chromium = playwright.chromium.launch(headless=True, channel="chromium")
+            except Exception:  # noqa: BLE001 - a bare Linux server starts only the shell
+                chromium = playwright.chromium.launch(headless=True)
             page = chromium.new_page()
             page.set_content("<title>OpenProgram runtime probe</title>")
             if page.title() != "OpenProgram runtime probe":
@@ -499,19 +502,8 @@ def _native_problems(root: Path, macos_minimum: str) -> list[str]:
     return problems
 
 
-def _check_native_files(root: Path, product: dict, *, this_machine: bool = False) -> None:
-    minimum = product["macosMinimum"]
-    if this_machine and sys.platform == "darwin":
-        # A runtime assembled in place from this machine's own packages serves
-        # only this machine, so the oldest macOS it must load on is this one.
-        import platform
-
-        here = platform.mac_ver()[0]
-        if here and tuple(int(part) for part in here.split(".")[:2]) > tuple(
-            int(part) for part in minimum.split(".")[:2]
-        ):
-            minimum = here
-    problems = _native_problems(root, minimum)
+def _check_native_files(root: Path, product: dict) -> None:
+    problems = _native_problems(root, product["macosMinimum"])
     if problems:
         raise RuntimeError("native files that would not load on a supported machine:\n  "
                            + "\n  ".join(problems[:40]))
@@ -538,8 +530,6 @@ def main() -> int:
     parser.add_argument("--tui", type=Path, help="The version's terminal UI bundle")
     parser.add_argument("--require-git", action="store_true",
                         help="With --write: fail unless this runtime carries its own Git")
-    parser.add_argument("--this-machine", action="store_true",
-                        help="The runtime was assembled in place for this machine only")
     parser.add_argument("--compiled-import-only", action="store_true",
                         help="Check only that this Python loads compiled packages, for use after signing")
     args = parser.parse_args()
@@ -583,7 +573,7 @@ def main() -> int:
         bundled_git = args.require_git or (root / "git").is_dir()
         if bundled_git:
             _probe_git(root)
-        _check_native_files(root, product, this_machine=args.this_machine)
+        _check_native_files(root, product)
         capabilities = _probe(root, product, args.openprogram_version, browser=not args.defer_browser)
         node_relative = "bin/node.exe" if os.name == "nt" else "bin/node"
         tui_relative = "assets/tui/index.cjs"

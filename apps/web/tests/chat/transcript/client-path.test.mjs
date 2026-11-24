@@ -266,9 +266,11 @@ test("a local row without a server copy keeps its kind and anchor", () => {
 });
 
 for (const [name, ending, rows] of [
-  ["a no-op", { type: "compaction_finished", no_op: true }, 1],
   // Nothing changed and a later request tries again: nothing to say.
+  ["a no-op", { type: "compaction_finished", no_op: true }, 0],
   ["a failure", { type: "compaction_failed", error: "timeout" }, 0],
+  // Only a /compact the person asked for answers that it changed nothing.
+  ["a no-op of /compact", { type: "compaction_finished", no_op: true, user_initiated: true }, 1],
 ]) {
   test(`a turn's own compaction ending in ${name} names the step only while it lasts`, () => {
     store().setRunningTaskFor(SID, { msg_id: "m1", execution_id: "e1" }, "never");

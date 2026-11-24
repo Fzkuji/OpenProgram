@@ -84,7 +84,7 @@ function controlReason(reason: string | null | undefined, zh: boolean): string {
     active_owner: ["Another turn is running. Wait for it to stop before continuing this Goal.", "另一个轮次正在运行，请等待其结束后再继续此 Goal。"],
     budget_exhausted: ["The explicit budget is exhausted. Change the Goal budget before continuing.", "已达到显式预算，请修改 Goal 预算后再继续。"],
     elapsed_time_unknown: ["Interrupted active time is unknown, so the explicit time limit cannot be verified. Remove the time limit to continue.", "中断时段的执行时间未知，无法核实显式时间上限；移除时间上限后可继续。"],
-    execution_unavailable: ["Execution status is unavailable. Refresh status to retry.", "无法读取执行状态，请刷新状态重试。"],
+    execution_unavailable: ["The execution's status has not been read yet.", "执行状态尚未读到。"],
     unknown_external_effects: ["Operation outcomes must be checked before verification.", "验收前需要确认外部操作的结果。"],
     unfinished_conversation_execution: ["Related executions have not finished.", "关联执行尚未结束。"],
     managed_work_unfinished: ["Goal-owned background work is still running or its outcome is unknown.", "此 Goal 的后台工作仍在运行，或其结果未知。"],
@@ -212,6 +212,9 @@ function useGoalExecution(sessionId: string, goal: GoalState, enabled: boolean) 
   const [observation, setObservation] = useState<{ controls?: GoalControls; identity?: string; status?: string; finished?: boolean | null; can_start_new_turn?: boolean; provider_response_incomplete?: boolean; recovery_mode?: string | null; recovery_reason?: string | null; fresh: boolean }>({ fresh: false });
   const request = useRef(0);
   const controller = useRef<AbortController>();
+  // A read that fails is asked again, quietly, with backoff.
+  const failures = useRef(0);
+  const [retryTick, setRetryTick] = useState(0);
   const refresh = useCallback(async () => {
     const serial = ++request.current;
     controller.current?.abort();
@@ -228,9 +231,14 @@ function useGoalExecution(sessionId: string, goal: GoalState, enabled: boolean) 
       // will load controls. Never attach old-run eligibility to the new run.
       if ((result.execution?.execution_id || null) !== (goal.execution_id || null)
         || result.goal.run_id !== goal.run_id) return;
+      failures.current = 0;
       setObservation({ ...result.execution, controls: result.controls, identity, fresh: true });
-    } catch {
+    } catch (error) {
       // Keep the Goal and its editor; a read failure is not a stopped execution.
+      if (serial !== request.current || own.signal.aborted) return;
+      console.warn("goal status read failed; reading again", { sessionId, error });
+      const wait = Math.min(30_000, 1000 * 2 ** failures.current++);
+      setTimeout(() => { if (serial === request.current) setRetryTick((n) => n + 1); }, wait);
     }
   }, [sessionId, goal.goal_id, goal.run_id, goal.execution_id, goal.version, identity, enabled, connection]);
   useEffect(() => {
@@ -242,7 +250,7 @@ function useGoalExecution(sessionId: string, goal: GoalState, enabled: boolean) 
     };
     window.addEventListener("op:execution-update", onExecution);
     return () => { requests.current++; controller.current?.abort(); window.removeEventListener("op:execution-update", onExecution); };
-  }, [refresh, sessionId]);
+  }, [refresh, sessionId, retryTick]);
   return { ...observation, fresh: observation.fresh && observation.identity === identity && connection === "open", refresh };
 }
 
@@ -306,7 +314,7 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
   const canResume = execution.fresh && controls?.can_resume === true;
   const stopPending = !!goal.stop_requested && !!goal.execution_id && !stopped;
   const executionLabel = !goal.execution_id ? text("Stop takes effect at the next Goal boundary; no execution record.", "停止在下一个 Goal 边界生效；无执行记录。")
-    : !execution.fresh || execution.status === "unavailable" ? text("Execution status unknown", "执行状态未知")
+    : !execution.fresh || execution.status === "unavailable" ? ""
     : execution.status === "running" && controls?.can_pause && !goal.stop_requested ? text("Execution running", "执行正在运行")
     : execution.recovery_mode === "restricted_new_turn" && canResume ? text("Previous action outcomes are unknown. Resume starts a new turn to inspect current state; new side effects require confirmation.", "旧操作结果未知。继续会开始新轮次检查实际状态；新的副作用操作需要确认。")
     : execution.recovery_reason === "pending_wait" ? text("Answer the pending approval or question in Activity before resuming.", "请先在 Activity 中处理待办审批或问题，再继续。")
@@ -401,7 +409,6 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
 
           {!historical ? <section className={styles.reason} aria-label={text("Execution stop status", "执行停止状态")}>
             <p role="status">{executionLabel}</p>
-            <Button variant="elevated" disabled={busy} onClick={() => void execution.refresh()}>{text("Refresh status", "刷新状态")}</Button>
             {goal.execution_id ? <Button variant="elevated" onClick={() => setInspection(goal.execution_id!)}>{text("Inspect execution", "查看执行详情")}</Button> : null}
             {stopPending ? <Button variant="elevated" disabled={busy} onClick={() => void mutate("stop")}>{text("Retry stop", "重试停止")}</Button> : null}
           </section> : null}
@@ -460,7 +467,7 @@ export function GoalDetails({ sessionId, goal, historical = false }: { sessionId
             <SessionDebugger key={`${sessionId}:${inspection}`} sessionId={sessionId} active={open} requestedExecutionId={inspection} />
           </section> : null}
           {!historical && !terminal ? <div className={styles.draftNotice} role="status">
-            {!execution.fresh || !controls ? <p>{text("Action status unavailable. Refresh status to retry.", "无法读取操作状态，请刷新状态重试。")}</p> : <>
+            {!execution.fresh || !controls ? null : <>
               {controls.reasons.resume && controls.reasons.resume !== "goal_not_resumable" ? <p>{text("Resume", "继续")}: {controlReason(controls.reasons.resume, zh)}</p> : null}
               {controls.reasons.verify ? <p>{text("Verify", "验收")}: {controlReason(controls.reasons.verify, zh)}</p> : null}
             </>}

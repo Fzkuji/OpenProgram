@@ -416,6 +416,29 @@ def test_no_deadline_wait_survives_long_delay_and_store_reopen(tmp_path):
     assert result.command.status.value == 'applied'
 
 
+def test_a_system_access_wait_starts_the_settings_guide_once(tmp_path, monkeypatch):
+    from openprogram.host.system_access import guide
+    started = []
+    monkeypatch.setattr(guide, "start_for_wait", lambda wait_id, required: started.append((wait_id, required)))
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "computer_use", "required_capabilities": ["screen_recording", "accessibility"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_guided",
+    )
+    assert started == [("wait_guided", ["screen_recording", "accessibility"])]
+
+    other_executions, other_attempts, other, other_attempt = _active_execution(
+        tmp_path / "ask", execution_id="exec_ask")
+    _suspend_ask(RuntimeControlService(other_executions, other_attempts, DriverRegistry()),
+                 other, other_attempt, "wait_question")
+    assert len(started) == 1
+
+
 def test_system_access_wait_is_worker_resolved_and_cannot_accept_question_answer(tmp_path):
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -849,3 +872,25 @@ def test_recovery_only_applies_outcome_for_current_wait_checkpoint(tmp_path, ans
     assert DurableWaitStore(executions).get_wait("second").status.value == (
         "resolved" if answer_latest else "open"
     )
+
+
+def test_an_open_system_access_wait_keeps_the_reconciler_probing(tmp_path):
+    """Nothing announces a permission grant, so an open system-access wait is
+    due again within a few seconds while a question with no deadline is not."""
+    import time as _time
+    from openprogram.runtime.execution.waits import SYSTEM_ACCESS_PROBE_SECONDS
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    waits = DurableWaitStore(executions)
+    assert waits.next_due() is None
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_probe",
+    )
+    due = waits.next_due()
+    assert due is not None and due <= _time.time() + SYSTEM_ACCESS_PROBE_SECONDS

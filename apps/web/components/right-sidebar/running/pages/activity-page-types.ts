@@ -27,6 +27,8 @@ export interface ActivityWaitDecision {
   answerLabel: string; question: string; choices: string[];
   /** The status words: waiting for an answer or for approval. */
   waitLabel: string;
+  /** It waits for an approval, not an answer. */
+  approval?: boolean;
 }
 
 /** Built once per render by RunningPanel from the code level 1 already has. */

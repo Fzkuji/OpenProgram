@@ -47,7 +47,7 @@
 <ul>
 <li>Project-file edits keep before/after bytes independently of conversations. Each successful write publishes at once. Changes from one editor group for at most five minutes; closing the group or an intervening outside change starts another version.</li>
 <li>History lists retained versions and restores a selected one, creating a new entry after checking the current revision.</li>
-<li>A failed save or an outside change keeps the draft for retry, export or explicit discard. Closing waits for pending changes; a failed save keeps the tab open.</li>
+<li>A failed save or an outside change keeps the draft for retry, export or explicit discard. Closing a file with unsaved changes asks first: Save, Don't Save or Cancel. Saving never holds the close: the tab goes at once, and a save that fails shows a notice and keeps the changes as a draft.</li>
 <li>History combines manual edits and confirmed model changes for the project-relative file. Model entries read retained bytes from the original session checkpoint, without a second archive. Restoring changes only this file.</li>
 <li>Archived sessions keep their file history; permanent deletion makes their model versions unavailable; manual history is independent.</li>
 <li>Older history indexes in bounded batches: <strong>Continue loading history</strong>. Incomplete or unverifiable history is labeled. Legacy paths appear only when project ownership can be established.</li>
@@ -156,7 +156,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td>Operate application windows in the background (screenshot and Accessibility tree), built-in browser Pages, or a configured virtual machine. One step, a batch, Python code, or a new agent from a brief. One approval per application. Needs macOS Accessibility and Screen Recording for the runtime, Linux X11 with AT-SPI and xdotool, Windows UI Automation, or <code translate="no">computer_use.vm_url</code>. <a href="computer-use.html">Computer use</a></td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td>Operate application windows in the background (screenshot and Accessibility tree), the whole screen when you turn it on, built-in browser Pages, your own Chrome or Edge, or the screen of a machine you set up. One step, a batch or Python code. One approval per application; a machine you set up asks nothing. Needs macOS Accessibility and Screen Recording for the runtime, Linux X11 with AT-SPI and xdotool, or Windows UI Automation. <a href="computer-use.html">Computer use</a></td></tr>
 <tr><th scope="row"><code translate="no">terminal_use</code></th><td>The built-in Desktop Terminal, including one you already opened</td></tr>
 </tbody></table>
 <h2 id="images-and-pdf">Images and PDF</h2>
@@ -215,7 +215,7 @@
 <tr><th scope="row"><code translate="no">list_mcp_resources</code>, <code translate="no">read_mcp_resource</code>, <code translate="no">list_mcp_prompts</code>, <code translate="no">get_mcp_prompt</code></th><td>MCP resources and prompts (the <code translate="no">mcp_meta</code> directory). Needs a configured <a href="mcp.html">MCP</a> server.</td></tr>
 <tr><th scope="row"><code translate="no">tool_search</code></th><td>Load a deferred tool; its schema joins the next request</td></tr>
 <tr><th scope="row"><code translate="no">help</code></th><td>A tool guide by name (<code translate="no">help("self_update.prepare")</code>), or a tool's overview</td></tr>
-<tr><th scope="row"><code translate="no">self_update</code></th><td>Change OpenProgram from an isolated worktree through build, trial, switch, rollback and repair. <code translate="no">status</code> (default), <code translate="no">begin</code>, <code translate="no">prepare</code>, <code translate="no">retry</code>, <code translate="no">cancel</code>, <code translate="no">versions</code>, <code translate="no">undo</code>; each follows the permission mode. Needs an installation from sealed versions, or a checkout with a <code translate="no">stable</code> branch. <a href="self-update.html">Self-update</a></td></tr>
+<tr><th scope="row"><code translate="no">self_update</code></th><td>Change OpenProgram from an isolated worktree through build, trial, switch, rollback and repair. <code translate="no">status</code> (default), <code translate="no">begin</code>, <code translate="no">prepare</code>, <code translate="no">retry</code>, <code translate="no">cancel</code>, <code translate="no">versions</code>, <code translate="no">undo</code>; each follows the permission mode. Needs an installation from sealed versions, or the development instance of a source checkout. <a href="self-update.html">Self-update</a></td></tr>
 </tbody></table>
 <details>
 <summary>Tool guides</summary>
@@ -223,8 +223,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">When</th><th scope="col">Guide</th></tr></thead>
 <tbody>
-<tr><th scope="row">First result of <code translate="no">computer_use_agent</code> for a target, or of <code translate="no">self_update</code></th><td>Starts with its guide and lists further ones</td></tr>
-<tr><th scope="row">Call needing an unseen guide: first <code translate="no">self_update(action="prepare")</code>, or first <code translate="no">computer_use_agent</code> with <code translate="no">code</code></th><td>Refused once with the guide; the next call runs</td></tr>
+<tr><th scope="row">First result of <code translate="no">computer_use</code> for a target, or of <code translate="no">self_update</code></th><td>Starts with its guide and lists further ones</td></tr>
+<tr><th scope="row">First <code translate="no">self_update(action="prepare")</code></th><td>Refused once with the guide; the next call runs</td></tr>
 <tr><th scope="row">After compaction</th><td>Delivered again when needed</td></tr>
 </tbody></table>
 </details>

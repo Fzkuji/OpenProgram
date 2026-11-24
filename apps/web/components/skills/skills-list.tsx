@@ -204,8 +204,8 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
           `/api/skills/_search?body=true&q=${encodeURIComponent(filterValue)}&limit=200`,
         );
         if (!r.ok) return;
-        const data: { name: string }[] = await r.json();
-        if (!cancelled) setBodyHits(new Set(data.map((s) => s.name)));
+        const data = await r.json() as { name: string }[];
+        if (!cancelled) setBodyHits(new Set((Array.isArray(data) ? data : []).map((s) => s.name)));
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };

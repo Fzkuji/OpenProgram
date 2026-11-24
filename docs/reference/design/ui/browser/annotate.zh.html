@@ -1,0 +1,76 @@
+<title>浏览器批注</title>
+<meta name="description" content="内置浏览器的批注模式：钉在网页上的批注、实时调整预览，以及发到对话的一条消息。">
+<h1>浏览器批注</h1>
+
+<p>批注让读者在浏览器标签里标记网页，把这些标记作为一条消息交给 agent。它沿用 Codex App 浏览器里的 Annotate 和 Adjust：指出哪里不对，写下要改成什么，必要时在真实页面上试一下大小、间距或颜色，然后发送。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 640 300" font-size="11" font-family="system-ui, sans-serif" role="img" aria-label="批注模式下的页面：顶部提示条，带实线框和 1 号图钉及批注卡片的标题，带 2 号图钉的虚线区域，底部的操作条">
+<rect x="1" y="1" width="638" height="298" rx="8" fill="none" stroke="currentColor" stroke-opacity=".25"/>
+<rect x="216" y="12" width="208" height="22" rx="11" fill="#18181b"/>
+<text x="320" y="27" text-anchor="middle" fill="#fff">点击元素或拖出方框 · Esc 结束</text>
+<rect x="40" y="60" width="240" height="34" rx="3" fill="none" stroke="#3b82f6" stroke-width="2"/>
+<text x="52" y="83" fill="currentColor" font-size="18">Cat</text>
+<circle cx="280" cy="60" r="10" fill="#3b82f6" stroke="#fff" stroke-width="2"/><text x="280" y="64" text-anchor="middle" fill="#fff" font-weight="600">1</text>
+<rect x="300" y="56" width="230" height="118" rx="10" fill="none" stroke="currentColor" stroke-opacity=".3"/>
+<text x="312" y="74" fill="currentColor" fill-opacity=".6" font-family="ui-monospace,monospace">h1#firstHeading</text><text x="500" y="74" fill="currentColor" fill-opacity=".6">删除</text>
+<rect x="310" y="82" width="210" height="36" rx="6" fill="none" stroke="currentColor" stroke-opacity=".3"/><text x="318" y="98" fill="currentColor">再大一点</text>
+<text x="312" y="136" fill="currentColor" fill-opacity=".6">› 调整</text>
+<text x="312" y="156" fill="currentColor" fill-opacity=".6">大小</text><line x1="360" y1="152" x2="470" y2="152" stroke="#3b82f6" stroke-width="2"/><text x="480" y="156" fill="currentColor" fill-opacity=".6">34px</text>
+<rect x="40" y="130" width="200" height="90" rx="3" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4"/>
+<circle cx="240" cy="130" r="10" fill="#3b82f6" stroke="#fff" stroke-width="2"/><text x="240" y="134" text-anchor="middle" fill="#fff" font-weight="600">2</text>
+<rect x="180" y="248" width="280" height="34" rx="10" fill="none" stroke="currentColor" stroke-opacity=".3"/>
+<text x="194" y="269" fill="currentColor">本页 2 条批注</text><text x="330" y="269" fill="currentColor" fill-opacity=".6">丢弃</text>
+<rect x="374" y="254" width="80" height="22" rx="6" fill="#3b82f6"/><text x="414" y="269" text-anchor="middle" fill="#fff">发送到对话</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">按钮</th><td>地址栏胶囊里、书签星标左边的 Solar 笔图标；页面处于批注模式时带强调色底。再点一次退出模式。</td></tr>
+<tr><th scope="row">模式</th><td>页面顶部居中一条深色提示：“点击元素或拖出方框 · Esc 结束”。指针下的元素描边高亮；页面收不到点击。</td></tr>
+<tr><th scope="row">元素批注</th><td>点击后元素得到强调色实线框、右上角带编号的图钉和旁边的卡片：等宽字体的短选择器（<code translate="no">h1#firstHeading</code>）、输入框、删除。点击已有批注的元素会打开那条批注。</td></tr>
+<tr><th scope="row">区域批注</th><td>拖动至少 8 px 画出强调色虚线框；卡片标题为 <code translate="no">region 312×100</code>。</td></tr>
+<tr><th scope="row">调整</th><td>元素卡片里折叠在“调整”一行下：大小（字号）、间距（内边距）、颜色。拖动控件即以内联样式在元素上预览；改过的值并入这条批注。</td></tr>
+<tr><th scope="row">操作条</th><td>有批注时在底部居中：“本页 N 条批注”、丢弃、发送到对话。</td></tr>
+<tr><th scope="row">Esc</th><td>退出模式；未发送的批注、图钉和操作条保留，直到丢弃或发送。模式关闭时，Esc 关闭打开的卡片。</td></tr>
+<tr><th scope="row">发送</th><td>一条用户消息：页面，然后按编号列出每条批注的选择器或区域、文字和调整值（<code translate="no">font-size 28px → 34px</code>），附一张带图钉的页面截图。随后清除批注和预览样式，模式结束。</td></tr>
+<tr><th scope="row">丢弃</th><td>移除所有批注和预览样式，模式结束。</td></tr>
+<tr><th scope="row">导航</th><td>地址变化会清除批注。离开标签只结束模式。</td></tr>
+</tbody>
+</table>
+
+<h2>决定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">覆盖层运行在页面里的隔离环境、封闭的 shadow root 中</th><td>桌面端页面是原生视图，App 窗口画不到它上面，所以描边和卡片只能在页面里。隔离环境让页面脚本看不到也调用不了它；shadow root 和宿主元素的 <code translate="no">!important</code> 样式让页面 CSS 改不了它。它和元素、区域选取共用一个环境，开启一个会结束另一个。</td></tr>
+<tr><th scope="row">App 传入自己的颜色</th><td>进入模式时从窗口读取 <code translate="no">--bg-primary</code>、<code translate="no">--border-light</code>、<code translate="no">--text-primary</code>、<code translate="no">--text-muted</code> 和 <code translate="no">--accent-blue</code>，卡片在任何主题下都和 App 一致。宿主只传已知键下的短颜色值。</td></tr>
+<tr><th scope="row">截图保留图钉</th><td>截图前卡片、提示和操作条隐藏两帧；描边和编号留着，图和编号列表对得上。</td></tr>
+<tr><th scope="row">直接发送，不放草稿</th><td>“发送到对话”就是任务的终点；消息走对话的发送队列，正在运行时排队等候。</td></tr>
+<tr><th scope="row">优先页面所属对话</th><td>批注发往打开该标签的 Agent 所在对话，否则是聚焦的对话，否则是上一个对话；只算仍打开的对话。都没有时提示先打开一个，批注保留。</td></tr>
+<tr><th scope="row">调整用内联样式预览</th><td>元素自身的内联 <code translate="no">!important</code> 声明压过页面规则，也正好是要撤销的那一处；发送、删除或丢弃时恢复元素原有的内联值。</td></tr>
+<tr><th scope="row">短选择器</th><td>最多四层，遇到 id 或已唯一即停；跳过生成的类名。agent 拿到的是能在源码里搜到的东西。</td></tr>
+<tr><th scope="row">浏览器版不提供</th><td>网页界面用其他源的 iframe 显示页面，无权操作其脚本。按钮留在原位但不可用，提示说明批注需要桌面 App。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>代码与验证</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">覆盖层</th><td><code translate="no">apps/desktop/main/web-views/annotate-overlay.js</code></td></tr>
+<tr><th scope="row">宿主循环和截图</th><td><code translate="no">apps/desktop/main/web-views/webtab-annotate.js</code>，IPC <code translate="no">webtab:annotate</code> 和 <code translate="no">webtab:annotate-event</code></td></tr>
+<tr><th scope="row">按钮和发送</th><td><code translate="no">apps/web/components/center-tabs/browser/toolbar/annotate-button.tsx</code>、<code translate="no">pane/use-page-annotate.ts</code></td></tr>
+<tr><th scope="row">消息</th><td><code translate="no">apps/web/lib/browser/capture/annotate.ts</code></td></tr>
+<tr><th scope="row">测试</th><td><code translate="no">apps/web/tests/browser/annotate.test.mjs</code>（选择器、消息、覆盖层流程），<code translate="no">apps/desktop/tests/web-views/check-webtab-annotate.js</code>（命令、循环、发送）</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>桌面 App 已实现。浏览器版没有批注模式。</p>
+
+<p class="next"><a href="built-in-browser.zh.html">内置浏览器</a></p>

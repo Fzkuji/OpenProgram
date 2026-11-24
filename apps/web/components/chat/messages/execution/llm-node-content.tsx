@@ -190,8 +190,7 @@ function ToolRefRow({
         : typeof detailNode.output === "string"
           ? detailNode.output
           : JSON.stringify(detailNode.output),
-      error: detailNode?.error || (!target && unresolvedStatus
-        ? tr("Execution node unavailable", "执行节点暂不可用") : undefined),
+      error: detailNode?.error || undefined,
       node_type: detailNode?.node_type,
       duration_ms: detailNode?.duration_ms,
       tree_root: detailNode || treeRoot,
@@ -245,12 +244,6 @@ function ToolRefRow({
             <pre className="llm-nc-pre">{typeof child.output === "string"
               ? child.output
               : JSON.stringify(child.output, null, 2)}</pre>
-          ) : running ? (
-            <div className="llm-nc-muted">{tr("Waiting for result…", "等待结果…")}</div>
-          ) : unresolvedStatus ? (
-            <div className="llm-nc-muted">
-              {tr("Execution node is unavailable after recovery.", "恢复后暂时找不到执行节点。")}
-            </div>
           ) : null}
           {visibleChildren.map((c, i) => (
             <div key={c.path || i} className="llm-nc-nested">

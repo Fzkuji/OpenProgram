@@ -3,8 +3,8 @@ be packed by apps/desktop/package.json build.files, or app.asar ships incomplete
 the app dies at launch with "Cannot find module".
 
 An entry in build.files is one file ("main.js") or a whole folder ("main/**",
-dotfiles included), the same expansion apps/desktop/tests/packaged-files.js,
-refresh-local-app.sh and package-incremental-app.sh make.
+dotfiles included), the same expansion apps/desktop/tests/packaged-files.js and
+package-incremental-app.sh make.
 """
 
 from __future__ import annotations
@@ -95,54 +95,11 @@ def test_packaged_files_include_preload_and_shell_integration():
     assert not any(name.startswith(("tests/", "scripts/")) for name in packaged)
 
 
-def test_refresh_script_reads_build_files_instead_of_a_hand_list():
-    """The stable refresh packs build.files, not a duplicated name list."""
-    root = DESKTOP.parents[1]
-    packer = (root / "scripts" / "release" / "pack-desktop-archive.sh").read_text(
-        encoding="utf-8"
-    )
-    assert "apps/desktop/package.json" in packer
-    assert "build.files" in packer
-    assert "main.js menu-geometry.js" not in packer
-    refresh = (root / "scripts/local-instances/refresh-local-app.sh").read_text(encoding="utf-8")
-    assert "scripts/release/pack-desktop-archive.sh" in refresh
-    assert "main/windows/window-lifecycle.js" in _packaged_files()
-
-
 def test_packaging_scripts_expand_folder_entries():
-    """Both asar repackers expand "folder/**", replace main/ whole and drop
+    """The asar repacker expands "folder/**", replaces main/ whole and drops
     top-level modules from before the move into main/."""
-    root = DESKTOP.parents[1]
-    for script in ("scripts/release/pack-desktop-archive.sh", "apps/desktop/scripts/package-incremental-app.sh"):
-        text = (root / script).read_text(encoding="utf-8")
-        assert '"/**"' in text, script
-        assert 'rm -rf "$desktop_stage/main"' in text, script
-        assert 'for staged_module in "$desktop_stage"/*.js; do' in text, script
-        assert 'rm -rf "$desktop_stage/tab-transfer" "$desktop_stage/shell-integration"' in text, script
-
-
-def test_refresh_script_rejects_stale_checkout_for_default_app():
-    refresh = (DESKTOP.parents[1] / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
-        encoding="utf-8"
-    )
-
-    assert 'default_app_path="$(canonicalize_app_path "/Applications/OpenProgram.app")"' in refresh
-    assert 'app_path="$(canonicalize_app_path "${OPENPROGRAM_APP_PATH:-$default_app_path}" "$default_app_path")"' in refresh
-    assert 'test "$app_path" = "$default_app_path"' in refresh
-    assert "merge-base --is-ancestor" in refresh
-    assert "for protected_ref in refs/heads/main refs/remotes/origin/main; do" in refresh
-    assert 'merge-base --is-ancestor "$protected_ref" HEAD' in refresh
-    assert "refusing to refresh the default App" in refresh
-    assert "behind $protected_ref" in refresh
-
-
-def test_refresh_script_replaces_the_archive_by_rename():
-    """An App launched mid-refresh must never read a half-copied app.asar:
-    the archive goes into the staged App, which replaces the installed one by rename."""
-    refresh = (DESKTOP.parents[1] / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(
-        encoding="utf-8"
-    )
-    assert 'cp "$desktop_asar" "$installed_asar' not in refresh
-    copy = refresh.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"\n')
-    assert copy < refresh.index('mv "$app_path" "$previous_app"\n') < refresh.index('mv "$staged_app" "$app_path"\n')
-
+    text = (DESKTOP / "scripts" / "package-incremental-app.sh").read_text(encoding="utf-8")
+    assert '"/**"' in text
+    assert 'rm -rf "$desktop_stage/main"' in text
+    assert 'for staged_module in "$desktop_stage"/*.js; do' in text
+    assert 'rm -rf "$desktop_stage/tab-transfer" "$desktop_stage/shell-integration"' in text

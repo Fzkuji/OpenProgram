@@ -7,7 +7,7 @@
 <thead><tr><th scope="col">入口</th><th scope="col">触发</th><th scope="col">调用</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row">每轮结束</th><td><code translate="no">runtime/conversation/turn_runtime</code></td><td><code translate="no">write(session_id=…)</code></td><td>一次写入，且累计到 <code translate="no">memory.writer.trigger_tokens</code> 才动手（8000、16000 或 32000，默认 16000）</td></tr>
-<tr><th scope="row">会话空闲</th><td><code translate="no">state/memory/session_watcher</code>：每 5 分钟扫描，30 分钟算空闲</td><td><code translate="no">write(…, force=True)</code></td><td>一遍遍写到没有剩余。会话结束后不会再有下一批。</td></tr>
+<tr><th scope="row">会话空闲</th><td><code translate="no">state/memory/session_watcher</code>：30 分钟算空闲；在已知的下一个对话变空闲或重试到期时扫描，两次最多隔 5 分钟</td><td><code translate="no">write(…, force=True)</code></td><td>一遍遍写到没有剩余。会话结束后不会再有下一批。</td></tr>
 <tr><th scope="row">每天 03:00</th><td><code translate="no">state/memory/scheduler</code>；手动 <code translate="no">openprogram memory sleep</code></td><td><code translate="no">reorganize(model=…)</code></td><td>整理磁盘上的 Topic，不增加内容</td></tr>
 </tbody>
 </table>

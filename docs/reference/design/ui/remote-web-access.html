@@ -1,8 +1,8 @@
 <title>Remote Web access</title>
-<meta name="description" content="How the single owner reaches the Web UI from another device: instance token, browser bootstrap, Host and Origin checks, reverse proxies and secret handling.">
+<meta name="description" content="How the single owner reaches the Web UI from another device: instance token, paired devices, browser bootstrap, Host and Origin checks, reverse proxies and secret handling.">
 <h1>Remote Web access</h1>
 
-<p>Every HTTP, SSE and WebSocket request carries the per-start instance token, even on loopback. A valid token means the active profile's one owner. No relay, no accounts.</p>
+<p>Every HTTP, SSE and WebSocket request carries the per-start instance token or a paired device's credential, even on loopback. Either means the active profile's one owner. No relay, no accounts.</p>
 
 <h2 id="method">Access modes</h2>
 <table class="stack">
@@ -31,7 +31,7 @@
 <tr><th scope="row">RBAC, groups, tenant or workspace roles, project permissions</th><td>The Web UI is one full-capability administrative interface</td></tr>
 <tr><th scope="row">OAuth, OIDC, SSO, identity-aware proxy, Tailscale identity</th><td>May add a control; never replace the token</td></tr>
 <tr><th scope="row">Built-in TLS, ACME, certificate storage and renewal</th><td>The owner runs nginx, Caddy, a VPN or SSH</td></tr>
-<tr><th scope="row">Public relay, hosted tunnel, rendezvous, pairing, share URL</th><td>No outbound registration for reachability</td></tr>
+<tr><th scope="row">Public relay, hosted tunnel, rendezvous, share URL</th><td>No outbound registration for reachability; another device pairs directly with the server it can reach (<a href="#paired-devices">Paired devices</a>)</td></tr>
 <tr><th scope="row">Authentication off, <code translate="no">--insecure</code></th><td>Always on, including loopback</td></tr>
 <tr><th scope="row">Long-lived token in a query, <code translate="no">localStorage</code> or public HTML</th><td>Fragment bootstrap and HttpOnly cookie only</td></tr>
 <tr><th scope="row">Reading stored provider credentials as plaintext</th><td>Replace only</td></tr>
@@ -89,11 +89,13 @@
 <tbody>
 <tr><th scope="row">Browser HTTP, SSE, WebSocket</th><td>Cookie <code translate="no">openprogram_owner_&lt;16hex&gt;</code> = <code translate="no">base64url(HMAC-SHA256(raw_token, "openprogram-web-cookie-v1"))</code></td><td><code translate="no">HttpOnly</code>, <code translate="no">SameSite=Strict</code>, <code translate="no">Path=/</code>, no <code translate="no">Domain</code>, session lifetime; <code translate="no">Secure</code> when the effective scheme is HTTPS</td></tr>
 <tr><th scope="row">Native HTTP, SSE, WebSocket</th><td><code translate="no">Authorization: Bearer &lt;token&gt;</code></td><td>Header only; a token in a query is ignored</td></tr>
+<tr><th scope="row">Paired browser</th><td>Cookie <code translate="no">openprogram_device_&lt;16hex&gt;</code> = <code translate="no">opd1.&lt;device id&gt;.&lt;secret&gt;</code></td><td>Same attributes as the owner cookie, plus <code translate="no">Max-Age</code> of 400 days; the server forgets the device after 30 idle days</td></tr>
+<tr><th scope="row">Paired native client</th><td><code translate="no">Authorization: Bearer opd1.…</code></td><td>Same Bearer rules as the owner token</td></tr>
 </tbody>
 </table>
 <ul>
 <li>The profile-specific name keeps simultaneous profile servers from overwriting each other's cookie: cookies are not port-scoped.</li>
-<li>The cookie has no database row. It is recomputed from the token, so a restart invalidates it.</li>
+<li>The owner cookie has no database row. It is recomputed from the token, so a restart invalidates it. A device credential is checked against <code translate="no">web/devices.json</code> and survives restarts.</li>
 <li>Except on bootstrap, any <code translate="no">Authorization</code> header selects the Bearer path: a bad one returns <code translate="no">401</code> and never falls back to a valid cookie.</li>
 </ul>
 
@@ -152,6 +154,42 @@
 </ol>
 <p class="note"><code translate="no">--base-url</code> must be an effective origin frozen in <code translate="no">access.json</code>, with no path, query, fragment or user information. HTTP passes only for exact <code translate="no">localhost</code> on a loopback listener or an IP in the ranges under <a href="#http-ranges">Plaintext HTTP</a>.</p>
 
+<h3 id="paired-devices">Paired devices</h3>
+<p>The owner token changes on every start, which suits this computer's own App and CLI: they read it from the state directory. A phone or a second computer cannot, so it pairs once and keeps a credential of its own.</p>
+<ol class="flow">
+  <li><strong>Computer</strong><small><code translate="no">openprogram web pair</code>: <code translate="no">POST /api/auth/pairings</code> mints a code; the CLI prints <code translate="no">&lt;origin&gt;/#pair=&lt;code&gt;</code> and its QR code</small></li>
+  <li><strong>Other device</strong><small>opens the link; the fragment leaves the address bar before any request</small></li>
+  <li><strong>Other device</strong><small><code translate="no">POST /api/auth/pair {"code"}</code></small></li>
+  <li><strong>Web server</strong><small>spends the code; a browser (it sends <code translate="no">Origin</code>) gets the device cookie with <code translate="no">204</code>, a native client gets <code translate="no">{"device_id","token"}</code></small></li>
+  <li class="flow-end"><strong>Other device</strong><small>every later request, across restarts, until revoked or idle 30 days</small></li>
+</ol>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pairing code</th><td>32 random bytes; single use; 10 minutes; held only in the worker's memory, at most 16 pending</td><td>A link that leaks into a chat or a screenshot is worthless soon after; a restart drops them all</td></tr>
+<tr><th scope="row">Device credential</th><td><code translate="no">opd1.&lt;16hex id&gt;.&lt;32-byte secret&gt;</code>; only <code translate="no">sha256(secret)</code> is stored, owner-only, in <code translate="no">&lt;state&gt;/web/devices.json</code></td><td>The file never holds a usable secret; the id lets one device be listed and revoked</td></tr>
+<tr><th scope="row">Authority</th><td>The same single owner as the instance token; the device id goes on the request as <code translate="no">device_id</code></td><td>A paired device can run tools as the owner anyway, so narrower scopes would not be a real boundary</td></tr>
+<tr><th scope="row">Lifetime</th><td>Valid while used; forgotten after 30 idle days; <code translate="no">last_used</code> written at most hourly</td><td>A lost phone that is never opened again stops working on its own</td></tr>
+<tr><th scope="row">Revoke</th><td><code translate="no">DELETE /api/auth/devices/{device_id}</code> or <code translate="no">openprogram web devices revoke &lt;id&gt;</code>; its open WebSockets close with <code translate="no">4401</code></td><td>Revoking takes effect on the connection the device is already holding</td></tr>
+<tr><th scope="row">Reachability</th><td>Unchanged: the link names an effective origin; with only loopback origins the CLI explains how to configure LAN, VPN or a proxy</td><td>Pairing proves who; it does not make an unreachable server reachable</td></tr>
+<tr><th scope="row">Spent link</th><td>A browser that is already paired and opens an old link signs in with its cookie and says nothing</td><td>Reopening a bookmarked link is not an error</td></tr>
+</tbody>
+</table>
+<p class="note">Routes: <code translate="no">GET /api/auth/devices</code>, <code translate="no">PATCH</code> and <code translate="no">DELETE /api/auth/devices/{device_id}</code>, <code translate="no">POST /api/auth/pairings</code> in <code translate="no">openprogram/interfaces/server/routes/identity/devices.py</code>; registry in <code translate="no">openprogram/interfaces/server/device_access.py</code>.</p>
+
+<details>
+<summary>Why pairing, and why this shape</summary>
+<table class="stack">
+<thead><tr><th scope="col">Peer</th><th scope="col">How another device signs in</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/pingdotgg/t3code">T3 Code</a></th><td><code translate="no">t3 pair</code> prints a QR of a one-time link with the secret in the fragment; the device keeps a session listed and revocable under Sharing &amp; access; unused 30 days, it pairs again. LAN, Tailscale HTTPS, SSH, or its hosted T3 Connect relay</td><td>Fragment link, one-time code, 30-day idle expiry, revoke list. Not the hosted relay or scoped grants</td></tr>
+<tr><th scope="row">DSH Mobile (DeepSeek Harness plugin)</th><td>QR, link or key pairing; device tokens go only to their exact origin; private LAN CA pinned; Tailscale Funnel or tunnels for remote; Web Push for the home-screen PWA</td><td>Credential bound to one origin (host-only cookie). LAN TLS and push are later steps</td></tr>
+<tr><th scope="row">pi remote extensions</th><td>QR to a LAN or tailnet WebSocket, or a self-hosted end-to-end encrypted relay</td><td>Confirms LAN and tailnet as the default routes</td></tr>
+<tr><th scope="row">Claude Code Remote Control, Codex remote control</th><td>The vendor's service relays between the computer and the phone</td><td>Not taken: OpenProgram runs no service</td></tr>
+</tbody>
+</table>
+</details>
+
 <h2 id="routes">Request handling</h2>
 <p>One ASGI middleware, <code translate="no">OwnerAuthMiddleware</code>, runs before route dispatch for HTTP and WebSocket. No application route interprets authentication itself.</p>
 <table class="stack">
@@ -173,6 +211,7 @@
 <tr><th scope="row">Application shell, static assets</th><td><code translate="no">GET</code> and <code translate="no">HEAD</code>; no token, secret, session id or user data in the HTML</td></tr>
 <tr><th scope="row"><code translate="no">GET</code>/<code translate="no">HEAD /docs</code>, <code translate="no">/docs/**</code></th><td>Prebuilt site only: <code translate="no">docs/_site</code> in a checkout, <code translate="no">openprogram/interfaces/server/_frontend/docs</code> in a package (the wheel must include its <code translate="no">index.html</code>). No source scan or build on a request; staleness checks run only when a source worker registers routes.</td></tr>
 <tr><th scope="row"><code translate="no">POST /api/auth/bootstrap</code></th><td>Its own body-token check</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/auth/pair</code></th><td>A single-use pairing code in the body</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>Listener proof, below; grants nothing</td></tr>
 <tr><th scope="row"><code translate="no">GET /healthz</code></th><td>Only <code translate="no">{"status":"ok"}</code>; details are behind authentication at <code translate="no">/api/diagnostics</code></td></tr>
 <tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook, guarded by the task's own key</td></tr>
@@ -317,7 +356,7 @@ server {
 <tr><th scope="row">Preserve</th><td>Omit the name from <code translate="no">api_keys</code></td><td>Rename, turn off, reorder and the strategy neither take nor change the key</td></tr>
 <tr><th scope="row">Replace</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>, one or more keys; <code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/credentials/{cid}/replace</code> <code translate="no">{"api_key":"new"}</code>, checked first; <code translate="no">200 {"ok":true,"credential":…,"check":…}</code>; <code translate="no">400</code> for a rejected key or a sign-in; <code translate="no">404</code> if absent</td></tr>
 <tr><th scope="row">Check</th><td>Not offered</td><td><code translate="no">POST /api/providers/{provider}/credentials/check-key</code> <code translate="no">{"api_key":"new","replace"?:cid}</code> stores nothing and answers <code translate="no">{"ok":true,"check":…}</code>; the add or replace after it reuses the check</td></tr>
-<tr><th scope="row">Delete</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>, no body, idempotent; removes the saved entry and live environment value; <code translate="no">204</code>. The parent environment can bring it back only after a restart.</td><td><code translate="no">DELETE /api/providers/{provider}/credentials/{cid}</code> removes that one credential; <code translate="no">200 {"ok":true}</code>; <code translate="no">404</code> if absent; <code translate="no">409</code> naming the variable for an environment key</td></tr>
+<tr><th scope="row">Delete</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>, no body, idempotent; removes the stored key; <code translate="no">204</code>. A variable set in the Worker's environment is not touched and still supplies its key.</td><td><code translate="no">DELETE /api/providers/{provider}/credentials/{cid}</code> removes that one credential; <code translate="no">200 {"ok":true}</code>; <code translate="no">404</code> if absent; <code translate="no">409</code> naming the variable for an environment key</td></tr>
 <tr><th scope="row">Reveal</th><td>A <code translate="no">reveal</code> query: <code translate="no">404</code></td><td>No route reads a stored key</td></tr>
 </tbody>
 </table>
@@ -349,7 +388,8 @@ server {
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td>Everything above, except the two items below</td></tr>
+<tr><th scope="row">Implemented</th><td>Everything above, except the items below</td></tr>
+<tr><th scope="row">Not started</th><td>Web Push for paired phones; the desktop App opening another computer's server as its own window. Settings → Devices (one list with paired phones, Add device with a pairing QR, rename, revoke, Same Wi-Fi and Anywhere) is in place: <a href="../integrations/remote-openprogram.html#ways-in">Remote OpenProgram machines</a></td></tr>
 <tr><th scope="row">Partial</th><td>Browser-driven audit that no exported asset or navigation path embeds dynamic data; server-side tests cover responses and rendered HTML</td></tr>
 <tr><th scope="row">Partial</th><td>nginx and Caddy HTTPS, WebSocket and SSE smoke deployments; a real-listener origin matrix covers <code translate="no">X-Forwarded-Proto</code> and <code translate="no">X-Forwarded-Host</code></td></tr>
 </tbody>
@@ -366,6 +406,7 @@ server {
 <tr><th scope="row">Origins</th><td><code translate="no">canonicalize_origin()</code>, <code translate="no">resolve_effective_origins()</code> in <code translate="no">openprogram/host/security/backend_endpoint.py</code>; parameterized owner-auth tests</td></tr>
 <tr><th scope="row">Middleware</th><td><code translate="no">OwnerAuthMiddleware</code>; owner-auth tests for HTTP mutation and pre-accept WebSocket</td></tr>
 <tr><th scope="row">Bootstrap</th><td><code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code>, <code translate="no">OwnerAuthBoundary</code>; <code translate="no">apps/web/scripts/settings/check-owner-auth-bootstrap.mjs</code>, TypeScript check, production build</td></tr>
+<tr><th scope="row">Paired devices</th><td><code translate="no">device_access.py</code>, <code translate="no">routes/identity/devices.py</code>, <code translate="no">openprogram/interfaces/cli/commands/services/web_devices.py</code>; <code translate="no">tests/component/webui/owner_auth/test_device_pairing.py</code>, <code translate="no">apps/web/tests/access/owner-auth-bootstrap.test.mjs</code></td></tr>
 <tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/services/web.py</code>, <code translate="no">build_owner_auth_url()</code>; <code translate="no">tests/unit/webui/test_web_auth_url.py</code></td></tr>
 <tr><th scope="row">Secrets</th><td><code translate="no">openprogram/host/security/credential_mask.py</code>, <code translate="no">credential_secrets</code>; <code translate="no">tests/component/programs/mcp/test_mcp_secret_non_retrievability.py</code>, <code translate="no">apps/web/scripts/settings/check-secret-non-retrieval.mjs</code></td></tr>
 <tr><th scope="row">Internal clients</th><td><code translate="no">resolve_backend_endpoint()</code> returns a challenge-verified <code translate="no">BackendEndpoint</code>, so the token is read only after proof; used by <code translate="no">openprogram/interfaces/cli/ink.py</code> and <code translate="no">openprogram/interfaces/cli/commands/capabilities/mcp.py</code>. The Node client sends Bearer only to backend URLs: <code translate="no">apps/cli/src/utils/backend.ts</code>, <code translate="no">apps/cli/tests/startup/backendAuth.test.ts</code></td></tr>
@@ -431,7 +472,8 @@ server {
 <tbody>
 <tr><th scope="row">Instance credential</th><td>Jupyter, OpenClaw, OpenHands</td><td>Used: one root secret in two transport forms, one bootstrap, one set of checks; no WebSocket ticket, session database or OAuth flow</td></tr>
 <tr><th scope="row">Application accounts</th><td>Open WebUI, Dify, LibreChat, multi-user AnythingLLM</td><td>Rejected: state and policy the product does not need</td></tr>
-<tr><th scope="row">Managed remote control</th><td>Pairing, hosted tunnels, relays</td><td>Rejected: needs a service OpenProgram does not run</td></tr>
+<tr><th scope="row">Device pairing</th><td>T3 Code, DSH Mobile, OpenClaw paired devices</td><td>Used: a one-time code buys one revocable device credential on the server the device already reaches</td></tr>
+<tr><th scope="row">Managed remote control</th><td>Hosted tunnels, relays</td><td>Rejected: needs a service OpenProgram does not run</td></tr>
 </tbody>
 </table>
 </details>

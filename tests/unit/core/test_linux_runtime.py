@@ -192,6 +192,10 @@ def test_web_command_explicit_port_overrides_inherited_environment(
         lambda: observed.append(os.environ.get("OPENPROGRAM_WEB_PORT")) or 0,
     )
     monkeypatch.setattr(ink, "_wait_until_listening", lambda *_args, **_kwargs: True)
+    # The worker names its port once it is started; without one the command
+    # waits the whole start-up time for it.
+    from openprogram.operations.worker import lifecycle
+    monkeypatch.setattr(lifecycle, "read_worker_port", lambda: 19090 if observed else None)
 
     web._cmd_web(19090, open_browser=False)
 

@@ -5,13 +5,16 @@ import { useQuery } from "@tanstack/react-query";
 
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
+import { PICKER_QUERY_KEY } from "@/lib/models/provider-state";
 import { api } from "@/lib/net/api";
 
 export function useModelAvailability() {
   const { text } = useTranslation();
   const { data: enabledModels } = useQuery({
-    queryKey: ["models-enabled"],
-    queryFn: api.listEnabledModels,
+    // The picker's read of the same address: one request serves both.
+    queryKey: PICKER_QUERY_KEY,
+    queryFn: api.listPickerModels,
+    select: (picker) => picker.models,
   });
   const promptNeedModel = useCallback(() => {
     showToast(

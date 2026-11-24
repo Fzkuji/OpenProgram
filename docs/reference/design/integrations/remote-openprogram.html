@@ -1,0 +1,111 @@
+<title>Remote OpenProgram machines</title>
+<meta name="description" content="How one computer shows and drives the conversations of OpenProgram running on another computer, without copying them, and how both are set up from Settings.">
+<h1>Remote OpenProgram machines</h1>
+
+<p>Each computer, Mac, Linux or Windows, runs its own OpenProgram. A computer paired with it lists its projects and conversations beside its own, marked with that machine, and opens, writes in, stops and approves them there. Nothing is copied.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="Computer B's page talks only to B's Worker. B's Worker holds one connection to computer A's Worker, authenticated with a device credential from pairing. List requests are answered with B's items plus A's items marked as on A. An action on a conversation that lives on A is forwarded to A unchanged, and A's frames for that conversation come back through B to the pages viewing it. A's files, logs and accounts stay on A.">
+  <defs><marker id="ro-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="20" y="40" width="150" height="70" rx="8"/>
+  <text class="t-big mid" x="95" y="70">Page on B</text>
+  <text class="t-soft mid" x="95" y="92">App, browser, phone</text>
+  <rect class="tile" x="265" y="40" width="150" height="70" rx="8"/>
+  <text class="t-big mid" x="340" y="70">B's Worker</text>
+  <text class="t-soft mid" x="340" y="92">its own conversations</text>
+  <rect class="tile" x="510" y="40" width="150" height="70" rx="8"/>
+  <text class="t-big mid" x="585" y="70">A's Worker</text>
+  <text class="t-soft mid" x="585" y="92">its own conversations</text>
+  <line class="ln" x1="170" y1="75" x2="261" y2="75" marker-end="url(#ro-a)"/>
+  <line class="ln-acc" x1="415" y1="75" x2="506" y2="75" marker-end="url(#ro-a)"/>
+  <text class="t-cmd mid" x="460" y="62">device credential</text>
+  <text class="t-soft mid" x="460" y="132">one WebSocket per machine</text>
+  <text class="t-cmd" x="265" y="176">list → B's items + A's items, marked "on A"</text>
+  <text class="t-cmd" x="265" y="204">action on A's conversation → forwarded to A</text>
+  <text class="t-cmd" x="265" y="232">A's frames for it → back to the pages viewing it</text>
+  <rect class="gate" x="510" y="160" width="150" height="80" rx="8"/>
+  <text class="t-soft mid" x="585" y="190">files, logs, accounts,</text>
+  <text class="t-soft mid" x="585" y="212">memory stay on A</text>
+  <text class="t-soft" x="20" y="280">B never stores A's transcript; it holds A's address, its credential and A's list while connected.</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Page on B</strong><small>App, browser or phone; talks only to B's Worker</small></li>
+  <li><strong>B's Worker</strong><small>one WebSocket to A, with the device credential from pairing</small></li>
+  <li><strong>Lists</strong><small>B's items plus A's items, marked as on A</small></li>
+  <li><strong>Actions</strong><small>an action on A's conversation is forwarded to A unchanged</small></li>
+  <li class="flow-end"><strong>Frames</strong><small>A's frames for it return to the pages viewing it; A's files stay on A</small></li>
+</ol>
+</figure>
+
+<h2 id="terms">Terms</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Term</th><th scope="col">Means</th></tr></thead>
+<tbody>
+<tr><th scope="row">Remote OpenProgram machine</th><td>A machine in the registry (<a href="computer-use/machines-and-targets.html">Machines and targets</a>) with an OpenProgram connection: the address of another computer's Worker and the device credential that signs B in there</td></tr>
+<tr><th scope="row">Home of a conversation</th><td>The Worker whose log holds it. It runs every turn: its model accounts, tools, memory and files. Never changes by being viewed elsewhere</td></tr>
+<tr><th scope="row">Device</th><td>Anything paired with a Worker: a phone, a browser, or another computer's Worker (<a href="../ui/remote-web-access.html#paired-devices">Paired devices</a>)</td></tr>
+</tbody>
+</table>
+<p class="note">Different from an SSH machine. A project on an SSH host keeps its conversations on this computer and runs only commands there.</p>
+
+<h2 id="peers">Peers</h2>
+<table class="stack">
+<thead><tr><th scope="col">Peer</th><th scope="col">How another computer's work appears</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/pingdotgg/t3code">T3 Code</a></th><td>Each computer is an environment. One app connects to several, groups their projects, and reads a linked machine's threads through a relay that proxies the same stream format read-only. Work never silently crosses environments</td><td>Several machines in one list; the same frames forwarded, no second transcript format; a conversation stays on its machine</td></tr>
+<tr><th scope="row">DSH Mobile</th><td>The phone lists every paired computer and switches between them</td><td>Per-machine online state in the list</td></tr>
+<tr><th scope="row">OpenClaw</th><td>One gateway with paired devices that approve each other</td><td>Pairing as the only way in</td></tr>
+<tr><th scope="row">Warp, Nimbalyst, Cursor cloud agents</th><td>Conversations are copied through the vendor's sync service</td><td>Not taken: needs a service, and the files and accounts a turn needs would not follow</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">Decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Question</th><th scope="col">Choice and reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Who connects to A</th><td>B's Worker, not B's page. The credential stays in B's credential store and never reaches browser storage; every page of B, phone included, sees A without pairing with A itself. One connection per machine carries the lists and the online state; each page of B that acts on A's conversations gets a forwarded connection of its own, so A's replies reach that page and no other</td></tr>
+<tr><th scope="row">Copy or forward</th><td>Forward. Lists come from A when B asks; a conversation's rows come from A when it is opened, page by page as on A itself. B writes nothing of A's to disk</td></tr>
+<tr><th scope="row">Which actions go to A</th><td>Every WebSocket action that names a conversation whose home is A goes to A unchanged: opening, paging, sending, steering, stopping, approvals, branches. The rule is by conversation, so actions added later follow without a forwarding entry each</td></tr>
+<tr><th scope="row">Lists</th><td><code translate="no">list_projects</code> and <code translate="no">list_sessions</code> answer with B's items plus each connected machine's, each item carrying its <code translate="no">machine_id</code>; A's project ids become <code translate="no">@&lt;machine&gt;/&lt;id&gt;</code>. B asks A with <code translate="no">local_only</code>, so two computers paired both ways never list each other's lists back. The sidebar groups them as it groups an SSH machine's projects and shows the machine's connection dot</td></tr>
+<tr><th scope="row">New conversation</th><td>Created on the project's machine. Choosing A's project creates it on A</td></tr>
+<tr><th scope="row">Files, @ search, terminal</th><td>Read on A through A's own routes, as files on an SSH host are read through its shell. Second step</td></tr>
+<tr><th scope="row">A offline</th><td>A's projects stay listed with the disconnected dot and open to nothing; no error page. B keeps no copy to show stale content from</td></tr>
+<tr><th scope="row">Versions</th><td>A Worker names the <code translate="no">remote_machine</code> capability in its handshake. One that does not is not connected: the machine row says it needs an update and nothing is forwarded, so neither side reads frames it does not understand</td></tr>
+<tr><th scope="row">Routing</th><td>B knows which machine each listed conversation lives on, and a conversation started in A's project belongs to A from its first frame. An id that is also one of B's own stays B's; frames from A naming another computer's conversation are dropped</td></tr>
+<tr><th scope="row">Frames from A</th><td>Passed to the page unchanged, except those about A's Worker itself (functions, providers, build, its own lists), which would overwrite B's</td></tr>
+<tr><th scope="row">Authority</th><td>B acts on A as A's owner, as any paired device does. Revoking B on A closes the connection at once</td></tr>
+</tbody>
+</table>
+
+<h2 id="settings">Settings</h2>
+<p>Everything here is set up in the App; the command line stays as an equal alternative.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Settings → Devices, on A</th><td>One list of computers and paired phones; a phone shows its last use and can be renamed or revoked. <strong>Add device</strong> asks what the device is first (Codex's and Claude's flows): <em>Phone or tablet</em> or <em>Another computer → Let it use this one</em> shows a QR code and the link carrying every address that is on, valid ten minutes and replaced when it runs out. Below the list, <em>Open this computer from</em>: Same Wi-Fi and Anywhere (below)</td></tr>
+<tr><th scope="row">Settings → Devices, on B</th><td><strong>Add device → Another computer → Show its conversations here</strong>: paste A's link. B redeems it at the first of its addresses that answers and the machine appears with its dot. Its menu has no Edit: it is added by pairing only</td></tr>
+<tr><th scope="row">Phone or browser</th><td>Scans A's QR code and is signed in to A; nothing to install</td></tr>
+<tr><th scope="row">Settings → Channels → Add bot → WeChat</th><td>The WeChat QR code drawn in the dialog, with its waiting, scanned, confirmed and expired states, from the existing <code translate="no">start_channel_login</code> action. The terminal command is no longer the only way</td></tr>
+</tbody>
+</table>
+<h2 id="ways-in">Ways in</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">How</th><th scope="col">Applies</th></tr></thead>
+<tbody>
+<tr><th scope="row">Same Wi-Fi</th><td>A second listener, in the Worker's process and on the same app, bound to this computer's private network address, whose Origin the running server then answers; <code translate="no">web.lan</code> keeps the choice (<code translate="no">interfaces/server/lan_listener.py</code>). The address is the route's interface, or the addresses this computer's own name resolves to when a proxy tunnel holds the route; only 10/8, 172.16/12 and 192.168/16 count. A new network moves the listener on the next read</td><td>At once; the main bind stays loopback</td></tr>
+<tr><th scope="row">Tailscale</th><td>Runs <code translate="no">tailscale serve --bg --https=443</code> to the Worker's loopback port and adds <code translate="no">https://&lt;name&gt;.ts.net</code> to the configured and the running Origins. Serve passes the Host it was dialled at and <code translate="no">X-Forwarded-Proto: https</code>, which the owner-auth check already believes from a loopback peer</td><td>At once; the bind stays loopback</td></tr>
+</tbody>
+</table>
+<p>A pairing link names every address: the first with <code translate="no">#pair=&lt;code&gt;</code>, each other as <code translate="no">&amp;via=&lt;origin&gt;</code>. A browser ignores the rest; another OpenProgram keeps them all and tries them in order on every connection, as T3 Code tries each of a machine's routes.</p>
+<p>Peers: OpenClaw and T3 Code both recommend Tailscale for reaching a computer from elsewhere; Claude Code and Codex relay through their own servers, which OpenProgram has none of.</p>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Pairing and device credentials, the pairing and device routes, <code translate="no">openprogram web pair</code> and <code translate="no">openprogram web devices</code>. The <code translate="no">openprogram</code> connection kind (<code translate="no">host/machines/peer.py</code>), B's connection to A, merged lists, forwarding by conversation and new conversations on A (<code translate="no">interfaces/server/remote_machines/</code>). Settings → Devices with Add device, the paired phones in the list and both ways in (<code translate="no">/api/auth/remote-access</code>), the WeChat QR code</td></tr>
+<tr><th scope="row">Not started</th><td>Files, @ search and terminal: their WebSocket requests that name the conversation are forwarded like any other, but the HTTP routes still read B's own disk. The phone app (a PWA, then a native shell with push)</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../ui/remote-web-access.html">Remote Web access</a> · <a href="computer-use/machines-and-targets.html">Machines and targets</a> · <a href="../channels/README.html">Channels</a></p>

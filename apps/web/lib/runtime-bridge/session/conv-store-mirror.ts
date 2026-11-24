@@ -29,7 +29,6 @@ function toSummary(c: Record<string, unknown>): ConvSummary {
     peer_display: (c.peer_display as string | undefined) ?? undefined,
     channel: (c.channel as string | undefined) ?? undefined,
     account_id: (c.account_id as string | undefined) ?? undefined,
-    environment_id: (c.environment_id as string | null | undefined) ?? undefined,
     peer: (c.peer as string | undefined) ?? undefined,
     preview: (c.preview as string | null | undefined) ?? null,
     pinned: !!c.pinned,

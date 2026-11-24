@@ -125,23 +125,6 @@ export function tooltipRows(
     if (out) rows.push(block("output", out));
   }
 
-  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
-    const record = node as Record<string, unknown>;
-    const before = record.tokens_before;
-    const after = record.tokens_after;
-    if (typeof before === "number" && typeof after === "number") {
-      rows.push(kv(translateText("tokens (est.)", "token（估算）"), `${before} → ${after}`));
-    }
-    const at = record.compacted_at;
-    if (typeof at === "number" && at > 0) {
-      const date = new Date(at > 1e12 ? at : at * 1000);
-      rows.push(kv(
-        translateText("compacted", "压缩于"),
-        date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ));
-    }
-  }
-
   // Only the states worth a second look get a row; a finished node's
   // status is the default and says nothing.
   const status = String(node.status || "");

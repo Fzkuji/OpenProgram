@@ -35,11 +35,13 @@
 <tbody>
 <tr><th scope="row">Image, video, audio</th><td>Shown or played in place</td></tr>
 <tr><th scope="row">PDF</th><td>First page, cut to a 16:9 frame</td></tr>
+<tr><th scope="row">Word, PowerPoint, Excel</th><td>First page as the worker draws it (<code translate="no">/api/file-thumbnail</code>): macOS Quick Look, else the picture the authoring app saved in the file; cut to a 16:9 frame. Neither: name row only. The in-app editor is an optional 730 MB install, too heavy to boot per card</td></tr>
 <tr><th scope="row">HTML</th><td>Drawn at 1280 × 720, scaled into a 16:9 frame</td></tr>
 <tr><th scope="row">zip, tar</th><td>First level, with a file count per folder</td></tr>
 <tr><th scope="row">Text</th><td>Opening lines</td></tr>
 </tbody>
 </table>
+<p>Every card with a preview is a third of the text column (240–440 px), three to a row: enough to tell files apart, and the full view is one click away. A card with no preview is a name row on its own line.</p>
 <p>A card is drawn only for an attachment the server put on the message: a <code translate="no">send_file</code> file or a <a href="#produced-files">file the turn produced</a>. The browser derives no card of its own.</p>
 <p>When the turn's final text is assembled (<code translate="no">with_attachments</code>), a marker the model typed for a file the turn did not record becomes the file's name, in the content and the text blocks: no card, path or automatic preview, live or after a reload. Upload and mention markers in the person's message stay.</p>
 <ul>
@@ -69,6 +71,7 @@
 <tr><th scope="row">Confirmed by the worker</th><td><code translate="no">GET /api/file-paths</code> answers which candidates are files: absolute and <code translate="no">~</code> paths against <code translate="no">readable_roots</code>, relative ones joined to the chat's working directory first. Only confirmed paths become links, so a code span that looks like a name never turns into a dead link</td></tr>
 <tr><th scope="row">Cost</th><td>The candidates of every reply on screen go out in one request per chat (64 paths each, <code translate="no">stat</code> only), answers are kept five minutes (a missing file twenty seconds, since the agent may still make it). The text is drawn first and never waits</td></tr>
 <tr><th scope="row">Not a route</th><td>A markdown link that can only be a local path (<code translate="no">/…</code> that is not an app page, <code translate="no">~/</code>, <code translate="no">./</code>, <code translate="no">../</code>, <code translate="no">file://</code>, a drive) is stopped before the shell's router, which would take <code translate="no">/Users/…</code> for a page. Not confirmed yet, it is looked up on click; a file that is not there says so. A bare target (<code translate="no">notes/plan.md</code>, or <code translate="no">docs.example.ai</code>, a web address without its scheme) becomes a file link only once confirmed, and until then keeps its own click</td></tr>
+<tr><th scope="row">Spaces in a path</th><td>A link to a root, <code translate="no">~/</code>, <code translate="no">file://</code> or drive path with a space in it (<code translate="no">[deck](/Users/me/ICDM 2026/deck.pptx)</code>) is still a link, though CommonMark ends a destination at a space and would print it as text. Models write paths this way. Web addresses keep the stock rule (<code translate="no">lib/markdown/spaced-path-links.ts</code>)</td></tr>
 <tr><th scope="row">Look</th><td>Drawn as the app's rendered-markdown links are (the file preview's): the link colour over a faint underline that turns solid on hover. A code span keeps its chip and takes the colour and the underline, so it is told apart from plain code at rest even where the link colour is close to the code colour. Only decoration changes, so the paragraph keeps its layout when a path becomes a link. Enter opens it</td></tr>
 </tbody>
 </table>
@@ -287,7 +290,7 @@
 <tr><th scope="row">Claude Code desktop</th><td>A path in a reply opens the file pane or browser pane; right-click gives Attach as context, Copy (absolute, relative, filename), Open in, Show in Finder</td></tr>
 <tr><th scope="row">KimiCode</th><td>Click opens File Preview; right-click gives Copy path and Reveal</td></tr>
 <tr><th scope="row">OpenCode v2</th><td>Links inline-code paths only after confirming the file exists, after unchecked guesses gave dead links</td></tr>
-<tr><th scope="row">Codex app</th><td>Prompts for <code translate="no">[app.py](/abs/path/app.py:12)</code> links and opens them in its editor</td></tr>
+<tr><th scope="row">Codex app</th><td>Prompts for <code translate="no" data-claim="example">[app.py](/abs/path/app.py:12)</code> links and opens them in its editor</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

@@ -498,8 +498,8 @@ def _stop_run(adapter, admission, finished: threading.Event,
 
 def leave_stopped(run: PrintRun, code: int = print_stop.STOPPED_EXIT_CODE) -> None:
     """End a stopped run's command, its files written
-    (:func:`print_stop.leave_stopped`). A turn still busy has its commands
-    stopped first (:func:`stop_commands`)."""
+    (:func:`print_stop.leave_stopped`). Whenever the process leaves at once,
+    the turn's commands are stopped first (:func:`stop_commands`)."""
     print_stop.leave_stopped(code, left_running=run.left_running,
                              before_leaving=lambda: stop_commands(run))
 

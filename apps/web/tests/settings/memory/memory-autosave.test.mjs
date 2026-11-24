@@ -165,10 +165,13 @@ test("undo and redo survive automatic file saves", async () => {
 
 // MemorySettings: every change is saved the moment it is made (no Save bar),
 // a failed save puts the old value back, controls lock while a save or an
-// install is in flight, and neither the Memory status probe nor the writer
-// model list holds the form back.
+// install is in flight, neither the Memory status probe nor the writer model
+// list holds the form back, nothing says "Loading" or "Checking", and a
+// revisit shows the kept settings at once.
 const { createElement: h } = await import("react");
-const { MemorySettings, OPTIONAL_LOAD_WAIT_MS } = await import("../../../components/settings/memory-settings.tsx");
+const { MemorySettings } = await import("../../../components/settings/memory-settings.tsx");
+const { invalidateAllSettings } = await import("../../../lib/prefs/settings-cache.ts");
+test.afterEach(() => invalidateAllSettings());
 
 const SETTINGS = {
   settings: [
@@ -180,7 +183,6 @@ const SETTINGS = {
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const never = () => new Promise(() => {});
-const pastOptionalWait = () => new Promise((resolve) => setTimeout(resolve, OPTIONAL_LOAD_WAIT_MS + 50));
 
 function memoryFetch({ status = () => ok({ embedding_available: true }), save = (body) => ok({ value: body.value }), install } = {}) {
   const posts = [];
@@ -262,15 +264,38 @@ test("controls stay disabled while the embedding model installs", async () => {
   await view.unmount();
 });
 
-test("an unanswered Memory status request does not block the form", async () => {
+test("an unanswered Memory status request does not block the form and says nothing", async () => {
   globalThis.memoryModels = async () => [];
   const posts = memoryFetch({ status: never });
   const view = await renderSettings();
-  await view.act(pastOptionalWait);
-  assert.match(view.container.textContent, /Checking…/);
+  assert.doesNotMatch(view.container.textContent, /Checking|Loading|Unavailable|unavailable|Not installed/);
   assert.equal(control(view, "Automatic writing").disabled, false);
   await view.act(async () => { control(view, "Automatic writing").click(); await settle(); });
   assert.equal(posts.length, 1);
+  await view.unmount();
+});
+
+test("nothing shows until the settings arrive, and a revisit shows them in its first render", async () => {
+  globalThis.memoryModels = async () => [];
+  let answer;
+  globalThis.fetch = async (url) => {
+    if (url.startsWith("/api/memory/status")) return ok({ embedding_available: true });
+    if (url === "/api/settings?scope=memory") return new Promise((resolve) => { answer = () => resolve(ok(SETTINGS)); });
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  let view = await render(h(MemorySettings));
+  await view.act(settle);
+  assert.equal(control(view, "Automatic writing"), null);
+  assert.doesNotMatch(view.container.textContent, /Loading|加载/);
+  await view.act(async () => { answer(); await settle(); });
+  assert.ok(control(view, "Automatic writing"));
+  await view.unmount();
+
+  // Back on the page: the kept settings are drawn before any request answers.
+  globalThis.fetch = () => new Promise(() => {});
+  view = await render(h(MemorySettings));
+  assert.ok(control(view, "Automatic writing"), "the form is there at once");
+  assert.match(view.container.textContent, /Available/);
   await view.unmount();
 });
 
@@ -278,7 +303,6 @@ test("an unanswered writer-model list does not block the form", async () => {
   globalThis.memoryModels = never;
   const posts = memoryFetch();
   const view = await renderSettings();
-  await view.act(pastOptionalWait);
   const writer = control(view, "Writer model");
   assert.equal(writer.disabled, false);
   assert.deepEqual([...writer.querySelectorAll("option")].map((o) => o.value), [""], "only Automatic until the models arrive");

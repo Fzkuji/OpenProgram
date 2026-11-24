@@ -127,6 +127,15 @@ export function TurnFilesChips({
     legacyTurnFilesLoadReducer,
     initialLegacyTurnFilesLoadState,
   );
+  // A list read that failed is asked again, quietly, with backoff; the card
+  // stays as it was meanwhile.
+  useEffect(() => {
+    if (legacyLoad.status !== "error") return;
+    console.warn("turn file changes read failed; reading again", { assistantMsgId, attempt: legacyLoad.attempt });
+    const timer = setTimeout(() => dispatchLegacyLoad({ type: "retry" }),
+      Math.min(30_000, 1000 * 2 ** legacyLoad.attempt));
+    return () => clearTimeout(timer);
+  }, [legacyLoad, assistantMsgId]);
   const historyControllerRef = useRef<AbortController | null>(null);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
@@ -324,19 +333,6 @@ export function TurnFilesChips({
   }
 
   if (!files) {
-    if (legacyLoad.status === "error") {
-      return (
-        <div className="turn-files-load-error" role="status">
-          <span>{text("Could not load file changes.", "无法加载文件修改。")}</span>
-          <button
-            type="button"
-            onClick={() => dispatchLegacyLoad({ type: "retry" })}
-          >
-            {text("Retry", "重试")}
-          </button>
-        </div>
-      );
-    }
     return (
       <div ref={probeRef} className="turn-files-probe" aria-hidden="true" />
     );

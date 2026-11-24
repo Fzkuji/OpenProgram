@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
+import { useSettingsData } from "@/lib/prefs/settings-cache";
 import type { ProviderStatus, ProviderUsage } from "@/lib/settings/provider-status.generated";
+import { providerUsageUrl } from "@/lib/settings/settings-urls";
 
 import { StackedBarChart, type StackPoint } from "../../token-usage/stacked-bar-chart";
 import { barTone, baseKey, bindingLimit, fmtAmount, fmtCount, fmtPercent, fmtReset, fmtUsd, leftFraction, planLabel } from "../status/model";
@@ -31,18 +33,13 @@ export function UsagePanel({ providerId, status }: { providerId: string; status:
   const [picked, setPicked] = useState<Measure | null>(null);
   const measure: Measure = picked ?? (included ? "tokens" : "cost");
   const setMeasure = (m: Measure) => setPicked(m);
-  const [usage, setUsage] = useState<ProviderUsage | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setFailed(false);
-    fetch(`/api/providers/${encodeURIComponent(providerId)}/usage?days=${days}&group=day,model`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d: ProviderUsage) => { if (alive) setUsage(d); })
-      .catch(() => { if (alive) setFailed(true); });
-    return () => { alive = false; };
-  }, [providerId, days]);
+  // Kept for the visit (30 days is also the models table's read, so it is
+  // usually here already). Switching the period keeps the figures shown until
+  // the new period answers; a failed read is retried quietly.
+  const read = useSettingsData<ProviderUsage>(providerUsageUrl(providerId, days));
+  const [lastRead, setLastRead] = useState<ProviderUsage | null>(null);
+  useEffect(() => { if (read) setLastRead(read); }, [read]);
+  const usage = read ?? lastRead;
 
   const byCost = measure === "cost";
   const top = useMemo(() => {
@@ -133,11 +130,7 @@ export function UsagePanel({ providerId, status }: { providerId: string; status:
           <span>{limitLabel}</span>
         </div>
       </div>
-      {failed ? (
-        <div className={cx(styles.xs, styles.muted)} role="alert">{text("Couldn't read the usage", "无法读取用量")}</div>
-      ) : (
-        <StackedBarChart points={points} colors={[TOP, OTHER]} format={format} formatTip={formatTip} height={150} line={pace} />
-      )}
+      <StackedBarChart points={points} colors={[TOP, OTHER]} format={format} formatTip={formatTip} height={150} line={pace} />
       <div className={styles.legend}>
         {top ? <span><i className={styles.legendSwatch} style={{ background: TOP }} />{top}</span> : null}
         <span><i className={styles.legendSwatch} style={{ background: OTHER }} />{text("Other models", "其他模型")}</span>

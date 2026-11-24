@@ -1,0 +1,202 @@
+{
+  "id": "local.auto-research",
+  "title": "Auto Research",
+  "description": "Your paper's research tasks, each with its own conversation: the agent works in the paper's folder and knows what the task needs; the task's files, figures and PDF show above it.",
+  "icon": "telescope",
+  "version": "1.4.0",
+  "scope": "project",
+  "dataSchema": 1,
+  "ui": {
+    "root": "ui",
+    "entry": "index.html"
+  },
+  "capabilities": [
+    "storage.app",
+    "model.invoke",
+    "files.project.read",
+    "chat"
+  ],
+  "backend": {
+    "kind": "python",
+    "entry": "backend:operations",
+    "dependencies": [
+      "pymupdf==1.28.2"
+    ]
+  },
+  "operations": {
+    "projects": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "List the research projects the page can open: OpenProgram projects that are Git repositories, and the bound folder."
+    },
+    "browse": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "pick_folder": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "overview": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Every task of the project with its state, last runs and the inputs its form offers."
+    },
+    "run_task": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Run one task on the project, or on a draft copy when draft_dir names one."
+    },
+    "pages": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "zoom": {
+            "type": "number"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "read_text": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Read a text file of the project, such as a report."
+    },
+    "artifacts": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "What a task, or the project, shows beside its conversation: changed files, the paper PDF, the task's files and what its last check wrote."
+    },
+    "read_file": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

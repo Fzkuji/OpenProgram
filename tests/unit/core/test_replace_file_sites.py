@@ -52,7 +52,7 @@ def state(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: root)
     # meta_storage binds get_state_dir at import; an earlier test in the same
     # worker may already have imported it.
-    monkeypatch.setattr("openprogram.programs._host.meta_storage.get_state_dir", lambda: root)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: root)
     return root
 
 

@@ -100,12 +100,12 @@ describe("message rail", () => {
     useSessionStore.setState({ currentSessionId: "s1", rowsByView: { s1: seeded }, messageOrder: { s1: order } });
   }
 
-  test("draws one tick per user message and drops folded covered originals", async () => {
+  test("draws one tick per user message", async () => {
     seed(["u1", "u2", "u3"]);
-    const view = await render(createElement(MessageRail, { hiddenKey: "u1" }));
+    const view = await render(createElement(MessageRail, {}));
     try {
       const ticks = [...view.container.querySelectorAll(".msg-rail-dash")];
-      assert.deepEqual(ticks.map((tick) => tick.getAttribute("aria-label")), ["question u2", "question u3"]);
+      assert.deepEqual(ticks.map((tick) => tick.getAttribute("aria-label")), ["question u1", "question u2", "question u3"]);
     } finally { await view.unmount(); }
   });
 
@@ -120,7 +120,7 @@ describe("message rail", () => {
     } finally { await view.unmount(); }
   });
 
-  test("a turn whose reply declared a task has a longer tick, and its card lists the task", async () => {
+  test("only a chapter has a longer tick; a turn whose reply declared a task lists it on its card", async () => {
     seed(["u1", "u2", "u3"], ["u3"]);
     useTaskStore.getState().setAll("s1", [
       { anchor_id: "u2_reply", plan_id: "T1", scope: "", title: "Fold the agent list", state: "done", advanced: true,
@@ -130,7 +130,7 @@ describe("message rail", () => {
     const view = await render(createElement(MessageRail, {}));
     try {
       const ticks = [...view.container.querySelectorAll(".msg-rail-dash")];
-      assert.deepEqual(ticks.map((tick) => tick.style.width), ["9px", "14px", "18px"]);
+      assert.deepEqual(ticks.map((tick) => tick.style.width), ["9px", "9px", "18px"]);
       await view.act(() => ticks[1].dispatchEvent(new Event("focusin", { bubbles: true })));
       const entries = [...view.container.querySelectorAll(".msg-rail-card-task")];
       assert.deepEqual(entries.map((entry) => entry.textContent), ["Fold the agent list2 steps"]);
@@ -216,10 +216,10 @@ describe("message rail", () => {
     }
   });
 
-  test("clicking a tick seeks to the real message node, but not into a folded original", async () => {
+  test("clicking a tick seeks to the real message node", async () => {
     seed(["u1", "u2"]);
     document.body.innerHTML = `<div id="chatArea"><div id="chatMessages">
-      <div class="compaction-orig-fold" data-open="0"><div data-msg-id="u1"></div></div>
+      <div data-msg-id="u1"></div>
       <div data-msg-id="u2"></div></div></div>`;
     const scrolled = [];
     for (const node of document.querySelectorAll("[data-msg-id]")) {
@@ -233,7 +233,7 @@ describe("message rail", () => {
       first.click();
       second.click();
       assert.deepEqual(seeks, ["u1", "u2"]);
-      assert.deepEqual(scrolled, ["u2"]);
+      assert.deepEqual(scrolled, ["u1", "u2"]);
     } finally { await view.unmount(); document.body.innerHTML = ""; }
   });
 });

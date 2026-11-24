@@ -5,8 +5,8 @@
 <table class="stack">
 <thead><tr><th scope="col">Target</th><th scope="col">Drawn</th><th scope="col">Code</th></tr></thead>
 <tbody>
-<tr><th scope="row">Native macOS window (<code translate="no">computer_use</code> window actions)</th><td>Inner glow, accent title-bar lights, cursor. One transparent, click-through, unfocusable window per conversation, 32pt margin.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use_agent/desktop/window_watch.py">window_watch.py</a> reports; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> places; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> renders</td></tr>
-<tr><th scope="row">Webpage in the App: tab or floating preview</th><td>Inner glow, cursor. One such window per page, 24pt margin, shown only while the view is. Glow follows the corners: preview 10pt, tab rounded bottom.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> places; <code translate="no">subscribeAgentPageGlow</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> reports</td></tr>
+<tr><th scope="row">Native macOS window (<code translate="no">computer_use</code> window actions)</th><td>Inner glow, accent title-bar lights, cursor. One transparent, click-through, unfocusable window per conversation, 32pt margin.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use/desktop/window_watch.py">window_watch.py</a> reports; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> places; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> renders</td></tr>
+<tr><th scope="row">Webpage in the App: tab or floating preview</th><td>Inner glow, cursor. One such window per page, 24pt margin, shown only while the view and its App window are. It sits in the window stack directly above the App window and is not its child: on macOS showing a child window brings its parent in front of every other app. Glow follows the corners: preview 10pt, tab rounded bottom.</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> places; <code translate="no">subscribeAgentPageGlow</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> reports</td></tr>
 <tr><th scope="row">Chat preview (PiP), web build</th><td>Cursor in a <code translate="no">pointer-events: none</code> layer over the preview image</td><td><code translate="no">ActionCueTravel</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser/toolbar/browser-control-bar.tsx">browser-control-bar.tsx</a></td></tr>
 </tbody>
 </table>
@@ -19,7 +19,7 @@
 <tr><th scope="row">Glows while</th><td>Control state is Agent operating, stopping, or not confirmed stopped, and its conversation's run is still going</td></tr>
 <tr><th scope="row">After the run ends</th><td>Idle whatever the state says, since the backend keeps it active until it reconciles (<code translate="no">presentedControlState</code> in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/browser/control/browser-control.ts">browser-control.ts</a>)</td></tr>
 <tr><th scope="row">Not drawn</th><td>A pausing state, a frame around the page</td></tr>
-<tr><th scope="row">Header and toolbar</th><td>Speak only for Needs your confirmation or an unknown state</td></tr>
+<tr><th scope="row">Header and toolbar</th><td>Speak only for Needs your confirmation; an unknown state says nothing while it is read again</td></tr>
 </tbody>
 </table>
 
@@ -28,7 +28,7 @@
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
 <tbody>
 <tr><th scope="row">Held</th><td>From the first read or step until 20 s after the last step, or until the agent moves on</td></tr>
-<tr><th scope="row">Polled</th><td>Window server's on-screen list every 0.12 s; reported when changed</td></tr>
+<tr><th scope="row">Read</th><td>Window server's on-screen list, once per burst of Accessibility notifications from any application with a window on screen, and at least every 5 s; every 0.12 s without Accessibility access. Reported when changed</td></tr>
 <tr><th scope="row">Reported</th><td>Frame in screen points, button frames relative to the window (read once through Accessibility), windows in front within the margin</td></tr>
 <tr><th scope="row">Excluded</th><td>Windows titled <code translate="no">OpenProgram agent overlay</code></td></tr>
 <tr><th scope="row">Ends</th><td>A last report with <code translate="no">active: false</code></td></tr>
@@ -60,7 +60,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
 <tbody>
-<tr><th scope="row">No input</th><td>Ignores the mouse, never takes focus or activates. Nothing moves the system pointer.</td></tr>
+<tr><th scope="row">No input</th><td>Ignores the mouse, never takes focus or activates, and never brings the App in front of another app. Nothing moves the system pointer.</td></tr>
 <tr><th scope="row">Visible in control</th><td>Up for the whole window session, fades in 0.36 s. A minimized window or another Space hides it until back.</td></tr>
 <tr><th scope="row">Per conversation</th><td>Each conversation shows its own</td></tr>
 <tr><th scope="row">Display only</th><td>Failures are dropped; the step goes on</td></tr>

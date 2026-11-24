@@ -59,6 +59,7 @@ import type { MentionScope } from "./attach/mention/at-mention";
 import { showToast } from "@/lib/format-utils/toast";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { runningApps } from "@/lib/net/computer-use-apps";
+import { loadResourcePages } from "@/lib/chat/resources/session-resources";
 import { onComposerFiles, takeComposerFiles } from "@/lib/chat/composer-inbox";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
@@ -115,8 +116,15 @@ export function wsSend(payload: unknown): boolean {
   }
 }
 
-// An @ in the draft can name an open web tab or a running app, not only a file.
-const MENTION_SOURCES: MentionSources = { tabs: () => useCenterTabs.getState().tabs, apps: runningApps };
+// An @ in the draft can name a web page this conversation uses, a window
+// shown in a tab or a running app, not only a file.
+function mentionSources(sessionId: string | null): MentionSources {
+  return {
+    pages: () => sessionId ? loadResourcePages(sessionId, () => useCenterTabs.getState().tabs) : Promise.resolve([]),
+    tabs: () => useCenterTabs.getState().tabs,
+    apps: runningApps,
+  };
+}
 
 /**
  * @param boundSessionId  Render this composer against a SPECIFIC session
@@ -245,7 +253,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // positioning + picker all live in ./use-file-mention now. The hook
   // owns the 6 useStates + 2 effects + pickFile callback that used to
   // sit here.
-  const fileMention = useFileMention({ input, setInput, textareaRef, sources: MENTION_SOURCES, scope: mentionScope });
+  const sources = useMemo(() => mentionSources(draftOwner), [draftOwner]);
+  const fileMention = useFileMention({ input, setInput, textareaRef, sources, scope: mentionScope });
 
   // Thinking-effort + plus-menu + tools toggles each live in their own
   // dedicated hooks now — see ./use-thinking-effort, ./use-tools-toggles.

@@ -46,7 +46,7 @@
 <ul>
 <li>项目文件的编辑独立于对话保留前后字节。每次成功写入立即发布。同一编辑器的修改最多合并五分钟；关闭合并或中间有外部修改就开始新版本。</li>
 <li>History 列出保留的版本，可恢复所选版本，检查当前修订后创建新条目。</li>
-<li>保存失败或外部修改时，草稿保留用于重试、导出或明确放弃。关闭文件等待未完成的修改；保存失败时标签保持打开。</li>
+<li>保存失败或外部修改时，草稿保留用于重试、导出或明确放弃。关闭有未保存修改的文件会先询问：保存、不保存或取消。保存从不拖住关闭：标签立即关掉，保存失败会提示，修改保留为草稿。</li>
 <li>History 合并项目相对路径文件的手动编辑和已确认的模型修改。模型条目从原会话检查点读取保留的字节，不另存归档。恢复只改动这个文件。</li>
 <li>归档会话保留文件历史；永久删除后其模型版本不可用；手动历史独立。</li>
 <li>较早的历史分批索引：<strong>继续加载历史</strong>。不完整或无法验证的会明确标注。旧路径只有能确定项目归属时才列入。</li>
@@ -155,7 +155,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td>在后台操作应用窗口（截图和辅助功能树）、内置浏览器 Page 或配置的虚拟机。单步、批量、Python 代码或按简报的新 agent。每个应用一次审批。需要 macOS 给 runtime 的辅助功能和屏幕录制、Linux X11 加 AT-SPI 和 xdotool、Windows UI Automation，或 <code translate="no">computer_use.vm_url</code>。<a href="computer-use.zh.html">Computer use</a></td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td>在后台操作应用窗口（截图和辅助功能树）、整个屏幕（需要你打开）、内置浏览器 Page、你自己的 Chrome 或 Edge，或你设置的机器的屏幕。单步、批量或 Python 代码。每个应用一次审批；你设置的机器不询问。需要 macOS 给 runtime 的辅助功能和屏幕录制、Linux X11 加 AT-SPI 和 xdotool，或 Windows UI Automation。<a href="computer-use.zh.html">Computer use</a></td></tr>
 <tr><th scope="row"><code translate="no">terminal_use</code></th><td>内置桌面终端，包括你已打开的</td></tr>
 </tbody></table>
 <h2 id="images-and-pdf">图片和 PDF</h2>
@@ -214,7 +214,7 @@
 <tr><th scope="row"><code translate="no">list_mcp_resources</code>、<code translate="no">read_mcp_resource</code>、<code translate="no">list_mcp_prompts</code>、<code translate="no">get_mcp_prompt</code></th><td>MCP 资源和提示（<code translate="no">mcp_meta</code> 目录）。需要已配置的 <a href="mcp.zh.html">MCP</a> 服务器。</td></tr>
 <tr><th scope="row"><code translate="no">tool_search</code></th><td>加载延迟工具，schema 进入下一次请求</td></tr>
 <tr><th scope="row"><code translate="no">help</code></th><td>按名字读工具指南（<code translate="no">help("self_update.prepare")</code>）或工具概览</td></tr>
-<tr><th scope="row"><code translate="no">self_update</code></th><td>从隔离 worktree 修改 OpenProgram 自身，经过构建、试运行、切换、回退和修正。<code translate="no">status</code>（默认）、<code translate="no">begin</code>、<code translate="no">prepare</code>、<code translate="no">retry</code>、<code translate="no">cancel</code>、<code translate="no">versions</code>、<code translate="no">undo</code>；每个动作都遵循权限模式。需要从封存版本安装，或带 <code translate="no">stable</code> 分支的检出。<a href="self-update.zh.html">自我更新</a></td></tr>
+<tr><th scope="row"><code translate="no">self_update</code></th><td>从隔离 worktree 修改 OpenProgram 自身，经过构建、试运行、切换、回退和修正。<code translate="no">status</code>（默认）、<code translate="no">begin</code>、<code translate="no">prepare</code>、<code translate="no">retry</code>、<code translate="no">cancel</code>、<code translate="no">versions</code>、<code translate="no">undo</code>；每个动作都遵循权限模式。需要从封存版本安装，或源码检出的开发版。<a href="self-update.zh.html">自我更新</a></td></tr>
 </tbody></table>
 <details>
 <summary>工具指南</summary>
@@ -222,8 +222,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">时机</th><th scope="col">指南</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">computer_use_agent</code> 对某目标的第一次结果，或 <code translate="no">self_update</code> 的第一次结果</th><td>以指南开头并列出更多</td></tr>
-<tr><th scope="row">需要未见过的指南的调用：第一次 <code translate="no">self_update(action="prepare")</code>，或第一次带 <code translate="no">code</code> 的 <code translate="no">computer_use_agent</code></th><td>被拒绝一次并带上指南，下一次运行</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code> 对某目标的第一次结果，或 <code translate="no">self_update</code> 的第一次结果</th><td>以指南开头并列出更多</td></tr>
+<tr><th scope="row">第一次 <code translate="no">self_update(action="prepare")</code></th><td>被拒绝一次并带上指南，下一次运行</td></tr>
 <tr><th scope="row">压缩后</th><td>需要时重新提供</td></tr>
 </tbody></table>
 </details>

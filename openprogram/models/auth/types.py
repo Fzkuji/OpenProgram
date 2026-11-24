@@ -162,8 +162,9 @@ class Credential:
 
     def to_dict(self) -> dict:
         payload = _payload_to_dict(self.payload)
-        if self.source == "env":
-            # An environment variable's key is read where it lives, never stored.
+        if self.source == "env" or self.metadata.get("company_key"):
+            # An environment variable's key is read where it lives, a company
+            # key from its company's file (``company_keys.py``): never here.
             payload["auth_value"] = ""
         return {
             "id": self.id,

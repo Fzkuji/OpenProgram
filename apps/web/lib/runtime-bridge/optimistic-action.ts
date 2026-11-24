@@ -17,8 +17,9 @@
  *
  * Used by ≥3 surfaces (Function-call Retry, version switcher / branch
  * checkout) that all share the pattern "flip now, server confirms via a
- * load_session reload, revert on timeout". Keep it dumb: a `setTimeout` +
- * a settled-poll; no bookkeeping store, no per-surface subclass.
+ * load_session reload, revert on timeout". Keep it dumb: one deadline
+ * `setTimeout`, and `settled()` asked again each time the store it reads
+ * changes; no bookkeeping store, no per-surface subclass.
  */
 
 /** Default rollback window for a control action (checkout / retry). Chosen
@@ -31,9 +32,12 @@ export interface OptimisticActionArgs {
   /** Apply the 0ms transitional state (spinner, target-selected, …). */
   apply: () => void;
   /** True once the real data has superseded the optimistic state — the
-   *  helper stops watching and never reverts. Polled a few times/sec and
-   *  once when the timeout fires. */
+   *  helper stops watching and never reverts. Asked on each change
+   *  `subscribe` reports and once when the timeout fires. */
   settled: () => boolean;
+  /** Hear each change of the store `settled` reads (a zustand store's
+   *  `subscribe`); returns the unsubscribe. */
+  subscribe: (onChange: () => void) => () => void;
   /** Undo ``apply`` — restore the pre-click state. Runs only if the
    *  timeout fires while ``settled()`` is still false. */
   revert: () => void;
@@ -61,20 +65,22 @@ export function optimisticAction(
   args.apply();
 
   let done = false;
+  let unsubscribe = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const finish = () => {
     if (done) return;
     done = true;
-    clearInterval(poll);
+    unsubscribe();
     clearTimeout(timer);
   };
 
-  // Poll a few times a second so we stop the revert timer the instant the
-  // backfill lands — no need to wait out the full window on success.
-  const poll = setInterval(() => {
-    if (args.settled()) finish();
-  }, 250);
+  // Stop the revert the moment the backfill lands, without waiting out
+  // the window: the store says when it changed.
+  unsubscribe = args.subscribe(() => {
+    if (!done && args.settled()) finish();
+  });
 
-  const timer = setTimeout(() => {
+  timer = setTimeout(() => {
     if (done) return;
     if (args.settled()) {
       finish();

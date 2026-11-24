@@ -16,6 +16,16 @@ import { type LegacyConv } from "./helpers";
 import { StatusMarker } from "./status-marker";
 import { ChannelLogo } from "@/components/channels/channel-logo";
 import { channelBrand } from "@/lib/channels/channel-brands";
+import type { ActivityState } from "./activity";
+
+/** What an Activity row adds to the chat row: a second line with the
+ *  project and the status word, and the time of its last activity on the
+ *  right. */
+export interface ConvRowActivity {
+  project?: string;
+  status?: { label: string; tone: ActivityState };
+  time: string;
+}
 
 export function ConvItem({
   conv,
@@ -38,6 +48,7 @@ export function ConvItem({
   onCopyLink,
   onExport,
   onDelete,
+  activity,
 }: {
   conv: LegacyConv;
   label: string;
@@ -64,6 +75,8 @@ export function ConvItem({
   onCopyLink: () => void;
   onExport: (format: "md" | "html") => void;
   onDelete: () => void;
+  /** Set on Activity rows (the bell's list). */
+  activity?: ConvRowActivity;
 }) {
   const { t, text } = useTranslation();
   // What a screen reader hears for the row: the logo is decorative, so a
@@ -192,6 +205,8 @@ export function ConvItem({
       <div
         ref={rowRef}
         className={`${base} ${colorCls} ${stateCls}`}
+        // Two lines: the row grows to fit them.
+        style={activity ? { height: "auto", alignItems: "flex-start" } : undefined}
         /* The row is a div (the marquee/mask layering and the nested ⋮
            trigger rule out a real <button>), so it needs the button role
            plus explicit keyboard activation to be reachable at all.
@@ -234,7 +249,7 @@ export function ConvItem({
             nav rows' icon slot (sidebarNavIconClass) — so with the row's
             12px gap the conversation title lines up at the exact same
             left indent as New chat / Functions / … above. */}
-          <StatusMarker
+          {wrapMarker(!!activity, <StatusMarker
             pinned={!!conv.pinned}
             state={
               // needs_input outranks working: a session waiting on the user
@@ -254,7 +269,7 @@ export function ConvItem({
               failed: t("sidebar.failed"),
               unread: t("sidebar.unread"),
             }}
-          />
+          />)}
 
         {renaming ? (
           <input
@@ -275,7 +290,7 @@ export function ConvItem({
           // A channel chat's brand logo stands where the title starts and
           // the title follows 6px later; the logo stays put while a long
           // title scrolls.
-          <span className="flex min-w-0 flex-1 items-center gap-[6px]">
+          withDetail(activity, <span className="flex min-w-0 flex-1 items-center gap-[6px]">
             {conv.channel ? <span className="sr-only">{channelBrand(conv.channel)}: </span> : null}
             {conv.channel ? <ChannelLogo channel={conv.channel} size={14} /> : null}
             <span
@@ -298,8 +313,16 @@ export function ConvItem({
                 {label}
               </span>
             </span>
-          </span>
+          </span>)
         )}
+        {activity ? (
+          // The time steps aside for the ⋯ button on hover.
+          <span className="shrink-0 self-center text-fs-xs leading-[16px] text-text-muted tabular-nums
+            transition-opacity duration-150 group-hover:opacity-0"
+            style={menuOpen ? { opacity: 0 } : undefined}>
+            {activity.time}
+          </span>
+        ) : null}
 
         {/* ⋯ button — hover-visible; anchors the menu. */}
         {/* The menu opens at the click point: a zero-size trigger placed
@@ -359,6 +382,36 @@ export function ConvItem({
   );
 }
 
+/** An Activity row's marker sits on the title line, not between the lines. */
+function wrapMarker(activity: boolean, marker: React.ReactNode) {
+  return activity ? <span className="mt-[2px] flex shrink-0">{marker}</span> : marker;
+}
+
+const STATUS_TONE: Record<ActivityState, string> = {
+  needs_input: "text-text-secondary",
+  failed: "text-[color:var(--status-failed)]",
+  working: "",
+  unread: "",
+};
+
+/** The title, with an Activity row's project and status word under it. */
+function withDetail(activity: ConvRowActivity | undefined, title: React.ReactNode) {
+  if (!activity) return title;
+  const { project, status } = activity;
+  return (
+    <span className="flex min-w-0 flex-1 flex-col">
+      {title}
+      {project || status ? (
+        <span className="truncate text-fs-xs leading-[16px] text-text-muted">
+          {project}
+          {project && status ? " · " : null}
+          {status ? <span className={STATUS_TONE[status.tone]}>{status.label}</span> : null}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** Where a row's context-menu anchor goes: the click point, relative to
  *  the row it sits in. */
 function menuAnchorStyle(point: { x: number; y: number }, row: HTMLElement | null): React.CSSProperties {
@@ -378,6 +431,13 @@ const DRAWN_FIELDS = ["id", "title", "pinned", "archived", "group", "status", "u
 const sameList = <T,>(a: readonly T[] | undefined, b: readonly T[] | undefined, same: (x: T, y: T) => boolean) =>
   a === b || (!!a && !!b && a.length === b.length && a.every((item, index) => same(item, b[index])));
 const sameProject = (a: { id: string; name: string }, b: { id: string; name: string }) => a.id === b.id && a.name === b.name;
+
+function sameActivity(a: ConvRowActivity | undefined, b: ConvRowActivity | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.project === b.project && a.time === b.time
+    && a.status?.label === b.status?.label && a.status?.tone === b.status?.tone;
+}
 
 function sameDragProps(a: ChatRowProps | undefined, b: ChatRowProps | undefined): boolean {
   if (a === b) return true;
@@ -399,6 +459,7 @@ export function sameConvRow(a: ConvItemProps, b: ConvItemProps): boolean {
     && sameList(a.groups, b.groups, Object.is)
     && sameList(a.projects, b.projects, sameProject)
     && !a.onOpenInNewTab === !b.onOpenInNewTab && !a.onMoveToProject === !b.onMoveToProject
+    && sameActivity(a.activity, b.activity)
     && !a.bulk === !b.bulk
     && (!a.bulk || !b.bulk || (a.bulk.count === b.bulk.count && sameList(a.bulk.projects, b.bulk.projects, sameProject)))
     && sameDragProps(a.dragProps, b.dragProps);

@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Callable
 
 _REQUEST_LOCK = threading.Lock()
 _log = logging.getLogger(__name__)
@@ -54,6 +55,9 @@ class CapabilitySpec:
     request_style: str = 'none'
     settings_pane: str | None = None
     settings_label: str = 'Privacy & Security'
+    # macOS grants it by a switch in a System Settings list of applications,
+    # not by a dialog: the explicit flows open the pane with the drag guide.
+    settings_list: bool = False
     usage_key: str | None = None
     entitlement: str | None = None
     identity_role: str | None = None
@@ -74,7 +78,7 @@ _CAPABILITY_SPECS = (
         check_method='CGPreflightScreenCaptureAccess',
         request_method='CGRequestScreenCaptureAccess',
         settings_pane='Privacy_ScreenCapture',
-        settings_label='Screen & System Audio Recording',
+        settings_label='Screen & System Audio Recording', settings_list=True,
         # Meetings records the call's sound through the same grant: the
         # worker's ScreenCaptureKit audio stream needs no other declaration.
         identity_role='runtime',
@@ -88,6 +92,7 @@ _CAPABILITY_SPECS = (
         request_method='AXIsProcessTrustedWithOptions',
         request_style='accessibility_prompt',
         settings_pane='Privacy_Accessibility', settings_label='Accessibility',
+        settings_list=True,
         identity_role='runtime',
         identity_application='/Applications/OpenProgram.app/Contents/Resources/runtime/OpenProgram.app',
         identity_bundle_id='ai.openprogram.runtime', tcc_service='Accessibility',
@@ -258,6 +263,8 @@ def validate_capability_registry() -> None:
             'eventkit_reminders', 'avfoundation_audio', 'avfoundation_video',
         }:
             raise RuntimeError(f'Unknown native request style for {spec.id}.')
+        if spec.settings_list and not (spec.request_mode == 'native' and spec.settings_pane):
+            raise RuntimeError(f'List capability {spec.id} needs a native check and a pane.')
         if spec.request_mode in {'native', 'settings', 'targeted'} and not spec.settings_pane:
             raise RuntimeError(f'Capability {spec.id} has no settings destination.')
         if spec.identity_role and spec.identity_role not in {'containing_app', 'runtime'}:
@@ -338,6 +345,7 @@ def _capability_row(spec: CapabilitySpec, *, status: str, detail: str) -> dict:
         'settings_available': bool(spec.settings_pane),
         'settings_pane': spec.settings_pane,
         'settings_url': settings_url,
+        'settings_guide': spec.settings_list,
         'operations': list(spec.operations),
         'required_operations': list(spec.operations),
         'instruction': instruction,
@@ -678,25 +686,30 @@ def report() -> dict:
     }
 
 
+# What a tool call needs of this computer's operating system. The tool that
+# knows its targets sits above the host, so the runtime installs the answer
+# here when it loads (``openprogram.runtime.lower_layers``): a function of the
+# tool's name and arguments that returns an operation of the registry above
+# (``computer_use:desktop``) or None. Without it no call needs a grant.
+_operation_source: Callable[[str, dict], str | None] | None = None
+
+
+def register_operation_source(source: Callable[[str, dict], str | None] | None) -> None:
+    """Install what tells the operating-system access a tool call needs."""
+    global _operation_source
+    _operation_source = source
+
+
 def _desktop_operation(tool_name: str, args: dict | None) -> str | None:
     """The registry operation a host-bound tool call needs, or None when it needs no grant."""
-    if not isinstance(args, dict):
+    if not isinstance(args, dict) or _operation_source is None:
         return None
-    name = str(tool_name)
-    if name == 'computer_use_agent':
-        # Application windows need the desktop grants; Pages and a VM do not.
-        # Listing applications reads nothing from the screen or the windows.
-        if args.get('target') != 'app':
-            return None
-        named = isinstance(args.get('args'), dict) and bool(args['args'].get('app'))
-        opening = 'get_app_state' if named else 'list_apps'  # A call without an action reads the app, or lists apps.
-        steps = args.get('actions') if isinstance(args.get('actions'), list) else [{'action': args.get('action') or opening}]
-        if not args.get('code') and steps and all(
-                isinstance(step, dict) and str(step.get('action') or '').strip() in {'list_apps', 'guide'}
-                for step in steps):
-            return None
-        return 'computer_use:desktop'
-    return None
+    try:
+        return _operation_source(str(tool_name), args)
+    except Exception:
+        # The call itself then says what is wrong with it; no wait is opened for it.
+        _log.debug("system access of %s could not be told", tool_name, exc_info=True)
+        return None
 
 
 def required_access_state(tool_name: str, args: dict | None, found: set[str] | None = None) -> dict | None:
@@ -770,7 +783,11 @@ def access_manifest_for_tool(tool_name: str, args: dict | None, found: set[str] 
 
 
 def missing_access_error(tool_name: str, args: dict | None, found: set[str] | None = None) -> str | None:
-    """The tool error for a missing macOS grant in a turn nobody can answer a card in."""
+    """The tool error for a missing macOS grant in a turn nobody can answer a card in.
+
+    It is coded as every computer-use failure is, so the model can tell the
+    user which permission is missing and where to grant it.
+    """
     if _desktop_operation(tool_name, args) is None:
         return None
     state = required_access_state(tool_name, args, found)
@@ -778,7 +795,8 @@ def missing_access_error(tool_name: str, args: dict | None, found: set[str] | No
         return None
     required = set(state['required_capabilities'])
     rows = [row for row in state['capabilities'] if row.get('id') in required]
-    return (f'{tool_name} cannot run: macOS has not granted ' + ', '.join(str(row['label']) for row in rows) + '. '
+    return ('PERMISSION_MISSING: macOS has not granted OpenProgram '
+            + ', '.join(str(row['label']) for row in rows) + '. '
             + ' '.join(str(row['instruction']) for row in rows))
 
 
@@ -835,6 +853,14 @@ def request_access(capability: str, *, open_settings: bool = False) -> dict:
             return before
         if open_settings:
             result = _mac_status(capability)
+            if spec.settings_list and result.get('status') in {'not_granted', 'unknown'}:
+                # The pane opens with the drag guide pinned to it (guide.py).
+                from openprogram.host.system_access import guide
+                result['guide_started'] = guide.start_after_check([capability])
+                result['settings_opened'] = bool(result['guide_started'])
+                if not result['guide_started']:
+                    result['settings_opened'] = _open_settings(capability)
+                return result
             result['settings_opened'] = _open_settings(capability)
             return result
         if not before['can_request']:
@@ -857,6 +883,8 @@ def setup_all_access() -> dict:
     the visible settings UI.  macOS still owns the final decision for each
     privacy category; this function only requests the registered capabilities
     through the one signed runtime identity and returns one consolidated report.
+    A capability granted by a switch in a System Settings list has no dialog:
+    its pane opens with the drag guide, one after another, in the background.
     """
     if platform.system() != 'Darwin':
         snapshot = report()
@@ -867,11 +895,15 @@ def setup_all_access() -> dict:
             'capabilities': snapshot['capabilities'],
         }
     requested = []
+    guided = []
     errors = []
     for spec in capability_registry():
         if spec.request_mode != 'native':
             continue
         requested.append(spec.id)
+        if spec.settings_list:
+            guided.append(spec.id)
+            continue
         try:
             request_access(spec.id)
         except (RuntimeError, ValueError) as exc:
@@ -879,10 +911,16 @@ def setup_all_access() -> dict:
     snapshot = report()
     remaining = [row['id'] for row in snapshot['capabilities']
                  if row.get('id') in requested and row.get('status') != 'granted']
+    from openprogram.host.system_access import guide
+    missing = {row['id'] for row in snapshot['capabilities']
+               if row.get('status') in {'not_granted', 'unknown'}}
+    guide_started = guide.start_after_check(
+        [capability for capability in guided if capability in missing])
     return {
         'status': 'granted' if not remaining and not errors else 'partial',
         'requested_capabilities': requested,
         'remaining_capabilities': remaining,
+        'guide_started': guide_started,
         'errors': errors,
         'capabilities': snapshot['capabilities'],
     }

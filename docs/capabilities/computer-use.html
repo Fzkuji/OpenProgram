@@ -1,44 +1,48 @@
 <title>Computer use</title>
-<meta name="description" content="computer_use_agent operates application windows, web pages and virtual machines: targets, actions, approval and platform differences.">
+<meta name="description" content="computer_use operates application windows, the whole screen, web pages and devices you set up: where a call lands, actions, approval and platform differences.">
 <h1>Computer use</h1>
-<p>One tool, <code translate="no">computer_use_agent</code>, lets the model operate a screen. Application windows work in the background: nothing comes to the front and the keyboard and mouse stay yours.</p>
+<p>One tool, <code translate="no">computer_use</code>, lets the model operate a screen. Every call names where it lands: a <code translate="no">type</code>, and a <code translate="no">device</code> when it is not this computer. Application windows work in the background: nothing comes to the front and the keyboard and mouse stay yours.</p>
 <h2 id="targets-and-guides">Targets</h2>
 <table class="stack">
-<thead><tr><th scope="col"><code translate="no">target</code></th><th scope="col">Operates</th><th scope="col">Needs</th></tr></thead>
+<thead><tr><th scope="col">Call</th><th scope="col">Operates</th><th scope="col">Listed when</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">app</code></th><td>Windows on this computer, named by <code translate="no">args.app</code>: Finder, Notes, Xcode, a chat client, a game launcher. macOS, Linux under X11, Windows.</td><td><a href="#requirements">Requirements</a></td></tr>
-<tr><th scope="row"><code translate="no">browser</code></th><td>Web pages, in <code translate="no">args.browser</code>: the App's built-in browser by default, or your own Chrome or Edge</td><td>The App; with it closed, a background browser without the App's sign-ins. For yours, the <a href="#your-own-chrome-or-edge">extension</a></td></tr>
-<tr><th scope="row"><code translate="no">vm</code></th><td>A remote machine behind an OSWorld-compatible server</td><td><code translate="no">computer_use.vm_url</code>, <a href="#virtual-machine">Virtual machine</a></td></tr>
+<tr><th scope="row"><code translate="no">type="window"</code></th><td>Application windows on this computer, by element tree, named by <code translate="no">app</code>: Finder, Notes, Xcode, a chat client, a game launcher. <code translate="no">title</code> picks one window.</td><td>macOS, Linux under X11 or Windows. See <a href="#requirements">Requirements</a>.</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td>A whole display of this computer, by pixels: the desktop, the menu bar, system dialogs, drags across windows. It moves your pointer.</td><td>macOS, after you turn on <code translate="no">computer_use.whole_screen</code>; off by default</td></tr>
+<tr><th scope="row"><code translate="no">type="browser"</code></th><td>This conversation's pages in the App's built-in browser; with the App closed, a background browser without the App's sign-ins</td><td>The browser application is enabled</td></tr>
+<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code>, …</th><td>Your own browser, with your tabs and sign-ins</td><td>The browser is installed; Chromium browsers also need the <a href="#your-own-browser">extension</a></td></tr>
+<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>The screen of a device you set up, here one named <code translate="no">lab</code></td><td>The device has a screen connection and is switched on. See <a href="#another-machine">Another device</a>.</td></tr>
 </tbody>
 </table>
+<p class="note">A call without <code translate="no">device</code> is always this computer, also in a conversation whose commands run on an SSH host or in Docker. A window, browser or application you name without a device is on this computer.</p>
 <details>
 <summary>How the model learns the actions</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Tool description</th><td>Lists only what this computer offers at the start of each turn: <code translate="no">vm</code> once <code translate="no">computer_use.vm_url</code> is set, your Chrome or Edge only once the Playwright Extension is installed, code only where its sandbox runs (macOS). Without the extension, a page open in your browser is operated as an application window with <code translate="no">app</code>.</td></tr>
-<tr><th scope="row">First call to a target</th><td>Returns its guide and current state. Code has its own guide, <code translate="no">computer_use_agent.code</code>, delivered with that call where code can run.</td></tr>
-<tr><th scope="row">Guide delivery</th><td>No call is turned back for a guide. A guide counts as read while it is in the model's context; after compaction the next call delivers it again. <code translate="no">action="guide"</code> or <code translate="no">help("computer_use_agent.app")</code> shows one.</td></tr>
-<tr><th scope="row">Checking a call</th><td>Against the guide, before anything runs. An unknown action or argument fails at once, and the error spells out the action's arguments. A few Playwright names are accepted: <code translate="no">select_option</code> for <code translate="no">select</code>, <code translate="no">values</code> for <code translate="no">value</code>, <code translate="no">expression</code> for <code translate="no">script</code>.</td></tr>
+<tr><th scope="row">What can be operated</th><td>A <code translate="no">&lt;devices&gt;</code> note beside your message lists it by device, this computer first: the whole list at the start and after compaction, then only what was added, changed or removed. The tool's own description never changes, so connecting a device keeps the prompt cache. A target missing a system permission stays listed with what to grant. With no target the tool is not offered.</td></tr>
+<tr><th scope="row">First call to a target</th><td>Returns the guide of its type (<code translate="no">window</code>, <code translate="no">screen</code> or <code translate="no">browser</code>), a short note on that target (its system, what it lacks, its keys) and its current state. Where code can run, the code guide comes too.</td></tr>
+<tr><th scope="row">Guide delivery</th><td>No call is turned back for a guide. A guide counts as read while it is in the model's context; after compaction the next call delivers it again. <code translate="no">action="guide"</code> or <code translate="no">help("computer_use.window")</code> shows one.</td></tr>
+<tr><th scope="row">One spelling</th><td>An action has one name and one set of arguments on every target. Names from other tools are rewritten, not refused: <code translate="no">left_click</code> to <code translate="no">click</code>, <code translate="no">double_click</code> to <code translate="no">click</code> with <code translate="no">click_count=2</code>, <code translate="no">element_index</code> and <code translate="no">ref</code> to <code translate="no">element</code>, <code translate="no">tabs</code> to <code translate="no">list_tabs</code>.</td></tr>
+<tr><th scope="row">Checking a call</th><td>Before anything runs. A wrong call fails at once with a coded error that says what works instead; see <a href="#what-the-tool-refuses">What the tool refuses</a>.</td></tr>
 </tbody>
 </table>
 </details>
 <h2 id="what-a-step-looks-like">What a step looks like</h2>
-<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", args={"app": "Calculator"})
+<pre translate="no" tabindex="0"><code>computer_use(type="window", app="Calculator")
 
 0 window "Calculator" actions: AXRaise
   12 static text value="0"
   18 button "7"
   23 button "All Clear"
 
-computer_use_agent(target="app", action="click", args={"app": "Calculator", "element_index": 18})</code></pre>
-<p class="note">The first call also returns the guide and a window screenshot. Each line: index, role, label, value, flags such as <code translate="no">[focused]</code> or <code translate="no">[checked]</code>, secondary actions.</p>
+computer_use(type="window", app="Calculator", action="click", args={"element": 18})</code></pre>
+<p class="note">Each line: element number, role, label, value, flags such as <code translate="no">[focused]</code> or <code translate="no">[checked]</code>, secondary actions.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Behaviour</th><th scope="col">Detail</th></tr></thead>
 <tbody>
 <tr><th scope="row">Result</th><td><code translate="no">Done: …</code>, then a diff of the tree: <code translate="no">-</code> disappeared, <code translate="no">+</code> new or changed</td></tr>
-<tr><th scope="row">Indices</th><td>Stable while the element stays, new elements get unused numbers. When an app replaces its elements, the tool finds the same control under its index.</td></tr>
-<tr><th scope="row">Limits</th><td>Trees 1500 elements, screenshots 1568 pixels on the long side. <code translate="no">full=true</code> on <code translate="no">get_app_state</code> returns the whole tree.</td></tr>
+<tr><th scope="row">Element numbers</th><td>Stable while the element stays, new elements get unused numbers. When an app replaces its elements, the tool finds the same control under its number. A number is valid only on the target that printed it.</td></tr>
+<tr><th scope="row">Limits</th><td>Trees 1500 elements, screenshots 1568 pixels on the long side. <code translate="no">full=true</code> on <code translate="no">get_state</code> returns the whole tree.</td></tr>
 <tr><th scope="row">Settling</th><td>At least 0.3 s, until the tree stops changing, at most 1.5 s; 5 s while a spinner or progress bar shows</td></tr>
 <tr><th scope="row">Sparse windows</th><td>Fewer than 12 elements (games, canvas editors, remote desktops, some Electron apps): the state also lists text read off the screenshot, such as <code translate="no">"New Game" at (160, 215), 120x30</code>, and textless icons as outlines like <code translate="no">(112, 169), 55x56</code>. Recognition runs on the Mac, preferred languages first, per screenshot.</td></tr>
 </tbody>
@@ -49,49 +53,63 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <tbody>
 <tr><th scope="row"><code translate="no">list_apps</code></th><td>—</td><td>Running and installed apps, with bundle ids</td></tr>
 <tr><th scope="row"><code translate="no">list_windows</code></th><td><code translate="no">app</code></td><td><code translate="no">window_id</code>, title, size; main, focused, minimised or on another Space</td></tr>
-<tr><th scope="row"><code translate="no">get_app_state</code></th><td><code translate="no">app</code>, <code translate="no">window?</code> or <code translate="no">window_id?</code>, <code translate="no">full?</code>, <code translate="no">include?</code></td><td>Screenshot and tree. Launches a closed app in the background. <code translate="no">window</code>: title substring or index; the last read stays selected. <code translate="no">include</code>: <code translate="no">all</code>, <code translate="no">tree</code>, <code translate="no">screenshot</code>.</td></tr>
+<tr><th scope="row"><code translate="no">get_state</code></th><td><code translate="no">app</code>, <code translate="no">window?</code> or <code translate="no">window_id?</code>, <code translate="no">full?</code>, <code translate="no">include?</code></td><td>Screenshot and tree. Opens a closed app in the background. <code translate="no">window</code>: title substring or index; the last read stays selected. <code translate="no">include</code>: <code translate="no">all</code>, <code translate="no">tree</code>, <code translate="no">screenshot</code>.</td></tr>
 <tr><th scope="row"><code translate="no">zoom</code></th><td><code translate="no">app</code>, <code translate="no">x</code>, <code translate="no">y</code>, <code translate="no">width</code>, <code translate="no">height</code></td><td>A region of the last screenshot at full pixel density. Action coordinates still refer to the screenshot.</td></tr>
 <tr><th scope="row"><code translate="no">find</code></th><td><code translate="no">app</code>, <code translate="no">text?</code>, <code translate="no">role?</code></td><td>Elements of the last tree by label, value or placeholder; otherwise screenshot lines showing <code translate="no">text</code></td></tr>
-<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">mouse_button?</code>, <code translate="no">click_count?</code>, <code translate="no">key?</code>, <code translate="no">duration?</code></td><td><code translate="no">key</code> holds modifiers like <code translate="no">cmd</code> or <code translate="no">shift+alt</code>; <code translate="no">duration</code> holds the button, up to 10 s</td></tr>
-<tr><th scope="row"><code translate="no">type_text</code></th><td><code translate="no">app</code>, <code translate="no">text</code>, <code translate="no">element_index?</code></td><td>Types into the focus, or focuses first. Refused on a control that cannot take text.</td></tr>
-<tr><th scope="row"><code translate="no">press_key</code></th><td><code translate="no">app</code>, <code translate="no">key</code>, <code translate="no">element_index?</code>, <code translate="no">duration?</code></td><td>One chord in xdotool spelling: <code translate="no">Return</code>, <code translate="no">super+c</code>, <code translate="no">ctrl+shift+Tab</code>, <code translate="no">KP_0</code>, <code translate="no">F5</code>. <code translate="no">super</code> and <code translate="no">cmd</code> are Command.</td></tr>
-<tr><th scope="row"><code translate="no">set_value</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code>, <code translate="no">value</code></td><td>Replaces a value, moves a slider, toggles a checkbox</td></tr>
-<tr><th scope="row"><code translate="no">scroll</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">direction?</code>, <code translate="no">pages?</code> or <code translate="no">pixels?</code></td><td>By pages (fractions allowed) or points</td></tr>
-<tr><th scope="row"><code translate="no">drag</code></th><td><code translate="no">app</code>, <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">to_x</code>,<code translate="no">to_y</code></td><td>Between two screenshot points</td></tr>
-<tr><th scope="row"><code translate="no">perform_secondary_action</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code>, <code translate="no">action_name</code></td><td>A listed action, such as <code translate="no">AXShowMenu</code>, <code translate="no">AXIncrement</code></td></tr>
-<tr><th scope="row"><code translate="no">select_text</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code>, <code translate="no">text</code>, <code translate="no">prefix?</code>, <code translate="no">suffix?</code>, <code translate="no">selection_type?</code></td><td>Selects a phrase or places the cursor beside it</td></tr>
-<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">app</code>, <code translate="no">text</code>, <code translate="no">format?</code>, <code translate="no">element_index?</code></td><td>Via the clipboard as <code translate="no">text</code>, <code translate="no">md</code> or <code translate="no">html</code>; clipboard restored</td></tr>
-<tr><th scope="row"><code translate="no">copy</code></th><td><code translate="no">app</code>, <code translate="no">element_index?</code></td><td>Runs the app's Copy and returns the text; clipboard restored</td></tr>
-<tr><th scope="row"><code translate="no">focus</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code></td><td>Moves focus without clicking</td></tr>
+<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">app</code>, <code translate="no">element</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">mouse_button?</code>, <code translate="no">click_count?</code>, <code translate="no">modifiers?</code>, <code translate="no">seconds?</code></td><td><code translate="no">modifiers</code> are keys held during the click, like <code translate="no">super</code> or <code translate="no">shift+alt</code>; <code translate="no">seconds</code> holds the button, up to 10 s</td></tr>
+<tr><th scope="row"><code translate="no">type_text</code></th><td><code translate="no">app</code>, <code translate="no">text</code>, <code translate="no">element?</code>, <code translate="no">clear?</code>, <code translate="no">submit?</code></td><td>Inserts at the focus, or focuses first. <code translate="no">clear</code> empties the field first, <code translate="no">submit</code> presses Return after; if that key fails, the text still counts as typed. Refused on a control that cannot take text.</td></tr>
+<tr><th scope="row"><code translate="no">press_key</code></th><td><code translate="no">app</code>, <code translate="no">key</code>, <code translate="no">element?</code>, <code translate="no">seconds?</code></td><td>One chord in xdotool spelling: <code translate="no">Return</code>, <code translate="no">super+c</code>, <code translate="no">ctrl+shift+Tab</code>, <code translate="no">KP_0</code>, <code translate="no">F5</code>. On a Mac <code translate="no">super</code> means Command.</td></tr>
+<tr><th scope="row"><code translate="no">set_value</code></th><td><code translate="no">app</code>, <code translate="no">element</code>, <code translate="no">value</code></td><td>Replaces a whole value, moves a slider, toggles a checkbox</td></tr>
+<tr><th scope="row"><code translate="no">scroll</code></th><td><code translate="no">app</code>, <code translate="no">element</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">direction?</code>, <code translate="no">pages?</code> or <code translate="no">pixels?</code></td><td>By pages (fractions allowed) or points</td></tr>
+<tr><th scope="row"><code translate="no">drag</code></th><td><code translate="no">app</code>, <code translate="no">element</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">seconds?</code></td><td>Presses there, moves to <code translate="no">to_element</code> or <code translate="no">to_x</code>,<code translate="no">to_y</code> and releases; <code translate="no">seconds</code> slows the move</td></tr>
+<tr><th scope="row"><code translate="no">perform_secondary_action</code></th><td><code translate="no">app</code>, <code translate="no">element</code>, <code translate="no">action_name</code></td><td>A listed action, such as <code translate="no">AXShowMenu</code>, <code translate="no">AXIncrement</code></td></tr>
+<tr><th scope="row"><code translate="no">select_text</code></th><td><code translate="no">app</code>, <code translate="no">element</code>, <code translate="no">text</code>, <code translate="no">prefix?</code>, <code translate="no">suffix?</code>, <code translate="no">selection_type?</code></td><td>Selects a phrase or places the cursor beside it</td></tr>
+<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">app</code>, <code translate="no">text</code>, <code translate="no">format?</code>, <code translate="no">element?</code></td><td>Via the clipboard as <code translate="no">text</code>, <code translate="no">md</code> or <code translate="no">html</code>; clipboard restored</td></tr>
+<tr><th scope="row"><code translate="no">copy</code></th><td><code translate="no">app</code>, <code translate="no">element?</code></td><td>Runs the app's Copy and returns the text; clipboard restored</td></tr>
+<tr><th scope="row"><code translate="no">focus</code></th><td><code translate="no">app</code>, <code translate="no">element</code></td><td>Moves focus without clicking</td></tr>
 <tr><th scope="row"><code translate="no">menu</code></th><td><code translate="no">app</code>, <code translate="no">menu_path?</code></td><td>No path: the menu bar. <code translate="no">["View", "Scientific"]</code>: lists it or chooses a leaf. Ignores case and trailing <code translate="no">…</code>. No menu opens on screen.</td></tr>
 <tr><th scope="row"><code translate="no">show_window</code></th><td><code translate="no">app</code>, <code translate="no">window?</code> or <code translate="no">window_id?</code></td><td>Restores or unhides, without bringing to the front</td></tr>
 <tr><th scope="row"><code translate="no">open_file</code></th><td><code translate="no">app</code>, <code translate="no">path</code></td><td>Opens a document (absolute path) like Open With, in the background. Refuses programs, scripts, executables and any file for a terminal app. macOS only.</td></tr>
-<tr><th scope="row"><code translate="no">hover</code></th><td><code translate="no">app</code>, <code translate="no">element_index</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">duration?</code></td><td>Rests the pointer (default 0.8 s) for tooltips; your cursor does not move. Apps ignoring the pointer in the background show nothing.</td></tr>
-<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">app</code>, <code translate="no">duration?</code></td><td>Up to 10 s (default 1), then what changed</td></tr>
+<tr><th scope="row"><code translate="no">hover</code></th><td><code translate="no">app</code>, <code translate="no">element</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">seconds?</code></td><td>Rests the pointer (default 0.8 s) for tooltips; your cursor does not move. Apps ignoring the pointer in the background show nothing.</td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">app</code>, <code translate="no">seconds?</code>, <code translate="no">text?</code></td><td>Up to 10 s (default 1), then what changed; with <code translate="no">text</code>, until the window shows it, in its tree or read off its screenshot</td></tr>
 <tr><th scope="row"><code translate="no">start_audio_recording</code></th><td><code translate="no">app</code>, <code translate="no">max_duration?</code></td><td>Records that app's sound, default 60 s, at most 300. Other actions run meanwhile.</td></tr>
 <tr><th scope="row"><code translate="no">stop_audio_recording</code></th><td><code translate="no">app</code>, <code translate="no">transcribe?</code></td><td>Saves a 16 kHz WAV and returns its path, plus a transcript if a speech engine is set</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">app</code> is a name, bundle id or <code translate="no">.app</code> path as <code translate="no">list_apps</code> prints. <code translate="no">x</code>,<code translate="no">y</code> are pixels of that app's latest screenshot. Prefer an index; coordinates are for canvases and custom controls.</p>
+<p class="note"><code translate="no">app</code> is a name, bundle id or <code translate="no">.app</code> path as <code translate="no">list_apps</code> prints. <code translate="no">x</code>,<code translate="no">y</code> are pixels of that app's latest screenshot. Prefer an element; coordinates are for canvases and custom controls.</p>
 <p>Element actions reach hidden, minimised or covered windows; coordinate clicks, drags and wheel scrolls run in the background too. A click or hover on an element scrolled out of view scrolls it in first. An element with no frame, such as an option of a closed dropdown, is refused with a note to open what holds it, and nothing changes.</p>
 <details>
 <summary>What you see on macOS</summary>
 <p>While the agent holds a window, a soft accent glow runs inside its edge, its traffic-light buttons turn the accent colour and pulse in turn, and the agent cursor glides to each target and leaves a small dot where it clicks. Your pointer stays put.</p>
 <p>The overlay sits just above that window, so a window in front covers it, and it never takes clicks. It fades about 20 seconds after the last step. <strong>Show actions</strong> in the browser toolbar turns it off for Pages and applications. macOS also shows its screen-sharing icon in the menu bar.</p>
 </details>
-<h2 id="several-steps-code-and-a-new-agent">Several steps, code and a new agent</h2>
-<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", args={"app": "Calculator"}, actions=[
-  {"action": "click", "args": {"element_index": 18}},
+<h2 id="the-whole-screen">The whole screen</h2>
+<pre translate="no" tabindex="0"><code>computer_use(type="screen", action="list_displays")
+computer_use(type="screen", display="2")
+computer_use(type="screen", display="2", action="click", args={"x": 640, "y": 412})</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Off by default</th><td>Listed only after <code translate="no">openprogram config set computer_use.whole_screen true</code>. An ordinary task needs one application, so the model works through <code translate="no">type="window"</code>; while it is off, a call with <code translate="no">type="screen"</code> answers that the target does not exist and sends nothing.</td></tr>
+<tr><th scope="row">When</th><td>What lies outside one window: the desktop, the menu bar, system dialogs, drags across windows, and windows that ignore background input. For one application, <code translate="no">type="window"</code> works without taking your pointer.</td></tr>
+<tr><th scope="row">Pixels only</th><td><code translate="no">get_state</code> is a screenshot of one display, the main one without <code translate="no">display</code>. <code translate="no">x</code>,<code translate="no">y</code> are pixels of the last screenshot of that display; every acting call returns a new one.</td></tr>
+<tr><th scope="row">Actions</th><td><code translate="no">click</code>, <code translate="no">type_text</code>, <code translate="no">press_key</code>, <code translate="no">scroll</code>, <code translate="no">drag</code>, <code translate="no">hover</code>, <code translate="no">wait</code>, plus <code translate="no">list_displays</code>, <code translate="no">zoom</code> and <code translate="no">paste</code></td></tr>
+<tr><th scope="row">Real input</th><td>The pointer moves where you see it, and keys and text go to the front application. A call holds this computer: other calls on it wait.</td></tr>
+<tr><th scope="row">Left out</th><td>Applications you refused and OpenProgram's windows are not in the screenshots, and a step on them is refused (OpenProgram's are allowed in Bypass permissions)</td></tr>
+</tbody>
+</table>
+<h2 id="several-steps-code-and-a-new-agent">Several steps and code</h2>
+<pre translate="no" tabindex="0"><code>computer_use(type="window", app="Calculator", actions=[
+  {"action": "click", "args": {"element": 18}},
   {"action": "press_key", "args": {"key": "KP_Multiply"}},
-  {"action": "click", "args": {"element_index": 18}},
+  {"action": "click", "args": {"element": 18}},
   {"action": "press_key", "args": {"key": "KP_Enter"}}
 ])</code></pre>
 <table class="stack">
 <thead><tr><th scope="col">Form</th><th scope="col">Limits</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">actions</code></th><td>Up to 20, one app</td><td>Run in order, stop at the first error, return the state once. Every step uses the indices of the state read before.</td></tr>
-<tr><th scope="row"><code translate="no">code</code> (macOS)</th><td>120 s, 100 actions, first 256 KB of output</td><td>Python with top-level <code translate="no">await</code>, in an isolated interpreter without files, network or processes; variables last for the turn. <code translate="no">await cu.app.click(app="Numbers", element_index=3)</code>, <code translate="no">await cu.browser.read()</code>, <code translate="no">await cu.vm.screenshot()</code>. <code translate="no">dir(cu.app)</code> and <code translate="no">help(cu.app.click)</code> explore.</td></tr>
-<tr><th scope="row"><code translate="no">context="inherit"</code> (default)</th><td>—</td><td>The model operates the screen in this conversation and sees every result</td></tr>
+<tr><th scope="row"><code translate="no">actions</code></th><td>Up to 20, one target and one application, window, tab or display, named once by the call</td><td>Run in order, stop at the first error, return the state once. Every step uses the element numbers of the state read before. A failure says how many steps are done.</td></tr>
+<tr><th scope="row"><code translate="no">code</code> (macOS)</th><td>120 s, 100 actions, first 256 KB of output</td><td>Python with top-level <code translate="no">await</code>, in an isolated interpreter without files, network or processes. <code translate="no">cu</code> is the call's target: <code translate="no">await cu.get_state()</code>, <code translate="no">await cu.click(element=3)</code>. <code translate="no">dir(cu)</code> and <code translate="no">help(cu.click)</code> explore.</td></tr>
 </tbody>
 </table>
 <details>
@@ -99,45 +117,46 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Scope</th><td>Code acts only on the app or browser its call names, with what single actions can do, page scripts and opening sites included. Uploading from the built-in browser is its own action.</td></tr>
+<tr><th scope="row">Scope</th><td>Code acts only on the target and the application, tab or display its call names, with what single actions can do. Work on two targets takes two calls; variables carry over between them for the turn.</td></tr>
 <tr><th scope="row">Failing step</th><td>Raises in the code; earlier steps stay done</td></tr>
 <tr><th scope="row">Running out of time</th><td>Returns an error: what was done stays, the current step may or may not have applied, and the next call starts a new interpreter</td></tr>
-<tr><th scope="row">Agent state</th><td>Every agent keeps its own window states, indices and interpreter. The conversation's turns share theirs, so a later message continues with the same indices.</td></tr>
-<tr><th scope="row">Sharing an application</th><td>Agents of one conversation take turns: a call holds it until it returns, and another waits up to 60 seconds, then fails without sending anything. An agent's next result says when another acted since it last looked, and lists those changes. Browser tabs work the same way.</td></tr>
+<tr><th scope="row">Agent state</th><td>Every agent keeps its own window states, element numbers and interpreter. The conversation's turns share theirs, so a later message continues with the same numbers.</td></tr>
+<tr><th scope="row">Sharing an application</th><td>Agents take turns on one application: a call holds it until it returns, and another waits up to 60 seconds in all, then answers <code translate="no">SCREEN_BUSY</code> without sending anything. On different applications they work together, except on Linux and Windows, where clicks, keys and text (on Linux also scrolls, hovers and drags; on Windows pastes) take turns across the whole computer. An agent's next result says when another acted since it last looked, and lists those changes.</td></tr>
 </tbody>
 </table>
 </details>
 <h2 id="web-pages">Web pages</h2>
-<p>Each built-in tab has a short id such as <code translate="no">tk3fa</code>, the same across turns, sub-agents and workflow programs. <code translate="no">read</code> returns Playwright's accessibility outline, such as <code translate="no">- button "Next" [ref=e12]</code>; a ref holds while the element is on the page, and an element can be named by <code translate="no">role</code> and <code translate="no">name</code> instead.</p>
+<p>Each tab has a short id such as <code translate="no">tk3fa</code>, the same across turns, sub-agents and workflow programs; <code translate="no">list_tabs</code> prints it and every result names the tab it acted on.</p>
+<p><code translate="no">get_state</code> returns Playwright's accessibility outline, such as <code translate="no">- button "Next" [ref=e12]</code>; a ref holds while the element is on the page, and an element can be named by <code translate="no">role</code> and <code translate="no">name</code> instead.</p>
 <p>Every action returns what changed, marked <code translate="no">&lt;changed&gt;</code> with <code translate="no">[unchanged]</code> for parts seen; a navigation returns the whole page. A re-rendered ref is found again by role and name; if gone, the error carries the page as it is.</p>
 <table class="stack">
 <thead><tr><th scope="col">Action</th><th scope="col">Arguments</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">tabs</code> / <code translate="no">open</code> / <code translate="no">close</code></th><td>— / <code translate="no">url</code>, <code translate="no">visible?</code> / <code translate="no">tab?</code></td><td>List; open, in the background unless <code translate="no">visible: true</code>; close. Other actions use the last tab unless given <code translate="no">tab</code>.</td></tr>
-<tr><th scope="row"><code translate="no">read</code></th><td><code translate="no">changes_only?</code></td><td>Whole page, or changes since the last result</td></tr>
-<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">ref</code> or <code translate="no">role</code>,<code translate="no">name</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">mouse_button?</code>, <code translate="no">click_count?</code>, <code translate="no">modifiers?</code></td><td>Right, middle, double and modifier clicks. <code translate="no">x</code>,<code translate="no">y</code> stop working once the page was acted on, navigated or scrolled.</td></tr>
-<tr><th scope="row"><code translate="no">type</code></th><td><code translate="no">ref?</code>, <code translate="no">text</code>, <code translate="no">clear?</code>, <code translate="no">submit?</code></td><td>Replaces the text; <code translate="no">clear: false</code> inserts at the caret; <code translate="no">submit: true</code> presses Enter; no <code translate="no">ref</code> types into the focus</td></tr>
-<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">text</code>, <code translate="no">format?</code>, <code translate="no">ref?</code></td><td>Offers a paste: <code translate="no">md</code> and <code translate="no">html</code> format in rich editors</td></tr>
-<tr><th scope="row"><code translate="no">select</code></th><td><code translate="no">ref</code>, <code translate="no">value</code></td><td>Options by value or label</td></tr>
-<tr><th scope="row"><code translate="no">press</code></th><td><code translate="no">key</code>, <code translate="no">ref?</code></td><td>No <code translate="no">ref</code>: to the page's focus</td></tr>
-<tr><th scope="row"><code translate="no">hover</code> / <code translate="no">drag</code> / <code translate="no">scroll</code></th><td><code translate="no">ref</code> / <code translate="no">ref</code>, <code translate="no">to_ref</code> / <code translate="no">ref?</code>, <code translate="no">direction?</code>, <code translate="no">amount?</code></td><td><code translate="no">scroll</code> with <code translate="no">ref</code> moves its nearest scrollable container; <code translate="no">amount</code> in pixels</td></tr>
+<tr><th scope="row"><code translate="no">list_tabs</code> / <code translate="no">create_tab</code> / <code translate="no">close_tab</code></th><td><code translate="no">all?</code> / <code translate="no">url</code>, <code translate="no">visible?</code> / <code translate="no">tab</code></td><td>List; open, in the background unless <code translate="no">visible: true</code>; close the tab named. Other actions use the tab this agent last used unless given <code translate="no">tab</code>.</td></tr>
+<tr><th scope="row"><code translate="no">get_state</code></th><td><code translate="no">include?</code>, <code translate="no">full?</code></td><td>The outline (<code translate="no">tree</code>), a <code translate="no">screenshot</code> of the tab without bringing it forward, or <code translate="no">all</code>, the default; from code, the outline. Without <code translate="no">full</code>, what changed since the last read.</td></tr>
+<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">element</code> or <code translate="no">role</code>,<code translate="no">name</code> or <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">mouse_button?</code>, <code translate="no">click_count?</code>, <code translate="no">modifiers?</code></td><td>Right, middle, double and modifier clicks. <code translate="no">x</code>,<code translate="no">y</code> stop working once the page was acted on, navigated or scrolled.</td></tr>
+<tr><th scope="row"><code translate="no">type_text</code></th><td><code translate="no">text</code>, <code translate="no">element?</code>, <code translate="no">clear?</code>, <code translate="no">submit?</code></td><td>Inserts at the caret; <code translate="no">clear: true</code> replaces the field's text; <code translate="no">submit: true</code> presses Return; no <code translate="no">element</code> types into the focus</td></tr>
+<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">text</code>, <code translate="no">format?</code>, <code translate="no">element?</code></td><td>Offers a paste: <code translate="no">md</code> and <code translate="no">html</code> format in rich editors</td></tr>
+<tr><th scope="row"><code translate="no">set_value</code></th><td><code translate="no">element</code>, <code translate="no">value</code></td><td>A field's whole value: options by value or label, a checkbox, a text field</td></tr>
+<tr><th scope="row"><code translate="no">press_key</code></th><td><code translate="no">key</code>, <code translate="no">element?</code>, <code translate="no">seconds?</code></td><td>No <code translate="no">element</code>: to the page's focus</td></tr>
+<tr><th scope="row"><code translate="no">hover</code> / <code translate="no">drag</code> / <code translate="no">scroll</code></th><td><code translate="no">element</code> / <code translate="no">element</code>, <code translate="no">to_element</code> / <code translate="no">element?</code>, <code translate="no">direction?</code>, <code translate="no">pages?</code> or <code translate="no">pixels?</code></td><td><code translate="no">scroll</code> with <code translate="no">element</code> moves its nearest scrollable container</td></tr>
 <tr><th scope="row"><code translate="no">navigate</code> / <code translate="no">back</code> / <code translate="no">forward</code> / <code translate="no">reload</code> / <code translate="no">wait</code></th><td><code translate="no">url</code> / — / <code translate="no">text?</code>, <code translate="no">seconds?</code></td><td><code translate="no">wait</code> until a text appears, or for seconds</td></tr>
-<tr><th scope="row"><code translate="no">upload</code></th><td><code translate="no">path</code>, <code translate="no">ref?</code></td><td>A local file up to 50 MiB. The click's file window is held for the agent; <code translate="no">upload</code> answers it. With <code translate="no">ref</code> it does both.</td></tr>
-<tr><th scope="row"><code translate="no">screenshot</code></th><td>—</td><td>The tab, without bringing it forward</td></tr>
-<tr><th scope="row"><code translate="no">console</code> / <code translate="no">network</code></th><td><code translate="no">pattern?</code>, <code translate="no">only_errors?</code>, <code translate="no">limit?</code></td><td>Since the agent first used the tab</td></tr>
-<tr><th scope="row"><code translate="no">evaluate</code></th><td><code translate="no">script</code></td><td>JavaScript: expression, statements or a function, <code translate="no">await</code> included. JSON result up to 20,000 characters; a promise gets 30 s; password values redacted.</td></tr>
+<tr><th scope="row"><code translate="no">upload_file</code></th><td><code translate="no">path</code>, <code translate="no">element?</code>, <code translate="no">field?</code></td><td>A local file up to 50 MiB. The click's file window is held for the agent; <code translate="no">upload_file</code> answers it. With <code translate="no">element</code> it does both.</td></tr>
+<tr><th scope="row"><code translate="no">read_console_messages</code> / <code translate="no">read_network_requests</code></th><td><code translate="no">pattern?</code>, <code translate="no">only_errors?</code>, <code translate="no">limit?</code></td><td>Since the agent first used the tab</td></tr>
+<tr><th scope="row"><code translate="no">evaluate</code></th><td><code translate="no">script</code>, <code translate="no">element?</code></td><td>JavaScript: expression, statements or a function, <code translate="no">await</code> included. JSON result up to 20,000 characters; a promise gets 30 s; password values redacted.</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
 <tbody>
-<tr><th scope="row">Concurrency</th><td>Agents and sub-agents can share the browser. An action holds its tab until its result is read, a list holds the tabs it touches until it ends; a tab held for a minute fails with <code translate="no">tab_busy</code>. Each agent has its own current tab and sees all changes since it last looked, told when another acted. Waiting does not block others.</td></tr>
-<tr><th scope="row">Retry</th><td>No action is sent twice. A failure after input may have landed says so, carries the page, and is not retried.</td></tr>
+<tr><th scope="row">Concurrency</th><td>Agents and sub-agents can share the browser. An action holds its tab until its result is read, a list holds the tabs it touches until it ends; a tab held for a minute answers <code translate="no">SCREEN_BUSY</code>. Each agent has its own current tab and sees all changes since it last looked, told when another acted. Waiting does not block others.</td></tr>
+<tr><th scope="row">Retry</th><td>No action is sent twice. A failure after input may have landed answers <code translate="no">OUTCOME_UNKNOWN</code>, carries the page, and is not retried.</td></tr>
 <tr><th scope="row">New tabs</th><td>The result names a tab an action opens; the agent keeps its current tab until it passes the new one.</td></tr>
 <tr><th scope="row">Workflow programs</th><td>Confined to the starting window; tabs it opened close when it ends</td></tr>
 <tr><th scope="row">Agent access off</th><td>Every action is refused in that conversation</td></tr>
 <tr><th scope="row">Background</th><td>Input reaches a tab without activating it. <code translate="no">visible: true</code> brings it forward, for when you asked to watch. <code translate="no">file://</code> opens a local file the sandbox lets the agent read. Password values never reach the model.</td></tr>
-<tr><th scope="row">Approval</th><td>Opening, acting and <code translate="no">evaluate</code> ask nothing on built-in tabs. Upload asks in the modes that ask. A script runs only in a conversation you started; scheduled runs and outside MCP clients are refused and told to use page actions, whether by action or code.</td></tr>
+<tr><th scope="row">Approval</th><td>Opening, acting and <code translate="no">evaluate</code> ask nothing on built-in tabs. <code translate="no">upload_file</code> asks in the modes that ask, and Auto reviews each upload. A script runs only in a conversation you started; scheduled runs, outside MCP clients, handoffs and automatic Goals are refused and told to use page actions, whether by action or code.</td></tr>
+<tr><th scope="row">Built-in only</th><td><code translate="no">list_panes</code>, <code translate="no">start_video_recording</code> and <code translate="no">stop_video_recording</code> record one pane of the OpenProgram window</td></tr>
 </tbody>
 </table>
 <details>
@@ -164,58 +183,99 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <tr><th scope="row">Preview</th><td>One compact row, with status only when the Agent needs you or the state cannot be confirmed. While anything in the App is fullscreen, its page is hidden. Default 300×198.75; drag the header or any edge, the aspect stays linked and the page is not resized.</td></tr>
 <tr><th scope="row">Action markers and history</th><td>Markers are brief and do not intercept input. History holds operation types and results, not typed text.</td></tr>
 <tr><th scope="row">Closing</th><td>Affects every branch referencing the Page. An active Page requests stopping first. Closing differs from hiding. Disconnection shows the last image as stale.</td></tr>
-<tr><th scope="row">Other things the preview follows</th><td>A desktop app window, with the latest screenshot after each step, and a Desktop Terminal the Agent takes or types into, live and read-only. Same Auto, pin and close rules. Screenshots stay in memory, gone after a worker restart. These controls apply to exact OpenProgram Pages; application windows and VMs keep their own approvals.</td></tr>
+<tr><th scope="row">Other things the preview follows</th><td>A desktop app window, with the latest screenshot after each step, and a Desktop Terminal the Agent takes or types into, live and read-only. Same Auto, pin and close rules. Screenshots stay in memory, gone after a worker restart. These controls apply to exact OpenProgram Pages; application windows, the screen and other machines keep their own approvals.</td></tr>
 <tr><th scope="row">App or worker restart</th><td>Unclosed pages return in the background with their tab, session, branch and last confirmed title and URL, as new live pages; old live handles are invalid. Explicitly closed pages stay under <strong>Closed pages</strong>, and a hidden preview stays hidden.</td></tr>
 <tr><th scope="row">After a restart</th><td>Rows show <strong>Restoring page…</strong>, <strong>Could not restore page</strong> or <strong>Reconnect</strong> in their original branch. <strong>Continue Agent</strong> is not required; new actions need a fresh observation and current permission. Restore reloads the URL with site storage; unsaved DOM and form values are lost. An older record with no retained tab descriptor reports <strong>Could not restore page</strong>.</td></tr>
 </tbody>
 </table>
 </details>
-<h2 id="your-own-chrome-or-edge">Your own Chrome or Edge</h2>
-<p>Set <code translate="no">args.browser</code> to <code translate="no">chrome</code> or <code translate="no">edge</code> for your sign-ins and cookies. Same actions: <code translate="no">tabs</code> lists by index, <code translate="no">read</code> with <code translate="no">tab=&lt;index&gt;</code> switches. The model is told to use it only when you name it or the task needs your signed-in state, and to stay in the one named. Without the extension a call naming it is turned back at once.</p>
+<h2 id="your-own-browser">Your own browser</h2>
+<pre translate="no" tabindex="0"><code>computer_use(type="browser", app="chrome", action="list_tabs")
+computer_use(type="browser", app="safari", title="tq7mb", action="click", args={"element": "e12"})</code></pre>
+<p>Your own browser has your sign-ins and cookies and the same actions as the built-in browser, without its pane recording. Tab ids stay the same across calls. The model is told to use it only when you name the browser or the task needs your signed-in state.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">app</code></th><th scope="col">Driven through</th><th scope="col">What you set up once</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">chrome</code>, <code translate="no">edge</code>, <code translate="no">brave</code>, <code translate="no">vivaldi</code>, <code translate="no">opera</code>, <code translate="no">arc</code>, <code translate="no">chromium</code>; the Beta, Dev and Canary channels as <code translate="no">chrome-beta</code>, <code translate="no">edge-canary</code>, …</th><td>Microsoft's Playwright MCP server (<code translate="no">@playwright/mcp --extension</code>), fetched with <code translate="no">npx</code></td><td>Node.js, and the <a href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm">Playwright Extension</a> in that browser. On the first action it asks which tab to share; <code translate="no">openprogram config set computer_use.chrome_extension_token &lt;token&gt;</code>, with the token the extension shows, skips that.</td></tr>
+<tr><th scope="row"><code translate="no">safari</code> (macOS)</th><td>AppleScript: Safari runs the page script itself</td><td>Safari → Settings → Advanced → Show features for web developers, then Develop → <strong>Allow JavaScript from Apple Events</strong>. macOS asks once to let OpenProgram control Safari; screenshots need Screen Recording.</td></tr>
+<tr><th scope="row"><code translate="no">firefox</code></th><td>Firefox's WebDriver BiDi remote agent on port 9222</td><td>Nothing when Firefox is closed: the first call starts it in the background with the agent on. When it is already running without it, quit Firefox once or start it with <code translate="no">firefox --remote-debugging-port 9222</code>.</td></tr>
+</tbody>
+</table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Server</th><td>Microsoft's Playwright MCP server (<code translate="no">@playwright/mcp --extension</code>), fetched with <code translate="no">npx</code>, so Node.js is required</td></tr>
-<tr><th scope="row">Extension</th><td>Install the <a href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm">Playwright Extension</a> once; Edge uses the same one. On the first action it asks which tab to share.</td></tr>
-<tr><th scope="row">Skipping that prompt</th><td><code translate="no">openprogram config set computer_use.chrome_extension_token &lt;token&gt;</code>, with the token the extension shows</td></tr>
-<tr><th scope="row">Approval</th><td>One approval covers that browser and everything in it, <code translate="no">evaluate</code> and uploads included; if the first call is an upload, the card says so. Code reaches it when its call names it in <code translate="no">args.browser</code>.</td></tr>
+<tr><th scope="row">Listed when</th><td>The browser is installed (for a Chromium browser, with the extension in one of its profiles). Names are matched without regard to case, and <code translate="no">"Google Chrome"</code> or <code translate="no">"Microsoft Edge"</code> work too.</td></tr>
+<tr><th scope="row">Something missing</th><td>A call answers <code translate="no">DEPENDENCY_MISSING</code> (no Node.js, no extension, browser not installed) or <code translate="no">PERMISSION_MISSING</code> (Safari's setting or the macOS permission, Firefox running without the agent), naming the fix</td></tr>
+<tr><th scope="row">Choosing a tab</th><td><code translate="no">title</code> is a tab id or a title only one tab has; a title several tabs share is refused with the candidates</td></tr>
+<tr><th scope="row">Tabs</th><td>A step without <code translate="no">title</code> or <code translate="no">tab</code> acts on the tab this agent used last there, at first the browser's current tab. Once that tab is gone, such a step answers <code translate="no">BAD_ARGUMENT</code> naming it, and the agent names the tab. Choosing a tab never brings it to the front. <code translate="no">close_tab</code> closes only a tab the call names, and <code translate="no">create_tab</code> opens in the background.</td></tr>
+<tr><th scope="row">Safari and Firefox</th><td>Keys and typing reach a tab in the background as page events; Firefox uses real input on the tab in front. Safari takes no <code translate="no">upload_file</code> and no console or network reads, and a screenshot needs the tab to be the one showing in its window.</td></tr>
+<tr><th scope="row">Filtering</th><td>Filtering console messages or requests (<code translate="no">pattern</code>, <code translate="no">only_errors</code>, <code translate="no">limit</code>) is <code translate="no">NOT_SUPPORTED</code> in Chromium browsers</td></tr>
+<tr><th scope="row">Several agents</th><td>One call at a time per browser, from any conversation; another waits up to 60 seconds</td></tr>
+<tr><th scope="row">Approval</th><td>One approval covers that browser and everything in it, <code translate="no">evaluate</code> and uploads included; if the first call is an upload, the card says so</td></tr>
 </tbody>
 </table>
-<h2 id="virtual-machine">Virtual machine</h2>
-<pre translate="no" tabindex="0"><code>openprogram config set computer_use.vm_url http://192.168.64.2:5000</code></pre>
-<p>Drives an <a href="https://os-world.github.io/">OSWorld</a>-compatible server: <code translate="no">GET /screenshot</code> and <code translate="no">POST /execute</code> with pyautogui. No element tree: <code translate="no">screenshot</code>, <code translate="no">click</code>, <code translate="no">move</code>, <code translate="no">drag</code>, <code translate="no">scroll</code>, <code translate="no">type_text</code>, <code translate="no">press_key</code>, <code translate="no">wait</code>, by pixels of the last screenshot. Each acting call returns a screenshot. The first use in a conversation asks for approval naming the endpoint.</p>
+<h2 id="another-machine">Another device</h2>
+<p>A virtual machine running an <a href="https://os-world.github.io/">OSWorld</a>-compatible server is set up as a device with a screen connection, in <strong>Settings → Devices</strong> or from the terminal:</p>
+<pre translate="no" tabindex="0"><code>openprogram machines add lab --name "Lab VM" --screen osworld url=http://192.168.64.2:5000
+openprogram machines test lab
+
+computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 412})</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Server</th><td><code translate="no">GET /screenshot</code> and <code translate="no">POST /execute</code> with pyautogui</td></tr>
+<tr><th scope="row">Actions</th><td>Pixels only, one display, no clipboard: <code translate="no">get_state</code>, <code translate="no">click</code>, <code translate="no">type_text</code>, <code translate="no">press_key</code>, <code translate="no">scroll</code>, <code translate="no">drag</code>, <code translate="no">hover</code>, <code translate="no">wait</code>, by pixels of the last screenshot. Each acting call returns a screenshot. A batch is checked whole first: one bad argument refuses it and nothing is sent.</td></tr>
+<tr><th scope="row">Results</th><td>Start with where they come from, <code translate="no">[device="lab", type="screen"]</code></td></tr>
+<tr><th scope="row">Device off or unreachable</th><td>Stays listed; a call answers <code translate="no">MACHINE_UNREACHABLE</code> and sends nothing, also when the machine was switched off or removed while the call was on its way. <code translate="no">openprogram machines disable lab</code> takes it out of the list.</td></tr>
+<tr><th scope="row">Several agents</th><td>One call at a time; another waits up to 60 seconds. A stopped call lets the machine go within 10 seconds.</td></tr>
+<tr><th scope="row">Approval</th><td>None: setting the device up is the consent. A rule can still deny it.</td></tr>
+</tbody>
+</table>
 <h2 id="approval">Approval</h2>
-<p>The first touch of an application shows a card with its icon, name and bundle id and what this step does ("Click element #7"), noting it runs in the background. Raw arguments are under "Execution details". <code translate="no">list_apps</code> never asks. Each application is approved separately.</p>
+<p>The first touch of an application shows a card with its icon, name and bundle id and what this step does ("Click element #7"), noting it runs in the background. Raw arguments are under "Execution details".</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Call</th><th scope="col">Asked once, and the rule key</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type="window"</code></th><td>Per application, by its display name: <code translate="no">window Calculator</code>. On a Mac any exact spelling the model uses gives that name; on Linux an exact desktop entry or a process; on Windows a process or <code translate="no">.exe</code> gives the program's file name. Other spellings stay as written. <code translate="no">list_apps</code> never asks.</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td>For the whole screen of this computer: <code translate="no">screen</code>. <code translate="no">list_displays</code> never asks.</td></tr>
+<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code></th><td>Per browser: <code translate="no">browser chrome</code>, <code translate="no">browser safari</code>, <code translate="no">browser firefox</code>, …</td></tr>
+<tr><th scope="row"><code translate="no">type="browser"</code></th><td>Nothing, except <code translate="no">upload_file</code>, which asks each time, or in Auto is reviewed each time</td></tr>
+<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>Nothing. Its key, <code translate="no">lab screen</code>, lets your own rules deny it.</td></tr>
+</tbody>
+</table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Scope</th></tr></thead>
 <tbody>
 <tr><th scope="row"><strong>Allow once</strong></th><td>This call</td></tr>
-<tr><th scope="row"><strong>Allow this conversation</strong></th><td>Later calls on this application in this session</td></tr>
-<tr><th scope="row"><strong>Always allow</strong></th><td>Project rule <code translate="no">computer_use_agent(&lt;app&gt;)</code>. Rules under the earlier name <code translate="no">computer_use(&lt;app&gt;)</code> still work.</td></tr>
+<tr><th scope="row"><strong>Allow this conversation</strong></th><td>Later calls on this application, screen or browser in this session</td></tr>
+<tr><th scope="row"><strong>Always allow</strong></th><td>Project rule <code translate="no">computer_use(window Calculator)</code>, with the key above</td></tr>
 <tr><th scope="row"><strong>Deny</strong></th><td>—</td></tr>
 </tbody>
 </table>
+<pre translate="no" tabindex="0"><code>computer_use(window:*)    any application
+computer_use(browser:*)   all your own browsers
+computer_use(lab:*)       everything on device lab</code></pre>
 <table class="stack">
 <thead><tr><th scope="col">Mode</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">Manual, Accept edits</th><td>Card until a saved rule names the application</td></tr>
-<tr><th scope="row">Bypass permissions</th><td>No asking</td></tr>
-<tr><th scope="row">Auto</th><td>Reviews the first call; an allowing review holds for that application for the conversation. Changing the mode or a <code translate="no">computer_use_agent</code> rule starts over.</td></tr>
-<tr><th scope="row">Scheduled and unattended</th><td>Outside Bypass permissions, only applications already allowed for the project</td></tr>
+<tr><th scope="row">Manual, Accept edits</th><td>Card until a saved rule names the key</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>No asking; a step of code that one of your deny or ask rules names is refused</td></tr>
+<tr><th scope="row">Auto</th><td>Reviews the first call; an allowing review holds for that key for the conversation. Changing the mode or a <code translate="no">computer_use</code> rule starts over.</td></tr>
+<tr><th scope="row">Scheduled and unattended</th><td>Outside Bypass permissions, only what is already allowed for the project; a machine that was set up runs in every mode</td></tr>
 </tbody>
 </table>
-<p class="note">The project's Settings tab lists always-allowed applications under <strong>Computer use</strong>; removing a row removes the rule. Conversation grants are not listed. See <a href="permissions.html">Permissions</a>.</p>
+<p class="note">An application name containing <code translate="no">*</code>, <code translate="no">?</code> or <code translate="no">[</code>, or ending in <code translate="no">:*</code>, can only be allowed once. The project's Settings tab lists always-allowed rules under <strong>Computer use</strong>; removing a row removes the rule. Conversation grants are not listed. See <a href="permissions.html">Permissions</a>.</p>
 <details>
 <summary>Consequential steps</summary>
 <p>Allowing lets the model operate, not take consequential steps on its own. It asks once, right before a step that cannot be undone or speaks for you (sending, submitting, paying, deleting), saying what, where and with which data. If your request names that step, it does it and reports. Text on screen is data, never permission or instruction.</p>
 </details>
 <p>An interrupted step does not hold up the next. The model is told its outcome is unknown, looks at the screen and goes on; the step stays in Activity.</p>
 <h2 id="system-access">System access</h2>
-<p>System settings shows live desktop access on the execution computer; <code translate="no">openprogram doctor</code>, TUI <code translate="no">/doctor</code> and <code translate="no">GET /api/system/access</code> expose the same checks. Viewing them requests nothing. Missing access does not stop ordinary chat or upgrades.</p>
+<p>Settings → Devices → This computer shows live desktop access on the execution computer; <code translate="no">openprogram doctor</code>, TUI <code translate="no">/doctor</code> and <code translate="no">GET /api/system/access</code> expose the same checks. Viewing them requests nothing. Missing access does not stop ordinary chat or upgrades.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td>Managed installations run the worker and its Python children through <strong>OpenProgram</strong>, an embedded application with a stable bundle identifier; look for that name in System Settings. Screen recording and Accessibility are checked separately in a fresh process of the desktop-task executable. <strong>Set up access</strong> requests only a missing permission. Remote clients must arrange authorization on the execution computer; a grant for another app is no evidence.</td></tr>
+<tr><th scope="row">macOS</th><td>Managed installations run the worker and its Python children through <strong>OpenProgram</strong>, an embedded application with a stable bundle identifier; look for that name in System Settings. Screen recording and Accessibility are checked separately in a fresh process of the desktop-task executable. <strong>Turn on</strong> requests only a missing permission. Remote clients must arrange authorization on the execution computer; a grant for another app is no evidence.</td></tr>
 <tr><th scope="row">Linux</th><td>Headless sessions and unsupported Wayland capture are reported apart from missing dependencies. An X11 display alone does not prove access.</td></tr>
 <tr><th scope="row">Windows</th><td>Depends on the active session and target; secure desktops and elevated targets cannot be assumed.</td></tr>
 </tbody>
@@ -226,7 +286,8 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">The call</th><td>Pauses before acting. OpenProgram requests the permission natively and opens the right System Settings page when needed.</td></tr>
+<tr><th scope="row">The call</th><td>Pauses before acting. System Settings opens at the right page with a small window under it: drag the OpenProgram icon into the list, or turn on its switch if it is already there. The window closes once the permission is on, and the call goes on.</td></tr>
+<tr><th scope="row">Nobody to ask</th><td>A scheduled or unattended run does not wait: the call answers <code translate="no">PERMISSION_MISSING</code> with the permission and where to grant it</td></tr>
 <tr><th scope="row">In the conversation</th><td>A brief waiting status and an Open System Settings action; no form, Continue, null result, Retry or Edit on the paused card. Failed and cancelled runs keep their own statuses.</td></tr>
 <tr><th scope="row">Checking and continuing</th><td>The worker saves the task and checks through a fresh OpenProgram process, which requests nothing and avoids a stale result. Once available the same task continues once. A turn's later steps do not recheck; the next turn does.</td></tr>
 <tr><th scope="row">While waiting</th><td>Closing the page does not stop this, a needed restart rechecks after startup, cancelling prevents continuation, and a failed check keeps waiting.</td></tr>
@@ -245,19 +306,20 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <table class="stack">
 <thead><tr><th scope="col">Situation</th><th scope="col">Behaviour</th><th scope="col">Next</th></tr></thead>
 <tbody>
-<tr><th scope="row">Screen locked (macOS)</th><td>Application calls return an error and send nothing; apps and windows stay open</td><td>Continue after unlocking. Built-in browser and VMs are unaffected.</td></tr>
+<tr><th scope="row">Screen locked (macOS)</th><td>Application calls return an error and send nothing; apps and windows stay open</td><td>Continue after unlocking. The built-in browser and other machines are unaffected.</td></tr>
 <tr><th scope="row">Application busy (saving, a dialog it just opened)</th><td>A step is sent once and waited on up to 10 s. Longer: done, with a note that state could not be read.</td><td>The model waits and reads again, never repeating the step</td></tr>
 <tr><th scope="row">Busy, before a read or step</th><td>Waits up to 10 s, then fails and sends nothing</td><td><code translate="no">wait</code> always runs</td></tr>
 <tr><th scope="row">Result unreadable after a step, such as a click that quits the app</th><td>The step stays done; the result says why</td><td>—</td></tr>
 <tr><th scope="row">Window on another Space</th><td><code translate="no">list_windows</code> marks it. Screenshots, clicks, scrolls, drags and element actions reach it. Key presses do not: <code translate="no">type_text</code> and <code translate="no">paste</code> insert plain text in the focused field, <code translate="no">press_key</code> reports it cannot.</td><td>Only you or the Dock can move it</td></tr>
-<tr><th scope="row">A step opens a window in front</th><td>The returned state is of the new window and names what it opened over</td><td><code translate="no">get_app_state</code> with <code translate="no">window</code> goes back</td></tr>
+<tr><th scope="row">A step opens a window in front</th><td>The returned state is of the new window and names what it opened over</td><td><code translate="no">get_state</code> with <code translate="no">window</code> goes back</td></tr>
 <tr><th scope="row">macOS Open or Save dialog</th><td>Separate process. Clicks and <code translate="no">set_value</code> reach it; keys do not, and those actions report it. Its file list is not in Accessibility, so state lists text read off the screenshot.</td><td>Use <code translate="no">open_file</code></td></tr>
 </tbody>
 </table>
 <h2 id="requirements">Requirements</h2>
 <ul>
 <li>macOS, Linux with X11 (Xorg), or Windows 10 or 11.</li>
-<li>macOS: the signed runtime (<code translate="no">ai.openprogram.runtime</code>) must hold <strong>Accessibility</strong> and <strong>Screen Recording</strong>. See <a href="#system-access">System access</a> and <a href="permissions.html">Permissions</a>.</li>
+<li>macOS: the signed runtime (<code translate="no">ai.openprogram.runtime</code>) must hold <strong>Accessibility</strong> and <strong>Screen Recording</strong>, for <code translate="no">app</code> and <code translate="no">screen</code> alike. See <a href="#system-access">System access</a> and <a href="permissions.html">Permissions</a>.</li>
+<li><code translate="no">screen</code>: macOS only, and only with <code translate="no">computer_use.whole_screen</code> on.</li>
 </ul>
 <h2 id="on-linux">On Linux and Windows</h2>
 <span id="on-windows"></span>
@@ -267,7 +329,7 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <tr><th scope="row">Tree</th><td>AT-SPI: GTK 3, GTK 4, Qt with <code translate="no">QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1</code></td><td>UI Automation: Win32, WPF, WinForms, Store (UWP, WinUI), Chromium. Screenshots even while covered.</td></tr>
 <tr><th scope="row">Needs</th><td>X11 (Wayland cannot drive other windows, so the tool reports unavailable), <code translate="no">python3-gi</code> with <code translate="no">gir1.2-atspi-2.0</code> and <code translate="no">gir1.2-gtk-3.0</code>, <code translate="no">xdotool</code></td><td><code translate="no">comtypes</code>, included in the Windows install</td></tr>
 <tr><th scope="row">Optional</th><td><code translate="no">x11-utils</code> (tells real windows from helpers), <code translate="no">tesseract-ocr</code>, <code translate="no">pulseaudio-utils</code></td><td><code translate="no">tesseract</code> on <code translate="no">PATH</code></td></tr>
-<tr><th scope="row">Same as macOS</th><td>Tree, indices, diffs, screenshots, <code translate="no">zoom</code>, <code translate="no">find</code>, <code translate="no">actions</code>, <code translate="no">menu</code>, <code translate="no">select_text</code>, <code translate="no">set_value</code>, scroll by element, approvals</td><td>Tree, indices, diffs, screenshots, <code translate="no">zoom</code>, <code translate="no">find</code>, <code translate="no">actions</code>, <code translate="no">select_text</code>, <code translate="no">set_value</code>, <code translate="no">copy</code>, <code translate="no">paste</code> (all formats), scroll by element, recording, approvals</td></tr>
+<tr><th scope="row">Same as macOS</th><td>Tree, element numbers, diffs, screenshots, <code translate="no">zoom</code>, <code translate="no">find</code>, <code translate="no">actions</code>, <code translate="no">menu</code>, <code translate="no">select_text</code>, <code translate="no">set_value</code>, scroll by element, approvals</td><td>Tree, element numbers, diffs, screenshots, <code translate="no">zoom</code>, <code translate="no">find</code>, <code translate="no">actions</code>, <code translate="no">select_text</code>, <code translate="no">set_value</code>, <code translate="no">copy</code>, <code translate="no">paste</code> (all formats), scroll by element, recording, approvals</td></tr>
 <tr><th scope="row">Names</th><td>Desktop entry id (<code translate="no">org.gnome.Calculator</code>), name or process, launched through the entry</td><td>Start menu name (<code translate="no">Calculator</code>), executable (<code translate="no">notepad</code>) or pid, launched from Start</td></tr>
 <tr><th scope="row">Background</th><td>Element actions (press, toggle, set value, insert and select text, menu, Return). Pointer at <code translate="no">x</code>,<code translate="no">y</code>, <code translate="no">hover</code> and other keys reach a GTK or Qt window only when focused: it comes forward, then focus and pointer return. <code translate="no">hover</code> leaves the pointer. The card says so.</td><td>Element actions; clicks, scrolls and plain keys are posted without raising; <code translate="no">hover</code> keeps your pointer</td></tr>
 <tr><th scope="row">Comes forward</th><td>As above</td><td>Keys with modifiers (<code translate="no">ctrl+s</code>), <code translate="no">paste</code> pressing <code translate="no">ctrl+v</code> in most apps, and pointer input in Store frames, Chromium and Firefox; focus and pointer return. Use Windows shortcuts: <code translate="no">ctrl+c</code>.</td></tr>
@@ -286,6 +348,7 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 <thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">OpenProgram's own windows</th><td>Only in modes showing approval cards, where the agent could answer its own card; Bypass permissions operates them</td></tr>
+<tr><th scope="row">On <code translate="no">screen</code></th><td>A pointer step on a refused application or an OpenProgram window; a key or text step while one of them is in front, or, with <code translate="no">computer_use.refuse_password_fields</code> on, into a password field. Screenshots leave them out.</td></tr>
 <tr><th scope="row">Secure keyboard input on macOS</th><td>Does not type; the keys would not arrive</td></tr>
 <tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td>Your list of names or bundle ids</td></tr>
 <tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>Stops typing into password fields</td></tr>
@@ -293,3 +356,22 @@ computer_use_agent(target="app", action="click", args={"app": "Calculator", "ele
 </tbody>
 </table>
 <p class="note">A refusal names the setting to change.</p>
+<details>
+<summary>Error codes</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Code</th><th scope="col">Says</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">UNKNOWN_TARGET</code></th><td>The targets listed now; it comes before any approval card or review</td></tr>
+<tr><th scope="row"><code translate="no">UNKNOWN_ACTION</code></th><td>The nearest action, or the targets of the same machine that have it</td></tr>
+<tr><th scope="row"><code translate="no">NOT_SUPPORTED</code></th><td>What this target lacks and the step that works instead</td></tr>
+<tr><th scope="row"><code translate="no">BAD_ARGUMENT</code></th><td>The action's arguments and those its type shares; for a wrong or closed tab, the open tabs; for a title that matches several windows or tabs, the candidates</td></tr>
+<tr><th scope="row"><code translate="no">PERMISSION_MISSING</code></th><td>Which system permission, and where to grant it</td></tr>
+<tr><th scope="row"><code translate="no">DEPENDENCY_MISSING</code></th><td>What the computer lacks, such as Node.js for your own browser</td></tr>
+<tr><th scope="row"><code translate="no">MACHINE_UNREACHABLE</code></th><td>Why the machine or browser did not answer, or that the machine was switched off or removed; nothing was sent</td></tr>
+<tr><th scope="row"><code translate="no">OUTCOME_UNKNOWN</code></th><td>A step was sent without an answer: read the state, do not repeat it</td></tr>
+<tr><th scope="row"><code translate="no">SCREEN_BUSY</code></th><td>Another agent held it for 60 seconds in all; nothing was sent</td></tr>
+<tr><th scope="row"><code translate="no">ELEMENT_GONE</code></th><td>The element is no longer there; the current state follows</td></tr>
+<tr><th scope="row"><code translate="no">TIMEOUT</code></th><td>The steps that took effect before the deadline, or that nothing was sent; an action call stops after 5 minutes</td></tr>
+</tbody>
+</table>
+</details>

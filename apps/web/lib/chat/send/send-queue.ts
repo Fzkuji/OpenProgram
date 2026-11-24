@@ -18,7 +18,7 @@
 
 import { create } from "zustand";
 import { adoptOrphanedQueues, saveQueues } from "./queue-storage";
-import { hasPendingFirstAck } from "./pending-user-text";
+import { hasPendingFirstAck, hasPendingUserText } from "./pending-user-text";
 import type { ChatAttachment } from "@/components/chat/composer/submit/send-chat-message";
 import type { PastedTextElement } from "./paste-elements";
 import { queuedMessagePayload, snapshotQueuedAttachments, type QueuedAttachments } from "./queued-attachments";
@@ -127,7 +127,7 @@ function parkedRow(row: QueuedMessage): boolean {
 }
 
 /** Sessions stopped by this window whose turn the server still holds. */
-const stopHolds = new Map<string, { executionId?: string; timer?: ReturnType<typeof setTimeout>; checks: number }>();
+const stopHolds = new Map<string, { executionId?: string; timer?: ReturnType<typeof setTimeout> }>();
 
 export const useSendQueue = create<SendQueueState>((set, get) => ({
   queues: {},
@@ -461,41 +461,48 @@ export function reconcileAfterSessionLoad(
   }
 }
 
-const STOP_CHECK_MS = [300, 600, 1000, 2000];
-const STOP_HOLD_MAX_CHECKS = 20;
+/** The longest a Stop holds the queue: a server that never says the turn
+ *  ended does not hold it for good; a text row refused with run_active is
+ *  re-queued by the stream. */
+const STOP_HOLD_MAX_MS = 35_000;
+let holdsFollowReconnect = false;
+
+/** A socket that came back may have missed the running_task_clear: ask
+ *  each held session's run state once. */
+function askHeldRunStates(): void {
+  if (!stopHolds.size) return;
+  void import("@/lib/runtime-bridge/state").then(({ getSocket }) => {
+    const socket = getSocket();
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    for (const sessionId of stopHolds.keys()) {
+      socket.send(JSON.stringify({ action: "get_run_state", session_id: sessionId }));
+    }
+  }).catch(() => { /* the deadline still lets the queue go */ });
+}
 
 /** Stop releases the composer at once, but the server keeps the turn until
  *  its run unwinds; a queued message sent before then is refused with
- *  `run_active`. Hold the drain for `sessionId` until the server reports
- *  the session idle (a `run_state`/session load through
- *  reconcileAfterSessionLoad, or a running_task_clear through
- *  releaseStopHold), asking it on a short timer meanwhile. */
+ *  `run_active`. Hold the drain for `sessionId` until the server says the
+ *  session is idle: it broadcasts running_task_clear when the turn lets go
+ *  (releaseStopHold), and a session load or run state answers through
+ *  reconcileAfterSessionLoad. Nothing asks on a timer; a reconnect asks
+ *  once, and a deadline lets the queue go if no answer ever comes. */
 export function holdDrainAfterStop(sessionId: string, executionId?: string): void {
   const prior = stopHolds.get(sessionId);
   if (prior?.timer !== undefined) clearTimeout(prior.timer);
-  const hold: { executionId?: string; timer?: ReturnType<typeof setTimeout>; checks: number } = {
-    executionId: executionId || undefined, checks: 0,
+  const hold: { executionId?: string; timer?: ReturnType<typeof setTimeout> } = {
+    executionId: executionId || undefined,
   };
   stopHolds.set(sessionId, hold);
-  const check = () => {
-    if (stopHolds.get(sessionId) !== hold) return;
-    if (hold.checks >= STOP_HOLD_MAX_CHECKS) {
-      // Never hold a queue for good on a server that does not answer; a
-      // text row refused with run_active is re-queued by the stream.
-      releaseStopHold(sessionId);
-      return;
-    }
-    hold.checks += 1;
-    void import("@/lib/runtime-bridge/state").then(({ getSocket }) => {
-      if (stopHolds.get(sessionId) !== hold) return;
-      const socket = getSocket();
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ action: "get_run_state", session_id: sessionId }));
-      }
-      hold.timer = setTimeout(check, STOP_CHECK_MS[Math.min(hold.checks, STOP_CHECK_MS.length - 1)]);
-    }).catch(() => releaseStopHold(sessionId));
-  };
-  hold.timer = setTimeout(check, STOP_CHECK_MS[0]);
+  hold.timer = setTimeout(() => {
+    if (stopHolds.get(sessionId) === hold) releaseStopHold(sessionId);
+  }, STOP_HOLD_MAX_MS);
+  if (!holdsFollowReconnect) {
+    holdsFollowReconnect = true;
+    useSessionStore.subscribe((state, previous) => {
+      if (state.wsStatus === "open" && previous.wsStatus !== "open") askHeldRunStates();
+    });
+  }
 }
 
 /** The server released the stopped turn: let the queue go. */
@@ -513,29 +520,75 @@ export function stopPending(sessionId: string): boolean {
   return stopHolds.has(sessionId);
 }
 
-const RUN_STATE_RECHECK_MS = 1500;
-const runStateRechecks = new Set<string>();
+/** Sessions whose id-less running slot was asked about; they are asked
+ *  again only when something says the run may have changed. */
+const runStateAsked = new Set<string>();
+let runStateAskedFollowsStore = false;
 
 /** A running slot with neither id (an active run reported without them, a
  *  legacy setRunning(true)) matches no running_task_clear, so the session
  *  would look busy for good. The session store calls this for every such
- *  write: ask the server again until the reply names the turn or reports
- *  the session idle. A just-sent message holds the same slot until its ack
- *  and is left alone. */
+ *  write: once the writes of this turn of the event loop are in, ask the
+ *  server, whose reply names the turn or reports the session idle. A
+ *  just-sent message holds the same slot until its ack and is left alone.
+ *  A reply that is itself an id-less slot is not asked about again: the
+ *  next ask comes when the session's run may have changed
+ *  (`runStateMayHaveChanged`: a running_task_clear the slot could not
+ *  match) or after a reconnect, which asks every session shown running
+ *  (lib/chat/run/running-sessions.ts). With the socket down nothing is
+ *  asked. Nothing asks on a timer. */
 export function recheckRunState(sessionId: string): void {
-  if (runStateRechecks.has(sessionId)) return;
-  runStateRechecks.add(sessionId);
-  setTimeout(() => {
-    runStateRechecks.delete(sessionId);
+  if (runStateAsked.has(sessionId)) return;
+  runStateAsked.add(sessionId);
+  followRunStateAsks();
+  queueMicrotask(() => {
     const task = useSessionStore.getState().runningTasks[sessionId];
-    if (!task || task.msg_id || task.execution_id || hasPendingFirstAck(sessionId)) return;
+    if (!task || task.msg_id || task.execution_id || awaitingAck(sessionId)) {
+      runStateAsked.delete(sessionId);
+      return;
+    }
     void import("@/lib/runtime-bridge/state").then(({ getSocket }) => {
       const socket = getSocket();
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ action: "get_run_state", session_id: sessionId }));
-      } else recheckRunState(sessionId);
+      } else {
+        runStateAsked.delete(sessionId);
+      }
     });
-  }, RUN_STATE_RECHECK_MS);
+  });
+}
+
+/** A sent message holds the id-less slot until its ack, which writes the
+ *  slot again (and asks then, if it is still id-less). */
+function awaitingAck(sessionId: string): boolean {
+  return hasPendingFirstAck(sessionId) || hasPendingUserText(sessionId);
+}
+
+/** The session's run may have changed (a running_task_clear its id-less
+ *  slot could not match): ask about the slot once more. */
+export function runStateMayHaveChanged(sessionId: string): void {
+  if (!runStateAsked.delete(sessionId)) return;
+  const task = useSessionStore.getState().runningTasks[sessionId];
+  if (task && !task.msg_id && !task.execution_id) recheckRunState(sessionId);
+}
+
+/** A slot that cleared or now names its turn, or a socket that came back
+ *  (whose own asks cover every running session), ends the wait. */
+function followRunStateAsks(): void {
+  if (runStateAskedFollowsStore) return;
+  runStateAskedFollowsStore = true;
+  useSessionStore.subscribe((state, previous) => {
+    if (!runStateAsked.size) return;
+    if (state.wsStatus === "open" && previous.wsStatus !== "open") {
+      runStateAsked.clear();
+      return;
+    }
+    if (state.runningTasks === previous.runningTasks) return;
+    for (const sessionId of [...runStateAsked]) {
+      const task = state.runningTasks[sessionId];
+      if (!task || task.msg_id || task.execution_id) runStateAsked.delete(sessionId);
+    }
+  });
 }
 
 /** Turn settings of the last outgoing send per session, so a rejected
@@ -555,12 +608,19 @@ export function rememberSendSettings(
  *  queue, so it goes out now when the conversation is idle and waits its
  *  turn otherwise, with the settings of this window's last send there. */
 export function sendFromTranscript(sessionId: string, text: string): string | null {
+  return sendFromOutside(sessionId, text);
+}
+
+/** Send `text`, with any attachments, as the user's next message in
+ *  `sessionId` from outside its composer (a web tab's annotate notes),
+ *  the same way as sendFromTranscript. */
+export function sendFromOutside(sessionId: string, text: string, attachments: QueuedAttachments = {}): string | null {
   const settings = lastSettings[sessionId] ?? {
     thinking: "medium",
     webSearchEnabled: false,
     background: false,
   };
-  const id = enqueueMessage(sessionId, { ...settings, text });
+  const id = enqueueMessage(sessionId, { ...settings, text, ...attachments });
   if (id) useSendQueue.getState().drain(sessionId);
   return id;
 }

@@ -22,8 +22,11 @@ ERROR = "error"
 
 
 def evaluate_project_location(project) -> str:
-    """Return location_state without rewriting identity."""
-    if project is None or getattr(project, "is_default", False):
+    """Return location_state without rewriting identity.
+
+    A folder on another machine is never looked for here: it is available,
+    and a turn that finds it gone says so from that machine."""
+    if project is None or getattr(project, "is_default", False) or not projects.folder_is_here(project):
         return AVAILABLE
     state = getattr(project, "location_state", "") or ""
     if state in {MIGRATING, PENDING, ERROR}:
@@ -51,7 +54,7 @@ def refresh_project_location(project_id: str, *, roots=None, max_directories: in
     ``scan`` is the walk a pass over many projects shares (``MarkerScan``).
     """
     project = projects.get_project(project_id)
-    if project is None or getattr(project, "is_default", False):
+    if project is None or getattr(project, "is_default", False) or not projects.folder_is_here(project):
         return AVAILABLE
     recorded = getattr(project, "location_state", "") or ""
     if recorded in {MIGRATING, PENDING, ERROR}:
@@ -149,7 +152,7 @@ def reconcile_registered_projects(*, roots=None, max_directories: int = 4000) ->
     scan = MarkerScan(roots, max_directories=max_directories)
     moved = []
     for project in projects.list_projects():
-        if getattr(project, "is_default", False) or not project.path:
+        if getattr(project, "is_default", False) or not project.path or not projects.folder_is_here(project):
             continue
         before = project.path
         state = refresh_project_location(project.id, roots=roots,
@@ -162,7 +165,7 @@ def reconcile_registered_projects(*, roots=None, max_directories: int = 4000) ->
 
 def bound_execution_state(project) -> str | None:
     """None when new bound-project tasks may start; otherwise a block reason."""
-    if project is None or getattr(project, "is_default", False):
+    if project is None or getattr(project, "is_default", False) or not projects.folder_is_here(project):
         return None
     state = evaluate_project_location(project)
     if state == AVAILABLE:

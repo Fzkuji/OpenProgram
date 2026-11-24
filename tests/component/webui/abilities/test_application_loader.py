@@ -249,3 +249,28 @@ def test_the_office_editor_switch_provides_and_withdraws_its_service(client):
     finally:
         assert client.patch("/api/applications/office_editor", json={"enabled": True}).status_code == 200
     assert office_assets.office_editor() is not None
+
+
+def test_the_programs_watcher_sees_no_change_when_the_worker_loads_its_applications(tmp_path, monkeypatch):
+    """The watcher takes its first stamp before the server has loaded the
+    applications; loading them changes no file, so it is not a change."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from openprogram.programs._host import watcher
+    from openprogram.programs._host.ui import catalog, loader
+    monkeypatch.setattr(catalog, "check_backend", lambda root, definition: None)
+    source = tmp_path / "notes"
+    _package(source)
+    catalog.install(str(source), trust=True)
+    monkeypatch.setattr(loader, "_active", False)
+    base = str(tmp_path / "programs")
+    before = watcher._catalog_fingerprint(base)
+    try:
+        loader.sync()
+        assert loader.active()
+        assert watcher._catalog_fingerprint(base) == before
+        assert source.resolve() in [root.resolve() for root in loader.watch_roots()], \
+            "its source tree is watched for file events"
+        (source / "ui" / "index.html").write_text("<!doctype html><h1>Edited</h1>")
+        assert watcher._catalog_fingerprint(base) != before, "an edited source still is one"
+    finally:
+        loader.unload_all()

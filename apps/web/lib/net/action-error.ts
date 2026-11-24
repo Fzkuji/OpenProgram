@@ -83,8 +83,36 @@ export function consumeCommandErrorFrame(
   // those frames available to the request listener and avoid a duplicate
   // toast; uncorrelated errors remain user-visible here.
   if (isWsRequestPending(frame.data?.request_id, frame.data?.action)) return false;
+  // A read the page sent by itself (loading a conversation, listing
+  // branches, replaying a run) is not something the user did: its failure
+  // is logged and the page keeps what it shows; the next read tries again.
+  const action = typeof frame.data?.action === "string" ? frame.data.action : "";
+  if (isBackgroundAction(action)) {
+    const notice = operationErrorNotice(frame.data);
+    console.warn("[useWS] background read failed:", notice.action, notice.code);
+    return true;
+  }
   consumeOperationError(frame.data, translate);
   return true;
+}
+
+const BACKGROUND_ACTIONS = new Set([
+  "execution.replay",
+  "mark_session_read",
+  "project_file_operation_status",
+  "reminder_shown",
+  "set_attended",
+  "set_window_hidden",
+  "turn_operation_status",
+  "webtab_closed",
+  "webtab_register",
+  "webtab_result",
+]);
+
+/** Actions the page sends on its own to read or report state, never as
+ *  the user's own request. */
+export function isBackgroundAction(action: string): boolean {
+  return BACKGROUND_ACTIONS.has(action) || /^(list|get|load|read|subscribe)_/.test(action);
 }
 
 export const actionErrorNotice = operationErrorNotice;

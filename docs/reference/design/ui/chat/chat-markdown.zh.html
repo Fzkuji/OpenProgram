@@ -1,0 +1,57 @@
+<title>中文 Markdown</title>
+<meta name="description" content="回复、消息和预览怎样读中文写的 Markdown：中文标点旁的强调、在中文标点处结束的网址、不带空格的标记、带空格的路径，以及表示价格的美元符号。">
+<h1>中文 Markdown</h1>
+
+<p>CommonMark 是为词与词之间有空格的语言写的。中文没有空格，模型写中文时会以几种固定方式违反它的规则，于是标记显示成了文字。所有渲染入口都给 marked 加同一组扩展（<code translate="no">lib/markdown/prose.ts</code>），每个扩展只接手原规则会留成文字的写法。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">写法</th><th scope="col">原 CommonMark</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><td><code translate="no">这是**重点。**下一句</code></td><td>星号显示成文字</td><td>粗体，在句号后闭合</td></tr>
+<tr><td><code translate="no">这是*斜体。*后面</code>、<code translate="no">~~原价，~~</code>、<code translate="no">__粗体__</code></td><td>标记显示成文字</td><td>斜体、删除线、粗体</td></tr>
+<tr><td><code translate="no">访问 https://a.com/x。下一句</code></td><td>链接吞掉 <code translate="no">。下一句</code></td><td>链接在 <code translate="no">。</code> 前结束</td></tr>
+<tr><td><code translate="no">[文档]（https://a.com）</code></td><td>方括号显示成文字</td><td>链接</td></tr>
+<tr><td><code translate="no">[deck](/Users/me/ICDM 2026/deck.pptx)</code></td><td>文字：空格截断目标</td><td>文件链接</td></tr>
+<tr><td><code translate="no">##标题</code>、<code translate="no">1.第一项</code>、<code translate="no">-第一项</code></td><td>标记显示成文字</td><td>标题、列表</td></tr>
+<tr><td><code translate="no">价格 $5，折后 $3</code></td><td>从 <code translate="no">$5</code> 到 <code translate="no">$</code> 成了一个公式</td><td>文字</td></tr>
+</tbody>
+</table>
+
+<h2>规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">强调</th><td><code translate="no">*</code>、<code translate="no">**</code>、<code translate="no">***</code>、<code translate="no">~~</code>：标点贴着标记内侧、非空白贴着外侧、且一侧是中日韩字符时接手。<code translate="no">_</code>、<code translate="no">__</code>：外侧贴着中日韩字符且内部含中日韩字符时接手，所以 <code translate="no">snake_case</code> 不变（<code translate="no">cjk-emphasis.ts</code>）</td></tr>
+<tr><th scope="row">裸网址</th><td>在第一个全角标点处结束；主机名里出现中日韩字符也在那里结束。路径里的中文保留：<code translate="no">zh.wikipedia.org/wiki/中文</code>（<code translate="no">cjk-links.ts</code>）</td></tr>
+<tr><th scope="row">链接目标</th><td>目标是网址或本地路径时，全角括号也算。根目录、主目录、<code translate="no">file://</code> 或盘符路径可以带空格（<code translate="no">spaced-path-links.ts</code>）</td></tr>
+<tr><th scope="row">标记</th><td>行首是 <code translate="no">#</code>–<code translate="no">######</code>、<code translate="no">1.</code>、<code translate="no">1)</code>、<code translate="no">-</code> 或 <code translate="no">+</code> 且紧跟中日韩字符时，补回空格再读。按块处理，所以不会碰到代码（<code translate="no">cjk-blocks.ts</code>）</td></tr>
+<tr><th scope="row">公式</th><td>由词法分析得到，渲染成保存原文的 <code translate="no">.md-math</code>；KaTeX 只画这些，从不扫描正文。和 Pandoc 一样：<code translate="no">$</code> 后面必须是非空白，结尾的 <code translate="no">$</code> 前面是非空白、后面不是数字。<code translate="no">\(…\)</code>、<code translate="no">\[…\]</code>、<code translate="no">$$…$$</code> 总是公式（<code translate="no">math.ts</code>）</td></tr>
+</tbody>
+</table>
+
+<h2>保持原样</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写法</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">#话题#今天</code></th><td>话题标签：一个 <code translate="no">#</code> 由另一个闭合</td></tr>
+<tr><th scope="row"><code translate="no">1.5倍</code></th><td>点后面是数字</td></tr>
+<tr><th scope="row"><code translate="no">1、</code>、<code translate="no">（1）</code>、<code translate="no">•</code></th><td>纯文字本来就像编号</td></tr>
+<tr><th scope="row">行首的 <code translate="no">*强调*</code></th><td>是强调，不是列表</td></tr>
+<tr><th scope="row">用 <code translate="no">｜</code> 的表格</th><td>少见，而全角竖线也是普通文字</td></tr>
+<tr><th scope="row">带空格的网址</th><td>空格就是结束，各处一样</td></tr>
+</tbody>
+</table>
+
+<p class="note">用户自己的消息和 A2UI 文字使用同一组扩展，但不含公式：人输入的内容保持原样。</p>
+
+<details>
+<summary>代码</summary>
+<ul>
+<li><code translate="no">apps/web/lib/markdown/prose.ts</code>、<code translate="no">cjk-emphasis.ts</code>、<code translate="no">cjk-links.ts</code>、<code translate="no">cjk-blocks.ts</code>、<code translate="no">spaced-path-links.ts</code>、<code translate="no">math.ts</code></li>
+<li><code translate="no">apps/web/lib/runtime-bridge/dom/markdown-render.ts</code>（<code translate="no">renderMd</code>、<code translate="no">typesetMath</code>）</li>
+<li><code translate="no">apps/web/components/chat/messages/bubbles/markdown.ts</code>、<code translate="no">apps/web/lib/format-utils/markdown.tsx</code>、<code translate="no">document-markdown.ts</code></li>
+<li><code translate="no">apps/web/tests/chat/markdown/chinese-prose.test.mjs</code></li>
+</ul>
+</details>
+
+<p class="next"><a href="chat-attachments.zh.html">聊天附件</a></p>

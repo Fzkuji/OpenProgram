@@ -19,7 +19,8 @@ export function settleFunctionRetry(sessionId: string, requestId: unknown, error
 
 export function startFunctionRetry(args: {
   sessionId: string; requestId: string; apply: () => void; restore: () => void;
-  settled: () => boolean; send: () => boolean; toast: Pending['toast']; timeoutMessage: string;
+  settled: () => boolean; subscribe: (onChange: () => void) => () => void;
+  send: () => boolean; toast: Pending['toast']; timeoutMessage: string;
 }): void {
   const cancel = optimisticAction({
     apply: args.apply,
@@ -28,6 +29,7 @@ export function startFunctionRetry(args: {
       pending.delete(args.requestId);
       return true;
     },
+    subscribe: args.subscribe,
     revert: () => { pending.delete(args.requestId); args.restore(); },
     onTimeoutMessage: args.timeoutMessage,
   }, args.toast);

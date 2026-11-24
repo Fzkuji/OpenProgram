@@ -35,6 +35,20 @@ const PdfPreview = lazy(() => import("./preview/pdf-preview").then((module) => (
 const ArchivePreview = lazy(() => import("./preview/archive-preview").then((module) => ({ default: module.ArchivePreview })));
 const LayeredImagePreview = lazy(() => import("./preview/image/layered-image-preview").then((module) => ({ default: module.LayeredImagePreview })));
 
+/** Attachments already read, by session and path. An attachment does not
+ *  change once sent, so a viewer opened again draws it on its first frame. */
+const attachmentReads = new Map<string, FileReadResult>();
+const ATTACHMENT_READS_KEPT = 32;
+function rememberAttachment(key: string, read: FileReadResult): void {
+  attachmentReads.delete(key);
+  attachmentReads.set(key, read);
+  while (attachmentReads.size > ATTACHMENT_READS_KEPT) {
+    const oldest = attachmentReads.keys().next().value;
+    if (oldest === undefined) break;
+    attachmentReads.delete(oldest);
+  }
+}
+
 function fmtSize(bytes: number): string {
   if (!Number.isFinite(bytes)) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -85,7 +99,6 @@ export function FileViewer({
 }) {
   const ext = fileExtension(path);
   const capability = fileCapabilities(path);
-  const { text } = useTranslation();
   // Version endpoints return opaque bytes. SVG image decoding requires its
   // media type; rendering remains inside img, never inline document markup.
   const blobUrl = useMemo(() => sourceBlob ? URL.createObjectURL(ext === "svg"
@@ -96,13 +109,13 @@ export function FileViewer({
     : rawFileUrl(projectId, path);
   const sourceUrl = blobUrl ?? rawUrl;
   if (!inArchive && isArchivePath(path)) {
-    return <Suspense fallback={<div className={styles.viewerHint}>{text("Loading…", "加载中…")}</div>}>
+    return <Suspense fallback={<div className={styles.viewerHint} />}>
       <ArchivePreview source={abs ? { kind: "absolute", path, sessionId } : { kind: "project", projectId, path }} />
     </Suspense>;
   }
   if (capability.preview === "image") return <div className={previewStyles.preview}><ImagePreview key={sourceUrl} sourceUrl={sourceUrl} path={path} /></div>;
   if (capability.preview === "pdf" || capability.preview === "layered-image") {
-    return <div className={previewStyles.preview}><Suspense fallback={<div>{text("Loading…", "加载中…")}</div>}>
+    return <div className={previewStyles.preview}><Suspense fallback={null}>
       {capability.preview === "pdf" ? <PdfPreview key={sourceUrl} sourceUrl={sourceUrl} path={path} />
         : <LayeredImagePreview key={sourceUrl} sourceUrl={sourceUrl} path={path} />}
     </Suspense></div>;
@@ -156,46 +169,58 @@ function TextViewer({
   snapshot?: FileReadResult | null;
 }) {
   const { text } = useTranslation();
-  const [loadedData, setData] = useState<FileReadResult | null>(null);
+  const attachmentKey = abs ? `${sessionId ?? ""}\n${path}` : null;
+  const [loadedData, setData] = useState<FileReadResult | null>(
+    () => (attachmentKey ? attachmentReads.get(attachmentKey) ?? null : null),
+  );
   const data = snapshot ?? loadedData;
-  const [failed, setFailed] = useState(false);
+  // A read that fails is asked again, quietly, with backoff; the viewer
+  // keeps what it shows (or stays blank) meanwhile.
+  const readKey = `${projectId}\n${path}\n${abs ? 1 : 0}\n${sessionId ?? ""}`;
+  const [retryState, setRetry] = useState({ key: readKey, n: 0 });
+  const retry = retryState.key === readKey ? retryState.n : 0;
   // Ref so a changing callback identity never re-triggers the fetch.
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
-    setFailed(false);
+    const failed = (reason: unknown) => {
+      if (cancelled) return;
+      console.warn("file read failed; reading again", { path, reason });
+      onLoadedRef.current?.(null);
+      timer = setTimeout(() => setRetry({ key: readKey, n: retry + 1 }), Math.min(30_000, 1000 * 2 ** retry));
+    };
     if (snapshot) {
       setData(snapshot);
       onLoadedRef.current?.(snapshot);
       return;
     }
     if (abs) {
-      // No readCache / mtime here: an attachment is immutable in
-      // practice and has no tree listing reporting an mtime, so a cache
-      // would only add a staleness question nobody can answer.
-      setData(null);
+      // An attachment is immutable in practice: one read already held is
+      // shown at once and not asked for again.
+      const held = attachmentKey ? attachmentReads.get(attachmentKey) : undefined;
+      if (held) {
+        setData(held);
+        onLoadedRef.current?.(held);
+        return;
+      }
+      if (retry === 0) setData(null);
       fetch(absFileReadUrl(path, sessionId))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((res: FileReadResult | null) => {
+        .then(async (r) => (r.ok ? await r.json() as FileReadResult : null))
+        .then((res) => {
           if (cancelled) return;
-          if (!res) {
-            setFailed(true);
-            onLoadedRef.current?.(null);
-            return;
-          }
+          if (!res) { failed("no file"); return; }
+          if (attachmentKey) rememberAttachment(attachmentKey, res);
           setData(res);
           onLoadedRef.current?.(res);
         })
-        .catch(() => {
-          if (cancelled) return;
-          setFailed(true);
-          onLoadedRef.current?.(null);
-        });
+        .catch(failed);
       return () => {
         cancelled = true;
+        clearTimeout(timer);
       };
     }
     const knownMtime = latestFileMtime.get(`${projectId}:${path}`);
@@ -205,7 +230,7 @@ function TextViewer({
       onLoadedRef.current?.(hit);
       return;
     }
-    setData(null);
+    if (retry === 0) setData(null);
     wsRequest<FileReadResult>(
       "project_file_read",
       { project_id: projectId, path },
@@ -219,8 +244,7 @@ function TextViewer({
     ).then((res) => {
       if (cancelled) return;
       if (!res || res.project_id !== projectId || res.error || res.path !== path) {
-        setFailed(true);
-        onLoadedRef.current?.(null);
+        failed(res?.error ?? "no reply");
         return;
       }
       cacheFileRead(res);
@@ -229,20 +253,12 @@ function TextViewer({
     });
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       controller.abort();
     };
-  }, [projectId, path, abs, sessionId, snapshot]);
+  }, [projectId, path, abs, sessionId, snapshot, attachmentKey, retry, readKey]);
 
-  if (failed) {
-    return (
-      <div className={styles.viewerHint}>
-        {text("Couldn't read this file.", "无法读取该文件。")}
-      </div>
-    );
-  }
-  if (!data) {
-    return <div className={styles.viewerHint}>{text("Loading…", "加载中…")}</div>;
-  }
+  if (!data) return <div className={styles.viewerHint} />;
 
   if (data.binary || data.too_large || data.content === undefined) {
     return (

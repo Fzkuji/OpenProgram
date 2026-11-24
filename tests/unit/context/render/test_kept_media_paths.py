@@ -73,3 +73,19 @@ def test_a_steer_keeps_its_pictures_after_its_text(tmp_path):
     [message] = render_dag_messages(graph, [node.id], str(tmp_path))
     assert [(type(b), getattr(b, "data", None)) for b in message.content] == [
         (TextContent, None), (ImageContent, PNG)]
+
+
+def test_only_the_latest_message_with_pictures_attaches_them(tmp_path):
+    """An earlier message's pictures are named by path once a later message
+    carries its own, so each picture does not ride on every request."""
+    first = media.records_for_attachments(tmp_path, [{"type": "image", "data": PNG,
+                                                      "media_type": "image/png"}], 1)
+    second = media.records_for_attachments(tmp_path, [{"type": "image", "data": JPEG,
+                                                       "media_type": "image/jpeg"}], 1)
+    graph = Graph()
+    old = graph.add(Call(role=ROLE_USER, output="the first", metadata={"media": first}))
+    new = graph.add(Call(role=ROLE_USER, output="the second", metadata={"media": second}))
+    earlier, latest = render_dag_messages(graph, [old.id, new.id], str(tmp_path))
+    assert [type(b) for b in earlier.content] == [TextContent, TextContent]
+    assert first[0]["sha"] in earlier.content[1].text
+    assert [type(b) for b in latest.content] == [TextContent, ImageContent]

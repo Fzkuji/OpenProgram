@@ -24,7 +24,7 @@ def _step(tmp_path, window_id=7, frame=b"\x89PNG one"):
     shot.write_bytes(frame)
     return {
         "status": "applied",
-        "target": {"window_id": window_id, "pid": 42, "app_name": "WeChat", "launch_time": "t"},
+        "window": {"window_id": window_id, "pid": 42, "app_name": "WeChat", "launch_time": "t"},
         "step": {"observation": {"screenshot_artifact": str(shot)}},
     }
 
@@ -41,17 +41,19 @@ def test_a_step_on_a_window_announces_it_with_its_frame(tmp_path, _clean):
 
 def test_a_step_without_a_capture_keeps_the_frame_of_the_same_window(tmp_path, _clean):
     nw.note_operated_window(_step(tmp_path))
-    nw.note_operated_window({"target": {"window_id": 7, "pid": 42, "app_name": "WeChat"}})
+    nw.note_operated_window({"window": {"window_id": 7, "pid": 42, "app_name": "WeChat"}})
     assert nw.latest_window("conv")["frame"] == b"\x89PNG one"
     assert nw.latest_window("conv")["sequence"] == 2
 
-    nw.note_operated_window({"target": {"window_id": 9, "pid": 42, "app_name": "WeChat"}})
+    nw.note_operated_window({"window": {"window_id": 9, "pid": 42, "app_name": "WeChat"}})
     assert nw.latest_window("conv")["frame"] is None, "another window's frame is never shown"
 
 
 @pytest.mark.parametrize("output", [
-    None, "text", {"target": None}, {"target": {"window_id": "7", "pid": 42, "app_name": "x"}},
-    {"target": {"window_id": 7, "pid": 42}},
+    None, "text", {"window": None}, {"window": {"window_id": "7", "pid": 42, "app_name": "x"}},
+    {"window": {"window_id": 7, "pid": 42}},
+    # device and type are the address a computer-use call writes, never a window.
+    {"device": "lab", "type": "screen"}, {"type": {"window_id": 7, "pid": 42, "app_name": "x"}},
 ])
 def test_results_that_name_no_window_are_ignored(output, _clean):
     nw.note_operated_window(output)
@@ -137,3 +139,58 @@ def test_a_subprocess_hands_its_controlled_window_to_the_worker(_clean):
     assert _clean == [] and forwarded[0]["kind"] == "control"
     nw.record_control(forwarded[0], session_id="parent-conv")
     assert _clean[0]["type"] == "native.control" and _clean[0]["data"]["session_id"] == "parent-conv"
+
+
+def test_a_used_application_is_announced_with_a_rising_sequence(_clean):
+    nw._application_sequences.clear()
+    nw.note_used_application("notes", "inst-1", "Notes")
+    nw.note_used_application("notes", "inst-2", "Notes")
+    frames = [frame["data"] for frame in _clean if frame["type"] == "application.used"]
+    assert frames[0] == {"session_id": "conv", "execution_id": "exec-1", "application_id": "notes",
+                         "instance_id": "inst-1", "title": "Notes", "sequence": 1, "at": frames[0]["at"]}
+    assert frames[1]["instance_id"] == "inst-2" and frames[1]["sequence"] == 2
+    nw.note_used_application("notes", "", "Notes")
+    assert len([f for f in _clean if f["type"] == "application.used"]) == 2, "no instance, nothing to follow"
+
+
+def test_a_subprocess_hands_its_used_application_to_the_worker(_clean):
+    forwarded = []
+    nw.forward_to_parent(forwarded.append)
+    nw.note_used_application("notes", "inst-1", "Notes")
+    assert _clean == [] and forwarded[0]["kind"] == "application"
+    nw.record_used_application(forwarded[0], session_id="parent-conv", execution_id="exec-p")
+    data = _clean[0]["data"]
+    assert _clean[0]["type"] == "application.used"
+    assert (data["session_id"], data["execution_id"], data["instance_id"]) == ("parent-conv", "exec-p", "inst-1")
+
+
+def test_an_announcement_that_fails_never_fails_the_step(_clean):
+    def broken(_observed):
+        raise RuntimeError("pipe closed")
+    nw.forward_to_parent(broken)
+    nw.note_used_application("notes", "inst-1", "Notes")
+
+
+def test_the_application_provider_announces_the_instance_it_used(monkeypatch, _clean):
+    from openprogram.programs._authoring import application_client
+    from openprogram.programs._host.framework import authority
+    from openprogram.programs._host.ui.resource_provider import application_provider
+    import openprogram.host.processes as processes
+
+    used = []
+    monkeypatch.setattr(nw, "note_used_application", lambda *args: used.append(args))
+    monkeypatch.setattr(authority, "require_owner", lambda: None)
+    monkeypatch.setattr(processes, "current_owner", lambda: ("conv", "exec-1", None))
+    monkeypatch.setattr(application_client, "request",
+                        lambda path, method="GET", body=None: {"instance_id": "inst-9", "path": path})
+    provider = application_provider({"id": "notes", "title": "Notes", "digest": "d", "operations": {},
+                                     "capabilities": []})
+    provider.invoke("open", {})
+    provider.invoke("observe", {"instance_id": "inst-3", "digest": "d"})
+    provider.invoke("status", {"instance_id": "inst-3", "digest": "d", "run_id": "r"})
+    assert used == [("notes", "inst-9", "Notes"), ("notes", "inst-3", "Notes")]
+
+    def broken(*_args):
+        raise RuntimeError("no App")
+    monkeypatch.setattr(nw, "note_used_application", broken)
+    assert provider.invoke("observe", {"instance_id": "inst-3", "digest": "d"})["instance_id"] == "inst-9"

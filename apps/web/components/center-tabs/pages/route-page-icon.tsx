@@ -8,7 +8,7 @@ const pageIcons: Record<string, typeof Bot> = {
   programs: Cpu, functions: Cpu, skills: Cpu, mcp: Cpu, plugins: Cpu, plugin: Cpu,
   applications: Blocks,
   chats: History, projects: History, memory: History, history: History,
-  scheduler: CalendarDays,
+  tasks: CalendarDays,
   settings: Settings,
 };
 

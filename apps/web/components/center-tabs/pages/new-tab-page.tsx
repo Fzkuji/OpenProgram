@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applicationRequest } from "@/lib/net/applications";
 import { refreshApplications, useApplicationList } from "@/lib/net/application-list";
+import { useChanged } from "@/lib/net/ws/changes";
 import { useApplicationLauncher } from "@/components/applications/use-application-launcher";
 
 import { useTranslation } from "@/lib/i18n";
@@ -12,10 +13,12 @@ import styles from "./pages.module.css";
 import { Launchpad, type LaunchItem } from "./launchpad/launchpad";
 import { artFor, toneFor } from "@/components/applications/application-icon";
 import { BUILTIN_TABS } from "@/components/applications/application-rows";
+import { embedAvailable } from "@/lib/desktop/embedded-window/embedded-window";
 
 export function NewTabPage() {
   const { text } = useTranslation();
   const openBuiltinTab = useCenterTabs((state) => state.openBuiltinTab);
+  const openWindowTab = useCenterTabs((state) => state.openWindowTab);
 
   // The last list paints at once; this page only refreshes it.
   const { applications, builtin } = useApplicationList();
@@ -29,9 +32,10 @@ export function NewTabPage() {
   useEffect(() => {
     void refresh();
     window.addEventListener("focus", refresh);
-    const timer = setInterval(refresh, 10000);
-    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
+    return () => { window.removeEventListener("focus", refresh); };
   }, [refresh]);
+  // An application installed, switched or removed anywhere (another window, the CLI).
+  useChanged("applications", refresh);
 
   const items = useMemo<LaunchItem[]>(() => [
     { id: "builtin:files", title: text("Files", "文件"), art: "files", open: () => openBuiltinTab("files") },
@@ -44,6 +48,8 @@ export function NewTabPage() {
     },
     { id: "builtin:browser", title: text("Browser", "浏览器"), art: "browser", open: () => openBuiltinTab("browser") },
     { id: "builtin:terminal", title: text("Terminal", "终端"), art: "terminal", open: () => openBuiltinTab("terminal") },
+    // Another application's window, in a tab (desktop App only).
+    ...(embedAvailable() ? [{ id: "builtin:window", title: text("App window", "应用窗口"), art: "window" as const, open: openWindowTab }] : []),
     // Built-in applications with a window of their own (the browser is above).
     ...builtin.filter(application => application.enabled && application.id !== "browser" && BUILTIN_TABS[application.id])
       .map((application): LaunchItem => ({
@@ -65,7 +71,7 @@ export function NewTabPage() {
         .then(() => refreshApplications({ fresh: true }))
         .catch(reason => setError(String(reason.message ?? reason))),
     })),
-  ], [applications, builtin, openBuiltinTab, text]);
+  ], [applications, builtin, openBuiltinTab, openWindowTab, text]);
 
   return (
     <div className={styles.ntp}>

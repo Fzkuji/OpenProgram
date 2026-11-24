@@ -722,11 +722,13 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       : { boundAgentBySession: { ...prev.boundAgentBySession, [sessionId]: agentId } }),
   branchInfo: { visible: false, name: "main", count: 0 },
   setBranchInfo: (b) => set({ branchInfo: b }),
+  // Only tone and paused are drawn (the environment chip's icon colour);
+  // the link's own state is never narrated.
   statusBadge: {
-    label: "connecting…",
+    label: "",
     tone: "connecting",
     paused: false,
-    title: "Connecting…",
+    title: "",
   },
   // Derived again on every run frame; the same badge keeps its object, so
   // the environment chip redraws only when the badge changes.

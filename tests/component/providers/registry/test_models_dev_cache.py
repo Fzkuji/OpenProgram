@@ -164,6 +164,11 @@ def test_failed_fetch_falls_back_to_disk_cache(monkeypatch, tmp_path, _reset_cac
     (tmp_path / "models_dev.json").write_text(
         json.dumps({"openrouter": {"models": {"x": {}}}}), encoding="utf-8"
     )
+    import os
+    import time
+
+    fetched = time.time() - md._TTL_SECONDS - 60
+    os.utime(tmp_path / "models_dev.json", (fetched, fetched))
     calls = {"n": 0}
 
     def _get(url, timeout=10):

@@ -19,11 +19,12 @@ def test_modifiers_accept_mac_and_pc_names_once_each():
     assert error.value.reason_code == "invalid_modifiers"
 
 
-def test_scroll_amount_keeps_its_old_meaning_without_a_direction():
-    assert pa.scroll_delta({}) == (0, 500)
-    assert pa.scroll_delta({"amount": -300}) == (0, -300)
-    assert pa.scroll_delta({"amount": -300, "direction": "left"}) == (-300, 0)
-    assert pa.scroll_delta({"amount": 200, "direction": "up"}) == (0, -200)
+def test_scroll_moves_by_pages_of_the_view_or_by_pixels():
+    assert pa.scroll_delta({}, (1000, 600)) == (0, 540)
+    assert pa.scroll_delta({"pages": 2, "direction": "up"}, (1000, 600)) == (0, -1080)
+    assert pa.scroll_delta({"pages": 1, "direction": "right"}, (1000, 600)) == (900, 0)
+    assert pa.scroll_delta({"pixels": -300, "direction": "left"}) == (-300, 0)
+    assert pa.scroll_delta({"pixels": 200, "direction": "up"}) == (0, -200)
 
 
 @pytest.mark.parametrize("arguments, code", [

@@ -18,6 +18,10 @@ import { useSessionStore } from "@/lib/session-store";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 
 import { resolveFnFormSessionId, shouldClearLegacyRunning } from "./session-target";
+import { errorDetailText } from "@/lib/net/error-text";
+
+/** What POST /api/function/<name> answers with. */
+interface FunctionDispatchReply { session_id?: unknown; error?: unknown; detail?: unknown }
 
 export interface FunctionDispatchOptions {
   forkOf?: string | null;
@@ -129,12 +133,9 @@ export function useFunctionDispatch({
       body: JSON.stringify(body),
     })
       .then(async (response) => {
-        const payload = await response.json().catch(() => null);
+        const payload = await response.json().catch(() => null) as FunctionDispatchReply | null;
         if (!response.ok) {
-          const message = payload && typeof payload.error === "string"
-            ? payload.error
-            : `HTTP ${response.status}`;
-          throw new Error(message);
+          throw new Error(errorDetailText(payload?.error ?? payload?.detail, `HTTP ${response.status}`));
         }
         const sid = payload && payload.session_id;
         if (typeof sid !== "string" || !sid) {

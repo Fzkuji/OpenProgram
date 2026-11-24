@@ -16,15 +16,6 @@ import re
 import time
 from typing import Any, AsyncGenerator, Optional
 
-# The ``anthropic`` SDK is a base dependency (installed by default). This
-# guarded import only stays defensive so importing this module succeeds
-# even in a stripped env and the provider *catalog* (which side-effect-
-# imports this package) stays usable. Any actual streaming call below
-# re-checks ``_anthropic`` and raises a clear error.
-try:
-    import anthropic as _anthropic
-except ImportError:  # pragma: no cover — base dep, normally present
-    _anthropic = None  # type: ignore[assignment]
 
 from ...types import (
     AssistantMessage,
@@ -62,6 +53,24 @@ from ...utils.sanitize_unicode import sanitize_surrogates
 from ...shared.transform_messages import transform_messages as _transform_messages
 from ...shared.tool_attachments import AttachmentMessage
 from ...shared.validate_modalities import validate_input_modalities
+
+
+def _sdk():
+    """The ``anthropic`` SDK, imported when a client is first built.
+
+    The provider catalog imports this module in every process to register
+    the provider; the SDK takes 0.4 s to import and is used only by a
+    request to this provider, so a command or a turn on another provider
+    does not pay for it.
+    """
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - base dependency, normally present
+        raise ImportError(
+            "The 'anthropic' Python SDK is required to use the Anthropic "
+            "provider. Reinstall the complete OpenProgram release."
+        ) from exc
+    return anthropic
 
 # Anthropic beta features
 _BETA_FINE_GRAINED = "fine-grained-tool-streaming-2025-05-14"
@@ -224,7 +233,7 @@ def _build_client(
     base_url_override: str | None = None,
     fast: bool = False,
     tool_search: bool = False,
-) -> tuple[_anthropic.AsyncAnthropic, bool]:
+) -> tuple["anthropic.AsyncAnthropic", bool]:
     """
     Build the Anthropic async client with appropriate headers.
     Mirrors createClient() in TypeScript.
@@ -238,11 +247,7 @@ def _build_client(
 
     Returns (client, is_oauth_token).
     """
-    if _anthropic is None:
-        raise ImportError(
-            "The 'anthropic' Python SDK is required to use the Anthropic "
-            "provider. Reinstall the complete OpenProgram release."
-        )
+    _anthropic = _sdk()
     from openprogram.models.auth.provider_policy import require_api_key
     require_api_key(api_key, is_subscription=bool(is_oauth_override))
     is_oauth = False
@@ -770,7 +775,7 @@ async def stream_simple(
         raise LLMError(
             message=(
                 f"No API key configured for provider '{model.provider}'. "
-                f"Add one in Settings → Providers, or run: "
+                f"Add one in Settings → Model services, or run: "
                 f"openprogram providers keys {model.provider} add"
             ),
             reason=ErrorReason.AUTHENTICATION,

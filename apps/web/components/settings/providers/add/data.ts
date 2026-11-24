@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
-import { cachedFetch, invalidate, readCachedSettings } from "@/lib/prefs/settings-cache";
+import { refreshSettings, useSettingsData } from "@/lib/prefs/settings-cache";
+import { PROVIDERS_CATALOGUE_URL, PROVIDERS_DETECTED_URL } from "@/lib/settings/settings-urls";
 import type {
   AuthKind,
   DetectedEnvKey,
@@ -14,8 +15,8 @@ import type {
 
 import type { Model, Provider } from "../types";
 
-export const DETECTED_URL = "/api/providers/detected";
-export const CATALOGUE_URL = "/api/providers/list";
+export const DETECTED_URL = PROVIDERS_DETECTED_URL;
+export const CATALOGUE_URL = PROVIDERS_CATALOGUE_URL;
 
 /** A provider Add provider can connect: a popular tile, a search result,
  *  an environment key's provider, or a local server. */
@@ -53,25 +54,20 @@ export function envKeysFor(detected: DetectedPayload | null | undefined, provide
     row.providers.includes(providerId) && !(row.connected && row.provider === providerId));
 }
 
-/** What Add provider offers before anything is typed, and the catalogue it searches. */
+const NO_PROVIDERS: Provider[] = [];
+
+/** What Add provider offers before anything is typed, and the catalogue it
+ *  searches: kept for the visit and read as Settings opens, so both are
+ *  usually here before the page is. A read that fails keeps the last answer
+ *  and is retried quietly. */
 export function useAddData() {
-  const [detected, setDetected] = useState<DetectedPayload | null>(() => readCachedSettings<DetectedPayload>(DETECTED_URL) ?? null);
-  const [catalogue, setCatalogue] = useState<Provider[]>(() => readCachedSettings<{ providers?: Provider[] }>(CATALOGUE_URL)?.providers ?? []);
-  /** The popular providers and environment keys could not be read. */
-  const [detectedFailed, setDetectedFailed] = useState(false);
+  const detected = useSettingsData<DetectedPayload>(DETECTED_URL) ?? null;
+  const catalogue = useSettingsData<{ providers?: Provider[] }>(CATALOGUE_URL)?.providers ?? NO_PROVIDERS;
   const load = useCallback(async (fresh = false) => {
-    if (fresh) { invalidate(DETECTED_URL); invalidate(CATALOGUE_URL); }
-    setDetectedFailed(false);
-    const [d, c] = await Promise.allSettled([
-      cachedFetch<DetectedPayload>(DETECTED_URL),
-      cachedFetch<{ providers?: Provider[] }>(CATALOGUE_URL),
-    ]);
-    if (d.status === "fulfilled") setDetected(d.value);
-    else setDetectedFailed(true);
-    if (c.status === "fulfilled") setCatalogue(c.value.providers ?? []);
+    if (!fresh) return;
+    await Promise.all([refreshSettings(DETECTED_URL), refreshSettings(CATALOGUE_URL)]);
   }, []);
-  useEffect(() => { void load(); }, [load]);
-  return { detected, detectedFailed, catalogue, reload: load };
+  return { detected, catalogue, reload: load };
 }
 
 /** The result of storing a key: the account it became and its one-line check. */

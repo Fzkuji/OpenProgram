@@ -38,7 +38,14 @@ from typing import Any, Optional
 
 from openprogram.runtime.jobs.types import Job, JobStatus
 
-POLL_SECONDS = 2.0
+#: The loop looks on its own only this often; otherwise it waits to be told.
+RESYNC_SECONDS = 300.0
+#: A delivery that failed is tried again this soon; nothing announces
+#: that it may work now.
+RETRY_SECONDS = 2.0
+_retry = threading.Event()
+#: Signalled when a notice or a queued message becomes due.
+NOTICES_TOPIC = "agent_notices"
 _REPLY_CHARS = 20_000
 # Jobs already told or read, remembered so a second terminal projection
 # of the same job cannot notify twice. Only recent ids matter: the
@@ -106,6 +113,8 @@ def answered(session_id: str, job_ids: list[str]) -> None:
         entries, done = _load(path) if path.exists() else ([], [])
         seen = _answered(path) if path.exists() else []
         _write(path, entries, done, seen + [j for j in job_ids if j not in seen])
+    # A reply held for these jobs (``hold``) may go on now.
+    announce_due()
 
 
 def hold(passing_on: Job, *, waits_on: Job) -> bool:
@@ -138,6 +147,7 @@ def hold(passing_on: Job, *, waits_on: Job) -> bool:
                             "waits_on": [wait], "queued_at": time.time()})
         _write(path, entries, done)
         _due.add(session_id)
+        announce_due()
     return True
 
 
@@ -173,6 +183,7 @@ def queue(job: Job) -> bool:
                         **({"stopped_by_user": True} if stopped_by_user(job) else {})})
         _write(path, entries, done)
         _due.add(session_id)
+        announce_due()
     return True
 
 
@@ -214,6 +225,10 @@ def queue_stalled(job: Job, *, minutes: int) -> bool:
                         "queued_at": time.time()})
         _write(path, entries, done)
         _due.add(session_id)
+        announce_due()
+    # The roster shows a helper as stalled from this entry.
+    from openprogram.host._platform import changes
+    changes.signal("roster", *(sid for sid in (job.parent_session_id, session_id) if sid))
     return True
 
 
@@ -258,6 +273,7 @@ def watch(
         })
         _write(path, entries, done)
         _due.add(sender_session_id)
+        announce_due()
     return True
 
 
@@ -312,6 +328,7 @@ def hold_reply(*, sender_session_id: str, entry_id: str, from_session_id: str,
                         "queued_at": time.time(), **normalize_authority(authority or {})})
         _write(path, entries, done)
         _due.add(sender_session_id)
+        announce_due()
     return True
 
 
@@ -683,6 +700,7 @@ def sweep() -> None:
             done = deliver(session_id)
         except Exception:
             _log.warning("agent notice for %s deferred", session_id, exc_info=True)
+            retry_soon()
             continue
         if done:
             with _lock:
@@ -691,19 +709,82 @@ def sweep() -> None:
                     _due.discard(session_id)
 
 
-def _sweep_all() -> None:
+def _sweep_all() -> bool:
+    """Deliver what can be; whether anything is still waiting."""
     sweep()
     # Messages queued for busy agents ride the same loop (agent/inbox.py).
     from openprogram.runtime.conversation.peer_agents import inbox
     inbox.sweep()
+    with _lock:
+        waiting = bool(_due)
+    return waiting or inbox.has_due()
+
+
+def retry_soon() -> None:
+    """A delivery failed: the worker loop tries again in ``RETRY_SECONDS``."""
+    _retry.set()
+
+
+def announce_due() -> None:
+    """A notice or a queued message became due: wake the worker loop."""
+    from openprogram.host._platform import changes
+    changes.signal(NOTICES_TOPIC)
 
 
 async def run_job_notices(stop: asyncio.Event) -> None:
     """Worker loop: deliver due notices and queued messages until
-    ``stop`` is set."""
-    while not stop.is_set():
-        await asyncio.to_thread(_sweep_all)
+    ``stop`` is set.
+
+    It wakes when a notice or a message is queued (``NOTICES_TOPIC``) and,
+    while one waits for a busy conversation, when a conversation may have
+    gone quiet (``run_control/idle.py``: a turn ended, a run slot was given
+    back, an execution or a Job changed). Otherwise it looks on its own only
+    every ``RESYNC_SECONDS``."""
+    from openprogram.host._platform import changes
+    from openprogram.runtime.conversation.run_control.idle import subscribe_idle
+
+    loop = asyncio.get_running_loop()
+    wake = asyncio.Event()
+    waiting = False
+    sweeping = threading.local()
+
+    def poke(_keys: tuple[str, ...] = ()) -> None:
         try:
-            await asyncio.wait_for(stop.wait(), POLL_SECONDS)
-        except asyncio.TimeoutError:
+            loop.call_soon_threadsafe(wake.set)
+        except RuntimeError:  # the loop is closing
             pass
+
+    def maybe_idle() -> None:
+        # Only while something waits, and not for the sweep's own writes
+        # (a notice turn it starts writes executions).
+        if waiting and not getattr(sweeping, "on", False):
+            poke()
+
+    def sweep_once() -> bool:
+        sweeping.on = True
+        try:
+            return _sweep_all()
+        finally:
+            sweeping.on = False
+
+    unsubscribes = [changes.subscribe(NOTICES_TOPIC, poke), subscribe_idle(maybe_idle)]
+    try:
+        while not stop.is_set():
+            wake.clear()
+            # Listening while the sweep looks: a turn that ends meanwhile
+            # brings another look.
+            waiting = True
+            _retry.clear()
+            waiting = await asyncio.to_thread(sweep_once)
+            stopped = asyncio.ensure_future(stop.wait())
+            woken = asyncio.ensure_future(wake.wait())
+            try:
+                await asyncio.wait({stopped, woken},
+                                   timeout=RETRY_SECONDS if _retry.is_set() else RESYNC_SECONDS,
+                                   return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in (stopped, woken):
+                    task.cancel()
+    finally:
+        for unsubscribe in unsubscribes:
+            unsubscribe()

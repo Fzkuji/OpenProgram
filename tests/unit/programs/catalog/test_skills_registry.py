@@ -235,3 +235,38 @@ def test_skill_paths_follow_the_active_profile(tmp_path, monkeypatch):
     assert loader.remote_cache_dir() == root / "cache" / "skills"
     assert tool._log_path() == root / "skills" / "invoke_log.jsonl"
     assert skills_route._state_root() == root
+
+
+def test_a_source_is_walked_again_only_when_it_changed(tmp_path, monkeypatch):
+    import os
+
+    root = tmp_path / "skills"
+    _write_skill(root, "alpha", "first")
+    (root / "notes" / "deep").mkdir(parents=True)
+    walks = []
+    real_walk = os.walk
+    monkeypatch.setattr(L.os, "walk", lambda top: walks.append(top) or real_walk(top))
+
+    def names():
+        return [(s.name, s.description) for s in L.load_skills([root])]
+
+    assert names() == [("alpha", "first")]
+    assert names() == [("alpha", "first")]
+    assert len(walks) == 1
+
+    # A caller's changes to what it was given stay its own.
+    given = L.load_skills([root])[0]
+    given.allowed_tools.append("bash")
+    assert L.load_skills([root])[0].allowed_tools == []
+    assert len(walks) == 1
+
+    # A skill added in a directory that was already there.
+    _write_skill(root, "notes/deep", "second")
+    assert names() == [("alpha", "first"), ("notes/deep", "second")]
+    # One edited in place.
+    _write_skill(root, "alpha", "first, rewritten")
+    assert names() == [("alpha", "first, rewritten"), ("notes/deep", "second")]
+    # One removed.
+    (root / "notes" / "deep" / "SKILL.md").unlink()
+    assert names() == [("alpha", "first, rewritten")]
+    assert len(walks) == 4

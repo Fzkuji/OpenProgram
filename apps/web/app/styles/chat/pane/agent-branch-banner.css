@@ -31,3 +31,8 @@
 .agent-branch-banner-back:hover {
   border-color: var(--text-secondary);
 }
+/* "Branched from <标题>"：标题加粗（branched-from-banner.tsx）。 */
+.agent-branch-banner-label strong {
+  font-weight: 600;
+  color: var(--text-bright);
+}

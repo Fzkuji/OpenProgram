@@ -103,12 +103,13 @@ def test_a_pdf_read_stops_before_the_page_that_would_pass_the_bound(tmp_path):
 
 
 def test_a_remote_read_pages_the_same_way(monkeypatch):
-    from openprogram.host import environments as envs
+    from openprogram.host.machines import Connection, Machine
     from openprogram.programs.tools.files import read as local
     from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     class _FS:
-        env = envs.Environment(id="devbox", name="devbox", kind="ssh", ssh_target="me@devbox")
+        machine = Machine("devbox", "devbox", shell=Connection("ssh", {"target": "me@devbox"}))
+        label = "devbox"
 
         def read_bytes(self, path):
             return "".join(f"row {i} {'z' * 40}\n" for i in range(1, 801)).encode()
@@ -122,7 +123,7 @@ def test_a_remote_read_pages_the_same_way(monkeypatch):
         reset_worktree(token)
     last = int(re.findall(r"^ *(\d+)\t", out, flags=re.M)[-1])
     assert len(out) <= CAP and last < 800
-    assert out.startswith(f"# me@devbox:/srv/app/data.txt (lines 1-{last} of 800)")
+    assert out.startswith(f"# devbox:/srv/app/data.txt (lines 1-{last} of 800)")
     assert f'read("/srv/app/data.txt", offset={last + 1}, limit={800 - last})' in out
 
 

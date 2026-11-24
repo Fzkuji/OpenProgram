@@ -79,7 +79,7 @@
   --composer-surface: var(--bg-input);
   --composer-backdrop-filter: none;
   --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
-  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.35);
+  --composer-shadow-focus: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 0 6px 0 rgb(0 0 0 / 0.2), 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 6px 16px -4px rgb(0 0 0 / 0.45);
   /* 环境 pill 芯片底 + 描边。 */
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);

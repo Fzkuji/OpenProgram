@@ -278,7 +278,8 @@ export const FileTree = memo(function FileTree({
       if (cursor) {
         setLoadingMore((previous) => new Set(previous).add(path));
       } else if (!refreshedEntries) {
-        setDirs((d) => ({ ...d, [path]: "loading" }));
+        // A folder already listed keeps its rows while it is read again.
+        setDirs((d) => (Array.isArray(d[path]) ? d : { ...d, [path]: "loading" }));
       }
       const page = directoryPagesRef.current[path];
       const data = await fileQuery<TreeResult>(
@@ -531,6 +532,17 @@ export const FileTree = memo(function FileTree({
   // Files changed outside the app show up when the window is used again:
   // coming back to it re-lists what is open, at most every few seconds.
   const lastRefresh = useRef(0);
+  // A listing that failed is read again, quietly, with backoff; the rows
+  // already drawn stay meanwhile.
+  const listingFailed = refreshErrors.size > 0 || Object.values(dirs).includes("error");
+  const failedListings = useRef(0);
+  const retryListings = useEffectEvent(() => refetchRoot({ keepSizes: true }));
+  useEffect(() => {
+    if (!listingFailed) { failedListings.current = 0; return; }
+    console.warn("file tree listing failed; reading again", { projectId, attempt: failedListings.current });
+    const timer = setTimeout(() => retryListings(), Math.min(30_000, 1000 * 2 ** failedListings.current++));
+    return () => clearTimeout(timer);
+  }, [listingFailed, projectId]);
   const refetchRef = useRef(refetchRoot);
   refetchRef.current = refetchRoot;
   useEffect(() => {
@@ -1024,7 +1036,7 @@ export const FileTree = memo(function FileTree({
               void fetchSearchPage(searchGeneration.current);
             }}
           >
-            {searchLoading ? text("Loading…", "加载中…") : text("Load more", "加载更多")}
+            {text("Load more", "加载更多")}
           </button>
         ) : null}
       </div>
@@ -1060,7 +1072,6 @@ export const FileTree = memo(function FileTree({
       return <ProjectLocationNotice projectId={projectId} onRepaired={() => { setLocationUnavailable(false); setDirs({}); void load(""); }} />;
     }
     return <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }} onKeyDown={onTreeKeyDown}>
-      {dirs[""] === "loading" || dirs[""] === undefined ? <div className={styles.treeHint}>{text("Loading…", "加载中…")}</div> : null}
       {treeMenu(
         <PierreFileTree key={projectId} ref={pierreRef} projectId={projectId} sort={sort} onSortChange={setSort} entries={pierreEntries} query={searchMode === "highlight" && !fuzzySearch ? filter : undefined} matches={filter.trim() ? new Set(searchMatches.map(match => match.path)) : undefined} expanded={expanded} selected={primaryPath}
           onRowsRendered={paths => {
@@ -1080,10 +1091,6 @@ export const FileTree = memo(function FileTree({
           onDraftCommit={name => void commitCreate(name)} onDraftCancel={() => setCreating(null)}
           onRenameCommit={(path, name) => void commitRename(path, name)} />
       )}
-      {visibleDirectories.map(dir => <div key={dir}>
-        {dir && dirs[dir] === "loading" ? <div className={styles.treeHint}>{dir} · {text("Loading…", "加载中…")}</div> : null}
-        {dirs[dir] === "error" || refreshErrors.has(dir) ? <button type="button" className={styles.treeRow} onClick={() => refetchRoot()}>{dir || "/"} · {text("Refresh failed — retry", "刷新失败，重试")}</button> : null}
-      </div>)}
     </div>;
   }
 
@@ -1097,7 +1104,7 @@ export const FileTree = memo(function FileTree({
           const type = path === selected?.path ? selected.type : path === activePath ? "file" : "dir";
           void locateTreePath(path, type).then(found => { if (found) { setSelected({ path, type }); recordNavigation(path, type); revealTarget.current = path; } });
         }} />}
-        rootName={projectRoot ? baseOf(projectRoot) : text("Resolving project…", "正在读取项目…")}
+        rootName={projectRoot ? baseOf(projectRoot) : ""}
         rootPath={projectRoot}
         searchOpen={searchOpen}
         onSearchOpenChange={setSearchOpen}
@@ -1146,9 +1153,9 @@ export const FileTree = memo(function FileTree({
       />
       <div className="flex-1 min-h-0 overflow-auto p-0" style={{ overflow: filter.trim() && searchMode === "filter" ? "auto" : "hidden" }}>
         {filter.trim() && searchMode === "filter" ? (
-          searchLoading && searchMatches.length === 0 ? (
-            <div className={styles.treeHint}>{text("Searching…", "搜索中…")}</div>
-          ) : searchError ? (
+          // Until the first page of matches arrives the list stays empty;
+          // "No matches" would be untrue then.
+          searchLoading && searchMatches.length === 0 ? null : searchError ? (
             renderSearchError()
           ) : searchMatches.length === 0 ? (
             <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>

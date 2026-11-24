@@ -585,7 +585,7 @@ def test_running_cross_session_placeholder_is_not_expanded_into_context(
 
 
 def test_unpublished_accepted_job_recovery_publishes_cross_session_spawn(
-    cross_session_store,
+    cross_session_store, monkeypatch,
 ):
     """Recovery finishes a hand-off whose card was persisted before its
     admission was published: the submitter is gone, so the Job is published
@@ -604,41 +604,58 @@ def test_unpublished_accepted_job_recovery_publishes_cross_session_spawn(
     )
     assert pointer_id
 
+    import threading
+
     from openprogram.runtime.jobs import get_runner
+    from openprogram.runtime.jobs.runner import JobRunner
     from openprogram.runtime.jobs.types import Job, JobStatus
 
-    runner = get_runner()
-    job = Job(
-        id="remote_fenced_job",
-        parent_session_id="target",
-        caller_session_id="source",
-        caller_msg_id="source_a",
-        origin_turn_id="source_a",
-        relation="linked",
-        creates_agent=True,
-        prompt="crash before publish",
-        agent_id="main",
-        attach_pointer_id=pointer_id,
-    )
-    runner.admit_job_entity(
-        job,
-        creates_agent=True,
-        caller_turn_id="source_a",
-        dispatch_ready=False,
-    )
+    # The dispatcher wakes on every run-table commit, so it would claim the
+    # published Job before its queued state is read. It is held until the
+    # recovery's outcome has been checked.
+    dispatch_gate = threading.Event()
+    real_dispatch_loop = JobRunner._dispatch_loop
 
-    runner._recover_deferred_inboxes()
+    def held_dispatch_loop(runner):
+        dispatch_gate.wait(timeout=30.0)
+        return real_dispatch_loop(runner)
 
-    recovered = runner.get_job(job.id)
-    assert recovered is not None
-    assert recovered.status == JobStatus.QUEUED
-    assert runner._governor.dispatch_published(job.id)
-    source_pair = cross_session_store._open("source")
-    assert source_pair is not None
-    pointer = source_pair[1].nodes_by_id[pointer_id]
-    attach = _attach_payload(pointer)
-    assert attach["status"] == "running"
-    assert attach["session_id"] == "target"
+    monkeypatch.setattr(JobRunner, "_dispatch_loop", held_dispatch_loop)
+    try:
+        runner = get_runner()
+        job = Job(
+            id="remote_fenced_job",
+            parent_session_id="target",
+            caller_session_id="source",
+            caller_msg_id="source_a",
+            origin_turn_id="source_a",
+            relation="linked",
+            creates_agent=True,
+            prompt="crash before publish",
+            agent_id="main",
+            attach_pointer_id=pointer_id,
+        )
+        runner.admit_job_entity(
+            job,
+            creates_agent=True,
+            caller_turn_id="source_a",
+            dispatch_ready=False,
+        )
+
+        runner._recover_deferred_inboxes()
+
+        recovered = runner.get_job(job.id)
+        assert recovered is not None
+        assert recovered.status == JobStatus.QUEUED
+        assert runner._governor.dispatch_published(job.id)
+        source_pair = cross_session_store._open("source")
+        assert source_pair is not None
+        pointer = source_pair[1].nodes_by_id[pointer_id]
+        attach = _attach_payload(pointer)
+        assert attach["status"] == "running"
+        assert attach["session_id"] == "target"
+    finally:
+        dispatch_gate.set()
 
 
 def test_startup_reconcile_closes_cross_session_legacy_placeholder(

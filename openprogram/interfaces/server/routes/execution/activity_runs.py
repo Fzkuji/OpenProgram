@@ -1,4 +1,12 @@
-"""Read-only run listing and per-run events for Activity's second level."""
+"""Read-only run listing and per-run events for Activity's second level.
+
+Open windows read these again when told, not on a timer: on the
+``execution.updated`` and ``job_status`` frames, on ``runs`` (a Job's
+record or a conversation's topics changed: ``jobs/store.py``,
+``conversation/topics.py``), on ``roster`` (what a helper used:
+``models/usage/ledger.py``) and on ``work`` (a scheduled task's runs).
+All but ``work`` are keyed by session id.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -6,7 +14,11 @@ import contextlib
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from openprogram.host._platform import changes
+
 from . import lifecycle
+
+changes.publish("runs", "roster")
 
 MAX_PAGE = 100
 _NOT_FOUND = {"error": "not_found"}

@@ -117,6 +117,11 @@ class TablesAccess:
                         # The file keeps its tables, so the next start tries again.
                         _log.exception("job admission rows were not moved out of the usage file")
                     load_job_sessions(tables)
+                    # Reading them in settles what each still has unfinished;
+                    # the ones with nothing unfinished leave again at once,
+                    # as they would after an hour (they were 98 MB of a
+                    # Worker with 640 conversations).
+                    tables.forget_finished_sessions(0.0, now=time.time() + 1.0)
                     self._opened_tables = tables
         return tables
 

@@ -19,7 +19,6 @@ export interface RunInsidesProps {
   run: ActivityRun;
   /** undefined until the first read answers. */
   events: ActivityRunEvents | undefined;
-  failed: boolean;
   context: ActivityPanelContext;
   axis: ActivityAxis;
 }
@@ -74,7 +73,7 @@ function savedPointTime(run: ActivityRun, events: ActivityRunEvent[]): string | 
   return run.ended_at !== null ? clockTime(run.ended_at, true) : null;
 }
 
-export function RunInsides({ rowId, run, events, failed, context, axis }: RunInsidesProps) {
+export function RunInsides({ rowId, run, events, context, axis }: RunInsidesProps) {
   const { text } = context;
   const start = run.started_at ?? run.ended_at ?? 0;
   const snapshot = run.execution_id ? context.controller.executions.find(item => item.execution_id === run.execution_id) ?? null : null;
@@ -91,7 +90,6 @@ export function RunInsides({ rowId, run, events, failed, context, axis }: RunIns
   // One attempt that is going or went fine says nothing the run's own line does not.
   const routineAttempt = (event: ActivityRunEvent) => event.kind === "attempt" && attemptCount === 1 && ["running", "completed"].includes(attemptLabel(event, text).state);
   return <>
-    {events === undefined ? <ActivityDetail><ActivityKeyValue label="" value={failed ? text("Could not read this run. Retrying automatically.", "读不到这次运行，正在自动重试。") : text("Loading…", "正在读取…")} /></ActivityDetail> : null}
     {list.map((event, index) => {
       if (routineAttempt(event)) return null;
       const key = `${rowId}:${eventKey(event, index)}`;

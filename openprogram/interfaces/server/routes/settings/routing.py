@@ -15,6 +15,15 @@ Providers. It joins four sources that already exist:
 
 Only sessions that are running or were active inside the window are listed;
 the rest are counted. The response never carries credential values.
+
+The page reads it when told, not on a timer: :data:`TOPIC` is published to
+the windows and signalled when a provider call or failover switch is
+recorded (the usage ledger), a credential changes, or a session still
+opening has opened; the page also reads when a turn begins or ends, which
+every window already hears (``running_task`` frames). What changes only
+with time (a lane that stops counting as live, an account's cooldown
+ending) is named by ``recheck_in``, the seconds until the earliest such
+moment.
 """
 from __future__ import annotations
 
@@ -24,6 +33,12 @@ from typing import Any
 
 from fastapi import Query as QParam
 from fastapi.responses import JSONResponse
+
+from openprogram.host._platform import changes
+
+#: Signalled when what the overview shows changed (see the module docstring).
+TOPIC = "routing"
+changes.publish(TOPIC)
 
 # A call this recent counts as in flight for a lane whose session index has
 # no running flag (child sessions of a program run, for example).
@@ -116,6 +131,8 @@ def _open_session(db, sid: str, key: tuple) -> None:
     if len(_lane_cache) > 256:
         _lane_cache.clear()
     _lane_cache[key] = (session, lanes)
+    # A page shown in part reads again now that this session is ready.
+    changes.signal(TOPIC)
 
 
 def _session_lanes(db, sids: list[str], by_id: dict) -> dict[str, tuple[dict | None, list[dict]]]:
@@ -167,6 +184,23 @@ def _accounts(providers: list[str]) -> dict[str, list[dict]]:
                          "until_ms": until if status in ("cooling", "quota") and until > now_ms else 0})
         out[p] = rows
     return out
+
+
+def _recheck_in(now: float, last_call: dict[str, float], sessions: list[dict],
+                accounts: dict[str, list[dict]]) -> float | None:
+    """Seconds until the overview changes with time alone: a lane live only
+    because of a recent call stops being live, or an account's cooldown
+    ends. ``None`` when nothing waits on the clock."""
+    moments = []
+    for session in sessions:
+        for lane in session["lanes"]:
+            if lane.get("live") and not session.get("running"):
+                last = max(lane.get("updated_at") or 0, last_call.get(session["id"], 0))
+                moments.append(last + _LIVE_SECONDS)
+    for rows in accounts.values():
+        moments.extend(row["until_ms"] / 1000 for row in rows if row.get("until_ms"))
+    future = [moment - now for moment in moments if moment > now]
+    return round(min(future), 3) if future else None
 
 
 def build_overview(window: float) -> dict:
@@ -293,18 +327,20 @@ def build_overview(window: float) -> dict:
     providers = sorted({lane["provider"] for s in sessions for lane in s["lanes"] if lane["provider"]}
                        | {e[k] for e in events for k in ("from_provider", "to_provider") if e[k]})
     titles = {s["id"]: s["title"] for s in sessions}
+    accounts = _accounts(providers)
     return {
         "now": now,
         "window": window,
         "sessions": sessions,
         "idle_sessions": max(0, len(rows) - len(shown)),
-        "accounts": _accounts(providers),
+        "accounts": accounts,
         "events": [
             {**e, "session_title": titles.get(e.get("session_id") or "")
              or titles.get(e.get("parent_session_id") or "") or ""}
             for e in events[:8]
         ],
         "partial": partial,
+        "recheck_in": _recheck_in(now, last_call, sessions, accounts),
         "stats": {
             "requests": sum(int(r["events"]) for r in activity),
             "reroutes": len(events),
@@ -313,6 +349,14 @@ def build_overview(window: float) -> dict:
 
 
 def register(app):
+    # A credential's state (a cooldown, a sign-in, a key turned off) shows
+    # in the overview's accounts.
+    try:
+        from openprogram.models.auth.store import get_store
+        get_store().subscribe(lambda _event: changes.signal(TOPIC))
+    except Exception:  # noqa: BLE001 - the overview still reads on its other changes
+        pass
+
     @app.get("/api/routing/overview")
     def api_routing_overview(window: float = QParam(1800, ge=60, le=7 * 86400)):
         return JSONResponse(content=build_overview(window))

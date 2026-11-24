@@ -40,10 +40,7 @@ def test_the_service_names_its_members():
     _services.load_programs()
     browser = _services.lookup("browser")
     assert browser is not None
-    for member in (
-        "pages", "tabs", "extension", "user_browser_names",
-        "open_tab", "authorized_page", "browser_of",
-    ):
+    for member in ("pages", "tabs", "extension", "open_tab", "authorized_page"):
         assert hasattr(browser, member), member
 
 
@@ -56,32 +53,28 @@ def test_the_call_gets_no_pages_section(no_browser):
     ) == ""
 
 
-def test_the_turn_gets_no_screen_tool_for_pages(no_browser):
+def test_the_turn_gets_no_pages_without_the_browser(no_browser, monkeypatch):
     from types import SimpleNamespace
 
-    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_browser_tool
+    from openprogram.programs.tools.computer_use.computer_use import tool as entry
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
 
+    # Another target keeps the tool; no provider answers for the conversation's Pages.
+    monkeypatch.setattr(entry, "available_targets", lambda: ["window"])
     tools = [SimpleNamespace(name="web_search")]
-    configured, enabled = _configure_browser_tool(tools, _PAGE_CONTEXT, enabled=True)
+    configured, enabled = _configure_screen_tool(tools, _PAGE_CONTEXT, enabled=True)
     assert enabled is False
-    assert [tool.name for tool in configured] == ["web_search"]
+    assert [tool.name for tool in configured] == ["web_search", "computer_use"]
 
 
-def test_permission_policy_sees_no_user_browser(no_browser):
-    from openprogram.runtime.permissions import policy
+def test_no_browser_target_is_listed_without_the_browser(no_browser):
+    from openprogram.host.machines import local_machine
+    from openprogram.programs.tools.computer_use.computer_use import tool as entry
+    from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser
 
-    assert policy._user_browser({"args": {"browser": "chrome"}}) == ""
-
-
-def test_computer_use_reports_the_browser_target_unavailable(no_browser):
-    from openprogram.programs.tools.computer_use.computer_use_agent import tool as entry
-    from openprogram.programs.tools.computer_use.computer_use_agent.targets import browser
-
-    assert browser.available() is False
-    assert browser.actions() == ()
-    result = entry.computer_use_agent(target="browser", action="tabs")
-    assert result.is_error
-    assert "the browser is not enabled" in result.text
+    assert built_in_browser.KIND.open(local_machine(), "s1") == []
+    result = entry.computer_use(type="browser", action="list_tabs")
+    assert result.is_error and result.text.startswith("UNKNOWN_TARGET: ")
 
 
 def test_native_page_commands_are_refused(no_browser):

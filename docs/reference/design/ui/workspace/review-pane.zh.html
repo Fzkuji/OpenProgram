@@ -1,0 +1,144 @@
+<title>审阅面板</title>
+<meta name="description" content="审阅标签页的范围、暂存、待发送的行评论和让 agent 审阅，以及每一项为什么这样做。">
+<h1>审阅面板</h1>
+
+<p>审阅标签页读一组改动并对它操作：四个范围，每个块上的撤销和暂存，攒起来一起发送的行评论，以及由本会话自己的模型做的审阅。布局参照 Codex 应用的审阅面板；改动集从哪里来见<a href="../chat/chat-turn-visual-spec.zh.html#review-tab">聊天回合规范</a>。</p>
+
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="审阅面板：顶部只有一行，左边是范围菜单“本轮 +12 −0”，右边是 … 菜单。下面是一个差异块，块头有撤销和暂存。一行下面是你的评论卡片，带编辑和删除，该行末尾有一个圆点；另一行下面是 agent 的审阅意见卡片，带忽略和修复。底部浮动条写着 2 条评论，带丢弃和发送给 agent。">
+  <text class="t-big" x="0" y="24">本轮</text>
+  <text class="t-soft" x="48" y="24">+12 −0 ▾</text>
+  <text class="t-soft" x="664" y="24">···</text>
+  <line class="ln-faint" x1="0" y1="48" x2="680" y2="48"/>
+  <text class="t-soft" x="0" y="72">第 12–18 行</text>
+  <text class="t-soft" x="560" y="72">撤销</text>
+  <text class="t-soft" x="626" y="72">暂存</text>
+  <text class="t-cmd" x="0" y="98">14</text>
+  <text class="t-cmd" x="40" y="98">+ return total</text>
+  <circle class="gate" cx="672" cy="94" r="3"/>
+  <rect class="ln" x="40" y="108" width="640" height="48" rx="10"/>
+  <text class="t-big" x="56" y="128">你</text>
+  <text class="t-soft" x="56" y="147">这里要先取整吗？</text>
+  <text class="t-soft" x="574" y="147">编辑 · 删除</text>
+  <text class="t-cmd" x="0" y="182">16</text>
+  <text class="t-cmd" x="40" y="182">+ cache[key] = value</text>
+  <rect class="ln-acc" x="40" y="192" width="640" height="48" rx="10"/>
+  <text class="t-big" x="56" y="212">✦ Agent 审阅 · 高</text>
+  <text class="t-soft" x="56" y="231">缓存永远不会过期。</text>
+  <text class="t-soft" x="568" y="231">忽略 · 修复</text>
+  <rect class="tile" x="200" y="258" width="280" height="34" rx="17"/>
+  <text class="t-soft" x="220" y="280">2 条评论</text>
+  <text class="t-soft" x="306" y="280">丢弃</text>
+  <text class="t-big" x="372" y="280">发送给 agent</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>顶部</strong><small>范围菜单带增删行数；… 菜单里有让 agent 审阅和文件类型</small></li>
+  <li><strong>块头</strong><small>撤销、暂存（已暂存范围里是取消暂存）</small></li>
+  <li><strong>你的评论</strong><small>在所评论的行下面，该行末尾有圆点；编辑、删除</small></li>
+  <li><strong>Agent 审阅意见</strong><small>在对应的行下面；忽略、修复</small></li>
+  <li class="flow-end"><strong>底部条</strong><small>N 条评论、丢弃、发送给 agent</small></li>
+</ol>
+
+<h2 id="header">顶部</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围菜单</th><td>就是顶部的标题：范围名和它的 +/− 行数。菜单依次列出本轮，未暂存和已暂存，分支，最后一行是来源和文件数。</td></tr>
+<tr><th scope="row">… 菜单</th><td>让 agent 审阅（审阅进行中是停止审阅）和文件类型：全部、代码、测试、文档、大文件</td></tr>
+<tr><th scope="row">审阅进行中</th><td>✦ 审阅中、已用时间和停止按钮，在范围菜单和 … 菜单之间，只在运行时出现</td></tr>
+<tr><th scope="row">文件头</th><td>暂存（或取消暂存）和预览是图标，鼠标悬停或聚焦文件头时才出现；n / N 文件切换保留</td></tr>
+</tbody>
+</table>
+<p class="note">为什么只有一行：面板通常在约 580 px 宽的分屏里，原来的标题行、范围标签行和单独放让 agent 审阅的第三行占去四分之一高度。布局照 Codex 的改动面板。</p>
+<table class="stack">
+<thead><tr><th scope="col">对象</th><th scope="col">顶部</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>一行：范围下拉当标题并带行数，一个 … 菜单；宽度不到 625 px 时按钮收进菜单；文件操作悬停才出现</td></tr>
+<tr><th scope="row">Claude Code 标签页</th><td>一行：范围下拉当标题；选项在面板菜单里</td></tr>
+<tr><th scope="row">OpenCode、Antigravity</th><td>范围下拉当标题；显示选项在图标或 ⋮ 菜单后面；Antigravity 悬停才出现暂存</td></tr>
+<tr><th scope="row">agent 审阅</th><td>这几家和 Copilot 都不放在差异面板头部</td></tr>
+</tbody>
+</table>
+
+<h2 id="scopes">范围</h2>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">显示</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row">本轮</th><td>一轮改了什么，来自修改日志</td><td>撤销一个块</td></tr>
+<tr><th scope="row">未暂存</th><td>工作区对比暂存区，包括未跟踪文件，遵守 <code translate="no">.gitignore</code></td><td>撤销一个块；暂存一个块或整个文件</td></tr>
+<tr><th scope="row">已暂存</th><td>暂存区对比 HEAD</td><td>取消暂存一个块或整个文件</td></tr>
+<tr><th scope="row">分支</th><td>会话分支改了什么，来自修改日志</td><td>撤销一个块</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>为什么分未暂存和已暂存</dt><dd>原来一个“工作区”差异把两段混在一起，而读的人对它们的处理不同：一段马上要提交，一段还没有。分成两个范围，每个有自己的操作（暂存、取消暂存），撤销也只留在它真正写入的一侧，即工作区文件。</dd>
+<dt>Git 胶囊</dt><dd>“N 个未提交文件”打开未暂存：还没进提交也没进暂存区的改动，通常是人最先要看的。</dd>
+<dt>快照</dt><dd>每个范围是一个固定的快照（HEAD、暂存区 blob、工作区文件标识）。暂存、取消暂存和撤销只对屏幕上的快照执行；快照已经变了就拒绝，面板重新加载。</dd>
+</dl>
+
+<h2 id="staging">暂存和取消暂存</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">块</th><td>对这一个块执行 <code translate="no">git apply --cached</code>；取消暂存加 <code translate="no">--reverse</code>。Git 会拿块的上下文核对暂存区，暂存区已对不上的块算冲突，什么也不改。</td></tr>
+<tr><th scope="row">文件</th><td><code translate="no">git add --all</code> 或 <code translate="no">git restore --staged</code>，重命名时连同旧路径</td></tr>
+<tr><th scope="row">只限完整的块</th><td>被分页切断或结尾没有换行的块没有暂存按钮；新增或删除的文件按整个文件暂存</td></tr>
+<tr><th scope="row">在哪里有</th><td>只在本地 Git 项目里。不是 Git 仓库，或会话运行在 SSH 环境里：没有暂存按钮，和 Git 胶囊不出现的地方一致，因为那里的暂存区不是 agent 工作的那个。</td></tr>
+<tr><th scope="row">一轮进行中</th><td>等待，和撤销一样</td></tr>
+<tr><th scope="row">之后</th><td>范围重新加载，Git 胶囊刷新</td></tr>
+</tbody>
+</table>
+<p class="note">打补丁交给 Git。暂存的就是 <code translate="no">git add -p</code> 会暂存的那个块，用 Git 自己的上下文检查，不另写一套补丁引擎。</p>
+
+<h2 id="comments">行评论</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">写</th><td>悬停行上的评论按钮；⌘Enter 保存，Escape 取消</td></tr>
+<tr><th scope="row">固定显示</th><td>所在行下面的卡片：“你”、正文、编辑和删除。该行末尾有一个强调色圆点。</td></tr>
+<tr><th scope="row">保留</th><td>按会话存在客户端存储里，切换标签页或重新挂载都不丢，直到发送。评论属于它的范围和文件。</td></tr>
+<tr><th scope="row">底部条</th><td>有待发送的评论时浮在差异上方：“N 条评论”、丢弃、发送给 agent</td></tr>
+<tr><th scope="row">发送</th><td>在该会话里发一条用户消息，每条评论写成文件和行号、引用的那一行、然后是评论。走发送队列，一轮进行中就排队。发送后评论清空。</td></tr>
+</tbody>
+</table>
+<p class="note">为什么攒成一批：对一组改动的评论是一起读的。每写一条就发出去，会每行开一轮；放进输入框又会和正在写的内容混在一起。Codex 应用也是这样收集行内评论，作为一个请求发出。</p>
+
+<h2 id="agent-review">让 agent 审阅</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">开始</th><td>… 菜单的第一项。运行时顶部显示 ✦ 审阅中、已用时间和停止按钮，菜单项变成停止审阅。</td></tr>
+<tr><th scope="row">停止审阅</th><td>立即结束审阅：服务端取消模型请求，结果不再采用，顶部的审阅中计时消失。每次审阅用 <code translate="no">review_id</code> 命名，带这个 id 的 <code translate="no">review_agent_cancel</code> 取消它。</td></tr>
+<tr><th scope="row">输入</th><td>屏幕上这个范围的全部差异（最多 60 个文件、120,000 个字符），每个文件放在它的路径下</td></tr>
+<tr><th scope="row">调用</th><td>用本会话自己的模型、以低推理强度发一次结构化输出请求，走生成会话标题的同一个运行时。不写入对话记录。低强度审一个 400 行的改动用了 82 秒、一次请求；默认强度用了九分钟、两次请求，也没多找出真正的问题。</td></tr>
+<tr><th scope="row">审阅意见</th><td>路径、行号、严重程度（低、中、高）、正文。不在本范围文件里的、或严重程度不合规的意见丢弃。</td></tr>
+<tr><th scope="row">显示</th><td>对应行下面的卡片：强调紫色的 ✦、“Agent 审阅 · 严重程度”、正文、忽略和修复。不在任何显示行上的意见放在差异上方。对同一范围再审阅一次，替换该范围原来的意见。</td></tr>
+<tr><th scope="row">修复</th><td>发一条消息请 agent 修复这条意见，然后移除卡片</td></tr>
+<tr><th scope="row">等待</th><td>审阅大的改动要几分钟（一个 400 行的改动要一分多钟），面板最多等 30 分钟。Worker 按 <code translate="no">review_id</code> 把每次的结果留一小时；模型还在审时连接断了，面板等连接恢复后用 <code translate="no">review_agent_wait</code> 再要一次：已完成就立即回答，否则审完时回答。</td></tr>
+<tr><th scope="row">失败</th><td>审阅中计时消失，可以再选让 agent 审阅；没有错误页，没有提示条。重启过的 Worker 不再认识这次审阅，回答 <code translate="no">UNKNOWN_REVIEW</code>。</td></tr>
+<tr><th scope="row">协议</th><td><code translate="no">review_agent</code> 在连接的有序帧之外运行，耗时的模型调用不会挡住其他请求</td></tr>
+</tbody>
+</table>
+<p class="note">为什么用本会话的模型：审阅用的是这个人为这项工作选的同一个模型和设置，不需要另外配置审阅模型。Codex 应用的 <code translate="no">/review</code> 也是这样，并把意见放在差异的对应行上。</p>
+
+<h2 id="peers">对比</h2>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">Codex 应用</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>上一轮、未暂存、已暂存、分支、提交</td><td>本轮、未暂存、已暂存、分支；没有提交范围</td></tr>
+<tr><th scope="row">暂存</th><td>按块和文件暂存、取消暂存</td><td>相同，经由 Git</td></tr>
+<tr><th scope="row">行内评论</th><td>收集后作为一个请求发出</td><td>相同，按会话保存</td></tr>
+<tr><th scope="row"><code translate="no">/review</code></th><td>带优先级的意见放在差异行上</td><td>带严重程度的意见，忽略和修复</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>实现位置</summary>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围、暂存、让 agent 审阅</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>：<code translate="no">diff.py</code>（未暂存和已暂存）、<code translate="no">stage.py</code>、<code translate="no">agent_review.py</code>、<code translate="no">history.py</code>（动作）</td></tr>
+<tr><th scope="row">面板</th><td><code translate="no">components/center-tabs/review/</code>：<code translate="no">review-tab-pane.tsx</code>、<code translate="no">review-diff.tsx</code>、<code translate="no">review-notes-store.ts</code>、<code translate="no">review-diff-rows.ts</code></td></tr>
+<tr><th scope="row">发送</th><td><code translate="no">lib/chat/send/send-queue.ts</code> 里的 <code translate="no">sendFromTranscript</code></td></tr>
+</tbody>
+</table>
+</details>

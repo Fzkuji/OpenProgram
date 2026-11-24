@@ -14,6 +14,7 @@ const mocks = {
 registerHooks({
   resolve(specifier, context, next) {
     if (mocks[specifier]) return { url: 'data:text/javascript,' + encodeURIComponent(mocks[specifier]), shortCircuit: true };
+    if (specifier === '@/lib/net/error-text') return next(new URL('../../../lib/net/error-text.ts', import.meta.url).href, context);
     return next(specifier, context);
   },
 });

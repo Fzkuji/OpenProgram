@@ -80,7 +80,8 @@
 <li>If the message or conversation says what to do with the recording, do that and nothing more.</li>
 <li>Otherwise make it a workflow:
 <ul>
-<li>Each step is evidence of an outcome (file changed, message sent, data fetched), not a gesture to replay. Use the most reliable tool: file tools, shell, <code translate="no">web_fetch</code>, the browser target, connectors, APIs. Use computer use's <code translate="no">app</code> target only where nothing else reaches, with stable targets, a check after each step and no coordinates.</li>
+<li>Each step is evidence of an outcome (file changed, message sent, data fetched), not a gesture to replay. Use the most reliable tool: file tools, shell, <code translate="no">web_fetch</code>, the browser targets, connectors, APIs.</li>
+<li>Use computer use's <code translate="no">app</code> target only where nothing else reaches, and its <code translate="no">screen</code> target only for the desktop, the menu bar, system dialogs and drags across windows, with stable applications, windows and elements, a check after each step and no coordinates.</li>
 <li>Decide which values are parameters and which are fixed. If an ambiguity would change the workflow, ask briefly and wait.</li>
 <li>Write the package in <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> per the authoring guide, with a test using the demonstrated values, and run <code translate="no">openprogram programs check</code>.</li>
 <li>Never copy passwords, codes, keys, account numbers or private details; use parameters or placeholders.</li>

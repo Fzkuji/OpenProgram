@@ -18,7 +18,7 @@
 <tr><th scope="row">Ctrl-C 或 SIGTERM</th><td>像 Web UI 的停止键一样在 Worker 上停止这一轮，最多等 30 秒让它结束（再来一个信号后等 2 秒）；退出码 130，SIGTERM 为 143。等待中 Worker 重启也不会丢掉这次停止：命令重新连接，在回来的 Worker 上停止这一轮。Worker 没有确认停止时，stderr 会说明这一轮可能仍在运行</td></tr>
 <tr><th scope="row">在 Web UI 里停止</th><td>stderr 打印 <code translate="no">[cancelled]</code>，退出码 130；已输出的部分回复留在会话里</td></tr>
 <tr><th scope="row">Worker 报错</th><td>打印到 stderr，退出码 1</td></tr>
-<tr><th scope="row">Worker 重启（刷新、晋升）</th><td>命令重新连接，跟随同一轮次直到结束</td></tr>
+<tr><th scope="row">Worker 重启（部署、更新）</th><td>命令重新连接，跟随同一轮次直到结束</td></tr>
 <tr><th scope="row">三分钟内没有 Worker 回来，或轮次已被中断</th><td>命令会说明；Web UI 会话显示停在哪里</td></tr>
 </tbody>
 </table>

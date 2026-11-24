@@ -279,6 +279,9 @@ async def _websocket_handler(ws):
         from openprogram.interfaces.server.transcript import publisher
 
         publisher.release(ws)
+        from openprogram.interfaces.server.remote_machines.forward import release as release_forwarded
+
+        await release_forwarded(ws)
         with state._ws_lock:
             try:
                 state._ws_connections.remove(ws)
@@ -312,8 +315,9 @@ def _build_ws_action_registry() -> dict:
         agent as _ws_agent,
         branch as _ws_branch,
         dag_nodes as _ws_dag_nodes,
+        embedded_window as _ws_embedded_window,
         channel as _ws_channel,
-        environment as _ws_environment,
+        machines as _ws_machines,
         chat as _ws_chat,
         runtime as _ws_runtime,
         session as _ws_session,
@@ -339,7 +343,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_permissions.ACTIONS)
     table.update(_ws_agent.ACTIONS)
     table.update(_ws_channel.ACTIONS)
-    table.update(_ws_environment.ACTIONS)
+    table.update(_ws_machines.ACTIONS)
     table.update(_ws_runtime.ACTIONS)
     table.update(_ws_chat.ACTIONS)
     table.update(_ws_commits.ACTIONS)
@@ -355,6 +359,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_user_error.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
     table.update(_ws_interface.ACTIONS)
+    table.update(_ws_embedded_window.ACTIONS)
     return table
 
 
@@ -420,6 +425,11 @@ async def _handle_ws_command(ws, cmd: dict):
             ws._client_identity = identity
             _log.debug("ws client %s %s", identity.get("name"), identity.get("version"))
     _log.debug("ws command received: action=%s", action)
+
+    # An action on a conversation that lives on another computer goes there.
+    from openprogram.interfaces.server.remote_machines.forward import forward
+    if await forward(ws, cmd):
+        return
 
     h = state.WS_ACTIONS.get(action)
     if h is not None:

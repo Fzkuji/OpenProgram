@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
@@ -13,7 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import { HoverTip } from "@/components/ui/tooltip";
 import { SettingsHeading } from "@/components/settings/settings-ui";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
+import { refreshSettings, useSettingsData } from "@/lib/prefs/settings-cache";
 import type { ProviderStatus, ProviderUsage } from "@/lib/settings/provider-status.generated";
+import { providerModelsUrl, providerUsageUrl } from "@/lib/settings/settings-urls";
 import { settingsSend } from "@/lib/settings/settings-request";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +32,12 @@ import { fmtAgo, providerUpdatedAt } from "./status/model";
 import { HealthChip } from "./status/parts";
 import styles from "./status/status.module.css";
 import type { Model, Provider } from "./types";
+
+/** What reading a provider's models answers. */
+interface ModelsReply { models?: Model[] }
+
+/** What asking the provider for its model list answers. */
+interface FetchModelsReply { fetched?: number; error?: unknown }
 
 /** One provider's page (design §5): back to the list, its name, health,
  *  when its status was read and Refresh, the on switch; its credentials;
@@ -54,11 +63,19 @@ export function Detail({
   onDeleted?: () => void;
 }) {
   const { text } = useTranslation();
-  const [models, setModels] = useState<Model[]>([]);
-  const [modelsState, setModelsState] = useState<"loading" | "ready" | "failed">("loading");
-  const [spend, setSpend] = useState<Record<string, number>>({});
+  // Kept for the visit: reopening a provider shows its models at once and
+  // reads them again behind; a failed read keeps them and retries quietly.
+  const modelsUrl = provider.kind === "cli" ? null : providerModelsUrl(provider.id);
+  const models = useSettingsData<ModelsReply>(modelsUrl)?.models;
+  // The usage panel's own read (30 days by day and model) also gives each
+  // model's 30-day spend: one request serves both.
+  const usage = useSettingsData<ProviderUsage>(providerUsageUrl(provider.id, 30));
+  const spend = useMemo(
+    () => Object.fromEntries((usage?.models ?? []).map((m) => [m.model_id, m.list_price_usd])),
+    [usage],
+  );
   // A subscription's calls are covered by the plan: their list price is not what was paid.
-  const [included, setIncluded] = useState(false);
+  const included = !!usage?.totals?.included;
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
   const [manualId, setManualId] = useState("");
   const [manualBusy, setManualBusy] = useState(false);
@@ -68,32 +85,8 @@ export function Detail({
   const [refreshing, setRefreshing] = useState(false);
 
   const reloadModels = useCallback(async () => {
-    if (provider.kind === "cli") { setModels([]); setModelsState("ready"); return; }
-    try {
-      const r = await fetch(`/api/providers/${encodeURIComponent(provider.id)}/models`);
-      if (!r.ok) throw new Error(String(r.status));
-      const d = await r.json();
-      setModels(d.models || []);
-      setModelsState("ready");
-    } catch {
-      setModelsState("failed");
-    }
-  }, [provider.id, provider.kind]);
-
-  useEffect(() => { setModels([]); setModelsState("loading"); void reloadModels(); }, [reloadModels]);
-
-  useEffect(() => {
-    let alive = true;
-    fetch(`/api/providers/${encodeURIComponent(provider.id)}/usage?days=30&group=model`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: ProviderUsage | null) => {
-        if (!alive || !d) return;
-        setSpend(Object.fromEntries((d.models ?? []).map((m) => [m.model_id, m.list_price_usd])));
-        setIncluded(!!d.totals?.included);
-      })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [provider.id]);
+    if (modelsUrl) await refreshSettings(modelsUrl);
+  }, [modelsUrl]);
 
   useEffect(() => {
     const onModels = (event: Event) => {
@@ -110,9 +103,10 @@ export function Detail({
     setFetchStatus(text("Fetching…", "获取中…"));
     try {
       const r = await fetch(`/api/providers/${encodeURIComponent(provider.id)}/fetch-models`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const d = await r.json();
-      if (d.error) { setFetchStatus(text("Failed: ", "失败：") + d.error); return; }
-      setFetchStatus(text(`Fetched ${d.fetched}`, `已获取 ${d.fetched} 个`));
+      const d = await r.json() as FetchModelsReply;
+      if (d.error) { setFetchStatus(text("Failed: ", "失败：") + errorDetailText(d.error, String(r.status))); return; }
+      const fetched = Number(d.fetched ?? 0);
+      setFetchStatus(text(`Fetched ${fetched}`, `已获取 ${fetched} 个`));
       changed();
     } catch (e) {
       setFetchStatus(text("Failed: ", "失败：") + (e as Error).message);
@@ -129,8 +123,8 @@ export function Detail({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: mid, ...(provider.local ? { context_window: Number(contextWindow), max_tokens: Number(maxTokens) } : {}) }),
       });
-      const result = await response.json();
-      if (!response.ok || result.error) { setManualError(result.error || text("Could not save the model.", "无法保存模型。")); return; }
+      const result = await response.json() as { error?: unknown };
+      if (!response.ok || result.error) { setManualError(errorDetailText(result.error, text("Could not save the model.", "无法保存模型。"))); return; }
       setManualError(null);
       setManualId("");
       changed();
@@ -184,7 +178,7 @@ export function Detail({
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><button type="button" onClick={onBack}>{text("LLM Providers", "LLM 服务商")}</button></BreadcrumbLink>
+              <BreadcrumbLink asChild><button type="button" onClick={onBack}>{text("Model services", "模型服务")}</button></BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem><BreadcrumbPage>{provider.label}</BreadcrumbPage></BreadcrumbItem>
@@ -255,10 +249,7 @@ export function Detail({
 
       {provider.kind === "cli" ? (
         <CliInfo provider={provider} />
-      ) : modelsState === "loading" ? null : modelsState === "failed" ? (
-        <ManageEmptyState compact title={text("Could not load the model list.", "无法加载模型列表。")}
-          action={<Button variant="elevated" size="sm" onClick={() => void reloadModels()}>{text("Retry", "重试")}</Button>} />
-      ) : models.length > 0 ? (
+      ) : !models ? null : models.length > 0 ? (
         <ModelList key={`${provider.id}:models`} provider={provider} models={models} spend={spend} included={included || !!status?.spend.included} defaultModel={status?.default_model ?? null} onReload={changed} />
       ) : (
         <section className="flex flex-col gap-3" aria-label={text("Models", "模型")}>

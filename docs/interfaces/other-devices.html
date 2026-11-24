@@ -1,0 +1,55 @@
+<title>Use OpenProgram from other devices</title>
+<meta name="description" content="Open this computer's OpenProgram from a phone, a browser or another computer: Add device, scan or paste a one-time code, and choose whether it reaches this computer on the same Wi-Fi or from anywhere.">
+<h1>Use OpenProgram from other devices</h1>
+<ol class="flow fig-narrow">
+  <li><strong>Add device</strong><small>Settings → Devices: pick what it is</small></li>
+  <li><strong>Scan or paste</strong><small>A one-time code, good for 10 minutes</small></li>
+  <li class="flow-end"><strong>Signed in</strong><small>Until you revoke it, or it goes unused for 30 days</small></li>
+</ol>
+<p>Conversations, files and accounts stay on the computer that runs them. A phone or browser shows that computer's OpenProgram; another computer's OpenProgram lists its conversations beside its own and sends what you do there. Every device, phones and servers alike, is one list under <strong>Settings → Devices</strong>.</p>
+
+<h2 id="add">Add device</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Device</th><th scope="col">What you do</th></tr></thead>
+<tbody>
+<tr><th scope="row">Phone or tablet</th><td>Scan the QR code with its camera. It opens OpenProgram in its browser, already signed in.</td></tr>
+<tr><th scope="row">Another computer with OpenProgram</th><td><strong>Show its conversations here</strong>: paste the link it shows. <strong>Let it use this one</strong>: this computer shows the link to paste there.</td></tr>
+<tr><th scope="row">Server over SSH</th><td>Pick a host from your SSH configuration, or type <code translate="no">user@host</code>. It is tested before you use it.</td></tr>
+<tr><th scope="row">Something else</th><td>Describe it in a sentence. A new chat opens with the request; the agent finds the details, adds the device and tests it.</td></tr>
+</tbody>
+</table>
+<p>A code works once and is replaced while it is shown. If nothing can reach this computer yet, Add device offers to switch on Same Wi-Fi.</p>
+
+<h2 id="ways-in">Open this computer from</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Reaches from</th><th scope="col">To set up</th></tr></thead>
+<tbody>
+<tr><th scope="row">Same Wi-Fi</th><td>Phones and computers on this network; not encrypted, so use it on networks you trust</td><td>Switch it on; it applies at once</td></tr>
+<tr><th scope="row">Anywhere</th><td>Any network, over https</td><td>Switch it on and sign in to Tailscale once in the browser. Tailscale is built into OpenProgram: nothing to install, here or on the phone</td></tr>
+</tbody>
+</table>
+<p>Reaching the address is not enough to sign in: every device is added with a code first. The link carries every address that is on, and the other side tries each in turn, so a laptop that leaves home keeps working.</p>
+
+<h2 id="another-computer">Another computer's conversations</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Doing</th><th scope="col">Happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open, send, stop, approve</th><td>On that computer, with its models, tools and files</td></tr>
+<tr><th scope="row">New chat in one of its projects</th><td>Created and run there</td></tr>
+<tr><th scope="row">It goes offline</th><td>Its projects stay listed with a red dot and open to nothing until it is back; nothing was copied to show</td></tr>
+</tbody>
+</table>
+
+<h2 id="this-computer">This computer's permissions</h2>
+<p>Choose <strong>This computer</strong> in the list to see what OpenProgram may use here. <strong>Turn on</strong> opens the right place in System Settings with a small window under it showing the app to drag into the list; the row turns on by itself. Controlling another app and opening files are asked by macOS the first time they are needed.</p>
+
+<h2 id="revoke">Revoke and the command line</h2>
+<p><strong>Revoke</strong> in a device's menu signs it out at once and closes its connections. The same from a terminal:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram web pair</code></th><td>Prints a one-time link and its QR code</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web devices</code></th><td>Lists paired devices; <code translate="no">openprogram web devices revoke ID</code> revokes one</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="web.html">Web interface</a> · <a href="../capabilities/environments.html">Run conversations on another machine</a> · <a href="../integrations/channels.html">Channels</a></p>

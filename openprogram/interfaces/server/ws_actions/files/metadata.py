@@ -53,6 +53,10 @@ def _error(exc):
 
 
 def file_info(project_id, path):
+    from . import remote as _remote
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.file_info(remote, path)
     try:
         canonical, fd, name = _target(project_id, path)
         try:
@@ -270,6 +274,10 @@ def invalidate_cached_sizes(project_id, paths):
 
 def cached_size(project_id, path):
     """Use only recent complete samples for a new size-sorted snapshot."""
+    from . import remote as _remote
+    if _remote.target(project_id) is not None:
+        # Kept samples are keyed by this computer's paths; a remote folder has none.
+        return None
     info = file_info(project_id, path)
     with _LOCK:
         cached = _cached_sample(info)
@@ -304,6 +312,10 @@ def _measure(project_id, path, fresh):
 def folder_size(project_id, path, operation='peek', token=None, fresh=False):
     if not isinstance(operation, str) or operation not in {'peek', 'measure', 'start', 'continue', 'cancel'}:
         return _error(ValueError('unsupported size operation'))
+    from . import remote as _remote
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote.folder_size(remote, path, operation)
     if operation == 'measure':
         return _measure(project_id, path, fresh is True)
     info = file_info(project_id, path)

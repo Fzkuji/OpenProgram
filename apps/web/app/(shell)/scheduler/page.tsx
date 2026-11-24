@@ -1,12 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import dynamic from "next/dynamic";
-
-const SchedulerPage = dynamic(
-  () => import("@/components/scheduler/scheduler-page").then((m) => m.SchedulerPage),
-  { ssr: false },
-);
-
+// The Scheduler is the Tasks page's Scheduled tab now.
 export default function Page() {
-  return <SchedulerPage />;
+  redirect("/tasks?tab=scheduled");
 }

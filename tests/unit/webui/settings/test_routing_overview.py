@@ -188,3 +188,32 @@ def test_a_session_still_opening_shows_from_the_ledger_until_ready(
     second = routing.build_overview(1800)
     [session] = second["sessions"]
     assert not second["partial"] and session["lanes"][0]["kind"] == "branch"
+
+
+def test_a_recorded_call_or_switch_and_a_session_opened_tell_the_overview(
+        store: SessionStore, ledger: UsageLedger, opener: _Opener) -> None:
+    from openprogram.host._platform import changes
+
+    with changes.listen(routing.TOPIC) as listener:
+        ledger.append(UsageEvent(ts=time.time(), session_id="s1", provider="deepseek", model_id="deepseek-chat"))
+        assert listener.wait(0) == {routing.TOPIC}
+        ledger.append_route_event(from_provider="a", from_model="m", to_provider="b", to_model="n",
+                                  reason="rate_limit", session_id="s1")
+        assert listener.wait(0) == {routing.TOPIC}
+        store.create_session("s2", "main", title="Opened later")
+        _turn(store, "s2", "u0", "a0", None, "deepseek", "deepseek-chat")
+        listener.wait(0)
+        routing.build_overview(1800)
+        assert listener.wait(0) == {routing.TOPIC}, "a session opened for the page is announced"
+
+
+def test_the_overview_names_when_time_alone_changes_it(store: SessionStore, ledger: UsageLedger) -> None:
+    now = time.time()
+    ledger.append(UsageEvent(ts=now - 30, session_id="op-1", provider="deepseek", model_id="deepseek-chat"))
+    data = routing.build_overview(1800)
+    # The background lane counts as live until its call is _LIVE_SECONDS old.
+    assert data["recheck_in"] == pytest.approx(routing._LIVE_SECONDS - 30, abs=2)
+    quiet = routing._recheck_in(now, {}, [], {"x": [{"until_ms": 0}]})
+    assert quiet is None, "nothing waits on the clock"
+    cooling = routing._recheck_in(now, {}, [], {"x": [{"until_ms": int((now + 12) * 1000)}]})
+    assert cooling == pytest.approx(12, abs=0.01)

@@ -5,26 +5,16 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConversationAgentShape } from "@/components/agents/agent-avatar";
-import type { ActivityPageProps, ActivityPanelContext, ActivityScope } from "./activity-page-types";
+import type { ActivityPageProps, ActivityScope } from "./activity-page-types";
 import { ActivityPageFrame } from "./activity-page";
 import { ActivityActionRow, ActivityPanelReact } from "./activity-page-row";
 import { AgentChart } from "../agent-chart/agent-chart";
 import { AlwaysOnRow, reportNameForRun } from "./always-on-row";
 import { useActivityPageKeys } from "./use-activity-page-keys";
 import { AgentGlyph } from "../running-rows";
+import { nextWakeOf } from "../running-format";
 import pageStyles from "./activity-page.module.css";
 import styles from "../agent-chart/agent-chart.module.css";
-
-function nextWakeOf(context: ActivityPanelContext, scope: ActivityScope): { at: number; line: string } | null {
-  const alwaysOn = context.work?.always_on;
-  if (!alwaysOn?.enabled || !scope.active || !alwaysOn.next_wake_at) return null;
-  const { text } = context;
-  const minutes = alwaysOn.config?.wake_minutes ?? null;
-  const every = minutes === null ? "" : minutes % 60 === 0
-    ? (minutes === 60 ? text("hourly", "每小时") : text(`every ${minutes / 60}h`, `每 ${minutes / 60} 小时`))
-    : text(`every ${minutes}m`, `每 ${minutes} 分钟`);
-  return { at: alwaysOn.next_wake_at, line: [text("Always-on", "常驻"), every].filter(Boolean).join(" · ") };
-}
 
 export function AgentPage({ target, context }: ActivityPageProps<"agent">) {
   const { text } = context;
@@ -65,7 +55,7 @@ export function AgentPage({ target, context }: ActivityPageProps<"agent">) {
         </Button>
       </div>
       {scope.head && !scope.active ? <ActivityActionRow icon={GitBranch} label={text("Switch to this branch", "切换到这个分支")} note={text("Shows it in the chat", "在聊天里显示它")} onClick={() => context.switchTo(scope)} /> : null}
-      <AgentChart head={scope.head} context={context} box={box} reportName={run => reportNameForRun(run, context)} nextWake={nextWakeOf(context, scope)} onOpenNextWake={() => setAlwaysOnOpen(true)} stepBack={stepBack} onPull={context.pull} />
+      <AgentChart head={scope.head} context={context} box={box} reportName={run => reportNameForRun(run, context)} nextWake={nextWakeOf(context.work, scope.active, context.text)} onOpenNextWake={() => setAlwaysOnOpen(true)} stepBack={stepBack} onPull={context.pull} />
     </div>
   </>;
 }

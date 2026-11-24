@@ -106,7 +106,7 @@ def _create_root_parser() -> argparse.ArgumentParser:
             "    skills          manage the SKILL.md registry\n"
             "    plugins         manage installed plugins\n"
             "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
-            "    environments    where conversations run (this computer, SSH, Docker)\n"
+            "    machines        computers OpenProgram reaches; where conversations run\n"
             "    memory          inspect / manage persistent memory\n"
             "    trash           list / restore recoverable local deletions\n"
             "    backup          snapshot / restore your profile state\n"
@@ -115,7 +115,7 @@ def _create_root_parser() -> argparse.ArgumentParser:
             "    doctor          health checks\n"
             "    rescue          diagnose problems, print fix commands\n"
             "    self-update     inspect or explicitly recover an in-chat App update\n"
-            "    dev             development instance: status, deploy, promote to stable\n"
+            "    dev             development instance: status, deploy, sign-in\n"
             "    logs            view log files\n"
             "    update          check for + apply updates\n"
             "    worker install  run as a login service (auto-start, crash-restart)\n"
@@ -187,10 +187,10 @@ def _add_maintenance_commands(sub):
              "(deterministic — works when LLM/agent path is broken)",
     )
     p_dev = sub.add_parser("dev",
-        help="The development instance (port 18200) and promoting it to the stable App")
+        help="The development instance (port 18200) beside the official App")
     dev_sub = p_dev.add_subparsers(dest="dev_verb", metavar="verb")
     p_dev_status = dev_sub.add_parser("status",
-        help="Show both instances and the commits promoting would bring to stable")
+        help="Show both instances and the dev commits not deployed yet")
     p_dev_status.add_argument("--json", action="store_true", help="Emit JSON")
     p_dev_deploy = dev_sub.add_parser("deploy",
         help="Build a commit into the development instance and restart its worker")
@@ -206,14 +206,6 @@ def _add_maintenance_commands(sub):
         help="Print a sign-in link for the development instance; a deploy "
              "restarts its worker and makes earlier links and browser "
              "sign-ins expire")
-    dev_promote_help = (
-        "Fast-forward the stable branch to the commit the development "
-        "instance serves, back up the stable profile, and refresh the App; "
-        "first waits up to 10 minutes for stable to finish running work, "
-        "and refuses, naming that work, if it does not")
-    p_dev_promote = dev_sub.add_parser("promote", help=dev_promote_help, description=dev_promote_help)
-    p_dev_promote.add_argument("revision", nargs="?", default=None,
-        help="Must be the commit the development instance serves (default: that commit)")
     p_versions = sub.add_parser("versions",
         help="List the versions this install keeps, or go back to one; runs outside every version")
     versions_sub = p_versions.add_subparsers(dest="versions_verb", metavar="verb", required=True)
@@ -810,6 +802,27 @@ def _add_web_and_settings_commands(sub):
         required=True,
         help="Canonical browser Origin, for example https://agent.example.com",
     )
+    p_web_pair = web_sub.add_parser(
+        "pair",
+        help="Print a one-time link (and QR code) that signs another device in",
+    )
+    p_web_pair.add_argument(
+        "--base-url", default=None,
+        help="Origin the other device opens (default: the first non-loopback Origin)",
+    )
+    p_web_pair.add_argument(
+        "--label", default=None,
+        help="Name for the device (default: its browser and system)",
+    )
+    p_web_devices = web_sub.add_parser(
+        "devices", help="List paired devices, or revoke one",
+    )
+    p_web_devices.add_argument("--json", action="store_true", help="Emit JSON")
+    devices_sub = p_web_devices.add_subparsers(dest="devices_verb", metavar="verb")
+    p_web_devices_revoke = devices_sub.add_parser(
+        "revoke", help="Sign a paired device out and forget it",
+    )
+    p_web_devices_revoke.add_argument("device_id", help="Device id from `web devices`")
 
     p_ports = sub.add_parser("ports",
         help="Show or set the web UI port; takes effect next start")
@@ -976,39 +989,43 @@ def _add_service_commands(sub):
     return p_worker, p_upgrade
 
 
-def _add_environments_command(sub):
-    """Add the ``environments`` group."""
-    # ---- environments -----------------------------------------------------
-    p_env = sub.add_parser("environments",
-        help="Manage where conversations run: this computer, an SSH host, "
-             "or a Docker container")
-    env_sub = p_env.add_subparsers(dest="environments_verb", metavar="verb")
-    env_sub.add_parser("list", help="List environments and mark the default")
-    p_env_add = env_sub.add_parser("add",
-        help="Add or replace an SSH or Docker environment")
-    p_env_add.add_argument("kind", choices=["ssh", "docker"],
-        help="Environment kind")
-    p_env_add.add_argument("id",
-        help="Short id: lowercase letters, digits, '-' or '_'")
-    p_env_add.add_argument("--name", default="",
+def _add_machines_command(sub):
+    """Add the ``machines`` group."""
+    # ---- machines ----------------------------------------------------------
+    p_machines = sub.add_parser("machines",
+        help="Manage the machines OpenProgram reaches; a project is a folder on one of them")
+    machines_sub = p_machines.add_subparsers(dest="machines_verb", metavar="verb")
+    p_list = machines_sub.add_parser("list",
+        help="List machines")
+    p_list.add_argument("--kinds", action="store_true",
+        help="Also list the connection kinds and their settings")
+    p_add = machines_sub.add_parser("add",
+        help="Add or replace a machine")
+    p_add.add_argument("id",
+        help="Short id: lowercase letters, digits, '-' or '_'; it never changes")
+    p_add.add_argument("--name", default="",
         help="Display name (default: the id)")
-    p_env_add.add_argument("--target", default="",
-        help="SSH only: user@host or a host from ~/.ssh/config")
-    p_env_add.add_argument("--workdir", default="",
-        help="SSH only: absolute remote folder new conversations start in "
-             "(default: the remote home)")
-    p_env_add.add_argument("--image", default="",
-        help="Docker only: image to start (default: ubuntu:24.04)")
-    p_env_add.add_argument("--default", action="store_true",
-        help="Also make it the default for new conversations")
-    p_env_rm = env_sub.add_parser("rm", help="Remove an environment")
-    p_env_rm.add_argument("id", help="Environment id")
-    p_env_default = env_sub.add_parser("default",
-        help="Set the environment new conversations start in")
-    p_env_default.add_argument("id", help="Environment id ('local' for this computer)")
-    p_env_test = env_sub.add_parser("test",
-        help="Check that an environment can run a command")
-    p_env_test.add_argument("id", help="Environment id")
+    p_add.add_argument("--shell", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
+        help="The shell connection, where commands and files run: its kind, "
+             "then its settings; `machines list --kinds` shows them")
+    p_add.add_argument("--window", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
+        help="The window connection, how its application windows are operated (target app): its kind, "
+             "then its settings")
+    p_add.add_argument("--screen", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
+        help="The screen connection, how its whole display is operated (target screen): its kind, "
+             "then its settings")
+    p_add.add_argument("--browser", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
+        help="The browser connection, a browser OpenProgram runs there: its kind, then its settings")
+    p_remove = machines_sub.add_parser("remove", help="Remove a machine")
+    p_remove.add_argument("id", help="Machine id")
+    p_enable = machines_sub.add_parser("enable", help="Switch a machine on")
+    p_enable.add_argument("id", help="Machine id")
+    p_disable = machines_sub.add_parser("disable",
+        help="Switch a machine off: it offers no targets and its projects do not run")
+    p_disable.add_argument("id", help="Machine id")
+    p_test = machines_sub.add_parser("test",
+        help="Check that each connection of a machine answers")
+    p_test.add_argument("id", help="Machine id")
 
 
 def _add_group_users_command(accounts_sub):
@@ -1352,7 +1369,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_config, p_recordings = _add_web_and_settings_commands(sub)
     p_memory = _add_memory_command(sub)
     p_worker, p_upgrade = _add_service_commands(sub)
-    _add_environments_command(sub)
+    _add_machines_command(sub)
     p_channels, p_chacct, p_chaccess, p_chb = _add_channels_command(sub)
     p_mcp = _add_mcp_command(sub)
     p_agents = _add_agents_command(sub)

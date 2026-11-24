@@ -23,7 +23,7 @@ Create with the cron tool, from one dedicated conversation of the Main Agent on 
 Run the always-on weekly check, as the Weekly routine section of docs/reference/design/runtime/always-on-agents.html says.
 Run scripts/testing/always_on_weekly.sh and read the peers listed on that page from each baseline in scripts/testing/always_on_peers.json to the latest commit.
 Then, in your own worktree, change only that page in both languages and the peer baseline file.
-Do not run scripts/testing/always_on_weekly_checks.sh, do not deploy, promote or build a batch.
+Do not run scripts/testing/always_on_weekly_checks.sh, do not deploy or build a batch.
 End with one verdict in plain words: what is done, what is left, what needs a yes.
 TASK
       exit 0 ;;

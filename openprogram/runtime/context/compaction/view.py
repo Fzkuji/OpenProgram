@@ -74,22 +74,31 @@ class CompactionView:
 
 
 def load_compaction_view(db, session_id: str, head_id: str | None = None,
-                         *, audience: str = 'own_prompt') -> CompactionView:
+                         *, audience: str = 'own_prompt',
+                         reasoning_for=None, frozen: bool = True) -> CompactionView:
     """What the chain ending at ``head_id`` reads, frozen for one compaction.
 
     ``None`` reads the session's head once, here; the view then stays on
     that chain whatever the head does next. ``audience`` is who the render
     is for (``context.prompt_assembly.turn_context``); the context panel passes the
     conversation's, so it counts the notes its requests send.
+    ``reasoning_for`` is the model the request goes to: its own replies are
+    rendered with their reasoning, as the request sends them, so the panel
+    counts it. A summary source passes none and reads no reasoning payload.
+    ``frozen=False`` reads the store's own nodes instead of a copy of each:
+    the context panel counts them once and keeps no view, so it has nothing
+    to compare later.
     """
     from openprogram.runtime.context.compaction.persistence import rendered_history
     from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     head_id = head_id or (db.get_session(session_id) or {}).get('head_id')
-    graph = SessionNodeWriter(db, session_id).load()
+    graph = SessionNodeWriter(db, session_id).load(frozen=frozen)
     history = rendered_history(db, session_id, head_id)
     ids = render_context(graph, head_id=head_id, frame_entry_seq=-1)
-    messages = render_dag_messages(graph, ids, audience=audience)
+    from openprogram.runtime.context.session_dag.render import latest_media_id
+    media = latest_media_id(graph, ids)
+    messages = render_dag_messages(graph, ids, audience=audience, reasoning_for=reasoning_for)
     groups: dict[str, list[str]] = {m['id']: [] for m in history}
     for nid in ids:
         owner = nid
@@ -102,7 +111,8 @@ def load_compaction_view(db, session_id: str, head_id: str | None = None,
             groups[owner].append(nid)
     enriched = []
     for row in history:
-        rendered = render_dag_messages(graph, groups[row['id']], audience=audience)
+        rendered = render_dag_messages(graph, groups[row['id']], audience=audience,
+                                       reasoning_for=reasoning_for, latest_media=media)
         enriched.append({**row, 'content': _text(rendered),
                          '_context_tokens': estimate_history_tokens(rendered)})
     return CompactionView(graph, head_id, enriched, messages, ids)

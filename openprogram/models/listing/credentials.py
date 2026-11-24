@@ -836,7 +836,11 @@ def _validate_key(provider_id: str, kind: str, api_key: str, *, model: str | Non
     """:func:`validate_credential` once the key to send is known."""
     # Cache only the model-independent (layer-1) result. A prove-usable ping
     # is never served from that cache — it would hide a dead quota.
-    cache_key = (provider_id, model or "", base_url or "")
+    # Keyed by the key's digest too: two keys of one provider (a company key
+    # and another) never share an answer.
+    import hashlib
+    cache_key = (provider_id, model or "", base_url or "",
+                 hashlib.sha256(api_key.encode()).hexdigest()[:16])
     if use_cache and model is None and not prove_usable:
         hit = _cache_get(cache_key)
         if hit is not None:

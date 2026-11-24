@@ -1,3 +1,4 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openprogram.interfaces.server.routes.settings import misc
@@ -121,3 +122,74 @@ def test_system_access_waits_are_scoped_and_not_questions(monkeypatch, tmp_path)
             "capabilities": [{"id": "screen_recording", "status": "not_granted"}],
             "expires_at": 0.0, "reason_code": "system_access_required",
         }]
+
+
+def _local(app):
+    return TestClient(app, base_url='http://127.0.0.1:18100',
+                      headers={'origin': 'http://127.0.0.1:18100'},
+                      client=('127.0.0.1', 4000))
+
+
+def test_guide_endpoint_starts_missing_capabilities_in_order(monkeypatch):
+    from openprogram.host.system_access import guide
+    app = FastAPI()
+    misc.register(app)
+    monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
+    calls = []
+    monkeypatch.setattr(guide, 'start', lambda caps: calls.append(list(caps)) or ['accessibility'])
+    with _local(app) as client:
+        response = client.post('/api/system/access/guide',
+                               json={'capabilities': ['screen_recording', 'accessibility']})
+    assert response.status_code == 200
+    assert response.json() == {'ok': True, 'started': ['accessibility']}
+    assert response.headers['cache-control'] == 'no-store'
+    assert calls == [['screen_recording', 'accessibility']]
+
+
+def test_guide_endpoint_is_owner_and_loopback_only(monkeypatch):
+    from openprogram.host.system_access import guide
+    app = FastAPI()
+    misc.register(app)
+    calls = []
+    monkeypatch.setattr(guide, 'start', lambda caps: calls.append(caps) or [])
+    body = {'capabilities': ['screen_recording']}
+    monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
+    with TestClient(app, client=('203.0.113.4', 4000)) as client:
+        assert client.post('/api/system/access/guide', json=body).status_code == 403
+    with TestClient(app, base_url='http://127.0.0.1:18100', client=('127.0.0.1', 4000)) as client:
+        assert client.post('/api/system/access/guide', json=body,
+                           headers={'origin': 'http://127.0.0.1:18100',
+                                    'x-forwarded-for': '203.0.113.4'}).status_code == 403
+
+    def deny(request):
+        raise ProjectionAccessError('denied')
+    monkeypatch.setattr(self_updates, 'require_owner', deny)
+    with _local(app) as client:
+        assert client.post('/api/system/access/guide', json=body).status_code == 403
+    assert calls == []
+
+
+@pytest.mark.parametrize('body', [None, {}, {'capabilities': []},
+                                  {'capabilities': 'screen_recording'}, {'capabilities': [1]}])
+def test_guide_endpoint_rejects_a_malformed_body(monkeypatch, body):
+    app = FastAPI()
+    misc.register(app)
+    monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
+    with _local(app) as client:
+        response = (client.post('/api/system/access/guide') if body is None
+                    else client.post('/api/system/access/guide', json=body))
+    assert response.status_code == 400
+
+
+def test_guide_endpoint_refuses_unknown_ids_and_starts_nothing_off_macos(monkeypatch):
+    from openprogram.host.system_access import guide
+    app = FastAPI()
+    misc.register(app)
+    monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
+    monkeypatch.setattr(guide.platform, 'system', lambda: 'Linux')
+    with _local(app) as client:
+        assert client.post('/api/system/access/guide',
+                           json={'capabilities': ['nonsense']}).status_code == 400
+        assert client.post('/api/system/access/guide',
+                           json={'capabilities': ['screen_recording']}).json() == {
+                               'ok': True, 'started': []}

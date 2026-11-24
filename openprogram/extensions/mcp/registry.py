@@ -24,11 +24,18 @@ import logging
 import threading
 from typing import Any, Optional
 
+from openprogram.host._platform.changes import publish, signal
+
 from .adapter import register_remote_tool
 from .client import MCPClient
 from .config import MCPServerConfig, load_configs, mask_secret_map
 
 _log = logging.getLogger(__name__)
+
+#: A server was added, removed, connected, dropped or failed (key: its
+#: name); the MCP page reads ``server_status`` again. The client signals its
+#: own connection changes (client.py).
+publish("mcp")
 
 
 # Module-level state — single set of MCP clients per process.
@@ -254,6 +261,13 @@ async def restart_server(name: str,
 
 async def _spawn_and_register(cfg: MCPServerConfig) -> None:
     """Internal helper — spawn + register tools + log."""
+    try:
+        await _spawn(cfg)
+    finally:
+        signal("mcp", cfg.name)
+
+
+async def _spawn(cfg: MCPServerConfig) -> None:
     client = MCPClient(cfg)
     # Pending clients must remain visible to management and shutdown.
     _clients[cfg.name] = client
@@ -297,6 +311,7 @@ async def _stop_and_unregister(name: str) -> None:
         except Exception:  # noqa: BLE001
             _log.warning("stop '%s' failed", name, exc_info=True)
     tool_names = _registered_tool_names.pop(name, [])
+    signal("mcp", name)
     if tool_names:
         # Defer the import to avoid a cycle: functions._runtime imports
         # nothing from us, but pulling it in at module load time would

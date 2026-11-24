@@ -6,7 +6,8 @@
 
 Callers import the module that owns the operation: ``filesystem`` (paths,
 owner-only permissions, directory handles), ``locking`` (``flock``),
-``processes`` (liveness, kill trees, port owners), ``process_ownership``
+``processes`` (liveness, kill trees, port owners), ``process_exits``
+(learning the moment a process ends), ``process_ownership``
 (process groups and Windows jobs), ``command_shell`` (which shell a
 command runs in), ``terminal`` (shell invocations, PTYs, bundled tools),
 ``environment`` (browser, WSL, release and service backends),
@@ -20,6 +21,7 @@ picks packages), ``front`` (giving the front back to the application the user is
 
 - **`architecture.py`** — The CPU architecture this Python runs as, in the release matrix's words
 - **`asyncio.py`** — Platform asyncio
+- **`changes.py`** — How a Worker learns that something changed, instead of looking again
 - **`clipboard.py`** — Putting text on the system clipboard with the tool each platform ships
 - **`command_shell.py`** — Which shell a command runs in, decided in one place
 - **`environment.py`** — Platform environment
@@ -28,6 +30,7 @@ picks packages), ``front`` (giving the front back to the application the user is
 - **`front.py`** — What the user has in front stays in front while an agent operates something else
 - **`locking.py`** — Advisory file locking with the POSIX ``fcntl.flock`` surface on every platform
 - **`power.py`** — Optional idle-system-sleep assertion for active agent execution
+- **`process_exits.py`** — Learning that a process ended the moment it ends
 - **`process_ownership.py`** — Platform process ownership
 - **`processes.py`** — Platform processes
 - **`screen_capture_audio.py`** — Audio-only ScreenCaptureKit streams on macOS, and the WAV their samples become

@@ -59,7 +59,7 @@
 <thead class="sr"><tr><th scope="col">层</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">绑定地址 <code translate="no">web.host</code></th><td>默认 <code translate="no">127.0.0.1</code>，仅本机。<code translate="no">0.0.0.0</code> 把需要登录的 UI 暴露给其他接口，且至少需要一个 <code translate="no">web.allowed_origins</code> 条目。不可信网络优先用同机反向代理加 HTTPS</td></tr>
-<tr><th scope="row">登录</th><td>每个 API 和 WebSocket 请求都需要登录链接设置的 owner cookie 或 bearer token，否则 401。公开的只有 <code translate="no">/healthz</code>、页面外壳、<code translate="no">/docs</code>，以及 <code translate="no">/hooks/</code> 下由任务自身密钥保护的 Scheduler webhook</td></tr>
+<tr><th scope="row">登录</th><td>每个 API 和 WebSocket 请求都需要登录链接设置的 owner cookie、配对设备的凭据（<code translate="no">openprogram web pair</code>）或 bearer token，否则 401。公开的只有 <code translate="no">/healthz</code>、页面外壳、<code translate="no">/docs</code>，以及 <code translate="no">/hooks/</code> 下由任务自身密钥保护的 Scheduler webhook</td></tr>
 <tr><th scope="row">Host</th><td>必须是有效 origin：绑定回环时为回环地址，加上 <code translate="no">web.allowed_origins</code>。否则 403</td></tr>
 <tr><th scope="row"><code translate="no">Sec-Fetch-Site</code></th><td><code translate="no">cross-site</code> 得到 403</td></tr>
 <tr><th scope="row"><code translate="no">Origin</code>，存在时</th><td>必须与请求自身的 origin 一致，否则 403</td></tr>
@@ -103,7 +103,7 @@
 <thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">security.outbound_url.model_tools</code></th><td><code translate="no">open</code>（默认）：你自己的轮次里 <code translate="no">web_fetch</code> 和图片下载可访问任意地址、端口和 HTTP 方法。<code translate="no">strict</code>：应用地址检查。他人的轮次和服务器自身调用始终严格</td></tr>
-<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td><code translate="no">computer_use_agent</code> 不操作的应用名或 bundle id 的 JSON 列表，默认空</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td><code translate="no">computer_use</code> 不操作的应用名或 bundle id 的 JSON 列表，默认空</td></tr>
 <tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>不向密码框输入，默认关</td></tr>
 <tr><th scope="row"><code translate="no">sandbox.mode</code></th><td>用于没有对话的定时任务；否则用触发时其对话的 Sandbox 设置</td></tr>
 <tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>与<a href="../capabilities/permissions.zh.html">权限</a>中列出的启动、Git 和状态路径一起，是沙箱唯一限制的路径</td></tr>

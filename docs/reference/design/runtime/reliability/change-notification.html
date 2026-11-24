@@ -1,0 +1,216 @@
+<title>Change notification</title>
+<meta name="description" content="How the Worker and the windows learn that something changed instead of looking again on a timer, and what each loop waits on in place of its old interval.">
+<meta name="covers" content="openprogram/host/_platform/changes.py apps/web/lib/net/ws/changes.ts openprogram/runtime/execution/store/run_tables.py openprogram/runtime/jobs/runner/dispatch.py openprogram/runtime/jobs/runner/recovery.py openprogram/runtime/jobs/runner/progress.py openprogram/runtime/jobs/runner/service.py openprogram/runtime/jobs/notices.py openprogram/runtime/conversation/process_notices.py openprogram/runtime/conversation/run_control/idle.py openprogram/runtime/conversation/run_control/run_slot.py openprogram/runtime/execution/run_control/tokens.py openprogram/runtime/execution/waits.py openprogram/runtime/execution/projections/dag.py openprogram/runtime/execution/event_effects.py openprogram/operations/self_update/control/watchdog.py openprogram/operations/self_update/control/switch.py openprogram/operations/self_update/versions/store.py openprogram/host/_platform/process_exits.py openprogram/runtime/conversation/process_notices.py openprogram/interfaces/server/server_runtime/loop_stall.py openprogram/host/resources/conversation_changes.py openprogram/host/processes/record_changes.py openprogram/host/processes/store.py openprogram/host/processes/channel.py openprogram/host/processes/supervisor.py openprogram/host/processes/group_guard.py openprogram/programs/tools/files/bash/session.py openprogram/host/cancellation.py openprogram/interfaces/server/routes/files/document_changes.py openprogram/interfaces/server/routes/settings/routing.py openprogram/interfaces/server/routes/execution/recordings.py openprogram/interfaces/server/routes/identity/provider_login.py openprogram/interfaces/channels/_heartbeats.py openprogram/state/memory/session_watcher.py openprogram/state/memory/checkpoints.py openprogram/state/store/session/files/session_log.py openprogram/programs/_host/watcher.py openprogram/extensions/skills/watcher.py openprogram/operations/worker/runner.py openprogram/operations/worker/web.py openprogram/runtime/conversation/always_on/ticker.py openprogram/programs/tools/jobs/cron/worker.py apps/web/lib/browser/browser-resource-projection.ts apps/web/lib/desktop/terminal-output.ts openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_macos.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_windows.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_linux.py openprogram/interfaces/server/ws_actions/embedded_window.py openprogram/programs/tools/computer_use/computer_use/desktop/window_watch.py openprogram/programs/tools/computer_use/computer_use/desktop/ax_events.py openprogram/state/store/operation_receipts.py openprogram/interfaces/server/routes/settings/config.py openprogram/interfaces/server/routes/catalog/agents.py openprogram/interfaces/server/routes/identity/providers.py apps/web/components/center-tabs/window/live-window-view.tsx apps/web/lib/desktop/embedded-window/embedded-window.ts apps/desktop/main/windows/embedded-windows.js apps/web/lib/clock/use-now.ts apps/web/lib/runtime-bridge/optimistic-action.ts apps/web/lib/net/ws/ws-request.ts apps/web/lib/net/ws/change-bus.ts apps/web/lib/desktop/recording/pane-recorder.ts apps/web/lib/chat/send/send-queue.ts apps/web/lib/chat/send/steer-message.ts apps/web/lib/chat/rewind/rewind-actions.ts apps/web/lib/query-client.ts apps/web/lib/prefs/settings-cache.ts apps/web/lib/execution/activity-reads.ts apps/web/lib/projects/list-projects.ts">
+<h1>Change notification</h1>
+
+<p>Nothing in the Worker or in a window looks again on a short timer to find out whether something changed. The code that makes a change says so once, and whoever waits on it wakes. A loop with a deadline sleeps until it. An idle Worker does almost nothing.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="Three sources announce a change to one hub: the code that made it, file events for files another process writes, and every run-table commit. The hub wakes loops in the Worker and sends windows a changed frame.">
+  <defs><marker id="cn-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">signal(topic, key)</text>
+  <text class="t-soft" x="0" y="54">the code that made the change</text>
+  <text class="t-big" x="0" y="114">watch(directory, topic)</text>
+  <text class="t-soft" x="0" y="134">files another process writes</text>
+  <text class="t-big" x="0" y="194">run-table commit</text>
+  <text class="t-soft" x="0" y="214">every Job and execution change</text>
+  <line class="ln" x1="214" y1="40" x2="282" y2="96" marker-end="url(#cn-a)"/>
+  <line class="ln" x1="214" y1="120" x2="282" y2="120" marker-end="url(#cn-a)"/>
+  <line class="ln" x1="214" y1="200" x2="282" y2="144" marker-end="url(#cn-a)"/>
+  <rect class="tile" x="294" y="88" width="136" height="64" rx="8"/>
+  <text class="t-big mid" x="362" y="116">changes</text>
+  <text class="t-soft mid" x="362" y="136">one per Worker</text>
+  <line class="ln-acc" x1="432" y1="104" x2="498" y2="64" marker-end="url(#cn-a)"/>
+  <line class="ln-acc" x1="432" y1="136" x2="498" y2="176" marker-end="url(#cn-a)"/>
+  <text class="t-big" x="510" y="60">loops in the Worker</text>
+  <text class="t-soft" x="510" y="80">wake, or sleep to a due time</text>
+  <text class="t-big" x="510" y="180">windows</text>
+  <text class="t-soft" x="510" y="200">"changed" frame: read again</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>signal, watch, run-table commit</strong><small>The change is announced once</small></li>
+  <li><strong>changes</strong><small>One hub per Worker</small></li>
+  <li class="flow-end"><strong>Loops wake; windows read again</strong><small>Nothing looks on a short timer</small></li>
+</ol>
+</figure>
+
+<h2 id="hub">The hub</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">signal(topic, *keys)</code></th><td>Called right after a change is written. Keys name what changed: a conversation, a job, a table. Costs nothing when nobody listens</td></tr>
+<tr><th scope="row"><code translate="no">listen</code>, <code translate="no">wait_for</code></th><td>A loop waits for its topics, the next time it must act at (<code translate="no">due</code>), or a long <code translate="no">resync</code>. What was signalled while it was busy is kept</td></tr>
+<tr><th scope="row"><code translate="no">subscribe</code></th><td>For a loop that already waits on its own event: a callback on the signalling thread sets it</td></tr>
+<tr><th scope="row"><code translate="no">watch</code></th><td>Files written by another process (the CLI, a command's supervisor, the update controller, the user editing a skill). One thread takes the operating system's file events through <code translate="no">watchfiles</code>, which <code translate="no">uvicorn[standard]</code> already brings: 8 ms of processor time per 30 s idle, a change seen within about 0.7 s</td></tr>
+<tr><th scope="row"><code translate="no">process_exits.watch_process(pid, identity, topic, key)</code></th><td>A command's supervisor or the update controller: its topic is signalled when it ends, through <code translate="no">kqueue</code> <code translate="no">NOTE_EXIT</code> on macOS, a <code translate="no">pidfd</code> in <code translate="no">epoll</code> on Linux, the process handle in <code translate="no">WaitForMultipleObjects</code> on Windows. One thread serves every process; a killed one is seen about 1 ms later on macOS. The process is held before its birth identity is compared, so a reused PID counts as ended at once. Without these, it is looked at every 10 s</td></tr>
+<tr><th scope="row"><code translate="no">publish</code></th><td>Forwards a topic to the windows as <code translate="no">{"type": "changed", "topic", "keys"}</code>, changes within 0.2 s in one frame</td></tr>
+</tbody>
+</table>
+
+<p>Threads and frames start only in the Worker (<code translate="no">start_watching</code> for file events and process exits, <code translate="no">set_publisher</code>). In the CLI and in tests a signal only wakes listeners, and a loop that relies on file events looks on its fallback interval (<code translate="no">poll</code>).</p>
+
+<p>Some topics stay inside the Worker; they wake loops and are not sent to windows.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Topic</th><th scope="col">Signalled when</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">turn_ended</code></th><td>Keyed by session: a turn's cancellation token retires the first time, the server hands back a run slot, or the Worker begins shutting down (no key)</td></tr>
+<tr><th scope="row"><code translate="no">session.records</code></th><td>A conversation's log makes a durable write; while a live run is watched, also a file event on the session's <code translate="no">main.jsonl</code> or <code translate="no">agents/</code>. Keyed by session</td></tr>
+<tr><th scope="row"><code translate="no">memory.checkpoint</code></th><td>A manual memory edit makes a history checkpoint pending</td></tr>
+<tr><th scope="row"><code translate="no">recordings</code></th><td>Keyed by recording id: a step is added, typing into a new element begins, or the recording stops. It drives the server-sent stream <code translate="no">/api/recordings/{id}/events</code></td></tr>
+</tbody>
+</table>
+
+<p><code translate="no">subscribe_idle</code> (<code translate="no">run_control/idle.py</code>) gathers what can end a conversation's busy state: <code translate="no">turn_ended</code>, <code translate="no">runs</code>, and run-table commits to <code translate="no">executions</code> or <code translate="no">job_finalizations</code>. Whatever holds something for a busy conversation waits on it.</p>
+
+<h2 id="windows">Windows</h2>
+
+<p><code translate="no">useChanged(topics, refresh, keys)</code> (<code translate="no">apps/web/lib/net/ws/changes.ts</code>) runs <code translate="no">refresh</code> when a frame for one of its topics and keys arrives.</p>
+<ul>
+<li>A hidden window keeps the change and reads once when it shows.</li>
+<li>After a reconnect every topic counts as changed: frames sent while the socket was down are lost.</li>
+<li>A cached answer stays fresh until a topic says it changed: React Query answers never age (<code translate="no">staleTime: Infinity</code>), and <code translate="no">QUERY_TOPICS</code> invalidates them by topic.</li>
+<li>Elapsed times, countdowns and "5 min ago" share one clock (below).</li>
+</ul>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Cache</th><th scope="col">Fresh until</th></tr></thead>
+<tbody>
+<tr><th scope="row">React Query (<code translate="no">query-client.ts</code>)</th><td><code translate="no">settings</code>, <code translate="no">routing</code>, <code translate="no">agents</code> or <code translate="no">applications</code> for the keys read from it; a reconnect invalidates everything</td></tr>
+<tr><th scope="row">Settings reads (<code translate="no">settings-cache.ts</code>)</th><td><code translate="no">settings</code>, <code translate="no">routing</code> or <code translate="no">channels</code>, or a reconnect; an unchanged answer redraws nothing</td></tr>
+<tr><th scope="row">Activity reads (<code translate="no">activity-reads.ts</code>)</th><td><code translate="no">op:execution-update</code>, <code translate="no">op:job-status</code>, <code translate="no">processes</code>, or the socket opening again</td></tr>
+<tr><th scope="row">Project lists (<code translate="no">list-projects.ts</code>)</th><td><code translate="no">project-changed</code> or <code translate="no">op:browser-connection</code></td></tr>
+<tr><th scope="row">Running apps for an @ mention</th><td>Read once per new @ being typed</td></tr>
+<tr><th scope="row">Files and the project menu</th><td>One read, then again on <code translate="no">onReconnected</code></td></tr>
+<tr><th scope="row">Local model services (Ollama and others)</th><td>Opening the model picker asks <code translate="no">/api/models/enabled?probe=local</code>, which probes at once past the 30 s probe cache; opening the providers page or adding a provider reads again. Cached data shows first, an unchanged answer redraws nothing, and nothing probes in the background</td></tr>
+</tbody>
+</table>
+
+<p><code translate="no">useNow(cadence, from)</code> (<code translate="no">apps/web/lib/clock/use-now.ts</code>) is the one clock. The whole App keeps a single <code translate="no">setTimeout</code>, set for the earliest moment any shown text reads differently. It stops with no subscribers, pauses while the document is hidden and catches up when it shows.</p>
+
+<p>Some views follow a source other than a topic:</p>
+<ul>
+<li>A terminal view reads from its cursor when the desktop app pushes output (<code translate="no">terminal:data</code>) or the resource changes.</li>
+<li>A web resource's thumbnail is taken after each Agent operation on its tab, not re-captured on a timer.</li>
+<li>System-access recovery checks when the window shows or gets focus back; a grant made elsewhere closes the wait on the server (<code translate="no">system_access.waits</code>).</li>
+<li>The recording bar reads a server-sent stream; provider sign-in asks with a request held up to 25 s until the sign-in changes.</li>
+<li>The command page reads on its own <code translate="no">op:execution-update</code>; the sidebar project list and working-folder chips ask again when the socket opens.</li>
+</ul>
+
+<h2 id="decisions">Decisions</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Announce changes; do not look for them</th><td>OpenCode works this way: one bus inside the server, file events from the operating system, and a stream of events the client reads instead of polling. Looking every few seconds cost an idle Worker 2.5 s of processor time per 30 s and found nothing</td></tr>
+<tr><th scope="row">Keep a long resync</th><td>A lost announcement must not leave work undone. Kubernetes controllers work from events and still list everything again on a long period; here 30 to 60 s for loops that hold a turn or a Job, 300 s elsewhere</td></tr>
+<tr><th scope="row">Wait until a due time</th><td>Deadlines (a Job's budget, a durable wait expiring, a scheduled agent, a pending checkpoint, a credential's expiry, the <code translate="no">recheck_in</code> that channels and routing return) are known in advance; a loop or window sleeps until the earliest one instead of checking whether it has come</td></tr>
+<tr><th scope="row">Operating system file events through <code translate="no">watchfiles</code></th><td>It is already installed with the server, has wheels for macOS, Linux and Windows, and falls back to polling by itself where events cannot be had (WSL, some network drives)</td></tr>
+<tr><th scope="row">A loop is not woken by its own writes</th><td>A pass that writes would otherwise wake itself for ever</td></tr>
+<tr><th scope="row">Folder metadata is not a change</th><td>The self-update store chmods its folder on every write lock; counting that would wake the watchdog and the reconciler for nothing. A file made or changed inside a watched folder still counts</td></tr>
+<tr><th scope="row">Liveness comes from the operating system, not from heartbeats</th><td>A heartbeat costs a write for a process's whole life and still leaves its death unseen until a staleness deadline passes (15 s for a supervisor, 30 s for the controller). The operating system knows the moment a process ends, as <code translate="no">waitpid</code> does for a parent; kqueue, pidfd and process handles give that to any process. A process says once who it is (pid and birth identity, in its record, <code translate="no">controller.json</code> or the <code translate="no">.migrating</code> marker) and writes nothing more</td></tr>
+<tr><th scope="row">An exit, not a hang</th><td>None of the replaced heartbeats detected a hang: each was written by a timer thread of its own, which goes on beating while the work is stuck. A stuck controller or migration is bounded by its phase limits (<code translate="no">MIGRATION_LIMIT_SECONDS</code>, <code translate="no">VERIFY_LIMIT_SECONDS</code>), a stuck command by its own Stop</td></tr>
+<tr><th scope="row">Busy waits wait on what ends them</th><td>A notice, a queued message or a Goal's next turn held for a busy conversation wakes through <code translate="no">subscribe_idle</code>, not on an interval</td></tr>
+<tr><th scope="row">A running command and its waiter ring each other</th><td>The supervisor and the tool call waiting on it are separate processes, and a quick command must return in milliseconds, so file events (about 0.7 s, and only in the Worker) are too slow. Each supervisor listens on a loopback TCP port with a token in its record: the one local channel Python has on macOS, Linux and Windows alike. <code translate="no">processes.db</code> stays the record; a ring only says "look now", and its connection closing says the supervisor ended (<a href="../execution/command-sessions.html#wakeups">command sessions</a>)</td></tr>
+<tr><th scope="row">Bursts are coalesced</th><td>Output streaming into a command's records or nodes written by a live run would wake a loop many times a second; the exit-notice loop looks at most every 2 s and the run tree pushes at most once a second. In windows, a gap only merges a burst of change frames into one read: <code translate="no">READ_GAP_MS</code> (execution debugger), <code translate="no">GAP_MS</code> (agent roster), <code translate="no">CHANGE_SETTLE_MS</code> (provider status)</td></tr>
+<tr><th scope="row">Opening is the event</th><td>Local model services announce nothing; the picker or providers page opening is when their state matters, so that is when they are probed, never in the background</td></tr>
+<tr><th scope="row">Probe what announces nothing, only while it matters</th><td>The operating system announces no permission grant, so the reconciler checks every 5 s only while a system-access wait is open</td></tr>
+</tbody>
+</table>
+
+<h2 id="loops">What each loop waits on</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Loop</th><th scope="col">Before</th><th scope="col">Now</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job dispatcher</th><td>Claimed every 0.5 s, taking the self-update lock and a ledger transaction each time</td><td>A run-table commit to an admission, a finalization or a resource intent by another thread, or a self-update file; 60 s resync</td></tr>
+<tr><th scope="row">Job reconciler</th><td>Every 5 s: every session directory, every self-update record</td><td>A run-table commit by another thread, a self-update file, or the next durable wait deadline; while a system-access wait is open it is due every 5 s (<code translate="no">SYSTEM_ACCESS_PROBE_SECONDS</code>, <code translate="no">waits.next_due</code>); passes at least 5 s apart; 60 s resync</td></tr>
+<tr><th scope="row">Job budgets</th><td>Four times a second</td><td>Sleeps until the earliest runtime, idle, stall or hard-stop deadline; also wakes when another thread writes a stop to <code translate="no">commands</code>, a helper's usage is written (<code translate="no">roster</code>, spend checks at least 5 s apart), or a Job starts; 60 s resync. With no Job it waits for one to start</td></tr>
+<tr><th scope="row">Event effects</th><td>Woken by each commit, and every second</td><td>Woken by each commit, or at the next retry of a failed effect; 300 s resync</td></tr>
+<tr><th scope="row">Agent notices and queued messages</th><td>Every 2 s</td><td>A notice queued (<code translate="no">agent_notices</code>); while one waits for a busy conversation, that conversation possibly going idle (<code translate="no">subscribe_idle</code>); a failed delivery retries once after 2 s; 300 s resync</td></tr>
+<tr><th scope="row">Background command exit notices</th><td>Every 2 s</td><td>A change to <code translate="no">processes.db</code>; while output keeps arriving, at most every 2 s, cut short when the conversation goes idle or a supervisor ends; 300 s resync. Each look follows every live record's supervisor (<code translate="no">record_changes.follow_supervisors</code>); one that ends without writing its command's end turns the record <code translate="no">unknown</code> at once. A quiet running command writes nothing</td></tr>
+<tr><th scope="row">A command's supervisor</th><td>Read its stop and stdin rows and the command's liveness every 50 ms</td><td>The command's end (<code translate="no">SIGCHLD</code> through <code translate="no">set_wakeup_fd</code>; a Windows job's completion port), a writer connecting to its doorbell after inserting a row, a blocked stdin pipe with room again, or a stop's 5 s grace ending</td></tr>
+<tr><th scope="row">A command tool call (<code translate="no">collect</code>), a stop or input waiting to be applied, a launch</th><td>Read the record every 50 ms</td><td>The supervisor's ring after each output chunk, status or acknowledgement; its connection closing; a stop fired for the turn (<code translate="no">cancellation.on_cancel</code>); the launch's <code translate="no">ready</code> line; the yield time or limit; 10 s resync. The same in the Worker, <code translate="no">--print</code> and scripts</td></tr>
+<tr><th scope="row">A command's group leader (<code translate="no">group_guard</code>)</th><td>Listed its group every 0.1 s until a background child ended</td><td>Each remaining member's exit (kqueue <code translate="no">NOTE_EXIT</code>, a pidfd), then the group listed once more</td></tr>
+<tr><th scope="row">Run slot for a Goal's next turn (<code translate="no">run_slot.hold_admitted</code>)</th><td>Every 0.5 s</td><td><code translate="no">subscribe_idle</code>; 30 s resync; a 0.5 s retry only when the session's file lock times out</td></tr>
+<tr><th scope="row">Live run tree (<code translate="no">dag.live_progress</code>)</th><td>Every 0.15 s, backing off to 1.2 s</td><td>The run writing a node (<code translate="no">session.records</code>), coalesced: the first tree after at least 0.1 s, then at least 1 s apart; 60 s resync; a final push at the end</td></tr>
+<tr><th scope="row">Self-update watchdog</th><td>Every 10 s</td><td>A self-update file, or the exit of the process named in the update's <code translate="no">controller.json</code>, which is then launched again; after a launch, 30 s for the new controller to say who it is; 300 s resync; every 10 s only where file events are unavailable</td></tr>
+<tr><th scope="row">Programs watcher</th><td>A fingerprint of every package and application source every 5 s</td><td>File events on the Programs folder, the source and catalog files and each enabled application's tree (<code translate="no">programs.sources</code>); the fingerprint is still compared, so an event that changes nothing rescans nothing</td></tr>
+<tr><th scope="row">Skills watcher</th><td>A walk of the skill folders every 5 s</td><td>File events on each skill root (<code translate="no">skills.files</code>); a plugin's new root is watched when the plugin registers it</td></tr>
+<tr><th scope="row">Stop request</th><td>The main thread looked for the file four times a second</td><td>A file event on <code translate="no">worker.stop</code>; a signal still interrupts the wait at once. On Windows, where a wait is not interrupted by Ctrl-C, the main thread wakes each second</td></tr>
+<tr><th scope="row">Web build, thread and memory sample requests</th><td>A file read every 2 s each</td><td>A file event on <code translate="no">BUILD_ID</code> or on the request file</td></tr>
+<tr><th scope="row">Channel supervisor</th><td>Accounts and heartbeats every 5 s</td><td>An account or credentials file, or a start retry coming due; 300 s resync. No heartbeat loop: an adapter thread marks itself running when it starts and signals <code translate="no">channels</code> when it ends</td></tr>
+<tr><th scope="row">Always-on ticker</th><td>Every always-on agent read every 30 s</td><td>Sleeps until the earliest scheduled wake; an agent's settings or state changing wakes it (<code translate="no">always_on</code>). Every 30 s only while a check-in runs or a run has a time limit</td></tr>
+<tr><th scope="row">Scheduled tasks</th><td>Every minute</td><td>Sleeps until the next cron match, one-time run or command limit; saving a task wakes it (<code translate="no">schedule.entries</code>). Each wait is at most a minute of wall clock, so a firing missed while the computer slept is seen</td></tr>
+<tr><th scope="row">Idle-session memory watcher</th><td>Every 5 minutes</td><td>Sleeps until the next known idle deadline or retry, at most 300 s</td></tr>
+<tr><th scope="row">Memory manual checkpoints</th><td>Every 15 s</td><td>Sleeps until the pending checkpoint is due; <code translate="no">memory.checkpoint</code> wakes it; 300 s resync</td></tr>
+<tr><th scope="row">Following another application's window (<code translate="no">embedding/follow.py</code>)</th><td>The view read the window's state every 1.5 s</td><td>OS events from the first view of the window to the last: Accessibility observers and kqueue on macOS, <code translate="no">SetWinEventHook</code> on Windows, <code translate="no">StructureNotify</code> and <code translate="no">PropertyChange</code> on X11; each signals <code translate="no">embedded_windows</code></td></tr>
+<tr><th scope="row">Control overlay place report (<code translate="no">window_watch.py</code>, <code translate="no">ax_events.py</code>)</th><td>Every 0.12 s while a step runs</td><td>Accessibility observers on the application element of every app with a window on screen (window created, moved, resized, destroyed, minimized, restored; focused window changed; app activated, deactivated, hidden, shown) and a kqueue exit per process; one window-list read per burst; 5 s resync while a step runs; observers only while a window is watched</td></tr>
+</tbody>
+</table>
+
+<p class="note">The apps to observe come from the window list: NSWorkspace notifications never reach a Worker, which has no main run loop.</p>
+
+<h3 id="window-waits">In the windows</h3>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Wait</th><th scope="col">Before</th><th scope="col">Now</th></tr></thead>
+<tbody>
+<tr><th scope="row">A window view's state (<code translate="no">live-window-view.tsx</code>)</th><td>Read every 1.5 s; a lost capture retaken after 1 s</td><td>Read once in the animation frame after an <code translate="no">embedded_windows</code> frame, and a lost capture retaken then</td></tr>
+<tr><th scope="row">A window tab's own layout</th><td>Every 120 ms</td><td>A <code translate="no">ResizeObserver</code>, an <code translate="no">IntersectionObserver</code> for shifts without resize, page resize and zoom, scroll and visibility, coalesced per animation frame</td></tr>
+<tr><th scope="row">The App window moving (macOS window tab)</th><td>Every 400 ms</td><td>Electron <code translate="no">move</code> and <code translate="no">resize</code> on the App window, sent as <code translate="no">embedded-window:host-changed</code> IPC</td></tr>
+<tr><th scope="row">Elapsed times and "ago" text</th><td>A timer in each component (runtime block, task block, attach card, retry status, meeting window, recording bar, chats page, routing overview)</td><td>The one shared clock, <code translate="no">useNow</code></td></tr>
+<tr><th scope="row">Optimistic actions (<code translate="no">optimistic-action.ts</code>)</th><td>Every 250 ms</td><td>Subscribed to the store it reads, with one 10 s deadline</td></tr>
+<tr><th scope="row">An unconfirmed write (<code translate="no">ws-request.ts</code>)</th><td>Reconciled every 250 ms</td><td>An <code translate="no">operation.receipts</code> frame for its idempotency key; asks once on reconnect; one deadline</td></tr>
+<tr><th scope="row">A recorded pane's place (<code translate="no">pane-recorder.ts</code>)</th><td>Every 200 ms</td><td>A <code translate="no">ResizeObserver</code>, a <code translate="no">MutationObserver</code> on ancestors' <code translate="no">style</code> and <code translate="no">class</code>, resize and scroll; each animation frame only while a transition or animation runs</td></tr>
+<tr><th scope="row">A recorded pane closing</th><td>Every 500 ms</td><td>A <code translate="no">ResizeObserver</code> and a <code translate="no">MutationObserver</code> on the body</td></tr>
+<tr><th scope="row">Send queue's run state (<code translate="no">send-queue.ts</code>)</th><td>Every 1.5 s</td><td>Asks once after the current microtask for a run slot with no id, then only when a <code translate="no">running_task_clear</code> does not match, or on reconnect</td></tr>
+<tr><th scope="row">A steer's confirmation (<code translate="no">steer-message.ts</code>)</th><td>A timer</td><td>Asks again on that execution's <code translate="no">op:execution-update</code>, a run-slot change or reconnect; a backoff timer only after a transport failure</td></tr>
+<tr><th scope="row">Stop, then rewind (<code translate="no">rewind-actions.ts</code>)</th><td>Every 400 ms, backing off to 5 s</td><td>The session's run-slot change, <code translate="no">op:execution-update</code>, <code translate="no">op:job-status</code> or reconnect; one 15 s deadline</td></tr>
+</tbody>
+</table>
+
+<h2 id="topics">What windows listen to</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Topic</th><th scope="col">Signalled when</th><th scope="col">Read again</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation.resources</code></th><td>A machine or desktop is attached or let go, a browser page changes, a UI binding is made or released, a run changes status. Keyed by the session and every session above it, so a helper's change reaches the conversation on screen</td><td>A conversation's resources list, instead of every 3 s for each conversation on screen</td></tr>
+<tr><th scope="row"><code translate="no">system_access.waits</code></th><td>A run pauses or resumes for a permission</td><td>The waiting-for-permission list, instead of every 2 s while one waits</td></tr>
+<tr><th scope="row"><code translate="no">runs</code>, <code translate="no">roster</code></th><td>A Job is written, topics are sorted, a helper's usage or stall is recorded</td><td>The Activity lists and the helper roster, instead of every 30 s and every 4 s while sorting</td></tr>
+<tr><th scope="row"><code translate="no">inbox</code>, <code translate="no">work</code></th><td>An always-on report is written or seen, a person writes, a scheduled task or its run record changes</td><td>The pending inbox and the conversation's open work, instead of every 30 s</td></tr>
+<tr><th scope="row"><code translate="no">programs</code>, <code translate="no">applications</code></th><td>Programs are rescanned or disposed; an application loads, unloads or its catalog changes</td><td>The Programs page, the new tab page and the sidebar, instead of every 5, 10 and 30 s</td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>An MCP server starts, connects, fails, stops or is removed</td><td>The MCP page, instead of every 4 s</td></tr>
+<tr><th scope="row"><code translate="no">channels</code></th><td>An account changes, an adapter starts, stops or retries, or its running mark appears or clears</td><td>Channel settings and the channel health dot, instead of every 5 and 30 s</td></tr>
+<tr><th scope="row"><code translate="no">meetings</code></th><td>A meeting's record is written, discarded or deleted</td><td>The meeting window, instead of every 4 s while recording</td></tr>
+<tr><th scope="row"><code translate="no">documents</code></th><td>A file a window has open changes on disk. Keyed by a hash of the file's path; the window starts following the file with <code translate="no">/api/documents/stat</code>, and the Worker watches it</td><td>The document window's file metadata</td></tr>
+<tr><th scope="row"><code translate="no">processes</code></th><td>A write to <code translate="no">processes.db</code> or its <code translate="no">-wal</code>, by a command's supervisor</td><td>The programs panel of a conversation</td></tr>
+<tr><th scope="row"><code translate="no">routing</code></th><td>The usage ledger records a provider call or route event, a cold session finishes opening, or a credential changes</td><td>The routing overview in provider settings</td></tr>
+<tr><th scope="row"><code translate="no">embedded_windows</code></th><td>A window another application owns, shown in a tab or preview, moves, resizes, is minimized or restored, is renamed, gains focus or closes, or its process exits. Keyed by window id</td><td>That window view's state, instead of every 1.5 s</td></tr>
+<tr><th scope="row"><code translate="no">operation.receipts</code></th><td>A file operation leaves <code translate="no">in_flight</code>, or a turn's revert or <code translate="no">reapply_turn</code> ends. Keyed by idempotency key (<code translate="no">operation_receipts.py</code>)</td><td>The receipt of a write whose answer was lost, instead of every 250 ms</td></tr>
+<tr><th scope="row"><code translate="no">settings</code></th><td>A file event on <code translate="no">config.json</code>, written by the Worker or another process</td><td>Enabled models, providers, fallbacks and Agents' defaults</td></tr>
+<tr><th scope="row"><code translate="no">agents</code></th><td>A file event on any saved Agent's <code translate="no">agent.json</code> (a recursive watch)</td><td>The Agents list</td></tr>
+</tbody>
+</table>
+
+<p class="note">A program's own process writes <code translate="no">session-resources.changed</code> beside the database, and the Worker watches that file rather than the database, which it writes all the time itself. The Worker writes <code translate="no">processes.db</code> only when it delivers a notice or a supervisor ends, so that file is watched directly.</p>
+
+<h2 id="kept">Timers that stay</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Timer</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">A launched controller's start window</th><td>After the watchdog launches a controller, it waits up to 30 s for <code translate="no">controller.json</code> before launching again; nothing announces a launch that produced no process</td></tr>
+<tr><th scope="row">The fallback process look</th><td>Every 10 s, only for a process the operating system cannot follow here</td></tr>
+<tr><th scope="row">A stop's grace</th><td>A stopped command's group has 5 s after SIGTERM before SIGKILL; nothing announces that a process ignores SIGTERM</td></tr>
+<tr><th scope="row">A command group without exit events</th><td>Where neither kqueue nor pidfds exist (a Linux kernel before 5.3), <code translate="no">group_guard</code> lists its group every 0.1 s while a background child runs</td></tr>
+<tr><th scope="row">Loop-stall watch</th><td>It asks the event loop to answer four times a second to notice a loop that stopped answering: a hang, which no exit announces. Idle, it costs 8.8 ms of processor time per 20 s. Timing only the loop's work, by wrapping its selector, would cost nothing idle but misses a loop woken yet waiting for the interpreter another thread holds, the case <code translate="no">busy_threads</code> names; the ping sees it</td></tr>
+<tr><th scope="row">The shared clock</th><td>Elapsed times and "2 min ago" redraw from one App-wide timer, set for the next moment any shown text changes; they read nothing</td></tr>
+<tr><th scope="row">System-access probe</th><td>The operating system announces no permission grant; the Worker checks every 5 s only while a system-access wait is open</td></tr>
+<tr><th scope="row">Without Accessibility access</th><td>Where the Worker cannot start Accessibility observers, a window view reads state and retries a lost picture every 1.5 s while open, and the overlay reads the window list every 0.12 s while a step runs. Taking a window or a step needs that access anyway; ScreenCaptureKit cannot replace it, because a window capture never shows the windows covering it</td></tr>
+<tr><th scope="row">Network checks and channel long-polls</th><td>Releases, plugin updates and subscription catalogues are fetched every few hours; a channel adapter's long-poll is how its service delivers messages</td></tr>
+<tr><th scope="row">Daily and ten-minute schedules</th><td>Memory sleep, tool output collection and clearing a version's start records after ten minutes of service sleep until their time</td></tr>
+<tr><th scope="row">Request timeouts and backoff</th><td>A request that gets no answer gives up after its timeout, and a failed read is asked again with growing gaps</td></tr>
+</tbody>
+</table>

@@ -94,6 +94,24 @@ const LIVE_SIDE_LABEL: Record<CanvasDockSide & ("left" | "right" | "top" | "bott
   top: ["Release to split, on top", "松开以分屏，放在上面"],
   bottom: ["Release to split, below", "松开以分屏，放在下面"],
 };
+/** The window on screen under the pointer: the active tab, the tabs it
+ *  shares the canvas with, and the canvas box. Null off the canvas. */
+function canvasUnder(x: number, y: number): { targetId: string; members: string[]; box: DOMRect } | null {
+  const root = document.querySelector<HTMLElement>("[data-canvas-root]");
+  const s = useCenterTabs.getState();
+  const targetId = s.activeId;
+  if (!root || !targetId) return null;
+  const box = root.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0 || x < box.left || x > box.right || y < box.top || y > box.bottom) return null;
+  return { targetId, members: findCenterTabGroup(s.groups, targetId)?.memberIds ?? [targetId], box };
+}
+/** The dragged tab is part of the window on screen and the pointer is
+ *  over that window: it cannot dock beside itself, so the drag goes to
+ *  the overview instead. */
+export function draggingOverOwnWindow(x: number, y: number, sourceIds: string[]): boolean {
+  const hit = sourceIds.length ? canvasUnder(x, y) : null;
+  return Boolean(hit && sourceIds.some(id => hit.members.includes(id)));
+}
 /** A tab dragged out of the strip over the window on screen, with no
  *  overview open: it docks beside that window, on the side under the
  *  pointer (outer quarters left and right, otherwise the top or bottom
@@ -101,14 +119,9 @@ const LIVE_SIDE_LABEL: Record<CanvasDockSide & ("left" | "right" | "top" | "bott
  *  or when the dragged tab is already part of the window shown. */
 export function liveCanvasDropAt(x: number, y: number, sourceIds: string[]): CanvasDrop | null {
   if (overviewOpen() || !sourceIds.length) return null;
-  const root = document.querySelector<HTMLElement>("[data-canvas-root]");
-  const s = useCenterTabs.getState();
-  const targetId = s.activeId;
-  if (!root || !targetId) return null;
-  const members = findCenterTabGroup(s.groups, targetId)?.memberIds ?? [targetId];
-  if (sourceIds.some(id => members.includes(id))) return null;
-  const b = root.getBoundingClientRect();
-  if (b.width <= 0 || b.height <= 0 || x < b.left || x > b.right || y < b.top || y > b.bottom) return null;
+  const hit = canvasUnder(x, y);
+  if (!hit || sourceIds.some(id => hit.members.includes(id))) return null;
+  const { targetId, box: b } = hit;
   const px = (x - b.left) / b.width, py = (y - b.top) / b.height;
   const side = px < OVERVIEW_SIDE ? "left" : px > 1 - OVERVIEW_SIDE ? "right" : py < 0.5 ? "top" : "bottom";
   const rect: Rect = side === "left" ? { left: b.left, top: b.top, width: b.width / 2, height: b.height }

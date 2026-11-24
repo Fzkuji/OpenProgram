@@ -1,5 +1,7 @@
 """JobRunner recovery operations."""
 from __future__ import annotations
+import time
+
 from openprogram.runtime.jobs.runner import shared
 
 
@@ -220,11 +222,7 @@ class RecoveryOperations:
         self._recover_deferred_resumes()
         self._recover_deferred_inboxes()
         self._recover_pending_notices()
-        try:
-            from openprogram.operations.self_update.delivery.delivery import deliver_pending
-            deliver_pending()
-        except Exception as exc:
-            shared._log.warning("self-update result delivery unavailable: %s", type(exc).__name__)
+        self._deliver_self_update_results()
         if (
             result.finalized_preparing
             or result.released_missing
@@ -394,7 +392,17 @@ class RecoveryOperations:
         from openprogram.runtime.jobs import handoff
 
         try:
-            jobs = self.list_jobs()
+            listed = self.__dict__.pop("_pass_jobs", None)
+            if listed is None:
+                jobs = self.list_jobs()
+            else:
+                # This pass already walked every conversation. A notice can
+                # only wait where a Job was still open or had one waiting,
+                # so those conversations alone are read again, as they are
+                # now; the others would be a second walk for nothing.
+                sessions = sorted({job.parent_session_id for job in listed
+                                   if job.notice_pending or not shared.is_terminal(job.status)})
+                jobs = [job for session_id in sessions for job in shared._store_list(session_id)]
         except Exception:
             shared._log.exception("failed to list jobs with unsent notices")
             return
@@ -410,22 +418,77 @@ class RecoveryOperations:
                     shared._log.exception("failed to replay the notice of job %s", job.id)
 
 
-    def _reconcile_loop(self) -> None:
-        while not self._shutdown_event.wait(shared._RECONCILE_SECS):
-            self._reconcile_resources()
-            try:
-                self._execution_store.tables.forget_finished_sessions(shared._FINISHED_SESSION_MEMORY_SECS)
-            except Exception:
-                shared._log.exception("finished sessions were not released from memory")
-            try:
-                from openprogram.operations.self_update.delivery.restart import reconcile
-                reconcile(self)
-                from openprogram.operations.self_update.control.continuation import reconcile as continue_updates
-                continue_updates(self)
-                from openprogram.runtime.execution.recovery.restart import reconcile as resume_interrupted
-                resume_interrupted(self)
-                from openprogram.operations.self_update.control.recovery import stop_parked_stages
-                stop_parked_stages(self)
-            except Exception:
+    def _deliver_self_update_results(self) -> None:
+        try:
+            from openprogram.operations.self_update.delivery.delivery import deliver_pending
+            deliver_pending()
+        except Exception as exc:
+            from openprogram.operations.self_update.types import ConcurrentUpdateError
+            if isinstance(exc, ConcurrentUpdateError):
+                # Held by another process for a moment; delivered on the next pass.
+                shared._log.info("self-update state is busy; results delivered on the next pass")
+            else:
+                shared._log.warning("self-update result delivery unavailable: %s", type(exc).__name__)
+
+    def _reconcile_self_updates(self) -> None:
+        try:
+            from openprogram.operations.self_update.delivery.restart import reconcile
+            reconcile(self)
+            from openprogram.operations.self_update.control.continuation import reconcile as continue_updates
+            continue_updates(self)
+            from openprogram.runtime.execution.recovery.restart import reconcile as resume_interrupted
+            resume_interrupted(self)
+            from openprogram.operations.self_update.control.recovery import stop_parked_stages
+            stop_parked_stages(self)
+        except Exception as exc:
+            from openprogram.operations.self_update.types import ConcurrentUpdateError
+            if isinstance(exc, ConcurrentUpdateError):
+                # Another process holds the update state for a moment; the
+                # next pass, five seconds on, does this work.
+                shared._log.info("self-update state is busy; reconciled on the next pass")
+            else:
                 shared._log.exception("self-update restart reconciliation failed")
+
+    def _reconcile_loop(self) -> None:
+        """Repair passes, woken by changes instead of every few seconds.
+
+        A pass runs after a run-table commit by another thread or a change
+        to a self-update file, at the next deadline of a durable wait, and
+        every ``_RECONCILE_RESYNC_SECS`` in case a change went unseen. Passes
+        are at least ``_RECONCILE_SECS`` apart, which is how often they ran
+        before whether anything had changed or not.
+        """
+        if self._shutdown_event.wait(shared._RECONCILE_SECS):
+            return
+        while not self._shutdown_event.is_set():
+            started = time.monotonic()
+            self._reconcile_wake.clear()
+            self._reconcile_pass()
+            timeout = shared._RECONCILE_RESYNC_SECS
+            try:
+                due = self._execution_waits.next_due()
+            except Exception:
+                shared._log.exception("durable wait deadlines were not read")
+                due = None
+            if due is not None:
+                timeout = min(timeout, max(0.0, due - time.time()))
+            self._reconcile_wake.wait(timeout)
+            rest = shared._RECONCILE_SECS - (time.monotonic() - started)
+            if rest > 0 and self._shutdown_event.wait(rest):
+                return
+
+    def _reconcile_pass(self) -> None:
+        self._reconcile_resources()
+        try:
+            self._execution_store.tables.forget_finished_sessions(shared._FINISHED_SESSION_MEMORY_SECS)
+        except Exception:
+            shared._log.exception("finished sessions were not released from memory")
+        try:
+            from openprogram.state.store.session import default_store as sessions
+            from openprogram.state.store.session.files.session_state_file import release_idle_run_rows
+            sessions().release_idle(shared._IDLE_SESSION_MEMORY_SECS)
+            release_idle_run_rows(shared._IDLE_RUN_ROWS_MEMORY_SECS)
+        except Exception:
+            shared._log.exception("idle sessions were not released from memory")
+        self._reconcile_self_updates()
 

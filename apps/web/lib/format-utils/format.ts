@@ -261,9 +261,8 @@ export function highlightPython(code: string): string {
 
 /** Relative time like "3m ago" / "3 分钟前". Shared by the Chats and
  *  Projects pages. `ts` is a unix seconds timestamp. */
-export function formatRelativeTime(ts: number, locale: "en" | "zh"): string {
+export function formatRelativeTime(ts: number, locale: "en" | "zh", now = Date.now() / 1000): string {
   if (!ts) return "";
-  const now = Date.now() / 1000;
   const diff = Math.max(0, now - ts);
   if (locale === "zh") {
     if (diff < 60) return "刚刚";

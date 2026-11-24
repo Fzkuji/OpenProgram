@@ -1,0 +1,83 @@
+<title>Worker memory</title>
+<meta name="description" content="What a Worker keeps in memory, when each part is let go, and how to see what a running Worker holds.">
+<meta name="covers" content="openprogram/interfaces/server/server_runtime/memory_sample.py openprogram/interfaces/server/server_runtime/thread_sample.py openprogram/state/store/session/session_store/service.py openprogram/state/store/session/files/session_state_file.py openprogram/runtime/execution/projections/dag.py openprogram/models/providers/catalog/sources/models_dev.py openprogram/programs/applications/browser/pages.py openprogram/state/store/session/files/tool_output_gc.py openprogram/runtime/context/token_accounting/tokens.py openprogram/models/auth/login/login_method_registry.py openprogram/state/config.py openprogram/runtime/context/token_accounting/session_stats.py openprogram/extensions/skills/loader.py openprogram/extensions/skills/watcher.py openprogram/operations/self_update/store.py openprogram/programs/_host/watcher.py">
+<h1>Worker memory</h1>
+
+<p>A Worker holds only what something is using. Everything below is read from files again when asked for, so letting it go loses nothing.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Held in memory</th><th scope="col">Size</th><th scope="col">Let go</th></tr></thead>
+<tbody>
+<tr><th scope="row">A conversation read whole (<code translate="no">SessionStore._sessions</code>)</th><td>2–38 MB each</td><td>30 minutes after it was last asked for (<code translate="no">release_idle</code>), or when 256 are held</td></tr>
+<tr><th scope="row">Run rows read beside a session's documents (<code translate="no">session_state_file</code>)</th><td>60 MB over 640 conversations</td><td>10 minutes after they were last read (<code translate="no">release_idle_run_rows</code>); the documents stay</td></tr>
+<tr><th scope="row">Run tables of a session (<code translate="no">RunTables</code>)</th><td>Up to 5 MB each</td><td>An hour after the session's last change or question, when nothing in it is unfinished; the sessions read at start because they held a Job leave at once when nothing in them is unfinished</td></tr>
+<tr><th scope="row">The models.dev catalogue</th><td>7 MB</td><td>Never; only the fields that are read are kept, equal values are shared. The file on disk stays whole</td></tr>
+</tbody>
+</table>
+
+<p>The Job runner's reconcile pass (<code translate="no">_reconcile_loop</code>) does the letting go; it runs at least once a minute (<a href="change-notification.html">Change notification</a>).</p>
+
+<h2 id="restart">The restart pass</h2>
+
+<p><code translate="no">reconcile_interrupted_runs</code> marks what a dead Worker left running. It reads a conversation whole, so it reads only the ones that can hold such work:</p>
+
+<ul>
+<li>those with a log written since the last finished pass began: every node, run row and Goal state is a line of the session's logs;</li>
+<li>those the last pass left with a run, a wait or an attached Job open, or could not lock;</li>
+<li>those with an unfinished-run marker, or a row that says running.</li>
+</ul>
+
+<p>A finished pass records its start and the open conversations in <code translate="no">projects/.restart-reconciled.json</code>. Without that file every conversation is read. Each one read leaves memory when its turn in the pass ends (<code translate="no">passing_through</code>).</p>
+
+<h2 id="repeated">Reads that repeat</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Read</th><th scope="col">When</th><th scope="col">How it stays small</th></tr></thead>
+<tbody>
+<tr><th scope="row">A conversation's resources</th><td>When the conversation comes on screen and each time it changes</td><td>The branch projection reads the store's own nodes instead of a copy of each, one projection serves the rows and the current branch, and only the conversation's pages are read from the resource tables: 25 ms for a conversation of 1,600 nodes, against 330 ms. Control state is brought up to date for live pages only, and the conversation's executions are worked out once per read: 5 ms with 120 pages</td></tr>
+<tr><th scope="row">Token counts of a conversation's messages</th><td>Every open, turn and compaction check</td><td>A count is remembered by the text's length and hash, not the text; the context ring of a long conversation takes 0.2 s after it is opened, against 0.5 s</td></tr>
+<tr><th scope="row">A conversation's context breakdown</th><td>Three times at once when a conversation is opened: the panel twice and the ring</td><td>Callers that ask for the same branch at the same time share one computation and each gets its own copy; nothing is kept afterwards. Three at once take what one takes (0.08 s on a long conversation already read, against 0.25 s). It reads the store's own nodes instead of a copy of each: 0.12 s for a conversation of 3,300 nodes, against 0.17 s</td></tr>
+<tr><th scope="row">Resources of the conversations that own retained web tabs</th><td>Once after the App reconnects</td><td>Only the conversations on screen are read ahead; a tab whose address the native page reported comes back at that address, and its conversation is read when it is opened. Reading all 22 took 3.8 s of the Worker in the first 13 s after a restart and opened each conversation whole</td></tr>
+<tr><th scope="row">A refresh of the models.dev catalogue</th><td>When the copy on disk is over an hour old</td><td>One wanted in the first 20 s of a process waits until then: fetching, parsing and rewriting 7 MB took 0.3 s of the interpreter beside the first screen, which is served from the copy on disk either way</td></tr>
+<tr><th scope="row">The page records of a window</th><td>Each time the App registers its window again, so after every restart</td><td>The window's pages are marked in one transaction instead of one each, the store's tables are prepared once per process instead of at every call, and commits sync at checkpoints. A window of 99 pages kept a thread in this pass for 10 of the first 30 s</td></tr>
+<tr><th scope="row">The stamp of every package and enabled application</th><td>When a file under a package or an application changes, by the Programs watcher</td><td>Files are read from the directory listing with one <code translate="no">stat</code> each and plain strings, not a path object and two <code translate="no">stat</code> calls per file: 5 ms a pass, against 80 ms. The pass was the largest use of the processor in an idle Worker</td></tr>
+<tr><th scope="row">The self-update records</th><td>Three times at each pass of the job reconciler</td><td>A finished update is parsed again only when one of its three files is another file or has changed, and its restart record is passed over, without the lock, once nothing in it is left to continue. Seventeen finished updates took 0.5 s of every 30 s</td></tr>
+<tr><th scope="row">The skill folders</th><td>When a file event arrives under a skill root, by the skills watcher</td><td>The folders are walked again only when a directory or a <code translate="no">SKILL.md</code> has another time or size: 0.1 ms a pass, against 12 ms for two skills that hold 12,000 other files</td></tr>
+<tr><th scope="row">The Git state of each user package</th><td>When a Worker starts, and when a package changes</td><td>Asked side by side, a process each: 20 ms for five packages, against 70 ms one after another</td></tr>
+<tr><th scope="row">The list of skills</th><td>Every turn, context breakdown and skills request</td><td>A source is walked again only when one of its directories or <code translate="no">SKILL.md</code> files has changed since the last walk: 0.1 ms, against 12 ms for 370 directories holding two skills</td></tr>
+<tr><th scope="row">Which company a provider belongs to</th><td>Once per stored credential looked up, dozens of times in one model list</td><td>The normalised catalogue is kept until the catalogue changes, and the config file is parsed only when its bytes change: the enabled-model list takes 16 ms, against 62 ms</td></tr>
+<tr><th scope="row">The tokenizer's vocabulary</th><td>Once per Worker</td><td>Read in beside the start (0.3 s), not inside the first conversation opened</td></tr>
+<tr><th scope="row">Tool output collection</th><td>Ten minutes after a start, then daily</td><td>Record files are scanned as bytes, one megabyte at a time: 150 MB at its peak over 900 MB of logs, against 2.7 GB when each file was read whole as text</td></tr>
+</tbody>
+</table>
+
+<p>The Worker log names each startup step that took 50 ms or more (<code translate="no">[startup] … took N ms</code>); requests wait for those steps.</p>
+<p>An empty file <code translate="no">logs/sample-threads</code> asks for a thread sample: for half a minute the Worker notes the call each thread is in, and writes those calls and the processor time each thread used to <code translate="no">logs/thread-sample.txt</code>.</p>
+<p>A thread listed at a call may be waiting there; its processor time says whether it worked. A request left before the Worker starts is taken as it starts.</p>
+
+<h2 id="sample">Seeing what a Worker holds</h2>
+
+<p>Create <code translate="no">logs/sample-memory</code> in the state directory. The Worker writes <code translate="no">logs/memory-sample.txt</code> within a second and removes the request.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Section</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Process size</th><td>Resident memory of the Worker</td></tr>
+<tr><th scope="row">By type</th><td>Count and bytes of each object type</td></tr>
+<tr><th scope="row">By holder</th><td>What each module-level name reaches, measured alone</td></tr>
+<tr><th scope="row">Sessions in memory</th><td>Cached conversations, grouped by the call that first read each in</td></tr>
+<tr><th scope="row">Run tables in memory</th><td>Sessions whose run tables are loaded, grouped by the call that read each in</td></tr>
+<tr><th scope="row">Large strings</th><td>Strings of 50,000 characters or more, by the chain of objects holding them; never their text</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Measurements behind this design</summary>
+<ul>
+<li>The restart pass read all 640 conversations and left them cached: 106 conversations held 260 MB after 45 seconds, and the Worker stayed near 950 MB. Reading them took it to 700 MB in its first seconds even when each was let go.</li>
+<li>The catalogue took 26 MB as parsed; 10,021 models repeat a few hundred distinct values.</li>
+<li>With 640 conversations and 15 open in the App, a Worker 45 seconds after start takes 130 MB, against 950 MB; its peak is 420 MB, against 1.8 GB. What remains is the open conversations: the App reads each one's resources, which reads the conversation and its run tables.</li>
+<li>While the pass read every conversation, the first requests of a page took seconds (resources 3.9 s, enabled models 3.3 s); the same requests take 60–170 ms once it reads only changed ones.</li>
+<li>Forcing a collection after each conversation did not lower the peak (351 MB against 366 MB over 106 conversations), so the pass reads fewer conversations instead.</li>
+</ul>
+</details>

@@ -5,6 +5,7 @@
  * on the current branch; a rewind is never partly applied.
  */
 import { useSessionStore } from "@/lib/session-store";
+import { onReconnected } from "@/lib/net/ws/change-bus";
 import { translateText } from "@/lib/i18n";
 import { dismissToast, showToast } from "@/lib/format-utils/toast";
 import { absRawFileUrl } from "@/lib/files/files-shared";
@@ -247,12 +248,46 @@ export async function confirmRewind(): Promise<void> {
   }
 }
 
-/** How long "Stop it, then rewind" waits between tries for the stopped
- *  branch to let go of the conversation's files. */
-const STOP_THEN_REWIND_WAITS_MS = [400, 800, 1500, 3000, 5000];
+/** How long "Stop it, then rewind" waits in all for the stopped branch to
+ *  let go of the conversation's files. */
+const STOP_THEN_REWIND_DEADLINE_MS = 15_000;
+
+/** Resolves at the next sign that a run in `sessionId` moved: its run slot
+ *  changed, an execution of it (or `executionId`) reported, or the socket
+ *  reopened; false when `deadline` (epoch ms) passes first or on `stop`. */
+function runMoved(sessionId: string, executionId: string | undefined, deadline: number): { moved: Promise<boolean>; stop: () => void } {
+  let stop = () => {};
+  let end: (moved: boolean) => void = () => {};
+  const moved = new Promise<boolean>((resolve) => {
+    let done = false;
+    const finish = (value: boolean) => { if (done) return; done = true; stop(); resolve(value); };
+    end = finish;
+    const offRun = useSessionStore.subscribe((state, previous) => {
+      if (state.runningTasks[sessionId] !== previous.runningTasks[sessionId]) finish(true);
+    });
+    const onExecution = (event: Event) => {
+      const run = (event as CustomEvent<{ execution?: { execution_id?: string; session_id?: string } }>).detail?.execution;
+      if (!run || run.execution_id === executionId || run.session_id === sessionId) finish(true);
+    };
+    const events = typeof window !== "undefined" && typeof window.addEventListener === "function" ? window : null;
+    events?.addEventListener("op:execution-update", onExecution);
+    events?.addEventListener("op:job-status", onExecution);
+    const offOpen = onReconnected(() => finish(true));
+    const timer = setTimeout(() => finish(false), Math.max(0, deadline - Date.now()));
+    stop = () => {
+      offRun();
+      events?.removeEventListener("op:execution-update", onExecution);
+      events?.removeEventListener("op:job-status", onExecution);
+      offOpen();
+      clearTimeout(timer);
+    };
+  });
+  return { moved, stop: () => end(false) };
+}
 
 /** The refusal's "Stop it, then rewind": stop the branch in the way, then
- *  apply the same rewind once that branch has ended. */
+ *  apply the same rewind once that branch has ended. It tries again each
+ *  time the session's run moves, never on a timer, until one deadline. */
 export async function stopBlockingThenRewind(): Promise<void> {
   const flow = useRewindStore.getState().flow;
   const blocking = flow?.blocking;
@@ -269,17 +304,25 @@ export async function stopBlockingThenRewind(): Promise<void> {
   const same = (other?: { execution_id?: string; op_id?: string } | null) =>
     Boolean(other) && other?.execution_id === blocking.execution_id && other?.op_id === blocking.op_id;
   patchFlow({ phase: "running", error: null, blocking: null });
-  for (const wait of STOP_THEN_REWIND_WAITS_MS) {
-    await new Promise((resolve) => setTimeout(resolve, wait));
+  const deadline = Date.now() + STOP_THEN_REWIND_DEADLINE_MS;
+  let next = runMoved(flow.sessionId, blocking.execution_id, deadline);
+  while (await next.moved) {
     const current = useRewindStore.getState().flow;
     if (!current || current.sessionId !== flow.sessionId) return;
+    // Listen before asking, so a move during the request is not missed.
+    next = runMoved(flow.sessionId, blocking.execution_id, deadline);
     patchFlow({ phase: "ready" });
     await confirmRewind();
     const after = useRewindStore.getState().flow;
     // Done, or refused for another reason the dialog now shows.
-    if (!after || !same(after.blocking)) return;
+    if (!after || !same(after.blocking)) {
+      next.stop();
+      return;
+    }
     patchFlow({ phase: "running", error: null, blocking: null });
   }
+  const current = useRewindStore.getState().flow;
+  if (!current || current.sessionId !== flow.sessionId) return;
   patchFlow({
     phase: "ready",
     blocking,
@@ -383,19 +426,31 @@ export async function openRewindPicker(sessionId: string, options: { fromError?:
     return;
   }
   if (options.fromError) useSessionStore.getState().setComposerInputFor(sessionId, "");
-  useRewindStore.setState({ picker: { sessionId, points: null } });
+  // The list read last time opens at once; the fresh read replaces it.
+  const held = rewindPointsRead.get(sessionId) ?? null;
+  useRewindStore.setState({ picker: { sessionId, points: held } });
   try {
     const reply = await post<{ points?: RewindPoint[]; error?: string }>(
       "/api/chat/rewind_points", { session_id: sessionId },
     );
     if (!reply.ok) throw new Error(reply.data.error || String(reply.status));
+    const points = [...(reply.data.points ?? [])].reverse();
+    rewindPointsRead.set(sessionId, points);
     if (useRewindStore.getState().picker?.sessionId !== sessionId) return;
-    useRewindStore.setState({ picker: { sessionId, points: [...(reply.data.points ?? [])].reverse() } });
-  } catch {
+    useRewindStore.setState({ picker: { sessionId, points } });
+  } catch (error) {
+    if (held) {
+      // The list already open stays; a point that is gone is refused on pick.
+      console.warn("rewind points refresh failed", { sessionId, error });
+      return;
+    }
     useRewindStore.setState({ picker: null });
     showToast(translateText("Couldn't read this conversation's messages.", "未能读取这段对话的消息。"), { tone: "error" });
   }
 }
+
+/** Each conversation's rewind points as last read, oldest first. */
+const rewindPointsRead = new Map<string, RewindPoint[]>();
 
 export function closeRewindPicker(): void {
   useRewindStore.setState({ picker: null });
@@ -403,6 +458,8 @@ export function closeRewindPicker(): void {
 
 export function pickRewindPoint(sessionId: string, point: RewindPoint): void {
   closeRewindPicker();
+  // The rewind changes which messages can be gone back to.
+  rewindPointsRead.delete(sessionId);
   void requestRewind(sessionId, point.msg_id, point.user_text ?? "");
 }
 

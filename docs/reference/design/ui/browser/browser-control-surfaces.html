@@ -32,8 +32,17 @@
 <tbody>
 <tr><th scope="row">Open page</th><td>Opens it in a tab</td></tr>
 <tr><th scope="row">Close preview (X)</th><td>Hides; page and session resource stay, Resources can reopen</td></tr>
-<tr><th scope="row">More → Automatically show the page the Agent is using</th><td>Checked follows the Agent's page, unchecked keeps the current one. Not always-on-top; no effect on execution. Native and Web menus agree.</td></tr>
+<tr><th scope="row">More → Automatically show what the Agent is using</th><td>Checked follows the Agent's page, unchecked keeps the current one. Not always-on-top; no effect on execution. Native and Web menus agree.</td></tr>
 <tr><th scope="row">Absent</th><td>Pin, expand or shrink buttons. Dragging and eight-direction resizing stay; legacy expanded geometry stays compatible.</td></tr>
+</tbody>
+</table>
+<h2 id="resources-ownership">What Resources keeps</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Page the conversation opened</th><td>Belongs to that conversation and stays listed until it is closed.</td></tr>
+<tr><th scope="row">Closed page</th><td>Leaves the list, and its tab goes with it unless the tab is in the strip or on the canvas.</td></tr>
+<tr><th scope="row">Another application's window</th><td>Shared by everyone, so it is listed only while the Agent operates it and released after each call.</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

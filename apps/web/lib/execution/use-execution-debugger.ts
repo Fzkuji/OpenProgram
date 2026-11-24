@@ -30,7 +30,7 @@ import {
 } from "@/lib/net/execution/execution-client";
 import "@/lib/net/ws/ws-events";
 import { useSessionStore } from "@/lib/session-store";
-import { activityReadFreshFor, activityReadIsFresh, lastActivityRead, activityReadStart, rememberActivityRead } from "./activity-reads";
+import { activityReadIsFresh, activityReadKey, lastActivityRead, activityReadStart, rememberActivityRead } from "./activity-reads";
 
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
@@ -82,12 +82,14 @@ type ExecutionList = {
   fetchedAt: number;
 };
 
-/** A periodic read follows the last one by this long, and event-driven
- *  reads follow each other at least `READ_GAP_MS` apart. */
-const POLL_MS = 30000;
+/** The list is read on entry and when an execution or a Job moves (their
+ *  frames), on reconnect, focus and showing again: never on a timer while
+ *  reads work. Event-driven reads follow each other at least `READ_GAP_MS`
+ *  apart. */
 const READ_GAP_MS = 1000;
-/** A failed read is tried again after 2, 4, 8 … seconds, up to `POLL_MS`. */
-const retryDelay = (failures: number) => Math.min(POLL_MS, 1000 * 2 ** failures);
+/** A failed read is tried again after 2, 4, 8 … seconds, up to `RETRY_MAX_MS`. */
+const RETRY_MAX_MS = 30000;
+const retryDelay = (failures: number) => Math.min(RETRY_MAX_MS, 1000 * 2 ** failures);
 
 function errorMessage(error: unknown): string {
   return error instanceof ExecutionApiError || error instanceof Error
@@ -95,10 +97,36 @@ function errorMessage(error: unknown): string {
     : "Execution request failed.";
 }
 
+/** The record of one execution as the inspector last read it; an open run in
+ *  Activity keeps the same shape (use-run-inspection.ts), so either draws it. */
+type InspectionRead = {
+  events: PersistedExecutionEvent[];
+  cursor: EventCursor | null;
+  checkpoints: import("@/components/right-sidebar/debugger/debugger-panel").CheckpointInspector[];
+  waits: import("@/lib/execution/execution-debugger").DurableWait[];
+  drafts: RevisionDraft[];
+  unresolvedEffects: UnresolvedEffect[];
+};
+
+const newestOf = (snapshots: Record<string, ExecutionSnapshot>) =>
+  Object.values(snapshots).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id;
+
+/** The execution the inspector would show from the conversation's last read, and its last record. */
+function keptInspection(sessionId: string | null, requestedExecutionId: string | null | undefined, inspect: boolean) {
+  if (!inspect || !sessionId) return null;
+  const list = lastActivityRead<ExecutionList>("executions", sessionId);
+  if (!list) return null;
+  const id = requestedExecutionId && list.snapshots[requestedExecutionId] ? requestedExecutionId : newestOf(list.snapshots);
+  const read = id ? lastActivityRead<InspectionRead>("inspection", activityReadKey(sessionId, id)) : null;
+  return id && read ? { id, read } : null;
+}
+
 export function useExecutionDebugger(active: boolean, sessionId: string | null, requestedExecutionId?: string | null, inspect = true): ExecutionDebuggerController {
   // The conversation's last read draws at once, from this page's earlier
-  // visit when there was one; a new read replaces it in place.
+  // visit when there was one; a new read replaces it in place. So does the
+  // record of the execution the inspector shows first.
   const [read, setRead] = useState<ExecutionList | null>(() => lastActivityRead<ExecutionList>("executions", sessionId));
+  const [kept] = useState(() => keptInspection(sessionId, requestedExecutionId, inspect));
   const list = read?.sessionId === sessionId ? read : lastActivityRead<ExecutionList>("executions", sessionId);
   const snapshots = useMemo(() => list?.snapshots ?? {}, [list]);
   const branches = useMemo(() => list?.branches ?? [], [list]);
@@ -110,13 +138,13 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       return base ? { ...base, snapshots: update(base.snapshots) } : current;
     });
   }, [sessionId]);
-  const [events, setEvents] = useState<PersistedExecutionEvent[]>([]);
+  const [events, setEvents] = useState<PersistedExecutionEvent[]>(() => kept?.read.events ?? []);
   const [debuggerData, setDebuggerData] = useState<Record<string, {
     checkpoints: import("@/components/right-sidebar/debugger/debugger-panel").CheckpointInspector[];
     waits: import("@/lib/execution/execution-debugger").DurableWait[];
     drafts: RevisionDraft[];
     unresolvedEffects?: UnresolvedEffect[];
-  }>>({});
+  }>>(() => kept ? { [kept.id]: { checkpoints: kept.read.checkpoints, waits: kept.read.waits, drafts: kept.read.drafts, unresolvedEffects: kept.read.unresolvedEffects } } : {});
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [connection, setConnection] = useState<DebuggerConnection>({ state: "reconnecting" });
   const refreshToken = useRef(0);
@@ -129,7 +157,12 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     return () => { mounted.current = false; refreshes.current++; refreshController.current?.abort(); };
   }, []);
 
+  // Another conversation starts from nothing of this one's; the first one
+  // keeps what was drawn from its last read.
+  const shownSession = useRef(sessionId);
   useEffect(() => {
+    if (shownSession.current === sessionId) return;
+    shownSession.current = sessionId;
     setEvents([]);
     setDebuggerData({}); setSelectedExecutionId(null);
     setConnection({ state: "reconnecting" });
@@ -151,6 +184,11 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       const controller = new AbortController();
       refreshController.current = controller;
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
+      // The inspector's execution, when it is already known, has its record
+      // asked for together with the list instead of after it.
+      const knownId = inspect ? [selectedExecutionId, requestedExecutionId].find(Boolean) || null : null;
+      const early = knownId ? loadDebuggerData(knownId, signal) : null;
+      early?.catch(() => undefined);
       try {
         const list = await getSessionExecutions(sessionId, signal);
         const next: Record<string, ExecutionSnapshot> = {};
@@ -161,17 +199,20 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
           if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
         }
         const inspectionId = inspect ? ([selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
-          || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id) : undefined;
+          || newestOf(next)) : undefined;
         let history: PersistedExecutionEvent[] = [];
         if (inspectionId) {
-          const [replay] = await Promise.all([
+          const [replay, state] = await Promise.all([
             getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal, sessionId),
-            loadDebuggerData(inspectionId, signal),
+            inspectionId === knownId && early ? early : loadDebuggerData(inspectionId, signal),
           ]);
           if (replay.snapshot?.execution_id !== inspectionId || replay.snapshot.session_id !== next[inspectionId].session_id) throw new Error("Execution does not belong to this conversation.");
           next[inspectionId] = { ...next[inspectionId], ...replay.snapshot };
           if (replay.event_cursor) nextCursors[inspectionId] = replay.event_cursor;
           history = replay.events || [];
+          rememberActivityRead<InspectionRead>("inspection", activityReadKey(sessionId, inspectionId), {
+            events: history, cursor: nextCursors[inspectionId] || null, ...inspectionFromDebuggerState(state),
+          }, startedAt);
         }
         if (!mounted.current || token !== refreshToken.current || signal.aborted) return false;
         const read: ExecutionList = { sessionId, snapshots: next, branches: list.branches || [], cursors: nextCursors, fetchedAt: Date.now() };
@@ -182,6 +223,8 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
         return true;
       } catch (error) {
         if (!mounted.current || token !== refreshToken.current || controller.signal.aborted) return false;
+        // What was read stays on screen; the read is tried again behind it.
+        console.warn("Activity: could not read executions", error);
         setConnection({ state: "stale", message: errorMessage(error), errorSessionId: sessionId });
         return false;
       } finally {
@@ -221,7 +264,8 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
         } while (dirty && !cancelled && visible());
       } finally {
         reading = false;
-        if (!cancelled) timer = setTimeout(update, read ? POLL_MS : retryDelay(failures));
+        // Only a failed read comes back on its own, later each time.
+        if (!cancelled && !read) timer = setTimeout(update, retryDelay(failures));
       }
     };
     // Events invalidate the authorized list, including newly created child sessions.
@@ -236,10 +280,9 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     window.addEventListener("focus", onUpdate);
     document.addEventListener("visibilitychange", onUpdate);
     // Coming back to a read nothing has changed since needs no new one; the
-    // inspector reads events no earlier visit kept, so it always reads.
-    if (!inspect && activityReadIsFresh("executions", sessionId)) {
-      timer = setTimeout(update, activityReadFreshFor("executions", sessionId));
-    } else void update();
+    // next change reads. The inspector reads events no earlier visit kept,
+    // so it always reads.
+    if (inspect || !activityReadIsFresh("executions", sessionId)) void update();
     const refreshes = refreshToken;
     return () => {
       cancelled = true;

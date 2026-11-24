@@ -1,7 +1,7 @@
 """The operated window stays under a live capture so macOS marks it, then is released."""
 import threading
 
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import window_watch
+from openprogram.programs.tools.computer_use.computer_use.desktop import window_watch
 
 
 # Threads alive before a test's watch started; _settle waits for the rest.
@@ -95,10 +95,15 @@ def test_a_window_place_counts_the_windows_in_front_of_it():
     assert window_watch.window_place(99, rows) is None
 
 
+def _no_events(_changed):
+    raise RuntimeError("no Accessibility access")
+
+
 def test_a_watched_window_is_reported_until_it_is_released(monkeypatch):
     _fake(monkeypatch)
     places = iter([{"frame": [1, 2, 3, 4], "occluders": []}] * 2 + [{"frame": [5, 6, 3, 4], "occluders": []}] * 100)
-    monkeypatch.setattr(window_watch, "window_place", lambda window_id: next(places))
+    monkeypatch.setattr(window_watch, "window_place", lambda window_id, rows=None: next(places))
+    monkeypatch.setattr(window_watch, "_screen_rows", lambda: [])
     monkeypatch.setattr(window_watch, "REPORT_SECONDS", 0.01)
     reports, moved = [], threading.Event()
 
@@ -107,7 +112,7 @@ def test_a_watched_window_is_reported_until_it_is_released(monkeypatch):
         if len(reports) >= 2:
             moved.set()
 
-    watch = window_watch.WindowWatch(report=report)
+    watch = window_watch.WindowWatch(report=report, make_source=_no_events)
     watch.touch("s", 7, {"app_name": "Calculator", "buttons": [8, 6, 52, 14], "owner": ("conv", "run")})
     assert moved.wait(30)
     watch.release("s")
@@ -117,3 +122,48 @@ def test_a_watched_window_is_reported_until_it_is_released(monkeypatch):
     info, last = reports[-1]
     assert last["active"] is False and info["owner"] == ("conv", "run")
     assert all(payload["app_name"] == "Calculator" and payload["buttons"] == [8, 6, 52, 14] for _, payload in reports)
+
+
+class _Source:
+    def __init__(self, changed):
+        self.changed = changed
+        self.tracked = set()
+        self.closed = False
+
+    def track(self, pids):
+        self.tracked |= set(pids)
+
+    def close(self):
+        self.closed = True
+
+
+def test_window_events_wake_every_reader_and_run_only_while_one_reads():
+    made = []
+    changes = window_watch._Changes(lambda changed: made.append(_Source(changed)) or made[-1])
+    first, second = threading.Event(), threading.Event()
+    assert changes.join(first) is True and changes.join(second) is True
+    assert len(made) == 1, "one source for every watched window"
+    made[0].changed()
+    assert first.is_set() and second.is_set(), "one burst wakes each reader once"
+    changes.track({3, 4})
+    assert made[0].tracked == {3, 4}
+    changes.leave(first)
+    assert not made[0].closed
+    changes.leave(second)
+    assert made[0].closed, "no window watched: no observers"
+    assert changes.join(first) is True and len(made) == 2
+
+
+def test_without_accessibility_the_reader_looks_on_its_own():
+    changes = window_watch._Changes(_no_events)
+    wake = threading.Event()
+    assert changes.join(wake) is False
+    changes.track({1})
+    changes.leave(wake)
+
+
+def test_the_windows_that_can_cover_are_the_ordinary_ones_of_other_processes():
+    from openprogram.programs.tools.computer_use.computer_use.desktop.ax_events import window_owners
+    rows = [{"kCGWindowOwnerPID": 5, "kCGWindowLayer": 0}, {"kCGWindowOwnerPID": 6, "kCGWindowLayer": 25},
+            {"kCGWindowOwnerPID": 9, "kCGWindowLayer": 0}, {"kCGWindowOwnerPID": 0, "kCGWindowLayer": 0}]
+    assert window_owners(rows, own_pid=9) == {5}

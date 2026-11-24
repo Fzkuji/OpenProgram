@@ -1,0 +1,29 @@
+<title>侧栏动态视图</title>
+<meta name="description" content="侧栏铃铛：聊天列表原地切换成需要你处理的对话。">
+<h1>侧栏动态视图</h1>
+
+<p>列表筛选按钮旁的铃铛把侧栏聊天列表原地切换成<strong>动态</strong>：近 7 天里正在运行、等你输入、失败或未读的对话，按天分组，新的在上。再点铃铛或按 <strong>Cmd+Option+U</strong> 回到项目列表。</p>
+<p class="note">参照：Codex 侧栏的铃铛，它在同样的时间范围内做同样的事。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>就是列表本身，不是页面或面板。分区标题显示<strong>动态</strong>，铃铛呈按下状态。</td><td>行上的状态点、Running 面板和任务页的收件箱各自回答了“什么需要我”的一部分；在用户本来就看的位置给一个视图，全部回答，又不离开当前对话。</td></tr>
+<tr><th scope="row">列出谁</th><td>按<a href="session-status.zh.html">会话状态</a>的标记：等待输入、运行中、失败且未读、未读。归档的从不列出。最后活动在 7 天内。</td><td>列表说的正是状态点说的，两者不会矛盾。</td></tr>
+<tr><th scope="row">行</th><td>真实的聊天行（<code translate="no">ConvItem</code>）和它的标记，第二行是项目和状态词（等待、失败、运行），右侧是相对时间，悬停时让位给 ⋯。</td><td>点击、菜单、重命名和打开即清除未读都还是这一行自己的。</td></tr>
+<tr><th scope="row">分组</th><td>今天、昨天，然后是日期</td><td>Codex 也这样分；一周几个标题就够。</td></tr>
+<tr><th scope="row">铃铛小点</th><td>任一未归档对话在等输入时显示琥珀色（<code translate="no">--status-needs-input</code>）</td><td>等待输入是唯一会卡住工作的状态；其余状态可以等用户来看。</td></tr>
+<tr><th scope="row">⋯ 菜单</th><td><strong>全部标为已读</strong>：WebSocket 动作 <code translate="no">mark_sessions_read</code> 清除所列 id 的 <code translate="no">unread</code> 和待处理消息，和逐个打开一样，并广播 <code translate="no">session_updated</code>。不改变任何客户端的焦点。</td><td><code translate="no">mark_session_read</code> 还会记录这个连接的焦点，批量清除不能这样做。</td></tr>
+<tr><th scope="row">为空</th><td>标题加一行浅色文字：“没有要处理的对话”</td><td>侧栏不放加载、报错或重试提示。</td></tr>
+<tr><th scope="row">记住</th><td>每个浏览器的列表视图里的 <code translate="no">activity</code>（<code translate="no">lib/prefs/recents-view.ts</code>）</td><td>和其他列表视图选择一样，它描述的是这个浏览器的显示方式。</td></tr>
+<tr><th scope="row">快捷键</th><td><code translate="no">lib/tabs/navigation/tab-shortcuts.ts</code> 里的 <code translate="no">toggle-activity</code>；App 的“视图”菜单用加速键发送它</td><td>沿用 Codex 的按键；App 的菜单加速键在网页有焦点时也有效。</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li><strong>代码</strong>：<code translate="no">activity.ts</code>（筛选和分组）、<code translate="no">activity-header.tsx</code>（铃铛和菜单）、<code translate="no">sessions-list.tsx</code>（原地切换的列表）、<code translate="no">conv-item.tsx</code>（两行的行）；后端 <code translate="no">openprogram/interfaces/server/ws_actions/session/lifecycle.py</code>。</li>
+<li><strong>测试</strong>：<code translate="no">apps/web/tests/ui/rails/sidebar-activity.test.mjs</code>、<code translate="no">tests/component/webui/runtime/test_session_unread_dot.py</code>。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。</p>

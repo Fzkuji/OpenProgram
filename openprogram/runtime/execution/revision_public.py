@@ -82,9 +82,10 @@ def server_project_binding(store: ExecutionStore, execution: Any) -> dict[str, s
     project_path: Path | None = None
     try:
         from openprogram.state.store.project import project_for_session
+        from openprogram.state.store.project.project_store import folder_is_here
 
         project = project_for_session(execution.session_id)
-        if project is not None and project.path:
+        if project is not None and project.path and folder_is_here(project):
             project_path = Path(project.path).expanduser().resolve()
     except Exception:
         project_path = None

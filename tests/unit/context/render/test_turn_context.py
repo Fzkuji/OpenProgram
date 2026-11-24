@@ -71,3 +71,13 @@ def test_an_engine_that_does_not_report_what_it_shows_is_given_the_note():
     back = tc.Section(current="a", in_prompt="a")
     stored = tc.section_note("open_work", "b")
     assert tc.note_to_send("open_work", back, None, stored=stored) == tc.section_note("open_work", "a")
+
+
+def test_an_application_note_rides_beside_the_message():
+    note = "Task: Introduction. Done when the reviewer approves."
+    items = tc.put([], tc.ATTACHMENT, "date", DATE)
+    items = tc.put(items, tc.ATTACHMENT, "application", note)
+    items = tc.put(items, tc.ATTACHMENT, "run_note", RUN)
+    assert note in tc.notes_text(items, tc.CONVERSATION)
+    assert note in tc.block(tc.node_metadata(items), tc.CONVERSATION)
+    assert tc.put([], tc.ATTACHMENT, "application", "") == []

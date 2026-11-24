@@ -113,11 +113,19 @@ def test_the_model_picker_list_carries_each_providers_state(client, monkeypatch)
     from openprogram.models import listing
     from openprogram.models.usage import provider_views
     monkeypatch.setattr(listing, "list_enabled_models", lambda: [{"provider": "deepseek", "id": "flash"}])
-    monkeypatch.setattr(provider_views, "picker_states", lambda ids: {pid: {"id": pid, "state": "not_configured"}
-                                                                       for pid in ids})
+    probes: list[bool] = []
+
+    def states(ids, probe_local=False):
+        probes.append(probe_local)
+        return {pid: {"id": pid, "state": "not_configured"} for pid in ids}
+
+    monkeypatch.setattr(provider_views, "picker_states", states)
     body = client.get("/api/models/enabled").json()
     assert body["models"] == [{"provider": "deepseek", "id": "flash"}]
     assert body["providers"]["deepseek"]["state"] == "not_configured"
+    # The picker opening asks local servers now; other reads reuse a probe.
+    client.get("/api/models/enabled?probe=local")
+    assert probes == [False, True]
 
 
 def _hooks(monkeypatch, provider: str, **hooks):

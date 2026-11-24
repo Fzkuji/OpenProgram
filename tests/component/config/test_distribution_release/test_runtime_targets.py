@@ -216,7 +216,7 @@ def test_a_linux_library_found_outside_the_runtime_fails_the_build(verifier, tmp
 def test_the_build_checks_native_files_before_writing_the_manifest() -> None:
     source = (RELEASE / "verify-product-runtime.py").read_text(encoding="utf-8")
     write = source[source.index("    if args.write:"):source.index("        manifest = {")]
-    assert "_check_native_files(root, product, this_machine=args.this_machine)" in write
+    assert "_check_native_files(root, product)" in write
     probe = source[source.index("    if args.probe_only:"):source.index('    manifest_path = root')]
     assert "_check_native_files(root, product)" in probe
 
@@ -281,25 +281,3 @@ def test_the_signed_app_smoke_loads_an_unsigned_module_through_both_worker_inter
     full_layout = smoke[smoke.index('manifest="$resources/runtime/runtime-manifest.json"'):]
     assert full_layout.count("--compiled-import-only") == 2
     assert '"$resources/runtime/$worker_helper" -I -B' in full_layout
-
-
-def test_a_runtime_assembled_in_place_is_held_to_this_machines_macos(
-    verifier, tmp_path: Path, monkeypatch
-) -> None:
-    """The local App refresh installs this machine's own packages; a release never passes the flag."""
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    (runtime / "orjson.so").write_bytes(_macho(_minimum(15, 0), _load("/usr/lib/libSystem.B.dylib"), filetype=8))
-    check = verifier["_check_native_files"]
-    monkeypatch.setattr(check.__globals__["sys"], "platform", "darwin")
-    monkeypatch.setattr(check.__globals__["platform"], "mac_ver", lambda: ("15.7.3", ("", "", ""), "arm64"))
-    with pytest.raises(RuntimeError, match="needs macOS 15.0"):
-        check(runtime, {"macosMinimum": "13.5"})
-    check(runtime, {"macosMinimum": "13.5"}, this_machine=True)
-    monkeypatch.setattr(check.__globals__["platform"], "mac_ver", lambda: ("14.2", ("", "", ""), "arm64"))
-    with pytest.raises(RuntimeError, match="needs macOS 15.0"):
-        check(runtime, {"macosMinimum": "13.5"}, this_machine=True)
-    refresh = (ROOT / "scripts" / "local-instances" / "refresh-local-app.sh").read_text(encoding="utf-8")
-    assert "--write --this-machine" in refresh
-    for release_script in ("build-product-runtime.sh", "prepare-desktop-runtime.sh", "archive-product-runtime.sh"):
-        assert "--this-machine" not in (ROOT / "scripts" / "release" / release_script).read_text(encoding="utf-8")

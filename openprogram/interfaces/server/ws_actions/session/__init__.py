@@ -37,6 +37,7 @@ from .listing import build_sessions_list
 from .listing import broadcast_sessions_list
 from .listing import handle_list_sessions
 from .lifecycle import handle_mark_session_read
+from .lifecycle import handle_mark_sessions_read
 from .lifecycle import handle_set_window_hidden
 from .chapter import handle_set_message_chapter
 
@@ -45,6 +46,7 @@ ACTIONS = {
     "close_view": handle_close_view,
     "delete_session": handle_delete_session,
     "mark_session_read": handle_mark_session_read,
+    "mark_sessions_read": handle_mark_sessions_read,
     "set_window_hidden": handle_set_window_hidden,
     "rename_session": handle_rename_session,
     "predict_next_prompt": handle_predict_next_prompt,
@@ -97,6 +99,7 @@ __all__ = [
     "broadcast_sessions_list",
     "handle_list_sessions",
     "handle_mark_session_read",
+    "handle_mark_sessions_read",
     "handle_set_window_hidden",
     "handle_set_message_chapter",
     "ACTIONS",

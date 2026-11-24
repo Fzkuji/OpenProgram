@@ -152,7 +152,7 @@
 <thead><tr><th scope="col">Trigger</th><th scope="col">Call</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row">A turn finishes</th><td><code translate="no">write()</code></td><td>Writes the leading turns that reach <code translate="no">memory.writer.trigger_tokens</code> (8,000, 16,000 default, 32,000)</td></tr>
-<tr><th scope="row">Idle 30 minutes (polled every 5)</th><td><code translate="no">write(force=True)</code></td><td>Repeats until nothing is left, however small; the watcher marks the session processed on the way out</td></tr>
+<tr><th scope="row">Idle 30 minutes (looked at when it goes idle, at most 5 minutes apart)</th><td><code translate="no">write(force=True)</code></td><td>Repeats until nothing is left, however small; the watcher marks the session processed on the way out</td></tr>
 <tr><th scope="row">03:00 local, daily</th><td><code translate="no">reorganize()</code></td><td>Rewrites Topic files</td></tr>
 </tbody>
 </table>
@@ -553,8 +553,7 @@
 <tr><th scope="row"><code translate="no">markdown/</code></th><td>The Topic format</td></tr>
 <tr><th scope="row"><code translate="no">prompts/</code></th><td>What the writer is told</td></tr>
 <tr><th scope="row"><code translate="no">runtime/</code></th><td>Node marks, thresholds, derived views, writer status</td></tr>
-<tr><th scope="row"><code translate="no">agent_runtime/</code></th><td>Claude Code writer, writer result types</td></tr>
-<tr><th scope="row"><code translate="no">writer_agent.py</code></th><td>Hook the runtime registers its writer through</td></tr>
+<tr><th scope="row"><code translate="no">writer_agent.py</code></th><td>Writer result types; hook the runtime registers its writer through</td></tr>
 </tbody>
 </table>
 </details>

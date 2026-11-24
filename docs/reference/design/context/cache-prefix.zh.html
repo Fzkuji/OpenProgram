@@ -70,6 +70,8 @@
 <dt>回复之后</dt>
 <dd><code translate="no">settle_check</code> 看缓存读取。请求完好、缓存读取比上一次下降超过 5% 且超过 2,000 token 时，若间隔超过缓存时长（5 分钟，或设置的 1 小时、24 小时），原因是 <code translate="no">ttl</code>，否则是 <code translate="no">server</code>。</dd>
 <dd>随后这个得到回复的请求连同它的缓存读取成为通道的基线；没有得到回复的请求不改基线。</dd>
+<dt>日志</dt>
+<dd>没有预告的断点会在 Worker 日志里写一行：哪个单元、原因，以及两边文本从第一个不同字符开始的片段。Worker 在内存里为 16 个通道保留上一次得到回复的请求文本；用量库只存摘要。</dd>
 </dl>
 
 <h2 id="lanes">通道</h2>
@@ -127,12 +129,13 @@
 <tr><th scope="row">事件发生时写入</th><td>召回的 memory、运行说明和待发的回退说明在消息存储时写入；各节说明和按视图决定的说明在这一轮第一个请求组装时写入。再次发送的消息保留它的回退说明，其余按同一个视图重新决定</td></tr>
 <tr><th scope="row">按视图决定的说明</th><td>由本请求渲染出的历史决定（<code translate="no">turn_context.turn_view</code>）：日期只在和视图里最后一个日期不同时发；计划模式说明在进入时发，之后每 5 轮发一次，每第 5 条发完整版、其余发简短版，退出时发一条退出说明</td></tr>
 <tr><th scope="row">Goal 和待办说明</th><td>由同一视图决定：Goal 说明在视图里没有一条目标、状态、修订号、预算档位（75%）和验证反馈都相同的完整说明时发完整版，否则发一条带用量的简短版；Goal 的待办列表在 10 轮没有 <code translate="no">todo_*</code> 调用、也没有提醒之后发。压缩丢掉某条说明后，下一轮重新发完整版</td></tr>
-<tr><th scope="row">一个纪元一份工具数组</th><td>对话自己的一轮发出它可能用到的所有工具。取决于这一轮的条件不再把工具拿掉：不在渠道里的 <code translate="no">chat_send</code>、没人回答时的提问工具、不在头部时的 <code translate="no">handoff</code>、定时运行的 <code translate="no">always_on_report</code>、外部文字驱动的报告偏好、memory 关闭时的 memory 工具、没有页面时的 <code translate="no">computer_use_agent</code>、provider 自己搜索时的本地 <code translate="no">web_search</code></td></tr>
+<tr><th scope="row">一个纪元一份工具数组</th><td>对话自己的一轮发出它可能用到的所有工具。取决于这一轮的条件不再把工具拿掉：不在渠道里的 <code translate="no">chat_send</code>、没人回答时的提问工具、不在头部时的 <code translate="no">handoff</code>、定时运行的 <code translate="no">always_on_report</code>、外部文字驱动的报告偏好、memory 关闭时的 memory 工具、没有页面时的 <code translate="no">computer_use</code>、provider 自己搜索时的本地 <code translate="no">web_search</code></td></tr>
 <tr><th scope="row">拒绝而不拿掉</th><td>对这些工具的调用被拒绝（<code translate="no">TOOL_UNAVAILABLE</code>，不询问任何人），消息旁的 <code translate="no">tool_availability</code> 节列出它们一次。计划模式和 deny 规则也在派发时拒绝（<a href="../function/deferred-tools.zh.html">延迟工具</a>）。验证、check-in 和自更新步骤从自己的数组里去掉这些工具</td></tr>
 <tr><th scope="row">关闭 memory 不撤回</th><td>关闭 memory 后不再召回，memory 工具被拒绝。已经召回的内容和 memory 节说明留在历史里，记录的提示保留它的 memory 节，下一条消息说明它不再适用。压缩的输入不含召回内容（<code translate="no">turn_context.without_recall</code>），压缩之后第一次重建的提示没有 memory 节</td></tr>
 <tr><th scope="row">一条回放规则</th><td>每次渲染都显式传入 <code translate="no">audience</code>。只有对话自己的请求显示各节说明；带自己提示的调用一律不显示。请求是否召回 memory、是否带日期是循环自己的设置（<code translate="no">AgentLoopConfig.recall</code>、<code translate="no">dated</code>），不是 context variable</td></tr>
 <tr><th scope="row">分支记录是提示的权威</th><td>对话自己一轮的 checkpoint 只存分支上记录的提示的哈希（<code translate="no">system_prompt_sha256</code>），不存正文；续跑从记录读正文，记录对不上就拒绝续跑。带正文的 checkpoint（旧的，或带自己提示的轮次）按正文续跑</td></tr>
 <tr><th scope="row">哈希对哈希</th><td>两份都按哈希指向提示的契约，比如加载 checkpoint 时拿它和自己比，按哈希比较（<code translate="no">runtime_contract.validate_runtime_contract</code>）。只有开始前分支上已有记录的轮次按哈希存；第一轮的记录在它自己的回复上，所以它的 checkpoint 存正文</td></tr>
+<tr><th scope="row">运行时提示不是本轮的消息</th><td>当前权限模式的提示放在每次请求的最后，从不存储（<code translate="no">message_context.RuntimeNote</code>）。召回用这个人自己的话检索，日期和召回的记忆放在他的消息前面，和之后的轮次渲染的一样</td></tr>
 <tr><th scope="row">一次性调用只有一个 key</th><td>不属于任何对话的调用按 provider、模型、instructions 和工具名取 key（<code translate="no">providers.shared.cache_key</code>），无论经过 Runtime 还是直接调 adapter</td></tr>
 </tbody>
 </table>
@@ -160,13 +163,18 @@
 <h3 id="why-record">提示只有一份记录</h3>
 <p>Codex 从持久化的 <code translate="no">base_instructions</code> 恢复，Hermes 回放会话固定的提示和工具，直到压缩。两份副本（checkpoint 和分支）会在压缩、重启和续跑交错时分叉，所以正文只存在分支上，checkpoint 存一个哈希，由续跑检查比对。</p>
 
+<h3 id="why-xai">xAI 在字节不变时也会未命中</h3>
+<p>在 Grok 订阅入口上实测：72 次前缀完好的请求里，约八分之一只从缓存读到开头的 1,152 个 token；同一个请求隔两秒再发，可能命中也可能不命中。用量事件把这些记为 <code translate="no">server</code>，长时间停顿后记为 <code translate="no">ttl</code>。</p>
+<p>xAI 文档提供 <code translate="no">x-grok-conv-id</code> 请求头，把一个对话路由到同一台服务器。和 <code translate="no">prompt_cache_key</code> 一起发送时没有差别：带它 36 次命中 31 次，不带 36 次命中 32 次。所以不加这个请求头。</p>
+<p>未命中和停顿长短无关。同一个请求分别隔 30、60、120、240 秒重发，各两遍：60 秒和 240 秒各未命中一次，其余间隔都命中，包括 240 秒。所以也不发保活请求。</p>
+
 <h2 id="contract">请求字节契约</h2>
 <p>一轮结束后，下一轮渲染出的是这一轮自己发过的字节。<code translate="no">tests/support/request_bytes.py</code> 用脚本化的回复跑真实轮次（调度器、agent 循环、DAG 渲染），在 <code translate="no">capturing(send=False)</code> 里用真实适配器序列化每个请求。两组测试用它。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">测试</th><th scope="col">守住什么</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">tests/contracts/providers/test_request_bytes.py</code></th><td>Anthropic、Responses、Chat Completions 和 Codex：下一轮按原样重发工具调用、失败的工具、工具图片、用户图片、长粘贴和大的 <code translate="no">tool_search</code> 结果</td></tr>
-<tr><th scope="row"><code translate="no">tests/unit/context/render/test_turn_prefix_cache.py</code></th><td>Codex 和 Anthropic：memory、运行说明、从 journal 恢复、旧工具结果完整重发、跨午夜、一天只发一次日期、进出计划模式、Goal 的完整和简短说明、被拒绝的工具；场景矩阵：两轮之间改一处，检查前缀检查能说出改了哪里，以及前缀是否保住；以及 preserved-thinking 规则：同一模型上每个请求的系统提示和工具字节都相同</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/render/test_turn_prefix_cache.py</code></th><td>Codex 和 Anthropic：memory、运行说明、从 journal 恢复、旧工具结果完整重发、跨午夜、一天只发一次日期、所有者设过的权限模式、进出计划模式、Goal 的完整和简短说明、被拒绝的工具；场景矩阵：两轮之间改一处，检查前缀检查能说出改了哪里，以及前缀是否保住；以及 preserved-thinking 规则：同一模型上每个请求的系统提示和工具字节都相同</td></tr>
 </tbody>
 </table>
 <p>已知后续渲染会不同的地方标为 <code translate="no">xfail(strict=True)</code>，写明对应的缺口。修好缺口的改动同时去掉标记。</p>

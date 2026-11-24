@@ -20,4 +20,4 @@ python -m scripts.docs_site.check_landing
 
 构建依赖和 `uv run` 命令见[贡献指南](../../.github/CONTRIBUTING.md)。
 
-默认本地访问地址为 `http://localhost:18100/docs/`。源码 worker 使用当前源码实例的构建目录；已安装 runtime 可能使用打包的 `_frontend/docs/`，构建另一个 checkout 不会更新它。验收时核对实际显示的页面。完成应用更新统一使用 `scripts/local-instances/refresh-local-app.sh`，具体要求见根目录 `AGENTS.md`。
+默认本地访问地址为 `http://localhost:18100/docs/`。源码 worker 使用当前源码实例的构建目录；已安装 runtime 可能使用打包的 `_frontend/docs/`，构建另一个 checkout 不会更新它。验收时核对实际显示的页面。改动提交后用 `scripts/local-instances/refresh-dev-instance.sh` 更新开发版（端口 18200）再看，具体要求见根目录 `AGENTS.md`。

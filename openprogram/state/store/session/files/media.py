@@ -141,6 +141,29 @@ def block(record: dict, data: str) -> Any:
     return ImageContent(data=data, mime_type=mime)
 
 
+def as_references(text_blocks: list[Any], records: Any, session_dir: Any = None) -> list[Any]:
+    """A message's content with its media named, not attached: an earlier
+    message's pictures, once a later message carries its own (Hermes sends
+    only the latest; each picture otherwise rides on every request). The note
+    gives each file's path so the model can look again."""
+    if not isinstance(records, list) or not records:
+        return text_blocks
+    from openprogram.models.providers.types import TextContent
+    names = []
+    for record in records:
+        if not isinstance(record, dict) or not isinstance(record.get("sha"), str):
+            continue
+        mime = str(record.get("mime") or "")
+        path = (Path(session_dir) / DIRNAME / f"{record['sha']}{_extension(mime)}"
+                if session_dir else record.get("path"))
+        names.append(f"{mime or 'file'} {path}")
+    if not names:
+        return text_blocks
+    note = ("[Attachments of this earlier message, no longer attached to save context; "
+            "open them with image_analyze if they are needed again: " + "; ".join(names) + "]")
+    return [*text_blocks, TextContent(type="text", text=note)]
+
+
 def with_media(text_blocks: list[Any], records: Any, session_dir: Any = None) -> list[Any]:
     """A message's content: ``text_blocks`` with the kept media put back at
     the indexes they had. A block whose file is gone is left out."""
@@ -160,6 +183,6 @@ def with_media(text_blocks: list[Any], records: Any, session_dir: Any = None) ->
         content.insert(min(index, len(content)), placed[index])
     return content
 
-__all__ = ["DIRNAME", "attachments_from_records", "block", "load", "records_for_attachments",
+__all__ = ["DIRNAME", "as_references", "attachments_from_records", "block", "load", "records_for_attachments",
            "records_for_blocks",
            "save", "with_media"]

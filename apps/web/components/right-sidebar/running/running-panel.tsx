@@ -1,28 +1,29 @@
 "use client";
 
 /**
- * Activity: what the conversation runs and keeps doing. Agents holds the
- * main agent, one per branch the reader made (the checked-out one and the
- * ones with something going, waiting or failed as rows, the ones at rest
- * in one fold; branches the runtime or a schedule opened are none), with a
- * red count for what waits on the reader, and under it the roster of the
- * helpers it started: the ones still going, waiting on the reader or failed,
- * then one fold for the ones that finished (agent-roster.tsx). A helper of a
- * scheduled run that waits on the reader is listed there too. Then each
- * scheduled task that runs a prompt, one row with its runs in short
- * (task-row.tsx); its runs and their helpers are on its page, never rows of
- * their own. Programs and commands holds
- * the shell calls and background programs that are running now and the
- * programs that failed; one that finished leaves the list. Then what the conversation does
- * on its own: its open work and the reminders and commands scheduled from it. Always-on
- * is a setting of the conversation's Agent, not an agent of its own: the
- * main agent's row says when it wakes next. Above all of them, when there
- * are any, the reports from every always-on conversation still waiting for
- * the reader (the pending inbox); each opens its conversation. Every other
- * row opens one page (activity-page.tsx). Each overview section folds to its
- * header, like the sidebar's, and stays folded in this browser.
+ * Activity: what the conversation runs and keeps doing. Its agents are on
+ * the chart (agent-chart/): the main agent, one per branch the reader made
+ * (branches the runtime or a schedule opened are none), and the sub-agents
+ * they started, each with its glyph on one block. The glyph carries what
+ * the panel knows of the agent: its name and what its sub-agents cost when
+ * pointed at, a red count for what waits on the reader, a click to its page
+ * (a sub-agent's: its conversation in the chat), and a way to stop the
+ * sub-agents still going. Before the conversation has a run the main agent
+ * is one row in the chart's place. Above the chart, each only when it has
+ * something: the reports from every always-on conversation still waiting
+ * for the reader (the pending inbox), each opening its conversation; the
+ * messages sent to other conversations that are still unanswered; Programs
+ * and commands, the background programs running now (one that ended leaves
+ * the list, and a command the agent waits on is read in the chat);
+ * then what the conversation does on its own: its open work and its
+ * scheduled tasks, a task that runs a prompt as one row with its runs in
+ * short (task-row.tsx). Always-on is a setting of the conversation's Agent,
+ * not an agent of its own: the chart's first row says when it wakes next.
+ * Every other row opens one page (activity-page.tsx). Each overview section
+ * folds to its header, like the sidebar's, and stays folded in this browser.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { useExecutionDebugger } from "@/lib/execution/use-execution-debugger";
@@ -31,17 +32,15 @@ import { type ActiveToolCall, type AgentCall, type ManagedProcess } from "@/lib/
 import { type ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { activityModel, agentBranches, pruneBranches, spawnedBy, startedAt, type ActivityIssue, type BranchRow } from "@/lib/execution/activity-model";
 import { toggleActivitySection, useActivityView } from "@/lib/prefs/activity-view";
-import { rosterCost, rosterListed, rosterLive, rosterStatus, rosterTotal, splitRoster, type RosterLook, type RosterStatus } from "@/lib/execution/agent-roster";
+import { rosterCost, rosterLive, rosterNeedsReader, rosterStatus, rosterTotal, type RosterLook, type RosterStatus } from "@/lib/execution/agent-roster";
 import { canExecuteAction, newCommandId, buildExecutionCommand } from "@/lib/execution/execution-debugger";
 import { postExecutionCommand } from "@/lib/net/execution/execution-client";
 import type { OutgoingSend } from "@/lib/net/execution/activity-roster-client";
 import { navigate } from "@/lib/nav/navigate";
 import { showToast } from "@/lib/format-utils/toast";
 import { fmtUsd } from "@/components/settings/providers/status/model";
-import { HoverTip } from "@/components/ui/tooltip";
 import { loadSubAgentTranscript } from "@/lib/chat/transcript/sub-agent-transcripts";
 import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
-import { presentTool } from "@/components/chat/messages/execution/tool-presentation";
 import { SectionHeader } from "@/components/sidebar/sessions/section-header";
 import { Button } from "@/components/ui/button";
 import { SidebarNotice } from "../sidebar-notice";
@@ -58,19 +57,21 @@ import styles from "./running-panel.module.css";
 import { ActivityPage } from "./pages/activity-page";
 import { usePageSlide } from "./use-page-slide";
 import type { ActivityPageTarget, ActivityPanelContext } from "./pages/activity-page-types";
-import { Glyph, AgentGlyph, Status, Row, type Tone } from "./running-rows";
-import { FinishedRow, RosterRow, usageTip } from "./agent-roster";
+import { Glyph, AgentGlyph, Row, type Tone } from "./running-rows";
+import { RosterRow, rosterBadgeWords, usageTip } from "./agent-roster";
 import { useAgentRoster } from "./use-agent-roster";
+import { prefetchActivityRuns } from "./runs/use-activity-runs";
 import { TaskRow } from "./task-row";
-import { LIVE, duration, when, callKind, executionTone, executionState, programTone, programLive, programListed, programTitle, commandLine, programStatus, programBarTone, routineSchedule, routineRunLabel } from "./running-format";
+import { WorkChart, type AgentMarks, type WorkChartMemory, type WorkChartScope } from "./agent-chart/agent-chart";
+import { useWorkRuns } from "./runs/use-work-runs";
+import type { WorkTask } from "./agent-chart/agent-chart-model";
+import { reportNameForRun } from "./pages/always-on-row";
+import { useTaskStore, type TaskSegment } from "@/lib/chat/transcript/task-blocks";
+import { LIVE, nextWakeOf, duration, when, executionTone, executionState, programTone, programLive, programTitle, commandLine, programStatus, programBarTone, routineSchedule, routineRunLabel } from "./running-format";
 
 type View = { kind: "main" | "call" | "program" | "work" | "routine" | "task"; id: string };
 
 const PAGE = 20;
-/** How long the runs have to stay unreadable before Agents says so. */
-const FAILURE_AFTER_MS = 5000;
-/** Finished helpers listed when their fold opens, and with each "earlier". */
-const FINISHED_PAGE = 50;
 
 /** What a level-1 row opens. */
 function pageFor(view: View): ActivityPageTarget {
@@ -83,6 +84,11 @@ function pageFor(view: View): ActivityPageTarget {
     case "work": return { kind: "work", workId: view.id };
   }
 }
+
+/** The branches the conversation's chart reads at most: each is a read of its runs. */
+const CHART_BRANCHES = 6;
+const MAIN_HEAD: readonly (string | null)[] = [null];
+const NO_SEGMENTS: TaskSegment[] = [];
 
 export function RunningPanel({ active, sessionId, resetSignal }: { active: boolean; sessionId: string | null; resetSignal?: number }) {
   const { text } = useTranslation();
@@ -107,14 +113,33 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const allDecisions = useSessionStore(s => s.pendingDecisions);
   const listView = useActivityView();
   const conversationBranches = useConversationBranches(sessionId);
-  // A branch running in its own git worktree wears a Worktree tag.
+  // A branch running in its own git worktree says how many files it changed there.
   const worktrees = useSessionWorktrees(sessionId);
   const selectedBranchId = useSessionStore(s => (sessionId ? s.composerSettingsBySession[sessionId]?.active_branch_id ?? null : null));
   const [programsShown, setProgramsShown] = useState(PAGE);
+  // A program row, and the group with its header, open and close by height
+  // as programs start and end, as a project's rows do in the sidebar.
+  const reducedMotion = useReducedMotion();
+  const reveal = {
+    initial: { height: 0, opacity: 0, overflow: "hidden" },
+    animate: { height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } },
+    exit: { height: 0, opacity: 0, overflow: "hidden" },
+    transition: reducedMotion ? { duration: 0 } : { height: { duration: 0.24, ease: [0.2, 0.7, 0.2, 1] }, opacity: { duration: 0.16 } },
+  } as const;
   // What only the server knows of each helper: stalled, queued, its cost.
   const roster = useAgentRoster(active, sessionId);
-  // How many finished helpers each agent's fold lists; absent while shut.
-  const [finishedShown, setFinishedShown] = useState<Record<string, number>>({});
+  // The conversation's tasks as their newest replies left them: the chart's rows.
+  const taskSegments = useTaskStore(s => (sessionId ? s.segmentsBySession[sessionId] : undefined) ?? NO_SEGMENTS);
+  const chartTasks = useMemo(() => {
+    const newest = new Map<string, TaskSegment>();
+    for (const segment of taskSegments) if (!segment.legacy && (newest.get(segment.taskId)?.updatedAt ?? -1) <= segment.updatedAt) newest.set(segment.taskId, segment);
+    return new Map<string, WorkTask>([...newest].map(([id, segment]) => {
+      const steps = segment.steps.filter(step => step.status !== "dropped");
+      return [id, { title: segment.title, done: steps.filter(step => step.status === "completed").length, total: steps.length }];
+    }));
+  }, [taskSegments]);
+  const chartBox = useRef<HTMLDivElement>(null);
+  const chartMemory = useRef<WorkChartMemory | null>(null);
   const [stopping, setStopping] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -125,7 +150,16 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const slide = usePageSlide(() => setOpened(null));
   const { cut: cutSlide, leave: leaveSlide } = slide;
   const overviewShown = !page || slide.beneath;
-  useEffect(() => { cutSlide(); setOpened(null); setProgramsShown(PAGE); setFinishedShown({}); }, [sessionId, cutSlide]);
+  // The chart reads the branches worth a row: the checked-out one, then the
+  // newest. Read here, not in the chart: the runs stay while a page rests
+  // over the overview.
+  const chartBranches = useMemo(() => {
+    const reader = conversationBranches.filter(branch => !branch.runtimeStarted);
+    if (reader.length < 2) return null;
+    return [...reader].sort((a, b) => Number(b.active) - Number(a.active) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, CHART_BRANCHES);
+  }, [conversationBranches]);
+  const { runsByHead: chartRuns, loaded: chartRead } = useWorkRuns(sessionId ?? "", chartBranches ? chartBranches.map(branch => branch.head) : MAIN_HEAD, active && overviewShown);
+  useEffect(() => { cutSlide(); setOpened(null); setProgramsShown(PAGE); chartMemory.current = null; }, [sessionId, cutSlide]);
   useLayoutEffect(() => {
     const element = levelOneScroll.current;
     if (overviewShown && element) element.scrollTop = levelOneReturn.current.scrollTop;
@@ -145,18 +179,8 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     leaveSlide();
   }, [resetSignal, leaveSlide]);
   useEffect(() => { setActionError(null); }, [page]);
-  // What was read draws, and a new read replaces it in place without a word.
-  // Only runs that could never be read, with nothing to show for them, say
-  // so: under Agents, with a retry, once the reads have kept failing a while.
-  const runsFailed = !state.fetchedAt && state.connection.state === "stale"
-    && state.connection.errorSessionId === sessionId && Boolean(state.connection.message);
-  const [runsFailure, setRunsFailure] = useState<string | null>(null);
-  useEffect(() => {
-    setRunsFailure(null);
-    if (!active || !runsFailed) return;
-    const shown = setTimeout(() => setRunsFailure(sessionId), FAILURE_AFTER_MS);
-    return () => clearTimeout(shown);
-  }, [active, sessionId, runsFailed]);
+  // What was read draws, and a new read replaces it in place without a word;
+  // a read that fails leaves it there and is tried again behind it.
 
   if (!sessionId) return <SidebarNotice>{text("Select or start a conversation to view what it runs.", "选择或开始一个会话，查看它运行的内容。")}</SidebarNotice>;
 
@@ -243,6 +267,11 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     ? readerBranches.map(branch => ({ key: branch.branchId || branch.head, branchId: branch.branchId, head: branch.head, active: branch.active, color: branch.color, updatedAt: branch.updatedAt,
       name: branch.name || text("Unnamed branch", "未命名分支"), members: new Set([...(memberships.get(branch.head) ?? []), ...(branch.active ? runtimeRuns : [])]) }))
     : [{ key: "main", head: null, name: mainName, active: true, color: null, updatedAt: conversationUpdatedAt, members: null }];
+  const chartScopes: WorkChartScope[] = chartBranches
+    ? chartBranches.map(branch => ({ key: branch.branchId || branch.head, head: branch.head, name: branch.name || text("Unnamed branch", "未命名分支"), color: branch.color, current: branch.active }))
+    : [{ key: "main", head: null, name: mainName, color: null, current: true }];
+  // Before the conversation has a run there is nothing to chart: the main agent is one row in its place.
+  const hasChart = chartRuns.some(runs => runs.length > 0);
   const inScope = (scope: Scope, item: ExecutionSnapshot) => !scope.members || scope.members.has(rootOf(item).execution_id);
   // A scheduled run's helper is the task's, unless it waits on the reader.
   const fullTree = pruneBranches(branches.tree<AgentCall>(owner => failedSpawns(owner).map(leaf => ({ at: leaf.at, leaf }))),
@@ -315,24 +344,18 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   // ---- the roster under an agent ---------------------------------------------
   type RosterEntry = { row: BranchRow<AgentCall>; depth: number; status: RosterStatus };
   /** What the page sees of a helper right now; the server's facts refine it. */
-  function rosterLook(row: BranchRow<AgentCall>): RosterLook {
-    if (row.kind === "leaf") return row.leaf.failed ? "err" : "rest";
-    const issues = issuesOf(row.item);
+  function jobLook(item: ExecutionSnapshot): RosterLook {
+    const issues = issuesOf(item);
     if (issues.length) return issues.some(issue => decisionFor(issue.execution.execution_id)?.kind === "approval") ? "approval" : "input";
-    if (activeIn(subtreeOf(row.item))) return "run";
-    return executionTone(row.item) === "err" ? "err" : "rest";
+    if (activeIn(subtreeOf(item))) return "run";
+    return executionTone(item) === "err" ? "err" : "rest";
   }
+  const rosterLook = (row: BranchRow<AgentCall>): RosterLook => row.kind === "leaf" ? (row.leaf.failed ? "err" : "rest") : jobLook(row.item);
   const factsOf = (row: BranchRow<AgentCall>) => row.kind === "agent" ? roster.agents[row.item.execution_id] ?? null : null;
-  const helperName = (row: BranchRow<AgentCall>) => (row.kind === "agent"
-    ? row.item.display?.label || row.item.task_label || text("Sub-agent", "子代理")
-    : row.leaf.description || text("Sub-agent", "子代理")).replace(/_/g, " ");
-  /** One agent's roster: the helpers listed, the ones folded as finished,
-   *  the messages it still waits on, and what its helpers cost together. */
-  function rosterOf(scope: Scope, facts: ScopeFacts) {
+  /** What one agent's sub-agents add up to: the ones that can still be
+   *  stopped, and what they cost together. */
+  function rosterOf(facts: ScopeFacts) {
     const entries: RosterEntry[] = facts.tree.map(row => ({ row, depth: row.depth, status: rosterStatus(rosterLook(row), factsOf(row)) }));
-    const { shown, finished } = splitRoster(entries, entry => rosterListed(entry.status));
-    // Messages are sent from the branch the reader is on.
-    const outgoing: OutgoingSend[] = scope.active ? roster.outgoing : [];
     // The topmost helpers that can still be stopped: a stop reaches what they started.
     const stoppable: ExecutionSnapshot[] = [];
     let inside = Infinity;
@@ -342,8 +365,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
       if (rosterLive(entry.status) && canExecuteAction(entry.row.item, "cancel")) { stoppable.push(entry.row.item); inside = entry.depth; }
     }
     return {
-      shown, finished, outgoing, stoppable,
-      live: entries.filter(entry => rosterLive(entry.status)).length,
+      stoppable,
       // A helper's cost already holds the helpers under it; a scheduled
       // run's helper is in its task's cost.
       cost: rosterTotal(entries.filter(entry => entry.depth === 1 && !(entry.row.kind === "agent" && taskOf(entry.row.item))).map(entry => rosterCost(factsOf(entry.row)))),
@@ -360,60 +382,6 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   }
 
   // ---- rows ----------------------------------------------------------------
-  /** A main agent's row: its branch's colour and a tag on the checked-out
-   *  one, one chevron that opens its page, then its roster. */
-  function scopeRow(scope: Scope, facts: ScopeFacts, list: ReturnType<typeof rosterOf>): ReactNode {
-    // What waits for the reader is the red count on the glyph, its own
-    // and its sub-agents'; the line keeps what it is doing or its time.
-    const waiting = facts.issues.length + facts.tree.filter(row => lookOf(row).tone === "warn").length;
-    const look = facts.issues.length ? scopeStatus({ ...facts, issues: [] }, scope) : scopeStatus(facts, scope);
-    const foldKey = `${sessionId}:${scope.key}`;
-    const hasRoster = facts.tree.length > 0 || list.outgoing.length > 0;
-    const currentTag = scope.head && scope.active ? <span className={styles.current}>{text("Current", "当前")}</span> : null;
-    const tree = branchWorktree(worktrees.rows, scope.branchId ?? (scope.active ? selectedBranchId : null));
-    const isolated = tree && isOpen(tree) ? tree : null;
-    const current = currentTag || isolated ? <>{currentTag}{isolated && <span className={styles.current}>{text("Worktree", "Worktree")}</span>}</> : null;
-    const isolatedFiles = isolated ? changedFiles(isolated) : 0;
-    const worktreeNote = isolated ? text(`${isolatedFiles} ${isolatedFiles === 1 ? "file" : "files"} in worktree`, `worktree 中 ${isolatedFiles} 个文件`) : "";
-    // Always-on belongs to the checked-out branch: check-ins start from it.
-    // At rest its next wake is the row's line; busy, it goes under it.
-    const always = alwaysOn && scope.active ? alwaysStatus() : null;
-    const alwaysLine = always ? `${text("Always-on", "常驻")} · ${always.label.charAt(0).toLowerCase()}${always.label.slice(1)}` : "";
-    const resting = look.tone === "muted";
-    /** Left on a row inside the roster: the focus goes to the agent's row. */
-    const foldFromInside = () => {
-      (document.activeElement as HTMLElement | null)?.closest("[data-agent-group]")?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
-    };
-    const helperRow = (entry: RosterEntry, indent: number) => {
-      const { row } = entry;
-      const key = row.kind === "agent" ? row.item.execution_id : `spawn:${row.leaf.id}`;
-      return <RosterRow key={key} name={helperName(row)} status={entry.status} indent={indent} text={text}
-        cost={rosterCost(factsOf(row))} tip={usageTip(factsOf(row), text)} onFold={foldFromInside}
-        onOpen={() => { if (row.kind === "agent") openAgentConversation(row.item.execution_id); else open({ kind: "main", id: scope.key }); }} />;
-    };
-    const finishedCount = finishedShown[foldKey] ?? 0;
-    return <div key={scope.key} data-agent-group="">
-      <Row glyph={<AgentGlyph shape={mainShape} color={scope.color} />} title={scope.name} badge={current} count={waiting}
-        status={[resting && alwaysLine ? alwaysLine : look.label, worktreeNote].filter(Boolean).join(" · ")}
-        tone={resting && always ? always.tone : look.tone === "warn" ? "muted" : look.tone}
-        extra={always && !(resting && alwaysLine) && <Status tone={always.tone} dot={false}>{alwaysLine}</Status>}
-        onOpen={() => open({ kind: "main", id: scope.key })} />
-      {hasRoster ? <div className="-mx-[8px] -my-[4px] max-h-[360px] overflow-y-auto px-[8px] py-[4px]" role="group" aria-label={text(`Sub-agents of ${scope.name}`, `${scope.name} 的子代理`)}>
-        {list.shown.map(entry => helperRow(entry, 16 * entry.depth))}
-        {list.outgoing.map(send => <RosterRow key={`out:${send.job_id}`} outgoing name={send.to} indent={16} text={text} onFold={foldFromInside}
-          status={send.status === "waiting" ? "waiting" : rosterStatus("run", { agent_status: send.status, queued: false, usage: null })}
-          onOpen={() => navigate(`/s/${send.to_session}`)} />)}
-        {list.finished.length > 0 ? <FinishedRow count={list.finished.length} open={finishedCount > 0} indent={16} text={text} onFold={foldFromInside}
-          onToggle={() => setFinishedShown(current => ({ ...current, [foldKey]: current[foldKey] ? 0 : FINISHED_PAGE }))} /> : null}
-        {finishedCount > 0 ? <>
-          {list.finished.slice(0, finishedCount).map(entry => helperRow(entry, 16))}
-          {list.finished.length > finishedCount ? <Button type="button" variant="link" size="xs" onClick={() => setFinishedShown(current => ({ ...current, [foldKey]: finishedCount + FINISHED_PAGE }))}>
-            {text(`Show ${Math.min(FINISHED_PAGE, list.finished.length - finishedCount)} earlier`, `显示更早的 ${Math.min(FINISHED_PAGE, list.finished.length - finishedCount)} 个`)}
-          </Button> : null}
-        </> : null}
-      </div> : null}
-    </div>;
-  }
   /** An agent's status line: what waits on the reader first, then what runs. */
   function agentLook(item: ExecutionSnapshot): { label: string; tone: Tone; at: number } {
     const ids = subtreeOf(item);
@@ -436,13 +404,6 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     if (decision) return decision.kind === "approval" ? text("Waiting for approval", "等你授权") : text("Waiting for your answer", "等你回答");
     return stateOf(item);
   }
-  function callRow(item: ActiveToolCall, withKind = true): ReactNode {
-    const look = presentTool(item.name, undefined, text);
-    const phase = `${text("Running", "正在运行")} · ${duration(now - item.started_at, text)}`;
-    return <Row key={`call:${item.id}`} glyph={<Glyph name={look.icon} tone={look.tone} large />} title={item.description || item.name}
-      status={withKind ? `${callKind(item, text)} · ${phase}` : phase} tone="run"
-      onOpen={() => open({ kind: "call", id: item.id })} />;
-  }
   function programRow(item: ManagedProcess): ReactNode {
     const look = progressLook(item.progress);
     const active = programLive(item);
@@ -459,10 +420,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   // ---- what the conversation does on its own ---------------------------------
   const alwaysOn = ongoing?.always_on.enabled ? ongoing.always_on : null;
   const openItems = (ongoing?.open_work ?? []).filter(item => item.status === "open");
-  // A task that runs a prompt is an agent with a row in Agents; reminders
-  // and commands stay under Scheduled tasks.
-  const agentTasks = (ongoing?.routines ?? []).filter(isAgentTask);
-  const routines = (ongoing?.routines ?? []).filter(task => !isAgentTask(task));
+  const routines = ongoing?.routines ?? [];
   /** The always-on row: what it is doing, else when it wakes next. */
   function alwaysStatus(): { label: string; tone: Tone } {
     if (!alwaysOn) return { label: "", tone: "muted" };
@@ -480,8 +438,11 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   }
   function pendingRow(item: PendingItem): ReactNode {
     return <Row key={`pending:${item.session_id}:${item.report_id}`}
-      glyph={<span className="grid size-[22px] flex-none place-items-center"><AgentAvatarById agentId={item.agent_id} size={20} /></span>}
-      title={item.title} status={[reportKindTag(item.kind, text), item.agent_name, when(item.at, text)].join(" · ")}
+      // A scheduled task's result wears the task's calendar, as on the Tasks page's Inbox.
+      glyph={item.task_id
+        ? <Glyph name="calendar" tone="plan" large />
+        : <span className="grid size-[22px] flex-none place-items-center"><AgentAvatarById agentId={item.agent_id} size={20} /></span>}
+      title={item.title} status={[reportKindTag(item.kind, text), item.task_id ? text("Scheduled task", "定时任务") : item.agent_name, when(item.at, text)].join(" · ")}
       tone={item.kind === "approval" ? "warn" : "muted"} onOpen={() => openPendingItem(item)} />;
   }
   function openWorkRow(item: OpenWorkItem): ReactNode {
@@ -489,11 +450,9 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
       status={[item.status === "done" ? text("Done", "已完成") : text("Open", "未完成"), when(item.updated_at, text)].join(" · ")}
       tone={item.status === "done" ? "ok" : "muted"} onOpen={() => open({ kind: "work", id: item.id })} />;
   }
-  /** A scheduled task that runs a prompt: one row in Agents, its runs in short. */
-  function taskRow(task: Routine): ReactNode {
-    return <TaskRow key={`task:${task.id}`} task={task} text={text} onOpen={() => open({ kind: "task", id: task.id })} />;
-  }
+  /** A scheduled task: one that runs a prompt is one row with its runs in short. */
   function routineRow(task: Routine): ReactNode {
+    if (isAgentTask(task)) return <TaskRow key={`task:${task.id}`} task={task} text={text} onOpen={() => open({ kind: "task", id: task.id })} />;
     return <Row key={`routine:${task.id}`} glyph={<Glyph name={task.type === "webhook" ? "link" : "calendar"} tone="plan" large />}
       title={task.title} sub={task.watch} tone={task.runs?.[0]?.status === "failed" ? "warn" : "muted"}
       status={[routineSchedule(task, text), task.runs?.[0] && routineRunLabel(task.runs[0], text)].filter(Boolean).join(" · ")}
@@ -514,65 +473,54 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const looks = new Map(fullTree.map(row => [rowKey(row), row.kind === "agent" ? agentLook(row.item) : { tone: (row.leaf.failed ? "err" : "muted") as Tone, at: row.leaf.at }]));
   const lookOf = (row: BranchRow<AgentCall>) => looks.get(rowKey(row)) ?? { tone: "muted" as Tone, at: 0 };
   // ---- second-level pages -------------------------------------------------------
-  let pageLayer: ReactNode = null;
-  if (page) {
-    const scopeHeadText: ActivityPanelContext["scopeHeadText"] = scope => {
-      const { label, tone } = scopeStatus(scopeFacts(scope), scope);
+  const scopeHeadText: ActivityPanelContext["scopeHeadText"] = scope => {
+    const { label, tone } = scopeStatus(scopeFacts(scope), scope);
+    return {
+      kind: scope.head ? (scope.active ? `${text("Branch", "分支")} · ${text("Current", "当前")}` : text("Branch", "分支")) : mainName,
+      title: scope.head ? scope.name : conversationTitle || mainName,
+      status: label, tone,
+    };
+  };
+  const waitingFor: ActivityPanelContext["waitingFor"] = item => {
+    const decision = item.status === "paused" ? decisionFor(item.execution_id) : undefined;
+    if (decision) {
+      const approval = decision.kind === "approval";
       return {
-        kind: scope.head ? (scope.active ? `${text("Branch", "分支")} · ${text("Current", "当前")}` : text("Branch", "分支")) : mainName,
-        title: scope.head ? scope.name : conversationTitle || mainName,
-        status: label, tone,
+        answerLabel: approval ? text("Review in chat", "去聊天里授权") : text("Answer in chat", "去聊天里回答"),
+        question: decision.prompt || decision.questions?.[0]?.prompt || "",
+        choices: decision.options?.length ? decision.options : decision.questions?.[0]?.options ?? [],
+        waitLabel: approval ? text("Waiting for approval", "等你授权") : text("Waiting for your answer", "等你回答"),
+        approval,
       };
-    };
-    const waitingFor: ActivityPanelContext["waitingFor"] = item => {
-      const decision = item.status === "paused" ? decisionFor(item.execution_id) : undefined;
-      if (decision) {
-        const approval = decision.kind === "approval";
-        return {
-          answerLabel: approval ? text("Review in chat", "去聊天里授权") : text("Answer in chat", "去聊天里回答"),
-          question: decision.prompt || decision.questions?.[0]?.prompt || "",
-          choices: decision.options?.length ? decision.options : decision.questions?.[0]?.options ?? [],
-          waitLabel: approval ? text("Waiting for approval", "等你授权") : text("Waiting for your answer", "等你回答"),
-        };
-      }
-      if (item.status === "paused" && item.reason_code === "wait_open") return { answerLabel: "", question: "", choices: [], waitLabel: text("Waiting for your answer", "等你回答") };
-      return null;
-    };
-    const context: ActivityPanelContext = {
-      sessionId, text, now, active,
-      connected: state.connection.state === "connected",
-      controller: state, processes, work: ongoing, refreshWork: refreshOngoing,
-      scopes, scopeOf, scopeHeadText, waitingFor,
-      answerInChat: item => {
-        const decision = decisionFor(item.execution_id);
-        if (decision) answerInChat(decision.id); else useSessionStore.getState().focusComposer();
-      },
-      switchTo: scope => { if (scope.head) switchTo(scope.head, scope.branchId); },
-      openAgentConversation,
-      alwaysStatus, act, pendingKey: pending, actionError, copy: (key, value) => void copy(key, value), copiedKey: copied,
-      close: () => { levelOneReturn.current.focus = true; slide.leave(); },
-      pull: slide.pull,
-    };
-    pageLayer = <div ref={slide.layer} className={styles.page}><ActivityPage key={JSON.stringify(page)} target={page} context={context} /></div>;
-  }
+    }
+    if (item.status === "paused" && item.reason_code === "wait_open") return { answerLabel: "", question: "", choices: [], waitLabel: text("Waiting for your answer", "等你回答") };
+    return null;
+  };
+  const context: ActivityPanelContext = {
+    sessionId, text, now, active,
+    connected: state.connection.state === "connected",
+    controller: state, processes, work: ongoing, refreshWork: refreshOngoing,
+    scopes, scopeOf, scopeHeadText, waitingFor,
+    answerInChat: item => {
+      const decision = decisionFor(item.execution_id);
+      if (decision) answerInChat(decision.id); else useSessionStore.getState().focusComposer();
+    },
+    switchTo: scope => { if (scope.head) switchTo(scope.head, scope.branchId); },
+    openAgentConversation,
+    alwaysStatus, act, pendingKey: pending, actionError, copy: (key, value) => void copy(key, value), copiedKey: copied,
+    close: () => { levelOneReturn.current.focus = true; slide.leave(); },
+    pull: slide.pull,
+  };
+  const pageLayer: ReactNode = page ? <div ref={slide.layer} className={styles.page}><ActivityPage key={JSON.stringify(page)} target={page} context={context} /></div> : null;
 
   // ---- overview ----------------------------------------------------------------
-  // Messages live in the chat. Agents is the main agent with the roster
-  // of the sub-agents it started under it; its page holds their runs.
-  // Every conversation has its main agent, so its row is always there; its
-  // page reads the runs from the transcript, with or without execution
-  // records. Programs and commands lists what they run in a shell.
-  // Shell work, as the roster lists helpers: the running calls that are
-  // not sub-agents and the background programs that are going, then the
-  // programs that failed, newest first. What finished is not listed; the
-  // chat keeps every command.
-  const shellCalls = calls.filter(entry => entry.status === "running"
-    && presentTool(entry.name, undefined, text).tone !== "agent" && !agentOf(entry));
-  const rank = (tone: Tone) => tone === "run" ? 0 : tone === "warn" ? 1 : 2;
-  const work = [
-    ...shellCalls.map(entry => ({ tone: "run" as Tone, at: entry.started_at, node: callRow(entry) })),
-    ...processes.items.filter(programListed).map(entry => ({ tone: programTone(entry), at: entry.started_at, node: programRow(entry) })),
-  ].sort((a, b) => rank(a.tone) - rank(b.tone) || b.at - a.at);
+  // Messages live in the chat, and the agents are on the chart.
+  // Programs and commands lists what they run in a shell.
+  // The background programs going now, newest first. One that ended leaves
+  // at once, failed or not, as in Claude Code and Codex: the agent has its
+  // result, and the chat keeps every command. A command the agent waits on
+  // is read in the chat and on the chart's message, not here.
+  const work = processes.items.filter(programLive).sort((a, b) => b.started_at - a.started_at);
   /** One overview group: its header folds the rows under it. Until its
    *  data is read it stays folded and does not open. */
   const section = (key: string, name: ReactNode, rows: ReactNode, ready = true, actions?: ReactNode) => {
@@ -583,58 +531,89 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
       {!collapsed && rows}
     </div>;
   };
-  // Agents is always listed; every other group, header included, appears
-  // only when it has something in it.
-  // Before the first read the checked-out branch's main agent is listed on
-  // its own, resting at the conversation's last activity; the read adds
-  // the rest in place.
+  // Every group, header included, appears only when it has something in it.
   const agentsRead = Boolean(state.fetchedAt);
   const programsReady = agentsRead && processes.loaded;
   const scheduledReady = ongoing != null;
-  // Each agent with its roster; the group's header adds the rosters up.
-  const agentRows = scopes.filter(scope => agentsRead || scope.active)
-    .map(scope => { const facts = scopeFacts(scope); return { scope, facts, list: rosterOf(scope, facts) }; });
-  // A branch has its own row while it is the checked-out one or has
-  // something going, waiting on the reader or failed, itself or a helper;
-  // the branches at rest share one fold, opened in place.
-  const ownRow = (entry: typeof agentRows[number]) => entry.scope.active || entry.facts.live || entry.facts.issues.length > 0
-    || entry.list.shown.length > 0 || entry.list.outgoing.length > 0 || entry.facts.latestRun?.status === "failed";
-  const restingBranches = agentRows.filter(entry => !ownRow(entry));
-  const restKey = `${sessionId}:branches`;
-  const restOpen = (finishedShown[restKey] ?? 0) > 0;
-  // What the helpers listed and the scheduled tasks' runs cost.
-  const agentsCost = rosterTotal([...agentRows.map(entry => entry.list.cost), ...agentTasks.map(task => task.summary?.cost ?? null)]);
-  const stoppable = [...new Map(agentRows.flatMap(entry => entry.list.stoppable).map(item => [item.execution_id, item])).values()];
+  // ---- the agents on the chart ----------------------------------------------
+  // What each main agent holds, worked out once for every glyph that asks.
+  const scopeEntries = new Map(scopes.map(scope => { const facts = scopeFacts(scope); return [scope.key, { scope, facts, list: rosterOf(facts) }] as const; }));
+  // A sub-agent waits when the page holds its question, or when the server says a running one does.
+  const waitingOn = (facts: ScopeFacts) => facts.issues.length
+    + facts.tree.filter(row => lookOf(row).tone === "warn" || rosterNeedsReader(rosterStatus(rosterLook(row), factsOf(row)))).length;
+  const connected = state.connection.state === "connected";
+  /** What a glyph on the chart says and does: a main agent's by its branch, a sub-agent's by its job. */
+  const chartMarks: AgentMarks = agent => {
+    if (agent.sub) {
+      const job = agent.key ? execution(agent.key) : null;
+      const facts = agent.key ? roster.agents[agent.key] ?? null : null;
+      const cost = rosterCost(facts);
+      const status = job ? rosterStatus(jobLook(job), facts) : "idle";
+      return {
+        tip: [
+          agent.name, status !== "idle" ? rosterBadgeWords(status, text) : "",
+          cost !== null ? fmtUsd(cost) : "", usageTip(facts, text),
+        ].filter(Boolean).join(" · "),
+        waiting: job ? Math.max(issuesOf(job).length, rosterNeedsReader(status) ? 1 : 0) : 0,
+        onOpen: agent.key ? () => openAgentConversation(agent.key!) : undefined,
+      };
+    }
+    const entry = agent.key ? scopeEntries.get(agent.key) : undefined;
+    if (!entry) return { tip: agent.name, waiting: 0 };
+    const { scope, facts, list } = entry;
+    const tree = branchWorktree(worktrees.rows, scope.branchId ?? (scope.active ? selectedBranchId : null));
+    const files = tree && isOpen(tree) ? changedFiles(tree) : null;
+    const waiting = waitingOn(facts);
+    return {
+      tip: [
+        scope.name, scope.head && scope.active ? text("Current", "当前") : "",
+        waiting > 0 ? text(`${waiting} waiting for you`, `${waiting} 项等你处理`) : "",
+        list.cost !== null ? text(`sub-agents ${fmtUsd(list.cost)}`, `子代理 ${fmtUsd(list.cost)}`) : "",
+        files !== null ? text(`${files} ${files === 1 ? "file" : "files"} in worktree`, `worktree 中 ${files} 个文件`) : "",
+      ].filter(Boolean).join(" · "),
+      waiting,
+      onOpen: () => open({ kind: "main", id: scope.key }),
+      stop: list.stoppable.length ? { busy: stopping || !connected, run: () => void stopAll(list.stoppable) } : undefined,
+    };
+  };
+  const stoppableScopes = [...scopeEntries.values()].filter(entry => entry.list.stoppable.length > 0).map(entry => entry.scope.key);
+  const currentScope = scopes.find(scope => scope.active) ?? scopes[0];
+  // Before its first run the main agent is one row where the chart will be:
+  // its page is there from the start. Nothing is said while the runs are read.
+  const mainRow = (): ReactNode => {
+    const entry = scopeEntries.get(currentScope.key)!;
+    const look = entry.facts.issues.length ? scopeStatus({ ...entry.facts, issues: [] }, currentScope) : scopeStatus(entry.facts, currentScope);
+    const always = alwaysOn ? alwaysStatus() : null;
+    const resting = look.tone === "muted";
+    return <Row glyph={<AgentGlyph shape={mainShape} color={currentScope.color} />} title={currentScope.name} count={waitingOn(entry.facts)}
+      status={resting ? (always ? `${text("Always-on", "常驻")} · ${always.label.charAt(0).toLowerCase()}${always.label.slice(1)}` : look.label || text("No runs yet", "还没有运行记录")) : look.label}
+      tone={resting && always ? always.tone : look.tone === "warn" ? "muted" : look.tone}
+      onOpen={() => open({ kind: "main", id: currentScope.key })}
+      onIntent={() => prefetchActivityRuns(sessionId, { kind: "branch", head: currentScope.head }, true)} />;
+  };
+  // Messages are sent from the branch the reader is on.
+  const outgoing: OutgoingSend[] = roster.outgoing;
   return <>{overviewShown ? <section ref={slide.under} className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")} inert={Boolean(page)}>
-    <div ref={levelOneScroll} className={`${styles.scroll} min-h-0 overflow-y-auto p-[0_8px_16px]`}>
+    <div ref={levelOneScroll} className={`${styles.scroll} ${hasChart ? "max-h-[50%] flex-none" : "flex-1"} min-h-0 overflow-y-auto p-[0_8px_8px]`}>
       {pendingInbox.items.length > 0 && section("pending",
         text(`Waiting for you · ${pendingInbox.items.length}`, `等你处理 · ${pendingInbox.items.length}`),
         pendingInOrder(pendingInbox.items).map(pendingRow))}
-      {section("agents",
-        agentsCost !== null ? <>{text("Agents", "Agents")}<span className={styles.sum}>{` · ${fmtUsd(agentsCost)}`}</span></> : text("Agents", "Agents"),
-        <>
-          {agentRows.filter(ownRow).map(entry => scopeRow(entry.scope, entry.facts, entry.list))}
-          {agentTasks.map(taskRow)}
-          {restingBranches.length > 0 ? <FinishedRow count={restingBranches.length} open={restOpen} indent={0} text={text}
-            label={text(`${restingBranches.length} other branch${restingBranches.length === 1 ? "" : "es"}`, `${restingBranches.length} 个其他分支`)}
-            onToggle={() => setFinishedShown(current => ({ ...current, [restKey]: current[restKey] ? 0 : FINISHED_PAGE }))} /> : null}
-          {restOpen ? restingBranches.map(entry => scopeRow(entry.scope, entry.facts, entry.list)) : null}
-          {runsFailed && runsFailure === sessionId ? <p role="alert" className={styles.error}>
-            {text("Could not read this conversation's runs.", "读不到这个会话的运行记录。")}{" "}
-            <Button type="button" variant="link" size="xs" onClick={() => void state.refresh()}>{text("Retry", "重试")}</Button>
-          </p> : null}
-        </>, true,
-        stoppable.length > 0 ? <HoverTip label={text("Stops every running sub-agent", "停止所有正在运行的子代理")}>
-          <Button type="button" variant="ghost" size="xs" disabled={stopping || state.connection.state !== "connected"} onClick={() => void stopAll(stoppable)}>{text("Stop all", "全部停止")}</Button>
-        </HoverTip> : null)}
-      {work.length > 0 && section("programs", text("Programs and commands", "程序和命令"), <>
-        {work.slice(0, programsShown).map(entry => entry.node)}
+      {!hasChart && chartRead ? mainRow() : null}
+      {outgoing.length > 0 && section("sent", text("Sent messages", "发出的消息"), outgoing.map(send => <RosterRow key={`out:${send.job_id}`} outgoing name={send.to} indent={0} text={text}
+        status={send.status === "waiting" ? "waiting" : rosterStatus("run", { agent_status: send.status, queued: false, usage: null })}
+        onOpen={() => navigate(`/s/${send.to_session}`)} />))}
+      <AnimatePresence initial={false}>{work.length > 0 && <motion.div key="programs" {...reveal}>{section("programs", text("Programs and commands", "程序和命令"), <>
+        <AnimatePresence initial={false}>{work.slice(0, programsShown).map(entry => <motion.div key={entry.id} {...reveal}>{programRow(entry)}</motion.div>)}</AnimatePresence>
         {work.length > programsShown && <Button type="button" variant="link" size="xs" onClick={() => setProgramsShown(value => value + 50)}>
           {text(`Show ${Math.min(50, work.length - programsShown)} earlier`, `显示更早的 ${Math.min(50, work.length - programsShown)} 个`)}
         </Button>}
-      </>, programsReady)}
+      </>, programsReady)}</motion.div>}</AnimatePresence>
       {openItems.length > 0 && section("open-work", text("Open work", "未完成事项"), openItems.map(openWorkRow))}
       {routines.length > 0 && section("scheduled", text("Scheduled tasks", "定时任务"), routines.map(routineRow), scheduledReady)}
     </div>
+    {hasChart ? <div className="flex min-h-0 flex-1 flex-col px-2">
+      <WorkChart key={sessionId} scopes={chartScopes} runsByHead={chartRuns} tasks={chartTasks} context={context} box={chartBox} memory={chartMemory} reportName={run => reportNameForRun(run, context)}
+        marks={chartMarks} stoppable={stoppableScopes} nextWake={nextWakeOf(ongoing, currentScope.active, text)} onOpenNextWake={() => open({ kind: "main", id: currentScope.key })} />
+    </div> : null}
   </section> : null}{pageLayer}</>;
 }

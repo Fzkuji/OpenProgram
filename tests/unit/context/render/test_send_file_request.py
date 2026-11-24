@@ -22,10 +22,10 @@ def bench(monkeypatch, tmp_path):
     from openprogram.runtime.conversation import turn_runtime as D
     from openprogram.runtime.conversation.turn_runtime import loop_runner
 
-    resolve = loop_runner._configure_browser_tool
+    resolve = loop_runner._configure_screen_tool
     bench = install_bench(monkeypatch, tmp_path, "codex", [])
     # The Agent's own tools, as a chat in the App resolves them.
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool", resolve)
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool", resolve)
     monkeypatch.setattr(D, "_load_agent_profile", lambda agent_id: {
         "id": agent_id, "system_prompt": "you are helpful",
         "tools": {"mode": "automatic", "web_search": True}})

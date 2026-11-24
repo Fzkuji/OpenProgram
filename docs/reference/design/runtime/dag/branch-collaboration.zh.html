@@ -54,7 +54,7 @@
 <thead><tr><th scope="col">操作</th><th scope="col">新建什么</th><th scope="col">有分支在运行时</th></tr></thead>
 <tbody>
 <tr><th scope="row">切换到已有分支</th><td>什么都不建；视图和 head 移到那条分支的末端</td><td>总是允许</td></tr>
-<tr><th scope="row">从旧位置重新开始：编辑后重发、重试、在图里选中一条消息后发送</th><td>在原分支旁新建一条分支，有自己的记录（新消息的 <code translate="no">branch_identity</code>）。两条都保留，都能运行。重试一条从没得到回复的提问时，改为重跑那条提问</td><td>其他分支运行时可从任意位置开始；选中分支自己的轮次在跑时等待</td></tr>
+<tr><th scope="row">从旧位置重新开始：编辑后重发、重试、在图里选中一条消息后发送</th><td>在原分支旁新建一条分支，有自己的记录（新消息的 <code translate="no">branch_identity</code>）。两条都保留，都能运行。重试一条从没得到回复的提问时，改为重跑那条提问。重试一轮回复只有报错（没写出内容、没运行工具）的提问时，新的一轮取代它：新一轮写入后删除失败的那一轮：每次失败留一条分支，里面没有可回去的内容</td><td>其他分支运行时可从任意位置开始；选中分支自己的轮次在跑时等待</td></tr>
 <tr><th scope="row">接着自己分支继续的轮次：一条消息、Goal 续跑、后台命令结束通知、子代理返回</th><td>什么都不建，不管选中的是哪条分支。它的消息接在自己分支的末端，那条分支的记录跟着走（选中时用 <code translate="no">follow_line</code>；没选中时提问用 <code translate="no">point_branch</code>、回复用 <code translate="no">carry_branch</code>，head 和选中的分支不动）。一个轮次结束时，如果后面的轮次已经接在它的回复下面，head 留在后面那一轮（<code translate="no">behind_selected_tip</code>）</td><td>总是允许；同一分支上的两个运行时轮次在这条线上前后相接</td></tr>
 <tr><th scope="row">回退</th><td>什么都不建。就地撤回当前分支的尾部：分支 id、名字、设置和用量不变；末端退到所选提问之前，那条提问回到输入框</td><td>那条分支在运行时拒绝；改动文件的回退在任一分支运行时拒绝</td></tr>
 </tbody>

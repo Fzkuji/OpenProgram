@@ -19,7 +19,7 @@
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">lib/session-store/session-scope-registry.ts</code></th><td>Store factory and a module-level <code translate="no">Map&lt;sid, store&gt;</code>. Instances survive pane unmount; <code translate="no">dropSessionStore</code> drops them only when the session is deleted (<code translate="no">removeConversation</code>, <code translate="no">dropChatDraft</code>).</td></tr>
-<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>, <code translate="no">useSessionScope(selector)</code>. Throws with no provider: a silent fallback to the focused session is the bug this removes.</td></tr>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>, <code translate="no">useSessionScope(selector)</code>. With no provider it reads an empty scope (no session) and warns once in the console, never the focused session: that fallback is the bug this removes, and one misplaced component does not take the page down.</td></tr>
 <tr><th scope="row">Providers</th><td><code translate="no">FocusedComposer</code> in <code translate="no">components/app-shell.tsx</code> (single-session composer, focused chat key) and <code translate="no">PeerSessionPane</code> (each split pane)</td></tr>
 </tbody>
 </table>

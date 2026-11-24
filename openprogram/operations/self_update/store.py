@@ -64,6 +64,26 @@ def _rebound(value: Any, previous: str, commit: str) -> Any:
     return commit if value == previous else value
 
 
+#: Finished updates as last read, by directory. The reconciler reads every
+#: record three times each five seconds; a finished one is parsed again only
+#: when one of its three files is another file, or changed.
+_finished_records: dict[str, tuple[tuple, UpdateRecord]] = {}
+_FINISHED_RECORDS_KEPT = 512
+
+
+def _record_signature(directory: Path) -> tuple | None:
+    """What identifies the three files a record is read from, as they are now."""
+    signature = []
+    for name in ("request.json", "state.json", "events.jsonl"):
+        try:
+            info = os.lstat(directory / name)
+        except OSError:
+            return None
+        signature.append((info.st_ino, info.st_mode, info.st_uid, info.st_size,
+                          info.st_mtime_ns, info.st_ctime_ns))
+    return tuple(signature)
+
+
 class SelfUpdateStore:
     """Owns ``<state>/self-updates`` and its single active update slot."""
 
@@ -535,8 +555,13 @@ class SelfUpdateStore:
         directory = self._update_dir(update_id)
         if not directory.is_dir():
             raise UpdateNotFoundError(f"update {update_id} does not exist")
+        signature = None
         if read_only:
             self._private_directory(directory)
+            signature = _record_signature(directory)
+            kept = _finished_records.get(str(directory))
+            if kept is not None and signature is not None and kept[0] == signature:
+                return kept[1]
         raw_request = self._read_json(directory / "request.json", read_only=read_only)
         request = UpdateRequest.from_dict(raw_request)
         state = UpdateState.from_dict(self._read_json(directory / "state.json", read_only=read_only))
@@ -546,18 +571,16 @@ class SelfUpdateStore:
         self._reconcile_events_unlocked(record, read_only=read_only)
         if raw_request.get("schema") == 1 and self._retires_unlocked(record):
             record = self._retire_unlocked(record, read_only=read_only)
+        elif signature is not None and is_terminal(record.state.phase):
+            if len(_finished_records) >= _FINISHED_RECORDS_KEPT:
+                _finished_records.clear()
+            _finished_records[str(directory)] = (signature, record)
         return record
 
     @staticmethod
     def _retires_unlocked(record: UpdateRecord) -> bool:
-        """Whether an unfinished schema 1 update ends now.
-
-        A dev_stable update keeps going: its controller is a frozen private
-        copy that finishes the update with the code it started with.
-        """
-        from .control.dev_stable import owns
-
-        return not is_terminal(record.state.phase) and not owns(record)
+        """Whether an unfinished schema 1 update ends now."""
+        return not is_terminal(record.state.phase)
 
     def _retire_unlocked(self, record: UpdateRecord, *, read_only: bool) -> UpdateRecord:
         """End an update whose controller belongs to the previous update system."""

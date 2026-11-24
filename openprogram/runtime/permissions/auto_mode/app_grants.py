@@ -2,15 +2,15 @@
 
 Auto reviews a call from its arguments. For a screen those say which
 application the agent wants to operate and for what request; they say
-nothing about one click over the next, whose arguments are an element index
-or two pixels. So the first call to an application (or a VM, or the user's
-own browser) is reviewed, and an allowing review stands for that screen for
-the rest of the conversation, as a grant the user gives in the asking modes
-does. What the agent may do there without asking the user is the tool's
-confirmation policy, which the model reads with the target's guide.
+nothing about one click over the next, whose arguments are an element number
+or two pixels. So the first call to an application (or the whole screen, or
+the user's own browser) is reviewed, and an allowing review stands for that
+screen for the rest of the conversation, as a grant the user gives in the
+asking modes does. What the agent may do there without asking the user is the
+tool's confirmation policy, which the model reads with the target's guide.
 
 The grant is keyed like the permission rule of the same screen
-(``computer_use_agent(google chrome)``), bound to the conversation, its
+(``computer_use(window google chrome)``), bound to the conversation, its
 owner, the version of its permissions and the rules that name the tool:
 switching mode, or adding or removing a rule for the tool, starts over.
 Rules are matched before it on every call, so a deny or ask rule always

@@ -7,6 +7,12 @@
  * that does a request/response pair over the one worker WS.
  */
 import { getSocket } from "@/lib/runtime-bridge/state";
+import { onChanged } from "@/lib/net/ws/change-bus";
+
+/** The Worker's `changed` topic for durable write receipts: its keys are
+ *  the idempotency keys whose receipt was written or became final
+ *  (`openprogram/state/store/operation_receipts.py`). */
+export const OPERATION_RECEIPTS = "operation.receipts";
 
 const pendingRequestIds = new Map<string, string>();
 const mutationKeys = new Map<string, {
@@ -27,16 +33,12 @@ const MAX_MUTATION_KEYS = 128;
 const MAX_MUTATION_REGISTRY_BYTES = 64 * 1024;
 const MAX_MUTATION_ATTEMPTS = 3;
 const MAX_MUTATION_VALUE_SAMPLE = 4096;
-const MUTATION_RECONCILE_INTERVAL_MS = 250;
-const MUTATION_RECONCILE_RETRY_MS = 5000;
-const MUTATION_RECONCILE_DEADLINE_MS = 30000;
 const mutationReconciliations = new Map<string, {
   promise: Promise<void>;
   controller: AbortController;
   resetGeneration: number;
   keyGeneration: number;
 }>();
-const mutationReconcileRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const mutationReconcileKeyGenerations = new Map<string, number>();
 let mutationReconcileResetGeneration = 0;
 
@@ -248,56 +250,66 @@ export function wsMutationRequest<T>(
   const run = (async () => {
     let result: T | null = null;
     let attempt = 0;
-    while (attempt < maxAttempts) {
-      attempt += 1;
-      const requestController = new AbortController();
-      try {
-        result = await send(requestController.signal);
-      } catch {
-        result = null;
-      }
-      const operationId = result && typeof result === "object"
-        ? (result as Record<string, unknown>).operation_id
-        : undefined;
-      if (typeof operationId === "string") {
-        const pending = pendingMutations.get(key);
-        if (pending) pending.operationId = operationId;
-        for (const entry of mutationKeys.values()) {
-          if (entry.key === key) entry.operationId = operationId;
+    // Heard from the first send on, so a receipt that lands while the
+    // reply is on its way still counts.
+    const receipt = receiptWaiter(key);
+    try {
+      while (attempt < maxAttempts) {
+        attempt += 1;
+        const requestController = new AbortController();
+        try {
+          result = await send(requestController.signal);
+        } catch {
+          result = null;
         }
-      }
-      if (mutationIsTerminal(result)) break;
-      const status = result && typeof result === "object"
-        ? (result as Record<string, unknown>).status
-        : undefined;
-      if (status === "in_progress" || status === "pending") {
-        const deadline = Date.now() + deadlineMs;
-        while (Date.now() < deadline) {
-          await waitForMutationReconcile(Math.min(100, deadline - Date.now()));
-          const pollController = new AbortController();
-          try {
-            const next = await send(pollController.signal);
-            // A lost poll response is transport uncertainty, not evidence
-            // that the durable operation disappeared. Keep the last known
-            // in-progress receipt so the deadline still yields recovery_required.
-            if (next !== null) result = next;
-          } catch {
-            // Preserve the last known receipt until the deadline.
+        const operationId = result && typeof result === "object"
+          ? (result as Record<string, unknown>).operation_id
+          : undefined;
+        if (typeof operationId === "string") {
+          const pending = pendingMutations.get(key);
+          if (pending) pending.operationId = operationId;
+          for (const entry of mutationKeys.values()) {
+            if (entry.key === key) entry.operationId = operationId;
           }
-          const nextOperationId = result && typeof result === "object"
-            ? (result as Record<string, unknown>).operation_id
-            : undefined;
-          if (typeof nextOperationId === "string") {
-            const pending = pendingMutations.get(key);
-            if (pending) pending.operationId = nextOperationId;
-            for (const entry of mutationKeys.values()) {
-              if (entry.key === key) entry.operationId = nextOperationId;
+        }
+        if (mutationIsTerminal(result)) break;
+        const status = result && typeof result === "object"
+          ? (result as Record<string, unknown>).status
+          : undefined;
+        if (status === "in_progress" || status === "pending") {
+          // Another request holds the operation: ask again when the Worker
+          // says its receipt changed (or the socket came back), until the
+          // deadline.
+          const deadline = Date.now() + deadlineMs;
+          while (Date.now() < deadline) {
+            await receipt.next(undefined, deadline - Date.now());
+            const pollController = new AbortController();
+            try {
+              const next = await send(pollController.signal);
+              // A lost poll response is transport uncertainty, not evidence
+              // that the durable operation disappeared. Keep the last known
+              // in-progress receipt so the deadline still yields recovery_required.
+              if (next !== null) result = next;
+            } catch {
+              // Preserve the last known receipt until the deadline.
             }
+            const nextOperationId = result && typeof result === "object"
+              ? (result as Record<string, unknown>).operation_id
+              : undefined;
+            if (typeof nextOperationId === "string") {
+              const pending = pendingMutations.get(key);
+              if (pending) pending.operationId = nextOperationId;
+              for (const entry of mutationKeys.values()) {
+                if (entry.key === key) entry.operationId = nextOperationId;
+              }
+            }
+            if (mutationIsTerminal(result)) break;
           }
-          if (mutationIsTerminal(result)) break;
+          break;
         }
-        break;
       }
+    } finally {
+      receipt.stop();
     }
     if (result && typeof result === "object") {
       const status = (result as Record<string, unknown>).status;
@@ -394,43 +406,64 @@ function mutationStatusRequest(entry: {
   };
 }
 
-function waitForMutationReconcile(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const onAbort = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    };
-    timer = setTimeout(onAbort, ms);
-    unrefTimer(timer);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) onAbort();
+/** Wake on the Worker's word that the receipt of `key` changed, or on a
+ *  reconnect (frames sent while the socket was down are lost). A word heard
+ *  while nobody waited is kept for the next wait. */
+function receiptWaiter(key: string): {
+  next: (signal?: AbortSignal, deadlineMs?: number) => Promise<void>;
+  stop: () => void;
+} {
+  let heard = false;
+  let wake: (() => void) | null = null;
+  const off = onChanged(OPERATION_RECEIPTS, (keys) => {
+    if (keys !== null && !keys.includes(key)) return;
+    heard = true;
+    wake?.();
   });
+  return {
+    next(signal, deadlineMs) {
+      if (heard || signal?.aborted || deadlineMs !== undefined && deadlineMs <= 0) {
+        heard = false;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const done = () => {
+          wake = null;
+          heard = false;
+          if (timer !== undefined) clearTimeout(timer);
+          signal?.removeEventListener("abort", done);
+          resolve();
+        };
+        wake = done;
+        signal?.addEventListener("abort", done, { once: true });
+        if (deadlineMs !== undefined) {
+          timer = setTimeout(done, deadlineMs);
+          unrefTimer(timer);
+        }
+      });
+    },
+    stop: () => { off(); wake?.(); },
+  };
 }
 
 // Browser timers are numeric handles; Node timers expose `unref`. Keeping
-// reconciliation timers unreferenced prevents a test/SSR process from being
-// held open by a best-effort background retry while preserving browser use.
+// request deadlines unreferenced prevents a test/SSR process from being
+// held open by a best-effort background request while preserving browser use.
 function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
   const nodeTimer = timer as unknown as { unref?: () => void };
   nodeTimer.unref?.();
 }
 
 /** Reconcile an aborted UI request without replaying a write payload. The
- * durable server receipt is queried with fresh request ids at a bounded rate;
- * connection loss simply causes the next scheduled round to try again. */
+ * durable server receipt is asked for once now, then once each time the
+ * Worker says that receipt changed and once after each reconnect, until an
+ * identified terminal receipt answers; nothing asks on a timer. */
 export function reconcileWsMutation(key: string): void {
-  const retryTimer = mutationReconcileRetryTimers.get(key);
-  if (retryTimer !== undefined) clearTimeout(retryTimer);
-  mutationReconcileRetryTimers.delete(key);
   const resetGeneration = mutationReconcileResetGeneration;
   const keyGeneration = mutationReconcileKeyGenerations.get(key) ?? 0;
   // The shared durable request still owns the receipt; defer reconciliation
-  // until that promise settles so status polling never races its request.
+  // until that promise settles so status asks never race its request.
   const pending = pendingMutations.get(key);
   if (pending) {
     void pending.promise.then(() => {
@@ -443,12 +476,11 @@ export function reconcileWsMutation(key: string): void {
   }
   if (mutationReconciliations.has(key)) return;
   const controller = new AbortController();
+  const receipt = receiptWaiter(key);
   const run = (async () => {
-    const deadline = Date.now() + MUTATION_RECONCILE_DEADLINE_MS;
     while (!controller.signal.aborted
       && resetGeneration === mutationReconcileResetGeneration
-      && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)
-      && Date.now() < deadline) {
+      && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)) {
       const entry = mutationEntryForKey(key);
       if (!entry) return;
       if (pendingMutations.has(key)) return;
@@ -465,15 +497,13 @@ export function reconcileWsMutation(key: string): void {
           statusPayload,
           statusRequest.responseType,
           statusRequest.matches,
-          Math.min(4000, Math.max(1, deadline - Date.now())),
+          4000,
           { requestId: true, signal: controller.signal },
         );
       } catch {
         // Request setup/handler failures are uncertainty, not evidence that
-        // the durable operation is gone. Keep the key and retry this bounded
-        // round; the outer retry timer handles later reconnects.
-        await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS, controller.signal);
-        continue;
+        // the durable operation is gone: keep the key and ask again on the
+        // next receipt word or reconnect.
       }
       const status = result?.status;
       const expectedOperationId = entry.operationId;
@@ -497,33 +527,18 @@ export function reconcileWsMutation(key: string): void {
         forgetMutationKey(key);
         return;
       }
-      await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS, controller.signal);
+      await receipt.next(controller.signal);
     }
-    if (controller.signal.aborted) return;
-    // Keep the key for safe future replay, but start a later bounded round so
-    // reconnects can observe a server operation that outlives this deadline.
-    const retryTimer = setTimeout(() => {
-      mutationReconcileRetryTimers.delete(key);
-      if (resetGeneration === mutationReconcileResetGeneration
-        && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)) {
-        reconcileWsMutation(key);
-      }
-    }, MUTATION_RECONCILE_RETRY_MS);
-    unrefTimer(retryTimer);
-    mutationReconcileRetryTimers.set(key, retryTimer);
   })();
   const state = {
     promise: run, controller, resetGeneration, keyGeneration,
   };
   mutationReconciliations.set(key, state);
-  void run.then(
-    () => {
-      if (mutationReconciliations.get(key) === state) mutationReconciliations.delete(key);
-    },
-    () => {
-      if (mutationReconciliations.get(key) === state) mutationReconciliations.delete(key);
-    },
-  );
+  const settle = () => {
+    receipt.stop();
+    if (mutationReconciliations.get(key) === state) mutationReconciliations.delete(key);
+  };
+  void run.then(settle, settle);
 }
 
 /** Stop one registry-owned reconciler without releasing its durable key. */
@@ -532,18 +547,12 @@ export function stopWsMutationReconciliation(key: string): void {
     key, (mutationReconcileKeyGenerations.get(key) ?? 0) + 1,
   );
   mutationReconciliations.get(key)?.controller.abort();
-  const timer = mutationReconcileRetryTimers.get(key);
-  if (timer !== undefined) clearTimeout(timer);
-  mutationReconcileRetryTimers.delete(key);
 }
 
-/** Test/process teardown hook: stop background status polling, retain keys. */
+/** Test/process teardown hook: stop background reconcilers, retain keys. */
 export function resetWsMutationReconciliation(): void {
   mutationReconcileResetGeneration += 1;
-  for (const key of new Set([
-    ...mutationReconciliations.keys(),
-    ...mutationReconcileRetryTimers.keys(),
-  ])) stopWsMutationReconciliation(key);
+  for (const key of [...mutationReconciliations.keys()]) stopWsMutationReconciliation(key);
 }
 
 /** Used by the shared WS dispatcher to avoid toasting a request-local error. */

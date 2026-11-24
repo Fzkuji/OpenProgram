@@ -37,7 +37,7 @@ framework(action="interface", operation="tabs.list",
 <li>Native history, downloads, browser import and update controls use the existing Desktop functions. A browser window reports native-only capabilities as unavailable.</li>
 <li>Window presentation needs a connected view; backend and installed application operations do not need a rendered frontend.</li>
 <li>Unsaved file tabs must be saved or discarded before an automated close.</li>
-<li>Web pages are opened and closed with <code translate="no">computer_use_agent(target="browser")</code>, or with <code translate="no">tabs.openWebTab</code>. A native Page presentation command names its tab with <code translate="no">arguments.tab</code>, the id that target's <code translate="no">tabs</code> lists; it needs what <code translate="no">computer_use_agent</code> needs.</li>
+<li>Web pages are opened and closed with <code translate="no">computer_use(type="browser")</code>, or with <code translate="no">tabs.openWebTab</code>. A native Page presentation command names its tab with <code translate="no">arguments.tab</code>, the id that target's <code translate="no">list_tabs</code> lists; it needs what <code translate="no">computer_use</code> needs.</li>
 </ul>
 <h2 id="authority">Authority</h2>
 <table class="stack fixed">

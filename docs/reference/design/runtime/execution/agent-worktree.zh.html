@@ -122,7 +122,7 @@
 <tbody>
 <tr><th scope="row">输入框的环境行（<code translate="no">worktree-chip.tsx</code>）</th><td>环境标签旁的一个标签：工作目录，或工作树的分支及改动文件数。菜单可选工作目录或独立 worktree；工作树打开时提供合并到工作目录、压成一个提交合并、保留为 git 分支和丢弃。丢弃会弹出确认框。会话目录在 git 仓库里，或分支有打开的工作树时才显示。分支运行时合并、保留和丢弃要等它停下</td></tr>
 <tr><th scope="row">对话记录（<code translate="no">worktree-branch-marker.tsx</code>）</th><td>分支顶部一行：在哪里运行、改了几个文件，或工作树已合并、保留、丢弃</td></tr>
-<tr><th scope="row">Activity（<code translate="no">running-panel.tsx</code>）</th><td>分支代理行上的 Worktree 标记，状态行上的改动文件数</td></tr>
+<tr><th scope="row">Activity（<code translate="no">running-panel.tsx</code>）</th><td>分支 worktree 的改动文件数，在工作图上该分支主代理图标的提示里</td></tr>
 </tbody>
 </table>
 <p class="note">三处读同一份会话工作树（<code translate="no">lib/worktrees/session-worktrees.ts</code>），每次 <code translate="no">worktree_status</code> 广播后重新读取。</p>

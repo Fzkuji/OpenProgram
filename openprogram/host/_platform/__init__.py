@@ -2,7 +2,8 @@
 
 Callers import the module that owns the operation: ``filesystem`` (paths,
 owner-only permissions, directory handles), ``locking`` (``flock``),
-``processes`` (liveness, kill trees, port owners), ``process_ownership``
+``processes`` (liveness, kill trees, port owners), ``process_exits``
+(learning the moment a process ends), ``process_ownership``
 (process groups and Windows jobs), ``command_shell`` (which shell a
 command runs in), ``terminal`` (shell invocations, PTYs, bundled tools),
 ``environment`` (browser, WSL, release and service backends),

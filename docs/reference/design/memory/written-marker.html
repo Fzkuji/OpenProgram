@@ -55,7 +55,7 @@
 <tr><th scope="row">Walk</th><td><code translate="no">online.unwritten_turns</code>: the trailing run with no mark, oldest first</td></tr>
 <tr><th scope="row">Batch</th><td><code translate="no">_first_batch</code>: leading turns that reach the threshold, so a day-long backlog takes several passes</td></tr>
 <tr><th scope="row">Per turn</th><td><code translate="no">_memory_write</code> in <code translate="no">conversation/turn_runtime</code>: the branch ending at the head</td></tr>
-<tr><th scope="row">Session boundary</th><td><code translate="no">session_watcher</code> (polls every 5 minutes, 30 minutes idle) forces <code translate="no">write</code>: the head's branch first, however short, then each other live, unarchived tip from <code translate="no">list_branches</code> once its unwritten text reaches the threshold</td></tr>
+<tr><th scope="row">Session boundary</th><td><code translate="no">session_watcher</code> (30 minutes idle, looked at when that deadline comes, at most 5 minutes apart) forces <code translate="no">write</code>: the head's branch first, however short, then each other live, unarchived tip from <code translate="no">list_branches</code> once its unwritten text reaches the threshold</td></tr>
 </tbody>
 </table>
 <p class="note">The idle allowance in <code translate="no">should_incremental_write</code> does not apply to abandoned tips: their last message is old by definition and every retry would pass. Rewound turns never arrive; <code translate="no">get_branch</code> filters them.</p>

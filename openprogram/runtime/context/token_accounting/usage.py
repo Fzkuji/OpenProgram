@@ -198,32 +198,6 @@ class UsageTracker:
         self._persist(session_id, state)
         return state
 
-    # ---- Estimate fallback --------------------------------------------
-
-    def estimated_input(self, session_id: str,
-                        fresh_estimate: int) -> tuple[int, str]:
-        """Decide whether to trust a fresh estimate or the last
-        provider-reported number.
-
-        Returns ``(best_value, source)``. ``source`` is one of
-        ``provider`` / ``estimate`` so the engine can mark it on
-        TurnPrep for the UI.
-
-        Logic: if the cached state has a recent
-        ``last_prompt_tokens`` (set within the last turn) and the
-        fresh estimate isn't drastically larger, trust the provider's
-        figure — it's authoritative. If the estimate is much bigger,
-        new content was added since the last turn (the typical case
-        between turns); blend.
-        """
-        state = self.get(session_id)
-        if state.source != "provider" or state.last_prompt_tokens <= 0:
-            return fresh_estimate, "estimate"
-        # Heuristic blend: take the provider's number from last turn
-        # PLUS the estimated growth between then and now.
-        growth = max(0, fresh_estimate - state.last_prompt_tokens)
-        return state.last_prompt_tokens + growth, "provider+delta"
-
     # ---- Lifecycle hooks ----------------------------------------------
 
     def on_session_end(self, session_id: str) -> None:

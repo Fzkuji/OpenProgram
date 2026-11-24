@@ -31,7 +31,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">位置上报</th><td>窗口被监视期间，另一个线程每 <code translate="no">REPORT_SECONDS</code>（0.12 秒）在有变化时上报它的位置：<code translate="no">window_place</code> 读取屏幕窗口列表，得到窗口的位置和 <code translate="no">GLOW_MARGIN</code>（32pt）范围内挡在它前面的窗口，标题为 <code translate="no">OVERLAY_TITLE</code> 的窗口（App 自己的提示层）不计入。</td></tr>
+<tr><th scope="row">位置上报</th><td>窗口被监视期间，另一个线程在它的位置变化时上报：<code translate="no">window_place</code> 读取屏幕窗口列表，得到窗口的位置和 <code translate="no">GLOW_MARGIN</code>（32pt）范围内挡在它前面的窗口，标题为 <code translate="no">OVERLAY_TITLE</code> 的窗口（App 自己的提示层）不计入。</td></tr>
+<tr><th scope="row">何时读取位置</th><td>屏幕上有窗口的每个应用都挂着辅助功能观察者（<code translate="no">ax_events.ScreenEvents</code>），有窗口新建、移动、改变大小、最小化、恢复或关闭，或焦点转移时，每一阵读一次。至少每 <code translate="no">RESYNC_SECONDS</code>（5 秒）一次；没有辅助功能权限时每 <code translate="no">REPORT_SECONDS</code>（0.12 秒）。</td></tr>
 <tr><th scope="row">控制帧</th><td>上报经 <code translate="no">native_window.note_control</code> 发出，归属取触碰窗口时记下的对话，帧类型为 <code translate="no">native.control</code>（<code translate="no">session_id</code>、<code translate="no">window_id</code>、<code translate="no">active</code>、<code translate="no">app_name</code>、<code translate="no">frame</code>、<code translate="no">buttons</code>、<code translate="no">occluders</code>）；子进程以 <code translate="no">kind: "control"</code> 转发。</td></tr>
 <tr><th scope="row">结束</th><td>释放窗口时发出 <code translate="no">active: false</code>。</td></tr>
 <tr><th scope="row">Web 客户端</th><td>Web 客户端在<strong>显示操作</strong>打开时把上报交给 <code translate="no">openprogramDesktop.nativeControl</code>，控制结束的上报总会交过去。</td></tr>
@@ -46,9 +47,10 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">读取调用</th><td><code translate="no">lib/computer-use/computer-use-agent-call.ts</code> 解读 <code translate="no">computer_use_agent</code> 调用：<code translate="no">appStepArgs</code> 把 <code translate="no">app</code> 调用变成应用渲染器接受的扁平步骤（<code translate="no">{action, app, …}</code>；多个步骤成为 batch，代码自成一个动作），<code translate="no">screenStep</code> 给出浏览器或虚拟机调用的动作。</td></tr>
-<tr><th scope="row">应用步骤</th><td><code translate="no">tool-presentation.ts</code> 用显示器图标和 system 色调渲染 <code translate="no">app</code> 步骤；标题写动作和应用（"在 Calculator 中点击"），目标行在给了按键、文本、动作名或窗口时显示它们。</td></tr>
-<tr><th scope="row">其他调用</th><td>浏览器调用显示动作和 URL，虚拟机调用显示动作，代码显示"在 &lt;app&gt; 中运行代码"。工具还能把任务交出去时录下的对话，把那种调用显示为"交给新代理"及简报首行。</td></tr>
+<tr><th scope="row">读取调用</th><td><code translate="no">lib/computer-use/computer-use-call.ts</code> 解读每一次 <code translate="no">computer_use</code> 调用，别处都不解读：<code translate="no">callTarget</code> 把 <code translate="no">device</code>、<code translate="no">type</code> 和浏览器的 <code translate="no">app</code> 读成目标的键、设备和类型，<code translate="no">callStep</code> 给出用现行名字写的一个扁平步骤（<code translate="no">presentAction</code> 是 <code translate="no">vocabulary.py</code> 里改写表在 Web 端的副本）。<code translate="no">appStepArgs</code> 给出窗口调用的步骤，<code translate="no">screenStep</code> 给出其他调用的动作，<code translate="no">resultBody</code> 去掉目标抬头和指南，<code translate="no">resultFailed</code> 识别 <code translate="no">Error:</code> 和带代码的失败。</td></tr>
+<tr><th scope="row">存下的调用</th><td>历史保留模型当时写的内容：别的工具用的动作名和参数名（<code translate="no">vocabulary.py</code> 会改写的那些）在这里也会读，并用现行的说法显示。按这个工具更早的写法写的调用不读：2.0 之前不为旧版本保留兼容。</td></tr>
+<tr><th scope="row">应用步骤</th><td><code translate="no">tool-presentation.ts</code> 用显示器图标和 system 色调渲染窗口步骤；标题写动作和应用（"在 Calculator 中点击"），目标行在给了按键、文本、动作名或窗口时显示它们。</td></tr>
+<tr><th scope="row">其他调用</th><td>浏览器调用在“Chrome”“Safari”等浏览器名或“&lt;机器&gt; 上的浏览器”下显示动作和 URL；屏幕调用显示动作（“在屏幕上点击”“在 Lab VM 的屏幕上悬停”），机器名取自设置（<code translate="no">rememberMachineNames</code>；名单到达或机器改名时消息重新绘制）；代码显示"在 &lt;app&gt; 中运行代码"。工具还能把任务交出去时录下的对话，把那种调用显示为"交给新代理"及简报首行。</td></tr>
 <tr><th scope="row">审批卡片</th><td>审批卡片的范围按钮在"允许一次"和"始终允许"之间加入"允许此对话"，答案摘要打印"允许此对话"。</td></tr>
 <tr><th scope="row">旧调用</th><td>早先工具（<code translate="no">computer_use</code>、<code translate="no">web_use</code>、<code translate="no">gui_agent</code>）记录的调用保留各自的渲染器，旧对话照常可读。</td></tr>
 </tbody>
@@ -58,7 +60,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">卡片头部</th><td><code translate="no">app</code> 调用的审批卡片（<code translate="no">computer-use-approval.tsx</code>）先展示应用本身：图标、显示名和 bundle id 来自 <code translate="no">computer_use_apps</code> WebSocket 动作，它调用后端的 <code translate="no">app_info</code>，不启动任何东西，Web 按名字缓存结果（<code translate="no">lib/net/computer-use-apps.ts</code>）。</td></tr>
+<tr><th scope="row">卡片头部</th><td>审批卡片（<code translate="no">computer-use-approval.tsx</code>）用于本机的窗口和整屏调用，以及用户自己的浏览器（<code translate="no">asksAboutComputerUse</code>）；带设备的调用从不询问。窗口调用的卡片先展示应用本身，即调用写明的应用，否则是步骤里第一个写明的应用：图标、显示名和 bundle id 来自 <code translate="no">computer_use_apps</code> WebSocket 动作，它调用后端的 <code translate="no">app_info</code>，不启动任何东西，Web 按名字缓存结果（<code translate="no">lib/net/computer-use-apps.ts</code>）。</td></tr>
 <tr><th scope="row">卡片正文</th><td>其下一个标签用文字说明这一步（<code translate="no">computer-use-step.ts</code>），两行分别说明这一步在后台进行（录音则说明只录该应用的声音）以及可选范围的含义，去掉空值的参数折叠在"查看执行详情"里。</td></tr>
 </tbody>
 </table>
@@ -66,7 +68,7 @@
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">设置分区</th><td>项目设置页在默认设置和权限规则之间有一个"操控电脑"分区（<code translate="no">computer-use-apps-section.tsx</code>）。</td></tr>
-<tr><th scope="row">行</th><td>它把项目的 <code translate="no">computer_use_agent(&lt;app&gt;)</code> 允许规则（以及以 <code translate="no">computer_use(&lt;app&gt;)</code> 保存的规则）列成每个应用一行，带图标、名字、bundle id 和移除按钮，通用规则列表不再重复这些规则。</td></tr>
+<tr><th scope="row">行</th><td>它把项目的 <code translate="no">computer_use(window &lt;application&gt;)</code> 允许规则列成每个应用一行，带图标、名字、bundle id 和移除按钮。通用规则列表不再重复这些规则，并在其他每条操控电脑规则下面用文字说明它的键（<code translate="no">computerUseRuleWords</code>：屏幕、Chrome、Lab VM 的所有表面）。</td></tr>
 <tr><th scope="row">移除</th><td>移除一行即删除该规则。</td></tr>
 <tr><th scope="row">对话级授权</th><td>对话级授权是随对话结束的会话规则，所以这里不列出。</td></tr>
 </tbody>
@@ -79,7 +81,8 @@
 <tr><th scope="row">隔离世界</th><td>两者运行在同一 isolated world（<code translate="no">apps/desktop/main/web-views/web-views.js</code> 中的 <code translate="no">PICKER_WORLD</code>），共享取消钩子，一个模式会结束另一个。</td></tr>
 <tr><th scope="row">框选遮罩</th><td><code translate="no">capturePage</code> 取矩形前先移除区域遮罩并绘制两帧，按页面缩放换算。</td></tr>
 <tr><th scope="row">送达</th><td>文件经 <code translate="no">lib/chat/composer-inbox.ts</code> 到达目标对话：显示该对话的输入框把它当作拖入文件，否则一直等到有输入框显示。</td></tr>
-<tr><th scope="row">@ 菜单</th><td>输入框的 <code translate="no">@</code> 菜单在文件之前列出已打开的网页标签和正在运行的应用（<code translate="no">attach/mention/mention-sources.ts</code>）。标签页写成指向其地址的 markdown 链接，应用写成名称加 bundle id，所以「这个标签页」不用模型去猜。正在运行的应用来自带 <code translate="no">running: true</code> 的 <code translate="no">computer_use_apps</code>，它列出被拒应用之外的常规应用，页面里缓存十秒。</td></tr>
+<tr><th scope="row">@ 菜单</th><td>输入框的 <code translate="no">@</code> 菜单在文件之前列出这个会话 Resources 里的全部网页、标签页里的其他应用窗口和正在运行的应用（<code translate="no">attach/mention/mention-sources.ts</code>）。标签页写成指向其地址的 markdown 链接，应用写成名称加 bundle id，窗口写成够到它的调用参数（<code translate="no">target "app", app "Notes", window_id 812</code>），所以「这个标签页」不用模型去猜。</td></tr>
+<tr><th scope="row">正在运行的应用</th><td><code translate="no">@</code> 菜单里正在运行的应用来自带 <code translate="no">running: true</code> 的 <code translate="no">computer_use_apps</code>，它列出被拒应用之外的常规应用，页面里缓存十秒。</td></tr>
 </tbody>
 </table>
 
@@ -88,7 +91,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>网页标签里的元素评论和区域截图；对已打开标签页和正在运行应用的 <code translate="no">@</code> 提及。</td></tr>
+<tr><th scope="row">已实现</th><td>网页标签里的元素评论和区域截图；对本会话网页、标签页里的窗口和正在运行应用的 <code translate="no">@</code> 提及。</td></tr>
 <tr><th scope="row">macOS 上已实现</th><td>桌面应用上的控制提示层（向内发光、强调色红绿灯和 agent 光标），窗口位置帧、步骤坐标帧和桌面提示层窗口有单元测试。未实现：Linux 和 Windows 后端不上报窗口位置和步骤坐标，那里不会显示提示层。</td></tr>
 <tr><th scope="row">macOS 上已实现</th><td>窗口标识，监视、切换和空闲释放有单元测试。Linux 和 Windows 上未实现。</td></tr>
 </tbody>

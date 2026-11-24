@@ -12,7 +12,7 @@ const require = createRequire(join(root, 'package.json'));
 const {parseHTML} = require('linkedom');
 const dir = scratchDir(root, "canvas-transition");
 await build({absWorkingDir: root, stdin: {contents: `
-export {captureCanvasTransition, playCanvasTransition} from './lib/tabs/canvas/canvas-transition';
+export {captureCanvasTransition, playCanvasTransition, foldClip} from './lib/tabs/canvas/canvas-transition';
 export {canvasPanesMoving} from './lib/tabs/canvas/canvas-motion';
 `, resolveDir: root}, bundle: true, format: 'esm', platform: 'node', packages: 'external',
   tsconfig: join(root, 'tsconfig.json'), outfile: join(dir, 'probe.mjs'), loader: {'.css': 'empty'}});
@@ -23,7 +23,7 @@ const rects = new Map();
 const animations = [];
 const store = new Map();
 const storage = {getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k)};
-Object.assign(globalThis, {window, document, localStorage: storage, sessionStorage: storage, CSS: {escape: s => s}, matchMedia: () => ({matches: false})});
+Object.assign(globalThis, {window, document, localStorage: storage, sessionStorage: storage, CustomEvent: window.CustomEvent, CSS: {escape: s => s}, matchMedia: () => ({matches: false})});
 window.location = {pathname: '/chat', hash: '', search: '', protocol: 'http:', host: '127.0.0.1:18100'};
 globalThis.location = window.location;
 window.history = {state: null, pushState() {}, replaceState() {}};
@@ -41,10 +41,10 @@ proto.getBoundingClientRect = function () {
 };
 proto.animate = function (frames, options) {
   const finished = Promise.resolve();
-  animations.push({el: this, frames, options});
+  animations.push({el: this, frames, options, finishedLater: new Promise(resolve => setTimeout(resolve, 5))});
   return {finished, cancel() {}};
 };
-const {captureCanvasTransition, playCanvasTransition, canvasPanesMoving} = await import(pathToFileURL(join(dir, 'probe.mjs')));
+const {captureCanvasTransition, playCanvasTransition, canvasPanesMoving, foldClip} = await import(pathToFileURL(join(dir, 'probe.mjs')));
 const canvas = document.querySelector('[data-canvas-root]');
 
 test('a pane a rearrangement hides fades under the pane that grows into its room', () => {
@@ -79,4 +79,40 @@ test('a capture the layout never follows lapses instead of playing later', () =>
   playCanvasTransition();
   performance.now = realNow;
   assert.equal(animations.length, 0);
+});
+
+test('a closing pane folds toward its own side as the pane beside it grows into its room', () => {
+  const left = new DOMRect(0, 0, 500, 600), right = new DOMRect(500, 0, 500, 600), whole = new DOMRect(0, 0, 1000, 600);
+  assert.equal(foldClip(right, [{from: left, to: whole}]), 'inset(0 0 0 100%)', 'the right pane folds to the right edge');
+  assert.equal(foldClip(left, [{from: right, to: whole}]), 'inset(0 100% 0 0)', 'the left pane folds to the left edge');
+  const top = new DOMRect(0, 0, 1000, 300), bottom = new DOMRect(0, 300, 1000, 300);
+  assert.equal(foldClip(bottom, [{from: top, to: whole}]), 'inset(100% 0 0 0)');
+  assert.equal(foldClip(top, [{from: bottom, to: whole}]), 'inset(0 0 100% 0)');
+  assert.equal(foldClip(right, [{from: left, to: left}]), null, 'no pane takes its room: nothing to fold toward');
+});
+
+test('closing copies only the closing pane, and a document pane that stays mounted folds itself', async () => {
+  for (const node of [...canvas.children]) node.remove();
+  canvas.innerHTML = '<div data-center-tab-id="a">A</div><div><div data-file-pane-id="f">F</div></div>';
+  animations.length = 0;
+  rects.set('a', new DOMRect(0, 0, 500, 600));
+  const file = canvas.querySelector('[data-file-pane-id]');
+  file.getBoundingClientRect = () => new DOMRect(500, 0, 500, 600);
+  captureCanvasTransition({}, {closing: ['f'], held: ['f']});
+  // The tab is gone; its pane stays mounted where it stood for the fold.
+  file.removeAttribute('data-file-pane-id');
+  file.setAttribute('data-file-pane-leaving', 'f');
+  rects.set('a', new DOMRect(0, 0, 1000, 600));
+  playCanvasTransition();
+  assert.equal(canvas.querySelector('[data-canvas-ghost]'), null, 'no copy of the chat or of the document is made');
+  const fold = animations.find(a => a.el === file);
+  assert.deepEqual(fold.frames.map(f => f.clipPath), ['inset(0 0 0 0)', 'inset(0 0 0 100%)']);
+  const grow = animations.find(a => a.el.getAttribute('data-center-tab-id') === 'a');
+  assert.deepEqual([grow.frames[0].width, grow.frames[1].width], ['500px', '1000px']);
+  assert.equal(fold.options.duration, grow.options.duration, 'the fold and the growing pane share one clock');
+  assert.equal(fold.options.easing, grow.options.easing);
+  let folded = null;
+  window.addEventListener('op-file-pane-folded', event => { folded = event.detail.tabId; });
+  await fold.finishedLater;
+  assert.equal(folded, 'f', 'the pane is told to go out of sight when the fold ends');
 });

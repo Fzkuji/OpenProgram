@@ -17,8 +17,7 @@ edits.
     markdown/            the topic format — blocks, footnotes, links
     prompts/             what the writer, organizer and verifier are told
     runtime/             node marks, thresholds, derived views, writer status
-    agent_runtime/       the Claude Code writer and the writer result types
-    writer_agent.py      the hook the runtime registers its writer through
+    writer_agent.py      the hook the runtime registers its writer through, and the writer result types
 
 The runtime never names an implementation. It calls ``get_backend()``,
 which returns the configured one. Swapping memory systems means writing

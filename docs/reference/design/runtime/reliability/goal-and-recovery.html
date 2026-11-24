@@ -220,7 +220,7 @@
 <tr><th scope="row">After</th><td>Holds as of verification. No monitoring or reopening. Human waivers are explicit revisions with reasons. Acceptance can err.</td></tr>
 <tr><th scope="row">No progress</th><td>Judged by results and evidence, not tool count. An automatic turn with no tool call warns the next prompt; a second in a row stops as <code translate="no">stalled</code> (<code translate="no">IDLE_ROUND_LIMIT</code> 2).</td></tr>
 <tr><th scope="row"><code translate="no">blocked</code></th><td>Same real blocker recurs across at least three Goal turns with no independent work</td></tr>
-<tr><th scope="row">Waiting</th><td>A live handle waits with no idle model turns. Durable waits store <code translate="no">work_id</code>, revision, handle, observed version and consumption key. Notifications admit once if intent is run, versions match and no execution is current. Reconciliation polls with backoff. Pause, cancel or revision voids wakeups but keeps results. A query timeout does not mean the operation stopped.</td></tr>
+<tr><th scope="row">Waiting</th><td>A live handle waits with no idle model turns. Durable waits store <code translate="no">work_id</code>, revision, handle, observed version and consumption key. Notifications admit once if intent is run, versions match and no execution is current. Reconciliation wakes at the earliest wait deadline and on run-table changes, then expires or recovers what is due. Pause, cancel or revision voids wakeups but keeps results. A query timeout does not mean the operation stopped.</td></tr>
 </tbody>
 </table>
 

@@ -30,7 +30,7 @@ def _finish(monkeypatch):
 
 
 def test_stored_holds_are_released_once_and_a_later_choice_stays(tmp_path, monkeypatch):
-    monkeypatch.setattr(open_permissions, "get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     held = _agent(tmp_path, "held", hold_outbound=True)
     free = _agent(tmp_path, "free", hold_outbound=False)
     unset = _agent(tmp_path, "unset")
@@ -51,7 +51,7 @@ def test_stored_holds_are_released_once_and_a_later_choice_stays(tmp_path, monke
 
 
 def test_a_profile_without_agents_is_marked_done(tmp_path, monkeypatch):
-    monkeypatch.setattr(open_permissions, "get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     assert open_permissions.run() is True
     _finish(monkeypatch)
     assert open_permissions.run() is False

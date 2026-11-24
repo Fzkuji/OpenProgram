@@ -32,6 +32,7 @@ import {
   setPendingFirstAck,
   setPendingUserText,
 } from "@/lib/chat/send/pending-user-text";
+import { applicationNote } from "@/lib/chat/send/application-notes";
 
 /**
  * Chat send path — owned by the React composer.
@@ -322,6 +323,8 @@ export function sendChatMessage({
     payload.additional_working_dirs = additionalWorkingDirs;
   }
   if (recording) payload.recording = recording;
+  const note = applicationNote(sessionId);
+  if (note) payload.application_note = note;
   if (attachments && attachments.length > 0) {
     // Backend (ws_actions/chat/turn.py) reads ``attachments`` and dispatcher
     // (TurnRequest.attachments) folds them into the user message as
@@ -352,15 +355,6 @@ export function sendChatMessage({
     payload.channel = channelChoice.channel;
     payload.account_id = channelChoice.account_id || "";
   }
-  // Environment picked on a draft: the first message pins it. The worker
-  // ignores it for a conversation that already has history.
-  const environmentChoice = useSessionStore.getState().composerSettingsBySession[
-    sessionId ?? "__new__"
-  ]?.environment;
-  if (environmentChoice) {
-    payload.environment_id = environmentChoice;
-  }
-
   try {
     ws.send(JSON.stringify(payload));
     if (ws.readyState !== WebSocket.OPEN) {

@@ -5,6 +5,7 @@ import { renderMarkdown } from "./markdown/markdown";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./memory-page.module.css";
 import { useMemoryUrl } from "./data/api";
+import { errorDetailText } from "@/lib/net/error-text";
 
 type Turn = { message_id: string; role: string; speaker: string; at?: string | null; text: string; cited: boolean };
 type Cited = { turns?: Turn[]; error?: string; session_id?: string; message_id?: string };
@@ -26,13 +27,13 @@ export function MemorySourcePreview({ children }: { children: React.ReactNode })
     setSource({});
     try {
       const response = await fetch(api("/api/memory/source?" + new URLSearchParams({ ref: target.pathname + target.hash })));
-      const data = await response.json();
+      const data = await response.json() as Cited & { deleted?: boolean; error?: unknown };
       if (request !== generation.current) return;
       if (data.deleted) {
         anchor.textContent = text("Original session deleted", "原会话已删除");
         setSource({ error: text("Original session deleted. The memory remains available.", "原会话已删除，记忆本身仍保留。") });
-      } else if (!response.ok) setSource({ error: data.error || text("Source unavailable", "来源不可用") });
-      else setSource(data);
+      } else if (!response.ok) setSource({ error: errorDetailText(data.error, text("Source unavailable", "来源不可用")) });
+      else setSource({ ...data, error: undefined, turns: Array.isArray(data.turns) ? data.turns : [] });
     } catch (error) { if (request === generation.current) setSource({ error: String(error) }); }
   }
   return <div style={{ display: "contents" }} onClick={onClick}>
@@ -52,8 +53,7 @@ export function MemorySourcePreview({ children }: { children: React.ReactNode })
               </section>)}
             </div>
             {source.session_id && <a href={"/s/" + encodeURIComponent(source.session_id)}>{text("Open original session", "打开原会话")}</a>}
-          </> :
-          <p>{text("Loading…", "加载中…")}</p>}
+          </> : null}
       </DialogContent>
     </Dialog>
   </div>;

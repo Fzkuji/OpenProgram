@@ -6,11 +6,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SettingsHeading } from "@/components/settings/settings-ui";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
 
 /** Imperative handle so the parent can "click Check" programmatically
  *  (e.g. auto-run after an API key is saved) and await the result. */
 export interface ConnectivityHandle {
   run: () => Promise<boolean>;
+}
+
+/** What /api/providers/<id>/validate answers. */
+interface ValidateReply {
+  status?: string;
+  ok?: boolean;
+  via?: string;
+  kind?: string;
+  detail?: unknown;
+  latency_ms?: number;
 }
 
 function isUsableValid(status: string, via?: string, kind?: string): boolean {
@@ -41,16 +52,17 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const d = await r.json();
+      const d = await r.json() as ValidateReply;
       const status: string = d.status || (d.ok ? "valid" : "unknown");
       const via: string = d.via || "";
-      const title = d.detail || (via ? text(`verified via ${via}`, `已通过 ${via} 验证`) : undefined);
+      const detail = errorDetailText(d.detail, "");
+      const title = detail || (via ? text(`verified via ${via}`, `已通过 ${via} 验证`) : undefined);
       if (isUsableValid(status, via, d.kind)) {
-        setResult({ kind: "ok", text: d.latency_ms ? `${d.latency_ms} ms` : text("Valid", "有效"), title });
+        setResult({ kind: "ok", text: d.latency_ms ? `${Number(d.latency_ms)} ms` : text("Valid", "有效"), title });
         return true;
       }
       if (local) {
-        setResult({ kind: "err", text: text("Check failed", "检查失败"), title: d.detail || status });
+        setResult({ kind: "err", text: text("Check failed", "检查失败"), title: detail || status });
         return false;
       }
       if (status === "valid_no_balance" || status === "billing_blocked") {
@@ -69,7 +81,7 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string;
         : status === "needs_reauth" ? text("Sign in again", "需重新登录")
         : status === "missing" ? text("Not set", "未设置")
         : status;
-      setResult({ kind: "err", text: tag, title: d.detail || status });
+      setResult({ kind: "err", text: tag, title: detail || status });
       return false;
     } catch (e) {
       setResult({ kind: "err", text: text("Unreachable", "无法连接"), title: (e as Error).message });

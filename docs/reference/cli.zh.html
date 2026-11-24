@@ -67,7 +67,7 @@
 <tr><th scope="row"><code translate="no">ports</code></th><td>查看或保存唯一的 Web UI 端口。<code translate="no">--port PORT</code>，默认 18100。</td></tr>
 <tr><th scope="row"><code translate="no">completion</code></th><td>打印 shell 补全脚本：<code translate="no">bash</code>、<code translate="no">zsh</code>、<code translate="no">powershell</code>、<code translate="no">pwsh</code></td></tr>
 <tr><th scope="row"><code translate="no">recordings</code></th><td>录制和回放 provider 调用：<code translate="no">status</code>、<code translate="no">record</code>、<code translate="no">replay</code>、<code translate="no">off</code>、<code translate="no">list</code>、<code translate="no">show</code>、<code translate="no">delete</code>、<code translate="no">prune</code></td></tr>
-<tr><th scope="row"><code translate="no">environments</code></th><td>对话运行的位置（本机、SSH、Docker）：<code translate="no">list</code>、<code translate="no">add</code>、<code translate="no">rm</code>、<code translate="no">default</code>、<code translate="no">test</code></td></tr>
+<tr><th scope="row"><code translate="no">machines</code></th><td>OpenProgram 能连到的机器，即项目文件夹所在的地方：<code translate="no">list</code>、<code translate="no">add</code>、<code translate="no">remove</code>、<code translate="no">enable</code>、<code translate="no">disable</code>、<code translate="no">test</code></td></tr>
 <tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">check</code> 解释一次操作，<code translate="no">test</code> 校验预期的规则决定</td></tr>
 </tbody>
 </table>
@@ -224,7 +224,7 @@ openprogram mcp serve</code></pre>
 <tr><th scope="row"><code translate="no">diagnostics</code></th><td>脱敏的支持 zip。<code translate="no">--output PATH</code>，默认 <code translate="no">./openprogram-diagnostics-&lt;date&gt;.zip</code>。见<a href="diagnostics.zh.html">诊断包</a>。</td></tr>
 <tr><th scope="row"><code translate="no">logs</code></th><td><code translate="no">list</code>；<code translate="no">tail [name]</code> 带 <code translate="no">-n</code>、<code translate="no">-f</code>；<code translate="no">path [name]</code>。名称：worker（默认）、runtime、ink。</td></tr>
 <tr><th scope="row"><code translate="no">self-update</code></th><td><code translate="no">status</code>、<code translate="no">repair</code>：查看或恢复对话内 App 更新。见<a href="../install/upgrade.zh.html#conversational-self-update">升级</a>。</td></tr>
-<tr><th scope="row"><code translate="no">dev</code></th><td><code translate="no">status</code>、<code translate="no">deploy</code>、<code translate="no">open</code>、<code translate="no">copy-models</code>、<code translate="no">auth-url</code>、<code translate="no">promote</code>。见<a href="../install/upgrade.zh.html#development-checkout">升级</a>。</td></tr>
+<tr><th scope="row"><code translate="no">dev</code></th><td><code translate="no">status</code>、<code translate="no">deploy</code>、<code translate="no">open</code>、<code translate="no">copy-models</code>、<code translate="no">auth-url</code>。见<a href="../install/upgrade.zh.html#development-checkout">升级</a>。</td></tr>
 <tr><th scope="row"><code translate="no">update</code></th><td>遗留命令，目前抛 <code translate="no">ImportError</code>。请用 <code translate="no">upgrade</code>。</td></tr>
 </tbody>
 </table>

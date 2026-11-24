@@ -47,6 +47,10 @@ export interface RecentsView {
   lastActivity: RecentsActivity;
   groupBy: RecentsGroupBy;
   sort: RecentsSort;
+  /** The list shows Activity (the bell): conversations from the last 7
+   *  days that run, wait for the user, failed or have an unread result,
+   *  in place of the project or date list. */
+  activity: boolean;
 }
 
 export const DEFAULT_RECENTS_VIEW: RecentsView = {
@@ -62,6 +66,7 @@ export const DEFAULT_RECENTS_VIEW: RecentsView = {
   lastActivity: "all",
   groupBy: "none",
   sort: "recency",
+  activity: false,
 };
 
 const STORAGE_KEY = "recents_view";
@@ -88,6 +93,7 @@ function _read(): RecentsView {
       lastActivity: p.lastActivity || DEFAULT_RECENTS_VIEW.lastActivity,
       groupBy: p.groupBy || DEFAULT_RECENTS_VIEW.groupBy,
       sort: p.sort || DEFAULT_RECENTS_VIEW.sort,
+      activity: p.activity === true,
     };
   } catch {
     return DEFAULT_RECENTS_VIEW;
@@ -108,6 +114,11 @@ export function setRecentsView(patch: Partial<RecentsView>): void {
   } finally {
     window.dispatchEvent(new Event(CHANGE_EVT));
   }
+}
+
+/** The bell and ⌘⌥U: switch the list between Activity and the usual list. */
+export function toggleActivityView(): void {
+  setRecentsView({ activity: !getRecentsView().activity });
 }
 
 export function subscribeRecentsView(fn: () => void): () => void {

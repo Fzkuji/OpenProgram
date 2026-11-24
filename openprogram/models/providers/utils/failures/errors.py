@@ -234,6 +234,7 @@ _PERMANENT_MARKERS_QUOTA = (
     "usage limit reached",
     "quota_exceeded",
     "quota exceeded",
+    "用量上限",  # MiniMax Token Plan, sent as a 429 rate_limit_error (2056)
 ) + BILLING_MARKERS
 # Provider-internal generation failures that arrive WITHOUT an HTTP
 # status (e.g. xAI's mid-stream ``APIError: Internal error during token

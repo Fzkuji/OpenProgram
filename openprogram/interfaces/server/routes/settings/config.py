@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import importlib.metadata
 import json
-import os
 import threading
 from typing import Any
 
@@ -28,13 +27,13 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
     invoking a model. See docs/design/providers/auth/credential-validation-unification.md.
     """
     try:
-        from openprogram.models.listing import (
-            provider_id_for_env_var,
-            validate_credential,
-        )
-        pid = provider_id_for_env_var(env_var)
+        from openprogram.models.auth.services import checked_way
+        from openprogram.models.listing import validate_credential
+        pid = checked_way(env_var)
         if pid is None:
-            return None  # not an LLM provider key (search keys, etc.) — skip
+            # A search key, or a key of a company with several ways: no one
+            # way's refusal says the key is wrong (it is the company's).
+            return None
         r = validate_credential(pid, api_key=value, use_cache=False)
         # `unknown` (offline / ambiguous) must not block a save — only a
         # definitively rejected credential is an error here.
@@ -45,8 +44,25 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
         return None
 
 
+#: Signalled when ``config.json`` changed, by this process or another (the
+#: CLI, a program): Settings pages hold what they read until told
+#: (``apps/web/lib/prefs/settings-cache.ts``).
+SETTINGS_TOPIC = "settings"
+
+
+def watch_config() -> None:
+    """Tell the windows each time the config file changes."""
+    from openprogram.host._platform import changes
+    from openprogram.state.paths import get_config_path
+
+    changes.publish(SETTINGS_TOPIC)
+    path = get_config_path()
+    changes.watch(path.parent, SETTINGS_TOPIC, names={path.name})
+
+
 def register(app):
     resource_limits_lock = threading.RLock()
+    watch_config()
 
     @app.get("/api/system/version")
     async def get_system_version_api():
@@ -122,10 +138,12 @@ def register(app):
 
     @app.get("/api/config")
     async def get_config():
-        from openprogram.interfaces.server import server as _s
-        config = _s._load_config()
-        keys = config.get("api_keys", {})
-        masked = {k: mask_credential(v) for k, v in keys.items() if v}
+        from openprogram.models.auth.services import SERVICES, stored_key
+        masked = {}
+        for svc in SERVICES:
+            value = stored_key(svc.env_vars[0])
+            if value:
+                masked[svc.env_vars[0]] = mask_credential(value)
         return JSONResponse(content={"api_keys": masked})
 
     # /api/settings — the schema-driven settings the TUI panel + `openprogram
@@ -161,7 +179,6 @@ def register(app):
 
     @app.post("/api/config")
     async def save_config(body: Any = Body(default=None)):
-        from openprogram.state import config as user_config
         if not isinstance(body, dict) or set(body) != {"api_keys"}:
             return JSONResponse(
                 content={"error": "body must contain only api_keys"},
@@ -195,18 +212,16 @@ def register(app):
                     status_code=400,
                 )
 
-        def _merge_keys(config: dict) -> None:
-            keys = config.setdefault("api_keys", {})
-            for key, val in items.items():
-                keys[key] = val
-
-        # Atomic read-modify-write so a concurrent settings save (TUI / CLI)
-        # can't clobber these keys, or vice-versa.
-        user_config.update_config(_merge_keys)
-        # Reflect into the live process env so the running worker resolves the
-        # key immediately.
+        # Each key goes to the credential store, for the company its name
+        # names (``services.save_key``); nothing is written to the process
+        # environment or to config.json.
+        from openprogram.models.auth.services import save_key
         for key, val in items.items():
-            os.environ[key] = val
+            if save_key(key, val) is None:
+                return JSONResponse(
+                    content={"error": f"{key}: no service reads this key"},
+                    status_code=400,
+                )
         return JSONResponse(content={"saved": True})
 
     @app.delete("/api/config/key/{env_var}")
@@ -222,15 +237,8 @@ def register(app):
                 status_code=400,
             )
 
-        from openprogram.state import config as user_config
-
-        def _delete_key(config: dict) -> None:
-            keys = config.get("api_keys")
-            if isinstance(keys, dict):
-                keys.pop(env_var, None)
-
-        user_config.update_config(_delete_key)
-        os.environ.pop(env_var, None)
+        from openprogram.models.auth.services import remove_key
+        remove_key(env_var)
         return Response(status_code=204)
 
     @app.post("/api/config/verify")
@@ -253,7 +261,7 @@ def register(app):
                 content={"error": "unknown credential name"}, status_code=404
             )
 
-        from openprogram.interfaces.server import server as _s
+        from openprogram.models.auth.services import key_for_env_var, stored_key
 
         if "value" in body:
             value = body["value"]
@@ -261,16 +269,14 @@ def register(app):
                 return JSONResponse(
                     content={"error": "invalid credential value"}, status_code=400
                 )
-            stored = _s._load_config().get("api_keys", {}).get(env_var, "")
+            stored = stored_key(env_var)
             if stored and value == mask_credential(stored):
                 return JSONResponse(
                     content={"error": "a masked value is not a credential"},
                     status_code=400,
                 )
         else:
-            value = os.environ.get(env_var) or _s._load_config().get(
-                "api_keys", {}
-            ).get(env_var, "")
+            value = key_for_env_var(env_var)
             if not value:
                 return JSONResponse(content={"valid": False, "error": "No key stored"})
 

@@ -2,7 +2,7 @@
 <meta name="description" content="桌面 App 的内置浏览器：工具栏、窗格、数据导入、信任边界，以及 Agent 如何使用其中的网页。">
 <h1>内置浏览器</h1>
 
-<p>网页渲染在 Electron <code translate="no">WebContentsView</code> 中，使用独立的 <code translate="no">persist:webtabs</code> 配置，不与 App 共享 Cookie 或存储。Agent 通过 <code translate="no">computer_use_agent</code> 的浏览器目标操作同样的网页：用户能看到并随时接管，会话打开的网页显示在该会话的资源里。</p>
+<p>网页渲染在 Electron <code translate="no">WebContentsView</code> 中，使用独立的 <code translate="no">persist:webtabs</code> 配置，不与 App 共享 Cookie 或存储。Agent 通过 <code translate="no">computer_use</code> 的 <code translate="no">type="browser"</code> 操作同样的网页：用户能看到并随时接管，会话打开的网页显示在该会话的资源里。</p>
 
 <h2 id="toolbar">工具栏和菜单</h2>
 <table class="stack">
@@ -20,7 +20,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">层级</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">工具栏</th><td>常用的当前页操作。星标只保存或移除当前页，书签打开管理器。没有分屏控件，没有设置齿轮。</td></tr>
+<tr><th scope="row">工具栏</th><td>常用的当前页操作。星标只保存或移除当前页，书签打开管理器。星标左边的笔是<a href="annotate.zh.html">批注</a>。没有分屏控件，没有设置齿轮。</td></tr>
 <tr><th scope="row">浏览器 <code translate="no">⋯</code></th><td>新建浏览器标签页、收起到悬浮窗、查找、评论页面元素和区域截图（可用时）、缩放、打印、书签、历史、下载内容、显示书签栏、导入浏览器资料、清除浏览数据、浏览器设置</td></tr>
 <tr><th scope="row">窗口菜单</th><td>新建窗格或窗口、窗格布局、OpenProgram 设置、帮助、关于</td></tr>
 <tr><th scope="row">标签或窗格控件</th><td>分屏和排列，对文件、对话、浏览器、终端一视同仁</td></tr>

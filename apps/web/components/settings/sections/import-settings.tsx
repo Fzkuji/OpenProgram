@@ -9,6 +9,8 @@
  * new or updated transcript.
  */
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { refreshSettings, revalidateSettings, useSettingsData } from "@/lib/prefs/settings-cache";
+import { IMPORT_CANDIDATES_URL } from "@/lib/settings/settings-urls";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -56,27 +58,16 @@ function folderName(cwd: string | null): string {
 
 export function ImportSettings() {
   const { t, text, locale } = useTranslation();
-  const [rows, setRows] = useState<Candidate[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Kept across visits: a revisit shows the last scan at once and scans again
+  // behind it; a scan that fails keeps the last list and is retried quietly.
+  const rows = useSettingsData<{ candidates?: Candidate[] }>(IMPORT_CANDIDATES_URL)?.candidates;
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<Agent>>(new Set());
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/sessions/import/candidates");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      setRows(data.candidates ?? []);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-      setRows((current) => current ?? []);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = useCallback(() => refreshSettings(IMPORT_CANDIDATES_URL), []);
+  // Conversations change on disk outside OpenProgram: scan on every visit
+  // (joining the scan the page's own mount just started, not a second one).
+  useEffect(() => { void revalidateSettings(IMPORT_CANDIDATES_URL); }, []);
 
   async function runImport(paths: string[]) {
     if (!paths.length) return;
@@ -125,16 +116,7 @@ export function ImportSettings() {
         "把 Claude Code 和 Codex 的对话导入 OpenProgram。再次导入只会补充新增的回合。",
       )}
     >
-      {rows === null ? (
-        <p className="text-fs-base text-text-muted">{text("Looking for conversations…", "正在查找对话…")}</p>
-      ) : failed && !rows.length ? (
-        <p className="text-fs-base text-text-muted">
-          {text("Couldn't load conversations. ", "无法加载对话。")}
-          <Button variant="link" className="h-auto p-0" onClick={() => void load()}>
-            {text("Retry", "重试")}
-          </Button>
-        </p>
-      ) : (
+      {!rows ? null : (
         AGENTS.map(({ id, label }) => {
           const list = rows.filter((c) => c.agent === id);
           const todo = list.filter(pending).map((c) => c.path);

@@ -389,24 +389,17 @@ def test_registry_failures_are_listed():
         _registry._load_errors.clear()
 
 
-def test_a_failed_watcher_pass_logs_a_warning(monkeypatch, caplog):
+def test_a_failed_watcher_pass_logs_a_warning_and_is_tried_again_soon(monkeypatch, caplog):
     from openprogram.programs._host import watcher
 
-    naps = iter([None])
-    passed = threading.Event()
-
-    def sleep(_seconds):
-        if next(naps, passed) is passed:
-            # The pass is over; the daemon thread parks instead of looping on.
-            passed.set()
-            threading.Event().wait()
-
     fingerprints = iter([("first",), ("second",)])
-    monkeypatch.setattr(watcher, "time", types.SimpleNamespace(sleep=sleep))
     monkeypatch.setattr(watcher, "_catalog_fingerprint", lambda _base: next(fingerprints))
+    monkeypatch.setattr(watcher, "_watch_targets", lambda _base: set())
     monkeypatch.setattr(_registry, "rescan", lambda: (_ for _ in ()).throw(ValueError("scripted")))
-    monkeypatch.delenv("OPENPROGRAM_NO_PROGRAMS_WATCH", raising=False)
+    pass_ = watcher._Watcher("programs")
+    pass_.begin()
+    assert pass_.retry_at is None, "nothing to look at again until something changes"
     with caplog.at_level(logging.WARNING, logger="openprogram.programs._host.watcher"):
-        watcher.start_in_worker(poll_interval=0)
-        assert passed.wait(5)
+        pass_.step()
     assert any("programs watcher pass failed: scripted" in record.getMessage() for record in caplog.records)
+    assert pass_.retry_at is not None and pass_.retry_at - time.time() <= watcher.RETRY_SECONDS

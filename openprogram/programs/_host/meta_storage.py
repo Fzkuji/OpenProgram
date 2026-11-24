@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from openprogram.state.paths import get_active_profile, get_state_dir
+from openprogram.state import paths
 from openprogram.host._platform.filesystem import replace_file
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ PROGRAMS_META = "programs_meta.json"
 
 
 def _state_path(filename: str) -> Path:
-    return get_state_dir() / filename
+    return paths.get_state_dir() / filename
 
 
 def _legacy_directory() -> Path:
@@ -54,7 +54,7 @@ def load_meta(filename: str, default: dict[str, Any]) -> dict[str, Any]:
         return _read_meta_object(state) or {}
 
     legacy = _legacy_path(filename)
-    if get_active_profile() is None and legacy.is_file():
+    if paths.get_active_profile() is None and legacy.is_file():
         data = _read_meta_object(legacy)
         if data is None:
             return {}

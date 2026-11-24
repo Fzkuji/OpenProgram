@@ -68,9 +68,9 @@ export function WriterHealthBanner({ statusUrl, revision = 0 }: {
   useEffect(() => {
     let live = true;
     fetch(statusUrl)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => (r.ok ? await r.json() as { writer?: WriterStatus | null } | null : null))
       .then((status) => { if (live) setWriter(status?.writer ?? null); })
-      .catch(() => {});
+      .catch((cause) => { console.warn("[memory] writer status read failed", cause); });
     return () => { live = false; };
   }, [statusUrl, revision]);
 

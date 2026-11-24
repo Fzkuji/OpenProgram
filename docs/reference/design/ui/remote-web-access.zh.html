@@ -1,8 +1,8 @@
 <title>远程 Web 访问</title>
-<meta name="description" content="唯一所有者如何从其他设备进入 Web UI：实例令牌、浏览器引导、Host 与 Origin 校验、反向代理和密钥处理。">
+<meta name="description" content="唯一所有者如何从其他设备进入 Web UI：实例令牌、配对设备、浏览器引导、Host 与 Origin 校验、反向代理和密钥处理。">
 <h1>远程 Web 访问</h1>
 
-<p>每个 HTTP、SSE 和 WebSocket 请求都要带本次启动的实例令牌，回环地址也不例外。令牌有效即当前 profile 的唯一所有者。没有中继，没有账号。</p>
+<p>每个 HTTP、SSE 和 WebSocket 请求都要带本次启动的实例令牌或配对设备的凭据，回环地址也不例外。两者都代表当前 profile 的唯一所有者。没有中继，没有账号。</p>
 
 <h2 id="method">访问方式</h2>
 <table class="stack">
@@ -31,7 +31,7 @@
 <tr><th scope="row">RBAC、用户组、租户或工作区角色、项目权限</th><td>Web UI 是一个全能力的管理界面</td></tr>
 <tr><th scope="row">OAuth、OIDC、SSO、身份感知代理、Tailscale 身份</th><td>可以多加一道控制，不能替代令牌</td></tr>
 <tr><th scope="row">内置 TLS、ACME、证书存储与续期</th><td>所有者自己运行 nginx、Caddy、VPN 或 SSH</td></tr>
-<tr><th scope="row">公共中继、托管隧道、汇合服务、配对、分享 URL</th><td>不为可达性做任何外发注册</td></tr>
+<tr><th scope="row">公共中继、托管隧道、汇合服务、分享 URL</th><td>不为可达性做任何外发注册；其他设备直接和它能连到的服务器配对（<a href="#paired-devices">配对设备</a>）</td></tr>
 <tr><th scope="row">关闭认证、<code translate="no">--insecure</code></th><td>始终开启，回环也一样</td></tr>
 <tr><th scope="row">查询参数、<code translate="no">localStorage</code> 或公开 HTML 里的长期令牌</th><td>只有 fragment 引导和 HttpOnly cookie</td></tr>
 <tr><th scope="row">明文读取已存的 provider 凭据</th><td>只能替换</td></tr>
@@ -89,11 +89,13 @@
 <tbody>
 <tr><th scope="row">浏览器 HTTP、SSE、WebSocket</th><td>Cookie <code translate="no">openprogram_owner_&lt;16hex&gt;</code> = <code translate="no">base64url(HMAC-SHA256(raw_token, "openprogram-web-cookie-v1"))</code></td><td><code translate="no">HttpOnly</code>、<code translate="no">SameSite=Strict</code>、<code translate="no">Path=/</code>、无 <code translate="no">Domain</code>、会话生命周期；有效 scheme 为 HTTPS 时加 <code translate="no">Secure</code></td></tr>
 <tr><th scope="row">原生 HTTP、SSE、WebSocket</th><td><code translate="no">Authorization: Bearer &lt;token&gt;</code></td><td>只认请求头；查询参数里的令牌不被读取</td></tr>
+<tr><th scope="row">已配对的浏览器</th><td>Cookie <code translate="no">openprogram_device_&lt;16hex&gt;</code> = <code translate="no">opd1.&lt;设备 id&gt;.&lt;密钥&gt;</code></td><td>属性同所有者 cookie，另加 400 天的 <code translate="no">Max-Age</code>；设备闲置 30 天后服务器忘掉它</td></tr>
+<tr><th scope="row">已配对的原生客户端</th><td><code translate="no">Authorization: Bearer opd1.…</code></td><td>Bearer 规则同所有者令牌</td></tr>
 </tbody>
 </table>
 <ul>
 <li>cookie 不按端口隔离，按 profile 命名才能让同时运行的 profile 服务器互不覆盖。</li>
-<li>cookie 没有数据库记录，由令牌重新算出，所以重启即失效。</li>
+<li>所有者 cookie 没有数据库记录，由令牌重新算出，所以重启即失效。设备凭据对照 <code translate="no">web/devices.json</code> 校验，重启后仍有效。</li>
 <li>除引导接口外，只要有 <code translate="no">Authorization</code> 头就走 Bearer：错误的头返回 <code translate="no">401</code>，绝不回退到有效 cookie。</li>
 </ul>
 
@@ -152,6 +154,42 @@
 </ol>
 <p class="note"><code translate="no">--base-url</code> 必须是 <code translate="no">access.json</code> 中冻结的有效 origin，不含路径、查询、fragment 或用户信息。HTTP 只放行回环监听上的 <code translate="no">localhost</code>，或<a href="#http-ranges">明文 HTTP</a> 列出的网段内的 IP。</p>
 
+<h3 id="paired-devices">配对设备</h3>
+<p>所有者令牌每次启动都换新，这对本机的 App 和 CLI 没问题：它们从状态目录读取。手机或第二台电脑读不到，所以配对一次，拿一份自己的凭据。</p>
+<ol class="flow">
+  <li><strong>电脑</strong><small><code translate="no">openprogram web pair</code>：<code translate="no">POST /api/auth/pairings</code> 生成配对码；CLI 打印 <code translate="no">&lt;origin&gt;/#pair=&lt;code&gt;</code> 和它的二维码</small></li>
+  <li><strong>其他设备</strong><small>打开链接；任何请求发出前，片段就从地址栏移除</small></li>
+  <li><strong>其他设备</strong><small><code translate="no">POST /api/auth/pair {"code"}</code></small></li>
+  <li><strong>Web 服务器</strong><small>作废这个码；浏览器（会发 <code translate="no">Origin</code>）收到 <code translate="no">204</code> 和设备 cookie，原生客户端收到 <code translate="no">{"device_id","token"}</code></small></li>
+  <li class="flow-end"><strong>其他设备</strong><small>之后每个请求都带它，跨重启有效，直到被吊销或闲置 30 天</small></li>
+</ol>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">配对码</th><td>32 字节随机数；只能用一次；10 分钟；只存在 worker 内存里，最多 16 个待用</td><td>链接漏进聊天或截图，很快就失效；重启后全部作废</td></tr>
+<tr><th scope="row">设备凭据</th><td><code translate="no">opd1.&lt;16hex id&gt;.&lt;32 字节密钥&gt;</code>；只存 <code translate="no">sha256(密钥)</code>，仅所有者可读，位于 <code translate="no">&lt;state&gt;/web/devices.json</code></td><td>文件里从不含可用的密钥；id 用来单独列出和吊销一台设备</td></tr>
+<tr><th scope="row">权限</th><td>与实例令牌是同一个所有者；设备 id 以 <code translate="no">device_id</code> 放在请求上</td><td>配对设备本来就能以所有者身份运行工具，缩小范围不构成真正的边界</td></tr>
+<tr><th scope="row">有效期</th><td>使用中一直有效；闲置 30 天后忘掉；<code translate="no">last_used</code> 最多每小时写一次</td><td>丢了且不再打开的手机会自己失效</td></tr>
+<tr><th scope="row">吊销</th><td><code translate="no">DELETE /api/auth/devices/{device_id}</code> 或 <code translate="no">openprogram web devices revoke &lt;id&gt;</code>；它打开的 WebSocket 以 <code translate="no">4401</code> 关闭</td><td>吊销对设备正连着的连接立即生效</td></tr>
+<tr><th scope="row">可达性</th><td>不变：链接指向一个有效 origin；只有回环 origin 时，CLI 说明怎么配置局域网、VPN 或代理</td><td>配对证明是谁，不会让连不到的服务器变得可达</td></tr>
+<tr><th scope="row">用过的链接</th><td>已配对的浏览器再打开旧链接，用 cookie 直接登录，不提示</td><td>重开收藏的链接不是错误</td></tr>
+</tbody>
+</table>
+<p class="note">路由：<code translate="no">GET /api/auth/devices</code>、<code translate="no">PATCH</code> 和 <code translate="no">DELETE /api/auth/devices/{device_id}</code>、<code translate="no">POST /api/auth/pairings</code>，在 <code translate="no">openprogram/interfaces/server/routes/identity/devices.py</code>；登记表在 <code translate="no">openprogram/interfaces/server/device_access.py</code>。</p>
+
+<details>
+<summary>为什么配对，为什么是这个形状</summary>
+<table class="stack">
+<thead><tr><th scope="col">同类</th><th scope="col">其他设备怎么登录</th><th scope="col">采用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/pingdotgg/t3code">T3 Code</a></th><td><code translate="no">t3 pair</code> 打印一次性链接的二维码，密钥在片段里；设备保留一个会话，在 Sharing &amp; access 里列出、可吊销；30 天不用就要重新配对。局域网、Tailscale HTTPS、SSH，或它托管的 T3 Connect 中继</td><td>片段链接、一次性码、30 天闲置过期、吊销列表。不采用托管中继和分范围授权</td></tr>
+<tr><th scope="row">DSH Mobile（DeepSeek Harness 插件）</th><td>二维码、链接或密钥配对；设备令牌只发往原 origin；局域网固定私有 CA；远程走 Tailscale Funnel 或隧道；主屏 PWA 用 Web Push</td><td>凭据绑定单个 origin（仅限主机的 cookie）。局域网 TLS 和推送放到后面</td></tr>
+<tr><th scope="row">pi 远程扩展</th><td>二维码连到局域网或 tailnet 的 WebSocket，或自建端到端加密中继</td><td>印证局域网和 tailnet 作为默认路径</td></tr>
+<tr><th scope="row">Claude Code Remote Control、Codex 远程控制</th><td>厂商服务在电脑和手机之间中转</td><td>不采用：OpenProgram 不运行服务</td></tr>
+</tbody>
+</table>
+</details>
+
 <h2 id="routes">请求处理</h2>
 <p>同一个 ASGI 中间件 <code translate="no">OwnerAuthMiddleware</code> 在路由分发前处理 HTTP 和 WebSocket。应用路由不自行解释认证。</p>
 <table class="stack">
@@ -173,6 +211,7 @@
 <tr><th scope="row">应用外壳、静态资源</th><td><code translate="no">GET</code> 和 <code translate="no">HEAD</code>；HTML 中没有令牌、密钥、会话 ID 或用户数据</td></tr>
 <tr><th scope="row"><code translate="no">GET</code>/<code translate="no">HEAD /docs</code>、<code translate="no">/docs/**</code></th><td>只读预构建站点：源码检出用 <code translate="no">docs/_site</code>，安装包用 <code translate="no">openprogram/interfaces/server/_frontend/docs</code>（wheel 必须包含其 <code translate="no">index.html</code>）。请求时不扫描源码、不构建；过期检查只在源码 worker 注册路由时运行。</td></tr>
 <tr><th scope="row"><code translate="no">POST /api/auth/bootstrap</code></th><td>自己校验请求体令牌</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/auth/pair</code></th><td>请求体里的一次性配对码</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>监听者证明，见下；不授予任何权限</td></tr>
 <tr><th scope="row"><code translate="no">GET /healthz</code></th><td>只有 <code translate="no">{"status":"ok"}</code>；详情在需认证的 <code translate="no">/api/diagnostics</code></td></tr>
 <tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook，由任务自己的密钥保护</td></tr>
@@ -317,7 +356,7 @@ server {
 <tr><th scope="row">保留</th><td>在 <code translate="no">api_keys</code> 中省略该名称</td><td>改名、停用、排序和策略都不接收也不改变密钥</td></tr>
 <tr><th scope="row">替换</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>，一个或多个键；<code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/credentials/{cid}/replace</code> <code translate="no">{"api_key":"new"}</code>，先检查；<code translate="no">200 {"ok":true,"credential":…,"check":…}</code>；被拒的密钥或登录凭据 <code translate="no">400</code>；不存在 <code translate="no">404</code></td></tr>
 <tr><th scope="row">检查</th><td>不提供</td><td><code translate="no">POST /api/providers/{provider}/credentials/check-key</code> <code translate="no">{"api_key":"new","replace"?:cid}</code> 不保存任何东西，返回 <code translate="no">{"ok":true,"check":…}</code>；随后的添加或更换沿用这次检查</td></tr>
-<tr><th scope="row">删除</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>，无请求体，幂等；删除保存项和当前进程环境值；<code translate="no">204</code>。父环境再次提供的值只有重启后才会回来。</td><td><code translate="no">DELETE /api/providers/{provider}/credentials/{cid}</code> 删除这一个凭据；<code translate="no">200 {"ok":true}</code>；不存在 <code translate="no">404</code>；环境变量里的密钥 <code translate="no">409</code> 并给出变量名</td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>，无请求体，幂等；删除已存的 key；<code translate="no">204</code>。Worker 环境里设置的变量不动，仍然提供它的 key。</td><td><code translate="no">DELETE /api/providers/{provider}/credentials/{cid}</code> 删除这一个凭据；<code translate="no">200 {"ok":true}</code>；不存在 <code translate="no">404</code>；环境变量里的密钥 <code translate="no">409</code> 并给出变量名</td></tr>
 <tr><th scope="row">明文查看</th><td>带 <code translate="no">reveal</code> 查询：<code translate="no">404</code></td><td>没有路由读取已存的密钥</td></tr>
 </tbody>
 </table>
@@ -349,7 +388,8 @@ server {
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>以上全部，除下面两项</td></tr>
+<tr><th scope="row">已实现</th><td>以上全部，除下面几项</td></tr>
+<tr><th scope="row">未开始</th><td>给配对手机的 Web Push；桌面 App 把另一台电脑的服务器作为自己的窗口打开。设置 → 设备（与已配对手机同一个列表、带配对二维码的添加设备、改名、吊销、同一 Wi-Fi 和任何地方）已实现：<a href="../integrations/remote-openprogram.zh.html#ways-in">远程 OpenProgram 机器</a></td></tr>
 <tr><th scope="row">部分实现</th><td>浏览器驱动的审计，证明导出资源和导航路径都不嵌入动态数据；服务端测试已覆盖响应和渲染后的 HTML</td></tr>
 <tr><th scope="row">部分实现</th><td>nginx 和 Caddy 的 HTTPS、WebSocket、SSE 冒烟部署；真实监听的 origin 矩阵已覆盖 <code translate="no">X-Forwarded-Proto</code> 和 <code translate="no">X-Forwarded-Host</code></td></tr>
 </tbody>
@@ -366,6 +406,7 @@ server {
 <tr><th scope="row">origin</th><td><code translate="no">openprogram/host/security/backend_endpoint.py</code> 的 <code translate="no">canonicalize_origin()</code>、<code translate="no">resolve_effective_origins()</code>；参数化 owner-auth 测试</td></tr>
 <tr><th scope="row">中间件</th><td><code translate="no">OwnerAuthMiddleware</code>；HTTP 变更和 accept 前 WebSocket 的 owner-auth 测试</td></tr>
 <tr><th scope="row">引导</th><td><code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code>、<code translate="no">OwnerAuthBoundary</code>；<code translate="no">apps/web/scripts/settings/check-owner-auth-bootstrap.mjs</code>、TypeScript 检查、生产构建</td></tr>
+<tr><th scope="row">配对设备</th><td><code translate="no">device_access.py</code>、<code translate="no">routes/identity/devices.py</code>、<code translate="no">openprogram/interfaces/cli/commands/services/web_devices.py</code>；<code translate="no">tests/component/webui/owner_auth/test_device_pairing.py</code>、<code translate="no">apps/web/tests/access/owner-auth-bootstrap.test.mjs</code></td></tr>
 <tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/services/web.py</code>、<code translate="no">build_owner_auth_url()</code>；<code translate="no">tests/unit/webui/test_web_auth_url.py</code></td></tr>
 <tr><th scope="row">密钥</th><td><code translate="no">openprogram/host/security/credential_mask.py</code>、<code translate="no">credential_secrets</code>；<code translate="no">tests/component/programs/mcp/test_mcp_secret_non_retrievability.py</code>、<code translate="no">apps/web/scripts/settings/check-secret-non-retrieval.mjs</code></td></tr>
 <tr><th scope="row">内部客户端</th><td><code translate="no">resolve_backend_endpoint()</code> 返回通过 challenge 校验的 <code translate="no">BackendEndpoint</code>，令牌在证明之后才读取；用于 <code translate="no">openprogram/interfaces/cli/ink.py</code> 和 <code translate="no">openprogram/interfaces/cli/commands/capabilities/mcp.py</code>。Node 客户端只向后端 URL 发 Bearer：<code translate="no">apps/cli/src/utils/backend.ts</code>、<code translate="no">apps/cli/tests/startup/backendAuth.test.ts</code></td></tr>
@@ -431,7 +472,8 @@ server {
 <tbody>
 <tr><th scope="row">实例凭据</th><td>Jupyter、OpenClaw、OpenHands</td><td>采用：一个根密钥、两种传输形式、一次引导、一套校验；没有 WebSocket 票据、会话数据库或 OAuth 流程</td></tr>
 <tr><th scope="row">应用账号</th><td>Open WebUI、Dify、LibreChat、多用户 AnythingLLM</td><td>拒绝：产品不需要这些状态和策略</td></tr>
-<tr><th scope="row">托管远程控制</th><td>配对、托管隧道、中继</td><td>拒绝：需要 OpenProgram 不运行的服务</td></tr>
+<tr><th scope="row">设备配对</th><td>T3 Code、DSH Mobile、OpenClaw 配对设备</td><td>采用：一次性码换一份可吊销的设备凭据，作用于设备本来就能连到的服务器</td></tr>
+<tr><th scope="row">托管远程控制</th><td>托管隧道、中继</td><td>拒绝：需要 OpenProgram 不运行的服务</td></tr>
 </tbody>
 </table>
 </details>

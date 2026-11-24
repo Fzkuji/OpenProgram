@@ -261,11 +261,12 @@ test("with no provider connected the menu says so and opens Add provider", () =>
   assert.match(some, /Manage providers/);
 });
 
-test("a failed read of the models says so instead of an empty menu", () => {
+test("a failed read of the models shows no notice and no false empty state", () => {
   globalThis.__errors = { [JSON.stringify(S.PICKER_QUERY_KEY)]: true };
   try {
     const html = menu({ models: undefined, providers: {}, status: undefined });
-    assert.match(html, /data-picker-error[^>]*>Could not load models\./);
+    assert.doesNotMatch(html, /Could not load models|data-picker-error/);
+    assert.doesNotMatch(html, /agent\.no_enabled_models|No model provider connected/);
   } finally {
     globalThis.__errors = {};
   }

@@ -43,7 +43,7 @@ def state(tmp_path, monkeypatch):
     for target in (
         "openprogram.state.paths.get_state_dir",
         "openprogram.state.paths.ensure_state_dir",
-        "openprogram.state.worktree.manager.get_state_dir",
+        "openprogram.state.paths.get_state_dir",
     ):
         monkeypatch.setattr(target, lambda: home)
     # The branch a lookup is for comes from the test, never a real store.

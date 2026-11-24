@@ -234,34 +234,16 @@ def _load_config() -> dict:
 
 
 def _get_api_key(env_var: str) -> str:
-    """Get a search/TTS key from the environment (injected from
-    config.json ``api_keys`` by ``_apply_config_keys`` below). LLM
-    provider keys do NOT resolve here — use ``_llm_is_configured`` /
-    the AuthStore resolvers."""
-    return os.environ.get(env_var) or ""
+    """The key a search / speech variable name stands for, from the
+    credential store (``services.key_for_env_var``)."""
+    from openprogram.models.auth.services import key_for_env_var
+    return key_for_env_var(env_var)
 
 
 def _llm_is_configured(provider_id: str) -> bool:
     """AuthStore-backed configured check for an LLM provider."""
     from openprogram.models.providers.settings.env_api_keys import is_configured
     return is_configured(provider_id)
-
-
-def _apply_config_keys():
-    """Inject config file API keys into environment (if not already set).
-
-    This serves the web-search / TTS key flows: their settings UI saves
-    into config.json ``api_keys`` and their runtimes read ``os.environ``
-    (e.g. ``TAVILY_API_KEY``). LLM provider keys do NOT live here — they
-    are stored in the AuthStore and resolved per-request."""
-    config = _load_config()
-    for env_var, val in config.get("api_keys", {}).items():
-        if val and not os.environ.get(env_var):
-            os.environ[env_var] = val
-
-
-# Apply config keys on module load
-_apply_config_keys()
 
 
 def _list_providers() -> list[dict]:
@@ -278,10 +260,8 @@ def _list_providers() -> list[dict]:
         from pathlib import Path
         if (Path.home() / ".codex" / "auth.json").exists():
             return True
-        from openprogram.state.paths import get_state_dir
-        if (get_state_dir() / "auth" / "openai-codex" / "default.json").exists():
-            return True
-        return False
+        from openprogram.models.auth.store import get_store
+        return get_store().has_credentials("openai-codex")
 
     checks = [
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
@@ -414,14 +394,14 @@ _FILE_REQUEST_ACTIONS = frozenset({
     "project_file_operation_status",
     "project_file_write", "project_file_create", "project_file_rename",
     "project_file_copy", "project_file_delete", "project_file_reveal",
-    "review_scope", "review_file_diff", "review_revert_hunk",
-    "turn_history_state", "revert_turn", "reapply_turn",
+    "review_scope", "review_file_diff", "review_revert_hunk", "review_stage",
+    "review_agent", "turn_history_state", "revert_turn", "reapply_turn",
     "turn_operation_status",
 })
 _FILE_MUTATION_ACTIONS = frozenset({
     "project_file_write", "project_file_create", "project_file_rename",
     "project_file_copy", "project_file_delete", "revert_turn", "reapply_turn",
-    "review_revert_hunk",
+    "review_revert_hunk", "review_stage",
 })
 
 
@@ -707,14 +687,32 @@ def create_app(*, owner_auth=None, port: int = 18100):
         _start_plugin_autoupdate,
         _start_release_check,
     )
-    _SHUTDOWN = (_stop_mcp_servers, _stop_execution_event_effects)
+    async def _release_embedded_windows():
+        # A window still inside the App goes back to the desktop as it was.
+        from openprogram.interfaces.server.ws_actions.embedded_window import stop_following
+        from openprogram.programs.tools.computer_use.computer_use.desktop.embedding import release_all
+        await asyncio.to_thread(stop_following)
+        await asyncio.to_thread(release_all)
+
+    _SHUTDOWN = (_stop_mcp_servers, _stop_execution_event_effects, _release_embedded_windows)
 
     @asynccontextmanager
     async def _lifespan(_app):
         from openprogram.interfaces.server.server_runtime.loop_stall import watch_running_loop
         stall_watch = watch_running_loop()
+        from openprogram.interfaces.server.server_runtime.thread_sample import watch_sample_requests
+        sample_requests = watch_sample_requests()
+        # Requests wait for these, so the log says what a slow start waited on.
+        began = time.monotonic()
         for hook in _STARTUP:
+            hook_began = time.monotonic()
             await hook()
+            took = time.monotonic() - hook_began
+            if took >= 0.05:
+                _log(f"[startup] {hook.__name__.lstrip('_')} took {took * 1000:.0f} ms")
+        _log(f"[startup] ready after {(time.monotonic() - began) * 1000:.0f} ms of startup steps")
+        from openprogram.runtime.context.token_accounting.tokens import load_encoding
+        threading.Thread(target=load_encoding, name="openprogram-tokenizer-load", daemon=True).start()
         from openprogram.state.memory.checkpoints import run_checkpoints
         checkpoint_stop = asyncio.Event()
         checkpoint_task = asyncio.create_task(run_checkpoints(checkpoint_stop))
@@ -728,16 +726,25 @@ def create_app(*, owner_auth=None, port: int = 18100):
         from openprogram.interfaces.server.frontend import watch_frontend
         frontend_task = asyncio.create_task(watch_frontend(
             checkpoint_stop, lambda build: _broadcast(json.dumps({"type": "frontend_build", "data": {"id": build}}))))
+        from openprogram.interfaces.server.remote_machines.links import run_remote_machines
+        remote_machines_task = asyncio.create_task(run_remote_machines(checkpoint_stop))
+        from openprogram.interfaces.server import lan_listener
+        if _app.state.owner_auth is not None and lan_listener.configured():
+            asyncio.create_task(lan_listener.apply(_app.state.owner_auth, _app))
         try:
             yield
         finally:
+            if _app.state.owner_auth is not None:
+                await lan_listener.stop(_app.state.owner_auth)
             stall_watch.stop()
+            sample_requests.stop()
             checkpoint_stop.set()
             await checkpoint_task
             await discovery_task
             await notices_task
             await job_notices_task
             await frontend_task
+            await remote_machines_task
             for hook in reversed(_SHUTDOWN):
                 await hook()
 
@@ -776,6 +783,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # doesn't accumulate more authentication state than it already has.
     from openprogram.interfaces.server.routes.identity.credentials import router as _auth_router
     app.include_router(_auth_router)
+    from openprogram.interfaces.server.routes.identity.devices import router as _devices_router
+    app.include_router(_devices_router)
+    from openprogram.interfaces.server.routes.identity.remote_access import router as _remote_access_router
+    app.include_router(_remote_access_router)
 
     # Frontend: the Next.js static export (apps/web/out/) is served by this
     # same process — mount_frontend() is called LAST below so every API
@@ -864,6 +875,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _routes_file_search.register(app)
     from openprogram.interfaces.server.routes.files import archives as _routes_archives
     _routes_archives.register(app)
+    from openprogram.interfaces.server.routes.files import file_thumbnail as _routes_file_thumbnail
+    _routes_file_thumbnail.register(app)
 
     # Pause / Resume / Stop — routes.lifecycle
     from openprogram.interfaces.server.routes.execution import lifecycle as _routes_lifecycle
@@ -1078,12 +1091,26 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             if _server_stopping.is_set():
                 server.should_exit = True
             _loop = asyncio.new_event_loop()
+            # ``changed`` frames go out from this loop, a few at once.
+            from openprogram.host._platform import changes as _changes
+            loop_for_changes = _loop
+            from openprogram.runtime.events import emit_ws_frame as _emit_frame
+            _changes.set_publisher(
+                lambda delay, callback: loop_for_changes.call_soon_threadsafe(
+                    loop_for_changes.call_later, delay, callback),
+                _emit_frame)
+            # Shown windows of other applications are followed by their
+            # events; the thread starts with the first one shown.
+            from openprogram.interfaces.server.ws_actions.embedded_window import start_following
+            start_following()
             from openprogram.host._platform.asyncio import install_asyncio_exception_handler
 
             install_asyncio_exception_handler(_loop)
             asyncio.set_event_loop(_loop)
             _loop.run_until_complete(server.serve())
         finally:
+            from openprogram.host._platform import changes as _changes
+            _changes.set_publisher(None)
             if _loop is not None and not _loop.is_closed():
                 pending = asyncio.all_tasks(_loop)
                 for task in pending:

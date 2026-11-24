@@ -1,0 +1,130 @@
+<title>Embedded application windows</title>
+<meta name="description" content="How a tab of the desktop App holds another application's window, and how a chat preview shows the same window without moving it: a child window on Windows and X11, a live capture with posted input on macOS.">
+<h1>Embedded application windows</h1>
+
+<p>A tab of kind <code translate="no">window</code> holds a window of another application. Each platform does it the way its window system allows; the tab, the worker requests and giving the window back are the same everywhere. A small chat preview can show the same window at the same time without moving it.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 210" role="img" aria-label="The page asks the App window for its handle and geometry, sends the tab's rectangle to the worker, and the worker either makes the window a child of the App window (Windows, X11) or places it behind the tab and posts the tab's input to it while the page shows its capture (macOS).">
+<rect class="tile" x="0" y="20" width="190" height="170" rx="8"/>
+<text class="mid" x="95" y="50">Page (tab)</text>
+<text class="t-soft mid" x="95" y="80">rectangle, visible</text>
+<text class="t-soft mid" x="95" y="102">pointer, keys (macOS)</text>
+<text class="t-soft mid" x="95" y="124">capture video (macOS)</text>
+<rect class="tile" x="245" y="20" width="190" height="70" rx="8"/>
+<text class="mid" x="340" y="50">App (Electron)</text>
+<text class="t-soft mid" x="340" y="72">handle, zoom, source</text>
+<rect class="tile" x="245" y="120" width="190" height="70" rx="8"/>
+<text class="mid" x="340" y="150">Worker</text>
+<text class="t-soft mid" x="340" y="172">embedder per platform</text>
+<line class="ln-faint" x1="190" y1="55" x2="245" y2="55"/>
+<line class="ln-faint" x1="190" y1="155" x2="245" y2="155"/>
+<text x="470" y="62">Windows, X11</text><text class="t-soft" x="470" y="84">child of the App window</text>
+<text x="470" y="140">macOS</text><text class="t-soft" x="470" y="162">behind the tab, input posted</text>
+<line class="ln-faint" x1="435" y1="155" x2="462" y2="80"/>
+<line class="ln-faint" x1="435" y1="155" x2="462" y2="150"/>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Page</dt><dd>the tab's rectangle and whether it shows; on macOS also pointer, keys and the capture video</dd>
+<dt>App</dt><dd>its window handle, zoom and display scale, and a window's capture source</dd>
+<dt>Worker</dt><dd>child window on Windows and X11; on macOS places the window behind the tab and posts input</dd>
+</dl>
+</figure>
+
+<h2>Per platform</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Platform</th><th scope="col">Mode</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td><code translate="no">native</code></td><td><code translate="no">SetParent</code> into the App's top-level window; frame styles swapped for <code translate="no">WS_CHILD</code> and restored on release. Rectangle in device pixels of the client area.</td></tr>
+<tr><th scope="row">Linux, X11</th><td><code translate="no">native</code></td><td><code translate="no">XReparentWindow</code> into the App's X window, as a window manager does with its frame, after withdrawing it so the window manager lets go (ICCCM 4.1.4); back to the root at the old place on release, where the window manager takes it again.</td></tr>
+<tr><th scope="row">macOS</th><td><code translate="no">stream</code></td><td>A window cannot leave its process. The page shows a ScreenCaptureKit capture (Chromium window capture, <code translate="no">chromeMediaSource: "desktop"</code>). The worker moves and sizes the window through Accessibility to the tab's screen rectangle and posts the tab's events with SkyLight.</td></tr>
+<tr><th scope="row">Linux, Wayland</th><td>none</td><td>No client may place another's surface; reported as unavailable.</td></tr>
+</tbody>
+</table>
+
+<h2>Tabs and views</h2>
+<p>Each page that shows a window is a <em>holder</em> with an id it chooses. The worker keeps, per window, which holders hold it and whether each places it.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Holders</th><th scope="col">The window</th></tr></thead>
+<tbody>
+<tr><th scope="row">Any tab</th><td>Placed, as above. Layout requests come from a placing holder only; a view's are answered with the window's state.</td></tr>
+<tr><th scope="row">Views only</th><td>Watched: recorded for input and state, left where it is, at its size, in its own parent, not unhidden.</td></tr>
+<tr><th scope="row">Last tab closes, views remain</th><td>Given back where it was, then watched where it now is.</td></tr>
+<tr><th scope="row">Last holder lets go</th><td>Given back if it was placed; forgotten otherwise.</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Platform</th><th scope="col">Tab forwards input</th><th scope="col">View forwards input</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>yes, SkyLight</td><td>yes, SkyLight; a point maps to the screen through the window's current frame</td></tr>
+<tr><th scope="row">Windows</th><td>no, the child window takes it</td><td>yes, posted with <code translate="no">PostMessage</code></td></tr>
+<tr><th scope="row">X11</th><td>no, the child window takes it</td><td>no, the view only shows it</td></tr>
+</tbody>
+</table>
+
+<h2>Decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">The window system's own embedding on Windows and X11</th><td>The window stays the application's real window: no latency, its own input, menus and accessibility. Window managers embed windows this way.</td></tr>
+<tr><th scope="row">Capture plus posted input on macOS</th><td>The only way there; Codex Computer Use keeps the window it operates under a live capture the same way, and the input route is the one the computer_use backend already uses (after cua-driver).</td></tr>
+<tr><th scope="row">On macOS the window sits behind the tab, at its size</th><td>Menus, pop-ups and input-method panels are separate windows the application opens next to its window, so they appear over the tab where it shows the window. If the application raises the window, it covers the tab exactly.</td></tr>
+<tr><th scope="row">Capture drawn at the window's size from the tab's top-left</th><td>What is shown lines up with the window behind it; a point in the tab maps to the window by the page zoom alone.</td></tr>
+<tr><th scope="row">Input through one queue on one thread</th><td>Events reach the application in the order the user made them; moves and wheel turns are folded once a frame in the page, so the socket never backs up.</td></tr>
+<tr><th scope="row">Keys go to a hidden text field first</th><td>An input method can compose there; its finished text goes as text, every other key as a key with its physical code, so shortcuts keep working on any layout. Text that arrives without a key, from dictation or the emoji picker, goes as text too.</td></tr>
+<tr><th scope="row">Capture source through <code translate="no">getUserMedia</code></th><td>Needs no click, so a tab restored after a reload shows its window again by itself.</td></tr>
+<tr><th scope="row">A view never moves the window</th><td>The preview follows what the Agent or the user is doing; taking the window out of its place for a thumbnail would change what it shows. The reply's frame gives the view the window's aspect.</td></tr>
+<tr><th scope="row">Windows view input posted in the background</th><td>The route the computer_use backend takes for background clicks: mouse messages to the deepest child under the point in its client coordinates, the wheel in screen coordinates, keys to the thread's focus window, through one queue. Posted keys leave the keyboard state alone, so a printable key goes as its character and Ctrl with a letter as its control character, what <code translate="no">TranslateMessage</code> would make; shortcuts that read the keyboard state need the window in front.</td></tr>
+<tr><th scope="row">computer_use finds embedded windows from the window tree</th><td>An embedded window is a child of the App window, so top-level walks miss it. The backends look for children of OpenProgram App windows owned by another process (Windows: process image <code translate="no">openprogram*</code>; X11: <code translate="no">WM_CLASS</code> <code translate="no">openprogram*</code>, <code translate="no">XQueryTree</code>) and list them under their application. No worker records are read, so a backend in an agentic subprocess sees them too; screen rectangles come from the window itself.</td></tr>
+<tr><th scope="row">The App holds its close until windows are given back</th><td>A child window would close with its parent. The page detaches them and answers; after 2 s the App closes anyway.</td></tr>
+</tbody>
+</table>
+
+<h2>Following the window</h2>
+<p>A view looks at nothing on a timer. The operating system says when the window moves, resizes, is minimized or restored, is renamed or closes; the Worker signals <code translate="no">embedded_windows</code> keyed by the window id, and the view reads the window's state once, in the next animation frame.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Change</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">The window, macOS</th><td>An Accessibility observer per process: <code translate="no">AXMoved</code>, <code translate="no">AXResized</code>, minimized and restored, <code translate="no">AXTitleChanged</code>, <code translate="no">AXUIElementDestroyed</code> on the window; focused window changed, hidden, shown and activated on its application. A kqueue <code translate="no">NOTE_EXIT</code> catches a process that quits without closing its windows. One CFRunLoop thread</td></tr>
+<tr><th scope="row">The window, Windows</th><td><code translate="no">SetWinEventHook</code> on the window's process: location, name, show, hide, destroy, minimize and foreground, for the window object itself. One thread pumps them</td></tr>
+<tr><th scope="row">The window, X11</th><td><code translate="no">StructureNotifyMask</code> and <code translate="no">PropertyChangeMask</code> on the window, from a connection of its own: configure, map, unmap, reparent, destroy, its name and state. One thread waits in <code translate="no">select</code></td></tr>
+<tr><th scope="row">The App window</th><td>Electron's <code translate="no">move</code> and <code translate="no">resize</code>, sent as <code translate="no">embedded-window:host-changed</code>; a page zoom is the page's own <code translate="no">resize</code></td></tr>
+<tr><th scope="row">The tab within the page</th><td>A <code translate="no">ResizeObserver</code>, an intersection observer cropped to the tab's own rectangle for a shift without a resize, scrolling and the page showing or hiding</td></tr>
+<tr><th scope="row">A lost picture</th><td>Taken again when the window changes or the page shows or gets focus again</td></tr>
+</tbody>
+</table>
+<p>The Worker's thread starts with the first window a view shows and ends with the last. Where it cannot start (no Accessibility access), the attach reply has no <code translate="no">follows</code>, and that view reads the state every 1.5 s and retries a lost picture as often, only while it is open.</p>
+
+<h2>Requests</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Socket action</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">embedded_windows</code></th><td>Lists ordinary windows of other applications, without the App's own process</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_attach</code></th><td><code translate="no">window_id</code>, <code translate="no">holder</code> (default <code translate="no">"tab"</code>), <code translate="no">place</code> (default true), <code translate="no">host</code> when placing. Places or watches the window; answers its mode, title, <code translate="no">frame</code> (screen rectangle), <code translate="no">placed</code>, <code translate="no">input</code>: whether this holder forwards input, and <code translate="no">follows</code> when the Worker follows the window by its events</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_layout</code></th><td><code translate="no">holder</code>, <code translate="no">host</code>: the tab moved, resized, hid or showed; ignored for a view</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_state</code></th><td>Whether it is still open, its title and frame; with <code translate="no">holder</code>, that holder's <code translate="no">input</code></td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_detach</code></th><td><code translate="no">holder</code> lets go; see the holder table</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_input</code></th><td>Pointer, wheel, key, text and focus events, x and y from the window's top-left; no reply. Taken where <code translate="no">input</code> is true</td></tr>
+</tbody>
+</table>
+<p class="note">Every reply is one <code translate="no">embedded_window</code> message carrying the request's <code translate="no">request_id</code>. When the worker stops it gives back every window it holds.</p>
+
+<h2>Edges</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Window closed</th><td>The tab says so and offers the open windows again</td></tr>
+<tr><th scope="row">Restored tab whose id now names another application's window</th><td>Released at once; the tab offers the list</td></tr>
+<tr><th scope="row">Window of an elevated process (Windows)</th><td>Refused by the system; the reason is shown</td></tr>
+<tr><th scope="row">Window on another Space (macOS)</th><td>No capture source; the tab says so</td></tr>
+<tr><th scope="row">Tab hidden</th><td>Windows and X11 hide the child; macOS leaves the window behind the App</td></tr>
+<tr><th scope="row">System shortcuts, protected video (macOS)</th><td>Stay with the system; protected video captures black</td></tr>
+</tbody>
+</table>
+
+<p class="note">Code: <a href="https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/programs/tools/computer_use/computer_use/desktop/embedding"><code translate="no">computer_use/desktop/embedding/</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/server/ws_actions/embedded_window.py"><code translate="no">ws_actions/embedded_window.py</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/windows/embedded-windows.js"><code translate="no">apps/desktop/main/windows/embedded-windows.js</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/web/components/center-tabs/window"><code translate="no">apps/web/components/center-tabs/window/</code></a>.</p>
+
+<h2>Implementation status</h2>
+<p>Placing is checked on a real desktop on all three: macOS in the App, Windows 11 (Arm64) with Notepad, and X11 under Openbox on Xvfb. Wayland stays unavailable. Holders, watching, Windows view input and computer_use finding embedded windows are covered by unit tests and not yet checked on a real Windows or X11 desktop.</p>
+<p>Following by events is covered by unit tests on all three; its Windows and X11 sources, and the macOS observers' notifications, are not yet checked on a real desktop.</p>

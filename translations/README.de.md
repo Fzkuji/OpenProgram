@@ -43,6 +43,8 @@
 - **2026-11-14 · v1.2.0** — Zweige einer Unterhaltung laufen nebeneinander, Stopp wirkt sofort, und die Windows-App ist da.
 - **2026-11-10 · v1.1.0** — Zurückspulen von jeder gesendeten Nachricht aus; die App kommt auf Linux.
 - **2026-11-06 · v1.0.0** — Erste Version der 1.x-Reihe: Desktop-App mit geteilten Ansichten, Computernutzung im Hintergrund, Meetings und ein dauerhaft laufender Planer.
+- **2026-08-17 · v0.7.0** — Ein eingebauter Browser neben Dateien, Chat und Terminal, den Agenten lesen und bedienen können.
+- **2026-03-31 · v0.1.0** — Erste öffentliche Version: agentische Funktionen, Python-Funktionen, deren Schritte ein Modell ausführt, aufgezeichnet in einem Kontextbaum.
 
 <a id="install"></a>
 

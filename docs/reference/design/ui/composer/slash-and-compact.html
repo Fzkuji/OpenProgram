@@ -3,7 +3,8 @@
 <h1>Slash commands and context compaction</h1>
 
 <h2>Slash commands</h2>
-<p>When input starts with <code translate="no">/</code> and has no space, the menu expands upward; a space closes it over 380ms. Enter runs a registered first word, otherwise sends chat. A menu that is closing does not intercept Enter. Skills, plugins and user commands come from <code translate="no">/api/commands</code>; built-ins win dispatch.</p>
+<p>When input starts with <code translate="no">/</code> and has no space, the menu opens upward from the <code translate="no">/</code> as the same glass popover as the <code translate="no">@</code> menu, one row per command with an icon, its arguments and description; a built-in has its own icon, a skill, plugin or user command its source's; a space closes it at once.</p>
+<p>Enter runs a registered first word, otherwise sends chat. A menu that is closing does not intercept Enter. Skills, plugins and user commands come from <code translate="no">/api/commands</code>; built-ins win dispatch.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Command</th><th scope="col">Selection or Enter</th></tr></thead>
 <tbody>

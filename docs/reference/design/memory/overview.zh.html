@@ -152,7 +152,7 @@
 <thead><tr><th scope="col">触发</th><th scope="col">调用</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row">一个回合结束</th><td><code translate="no">write()</code></td><td>写入达到 <code translate="no">memory.writer.trigger_tokens</code>（8,000、默认 16,000、32,000）的最前面若干回合</td></tr>
-<tr><th scope="row">空闲 30 分钟（每 5 分钟轮询）</th><td><code translate="no">write(force=True)</code></td><td>重复到写完，无论多少；watcher 退出时把会话标记为已处理</td></tr>
+<tr><th scope="row">空闲 30 分钟（到空闲时查看，两次最多隔 5 分钟）</th><td><code translate="no">write(force=True)</code></td><td>重复到写完，无论多少；watcher 退出时把会话标记为已处理</td></tr>
 <tr><th scope="row">每天本地 03:00</th><td><code translate="no">reorganize()</code></td><td>重写 Topic 文件</td></tr>
 </tbody>
 </table>
@@ -552,8 +552,7 @@
 <tr><th scope="row"><code translate="no">markdown/</code></th><td>Topic 格式</td></tr>
 <tr><th scope="row"><code translate="no">prompts/</code></th><td>给写入器的提示</td></tr>
 <tr><th scope="row"><code translate="no">runtime/</code></th><td>节点标记、阈值、派生视图、写入器状态</td></tr>
-<tr><th scope="row"><code translate="no">agent_runtime/</code></th><td>Claude Code 写入器、写入器结果类型</td></tr>
-<tr><th scope="row"><code translate="no">writer_agent.py</code></th><td>Runtime 注册写入器的钩子</td></tr>
+<tr><th scope="row"><code translate="no">writer_agent.py</code></th><td>写入器结果类型；Runtime 注册写入器的钩子</td></tr>
 </tbody>
 </table>
 </details>

@@ -40,6 +40,7 @@ const { CenterTabStrip } = await import("../../../components/center-tabs/strip/c
 const { useCenterTabs } = await import("../../../lib/tabs/center-tabs-store.ts");
 const { dragCoordinator, DRAG_START_THRESHOLD_PX, DETACH_HYSTERESIS_PX } = await import("../../../lib/tabs/transfer/tab-drag-coordinator.ts");
 const { STRIP_GAP } = await import("../../../components/center-tabs/strip/tab-strip-geometry.ts");
+const { useCanvasOverview } = await import("../../../lib/tabs/canvas/canvas-overview.ts");
 
 const web = (id) => ({ id: `w:${id}`, kind: "web", title: id.toUpperCase(), url: `https://${id}.test/` });
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -268,6 +269,36 @@ describe("leaving the strip", () => {
     const preview = document.querySelector("[data-tab-drag-preview]");
     assert.equal(preview.style.transform, "translate(20px, 140px)");
     assert.equal(entry("w:b").style.transform, "translate(20px, 140px)");
+  });
+
+  describe("over the window on screen", () => {
+    let canvas;
+    beforeEach(() => {
+      canvas = document.createElement("div");
+      canvas.setAttribute("data-canvas-root", "");
+      setRect(canvas, { left: 0, top: 40, width: 1000, height: 600 });
+      document.body.append(canvas);
+    });
+    afterEach(() => { canvas.remove(); useCanvasOverview.setState({ mode: null, sourceIds: [], hover: null, label: "", landing: null, landed: false, slot: null }); });
+
+    test("the window's own tab opens the overview, and back in the strip it closes", async () => {
+      await mount();
+      await press("w:a", 50, 20);
+      await move(60, 300);
+      assert.equal(useCanvasOverview.getState().mode, "drag");
+      assert.deepEqual(useCanvasOverview.getState().sourceIds, ["w:a"]);
+      await move(60, 20);
+      assert.equal(useCanvasOverview.getState().mode, null);
+    });
+
+    test("another tab docks beside the window without opening the overview", async () => {
+      await mount();
+      await press("w:b", 150, 20);
+      await move(900, 300);
+      assert.equal(useCanvasOverview.getState().mode, null);
+      await release(900, 300);
+      assert.deepEqual(useCenterTabs.getState().groups[0]?.memberIds?.slice().sort(), ["w:a", "w:b"]);
+    });
   });
 
   test("without a transfer token (plain browser) leaving the strip never becomes a tear-off", async () => {

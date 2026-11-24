@@ -33,7 +33,8 @@ import { runtimeState } from "@/lib/runtime-bridge/state";
 import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
 import { fmtUsd } from "@/components/settings/providers/status/model";
 import { BotGlyph } from "@/components/avatar/bot/bot-glyph";
-import { duration } from "@/components/right-sidebar/running/running-format";
+import { DURATION_CADENCE, duration } from "@/components/right-sidebar/running/running-format";
+import { useNow } from "@/lib/clock/use-now";
 import { RosterBadge, usageTip } from "@/components/right-sidebar/running/agent-roster";
 import { Badge } from "@/components/ui/badge";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
@@ -133,15 +134,10 @@ function useFollowupNotice(attachMsgId: string): string | null {
 
 /** Seconds since the card was written, counted while its agent runs. */
 function useElapsed(timestamp: number | undefined, live: boolean): number | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [live]);
-  if (!live || typeof timestamp !== "number" || !Number.isFinite(timestamp) || timestamp <= 0) return null;
-  const started = timestamp > 1e12 ? timestamp : timestamp * 1000;
+  const known = live && typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0;
+  const started = known ? (timestamp > 1e12 ? timestamp : timestamp * 1000) : 0;
+  const now = useNow(known ? DURATION_CADENCE : null, started);
+  if (!known) return null;
   return Math.max(0, (now - started) / 1000);
 }
 

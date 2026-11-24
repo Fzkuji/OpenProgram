@@ -12,6 +12,9 @@ import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/m
 import { PlusIcon } from "@/components/animated-icons";
 import { confirmAction } from "@/components/ui/confirm-dialog";
 import { showToast } from "@/lib/format-utils/toast";
+import { isAbort, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
+
+const BUILTIN_KEY = "/api/plugins/builtin";
 
 interface IndexItem {
   name?: string;
@@ -39,8 +42,8 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
     install,
   } = usePluginsStore();
 
-  // Built-in curated catalog — fetched once on mount, always shown.
-  const [builtin, setBuiltin] = useState<IndexItem[]>([]);
+  // Built-in curated catalog: the kept one at once, then read again.
+  const [builtin, setBuiltin] = useState<IndexItem[] | null>(() => lastKept<IndexItem[]>(BUILTIN_KEY) ?? null);
   // Per-marketplace selected + fetched item list.
   const [selectedId, setSelectedId] = useState<string>("");
   const [items, setItems] = useState<IndexItem[]>([]);
@@ -53,8 +56,12 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
   const filterValue = externalFilter !== undefined ? externalFilter : filter;
 
   useEffect(() => {
-    refreshMarketplaces();
-    fetchBuiltinPlugins().then(setBuiltin).catch(() => { /* leave empty */ });
+    const controller = new AbortController();
+    refreshMarketplaces().catch((cause) => console.warn("[plugins] marketplace list read failed", cause));
+    readUntilAnswered(BUILTIN_KEY, () => fetchBuiltinPlugins() as Promise<IndexItem[]>, controller.signal)
+      .then(setBuiltin)
+      .catch((cause) => { if (!isAbort(cause)) console.warn("[plugins] built-in catalog read failed", cause); });
+    return () => controller.abort();
   }, [refreshMarketplaces, fetchBuiltinPlugins]);
 
   useEffect(() => {
@@ -115,7 +122,7 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
     return out;
   }, [filterValue, sort]);
 
-  const shownBuiltin = useMemo(() => filterAndSort(builtin), [builtin, filterAndSort]);
+  const shownBuiltin = useMemo(() => filterAndSort(builtin ?? []), [builtin, filterAndSort]);
   const shownItems = useMemo(() => filterAndSort(items), [items, filterAndSort]);
 
   return (
@@ -147,9 +154,9 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
       <section>
         <h3 className="text-fs-xs font-semibold text-text-bright mb-1">
           {text("Curated plugins", "精选插件")}
-          <span className="ml-2 text-fs-2xs font-normal text-text-secondary">
+          {builtin !== null && <span className="ml-2 text-fs-2xs font-normal text-text-secondary">
             {text(`built-in catalog · ${builtin.length} total`, `内置目录 · 共 ${builtin.length} 个`)}
-          </span>
+          </span>}
         </h3>
         <p className="text-fs-2xs text-text-secondary mb-3">
           {text(
@@ -167,7 +174,7 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
               onInstall={() => doInstall(it)}
             />
           ))}
-          {shownBuiltin.length === 0 && (
+          {builtin !== null && shownBuiltin.length === 0 && (
             <div className="col-span-full text-fs-2xs text-text-secondary py-2">
               {filterValue.trim() ? text("No matches.", "没有匹配结果。") : text("No built-in plugins available.", "没有可用的内置插件。")}
             </div>
@@ -207,7 +214,6 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
           )}
         </div>
 
-        {loading && <div className="text-fs-2xs text-text-secondary">{text("Loading...", "加载中...")}</div>}
         {err && <div className={styles.errorBox}>{err}</div>}
         {!loading && !err && selectedId && shownItems.length === 0 && (
           <div className="text-fs-2xs text-text-secondary">{text("No items in this marketplace.", "这个 Marketplace 中没有条目。")}</div>

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const moduleUrl = `/api/documents/office-module/${'a'.repeat(64)}.js`;
 registerHooks({ resolve(specifier, context, next) {
@@ -8,6 +10,11 @@ registerHooks({ resolve(specifier, context, next) {
     export const mountOfficeEditor = (...args) => globalThis.officeFixture.mount(...args);
     export const createOfficeEditor = (...args) => globalThis.officeFixture.mount(...args).activate();
   `), shortCircuit: true};
+  // Sibling modules are imported without their extension.
+  if (specifier.startsWith('./') && !/\.[a-z]+$/i.test(specifier) && context.parentURL?.includes('/lib/')) {
+    const url = new URL(specifier + '.ts', context.parentURL);
+    if (existsSync(fileURLToPath(url))) return {url: url.href, shortCircuit: true};
+  }
   return next(specifier, context);
 } });
 const {createBoundOfficeEditor, officeHostAvailability, OFFICE_EDITOR_DISABLED} = await import('../../../lib/documents/office-editor.ts');

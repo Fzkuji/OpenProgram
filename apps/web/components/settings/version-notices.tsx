@@ -16,8 +16,20 @@ import { createNoticeRunner, NOTICE_DURATION_MS, noticeToast, type VersionNotice
 export function VersionNotices() {
   const { text } = useTranslation();
   useEffect(() => {
+    // Whether the notices were read since the connection last dropped. The
+    // page reads them as it opens and connects a moment later; that first
+    // connection has nothing new to read.
+    let read = false;
+    let reading: Promise<unknown> = Promise.resolve();
     const poll = createNoticeRunner({
-      fetchNotices: () => jsonFetch<{ notices?: VersionNotice[] }>("/api/versions/notices").then((data) => data.notices ?? []),
+      fetchNotices: () => {
+        const request = jsonFetch<{ notices?: VersionNotice[] }>("/api/versions/notices").then((data) => {
+          read = true;
+          return data.notices ?? [];
+        });
+        reading = request.catch(() => undefined);
+        return request;
+      },
       acknowledge: (ids) => jsonFetch("/api/versions/notices/ack", { method: "POST", body: JSON.stringify({ ids }) }),
       show: (notice) => {
         const { message, link } = noticeToast(notice, text);
@@ -26,7 +38,13 @@ export function VersionNotices() {
     });
     void poll();
     const onConnection = (event: Event) => {
-      if ((event as CustomEvent<{ connected?: boolean }>).detail?.connected) void poll();
+      if (!(event as CustomEvent<{ connected?: boolean }>).detail?.connected) {
+        read = false;
+        return;
+      }
+      void reading.then(() => {
+        if (!read) void poll();
+      });
     };
     window.addEventListener("op:browser-connection", onConnection);
     return () => window.removeEventListener("op:browser-connection", onConnection);

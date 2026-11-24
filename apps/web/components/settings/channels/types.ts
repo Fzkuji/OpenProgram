@@ -45,6 +45,8 @@ export interface ChannelHealthStatus {
   state: "alive" | "stale" | "unknown" | "off" | "no_token" | "signed_out" | "failed" | "reconnecting";
   last_seen_at: number | null;
   age_seconds: number | null;
+  /** Seconds until a "reconnecting" mark runs out on its own. */
+  recheck_in?: number;
 }
 
 export type StatusMap = Record<string, ChannelHealthStatus>;

@@ -15,7 +15,8 @@ import { ArrowUp, ChevronRight, CircleCheck, CircleDashed, CircleEllipsis, Circl
 
 import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "@/lib/i18n";
-import { formatElapsed } from "@/lib/format-utils/elapsed";
+import { ELAPSED_CADENCE, formatElapsed } from "@/lib/format-utils/elapsed";
+import { useNow } from "@/lib/clock/use-now";
 import { stepOpenKey, taskOpenKey, useTaskOpen } from "@/lib/prefs/task-block-open";
 import {
   autoOpen,
@@ -142,15 +143,10 @@ function TaskStepRow({ rowId, taskId, step, items, drawn, active, current, rende
   );
 }
 
-function useSeconds(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now() / 1000);
-    const timer = setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
+/** Now in seconds, renewed when the block's "2m 14s" since `startedAt`
+ *  (seconds) changes while `active`; otherwise it stays where it was. */
+function useSeconds(active: boolean, startedAt: number): number {
+  return useNow(active ? ELAPSED_CADENCE : null, startedAt * 1000) / 1000;
 }
 
 function stateLabel(drawn: DrawnState, text: Text): string {
@@ -200,7 +196,7 @@ export function TaskBlock({ rowId, part, drawn, active = true, endedAt, last, ag
   const open = chosen ?? autoOpen(drawn, last, agentsRunning, legacy);
   const running = drawn === "running";
   const moving = running && active;
-  const now = useSeconds(running && segment.startedAt > 0);
+  const now = useSeconds(running && segment.startedAt > 0, segment.startedAt);
   // A block seen running on this page keeps the last second it showed.
   const ranHere = useRef(false);
   if (running) ranHere.current = true;

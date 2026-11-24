@@ -28,6 +28,9 @@ export interface ThinkingConfig {
   default?: string;
 }
 
+/** Window event sent after `runtimeState._thinkingConfig` is replaced. */
+export const THINKING_CONFIG_CHANGED = "op:thinking-config-changed";
+
 export interface ProgramsMeta {
   favorites?: string[];
   folders?: Record<string, unknown>;
@@ -61,7 +64,6 @@ export interface RuntimeState {
   _lastExecProvider: string | null;
   _lastExecModel: string | null;
   _agentSettings: AgentSettings;
-  _elapsedTimer: ReturnType<typeof setInterval> | null;
   _hasActiveSession: boolean;
   _webSearchEnabled: boolean;
   _webSearchProviderLabel: string;
@@ -158,7 +160,6 @@ export const runtimeState: RuntimeState = {
   _lastExecProvider: null,
   _lastExecModel: null,
   _agentSettings: { chat: {}, exec: {}, available: {} },
-  _elapsedTimer: null,
   _hasActiveSession: false,
   // ui.ts hydrates these from localStorage on first plus-menu render;
   // `false` matches the previous `undefined` (falsy) starting point.

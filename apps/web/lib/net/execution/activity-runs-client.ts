@@ -56,6 +56,8 @@ export interface ActivityStepEvent {
   kind: "step"; at: number; node_id: string; tool_call_id: string | null;
   name: string; input: unknown; input_truncated: boolean;
   result: string | null; result_truncated: boolean; failed: boolean;
+  /** The task the call was made for, when its reply stamped one. */
+  task?: string;
 }
 export interface ActivityRepliedEvent {
   kind: "replied"; at: number; text: string; truncated: boolean;
@@ -79,6 +81,8 @@ export interface ActivitySubAgentEvent {
   children: ActivitySubAgentEvent[];
   /** The time chart only: what it did in its own branch. */
   steps?: ActivityRunEvent[];
+  /** The task it was started for, when its reply stamped one. */
+  task?: string;
 }
 export type ActivityRunEvent =
   | ActivityAskedEvent | ActivityStepEvent | ActivityRepliedEvent

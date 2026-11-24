@@ -1,9 +1,8 @@
 "use client";
 
 /** Appearance settings — every option that changes how the interface looks:
- *  colours and theme, text, the conversation's layout, drag effects, the
- *  built-in browser's bookmarks bar and custom CSS. */
-import { useEffect, useState } from "react";
+ *  colours and theme, text, the conversation's layout, drag effects and
+ *  custom CSS. The built-in browser's bookmarks bar is in Browser. */
 
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -25,7 +24,6 @@ import {
 import { useVisualEffectsPref } from "@/lib/prefs/appearance/visual-effects-pref";
 import { CODE_RAIN_DENSITY, useWelcomeBackdropPref, type BackdropTheme } from "@/lib/prefs/appearance/welcome-backdrop-pref";
 import { DRAG_SURFACE_STYLE, VISUAL_EFFECTS_LIMITS, type VisualEffectKey } from "@/lib/prefs/appearance/visual-effects-config";
-import { setShowBookmarksBar, showBookmarksBar, subscribeBrowserPrefs } from "@/lib/browser/browser-prefs";
 import { setDefaultTranscriptView, useDefaultTranscriptView } from "@/lib/prefs/transcript-view";
 import styles from "../settings-page.module.css";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,11 +47,6 @@ export function AppearanceSection() {
   const { tabularNums, setTabularNums } = useTabularNumsPref();
   const { chatWidth, setChatWidth } = useChatWidthPref();
   const transcriptView = useDefaultTranscriptView();
-  const [bookmarksVisible, setBookmarksVisible] = useState(showBookmarksBar);
-  useEffect(
-    () => subscribeBrowserPrefs(() => setBookmarksVisible(showBookmarksBar())),
-    [],
-  );
   const {
     style,
     mode,
@@ -332,12 +325,6 @@ export function AppearanceSection() {
               </div>
             </div>
           </div>
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title={text("Built-in browser", "内置浏览器")}>
-        <SettingsRow label={text("Show bookmarks bar", "显示书签栏")} htmlFor="show-bookmarks-bar">
-          <Switch id="show-bookmarks-bar" checked={bookmarksVisible} onCheckedChange={(checked) => setShowBookmarksBar(checked)} />
         </SettingsRow>
       </SettingsSection>
 

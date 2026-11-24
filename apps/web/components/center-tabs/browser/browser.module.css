@@ -102,6 +102,13 @@
 /* The bookmark star rides at the pill's right end. */
 .webAddressStar { flex-shrink: 0; }
 .webAddressStar[data-on] { color: var(--accent-blue); }
+/* Annotate, left of the star: accent-tinted while the page is in annotate mode. */
+.webAddressAnnotate[data-on],
+.webAddressAnnotate[data-on]:hover {
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+}
+.webAddressAnnotate[aria-disabled="true"] { opacity: .45; cursor: default; }
+.webAddressAnnotate[aria-disabled="true"]:hover { background: transparent; color: inherit; }
 .toolbarTipLabel {
   min-width: 0;
   overflow: hidden;

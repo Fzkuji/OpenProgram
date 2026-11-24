@@ -128,6 +128,7 @@
 <thead><tr><th scope="col">接缝</th><th scope="col">核心默认</th><th scope="col">平台注册</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">set_cancellation_check</code>（<code translate="no">openprogram.host.cancellation</code>）</th><td>空操作</td><td><code translate="no">openprogram.runtime.conversation.run_control</code> 在导入时注册精确的执行检查</td></tr>
+<tr><th scope="row"><code translate="no">set_cancellation_waker</code>（<code translate="no">openprogram.host.cancellation</code>）</th><td>无；阻塞的宿主等待（命令的 <code translate="no">collect</code>）只在自己的超时或兜底重读时才发现停止</td><td><code translate="no">run_control</code> 在工具调用、这一轮或 Worker 被停止时唤醒它</td></tr>
 <tr><th scope="row"><code translate="no">set_session_id_provider</code></th><td><code translate="no">None</code>；<code translate="no">runtime.can_ask()</code> 为 <code translate="no">False</code></td><td><code translate="no">run_control</code> 提供活动会话 id</td></tr>
 <tr><th scope="row"><code translate="no">session_scope(store, id)</code></th><td>未设置；不持久化</td><td>调度器绑定每轮存储</td></tr>
 </tbody>

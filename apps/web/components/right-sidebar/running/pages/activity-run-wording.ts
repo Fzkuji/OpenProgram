@@ -2,7 +2,8 @@
  *  and the same colour everywhere. Pure, so the node tests can load it. */
 import type { ActivityAttemptEvent, ActivityRun, ActivityRunEvent } from "../../../../lib/net/execution/activity-runs-client";
 import type { ActivityTone, Translate } from "./activity-page-types";
-import { presentTool } from "../../../chat/messages/execution/tool-presentation.ts";
+import { browserTitle, presentTool } from "../../../chat/messages/execution/tool-presentation.ts";
+import { callStep, callTarget } from "../../../../lib/computer-use/computer-use-call.ts";
 import { readableRequest } from "../../debugger/debugger-presentation.ts";
 
 /** A run keeps its row when its reply arrives and its id changes to the message's. */
@@ -79,7 +80,9 @@ export function cleanRunTitle(value: string | null | undefined, text: Translate)
   return cleaned || text("No reply saved", "没有保存回复");
 }
 
-export const firstLine = (value: string) => (value.split("\n").find(line => line.trim()) ?? "").replace(/\(\[[^\]]*\]\([^)]*\)\)/g, "").trim();
+/** The first line that says something: a line that only opens a code block
+ *  does not, nor one of rules and marks, such as a pasted email's ______ above its headers. */
+export const firstLine = (value: string) => (value.split("\n").find(line => /[\p{L}\p{N}]/u.test(line) && !/^\s*(```|~~~)[\w+-]*\s*$/.test(line)) ?? "").replace(/\(\[[^\]]*\]\([^)]*\)\)/g, "").trim();
 
 /** A run's title: the first line of its reply, else what was asked. A report
  *  with no saved text has only what `reportName` knows it by. */
@@ -152,25 +155,31 @@ export function attemptLabel(event: Pick<ActivityAttemptEvent, "number" | "statu
   return { label: says(text("Ended", "已结束")), tone: "muted", state: "ended" };
 }
 
-/** A browser step by what it did: `Browser: navigate gomami.io, evaluate`. */
+/** A browser step by what it did: `Browser: navigate gomami.io, evaluate`, `Chrome: click`. */
 function browserStepTitle(input: unknown, result: string | null | undefined, text: Translate): string | null {
   let request: unknown = input;
   if (typeof input === "string") {
     try { request = JSON.parse(input); } catch { return null; }
   }
-  const fields = (request && typeof request === "object" ? request : {}) as { action?: unknown; args?: unknown; actions?: unknown };
-  const actions = (Array.isArray(fields.actions) ? fields.actions : typeof fields.action === "string" ? [fields] : []) as { action?: unknown; args?: { url?: unknown } }[];
+  const call = (request && typeof request === "object" && !Array.isArray(request) ? request : {}) as Record<string, unknown>;
+  const where = callTarget(call);
+  if (where.family !== "browser") return null;
+  const step = callStep(call);
+  const actions = (step.action === "batch" && Array.isArray(step.actions) ? step.actions
+    : typeof call.action === "string" ? [step] : []) as { action?: unknown; url?: unknown }[];
   const words = actions.map(item => {
-    const host = typeof item.args?.url === "string" ? item.args.url.replace(/^https?:\/\//, "").split("/")[0] : "";
+    const host = typeof item.url === "string" ? item.url.replace(/^https?:\/\//, "").split("/")[0] : "";
     return [typeof item.action === "string" ? item.action : "", host].filter(Boolean).join(" ");
   }).filter(Boolean);
-  if (words.length) return `${text("Browser", "浏览器")}: ${words.join(", ")}`;
-  return result?.startsWith("<guide") ? `${text("Browser", "浏览器")}: ${text("guide", "指南")}` : null;
+  const name = browserTitle(where, text);
+  if (words.length) return `${name}: ${words.join(", ")}`;
+  // A result that is only the guide, behind the target header where there is one.
+  return result && /^\s*(?:\[[^\]\n]*\]\s*)?<guide/.test(result) ? `${name}: ${text("guide", "指南")}` : null;
 }
 
 /** A tool step in the words the chat uses for it. */
 export function stepTitle(name: string, input: unknown, text: Translate, result?: string | null): string {
-  const browser = name === "computer_use_agent" ? browserStepTitle(input, result, text) : null;
+  const browser = name === "computer_use" ? browserStepTitle(input, result, text) : null;
   if (browser) return browser;
   const raw = typeof input === "string" ? input : input == null ? undefined : JSON.stringify(input);
   const presented = presentTool(name, raw, text);

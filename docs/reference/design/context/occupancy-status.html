@@ -62,7 +62,6 @@
 <tr><th scope="row">Terminal client</th><td>The bottom bar keeps a window per conversation from <code translate="no">context_stats</code>. A frame whose <code translate="no">context_window</code> is null removes it: the bar shows the token counts without a limit or percentage, as the ring does</td></tr>
 <tr><th scope="row">Compacting</th><td>While the branch's running task is a <code translate="no">compact</code> operation or a turn in its compaction phase (<code translate="no">isCompacting</code>, from <code translate="no">compaction_started</code> to finished or failed): ring busy, panel button disabled</td></tr>
 <tr><th scope="row">Compact conversation</th><td>Panel row sends <code translate="no">{action:"compact", session_id}</code>, the WebSocket path of <code translate="no">/compact</code>. Disabled with no session or while compacting. Right after a compaction it stays enabled; the server answers nothing to compact</td></tr>
-<tr><th scope="row">Last compaction</th><td>One note under that row, from the snapshot's <code translate="no">last_compaction</code> (the summary in effect on the branch): Last compacted <i>time</i>: N messages, X → Y. Absent on a branch with no summary</td></tr>
 </tbody>
 </table>
 
@@ -72,9 +71,9 @@
 <thead class="sr"><tr><th scope="col">Event</th><th scope="col">Text</th></tr></thead>
 <tbody>
 <tr><th scope="row">Started</th><td>No message: the run indicator shows "Compacting context…"</td></tr>
-<tr><th scope="row">Finished</th><td>No message. The transcript reloads with the summary card (Compacted N earlier messages, with its time) folding the covered messages, on a branch that holds the whole covered segment; a branch forked inside it was never compacted. Nothing marks the point where the compaction ran: a line there repeats the card and puts token counts between two messages of the conversation. The panel states the last compaction instead</td></tr>
+<tr><th scope="row">Finished</th><td>No message. The transcript reloads with one line (Compacted N earlier messages, with its time) after the covered messages, on a branch that holds the whole covered segment; a branch forked inside it was never compacted. The covered messages stay in the conversation, drawn, paged and recycled like every other message; the summary is what the model reads, so it stays closed and opens from that line. Its size before and after stays on the summary node for logs, shown nowhere</td></tr>
 <tr><th scope="row">Failed</th><td>Context compaction failed[: error]</td></tr>
-<tr><th scope="row">Finished with <code translate="no">no_op</code></th><td>Context unchanged; no smaller summary was applied.</td></tr>
+<tr><th scope="row">Finished with <code translate="no">no_op</code></th><td>From <code translate="no">/compact</code>: Context unchanged; no smaller summary was applied. From a turn's own compaction: no message, the history simply stays as it was</td></tr>
 </tbody>
 </table>
 

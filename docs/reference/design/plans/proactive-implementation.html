@@ -49,7 +49,7 @@
 <p><code translate="no">@function</code> tool execution writes no DAG node; only <code translate="no">Agent</code> methods do. The DAG is therefore incomplete as a causal record, and audit relies on the full event set in <code translate="no">events.jsonl</code> instead.</p>
 
 <h2 id="verification">Checking a wiring change</h2>
-<p><code translate="no">py_compile</code>, relevant unit tests, the documented local refresh, healthy <code translate="no">/healthz</code>, one real message through the Web UI (<code translate="no">npm --prefix apps/web run build</code> first for frontend changes). For ordering, run a turn with a tool call and read the session's <code translate="no">events.jsonl</code>:</p>
+<p><code translate="no">py_compile</code>, relevant unit tests, a deploy to the development instance, healthy <code translate="no">/healthz</code>, one real message through the Web UI (<code translate="no">npm --prefix apps/web run build</code> first for frontend changes). For ordering, run a turn with a tool call and read the session's <code translate="no">events.jsonl</code>:</p>
 <pre translate="no" tabindex="0"><code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed</code></pre>
 <p class="note">Each entry carries session and turn in metadata.</p>
 

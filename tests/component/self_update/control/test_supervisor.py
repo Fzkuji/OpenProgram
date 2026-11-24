@@ -279,7 +279,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     record = store.load("su_supervisor")
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    script = candidate / "apps/desktop/scripts/package-and-install-app.sh"
+    script = candidate / "apps/desktop/scripts/package-app.sh"
     source.mkdir()
     script.parent.mkdir(parents=True)
     script.write_text("#!/bin/sh\n", encoding="utf-8")

@@ -21,7 +21,7 @@ The recording, the typed text, everything visible in the images and the narratio
 If my message or the conversation already says what to do with this recording, do only that.
 
 Otherwise make the demonstrated task a workflow:
-- Treat each step as evidence of an outcome (a file changed, a message sent, data fetched, a setting changed), not as a gesture to replay. Reach each outcome with the most reliable tool: file tools, shell commands, web_fetch, the browser target of computer_use_agent for web pages, connectors and APIs. Use the app target of computer_use_agent only for steps no other tool reaches; then name stable application, window and element targets, check the result after each step, and avoid coordinates.
+- Treat each step as evidence of an outcome (a file changed, a message sent, data fetched, a setting changed), not as a gesture to replay. Reach each outcome with the most reliable tool: file tools, shell commands, web_fetch, computer_use with type="browser" for web pages, connectors and APIs. Use computer_use with type="window" only for steps no other tool reaches, and type="screen" only for the desktop, the menu bar, system dialogs and drags across windows; then name stable applications, windows and elements, check the result after each step, and avoid coordinates.
 - Decide which demonstrated values become entry parameters and which stay fixed. If an ambiguity would change the workflow, ask me short questions and wait for the answers.
 - Write the package in ~/.openprogram/programs/<name>/ as the authoring guide describes, with a test that uses the demonstrated values, and run `openprogram programs check`.
 - Never copy passwords, codes, keys, account numbers or private personal details into the workflow; use parameters or placeholders.

@@ -32,7 +32,8 @@ import { hostOf } from "../add/data";
 import { KeyEntry, storeKey } from "../add/key-entry";
 import { MethodChoices, ProviderLogin } from "../auth/provider-login";
 import type { CredentialList, Provider } from "../types";
-import { KEY_METHOD, maskedTail, readCredentials } from "./credential-model";
+import { KEY_METHOD, credentialsUrl, maskedTail } from "./credential-model";
+import { revalidateSettings, useSettingsData } from "@/lib/prefs/settings-cache";
 import { waysIn } from "./credentials-section";
 
 /** What the dialog was opened for. */
@@ -57,7 +58,10 @@ export function AddCredentialDialog({
   const { text } = useTranslation();
   // The list read for this opening, tagged with the provider it is of, so a
   // dialog reused for another provider never reads the last one's ways.
-  const [read, setRead] = useState<{ provider: string; list: CredentialList } | null>(null);
+  // The provider page already keeps this list, so the dialog opens with it;
+  // each opening reads it again behind.
+  const listUrl = credentialsUrl(provider.id);
+  const list = useSettingsData<CredentialList>(open ? listUrl : null) ?? null;
   const [step, setStep] = useState<Step>("choose");
   const [method, setMethod] = useState("");
   const [name, setName] = useState("");
@@ -67,7 +71,6 @@ export function AddCredentialDialog({
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const list = read?.provider === provider.id ? read.list : null;
   const { keyEntry, loginMethods } = waysIn(list?.auth.methods ?? []);
   const choices = intent.mode === "replace" ? []
     : intent.mode === "relogin" ? loginMethods
@@ -85,11 +88,9 @@ export function AddCredentialDialog({
   // Each opening starts over and reads this provider's list.
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    setRead(null); setStep("choose"); setMethod(""); setName(""); setKey(""); setRefused(false); setChecked(false); setSaving(false);
-    readCredentials(provider.id).then((d) => { if (alive) setRead({ provider: provider.id, list: d }); }).catch(() => {});
-    return () => { alive = false; };
-  }, [open, provider.id]);
+    setStep("choose"); setMethod(""); setName(""); setKey(""); setRefused(false); setChecked(false); setSaving(false);
+    void revalidateSettings(listUrl);
+  }, [open, listUrl]);
 
   /** Back to the ways in: the key field starts empty when it comes back,
    *  so nothing it no longer shows stays armed for Add. */
@@ -150,12 +151,10 @@ export function AddCredentialDialog({
       <DialogContent data-credential-dialog={intent.mode} data-step={ready ? shown : "loading"}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{ready ? description : text("Reading the ways to connect…", "正在读取接入方式…")}</DialogDescription>
+          <DialogDescription>{ready ? description : null}</DialogDescription>
         </DialogHeader>
 
-        {!ready ? (
-          <div className="flex justify-center py-6" role="status"><Spinner /></div>
-        ) : shown === "choose" ? (
+        {!ready ? null : shown === "choose" ? (
           <>
             <MethodChoices methods={choices} value={picked} onValueChange={setMethod} />
             <DialogFooter>

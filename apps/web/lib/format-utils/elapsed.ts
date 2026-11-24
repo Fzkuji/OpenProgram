@@ -1,3 +1,5 @@
+import { whenChanges } from "../clock/use-now.ts";
+
 /** A duration in seconds as "42s", "2m 14s" or "1h 5m"; with the interface's
  *  `text`, in its language: "42 秒", "2 分 14 秒", "4 分钟", "1 小时 5 分". */
 export function formatElapsed(seconds: number | undefined, text?: (en: string, zh: string) => string): string {
@@ -12,3 +14,6 @@ export function formatElapsed(seconds: number | undefined, text?: (en: string, z
     : `${rest} 秒`;
   return text(en, zh);
 }
+
+/** When `formatElapsed` of a running time next reads differently. */
+export const ELAPSED_CADENCE = whenChanges(elapsed => formatElapsed(elapsed / 1000));

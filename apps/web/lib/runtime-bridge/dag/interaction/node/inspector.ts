@@ -35,6 +35,7 @@ import { getSocket, runtimeState } from "../../../state";
 import { useSessionStore } from "../../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
 import { translateText } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
 import { _bodyText, closeTooltipDetail, expandTooltip } from "./tooltip";
 
 export function _roleLabel(node: GNode, el?: Element): string {
@@ -135,8 +136,8 @@ async function _checkoutTo(id: string): Promise<boolean> {
       body: JSON.stringify({ session_id: sid, msg_id: id }),
     });
     if (!r.ok) {
-      const j = await r.json().catch(() => null);
-      showToast(j?.error || translateText("Checkout failed", "checkout 失败"),
+      const j = await r.json().catch(() => null) as { error?: unknown } | null;
+      showToast(errorDetailText(j?.error, translateText("Checkout failed", "checkout 失败")),
         { tone: "error" });
       return false;
     }

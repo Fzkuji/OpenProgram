@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import abc
+import contextlib
 import threading
 import time
 from collections import deque
@@ -220,6 +221,20 @@ class Channel(abc.ABC):
           * 抛异常          — 瞬态故障 (断网 / gateway 掉线), 会被退避重连
           * 正常 return     — 永久停止 (凭据失效需人工重登), 不再重启
         """
+
+    #: True while the loop only waits for the platform to answer a long poll.
+    #: A worker that is stopping does not wait for such a thread: the poll
+    #: can last most of a minute, and nothing received is lost by ending it.
+    awaiting_platform: bool = False
+
+    @contextlib.contextmanager
+    def waiting_for_platform(self):
+        """Around a long poll: the stretch in which the loop holds nothing."""
+        self.awaiting_platform = True
+        try:
+            yield
+        finally:
+            self.awaiting_platform = False
 
     #: run_forever 的重连退避参数 — 初始等待秒数, 指数翻倍到上限.
     RESTART_BACKOFF = 5.0

@@ -20,7 +20,7 @@ SCANNED = (
     "openprogram/extensions/mcp/server",
 )
 SOURCE = "openprogram/runtime/permissions/refusal.py"
-_BROKER = "openprogram/programs/tools/computer_use/computer_use_agent/sandbox/broker.py"
+_BROKER = "openprogram/programs/tools/computer_use/computer_use/sandbox/broker.py"
 _BROKER_WHY = "the GUI broker's own lifecycle: a revoked handle or a stale attempt, not a decision about the call"
 
 # (file, finding) -> why it is not a refusal.

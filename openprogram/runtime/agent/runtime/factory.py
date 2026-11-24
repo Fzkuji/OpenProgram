@@ -82,6 +82,23 @@ def _replay_runtime(provider: str, model: str, entry: dict, kwargs: dict):
     return runtime
 
 
+def _table_default(entry: dict) -> str:
+    """The provider's default model, or its first known one when the
+    catalogue no longer lists the default.
+
+    The table's ids are written here by hand and the catalogue moves on: a
+    provider whose models are known but whose default is not among them
+    would otherwise fail as an unknown model before any request."""
+    default = entry["default_model"]
+    try:
+        from openprogram.models.providers.catalog.models import get_models
+
+        known = [model.id for model in get_models(entry["model_namespace"])]
+    except Exception:  # noqa: BLE001 - an unreadable catalogue keeps the table's id
+        return default
+    return default if not known or default in known else known[0]
+
+
 def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
@@ -134,7 +151,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
                 provider, model, {"model_namespace": source.provider}, kwargs
             )
         entry = _registry.PROVIDERS[provider]
-        use_model = model or entry["default_model"]
+        use_model = model or _table_default(entry)
         return _replay_runtime(provider, use_model, entry, kwargs)
 
     if provider and provider != "auto":
@@ -162,7 +179,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         # the binary but don't have an opinion on which model") — the
         # table default below covers that.
 
-    use_model = model or entry["default_model"]
+    use_model = model or _table_default(entry)
 
     from openprogram.runtime.agent.provider_runtimes import runtime_class_for
     cls = runtime_class_for(provider)

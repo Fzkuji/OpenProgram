@@ -71,7 +71,7 @@ def monitor():
              output="Always-on check-in: anything new?"),
         Call(id="a_never", role="llm", created_at=t + 1, predecessor="u_never", output="[could not check] proxy down",
              metadata={"status": "completed", "finished_at": t + 44}),
-        Call(id="s_job_missing", role="code", name="computer_use_agent", created_at=t + 3, caller="a_never",
+        Call(id="s_job_missing", role="code", name="computer_use", created_at=t + 3, caller="a_never",
              input=json.dumps({"context": "fresh", "brief": BRIEF}),
              output="[agent error: head=None] canonical execution admission is missing",
              metadata={"is_error": "True"}),
@@ -84,8 +84,10 @@ def monitor():
     add(index,
         Call(id="u_ran", role="user", created_at=t, predecessor="a_never", output="Is the page still refusing me?"),
         Call(id="a_ran", role="llm", created_at=t + 1, predecessor="u_ran", output="**Yes**, HTTP 403.",
-             metadata={"status": "completed", "finished_at": t + 90}),
-        Call(id="s_guide", role="code", name="computer_use_agent", created_at=t + 4, caller="a_ran",
+             metadata={"status": "completed", "finished_at": t + 90,
+                       # The reply's stored blocks say which task each call was made for.
+                       "extra": json.dumps({"blocks": [{"type": "tool", "tool_call_id": "call_1", "task": "T1"}]})}),
+        Call(id="s_guide", role="code", name="computer_use", created_at=t + 4, caller="a_ran",
              input=json.dumps({"target": "browser", "note": "n" * 2500}), output=long_result,
              metadata={"tool_call_id": "call_1", "spilled": {"path": "x"}}),
         Call(id="s_failed", role="code", name="bash", created_at=t + 6, caller="a_ran",
@@ -187,6 +189,14 @@ def test_the_chart_gets_every_runs_steps_in_short_form():
     [agent] = [event for event in row["steps"] if event["kind"] == "subagent"]
     assert [item.get("name") for item in agent["steps"]] == ["agent", None]
     assert agent["steps"][-1] == {"kind": "replied", "at": agent["steps"][-1]["at"], "text": "Sold out."}
+
+
+def test_a_call_made_for_a_task_says_which_and_the_rest_say_nothing():
+    guide, failed = events_of("a_ran", {"step"})
+    assert guide["task"] == "T1" and "task" not in failed
+    page = list_runs(monitor(), SESSION, monitor_reads(), chart=ChartReads(jobs()))
+    steps = next(item for item in page["runs"] if item["id"] == "a_ran")["steps"]
+    assert [event.get("task") for event in steps if event["kind"] == "step"] == ["T1", None]
 
 
 def test_only_what_the_user_sent_gets_a_topic():
@@ -506,6 +516,24 @@ def test_pairing_uses_the_prompt_then_the_only_healthy_step():
     body = run_events(index, "a", reads, jobs=[job("j1", "second", T0 + 3), job("j2", "reworded", T0 + 4)])
     kinds = sorted(event["kind"] for event in body["events"])
     assert kinds == ["replied", "subagent", "subagent"]
+
+
+def test_sub_agents_take_the_task_of_the_call_they_came_from():
+    blocks = [{"type": "tool", "tool_call_id": f"call_{name}", "task": "T2"} for name in ("failed", "program")]
+    index = SessionMemoryIndex()
+    add(index,
+        Call(id="a", role="llm", created_at=T0, predecessor="ROOT", output="x", metadata={"extra": json.dumps({"blocks": blocks})}),
+        # An agent call that failed before a sub-agent existed.
+        Call(id="s_failed", role="code", name="agent", created_at=T0 + 1, caller="a", input={"prompt": "first"},
+             output="agent refused", metadata={"tool_call_id": "call_failed", "is_error": True}),
+        # A program whose helper started a sub-agent.
+        Call(id="s_program", role="code", name="research", created_at=T0 + 2, caller="a", metadata={"tool_call_id": "call_program"}),
+        Call(id="helper", role="code", name="search", created_at=T0 + 3, caller="s_program"))
+    started = Job(id="j1", parent_session_id="s", prompt="look it up", agent_id="b", caller_msg_id="helper",
+                  status=JobStatus.COMPLETED, created_at=T0 + 4)
+    reads = ExecutionReads((), lambda _: [], lambda _: None)
+    events = [item for item in run_events(index, "a", reads, jobs=[started])["events"] if item["kind"] == "subagent"]
+    assert {(item["job_id"], item.get("task")) for item in events} == {("j1", "T2"), (None, "T2")}
 
 
 def test_nested_sub_agents_stop_at_the_depth_cap():

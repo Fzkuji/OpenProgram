@@ -90,6 +90,7 @@ class BorrowedOperations:
                 "attempt_generation": attempt.generation,
                 "driver": binding.driver,
             }
+            self._budget_wake.set()
             self._done_events[job.id] = done_ev
         result = None
         try:

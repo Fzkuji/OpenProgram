@@ -26,6 +26,7 @@ from openprogram.host._platform.filesystem import (
     directory_duplicate,
 )
 
+from . import remote as _remote
 from . import shared as _shared
 
 def _setting(name: str):
@@ -382,8 +383,45 @@ def _search_match(value: str, query: str, mode: str) -> tuple[bool, int]:
     return False, 0
 
 
+def _search_rank(name: str, rel: str, query: str, mode: str) -> int | None:
+    """Where a match sorts (exact name, name prefix, name, then path), or None for no match."""
+    name_match, _name_rank = _search_match(name, query, mode)
+    path_match, path_rank = _search_match(rel, query, mode)
+    if not (name_match or path_match):
+        return None
+    folded = name.casefold()
+    if name_match and query and folded == query.casefold():
+        return 0
+    if name_match and query and folded.startswith(query.casefold()):
+        return 1
+    return 2 if name_match else 3 + path_rank
+
+
+def _remote_search_rows(remote, project_id: str, path: str, query: str, mode: str,
+                        entry_type: str) -> tuple[list[dict], tuple, tuple[str, str] | None]:
+    """Search a project folder on its machine: one listing there, matched here."""
+    try:
+        found, basis = _remote.search(remote, path, _setting("_QUERY_MAX_SNAPSHOT_ITEMS"))
+    except OSError as exc:
+        return [], (), _fs_query_failure(exc)
+    rows: list[tuple[int, dict]] = []
+    for kind, size, mtime, rel in found:
+        if entry_type != "all" and entry_type != kind:
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        rank = _search_rank(name, rel, query, mode)
+        if rank is not None:
+            rows.append((rank, {"name": name, "path": rel, "type": kind, "size": size, "mtime": mtime,
+                                "project_id": project_id, "project_name": remote.project.name}))
+    rows.sort(key=lambda item: (item[0], item[1]["path"].casefold(), item[1]["path"]))
+    return [row for _rank, row in rows], basis, None
+
+
 def _search_rows(project_id: str, path: str, query: str, mode: str,
                  entry_type: str) -> tuple[list[dict], tuple, tuple[str, str] | None]:
+    remote = _remote.target(project_id)
+    if remote is not None:
+        return _remote_search_rows(remote, project_id, path, query, mode, entry_type)
     root, project_name, error = _project_info(project_id)
     if error:
         return [], (), ("NOT_FOUND", error)
@@ -554,6 +592,18 @@ def _tree_query(project_id: str, path: object, page_size: object,
         ):
             return _query_error(project_id, canonical_path or "",
                                 code="STALE_SNAPSHOT", kind="directory")
+        remote = _remote.target(project_id)
+        if remote is not None:
+            try:
+                _entries, basis = _remote.directory(remote, canonical_path or "")
+            except OSError as exc:
+                code, message = _fs_query_failure(exc)
+                return _query_error(project_id, canonical_path or "", code=code,
+                                    message=message, kind="directory")
+            if basis != snapshot.basis:
+                return _query_error(project_id, canonical_path or "",
+                                    code="STALE_SNAPSHOT", kind="directory")
+            return _query_page(snapshot, offset, size, "entries", str(cursor))
         try:
             fd = _open_query_dir(project_id, canonical_path or "")
         except _UnsafeQueryPath as exc:
@@ -579,23 +629,33 @@ def _tree_query(project_id: str, path: object, page_size: object,
                                 code="STALE_SNAPSHOT", kind="directory")
         return _query_page(snapshot, offset, size, "entries", str(cursor))
 
-    try:
-        fd = _open_query_dir(project_id, canonical_path or "")
-    except _UnsafeQueryPath as exc:
-        return _query_error(project_id, canonical_path or "",
-                            code="INVALID_REQUEST", message=str(exc))
-    except OSError as exc:
-        code, message = _fs_query_failure(exc)
-        return _query_error(project_id, canonical_path or "", code=code,
-                            message=message, kind="directory")
-    try:
-        entries, basis = _directory_snapshot_fd(fd)
-    except OSError as exc:
-        code, message = _fs_query_failure(exc)
-        return _query_error(project_id, canonical_path or "", code=code,
-                            message=message, kind="directory")
-    finally:
-        directory_close(fd)
+    remote = _remote.target(project_id)
+    if remote is not None:
+        # The folder is on the project's machine: listed there, never here.
+        try:
+            entries, basis = _remote.directory(remote, canonical_path or "")
+        except OSError as exc:
+            code, message = _fs_query_failure(exc)
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="directory")
+    else:
+        try:
+            fd = _open_query_dir(project_id, canonical_path or "")
+        except _UnsafeQueryPath as exc:
+            return _query_error(project_id, canonical_path or "",
+                                code="INVALID_REQUEST", message=str(exc))
+        except OSError as exc:
+            code, message = _fs_query_failure(exc)
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="directory")
+        try:
+            entries, basis = _directory_snapshot_fd(fd)
+        except OSError as exc:
+            code, message = _fs_query_failure(exc)
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="directory")
+        finally:
+            directory_close(fd)
     if len(entries) > _setting("_QUERY_MAX_SNAPSHOT_ITEMS"):
         return _query_error(project_id, canonical_path or "",
                             code="LIMIT_EXCEEDED", message="snapshot is too large",
@@ -604,7 +664,14 @@ def _tree_query(project_id: str, path: object, page_size: object,
         key, direction, grouping, hidden, ignored = sort_name.split(":")
         if hidden == "visible":
             entries = [row for row in entries if not row["name"].startswith(".")]
-        if ignored == "tracked":
+        if ignored == "tracked" and remote is not None:
+            paths = [posixpath.join(canonical_path or "", row["name"]) for row in entries]
+            try:
+                ignored_paths = _remote.ignored(remote, paths)
+            except OSError as exc:
+                return _query_error(project_id, canonical_path or "", code="IO_ERROR", message=str(exc))
+            entries = [row for row, candidate in zip(entries, paths) if candidate not in ignored_paths]
+        elif ignored == "tracked":
             root, _, _ = _project_info(project_id)
             paths = [posixpath.join(canonical_path or "", row["name"]) for row in entries]
             try:

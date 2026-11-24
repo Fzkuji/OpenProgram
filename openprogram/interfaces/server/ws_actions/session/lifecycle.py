@@ -17,6 +17,21 @@ def _close_browser_tabs(session_id: str) -> None:
     close_conversation_tabs_soon(session_id)
 
 
+def _remove_conversation_instances(*session_ids: str) -> None:
+    """The conversations' own machine instances (a Docker container) go with them, found by label: also
+    when a conversation was never loaded since the worker started. One thread takes them one after
+    another, so clearing many conversations does not start a removal per conversation at once."""
+    import threading
+    from openprogram.host.machines import remove_instances
+
+    def run() -> None:
+        for session_id in session_ids:
+            remove_instances(conversation=session_id)
+
+    if session_ids:
+        threading.Thread(target=run, name="remove-instances", daemon=True).start()
+
+
 async def handle_delete_session(ws, cmd: dict):
     from openprogram.interfaces.server import server as _s
     from openprogram.runtime.context.session_db import default_db
@@ -47,6 +62,7 @@ async def handle_delete_session(ws, cmd: dict):
         await handle_list_sessions(ws, {})
         return
     _close_browser_tabs(session_id)
+    _remove_conversation_instances(session_id)
     _s._broadcast(json.dumps({"type": "session_deleted", "session_id": session_id}))
 
 
@@ -333,6 +349,7 @@ async def handle_clear_sessions(ws, cmd: dict):
                         "closing runtime of session %s failed", sid, exc_info=True)
         _s._sessions.clear()
 
+    deleted: list[str] = []
     for cid in ids:
         _s._follow_up_queues.pop(cid, None)
         with _s._running_tasks_lock:
@@ -341,8 +358,10 @@ async def handle_clear_sessions(ws, cmd: dict):
             # Deleted under the conversation's lock: in its lane.
             await run_for_conversation(cid, db.delete_session, cid)
             _close_browser_tabs(cid)
+            deleted.append(cid)
         except Exception as e:
             _s._log(f"[clear_sessions] delete {cid}: {e}")
+    _remove_conversation_instances(*deleted)
 
     # 删完回发一次真实列表（应为空），让发起方立刻看到清空结果，不靠刷新。
     await handle_list_sessions(ws, {})
@@ -364,13 +383,30 @@ async def handle_mark_session_read(ws, cmd: dict):
     Broadcasts so every open tab clears the dot together. A hidden window
     keeps its focus but has not seen anything, so dot and news stay.
     """
-    from openprogram.interfaces.server import server as _s
-    from openprogram.runtime.context.session_db import default_db
-
     sid = cmd.get("session_id") or None
     ws._focused_session_id = sid
     if not sid or getattr(ws, "_window_hidden", False):
         return
+    await _clear_unread(sid, "mark_session_read")
+
+
+async def handle_mark_sessions_read(ws, cmd: dict):
+    """The sidebar Activity's "Mark all as read": clear the dot and the
+    pending news of each listed conversation, as opening it would, without
+    moving this client's focus (``mark_session_read`` records focus)."""
+    ids = cmd.get("session_ids")
+    if not isinstance(ids, list):
+        return
+    for sid in dict.fromkeys(i for i in ids if isinstance(i, str) and i):
+        await _clear_unread(sid, "mark_sessions_read")
+
+
+async def _clear_unread(sid: str, action: str) -> None:
+    """Clear a conversation's unread flag and its pending news, and tell
+    every window."""
+    from openprogram.interfaces.server import server as _s
+    from openprogram.runtime.context.session_db import default_db
+
     with _s._sessions_lock:
         conv = _s._sessions.get(sid)
         if conv is not None:
@@ -379,7 +415,7 @@ async def handle_mark_session_read(ws, cmd: dict):
         # Writing the flag takes the conversation's lock: off the loop.
         await run_for_conversation(sid, default_db().update_session, sid, unread=False)
     except Exception as e:
-        _s._log(f"[mark_session_read] {sid}: {e}")
+        _s._log(f"[{action}] {sid}: {e}")
     _s._broadcast(json.dumps({
         "type": "session_updated",
         "data": {"id": sid, "unread": False},
@@ -390,4 +426,4 @@ async def handle_mark_session_read(ws, cmd: dict):
             # Its news left the pending inbox.
             _s._broadcast(json.dumps({"type": "always_on_update", "data": {"session_id": sid}}))
     except Exception as e:  # noqa: BLE001 - reading the conversation goes on
-        _s._log(f"[mark_session_read] pending {sid}: {e}")
+        _s._log(f"[{action}] pending {sid}: {e}")

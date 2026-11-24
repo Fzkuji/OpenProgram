@@ -27,17 +27,54 @@ def answer(text):
                             provider=m.provider, model=m.id, timestamp=0)
 
 
-def test_request_budget_uses_matching_provider_usage():
+def _reply(prompt, *, server_tool=False):
+    """A finished reply whose usage reports a prompt of ``prompt`` tokens."""
+    from openprogram.models.providers.types import ServerToolUse, Usage
+    reply = answer('done')
+    if server_tool:
+        reply.content.insert(0, ServerToolUse(id='ws-1', name='web_search', input={}))
+    reply.usage = Usage(input=prompt, output=10, tokens_reported=True)
+    return reply
+
+
+def test_request_size_is_the_last_count_plus_the_change():
+    """A matching count moves the size by what the estimate missed, added once."""
     request = Context(messages=[UserMessage(content='review ' * 2600, timestamp=0)])
+    estimate = _text_tokens('review ' * 2600) + 4
     compactor = RequestCompactor()
+    roomy = model().model_copy(update={'max_tokens': 8192})
     async def run():
-        first_options = SimpleStreamOptions()
-        await compactor.prepare(request, model(), first_options)
-        estimate = _text_tokens('review ' * 2600) + 4
-        compactor.note_usage(model(), measured_input=2 * estimate,
-                             request_estimate=estimate)
-        with pytest.raises(ValueError, match='Protected request'):
-            await compactor.prepare(request, model(), SimpleStreamOptions())
+        first = SimpleStreamOptions()
+        await compactor.prepare(request, roomy, first)
+        compactor.note_reply(roomy, _reply(estimate + 300), estimate)
+        second = SimpleStreamOptions()
+        await compactor.prepare(request, roomy, second)
+        assert second.max_tokens == first.max_tokens - 300
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('kind', ['server_tool', 'over_window', 'error'])
+def test_a_count_of_several_passes_is_not_the_request_size(kind):
+    """A reply that ran provider-side tools reports its passes summed (xAI's
+    web search: three passes, three times the prompt); a count over the
+    window or from a failed reply measured no request. None of them changes
+    the size, and the request that fits is sent as it is."""
+    request = Context(messages=[UserMessage(content='review ' * 2600, timestamp=0)])
+    estimate = _text_tokens('review ' * 2600) + 4
+    compactor = RequestCompactor()
+    reply = _reply(3 * estimate if kind != 'over_window' else 7000,
+                   server_tool=kind == 'server_tool')
+    if kind == 'error':
+        reply.stop_reason = 'error'
+    roomy = model().model_copy(update={'max_tokens': 8192})
+    async def run():
+        first = SimpleStreamOptions()
+        await compactor.prepare(request, roomy, first)
+        compactor.note_reply(roomy, reply, estimate)
+        second = SimpleStreamOptions()
+        prepared = await compactor.prepare(request, roomy, second)
+        assert second.max_tokens == first.max_tokens
+        assert prepared.messages == request.messages
     asyncio.run(run())
 
 
@@ -135,10 +172,18 @@ def test_summary_overflow_retries_smaller_without_omitting_source(monkeypatch):
     assert len(seen[1]) < len(seen[0])
 
 
+def _fits(context, m, options):
+    return (_text_tokens(context.system_prompt or '') + estimate_history_tokens(context.messages)
+            <= m.context_window - options.max_tokens - max(256, m.context_window // 20))
+
+
 @pytest.mark.parametrize('kind', ['missing_result', 'image', 'signed_thinking'])
-def test_checkpoint_rejects_protected_prefix(monkeypatch, kind):
+def test_a_prefix_no_summary_may_cover_still_fits(monkeypatch, kind):
+    """What a checkpoint may not summarise (an unanswered call, the turn's own
+    signed reasoning) is fitted by the later steps instead; an earlier image
+    becomes a note. The request is sent, history is untouched."""
     from openprogram.models.providers.types import ImageContent, ThinkingContent
-    calls = install_summary(monkeypatch)
+    install_summary(monkeypatch)
     old = answer('large text ' * 6000)
     if kind == 'missing_result':
         old.content.append(ToolCall(id='unresolved', name='check', arguments={}))
@@ -146,16 +191,33 @@ def test_checkpoint_rejects_protected_prefix(monkeypatch, kind):
         user_content = [ImageContent(data='fixture', mime_type='image/png')]
     else:
         old.content.append(ThinkingContent(thinking='private', thinking_signature='signed'))
-    raw = Context(messages=[UserMessage(content=user_content if kind == 'image' else 'Read only.', timestamp=0),
-                            old, answer('Current step.')])
+    first = UserMessage(content=user_content if kind == 'image' else 'Read only.', timestamp=0)
+    messages = [first, old, answer('Current step.')]
+    if kind == 'image':
+        messages.append(UserMessage(content='Continue.', timestamp=0))
+    raw = Context(messages=messages)
     before = raw.model_dump_json()
-    with pytest.raises(ValueError, match='Protected request'):
-        asyncio.run(RequestCompactor().prepare(raw, model(), SimpleStreamOptions(max_tokens=512)))
-    assert not calls and raw.model_dump_json() == before
+    options = SimpleStreamOptions(max_tokens=512)
+    prepared = asyncio.run(RequestCompactor().prepare(raw, model(), options))
+    assert _fits(prepared, model(), options)
+    assert raw.model_dump_json() == before
+    assert prepared.messages[-1] == raw.messages[-1]
+    if kind == 'image':
+        assert not any(getattr(b, 'type', None) == 'image'
+                       for m in prepared.messages if not isinstance(m.content, str) for b in m.content)
+
+
+def test_only_a_latest_message_over_the_window_fails():
+    big = UserMessage(content='evidence ' * 9000, timestamp=0)
+    with pytest.raises(ValueError, match='does not fit'):
+        asyncio.run(RequestCompactor().prepare(Context(messages=[big]), model(),
+                                               SimpleStreamOptions(max_tokens=512)))
 
 
 @pytest.mark.parametrize('mode', ['cancelled', 'auth', 'overflow_forever'])
 def test_failed_checkpoint_preserves_input_and_does_not_cache(monkeypatch, mode):
+    """A summary that fails is skipped: the request is fitted without it and
+    nothing is cached. A stop still stops."""
     calls = []
     async def summary(*args):
         calls.append(True)
@@ -169,8 +231,14 @@ def test_failed_checkpoint_preserves_input_and_does_not_cache(monkeypatch, mode)
                             answer('large text ' * 6000), answer('Current step.')])
     before = raw.model_dump_json()
     compactor = RequestCompactor()
-    with pytest.raises(asyncio.CancelledError if mode == 'cancelled' else Exception):
-        asyncio.run(compactor.prepare(raw, model(), SimpleStreamOptions(max_tokens=512)))
+    options = SimpleStreamOptions(max_tokens=512)
+    if mode == 'cancelled':
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(compactor.prepare(raw, model(), options))
+    else:
+        prepared = asyncio.run(compactor.prepare(raw, model(), options))
+        assert _fits(prepared, model(), options)
+        assert prepared.messages[-1] == raw.messages[-1]
     assert raw.model_dump_json() == before and compactor._checkpoint is None
     assert 0 < len(calls) <= 32
     if mode != 'overflow_forever':
@@ -280,3 +348,20 @@ def test_default_provider_path_keeps_checkpoint_across_tool_continuation(monkeyp
     asyncio.run(run())
     assert len(requests) == 2
     assert counts[0] > 0 and counts[1] == counts[0]
+
+
+def test_a_turn_is_measured_by_the_request_it_sends(monkeypatch):
+    """The stored row of a reply holds its text; the request carries its
+    tool calls and results too, and that is what decides compaction."""
+    from openprogram.runtime.context.engine import DefaultContextEngine
+
+    engine = DefaultContextEngine(auto_compact_pct=0.8)
+    rows = [{'id': 'u1', 'role': 'user', 'content': 'check the sheet'},
+            {'id': 'a1', 'role': 'assistant', 'content': 'Done.'}]
+    rendered = [UserMessage(content='check the sheet', timestamp=0),
+                answer('[tool call] read the sheet\n[result]\n' + 'row ' * 6000)]
+    monkeypatch.setattr(engine, '_build_messages_from_dag', lambda **_kw: rendered)
+    prep = engine.prepare(agent={}, session={}, history=rows, model=model(), tools=[], system_prompt='x')
+    assert prep.budget.history == estimate_history_tokens(rendered)
+    assert engine.should_auto_compact(prep)
+

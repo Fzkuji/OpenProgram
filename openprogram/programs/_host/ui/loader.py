@@ -37,9 +37,16 @@ import time
 import uuid
 from pathlib import Path
 
+from openprogram.host._platform.changes import publish, signal
+
 from . import catalog
 
 logger = logging.getLogger(__name__)
+
+#: An installed or built-in application was loaded, disposed or changed in
+#: the catalog (``catalog_store.write``): Launchpads and the Applications
+#: and Programs pages read their lists again. The key is the application id.
+publish("applications")
 
 _lock = threading.RLock()
 #: Serializes load, unload and sync: the watcher and the routes both call them.
@@ -208,7 +215,10 @@ def _entry(definition: dict, operation: str, spec: dict):
 def load(app_id: str) -> dict | None:
     """Mount the installed application ``app_id`` if it is enabled."""
     with _load_lock:
-        return _load(app_id)
+        try:
+            return _load(app_id)
+        finally:
+            signal("applications", app_id)
 
 
 def _load(app_id: str) -> dict | None:
@@ -240,7 +250,10 @@ def unload(app_id: str) -> list[str]:
             if app_id in _builtin:
                 return []
             _errors.pop(app_id, None)
-        return dispose_program(owner(app_id))
+        try:
+            return dispose_program(owner(app_id))
+        finally:
+            signal("applications", app_id)
 
 
 def reload(app_id: str) -> dict | None:
@@ -350,6 +363,29 @@ def watch_stamp() -> tuple:
             continue
         stamp.append((row["application"]["id"], str(root), catalog.tree_stamp(root)))
     return tuple(stamp)
+
+
+def watch_roots() -> list[Path]:
+    """The source trees :func:`watch_stamp` stamps, for the Programs watcher
+    to take file events from; a missing source by the paths it may come back at."""
+    try:
+        rows = [r for r in catalog.catalog_store._read()
+                if r.get("kind") == "application" and isinstance(r.get("application"), dict)]
+    except (OSError, ValueError):
+        return []
+    roots: list[Path] = []
+    for row in rows:
+        if row.get("uninstalled") or not row["application"].get("enabled", True):
+            continue
+        try:
+            root = catalog.source_root(row)
+        except FileNotFoundError:
+            source = row.get("source") or row["application"].get("source")
+            roots.extend(Path(p) for p in dict.fromkeys((source, row.get("path"))) if p)
+            continue
+        if not _sealed_in_a_version(root):
+            roots.append(root)
+    return roots
 
 
 def _sealed_in_a_version(root: Path) -> bool:

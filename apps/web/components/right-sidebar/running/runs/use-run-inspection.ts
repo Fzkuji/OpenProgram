@@ -1,8 +1,10 @@
 "use client";
 
 /** The record of one open run: its waits, checkpoints, drafts and last 50 raw
- *  events. Read while the run is open and again when its version moves. */
+ *  events. Read while the run is open and again when its version moves. The
+ *  last record of a run draws at once when it opens again (activity-reads.ts). */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { activityReadKey, activityReadStart, lastActivityRead, rememberActivityRead } from "@/lib/execution/activity-reads";
 import type { CheckpointInspector } from "../../debugger/debugger-panel";
 import type { DurableWait, EventCursor, ExecutionSnapshot, RevisionDraft } from "@/lib/execution/execution-debugger";
 import { getExecutionDebuggerState, getExecutionEvents, inspectionFromDebuggerState, type PersistedExecutionEvent, type UnresolvedEffect } from "@/lib/net/execution/execution-client";
@@ -21,8 +23,8 @@ type Loaded = Omit<RunInspection, "refresh">;
 const EMPTY: Loaded = { events: [], unresolvedEffects: [], checkpoints: [], waits: [], drafts: [], cursor: null };
 
 export function useRunInspection(snapshot: ExecutionSnapshot | null, sessionId: string, active: boolean): RunInspection {
-  const [loaded, setLoaded] = useState<Loaded>(EMPTY);
   const executionId = snapshot?.execution_id ?? null;
+  const [loaded, setLoaded] = useState<Loaded>(() => (executionId && lastActivityRead<Loaded>("inspection", activityReadKey(sessionId, executionId))) || EMPTY);
   const sequence = snapshot?.event_sequence ?? 0;
   const version = snapshot?.status_version ?? 0;
   const alive = useRef(true);
@@ -46,6 +48,7 @@ export function useRunInspection(snapshot: ExecutionSnapshot | null, sessionId: 
         dirty.current = false;
         const { executionId: id, sequence: last } = latest.current;
         if (!id) return;
+        const startedAt = activityReadStart();
         try {
           const [replay, state] = await Promise.all([
             getExecutionEvents(id, Math.max(0, last - 50), reads.current?.signal, sessionId),
@@ -53,12 +56,15 @@ export function useRunInspection(snapshot: ExecutionSnapshot | null, sessionId: 
           ]);
           if (!alive.current || latest.current.executionId !== id) return;
           const { checkpoints, unresolvedEffects, waits, drafts } = inspectionFromDebuggerState(state);
-          setLoaded({
+          const read: Loaded = {
             events: replay.events || [], cursor: replay.event_cursor || null, unresolvedEffects, waits, drafts,
             checkpoints: checkpoints as CheckpointInspector[],
-          });
-        } catch {
+          };
+          rememberActivityRead("inspection", activityReadKey(sessionId, id), read, startedAt);
+          setLoaded(read);
+        } catch (error) {
           // The last record stays on screen; the next version change reads again.
+          if (alive.current && !reads.current?.signal.aborted) console.warn("Activity: could not read a run's record", error);
         }
       } while (dirty.current && alive.current);
     } finally {

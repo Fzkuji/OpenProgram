@@ -50,7 +50,7 @@ async function mount(run){
 }
 test('model-call entry supplies its tree, owner and subsequent result to selected details',async()=>mount(async({root,document,store})=>{
   const block={type:'tool',tool:'gui_agent',tool_call_id:'g1',input:'{"task":"Inspect window"}'};
-  const tree={name:'gui_agent',children:[{name:'computer_use',status:'running'}]};
+  const tree={name:'gui_agent',children:[{name:'vm_use',status:'running'}]};
   await act(async()=>root.render(createElement(FunctionStep,{block,tree,running:true,sessionId:'owner'})));
   await act(async()=>document.querySelector('.tl-step-link').click());
   assert.equal(store.detailNode.session_id,'owner');
@@ -63,7 +63,7 @@ test('model-call entry supplies its tree, owner and subsequent result to selecte
   assert.equal(store.detailNode.path,'different');
 }));
 test('manual tree entry preserves structured output and source conversation',async()=>mount(async({root,document,store})=>{
-  const node={path:'manual',name:'computer_use',status:'completed',params:{app_name:'TextEdit'},output:{status:'applied',success:true,step:{plan:{call:'window_press'}}}};
+  const node={path:'manual',name:'vm_use',status:'completed',params:{app_name:'TextEdit'},output:{status:'applied',success:true,step:{plan:{call:'window_press'}}}};
   await act(async()=>root.render(createElement(TreeStep,{node,sessionId:'manual-owner'})));
   await act(async()=>document.querySelector('.tl-step-link').click());
   assert.equal(store.detailNode.session_id,'manual-owner');
@@ -76,18 +76,23 @@ test('full-output loading does not replace another selected call',async()=>mount
   const block={type:'tool',tool:'gui_agent',tool_call_id:'g1',node_id:'n1',message_id:'m1',truncated:true,result:'{"history":['};
   await act(async()=>root.render(createElement(FunctionStep,{block,sessionId:'owner'})));
   await act(async()=>document.querySelector('.tl-step-link').click());
-  assert.equal(store.detailNode.status,'running');
+  // The head already held shows at once, with no Loading text standing in.
+  assert.equal(store.detailNode.output,'{"history":[');
+  assert.doesNotMatch(String(store.detailNode.output),/Loading/);
   store.detailNode={path:'different'};
   await act(async()=>resolve({result:'{"status":"succeeded"}'}));
   assert.equal(store.detailNode.path,'different');
 }));
 
-test('full-output failure remains visible and a later click can retry',async()=>mount(async({root,document,store})=>{
+test('a failed full-output read keeps the head without a notice and a later click can retry',async()=>mount(async({root,document,store})=>{
   globalThis.guiFetch=async()=>({error:'Result no longer available'});
-  const block={type:'tool',tool:'gui_agent',tool_call_id:'g1',node_id:'n1',message_id:'m1',truncated:true,result:'{"history":['};
+  const warn=console.warn;console.warn=()=>{};
+  const block={type:'tool',tool:'gui_agent',tool_call_id:'g1',node_id:'n1',message_id:'m-fail',truncated:true,result:'{"history":['};
   await act(async()=>root.render(createElement(FunctionStep,{block,sessionId:'owner'})));
   await act(async()=>document.querySelector('.tl-step-link').click());
-  assert.equal(store.detailNode.error,'Result no longer available');
+  console.warn=warn;
+  assert.equal(store.detailNode.error,undefined);
+  assert.equal(store.detailNode.output,'{"history":[');
   assert.equal(store.detailNode.status,'completed','a failed fetch is not a failed tool call');
   globalThis.guiFetch=async()=>({result:{status:'infeasible',handoff_instruction:'Open app'}});
   await act(async()=>document.querySelector('.tl-step-link').click());

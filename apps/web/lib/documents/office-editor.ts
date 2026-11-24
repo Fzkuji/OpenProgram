@@ -2,10 +2,23 @@
 
 import type { DocumentController, } from "@/lib/files/document/document-controller";
 import type { RichDocumentEditor } from "@/lib/files/document/document-types";
+import { fidelityCheckable, incompleteRead, type IncompleteRead } from "./office-fidelity";
 
 export interface OfficeEditorInstance extends RichDocumentEditor {
   save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;
   getState(): { dirty: boolean; readonly: boolean; destroyed: boolean; status?: string };
+}
+
+/** The engine read the file with slides or sheets missing. It is not
+ *  shown: what it would show is not the file, and what it would save
+ *  would replace the file with the part it kept. */
+export class IncompleteReadError extends Error {
+  readonly read: IncompleteRead;
+  constructor(read: IncompleteRead, fileName: string) {
+    super(`The built-in editor read only ${read.kept} of the ${read.expected} ${/\.(xlsx|xlsm|xltx)$/i.test(fileName) ? "sheets" : "slides"} in this file, so it was not opened. The file was not changed.`);
+    this.name = "IncompleteReadError";
+    this.read = read;
+  }
 }
 interface OfficeMount { activate(): Promise<OfficeEditorInstance>; destroy(): Promise<void>; }
 interface OfficeApi { mountOfficeEditor(container: HTMLElement, options: Record<string, unknown>): OfficeMount; }
@@ -58,6 +71,9 @@ export async function createBoundOfficeEditor(options: OfficeEditorOptions): Pro
   let readyReject!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   void ready.catch(() => undefined);
+  // While the engine's reading of the file is being checked, its export is
+  // compared, never kept, and its dirty notices are its own.
+  let probing = false;
   const mount = api.mountOfficeEditor(options.container, {
     hostUrl: options.hostUrl,
     expectedHostIdentity: {
@@ -73,11 +89,11 @@ export async function createBoundOfficeEditor(options: OfficeEditorOptions): Pro
     canReturnToPreview: false,
     saveBehavior: options.readonly ? "download" : "callback",
     onSave: options.readonly ? undefined : async (file: File) => {
-      if (!options.exportOnly) await options.controller.stageRichExport(file, generation);
+      if (!options.exportOnly && !probing) await options.controller.stageRichExport(file, generation);
       return true;
     },
     onDirtyChange: (dirty: boolean, instance: OfficeEditorInstance) => {
-      if (!options.exportOnly) options.controller.markRichEditorDirty(dirty, instance);
+      if (!options.exportOnly && !probing) options.controller.markRichEditorDirty(dirty, instance);
     },
     onReady: () => readyResolve(),
     onStateChange: (state: { readonly: boolean }) => options.onReadonlyChange?.(state.readonly),
@@ -115,6 +131,18 @@ export async function createBoundOfficeEditor(options: OfficeEditorOptions): Pro
       if (!enabled) (document.activeElement as HTMLElement | null)?.blur?.();
     },
   });
+  if (!options.readonly && !options.exportOnly && fidelityCheckable(options.fileName) && editor.getState().readonly === false) {
+    let missing: IncompleteRead | null = null;
+    probing = true;
+    try {
+      const exported = await bound.save(undefined, { commitPendingInput: false });
+      missing = await incompleteRead(options.bytes, exported, options.fileName);
+    } catch (error) {
+      // An engine that cannot export at all cannot overwrite anything either.
+      if (options.signal?.aborted) { await bound.destroy(); throw error; }
+    } finally { probing = false; }
+    if (missing) { await bound.destroy(); throw new IncompleteReadError(missing, options.fileName); }
+  }
   if (!options.readonly && !options.exportOnly) {
     try {
       const detach = options.controller.attachRichEditor(bound, generation);

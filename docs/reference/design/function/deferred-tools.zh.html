@@ -21,11 +21,12 @@
 
 <h2 id="anthropic">Anthropic 上的加载</h2>
 <p>provider 在 <code translate="no">provider.json</code> 的 <code translate="no">tool_search</code> 下声明原生形式。Anthropic 为 <code translate="no">anthropic-messages</code> 声明 <code translate="no">anthropic-reference</code>，并带 <code translate="no">models_off: ["haiku"]</code>。</p>
+<p>Grok 订阅入口没有声明：它对 <code translate="no">tool_search_call</code> 项返回 422 “unknown item type”，所以在那里加载的工具追加到所有其他工具之后。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">部分</th><th scope="col">有这个形式</th><th scope="col">没有</th></tr></thead>
 <tbody>
 <tr><th scope="row">搜索结果</th><td>只发 <code translate="no">tool_reference</code> 块，旁边加一个兄弟文字块：搜索的<a href="#codex">说明</a>，没有任何文字时是 <code translate="no">Tool loaded.</code>；结果文字仍存在节点上供界面显示</td><td>结果文字</td></tr>
-<tr><th scope="row">数组</th><td>已加载工具带 <code translate="no">defer_loading: true</code>，按第一次加载的顺序追加，定义取加载记录保存的那份</td><td>已加载工具作为普通项追加；请求记一次预期断点 <code translate="no">tool_loaded</code></td></tr>
+<tr><th scope="row">数组</th><td>已加载工具带 <code translate="no">defer_loading: true</code>，按第一次加载的顺序追加，定义取加载记录保存的那份</td><td>已加载工具作为普通项按第一次加载的顺序追加到所有其他工具之后（<code translate="no">split_tools_for_dispatch</code>）；请求记一次预期断点 <code translate="no">tool_loaded</code></td></tr>
 <tr><th scope="row">beta 头</th><td><code translate="no">advanced-tool-use-2025-11-20</code>；Vertex 上 <code translate="no">tool-search-tool-2025-10-19</code></td><td>无</td></tr>
 <tr><th scope="row">缓存</th><td>指纹跳过延迟项；断点打在最后一个普通工具上</td><td>不变</td></tr>
 <tr><th scope="row">没有匹配、出错、摘要携带的工具</th><td>普通文字结果；携带的工具是普通项</td><td>相同</td></tr>

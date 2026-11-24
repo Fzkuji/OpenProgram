@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -17,13 +18,15 @@ _log = logging.getLogger(__name__)
 _PROCESS_INCARNATION = uuid.uuid4().hex[:12]
 UNASSIGNED = "unassigned"
 _FROZEN_LIFECYCLES = frozenset({
-    "closed", "unavailable", "restoring", "restore_failed", "superseded",
+    "closed", "unavailable", "restoring", "restore_failed", "superseded", "dormant",
 })
+# "dormant": the tab is there and its page has no native view yet. The view
+# is made when the page is wanted, so the page reads as open all along.
 _RESTORABLE_LIFECYCLES = frozenset({
-    "restoring", "unavailable", "restore_failed",
+    "restoring", "unavailable", "restore_failed", "dormant",
 })
 _FROZEN_SQL = (
-    "'closed','unavailable','restoring','restore_failed','superseded'"
+    "'closed','unavailable','restoring','restore_failed','superseded','dormant'"
 )
 # A superseded Page has handed its associations to its successor; it is kept
 # this long only so a late write from the old connection is refused, not misrouted.
@@ -44,9 +47,40 @@ def resource_db_path() -> Path:
     return get_state_dir() / "session-resources.db"
 
 
+def _announce_change(db: sqlite3.Connection, pages) -> None:
+    """Tell the windows showing the conversations whose pages changed."""
+    try:
+        from openprogram.host.resources import conversation_changes
+        ids = list(pages or ())
+        if not ids or len(ids) > 500:
+            conversation_changes.changed_everywhere()
+            return
+        sessions = conversation_changes.browser_page_sessions(db, ids)
+        if sessions:
+            conversation_changes.changed(*sessions)
+    except Exception:  # noqa: BLE001 - a window reads again when it is next shown
+        _log.debug("browser page change not announced", exc_info=True)
+
+
+#: Database files this process has already prepared. A store is made for
+#: almost every call (a page bound, a listing every three seconds), and
+#: preparing one is a write transaction of its own: tables, columns and the
+#: once-per-process reset of pages that were live in the previous Worker.
+_prepared: set[tuple[str, str]] = set()
+_prepared_lock = threading.Lock()
+
+
 class BrowserResourceStore:
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path is not None else resource_db_path()
+        key = (str(self.path), _PROCESS_INCARNATION)
+        with _prepared_lock:
+            if key in _prepared and self.path.exists():
+                return
+            self._prepare()
+            _prepared.add(key)
+
+    def _prepare(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path, timeout=15)) as db:
             # Readers (previews, listings) must not stall the restore pass.
@@ -136,12 +170,23 @@ class BrowserResourceStore:
             self.path.chmod(0o600)
 
     @contextmanager
-    def connect(self):
+    def connect(self, *, pages: list[str] | tuple[str, ...] | None = None, quiet: bool = False):
+        """A connection; a write made through it tells the windows showing
+        the conversations that list ``pages`` (every conversation when no
+        pages are named) once it is committed. ``quiet`` writes are pushed
+        to the windows another way, or are not part of any list."""
         db = sqlite3.connect(self.path, timeout=15)
         db.row_factory = sqlite3.Row
+        # The log is synced at checkpoints, not at every commit: a restore
+        # pass commits hundreds of times, and what a power cut could lose
+        # (the last commits, never the file's integrity) the next start
+        # rebuilds from the App's own list of pages.
+        db.execute("PRAGMA synchronous=NORMAL")
         try:
             with db:
                 yield db
+            if db.total_changes and not quiet:
+                _announce_change(db, pages)
         finally:
             db.close()
 
@@ -166,7 +211,7 @@ class BrowserResourceStore:
         now = time.time()
         sanitized = display_target(target)
         conversation = conversation_session_id or session_id
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             current = db.execute(
                 "SELECT generation, sequence, lifecycle FROM browser_resources "
                 "WHERE resource_id=?",
@@ -281,7 +326,7 @@ class BrowserResourceStore:
 
     def note_tab_opened(self, window_id: str, tab_id: str, conversation: str, execution: str = "") -> None:
         """Remember that a conversation's agent opened this tab, and in which run, across restarts."""
-        with self.connect() as db:
+        with self.connect(quiet=True) as db:
             db.execute("INSERT OR REPLACE INTO browser_tabs_opened "
                        "(window_id, tab_id, conversation_session_id, opened_at, opened_in) VALUES (?, ?, ?, ?, ?)",
                        (window_id, tab_id, conversation, time.time(), execution or ""))
@@ -310,12 +355,12 @@ class BrowserResourceStore:
 
     def move_opened_tab(self, old: tuple[str, str], new: tuple[str, str]) -> None:
         """A tab dragged to another window stays the conversation's."""
-        with self.connect() as db:
+        with self.connect(quiet=True) as db:
             db.execute("UPDATE OR REPLACE browser_tabs_opened SET window_id=?, tab_id=? WHERE window_id=? AND tab_id=?",
                        (*new, *old))
 
     def forget_opened_tab(self, window_id: str, tab_id: str) -> None:
-        with self.connect() as db:
+        with self.connect(quiet=True) as db:
             db.execute("DELETE FROM browser_tabs_opened WHERE window_id=? AND tab_id=?", (window_id, tab_id))
 
     def update_display(
@@ -329,14 +374,14 @@ class BrowserResourceStore:
         if not title and not sanitized:
             return
         incoming = int(connection_generation or 0)
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             db.execute(
                 """UPDATE browser_resources SET
                 title=CASE WHEN ?='' THEN title ELSE ? END,
                 target=CASE WHEN ?='' THEN target ELSE ? END,
                 updated_at=?
                 WHERE resource_id=?
-                AND lifecycle NOT IN ('closed','unavailable','restoring','restore_failed','superseded')
+                AND lifecycle NOT IN ('closed','unavailable','restoring','restore_failed','superseded','dormant')
                 AND (
                     connection_generation=0
                     OR (? > 0 AND ? >= connection_generation)
@@ -355,13 +400,13 @@ class BrowserResourceStore:
                 """UPDATE browser_resource_control SET control_state='idle'
                 WHERE resource_id IN (
                     SELECT resource_id FROM browser_resource_associations WHERE execution_id=?
-                ) AND control_state IN ('active','idle')""",
+                ) AND control_state='active'""",
                 (execution_id,),
             )
 
     def mark_unavailable(self, resource_id: str, *, reason: str = "disconnected") -> None:
         del reason
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             db.execute(
                 """UPDATE browser_resources SET live=0, lifecycle='unavailable',
                 sequence=sequence+1, updated_at=?
@@ -378,23 +423,60 @@ class BrowserResourceStore:
     def mark_window_restorable(self, window_id: str, lifecycle: str) -> list[str]:
         if not window_id or lifecycle not in {"restoring", "restore_failed"}:
             return []
-        ids = []
-        with self.connect() as db:
+        ids: list[str] = []
+        with self.connect(pages=ids) as db:
             rows = db.execute(
                 """SELECT resource_id FROM browser_resources
                 WHERE window_id=? AND lifecycle IN ('restoring','unavailable','restore_failed')""",
                 (window_id,),
             ).fetchall()
-            ids = [row["resource_id"] for row in rows]
-        for resource_id in ids:
-            if lifecycle == "restoring":
-                self.mark_restoring(resource_id)
-            else:
-                self.mark_restore_failed(resource_id)
+            ids[:] = [row["resource_id"] for row in rows]
+            # One transaction for the window: a window holds a hundred
+            # pages, and one commit each took seconds at every start.
+            now = time.time()
+            db.executemany(
+                """UPDATE browser_resources SET live=0, lifecycle=?,
+                sequence=sequence+1, updated_at=?
+                WHERE resource_id=? AND lifecycle NOT IN ('closed','superseded')""",
+                [(lifecycle, now, resource_id) for resource_id in ids],
+            )
+            db.executemany(
+                """UPDATE browser_resource_control SET control_state='idle',
+                pause_command_id=NULL, pause_execution_id=NULL
+                WHERE resource_id=?""",
+                [(resource_id,) for resource_id in ids],
+            )
         return ids
 
-    def mark_restoring(self, resource_id: str) -> None:
+    def mark_tabs_dormant(self, window_id: str, tab_ids) -> None:
+        """Pages of tabs that are there with no native view yet."""
+        tab_ids = [tab_id for tab_id in tab_ids if tab_id]
+        if not window_id or not tab_ids:
+            return
+        now = time.time()
         with self.connect() as db:
+            db.executemany(
+                """UPDATE browser_resources SET live=0, lifecycle='dormant',
+                sequence=sequence+1, updated_at=?
+                WHERE window_id=? AND tab_id=?
+                AND lifecycle IN ('restoring','unavailable','restore_failed')""",
+                [(now, window_id, tab_id) for tab_id in tab_ids],
+            )
+
+    def dormant_tabs(self, window_id: str) -> dict[str, list[str]]:
+        """Resource ids of the window's dormant pages, by tab."""
+        found: dict[str, list[str]] = {}
+        with self.connect() as db:
+            for row in db.execute(
+                """SELECT resource_id, tab_id FROM browser_resources
+                WHERE window_id=? AND lifecycle='dormant'""",
+                (window_id,),
+            ):
+                found.setdefault(row["tab_id"] or "", []).append(row["resource_id"])
+        return found
+
+    def mark_restoring(self, resource_id: str) -> None:
+        with self.connect(pages=(resource_id,)) as db:
             db.execute(
                 """UPDATE browser_resources SET live=0, lifecycle='restoring',
                 sequence=sequence+1, updated_at=?
@@ -409,7 +491,7 @@ class BrowserResourceStore:
             )
 
     def mark_restore_failed(self, resource_id: str) -> None:
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             db.execute(
                 """UPDATE browser_resources SET live=0, lifecycle='restore_failed',
                 sequence=sequence+1, updated_at=?
@@ -443,7 +525,7 @@ class BrowserResourceStore:
         now = time.time()
         sanitized = display_target(target) if target else ""
         incoming = int(connection_generation or 0)
-        with self.connect() as db:
+        with self.connect(pages=(successor_id,)) as db:
             closed = db.execute(
                 """SELECT 1 FROM browser_resources
                 WHERE window_id=? AND tab_id=? AND lifecycle='closed'
@@ -457,7 +539,7 @@ class BrowserResourceStore:
             preds = db.execute(
                 """SELECT * FROM browser_resources
                 WHERE window_id=? AND tab_id=? AND resource_id!=?
-                AND lifecycle IN ('restoring','unavailable','restore_failed')
+                AND lifecycle IN ('restoring','unavailable','restore_failed','dormant')
                 ORDER BY updated_at DESC""",
                 (window_id, tab_id, successor_id),
             ).fetchall()
@@ -553,7 +635,7 @@ class BrowserResourceStore:
         return successor_id
 
     def mark_closed(self, resource_id: str) -> None:
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             db.execute(
                 """UPDATE browser_resources SET live=0, lifecycle='closed',
                 sequence=sequence+1, updated_at=? WHERE resource_id=?""",
@@ -567,7 +649,7 @@ class BrowserResourceStore:
             )
 
     def bump_sequence(self, resource_id: str) -> int:
-        with self.connect() as db:
+        with self.connect(quiet=True) as db:
             row = db.execute(
                 "SELECT sequence FROM browser_resources WHERE resource_id=?",
                 (resource_id,),
@@ -584,7 +666,7 @@ class BrowserResourceStore:
         execution_id: str | None = None,
         bump: bool = True, clear_pause: bool = False,
     ) -> None:
-        with self.connect() as db:
+        with self.connect(pages=(resource_id,)) as db:
             row = db.execute(
                 "SELECT * FROM browser_resource_control WHERE resource_id=?",
                 (resource_id,),
@@ -606,7 +688,7 @@ class BrowserResourceStore:
                         WHERE resource_id=?""",
                         (state, resource_id),
                     )
-                else:
+                elif changed or command_id is not None or execution_id is not None:
                     db.execute(
                         """UPDATE browser_resource_control SET control_state=?,
                         pause_command_id=COALESCE(?, pause_command_id),
@@ -619,7 +701,7 @@ class BrowserResourceStore:
 
     def record_operation(self, resource_id: str, operation: Mapping[str, Any]) -> None:
         payload = json.dumps(dict(operation), ensure_ascii=False)
-        with self.connect() as db:
+        with self.connect(quiet=True) as db:
             db.execute(
                 "UPDATE browser_resources SET last_operation=?, updated_at=? WHERE resource_id=?",
                 (payload, time.time(), resource_id),
@@ -673,6 +755,7 @@ class BrowserResourceStore:
         parents: Mapping[str, str | None] | None = None,
         session_store=None,
         execution_inputs: Mapping[str, Any] | None = None,
+        branches: "_BranchProjection | None" = None,
     ) -> list[dict[str, Any]]:
         executions_by_id = {item.execution_id: item for item in executions}
         parents = dict(parents or {})
@@ -681,36 +764,48 @@ class BrowserResourceStore:
             associations = [dict(row) for row in db.execute(
                 "SELECT * FROM browser_resource_associations"
             )]
-        visible_ids = []
+        visible: dict[str, None] = {}
         for assoc in associations:
-            if not _association_visible(
-                assoc, conversation_session_id, executions_by_id,
-            ):
-                continue
-            rid = assoc["resource_id"]
-            if rid not in visible_ids:
-                visible_ids.append(rid)
+            if _association_visible(assoc, conversation_session_id, executions_by_id):
+                visible[assoc["resource_id"]] = None
+        visible_ids = list(visible)
+        # Only a live page has a control state to bring up to date; the
+        # others return at their first read, one connection each, and a
+        # conversation keeps every page it ever opened.
+        with self.connect() as db:
+            live = {row["resource_id"] for row in db.execute(
+                """SELECT resource_id FROM browser_resources
+                WHERE live=1 AND lifecycle NOT IN ('unavailable','closed')""")}
         for rid in visible_ids:
+            if rid not in live:
+                continue
             reconcile_resource_control(
                 rid, store=self, executions_by_id=executions_by_id,
             )
+        if not visible_ids:
+            return []
+        # Only this conversation's pages are read: the tables keep every page
+        # any conversation ever opened.
+        resources, presentations, controls = {}, {}, {}
         with self.connect() as db:
-            resources = {
-                row["resource_id"]: dict(row)
-                for row in db.execute("SELECT * FROM browser_resources")
-            }
-            presentations = {
-                row["resource_id"]: row["presentation_id"]
-                for row in db.execute("SELECT resource_id, presentation_id FROM browser_resource_presentation")
-            }
-            for rid, resource in resources.items():
-                resource["presentation_id"] = presentations.get(rid) or rid
-            controls = {
-                row["resource_id"]: dict(row)
-                for row in db.execute("SELECT * FROM browser_resource_control")
-            }
+            for start in range(0, len(visible_ids), 500):
+                chunk = visible_ids[start:start + 500]
+                marks = ",".join("?" * len(chunk))
+                for row in db.execute(
+                        f"SELECT * FROM browser_resources WHERE resource_id IN ({marks})", chunk):
+                    resources[row["resource_id"]] = dict(row)
+                for row in db.execute(
+                        "SELECT resource_id, presentation_id FROM browser_resource_presentation "
+                        f"WHERE resource_id IN ({marks})", chunk):
+                    presentations[row["resource_id"]] = row["presentation_id"]
+                for row in db.execute(
+                        f"SELECT * FROM browser_resource_control WHERE resource_id IN ({marks})", chunk):
+                    controls[row["resource_id"]] = dict(row)
+        for rid, resource in resources.items():
+            resource["presentation_id"] = presentations.get(rid) or rid
         seen = {}
-        branches = _BranchProjection(conversation_session_id, session_store)
+        if branches is None:
+            branches = _BranchProjection(conversation_session_id, session_store)
         for assoc in associations:
             if not _association_visible(
                 assoc, conversation_session_id, executions_by_id,
@@ -803,6 +898,10 @@ def _public_row(resource, assoc, control, conversation_session_id, branch_id, br
     elif lifecycle == "restoring":
         control_state = "idle"
         status = "restoring"
+    elif lifecycle == "dormant":
+        # The tab is there; its view is made when the page is wanted.
+        control_state = "idle"
+        status = "open"
     elif not live or lifecycle == "unavailable":
         control_state = "idle"
         status = "unknown"
@@ -885,8 +984,11 @@ def _load_nodes(session_id: str, session_store=None):
     if session_store is None:
         from openprogram.runtime.context.session_db import default_db
         session_store = default_db()
-    from openprogram.state.store import SessionNodeWriter
-    return SessionNodeWriter(session_store, session_id).load().nodes, session_store
+    # The branch projection only reads ids, predecessors and roles, so it
+    # reads the store's own nodes: copying every node of a long conversation
+    # took a third of a second on each read of its resources, every three
+    # seconds while the conversation was open.
+    return {node.id: node for node in session_store.get_nodes(session_id)}, session_store
 
 
 def _children_by_predecessor(nodes: Mapping[str, Any]):
@@ -1392,16 +1494,24 @@ def project_page_resource_rows(page_key: str) -> list[dict[str, Any]]:
     return rows
 
 
-def project_conversation_resources(conversation_session_id: str) -> tuple[list[dict[str, Any]], str | None, str | None]:
+def project_conversation_resources(
+    conversation_session_id: str, *, scope: tuple | None = None,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    """The conversation's pages, with its current branch.
+
+    ``scope`` is the conversation's execution scope when the caller has
+    already worked it out (``conversation_execution_scope``): it is the
+    costly part of this read, and one answer serves the whole request.
+    """
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.conversation_scope import (
-        conversation_executions, conversation_parent_ids,
-    )
+    from openprogram.runtime.execution.conversation_scope import conversation_execution_scope
     from openprogram.runtime.context.session_db import default_db
 
     store = default_store()
-    executions = list(conversation_executions(store, conversation_session_id)) if store else []
-    parents = conversation_parent_ids(store, conversation_session_id) if store else {}
+    if scope is None and store:
+        scope = conversation_execution_scope(store, conversation_session_id)
+    executions = list(scope[0]) if scope else []
+    parents = scope[1] if scope else {}
     inputs = {}
     if store is not None:
         for item in executions:
@@ -1412,13 +1522,14 @@ def project_conversation_resources(conversation_session_id: str) -> tuple[list[d
             if record is not None:
                 inputs[item.execution_id] = record
     session_store = default_db()
+    # One projection serves the rows and the current branch: each builds
+    # the conversation's branch indexes from all of its nodes.
+    branches = _BranchProjection(conversation_session_id, session_store)
     rows = BrowserResourceStore().list_rows(
         conversation_session_id, executions=executions, parents=parents,
-        session_store=session_store, execution_inputs=inputs,
+        session_store=session_store, execution_inputs=inputs, branches=branches,
     )
-    current_id, current_name = current_branch(
-        conversation_session_id, session_store=session_store,
-    )
+    current_id, current_name = branches.current()
     return rows, current_id, current_name
 
 
@@ -1703,6 +1814,7 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
                 continue
             if (row.get("lifecycle") or "") in {
                 "closed", "unavailable", "restoring", "restore_failed", "superseded",
+                "dormant",
             }:
                 continue
             if (row.get("control_state") or "") == "closed":

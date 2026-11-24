@@ -65,7 +65,7 @@ def test_a_turn_with_no_window_keeps_off_the_tab_in_front_and_keeps_its_own(driv
         with pytest.raises(tabs.BrowserError) as missing:
             driver._tab("", "s1")
         assert missing.value.reason_code == "tab_not_found"
-        assert "open(url)" in str(missing.value)
+        assert "create_tab(url)" in str(missing.value)
         # Naming a tab still works, and that tab is this conversation's from then on.
         named = driver._tab(A, "s1")
         assert named.title == "A" and driver._tab(None, "s1") is named
@@ -145,13 +145,13 @@ class _Page:
 
 def test_a_ref_whose_element_was_rendered_again_is_found_by_role_and_name(driver, monkeypatch):
     tab = tabs.Tab(id="t1", window_id="main", tab_id="a", roles={"e4": ("button", "Next")})
-    _, label = driver._locate(_Page(refs={"e4"}), tab, {"ref": "e4"})
+    _, label = driver._locate(_Page(refs={"e4"}), tab, {"element": "e4"})
     assert label == "e4"
-    _, label = driver._locate(_Page(roles={("button", "Next"): 1}), tab, {"ref": "e4"})
+    _, label = driver._locate(_Page(roles={("button", "Next"): 1}), tab, {"element": "e4"})
     assert label == 'button "Next"'
     monkeypatch.setattr(driver, "_snapshot", lambda page, tab, full: ('- button "Back" [ref=e9]', ""))
     with pytest.raises(tabs.BrowserError) as gone:
-        driver._locate(_Page(), tab, {"ref": "e4"})
+        driver._locate(_Page(), tab, {"element": "e4"})
     assert gone.value.reason_code == "element_gone" and "Back" in gone.value.extra["page"]
 
 
@@ -223,6 +223,24 @@ def test_two_agents_of_one_conversation_keep_their_own_current_tab(driver):
     reset()
 
 
+def test_an_agent_that_ended_is_forgotten_and_the_others_keep_their_tab(driver, monkeypatch):
+    for agent, name in (("s1/exec-a", A), ("s1/exec-b", B)):
+        reset = _as(agent)
+        driver._tab(name, "s1")
+        driver._find(name).shots[agent] = (1.0, 0, "https://x.test", 0, 0, b"png")
+        reset()
+    monkeypatch.setattr(tabs, "_driver", driver)
+    tabs.forget("s1/exec-a")
+    assert "s1/exec-a" not in driver._last and driver._last["s1/exec-b"] == B
+    assert driver._find(A).shots == {} and list(driver._find(B).shots) == ["s1/exec-b"]
+
+
+def test_forgetting_an_agent_starts_no_driver(monkeypatch):
+    monkeypatch.setattr(tabs, "_driver", None)
+    tabs.forget("s1/exec-a")
+    assert tabs._driver is None
+
+
 def test_a_result_says_when_another_agent_acted_on_the_tab(driver, monkeypatch):
     tab = tabs.Tab(id="t1", window_id="main", tab_id="a")
     monkeypatch.setattr(driver, "_snapshot", lambda page, tab, full: (None, "- <changed> part"))
@@ -252,7 +270,7 @@ def test_an_action_already_sent_is_never_sent_again_when_the_tab_goes_away(drive
     monkeypatch.setattr(driver, "_operate", operate)
     monkeypatch.setattr(driver, "_settle", settle)
     monkeypatch.setattr(driver, "_catch_choosers", lambda tab: {})
-    result = driver.run("click", {"tab": A, "ref": "e1"}, "s1")
+    result = driver.run("click", {"tab": A, "element": "e1"}, "s1")
     assert sent == ["click"] and result["ok"] and "closed or left the App" in result["note"]
 
 
@@ -402,14 +420,14 @@ def test_coordinates_stop_working_once_the_page_moved_or_changed_at_the_point(dr
     tab = tabs.Tab(id="t1", window_id="main", tab_id="a")
     seen = _png(200, 120)
     with pytest.raises(tabs.BrowserError) as missing:
-        driver._click_point(_Clickable(0), tab, {"x": 1, "y": 1})
+        driver._screen_point(_Clickable(0), tab, {"x": 1, "y": 1})
     assert missing.value.reason_code == "screenshot_required"
     tab.shots[""] = (1.0, 0, _Page.url, 0, 0, seen)
     fresh = [seen]
     monkeypatch.setattr(driver, "_capture", lambda tab: (fresh[0], _Page.url, [800, 0, 0]))
     # Scrolled since: refused, and the new screenshot comes with the refusal.
     with pytest.raises(tabs.BrowserError) as scrolled:
-        driver._click_point(_Clickable(40), tab, {"x": 50, "y": 60})
+        driver._screen_point(_Clickable(40), tab, {"x": 50, "y": 60})
     assert scrolled.value.reason_code == "screenshot_stale" and scrolled.value.extra["_images"] == [seen]
     assert "A new screenshot is attached" in str(scrolled.value)
     # Acted on since, but the point still looks the same: the click goes ahead.
@@ -417,19 +435,19 @@ def test_coordinates_stop_working_once_the_page_moved_or_changed_at_the_point(dr
     tab.writes.append((next(tabs._writes), "other"))
     fresh[0] = _png(200, 120, spot=((150, 100), (10, 10, 200)))
     page = _Clickable(0)
-    assert driver._click_point(page, tab, {"x": 50, "y": 60}) == "clicked (50, 60) of the screenshot"
+    assert driver._click(page, tab, {"x": 50, "y": 60}, False) == "clicked (50, 60) of the screenshot"
     assert page.clicks == [(50.0, 60.0)]
     # Acted on since, and the point shows something else: refused, with the new screenshot recorded.
     fresh[0] = _png(200, 120, spot=((50, 60), (10, 10, 200)))
     with pytest.raises(tabs.BrowserError) as changed:
-        driver._click_point(_Clickable(0), tab, {"x": 50, "y": 60})
+        driver._screen_point(_Clickable(0), tab, {"x": 50, "y": 60})
     assert changed.value.reason_code == "screenshot_stale" and changed.value.extra["_images"] == [fresh[0]]
     assert tab.shots[""][5] == fresh[0] and tab.shots[""][1] == tab.last_write()
     # Where the pixels cannot be compared, acted on means stale, as before.
     tab.shots[""] = (1.0, 0, _Page.url, 0, 0, seen)
     monkeypatch.setattr(tabs, "_pixels_around", lambda png, point, radius: b"")
     with pytest.raises(tabs.BrowserError) as unknown:
-        driver._click_point(_Clickable(0), tab, {"x": 50, "y": 60})
+        driver._screen_point(_Clickable(0), tab, {"x": 50, "y": 60})
     assert unknown.value.reason_code == "screenshot_stale"
 
 
@@ -472,7 +490,7 @@ def test_a_script_on_an_element_runs_on_its_locator(driver, monkeypatch):
     monkeypatch.setattr(driver, "_page", lambda tab: _Scripted())
     driver._watches["tg"] = tabs._Watch()
     monkeypatch.setattr("openprogram.programs.applications.browser.privacy.password_values", lambda page: [])
-    assert driver._operate(tab, "evaluate", {"ref": "e3", "script": "(el) => el.value"})["result"] == "v"
+    assert driver._operate(tab, "evaluate", {"element": "e3", "script": "(el) => el.value"})["result"] == "v"
     assert driver._operate(tab, "evaluate", {"script": "1 + 1"})["result"] == "2"
     assert [item if isinstance(item, str) else item[0] for item in ran] == ["aria-ref=e3", "element", "page"]
 
@@ -496,7 +514,7 @@ def test_a_list_of_actions_holds_its_tab_until_it_ends(driver, monkeypatch):
 def test_the_browser_is_refused_while_the_user_turned_off_agent_access(driver, monkeypatch):
     from openprogram.runtime.conversation import surface_context
     monkeypatch.setattr(surface_context, "current", lambda: {"surfaces": [{"preview_status": "disabled"}]})
-    result = driver.run("read", {}, "s1")
+    result = driver.run("get_state", {}, "s1")
     assert result["reason_code"] == "page_access_disabled"
     assert result["error"].startswith("[blocked by setting] ") and "To change this: " in result["error"]
 
@@ -663,7 +681,7 @@ def _clicks(tab, action, args):
 
 def test_a_click_is_followed_from_before_its_input_and_its_outcome_shows_where_it_landed(driver, reports, monkeypatch):
     monkeypatch.setattr(driver, "_operate", _clicks)
-    assert driver.run("click", {"tab": A, "ref": "e1"}, "s1")["ok"]
+    assert driver.run("click", {"tab": A, "element": "e1"}, "s1")["ok"]
     (key, dispatched, follow), (_, done, done_follow) = reports
     assert key == "page:a" and dispatched["phase"] == "dispatched" and follow is True
     assert "point" not in dispatched
@@ -674,17 +692,17 @@ def test_a_click_is_followed_from_before_its_input_and_its_outcome_shows_where_i
 def test_each_step_of_a_list_reports_on_its_own(driver, reports, monkeypatch):
     monkeypatch.setattr(driver, "_operate", _clicks)
     with tabs.batch():
-        driver.run("click", {"tab": A, "ref": "e1"}, "s1")
-        driver.run("click", {"tab": A, "ref": "e2"}, "s1")
+        driver.run("click", {"tab": A, "element": "e1"}, "s1")
+        driver.run("click", {"tab": A, "element": "e2"}, "s1")
     assert [operation["phase"] for _, operation, _ in reports] == ["dispatched", "acknowledged"] * 2
     assert reports[0][1]["id"] != reports[2][1]["id"]
 
 
 def test_a_read_is_followed_without_marking_the_page_operated(driver, reports, monkeypatch):
     monkeypatch.setattr(driver, "_operate", lambda tab, action, args: {"ok": True, "tab": tab.id, "page": "- x"})
-    driver.run("read", {"tab": A}, "s1")
+    driver.run("get_state", {"tab": A}, "s1")
     [(key, operation, follow)] = reports
-    assert key == "page:a" and operation["action"] == "read" and operation["phase"] == "acknowledged"
+    assert key == "page:a" and operation["action"] == "get_state" and operation["phase"] == "acknowledged"
     assert follow is False
 
 
@@ -693,16 +711,16 @@ def test_a_tab_the_agent_opens_becomes_the_one_followed(driver, reports, monkeyp
     monkeypatch.setattr(surface_context, "open_page", lambda url, background=True: {
         "ok": True, "surfaces": [_surface("n", page_key="page:n")]})
     monkeypatch.setattr(driver, "_operate", lambda tab, action, args: {"ok": True, "tab": tab.id})
-    driver.run("open", {"url": "https://x.test/new"}, "s1")
+    driver.run("create_tab", {"url": "https://x.test/new"}, "s1")
     [(key, operation, follow)] = reports
-    assert key == "page:n" and operation["action"] == "open" and follow is False
+    assert key == "page:n" and operation["action"] == "create_tab" and follow is False
 
 
 def test_a_failed_action_reports_failed_and_does_not_keep_the_page_operated(driver, reports, monkeypatch):
     def fails(tab, action, args):
         raise tabs.BrowserError("not_editable", "e1 does not take text")
     monkeypatch.setattr(driver, "_operate", fails)
-    result = driver.run("type", {"tab": A, "ref": "e1", "text": "hi"}, "s1")
+    result = driver.run("type_text", {"tab": A, "element": "e1", "text": "hi"}, "s1")
     assert result["reason_code"] == "not_editable"
     assert [(operation["phase"], follow) for _, operation, follow in reports] == [("dispatched", True),
                                                                                   ("failed", False)]
@@ -717,9 +735,9 @@ def test_reporting_that_fails_never_fails_the_action(driver, reports, monkeypatc
     monkeypatch.setattr(pages, "report_browser_operation", broken)
     monkeypatch.setattr(pages, "publish_bound_page", broken)
     monkeypatch.setattr(driver, "_operate", _clicks)
-    assert driver.run("click", {"tab": A, "ref": "e1"}, "s1")["ok"]
+    assert driver.run("click", {"tab": A, "element": "e1"}, "s1")["ok"]
     monkeypatch.setattr(driver, "_operate", lambda tab, action, args: {"ok": True, "tab": tab.id})
-    assert driver.run("read", {"tab": A}, "s1")["ok"]
+    assert driver.run("get_state", {"tab": A}, "s1")["ok"]
 
 
 def test_a_click_aims_at_the_centre_of_its_element_once_in_view():
@@ -743,6 +761,19 @@ def test_a_click_aims_at_the_centre_of_its_element_once_in_view():
     assert tab.aim == {"point": {"x": 120.0, "y": 40.0}, "viewport": {"width": 1280, "height": 720}}
     tabs.Driver._aim(None, Viewed(), tab, None, (5.0, 6.0))
     assert tab.aim["point"] == {"x": 5.0, "y": 6.0}
+
+
+def test_an_element_with_no_place_on_the_page_fails_before_any_input():
+    class Boxless:
+        def scroll_into_view_if_needed(self, timeout=None):
+            pass
+
+        def bounding_box(self, timeout=None):
+            return None
+
+    with pytest.raises(tabs.BrowserError) as failed:
+        tabs.Driver._center(Boxless(), "the Save button")
+    assert failed.value.reason_code == "element_gone"
 
 
 def test_a_subprocess_hands_its_operations_to_the_worker(monkeypatch):
@@ -812,11 +843,11 @@ def test_a_tab_the_agent_opened_is_recorded_as_its_conversations(driver, opened_
     monkeypatch.setattr(driver, "_operate", lambda tab, action, args: {"ok": True, "tab": tab.id})
     monkeypatch.setattr(surface_context, "open_page", lambda url, background=True: {
         "ok": True, "surfaces": [_surface("n", agent_owned=True)]})
-    driver.run("open", {"url": "https://x.test/new"}, "s1")
+    driver.run("create_tab", {"url": "https://x.test/new"}, "s1")
     # A tab the App already had, which the open only borrowed, is not the conversation's to close.
     monkeypatch.setattr(surface_context, "open_page", lambda url, background=True: {
         "ok": True, "surfaces": [_surface("a", agent_owned=False)]})
-    driver.run("open", {"url": "https://x.test/"}, "s1")
+    driver.run("create_tab", {"url": "https://x.test/"}, "s1")
     assert opened_store.tabs_opened_by("s1") == {("main", "n")}
 
 
@@ -847,7 +878,7 @@ def test_with_no_app_window_the_tab_opens_in_the_drivers_own_browser(driver, ope
         "ok": False, "reason_code": "desktop_unavailable", "error": "no App"})
     monkeypatch.setattr(driver, "_own_open", own_open)
     monkeypatch.setattr(driver, "_operate", lambda tab, action, args: {"ok": True, "tab": tab.id})
-    opened = driver.run("open", {"url": "https://x.test/own"}, "s1")
+    opened = driver.run("create_tab", {"url": "https://x.test/own"}, "s1")
     assert opened["ok"] and "background browser" in opened["note"]
     assert opened_store.tabs_opened_by("s1") == {(tabs.OWN_WINDOW, "o1")}
     # It is listed beside the App's tabs, and a later action goes to it without the App.
@@ -939,7 +970,7 @@ def test_one_more_tab_than_a_conversation_keeps_closes_its_least_recently_used(
     driver._refresh()
     driver._use(driver._find(A), "s1")   # a was used after b was opened, so b goes first
     _open_one_more(driver, monkeypatch)
-    result = driver.run("open", {"url": "https://x.test/new"}, "s1")
+    result = driver.run("create_tab", {"url": "https://x.test/new"}, "s1")
     assert closing == ["bb"]
     assert "closed 1 tab(s)" in result["note"]
     assert opened_store.tabs_opened_by("s1") == {("main", "a"), ("main", "n"), ("offline", "x")}
@@ -951,7 +982,7 @@ def test_the_limit_leaves_the_tab_in_front_of_the_user_and_never_fails_the_open(
     driver.listed["surfaces"] = [_surface("a", focused=True, visible=True)]
     opened_store.note_tab_opened("main", "a", "s1")
     _open_one_more(driver, monkeypatch)
-    result = driver.run("open", {"url": "https://x.test/new"}, "s1")
+    result = driver.run("create_tab", {"url": "https://x.test/new"}, "s1")
     # The only older tab is the one the user is on: nothing closes, and the page still opened.
     assert closing == [] and result["ok"] and "note" not in result
     # A listing that fails leaves the open as it was.
@@ -995,7 +1026,7 @@ def test_only_a_run_that_ends_with_its_answer_is_named_on_the_tab(
     _open_one_more(driver, monkeypatch)
     token = set_turn_request(TurnRequest("s1", "", "main", source, speaker_id=speaker))
     try:
-        driver.run("open", {"url": "https://x.test/new"}, "s1")
+        driver.run("create_tab", {"url": "https://x.test/new"}, "s1")
     finally:
         reset_turn_request(token)
     assert opened_store.tabs_opened_in("exec_7") == ({("main", "n")} if named else set())

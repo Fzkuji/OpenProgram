@@ -24,8 +24,8 @@
 <tr><th scope="row">Code search <code translate="no">grep glob semble_* lsp_*</code></th><td>Searched for "tl-toggle"</td><td>Ran 3 searches</td><td>Searching for "tl-toggle"…</td></tr>
 <tr><th scope="row">Web search <code translate="no">web_search</code></th><td>Searched the web</td><td>Searched the web 2 times</td><td>Searching the web…</td></tr>
 <tr><th scope="row">Fetch <code translate="no">web_fetch</code></th><td>Fetched docs.anthropic.com</td><td>Fetched 3 pages</td><td>Fetching docs.anthropic.com…</td></tr>
-<tr><th scope="row">Old browser tools <code translate="no">web_use</code>, <code translate="no">playwright_browser</code>, <code translate="no">browser_use</code></th><td>Operated the browser</td><td>Operated the browser</td><td>Operating the browser…</td></tr>
-<tr><th scope="row">GUI and computer <code translate="no">computer_use_agent</code>, GUI tools</th><td>Ran a GUI call; Operated an app</td><td>Ran 2 GUI calls</td><td>Running a GUI call…; Operating an app…</td></tr>
+<tr><th scope="row">Browser <code translate="no">web_use</code>, <code translate="no">playwright_browser</code>, <code translate="no">browser_use</code>, <code translate="no">computer_use</code> on the built-in browser of this computer</th><td>Operated the browser</td><td>Operated the browser</td><td>Operating the browser…</td></tr>
+<tr><th scope="row">GUI and computer <code translate="no">computer_use</code> on any other target, GUI tools</th><td>Ran a GUI call; Operated Calculator; Operated the screen; Operated Chrome; Operated Lab VM's screen</td><td>Ran 2 GUI calls; Operated 2 apps; Operated Chrome and the screen; Operated Chrome and 2 more</td><td>Running a GUI call…; Operating Calculator…</td></tr>
 <tr><th scope="row">Sub-agent <code translate="no">agent task send_message mixture_of_agents</code></th><td>Ran sub-agent Reviewer</td><td>Ran 2 sub-agents</td><td>Running sub-agent Reviewer…</td></tr>
 <tr><th scope="row">Peer <code translate="no">send_message</code> to another conversation</th><td>Messaged another conversation</td><td>Counted once per conversation</td><td>Messaging another conversation…</td></tr>
 <tr><th scope="row">Image <code translate="no">image_generate</code>, <code translate="no">image_analyze</code></th><td>Generated an image; Analyzed an image</td><td>Generated 2 images; Analyzed 2 images</td><td>Generating an image…; Analyzing an image…</td></tr>
@@ -42,9 +42,9 @@
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Thinking</th><td>"Thought" or "Thinking…" only when the group has nothing else</td></tr>
-<tr><th scope="row">Names</th><td>A bucket names its target only with exactly one distinct target. Repeated calls on one file count once. Files show the basename, search patterns are quoted and cut to 24 characters, fetches show the host, commands are never named.</td></tr>
+<tr><th scope="row">Names</th><td>A bucket names its target only with exactly one distinct target; a computer bucket whose targets are not all applications names two, or the first and how many more. Repeated calls on one file count once. Files show the basename, search patterns are quoted and cut to 24 characters, fetches show the host, commands are never named.</td></tr>
 <tr><th scope="row">Numbers</th><td>English: "a"/"an" for one, digits above. Chinese: always digits with a measure word.</td></tr>
-<tr><th scope="row">Failures</th><td>Muted red "· N failed" after the label. A failed call counts in its bucket and adds nothing to the badge.</td></tr>
+<tr><th scope="row">Failures</th><td>Muted red "· N failed" after the label. A failed call counts in its bucket and adds nothing to the badge. A <code translate="no">computer_use</code> call stored without <code translate="no">is_error</code> has failed when its result starts with an error code (<code translate="no">Error:</code>, <code translate="no">UNKNOWN_TARGET:</code>).</td></tr>
 <tr><th scope="row">Running</th><td>The bucket of the call in progress moves to the end, in the present tense with "…"; the shimmer stays. When the call finishes it returns to past tense at its first position.</td></tr>
 <tr><th scope="row">Width</th><td>One 28px line. The label has <code translate="no">min-width:0</code> and a CSS ellipsis; failure note, badge and chevron are <code translate="no">flex:none</code>. No character budget.</td></tr>
 <tr><th scope="row">Hover</th><td>No tip: transcript content, and expanding shows every call</td></tr>

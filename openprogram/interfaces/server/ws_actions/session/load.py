@@ -16,27 +16,40 @@ _HISTORY_PAGE_KEYS = ("history_before", "history_after", "history_around", "hist
 
 
 def _branched_from(session_row: dict) -> dict | None:
-    """``{"session_id", "msg_id", "title", "exists"}`` for a branched
-    session, else None.
+    """``{"session_id", "msg_id", "title", "exists", "at_msg_id",
+    "msg_preview"}`` for a branched session, else None.
 
     ``title`` is the source's title now (or "" when it has none or is
     gone); the client prefers its live session list for renames.
-    ``exists`` is False once the source was deleted.
+    ``exists`` is False once the source was deleted. ``msg_id`` is set
+    only for a fork from an earlier message ("Fork from here"), None for a
+    whole copy; a fork also names the prompt it branched at
+    (``at_msg_id``) and the start of its text (``msg_preview``), both None
+    once that prompt is gone.
     """
     lineage = (session_row.get("extra_meta") or {}).get("branched_from") \
         or session_row.get("branched_from")
     if not isinstance(lineage, dict) or not lineage.get("session_id"):
         return None
-    title, exists = "", False
+    source_id = str(lineage["session_id"])
+    forked = bool(lineage.get("forked")) and bool(lineage.get("msg_id"))
+    title, exists, point = "", False, None
     try:
         from openprogram.runtime.context.session_db import default_db
-        source = default_db().get_session(str(lineage["session_id"]))
+        db = default_db()
+        source = db.get_session(source_id)
         exists = source is not None
         title = str((source or {}).get("title") or "")
+        if exists and forked:
+            from openprogram.runtime.context.session_dag.branch_session import fork_point
+            point = fork_point(source_id, str(lineage["msg_id"]), store=db)
     except Exception:  # noqa: BLE001 — the banner falls back to a generic name
-        title, exists = "", False
-    return {"session_id": lineage["session_id"], "msg_id": lineage.get("msg_id"),
-            "title": title, "exists": exists}
+        title, exists, point = "", False, None
+    return {"session_id": lineage["session_id"],
+            "msg_id": lineage.get("msg_id") if forked else None,
+            "title": title, "exists": exists,
+            "at_msg_id": (point or {}).get("msg_id"),
+            "msg_preview": (point or {}).get("preview")}
 
 
 def _session_todos(session_id: str) -> list:
@@ -110,19 +123,24 @@ def _read_failed(session_id, exc: Exception):
 def _context_stats_for_load(conv: dict):
     """Current-version context stats with the cached breakdown folded in: ``(stats, refresh_after_load)``."""
     _stats = conv.get("_last_context_stats") or {}
-    if _stats.get("context_usage_version") != 2:
-        conv.pop("_last_context_stats", None)
-        conv.pop("_last_context_breakdown", None)
-        conv.pop("_chat_usage", None)
-        _stats = {}
-    refresh_context_after_load = not conv.get("_last_context_breakdown")
-    _bd = conv.get("_last_context_breakdown")
     # The window belongs to the model, not to the saved record: resolve it
     # now, so a record saved with a wrong window (the old 128k default)
     # shows the model's real one, or none when the model is unknown.
     from openprogram.interfaces.server.server_runtime.context_stats import with_window
     from openprogram.interfaces.server import server as _s
     window = _s._conv_context_window(conv)
+    # A record that scaled its estimate by a ratio (``calibration``), or
+    # whose measurement the window cannot hold, was taken from a count of
+    # several summed passes: it is worked out again from the graph.
+    stale = ("calibration" in _stats
+             or (window and int(_stats.get("total_used") or 0) > window * 1.05))
+    if _stats.get("context_usage_version") != 2 or stale:
+        conv.pop("_last_context_stats", None)
+        conv.pop("_last_context_breakdown", None)
+        conv.pop("_chat_usage", None)
+        _stats = {}
+    refresh_context_after_load = not conv.get("_last_context_breakdown")
+    _bd = conv.get("_last_context_breakdown")
     if _stats:
         _stats = with_window(_stats, window)
         if isinstance(_stats.get("breakdown"), dict):
@@ -224,15 +242,15 @@ def _session_loaded_data(_s, cmd: dict, conv: dict, session_id, transcript: dict
         "graph": [],
         "head_id": head,
         "spawned_branch": spawned_branch,
-        # Lineage of a conversation made with "Copy conversation":
-        # the transcript's "Copied from" banner.
+        # Lineage of a conversation made with "Copy conversation" or
+        # "Fork from here": the transcript's "Copied from" / "Branched
+        # from" banner.
         "branched_from": _branched_from(_db_sess),
         "context_tree": tree_data,
         "provider_info": _provider_info_from_snapshot(_db_sess),
         "context_stats": _stats or None,
         "channel": _db_sess.get("channel"),
         "account_id": _db_sess.get("account_id"),
-        "environment_id": _db_sess.get("environment_id"),
         "peer": _db_sess.get("peer"),
         "peer_display": _db_sess.get("peer_display"),
         "source": _db_sess.get("source"),

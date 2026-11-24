@@ -77,9 +77,16 @@ def _parameters(method: Any) -> frozenset[str]:
         return frozenset()
 
 
+#: The longest an admitted turn waits for its slot without being told
+#: anything (a stale reservation expiring, the Worker stopping).
+HOLD_RESYNC_SECONDS = 30.0
+#: A slot whose conversation files were locked is asked for again this soon.
+HOLD_LOCKED_RETRY_SECONDS = 0.5
+
+
 def hold_admitted(session_id: str, owner: str, *, execution_id: str, status_version: int,
                   branch_id: str | None, runner: Any, still_wanted: Callable[[], bool],
-                  poll_s: float = 0.5) -> bool:
+                  poll_s: float | None = None) -> bool:
     """Take the run slot for a turn that is already admitted, waiting for it.
 
     A Goal's next turn is admitted from inside the turn before it, which
@@ -93,6 +100,11 @@ def hold_admitted(session_id: str, owner: str, *, execution_id: str, status_vers
     it, and no other turn starts on the branch beside it. The caller gives
     the slot back with :func:`finish`.
 
+    It asks again when a conversation may have gone quiet (``idle.py``: a
+    turn ended, a slot was given back, an execution changed), shortly after
+    the conversation's files were locked, and at most ``poll_s`` apart
+    (``HOLD_RESYNC_SECONDS`` when not given).
+
     ``False`` when ``still_wanted`` says the turn is no longer to run (it
     was stopped or superseded while it waited, or the Worker is stopping);
     nothing is held then. Without a host the turn runs as before.
@@ -100,18 +112,36 @@ def hold_admitted(session_id: str, owner: str, *, execution_id: str, status_vers
     adopt = getattr(_port, "adopt", None)
     if adopt is None:
         return still_wanted()
-    import time
+    import threading
     from openprogram.state.store.session.files.session_lock import SessionLockTimeout
-    while still_wanted():
-        try:
-            if adopt(session_id, owner, execution_id=execution_id, status_version=status_version,
-                     branch_id=branch_id, runner=runner):
-                return True
-        except SessionLockTimeout:
-            # The conversation's files are being written; the slot may be free.
-            pass
-        time.sleep(poll_s)
-    return False
+    from .idle import subscribe_idle
+
+    if poll_s is None:
+        poll_s = HOLD_RESYNC_SECONDS
+    wake = threading.Event()
+    me = threading.current_thread()
+
+    def maybe_free() -> None:
+        # Not for what this wait writes itself while taking the slot.
+        if threading.current_thread() is not me:
+            wake.set()
+
+    unsubscribe = subscribe_idle(maybe_free)
+    try:
+        while still_wanted():
+            wake.clear()
+            locked = False
+            try:
+                if adopt(session_id, owner, execution_id=execution_id, status_version=status_version,
+                         branch_id=branch_id, runner=runner):
+                    return True
+            except SessionLockTimeout:
+                # The conversation's files are being written; the slot may be free.
+                locked = True
+            wake.wait(min(poll_s, HOLD_LOCKED_RETRY_SECONDS) if locked else poll_s)
+        return False
+    finally:
+        unsubscribe()
 
 
 def activate(session_id: str, owner: str, *, execution_id: str,

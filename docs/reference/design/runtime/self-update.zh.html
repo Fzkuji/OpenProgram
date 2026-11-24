@@ -75,8 +75,8 @@
 <tbody>
 <tr><th scope="row"><code translate="no">checkout</code></th><td>存在 <code translate="no">developer.json</code></td><td>说明这是开发者检出，不激活</td></tr>
 <tr><th scope="row"><code translate="no">versions</code></th><td><code translate="no">sys.prefix</code> 在 <code translate="no">&lt;root&gt;/versions/</code> 内</td><td>macOS、Windows、Linux 完整流程</td></tr>
-<tr><th scope="row"><code translate="no">dev_stable</code></th><td>源码仓库有 <code translate="no">stable</code> 分支</td><td><a href="#this-machine">这台机器</a></td></tr>
-<tr><th scope="row"><code translate="no">legacy_app</code></th><td>内嵌运行时的打包 App，无源码仓库</td><td><code translate="no">_prepare_update</code> 路径和 App 安装事务，仅 macOS</td></tr>
+<tr><th scope="row"><code translate="no">dev_deploy</code></th><td>worker 运行 <code translate="no">dev</code> profile，且它的源码仓库有 <code translate="no">dev</code> 分支</td><td><a href="#development-instance">开发版</a></td></tr>
+<tr><th scope="row"><code translate="no">legacy_app</code></th><td>其余内嵌运行时的打包 App；Developer ID 签名的正式版 App 会被拒绝，并指向检查更新</td><td><code translate="no">_prepare_update</code> 路径和 App 安装事务，仅 macOS</td></tr>
 <tr><th scope="row"><code translate="no">checkout</code></th><td>其余情况，源码检出</td><td>同上</td></tr>
 </tbody>
 </table>
@@ -94,7 +94,7 @@
 <tr><th scope="row"><code translate="no">undo(target)</code></th><td><a href="#undo">撤销</a></td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">status</code> 和 <code translate="no">versions</code> 免审批。<code translate="no">self_update</code> 设 <code translate="no">unsafe_in=["plan"]</code>。<code translate="no">dev_stable</code> 和 <code translate="no">legacy_app</code> 保持 <code translate="no">prepare(worktree_id, candidate_sha, goal, assertions, ...)</code>。</p>
+<p class="note"><code translate="no">status</code> 和 <code translate="no">versions</code> 免审批。<code translate="no">self_update</code> 设 <code translate="no">unsafe_in=["plan"]</code>。<code translate="no">dev_deploy</code> 和 <code translate="no">legacy_app</code> 保持 <code translate="no">prepare(worktree_id, candidate_sha, goal, assertions, ...)</code>。</p>
 <dl class="pairs">
 <dt>校验</dt><dd><code translate="no">prepare</code> 要求 worktree 存在、已链接、干净、有 <code translate="no">local</code> 之外的提交；错误返回给模型。候选可基于 <code translate="no">local</code> 的任何祖先，由系统 rebase 而不是拒绝。</dd>
 <dt>授权</dt><dd>默认模式下所有者的调用不弹卡片。询问模式或询问规则产生普通卡片。非所有者按身份拒绝。</dd>
@@ -135,7 +135,7 @@
 <tr><th scope="row">验收者</th><td><code translate="no">store.claim_verifier</code>、<code translate="no">_validate_event</code>、<code translate="no">verification_channel.load_grant</code> 和 <code translate="no">control/recovery.py</code> 接受 <code translate="no">VERIFIER_PHASES = {TRIAL, VERIFYING}</code>。</td></tr>
 <tr><th scope="row"><code translate="no">self-updates/</code></th><td>有版本的协议，旧控制器和候选 worker 都读。<code translate="no">activating</code>、<code translate="no">verifying</code> 期间只有控制器写。带协议标记的文件中，读者忽略未知键。</td></tr>
 <tr><th scope="row">控制器</th><td>从 <code translate="no">versions/&lt;controller_version&gt;/venv</code> 运行 <code translate="no">python -I -B -m openprogram.operations.self_update.control.supervisor &lt;update_id&gt;</code>，到终态前钉住。异常退出时由 launchd <code translate="no">KeepAlive={SuccessfulExit=false}</code>、计划任务、<code translate="no">systemd-run --user</code> 重启，兜底用 <code translate="no">setsid</code>。</td></tr>
-<tr><th scope="row">存活</th><td>每 5 秒心跳；<code translate="no">operations/worker/runner.py</code> 的 watchdog 线程在超过 30 秒时重启控制器。<code translate="no">maintenance.json</code> 带期限，过期标记被忽略。<code translate="no">probation_deadline</code> 过期在 launcher 处算失败。</td></tr>
+<tr><th scope="row">存活</th><td>控制器把自己的 pid 和启动时间写进 <code translate="no">controller.json</code> 一次，之后什么也不写；Worker 的 watchdog（<code translate="no">control/watchdog.py</code>）在那个进程结束的一刻由操作系统得知并重启控制器，刚启动的给 30 秒出现。<code translate="no">maintenance.json</code> 带期限，过期标记被忽略。<code translate="no">probation_deadline</code> 过期在 launcher 处算失败。</td></tr>
 <tr><th scope="row">启动巡检</th><td><code translate="no">recover_pending_updates</code> 重启任何未结束更新的控制器。若 <code translate="no">activating</code>、<code translate="no">verifying</code> 时 <code translate="no">current</code> 已不指向候选，它记录 <code translate="no">rolled_back</code>、离开维护、交付结果并启动诊断。</td></tr>
 </tbody>
 </table>
@@ -254,7 +254,7 @@ writer=controller</pre>
 <thead><tr><th scope="col">试运行检查（按顺序）</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">1 基线</th><td>旧版本在副本上记录 doctor 行</td></tr>
-<tr><th scope="row">2 冷启动</th><td>120 秒内到 <code translate="no">/healthz</code>，<code translate="no">boot/&lt;id&gt;.migrating</code> 推进时最多延长到 30 分钟</td></tr>
+<tr><th scope="row">2 冷启动</th><td>120 秒内到 <code translate="no">/healthz</code>，<code translate="no">boot/&lt;id&gt;.migrating</code> 写的进程还在运行时最多延长到 30 分钟</td></tr>
 <tr><th scope="row">3 <code translate="no">system_probe</code></th><td>候选身份、<code translate="no">/healthz</code>、<code translate="no">/chat</code>、WebSocket ping、按回归规则的 doctor 行</td></tr>
 <tr><th scope="row">4 浏览器探测</th><td>用 Playwright</td></tr>
 <tr><th scope="row">5 完整一轮</th><td>对 <code translate="no">trial/fake_model.py</code>：一次工具调用，然后最终回答</td></tr>
@@ -402,7 +402,7 @@ writer=controller</pre>
 <tr><th scope="row">准入</th><td>只从激活第 3 步关到第 11 步</td></tr>
 <tr><th scope="row">结构和配置</th><td>改动只增不减；旧代码容忍未知的表、列和键</td></tr>
 <tr><th scope="row">SQLite 读者下限</th><td>存储在 <code translate="no">PRAGMA user_version</code> 旁保存 <code translate="no">min_reader_schema</code>（<code translate="no">state/store/reader_floor.py</code>），只有比代码已知更新时才拒绝。运行状态不需要：旧读者跳过日志行上未知的表和列。</td></tr>
-<tr><th scope="row">迁移中的存储</th><td>每 5 秒触碰 <code translate="no">boot/&lt;id&gt;.migrating</code></td></tr>
+<tr><th scope="row">迁移中的存储</th><td>把自己的 pid 和启动时间写进 <code translate="no">boot/&lt;id&gt;.migrating</code> 一次，结束时删掉；读的人检查那个进程是否还在运行（<code translate="no">versions/store.py</code> 的 <code translate="no">migrating_process</code>）</td></tr>
 <tr><th scope="row">破坏性迁移</th><td>需要 trailer，在激活第 6 步备份，并写入结果、回退结果和 <code translate="no">versions list</code></td></tr>
 </tbody>
 </table>
@@ -437,26 +437,20 @@ writer=controller</pre>
 </ol>
 <p class="note">需要超出 shell 范围的 <code translate="no">shell_compat</code> 的发行版，等待 DMG 或 EXE 的 shell 更新。</p>
 
-<h2 id="this-machine">这台机器（<code translate="no">dev_stable</code>）</h2>
-<p class="note">开发版是试运行，晋升是切换。两个 App 都在 shell 的内嵌模式下运行。见<a href="../distribution/dev-instance.zh.html">开发实例</a>。分离的控制器从私有副本（<code translate="no">delivery/controller_bundle.py</code>）运行，并清除 <code translate="no">OPENPROGRAM_SESSION_ID</code>。</p>
+<h2 id="development-instance">开发版（<code translate="no">dev_deploy</code>）</h2>
+<p class="note">在开发版里做的改动就是 <code translate="no">dev</code> 上的一个提交，部署它就是这次更新。稳定版是正式版 App，只由它自己的更新器改动，所以这里不等它。见<a href="../distribution/dev-instance.zh.html">开发实例</a>。分离的控制器从私有副本（<code translate="no">delivery/controller_bundle.py</code>）运行，环境里既没有会话也没有 profile。</p>
 <h3>落地</h3>
 <ol>
+<li>等发起调用的那一轮保存。</li>
 <li>把候选 rebase 到 <code translate="no">dev</code>。</li>
 <li>在主检出 <code translate="no">git merge --ff-only &lt;sha&gt;</code>，最多 10 次。rebase 冲突或重叠的脏文件：<code translate="no">aborted</code> 并列出。</li>
-<li><code translate="no">openprogram dev deploy &lt;sha&gt;</code>。</li>
 </ol>
-<h3>晋升</h3>
+<h3>部署</h3>
 <ol start="4">
-<li>对 <code translate="no">18200</code> 运行 <code translate="no">system_probe</code> 和浏览器探测。</li>
-<li>最多等 30 分钟，直到稳定版没有任务。</li>
-<li><code translate="no">stable</code> 已含该提交则到第 8 步。否则 <code translate="no">openprogram dev promote &lt;sha&gt;</code>。遇到 “only the commit the development instance serves” 时重新部署，重复第 4 步一次，再晋升；第二次拒绝：<code translate="no">aborted</code>。</li>
-<li>刷新失败时 <code translate="no">stable</code> 和 App 都留在之前的版本。失败或不健康：在 <code translate="no">dev</code> 上 <code translate="no">git revert</code>，部署，晋升。<code translate="no">rolled_back</code> 给出 revert 提交。</li>
+<li><code translate="no">openprogram dev deploy &lt;sha&gt;</code>，开发版已在服务该提交时跳过。这会重启发起请求的 worker。</li>
+<li>对 <code translate="no">18200</code> 运行 <code translate="no">system_probe</code> 和浏览器探测。通过：<code translate="no">succeeded</code>，由重启后的 worker 交付。失败：<code translate="no">aborted</code>；提交留在 <code translate="no">dev</code> 上，由下一个提交修复。</li>
 </ol>
-<h3>交付</h3>
-<ol start="8">
-<li>稳定版重启后交付结果。</li>
-</ol>
-<p class="note">这里的撤销是在 <code translate="no">dev</code> 上 <code translate="no">git revert</code>。试运行引擎和版本布局由测试用临时 <code translate="no">HOME</code> 和临时端口运行。</p>
+<p class="note">这里的撤销是在 <code translate="no">dev</code> 上 <code translate="no">git revert</code>，和其他改动一样提交。试运行引擎和版本布局由测试用临时 <code translate="no">HOME</code> 和临时端口运行。</p>
 
 <h2 id="packaging">打包</h2>
 <table class="stack fixed">
@@ -476,7 +470,7 @@ writer=controller</pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">项</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>状态机和 schema 2、队列、各平台切换控制器和 launcher、心跳、watchdog、保存的对话、subsystems、巡检、全部 <code translate="no">self_update</code> 动作、版本存储、指针、launcher、保留、试运行引擎、通过 <code translate="no">openprogram upgrade</code> 的发行版获取和重放、thin shell 加载器、种子、恢复页、握手、重启、CLI 种子安装器</td></tr>
+<tr><th scope="row">已实现</th><td>状态机和 schema 2、队列、各平台切换控制器和 launcher、控制器退出监视、watchdog、保存的对话、subsystems、巡检、全部 <code translate="no">self_update</code> 动作、版本存储、指针、launcher、保留、试运行引擎、通过 <code translate="no">openprogram upgrade</code> 的发行版获取和重放、thin shell 加载器、种子、恢复页、握手、重启、CLI 种子安装器</td></tr>
 <tr><th scope="row">未验证</th><td>Windows：版本存储的任何部分都没在那里运行过。它的分支通过替身和交叉编译的 launcher 测试。<code translate="no">windows-desktop</code> 在 Windows 上跑 shell 检查；<code translate="no">windows-core</code> 只跑 launcher 测试。</td></tr>
 <tr><th scope="row">未完成</th><td>没有发布过 Windows App 和 Windows 更新文件：唯一一次构建它们的 Release 运行在这一步失败。Linux 的 thin App 和已签名更新文件已发布；还没有在已安装的副本上观察到切换。macOS App 仍内嵌运行时，除非设置 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code>。macOS 隐私授权门需要人工点击。</td></tr>
 <tr><th scope="row">暂时保留</th><td><code translate="no">legacy_app</code>、<code translate="no">delivery/bootstrap.py</code>、<code translate="no">control/supervisor.py</code> 的 App 路径、<code translate="no">repair/owner_repair.py</code>、<code translate="no">owner_terminal.py</code>，直到已发布的 App 都是 thin。<code translate="no">package_protocol.py</code> 留到 <code translate="no">native_checks.py</code> 和 <code translate="no">ui_checks.py</code> 不再读取。</td></tr>

@@ -39,7 +39,7 @@ def call(action='describe', operation='', arguments=None):
                 raise ValueError(
                     'no_window_for_this_run: this run was not started from an App window, so there is no window '
                     'for it to command. Pass window_id to act on one on purpose; to open or read a web page use '
-                    'computer_use_agent with target browser, which works with the App closed.')
+                    'computer_use with type="browser", which works with the App closed.')
         if operation.startswith('native.webTab.') or operation == 'tabs.setWebTabPinned':
             from .web_interface import authorized_page
             with authorized_page(values, window) as page:

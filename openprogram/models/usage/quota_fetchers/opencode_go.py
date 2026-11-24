@@ -1,6 +1,6 @@
 """OpenCode Go: windows from ``GET https://opencode.ai/zen/go/v1/usage``.
 
-Unverified: the shape is Oh My Pi's (``packages/ai/src/usage/opencode-go.ts``):
+The shape is Oh My Pi's, confirmed by a real response (``packages/ai/src/usage/opencode-go.ts``):
 ``usage.{rolling,weekly,monthly}`` each with ``percent`` (0-100 used),
 ``status`` (``ok`` or ``rate-limited``) and ``resetsAt`` (ISO time). The
 monthly window follows the subscription date, so it carries no length.
@@ -13,7 +13,10 @@ from typing import Any, Optional
 from ..quota import SOURCE_ENDPOINT, STATUS_EXHAUSTED, QuotaLimit
 
 PROVIDERS = ("opencode-go",)
-VERIFIED = False
+VERIFIED = True
+#: A 401 here says the plan does not know this key or sign-in, not that
+#: requests with it fail, so it marks nothing on the credential.
+REFUSAL_IS_THE_KEYS = False
 ENDPOINT = "GET https://opencode.ai/zen/go/v1/usage"
 SHAPE_FROM = "oh-my-pi packages/ai/src/usage/opencode-go.ts"
 URL = "https://opencode.ai/zen/go/v1/usage"

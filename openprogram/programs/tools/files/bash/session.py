@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import json
 import time
 
-from openprogram.host.processes import ProcessStore, control, scoped_records, start
+from openprogram.host.processes import ProcessStore, channel, control, scoped_records, start
 from openprogram.host.processes.store import LIVE, TERMINAL
 
 # Codex unified_exec constants.
@@ -28,8 +28,6 @@ OUTPUT_MAX_BYTES = 1024 * 1024
 INTERRUPT = "\x03"
 # Ours: a command waits 30 s before it moves to the background.
 DEFAULT_YIELD_TIME_MS = 30_000
-
-_POLL_SECONDS = 0.05
 
 
 class HeadTailBuffer:
@@ -111,39 +109,54 @@ def collect(store: ProcessStore, process_id: str, yield_ms: int, started: float,
             stop_on_cancel: bool = False) -> Reply:
     """Unread output until the command ends or the yield time passes.
 
+    The wait sleeps until the supervisor rings (new output, a status), the
+    supervisor ends, a stop is fired for this turn, the yield time passes or
+    the doorbell's resync comes due; it never looks on a tick.
+
     Cancelling the turn ends the wait. A command still in its first wait is
     stopped with it, as a foreground command would be; a session the agent
     already left in the background keeps running.
     """
-    from openprogram.host.cancellation import CancelledError, check_cancelled
+    from openprogram.host.cancellation import CancelledError, check_cancelled, on_cancel
 
     buffer = HeadTailBuffer()
     dropped = 0
     note = ""
     deadline = started + yield_ms / 1000
-    while True:
+    # Subscribed before the first read, so no ring between them is missed.
+    with channel.Watch(store.get(process_id)) as watch:
+        stop_waking = on_cancel(watch.wake)
         try:
-            check_cancelled()
-        except CancelledError:
-            if not stop_on_cancel:
-                raise
-            control(store, process_id, "stop")
-            stop_on_cancel = False
-            note = "Cancelled; the command was stopped"
-            deadline = time.monotonic() + 5
-        chunk, lost = store.take(process_id)
-        buffer.push(chunk)
-        dropped += lost
-        record = store.get(process_id)
-        if record["status"] in TERMINAL:
-            # The supervisor appends the last output before the final status.
-            chunk, lost = store.take(process_id)
-            buffer.push(chunk)
-            dropped += lost
-            break
-        if time.monotonic() >= deadline:
-            break
-        time.sleep(_POLL_SECONDS)
+            while True:
+                try:
+                    check_cancelled()
+                except CancelledError:
+                    if not stop_on_cancel:
+                        raise
+                    control(store, process_id, "stop")
+                    stop_on_cancel = False
+                    note = "Cancelled; the command was stopped"
+                    deadline = time.monotonic() + 5
+                chunk, lost = store.take(process_id)
+                buffer.push(chunk)
+                dropped += lost
+                record = store.get(process_id)
+                if record["status"] in LIVE and watch.ended and record.get("supervisor_pid"):
+                    # Its supervisor ended without writing the command's end.
+                    store.supervisor_ended(process_id, record["supervisor_pid"])
+                    record = store.get(process_id)
+                if record["status"] in TERMINAL:
+                    # The supervisor appends the last output before the final status.
+                    chunk, lost = store.take(process_id)
+                    buffer.push(chunk)
+                    dropped += lost
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or (watch.ended and record["status"] == "unknown"):
+                    break
+                watch.wait(min(remaining, channel.RESYNC_SECONDS))
+        finally:
+            stop_waking()
     fields = {"last_used": time.time()}
     if record["status"] in TERMINAL:
         fields["reported"] = True
@@ -211,8 +224,6 @@ def write(process_id: str, chars: str, yield_ms: int | None) -> Reply:
     if chars and record["status"] in LIVE:
         if record.get("tty"):
             control(store, process_id, "write", chars)
-            # Give the command a moment to react before reading.
-            time.sleep(0.1)
         elif chars == INTERRUPT:
             control(store, process_id, "interrupt")
         else:

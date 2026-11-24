@@ -2,9 +2,10 @@
  *  slides and resizes from where it was, a pane that leaves fades under the
  *  panes that take its place, and a pane that arrives fades in.
  *
- *  Closing a pane (red, yellow, ⌘W) is not animated: the pane leaves the
- *  layout in the click's frame and its neighbours take the room at once,
- *  as a window closes. Only rearranging animates.
+ *  A pane closed out of a split folds away toward the side it stood on
+ *  while the panes beside it grow into its room, the edge between them
+ *  moving as one. The layout itself changes in the click's frame, so the
+ *  animation never holds the close.
  *
  *  A caller captures the canvas just before it changes the layout; the app
  *  shell plays the capture in the layout effect of the commit that changed
@@ -31,7 +32,9 @@ type Ghost = { tabId: string; node: HTMLElement; rect: DOMRect; scroll: [number,
  *  document timeline; the compositor that plays it sets it, so it holds
  *  even when the main thread saw the card late), null if not started. */
 export type CanvasZoom = { from: DOMRect; startTime: number | null; duration: number; easing: string };
-type Capture = { at: number; root: HTMLElement; rects: Map<string, DOMRect>; ghosts: Ghost[]; enters: Record<string, CanvasEnter>; zoom?: CanvasZoom };
+type Capture = { at: number; root: HTMLElement; rects: Map<string, DOMRect>; ghosts: Ghost[]; enters: Record<string, CanvasEnter>; zoom?: CanvasZoom; fold?: boolean };
+/** Where a pane stands in the canvas, in the canvas's own frame. */
+export type CanvasFrame = { left: number; top: number; width: number; height: number };
 
 let pending: Capture | null = null;
 let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -48,7 +51,8 @@ function canvasRoot(): HTMLElement | null {
  *  and file panes. */
 function paneElements(root: HTMLElement): Map<string, HTMLElement> {
   const out = new Map<string, HTMLElement>();
-  for (const el of root.querySelectorAll<HTMLElement>(":scope > [data-center-tab-id], :scope > [data-file-pane-id]")) {
+  // A file pane sits one level down, in its document's display:contents wrapper.
+  for (const el of root.querySelectorAll<HTMLElement>(":scope > [data-center-tab-id], :scope > [data-file-pane-id], :scope > * > [data-file-pane-id]")) {
     const id = el.dataset.centerTabId || el.dataset.filePaneId;
     if (!id || out.has(id)) continue;
     if (getComputedStyle(el).display === "none") continue;
@@ -67,6 +71,10 @@ function ghostOf(el: HTMLElement): { node: HTMLElement; scroll: [number, number,
   const to = node.querySelectorAll<HTMLElement>("*");
   from.forEach((source, index) => {
     if (source.scrollTop || source.scrollLeft) scroll.push([index, source.scrollTop, source.scrollLeft]);
+    // A copied canvas is blank: it takes the picture the pane was showing.
+    if (source.tagName === "CANVAS" && (source as HTMLCanvasElement).width && (source as HTMLCanvasElement).height) {
+      try { (to[index] as HTMLCanvasElement).getContext("2d")?.drawImage(source as HTMLCanvasElement, 0, 0); } catch { /* tainted */ }
+    }
   });
   for (const item of [node, ...to]) {
     item.removeAttribute("id");
@@ -82,8 +90,11 @@ function ghostOf(el: HTMLElement): { node: HTMLElement; scroll: [number, number,
 
 /** Record the canvas before a layout change. `enters` names tabs that
  *  arrive from a side of the canvas; a tab that leaves fades under the
- *  panes that take its place. */
-export function captureCanvasTransition(enters: Record<string, CanvasEnter> = {}): void {
+ *  panes that take its place. `closing` names the tabs whose panes are
+ *  closing: they fold away as the others grow into their room, and only
+ *  they are copied, so closing beside a long chat costs nothing. A closing
+ *  document pane that stays mounted (`held`) folds itself and needs no copy. */
+export function captureCanvasTransition(enters: Record<string, CanvasEnter> = {}, options: { closing?: readonly string[]; held?: readonly string[] } = {}): void {
   if (typeof document === "undefined" || reducedMotion()) return;
   const root = canvasRoot();
   if (!root) return;
@@ -92,11 +103,23 @@ export function captureCanvasTransition(enters: Record<string, CanvasEnter> = {}
   for (const [id, el] of paneElements(root)) {
     const rect = el.getBoundingClientRect();
     rects.set(id, rect);
-    const { node, scroll } = ghostOf(el);
+    if (options.closing && !options.closing.includes(id)) continue;
+    const { node, scroll } = options.held?.includes(id) ? { node: document.createElement("div"), scroll: [] } : ghostOf(el);
     ghosts.push({ tabId: id, node, rect, scroll });
   }
   if (!rects.size) return;
-  begin(root, rects, ghosts, enters);
+  begin(root, rects, ghosts, enters, undefined, Boolean(options.closing));
+}
+
+/** Where the pane of `tabId` stands now, or null when it is not on screen
+ *  or nothing would animate. */
+export function canvasPaneFrame(tabId: string): CanvasFrame | null {
+  if (typeof document === "undefined" || reducedMotion()) return null;
+  const root = canvasRoot();
+  const el = root && paneElements(root).get(tabId);
+  if (!root || !el) return null;
+  const rect = el.getBoundingClientRect(), origin = root.getBoundingClientRect();
+  return { left: rect.left - origin.left, top: rect.top - origin.top, width: rect.width, height: rect.height };
 }
 
 /** Record a layout change seen from somewhere other than the live canvas:
@@ -112,8 +135,8 @@ export function captureCanvasLanding(rects: Map<string, DOMRect>, enters: Record
   if (root && rects.size) begin(root, rects, [], enters, zoom);
 }
 
-function begin(root: HTMLElement, rects: Map<string, DOMRect>, ghosts: Ghost[], enters: Record<string, CanvasEnter>, zoom?: CanvasZoom): void {
-  pending = { at: performance.now(), root, rects, ghosts, enters, zoom };
+function begin(root: HTMLElement, rects: Map<string, DOMRect>, ghosts: Ghost[], enters: Record<string, CanvasEnter>, zoom?: CanvasZoom, fold?: boolean): void {
+  pending = { at: performance.now(), root, rects, ghosts, enters, zoom, fold };
   // Web panes start freezing to a snapshot now, so the native views are
   // still by the time the panes move.
   setCanvasAnimating(true);
@@ -127,6 +150,27 @@ function begin(root: HTMLElement, rects: Map<string, DOMRect>, ghosts: Ghost[], 
 function moved(a: DOMRect, b: DOMRect): boolean {
   return Math.abs(a.left - b.left) > 0.5 || Math.abs(a.top - b.top) > 0.5
     || Math.abs(a.width - b.width) > 0.5 || Math.abs(a.height - b.height) > 0.5;
+}
+
+function overlap(a: DOMRect, b: DOMRect): number {
+  return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+    * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+}
+
+/** What is left of a closing pane at the end of its fold: it folds toward
+ *  the side away from the pane that grows into its room, so the edge the
+ *  two share moves as one. Null when no pane takes its room. */
+export function foldClip(rect: DOMRect, moves: readonly { from: DOMRect; to: DOMRect }[]): string | null {
+  let taker: { from: DOMRect; to: DOMRect } | null = null, gain = 0;
+  for (const move of moves) {
+    const won = overlap(move.to, rect) - overlap(move.from, rect);
+    if (won > gain) { gain = won; taker = move; }
+  }
+  if (!taker) return null;
+  const { from, to } = taker;
+  if (to.width - from.width >= to.height - from.height)
+    return from.left + from.width / 2 <= rect.left + rect.width / 2 ? "inset(0 0 0 100%)" : "inset(0 100% 0 0)";
+  return from.top + from.height / 2 <= rect.top + rect.height / 2 ? "inset(100% 0 0 0)" : "inset(0 0 100% 0)";
 }
 
 function place(node: HTMLElement, rect: DOMRect, origin: DOMRect): void {
@@ -205,9 +249,34 @@ export function playCanvasTransition(): void {
     ], { duration: MOVE_MS, easing: EASE }));
   }
   for (const ghost of leaving) {
+    const { node, rect } = ghost;
+    const clip = capture.fold ? foldClip(rect, moves) : null;
+    // A document's pane stays mounted while its editor saves, placed where
+    // it stood: the pane itself folds, not a copy of it.
+    const held = root.querySelector<HTMLElement>(`[data-file-pane-leaving="${CSS.escape(ghost.tabId)}"]`);
+    if (clip) {
+      const target = held ?? node;
+      if (!held) {
+        place(node, rect, origin);
+        root.prepend(node);
+      }
+      const animation = target.animate([
+        { clipPath: "inset(0 0 0 0)", opacity: 1 },
+        { clipPath: clip, opacity: 0.4 },
+      ], { duration: MOVE_MS, easing: EASE, fill: "forwards" });
+      animations.push(animation);
+      void animation.finished.catch(() => undefined).then(() => {
+        if (held) {
+          // Out of sight first, then off the fold: the pane never shows whole again.
+          window.dispatchEvent(new CustomEvent("op-file-pane-folded", { detail: { tabId: ghost.tabId } }));
+          requestAnimationFrame(() => requestAnimationFrame(() => animation.cancel()));
+        }
+        else node.remove();
+      });
+      continue;
+    }
     // A pane hidden behind a growing one (green, Fill, an arrangement with
     // fewer panes) stays under the panes that take its place as it fades.
-    const { node, rect } = ghost;
     place(node, rect, origin);
     root.prepend(node);
     const all = node.querySelectorAll<HTMLElement>("*");

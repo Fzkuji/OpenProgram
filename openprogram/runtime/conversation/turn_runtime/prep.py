@@ -222,6 +222,8 @@ def prepare_turn(
     beside = _turn_context.put([], _turn_context.ATTACHMENT, "date", current_date)
     beside = _turn_context.put(beside, _turn_context.ATTACHMENT, "memory_prefetch", memory_prefetch or "")
     beside = _turn_context.put(beside, _turn_context.ATTACHMENT, "run_note", req.run_note or "")
+    beside = _turn_context.put(beside, _turn_context.ATTACHMENT, "application",
+                               getattr(req, "application_note", None) or "")
     if not req.restart_resume:
         # The reply this message follows was stopped: the note is written
         # now, onto this message, so every later request sends it unchanged.
@@ -349,6 +351,10 @@ def prepare_turn(
             history = rendered_history(
                 db, req.session_id, head_id=user_msg_id,
             ) or history
+    # The message is in the conversation (written here or by the chat action
+    # before): a person's message can answer a decision in the pending inbox.
+    from openprogram.runtime.conversation.always_on import pending as _pending
+    _pending.person_wrote(req.session_id, user_msg)
 
     # A prompt that starts a turn is a point its branch can rewind to, on the
     # selected branch or beside it (another branch, a scheduled run's own).

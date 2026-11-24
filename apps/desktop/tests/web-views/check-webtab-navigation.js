@@ -452,6 +452,8 @@ function fakeWindow(id) {
     show() { this.shown = true; this.focusCalls = (this.focusCalls || 0) + 1; },
     showInactive() { this.shown = true; this.showInactiveCalls = (this.showInactiveCalls || 0) + 1; },
     hide() { this.shown = false; this.hideCalls = (this.hideCalls || 0) + 1; },
+    moveAbove(sourceId) { (this.moveAboveCalls ||= []).push(sourceId); },
+    getMediaSourceId() { return `window:${this.id}:0`; },
     setIgnoreMouseEvents(...args) { this.ignoreMouseCalls = this.ignoreMouseCalls || []; this.ignoreMouseCalls.push(args); },
     setMenuBarVisibility() {},
     getContentBounds() { return { ...this.bounds }; },
@@ -831,6 +833,8 @@ const webtabCheckContext = {
   get fakeElectron() { return fakeElectron; },
   set fakeElectron(value) { fakeElectron = value; },
   get fakeWindow() { return fakeWindow; },
+  // An App window on screen: the agent's cue overlay only shows over a visible, unminimized window.
+  shownWindow(id) { const win = fakeWindow(id); win.shown = true; return win; },
   set fakeWindow(value) { fakeWindow = value; },
   get fakeWindows() { return fakeWindows; },
   set fakeWindows(value) { fakeWindows = value; },

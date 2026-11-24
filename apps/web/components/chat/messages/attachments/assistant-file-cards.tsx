@@ -19,11 +19,11 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { FilePathContextMenu, type FileMenuProject } from "@/components/files/file-path-menu";
 import { MediaPlayer } from "@/components/files/preview/media-player";
 import type { ParsedAttachment } from "./user-attachments";
-import { ArchiveSummary, HtmlThumbnail, PdfFirstPage, TextHead, type PreviewInfo } from "./file-card-previews";
+import { ArchiveSummary, HtmlThumbnail, OfficeFirstPage, PdfFirstPage, TextHead, type PreviewInfo } from "./file-card-previews";
 import styles from "./assistant-file-cards.module.css";
 
 /** What a card shows above its name. */
-type PreviewKind = InlineMediaKind | "pdf" | "page" | "archive" | "text" | null;
+type PreviewKind = InlineMediaKind | "pdf" | "page" | "office" | "archive" | "text" | null;
 
 function previewKind(file: FileOutput): PreviewKind {
   const media = inlineMediaKind(file.path);
@@ -31,7 +31,7 @@ function previewKind(file: FileOutput): PreviewKind {
   if (isArchivePath(file.path)) return "archive";
   if (isHtmlPath(file.path)) return "page";
   const preview = fileCapabilities(file.path).preview;
-  return preview === "pdf" ? "pdf" : preview === "text" ? "text" : null;
+  return preview === "pdf" ? "pdf" : preview === "office" ? "office" : preview === "text" ? "text" : null;
 }
 
 /** A file the app can open: anything with a viewer, archives included. */
@@ -76,6 +76,8 @@ function FileCard({ file, kind, meta, sessionId, project, open }: { file: FileOu
   else if (sessionId && shown === "audio") preview = <MediaPlayer kind="audio" src={src} label={file.name} onError={() => setMediaFailed(true)} />;
   else if (sessionId && shown === "pdf") preview = <PdfFirstPage path={file.path} sessionId={sessionId} onInfo={setInfo} />;
   else if (sessionId && shown === "page") preview = <HtmlThumbnail path={file.path} sessionId={sessionId} />;
+  // No picture of an Office file (no Quick Look, none saved in the file): just the name row.
+  else if (sessionId && shown === "office") preview = <OfficeFirstPage path={file.path} sessionId={sessionId} onFail={() => setMediaFailed(true)} />;
   else if (sessionId && shown === "archive") preview = <ArchiveSummary path={file.path} sessionId={sessionId} onInfo={setInfo} onOpen={open} />;
   else if (sessionId && shown === "text") preview = <TextHead path={file.path} sessionId={sessionId} />;
   // Players keep their own controls; every other preview opens the file.
@@ -98,7 +100,7 @@ function FileCard({ file, kind, meta, sessionId, project, open }: { file: FileOu
   const media = shown === "image" || shown === "video" || shown === "audio" ? "" : undefined;
   // Right-click: the file menu every chat file shares (file-path-menu.tsx).
   const menu = (card: ReactElement) => <FilePathContextMenu path={file.path} sessionId={sessionId} project={project} onOpen={openable ? open : undefined}>{card}</FilePathContextMenu>;
-  if (overlay) return menu(<figure className={`${styles.shown} m-0 grid w-full min-w-0 gap-[6px]`} data-kind={shown ?? "file"} data-media={media}>
+  if (overlay) return menu(<figure className={`${styles.shown} m-0 grid min-w-0 gap-[6px]`} data-kind={shown ?? "file"} data-media={media}>
     <div className={styles.frame}>
       {previewBox}
       <span className={styles.floating}>{actions}</span>
@@ -156,7 +158,8 @@ export function AssistantFileCards({ msg, sessionId, attachments, only, skip }: 
   }, [only, sessionId, focusedSessionId, msg.id, msg.status, msg.autoPreviewFiles, allFiles, project]);
   if (!files.length) return null;
   const meta = (path: string) => attachments.find(item => item.path === path)?.meta ?? "";
-  return <div className="grid gap-[8px]" data-assistant-files>{files.map(file =>
+  // Previews sit three to a row; a card with nothing to show is a full row.
+  return <div className="flex flex-wrap items-start gap-[8px]" data-assistant-files>{files.map(file =>
     <FileCard key={file.path} file={file} kind={sessionId ? previewKind(file) : null} meta={meta(file.path)} sessionId={sessionId} project={project} open={() => void open(file)} />,
   )}</div>;
 }

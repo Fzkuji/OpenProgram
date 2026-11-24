@@ -473,7 +473,7 @@ const managementRoutes = ["/agents",
   "/projects",
   "/memory",
   "/history",
-  "/scheduler"];
+  "/tasks"];
 
 test("page names and history follow each route in the current tab", (t) => {
   const location = window.location; delete window.location;
@@ -536,8 +536,8 @@ test("visible route names restore independently and retain background conversati
 test("settings sections and unknown routes use the current page label", () => {
   const tab = { id: "s:page", kind: "session", title: "Research discussion" };
   for (const [route, expected] of [["/agents", "Agents"], ["/programs", "Abilities"],
-    ["/applications", "Applications"], ["/settings/providers/ollama", "LLM Providers"],
-    ["/settings/general", "General"], ["/scheduler", "Scheduler"], ["/unknown-page", "/unknown-page"]]) {
+    ["/applications", "Applications"], ["/settings/providers/ollama", "Model services"],
+    ["/settings/general", "General"], ["/tasks", "Tasks"], ["/unknown-page", "/unknown-page"]]) {
     assert.equal(label({ ...tab, navigationRoute: route }), expected);
   }
 });
@@ -548,8 +548,8 @@ test("a management page opened from a split pane gets its own tab and leaves the
     tabs: [{ id: a, kind: "session", sessionId: "split-A", title: "A" }, { id: b, kind: "session", sessionId: "split-B", title: "B" }],
     activeId: b, groups: [{ id: "g", memberIds: [a, b], visibleIds: [a, b], focusedId: b }],
   });
-  state().recordRouteNavigation("/scheduler");
-  assert.equal(active().navigationRoute, "/scheduler");
+  state().recordRouteNavigation("/tasks");
+  assert.equal(active().navigationRoute, "/tasks");
   assert.ok(![a, b].includes(active().id));
   assert.deepEqual(state().groups.find(group => group.id === "g")?.memberIds, [a, b]);
   assert.equal(state().tabs.find(tab => tab.id === b).navigationRoute, undefined);
@@ -558,7 +558,7 @@ test("a management page opened from a split pane gets its own tab and leaves the
 
 test("a persisted split member carrying a page route leaves its group", () => {
   const a = { id: "s:A", kind: "session", sessionId: "A", title: "A" };
-  const b = { id: "s:B", kind: "session", sessionId: "B", title: "B", navigationRoute: "/scheduler" };
+  const b = { id: "s:B", kind: "session", sessionId: "B", title: "B", navigationRoute: "/tasks" };
   const payload = normalizeCenterTabsPayload({
     tabs: [a, b], activeId: b.id,
     groups: [{ id: "g", memberIds: [a.id, b.id], visibleIds: [a.id, b.id], focusedId: b.id }],
@@ -625,13 +625,13 @@ test("a page that already has a tab is focused instead of opened again", () => {
 test("opening a built-in tab again after it went on to a management page shows its own page", () => {
   reset(); state().openSessionTab("A", "Alpha");
   state().openBuiltinTab("meeting"); const meeting = active().id;
-  state().recordRouteNavigation("/scheduler");
-  assert.equal(active().navigationRoute, "/scheduler");
+  state().recordRouteNavigation("/tasks");
+  assert.equal(active().navigationRoute, "/tasks");
   state().openSessionTab("A", "Alpha");
   state().openBuiltinTab("meeting");
   assert.equal(active().id, meeting);
   assert.equal(active().navigationRoute, undefined);
   assert.equal(state().navigationRoute, undefined);
   state().navigateHistory(-1);
-  assert.equal(active().navigationRoute, "/scheduler");
+  assert.equal(active().navigationRoute, "/tasks");
 });

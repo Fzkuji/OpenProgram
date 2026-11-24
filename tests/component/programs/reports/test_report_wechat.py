@@ -153,7 +153,7 @@ def native_processes(monkeypatch, pids, owners, ax_window="exact-main-window"):
             ),
         ),
     )
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import processes
+    from openprogram.programs.tools.computer_use.computer_use.desktop import processes
 
     monkeypatch.setattr(processes, "all_pids", lambda: [1, *pids, 999])
     monkeypatch.setitem(

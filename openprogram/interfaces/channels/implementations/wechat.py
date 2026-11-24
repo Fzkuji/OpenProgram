@@ -93,7 +93,7 @@ class WechatChannel(Channel):
 
         while not stop.is_set():
             try:
-                with _wechat_client(base) as client:
+                with self.waiting_for_platform(), _wechat_client(base) as client:
                     resp = client.post(
                         f"{base}/ilink/bot/getupdates",
                         headers=self._auth_headers(creds["bot_token"]),
@@ -103,6 +103,10 @@ class WechatChannel(Channel):
                         },
                         timeout=LONG_POLL_TIMEOUT,
                     )
+                if stop.is_set():
+                    # The cursor stays where it was, so what this answer
+                    # carried is handed out again after the restart.
+                    return
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:  # noqa: BLE001
@@ -110,7 +114,7 @@ class WechatChannel(Channel):
                 wait = min(60, backoff * (2 ** min(consecutive_errors - 1, 4)))
                 _log.info("[wechat:%s] poll failed (%s); retry in %ss",
                           self.account_id, type(e).__name__, wait)
-                time.sleep(wait)
+                stop.wait(wait)
                 continue
 
             consecutive_errors = 0
@@ -120,14 +124,14 @@ class WechatChannel(Channel):
                     _log.info("[wechat:%s] session expired; resetting cursor", self.account_id)
                     cursor = ""
                     _save_cursor_for_account(self.account_id, cursor)
-                    time.sleep(5)
+                    stop.wait(5)
                     continue
                 _log.error("[wechat:%s] bot token invalid — relogin required.", self.account_id)
                 return
             if data.get("ret", 0) != 0 and errcode != 0:
                 _log.warning("[wechat:%s] poll error ret=%s errcode=%s",
                              self.account_id, data.get("ret"), errcode)
-                time.sleep(3)
+                stop.wait(3)
                 continue
 
             new_cursor = data.get("get_updates_buf") or ""

@@ -19,7 +19,8 @@ ACTIVE = LIVE | {"unknown"}
 TERMINAL = frozenset({"exited", "stopped", "failed"})
 COMMAND_KINDS = frozenset({"stop", "write", "interrupt"})
 # A finished record, with its output, is kept this long after it ends; one
-# whose supervisor went silent, this long after its last heartbeat.
+# whose supervisor ended without saying how the command ended, this long
+# after that (``lost_at``).
 RETENTION_SECONDS = 24 * 3600
 PUBLIC_FIELDS = (
     "id", "session_id", "execution_id", "tool_call_id", "command", "cwd",
@@ -40,9 +41,8 @@ def process_identity(pid: int | None) -> str | None:
         value = subprocess.run(["ps", "-p", str(pid), "-o", "lstart="],
                                capture_output=True, text=True, timeout=3)
         return value.stdout.strip() or None
-    # Windows process handles are owned exclusively by the live supervisor;
-    # portable inspection relies on its durable heartbeat, never PID reuse.
-    return None
+    from openprogram.host._platform.processes import process_start_token
+    return process_start_token(pid)
 
 
 
@@ -92,7 +92,10 @@ class ProcessStore:
                     input TEXT, status TEXT NOT NULL, error TEXT, created_at REAL NOT NULL
                 );
             """)
-        if os.name == "posix":
+        # A chmod is a file event even when the mode stays the same, and
+        # the Worker announces events on this file to every window
+        # (record_changes.py): only a wrong mode is corrected.
+        if os.name == "posix" and self.path.stat().st_mode & 0o777 != 0o600:
             os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -113,34 +116,46 @@ class ProcessStore:
                       tool_call_id=tool_call_id, command=command, cwd=cwd, backend_id=backend_id,
                       status="starting", started_at=time.time(), ended_at=None, pid=None,
                       exit_code=None, truncated=False, supervisor_pid=None,
-                      supervisor_identity=None, pid_identity=None, heartbeat=time.time(),
+                      supervisor_identity=None, pid_identity=None, lost_at=None,
                       tty=bool(tty), sandboxed=bool(sandboxed), background=False,
-                      reported=False, last_used=time.time())
+                      reported=False, last_used=time.time(),
+                      # The supervisor's doorbell (``channel.py``); private,
+                      # never in ``public_record``.
+                      notify_port=None, notify_token=None)
         with self.connect() as db:
             db.execute("INSERT INTO processes(id,session_id,execution_id,record) VALUES(?,?,?,?)",
                        (record["id"], session_id, execution_id, json.dumps(record)))
         return record
 
-    def get(self, process_id, *, reconcile=True):
+    def get(self, process_id):
         with self.connect() as db:
             row = db.execute("SELECT record FROM processes WHERE id=?", (process_id,)).fetchone()
-        if row is None:
-            return None
-        record = json.loads(row[0])
-        if reconcile and record["status"] in LIVE and time.time() - record["heartbeat"] > 15:
-            expected = record.get("supervisor_identity")
-            if os.name == "posix" and expected and process_identity(record.get("supervisor_pid")) == expected:
-                return record
-            with self.connect() as db:
-                db.execute("BEGIN IMMEDIATE")
-                row = db.execute("SELECT record FROM processes WHERE id=?", (process_id,)).fetchone()
-                if row:
-                    current = json.loads(row[0])
-                    if current["status"] in LIVE and current["heartbeat"] == record["heartbeat"]:
-                        current.update(status="unknown", ended_at=None)
-                        db.execute("UPDATE processes SET record=? WHERE id=?", (json.dumps(current), process_id))
-            return self.get(process_id, reconcile=False)
-        return record
+        return None if row is None else json.loads(row[0])
+
+    def live_supervisors(self):
+        """``(id, supervisor_pid, supervisor_identity)`` of every live record
+        whose supervisor has said who it is."""
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT id, json_extract(record,'$.supervisor_pid'), json_extract(record,'$.supervisor_identity')"
+                " FROM processes WHERE json_extract(record,'$.status') IN ('starting','running','stopping')"
+                " AND json_extract(record,'$.supervisor_pid') IS NOT NULL").fetchall()
+        return [(row[0], int(row[1]), row[2]) for row in rows]
+
+    def supervisor_ended(self, process_id, supervisor_pid) -> bool:
+        """The supervisor ``supervisor_pid`` ended. A record it left live
+        turns ``unknown``: nobody saw how its command ended. Whether it did."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT record FROM processes WHERE id=?", (process_id,)).fetchone()
+            if row is None:
+                return False
+            record = json.loads(row[0])
+            if record["status"] not in LIVE or record.get("supervisor_pid") != supervisor_pid:
+                return False
+            record.update(status="unknown", ended_at=None, lost_at=time.time())
+            db.execute("UPDATE processes SET record=? WHERE id=?", (json.dumps(record), process_id))
+        return True
 
     def update(self, process_id, **fields):
         with self.connect() as db:
@@ -297,7 +312,7 @@ class ProcessStore:
                 "SELECT id FROM processes WHERE"
                 " (json_extract(record,'$.status') IN ('exited','stopped','failed')"
                 "  AND json_extract(record,'$.ended_at') < ?)"
-                " OR (json_extract(record,'$.status')='unknown' AND json_extract(record,'$.heartbeat') < ?)",
+                " OR (json_extract(record,'$.status')='unknown' AND json_extract(record,'$.lost_at') < ?)",
                 (cutoff, cutoff))]
             db.executemany("DELETE FROM process_commands WHERE process_id=?", [(i,) for i in ids])
             db.executemany("DELETE FROM processes WHERE id=?", [(i,) for i in ids])

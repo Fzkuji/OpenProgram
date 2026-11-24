@@ -68,11 +68,16 @@ class ResourceUseStore:
                 record_id, session_id, execution_id, str(kind)[:64], str(title)[:160],
                 display_target(target), time.time(), os.getpid(), identity,
             ))
+        _changed(session_id, execution_id)
         return record_id
 
     def remove(self, record_id):
         with self.connect() as db:
+            row = db.execute("SELECT session_id, execution_id FROM resource_uses WHERE id=?",
+                             (record_id,)).fetchone()
             db.execute("DELETE FROM resource_uses WHERE id=?", (record_id,))
+        if row is not None:
+            _changed(row["session_id"], row["execution_id"])
 
     def list(self, session_id, execution_ids=()):
         ids = tuple(execution_ids)
@@ -95,11 +100,22 @@ class ResourceUseStore:
         return result
 
 
+def _changed(session_id, execution_id) -> None:
+    """Tell the windows showing the conversation this use belongs to."""
+    try:
+        from openprogram.host.resources import conversation_changes
+        conversation_changes.changed_for_execution(execution_id, session_id)
+    except Exception as exc:  # noqa: BLE001 - the list is read again when next shown
+        logging.getLogger(__name__).debug("Resource change not announced: %s", type(exc).__name__)
+
+
 @contextmanager
 def resource_use(kind: str, title: str, target: str = "", *, store=None):
-    """Report use of a complete software/environment object with trusted attribution.
+    """Report use of a complete software object or machine with trusted attribution.
 
-    Identify the actual application, VM, container or remote environment.
+    ``kind`` is what the reporter says it is (``desktop``, ``machine``);
+    ``target`` is the display identity of what it operates (an application,
+    an address), stripped of credentials. Identify the actual application or machine.
     Commands, scripts, processes, files and execution output belong in Activity.
     Leaving the context releases the use record, never the external resource.
     Integrations retain their existing control and teardown responsibilities.

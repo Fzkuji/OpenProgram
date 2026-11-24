@@ -45,6 +45,9 @@ import { notifyGitChanged, useGitRepoClaim } from "./git-chip-registry";
 import { GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, MENU_TAG, itemCls } from "@/components/ui/menu/menu-styles";
 import { checksLabel, fixChecksPrompt, type PrChecks } from "@/lib/git/pr-checks";
 
+/** Each folder's git status as last read, so a chip drawn again shows it at once. */
+const gitStatusRead = new Map<string, GitFolderStatus>();
+
 /** A refusal from the worker, with the structured bits the menu acts on. */
 interface GitMenuError {
   message: string;
@@ -124,7 +127,7 @@ export function GitChip({
   const { sessionId, chatKey } = useBoundChat();
   const openReviewTab = useCenterTabs((s) => s.openReviewTab);
   const running = useSessionStore((s) => (sessionId ? Boolean(s.runningTasks?.[sessionId]) : false));
-  const [status, setStatus] = useState<GitFolderStatus | null>(null);
+  const [status, setStatus] = useState<GitFolderStatus | null>(() => (path ? gitStatusRead.get(path) ?? null : null));
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<GitMenuError | null>(null);
@@ -143,17 +146,23 @@ export function GitChip({
       full ? 15000 : 6000,
     );
     if (mine !== generation.current || !data?.status) return;
-    setStatus((prev) => (
-      !full && prev?.root === data.status.root
-        ? { ...data.status, branches: prev?.branches, pr: prev?.pr }
-        : data.status
-    ));
+    setStatus((prev) => {
+      // A light read leaves out branches and the pull request; the ones
+      // read before stay until a full read replaces them.
+      const next = !full && prev && prev.root === data.status.root
+        ? { ...data.status, branches: data.status.branches ?? prev.branches, pr: data.status.pr ?? prev.pr }
+        : data.status;
+      gitStatusRead.set(path, next);
+      return next;
+    });
   }, [path]);
 
+  // The folder read before (another conversation in it, this chip drawn
+  // again) shows at once; the read below brings it up to date.
   useEffect(() => {
-    setStatus(null);
+    setStatus(path ? gitStatusRead.get(path) ?? null : null);
     void refresh();
-  }, [refresh]);
+  }, [refresh, path]);
 
   // A turn just ended: the agent may have edited, committed or switched.
   const wasRunning = useRef(running);
@@ -367,6 +376,9 @@ export function GitChip({
         <PopoverTrigger asChild>
           <button
             type="button"
+            // Branches and pull requests are read as the pointer arrives, so
+            // the menu opens with them.
+            onPointerEnter={() => { if (!open && status.branches === undefined) void refresh(true); }}
             className={cn("folder-pill-seg git-seg", status.is_worktree && "git-seg-worktree")}
             aria-label={text(`Git: ${branchLabel}`, `Git：${branchLabel}`)}
           >
@@ -403,7 +415,7 @@ export function GitChip({
             <div
               className={itemCls(false)}
               data-tip={sessionId ? undefined : text("Send a message first to review changes.", "发送消息后才能审阅修改。")}
-              onClick={() => sessionId && (openReviewTab(sessionId, undefined, "workspace"), setOpen(false))}
+              onClick={() => sessionId && (openReviewTab(sessionId, undefined, "unstaged"), setOpen(false))}
             >
               <SolarIcon name="file-text" size={16} fit="fill" className="opacity-70" />
               <span className="min-w-0 flex-1 truncate">
@@ -483,9 +495,6 @@ export function GitChip({
                 </div>
               );
             })}
-            {status.branches === undefined ? (
-              <div className="git-menu-note">{text("Loading branches…", "正在读取分支…")}</div>
-            ) : null}
           </div>
           {typed && !typedExists ? (
             <div className={itemCls(false)} onClick={() => !busy && goToBranch(typed, true)}>

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.runner import GuiPythonRunner, GuiRunnerError
+from openprogram.programs.tools.computer_use.computer_use.sandbox.runner import GuiPythonRunner, GuiRunnerError
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="strict macOS sandbox")
 

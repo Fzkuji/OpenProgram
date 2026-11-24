@@ -24,7 +24,8 @@ def _record_context_usage(session_id: str, msg_id: str, conv: dict,
     measured = int(usage.get("context_tokens") or 0) if usage else 0
     if usage and "context_tokens" not in usage:
         measured = (int(usage.get("input_tokens") or 0)
-                    + int(usage.get("cache_read_tokens") or 0))
+                    + int(usage.get("cache_read_tokens") or 0)
+                    + int(usage.get("cache_write_tokens") or 0))
     if not measured:
         from openprogram.interfaces.server import server as _s
         _s.refresh_context_stats(session_id, msg_id)

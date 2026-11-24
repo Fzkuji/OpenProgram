@@ -33,36 +33,48 @@ export function canPreview(file: { path: string; op?: string }): boolean {
   return kind === "image" || kind === "pdf";
 }
 
-/** One hunk as the server's `review_revert_hunk` takes it: the old side
- *  (context and removed lines) and the new side (context and added lines). */
+/** One hunk as the server's `review_revert_hunk` and `review_stage` take
+ *  it: the old side (context and removed lines), the new side (context and
+ *  added lines) and the body as shown, each line with its sign. */
 export interface ReviewHunk {
+  old_start: number;
   new_start: number;
   old_lines: string[];
   new_lines: string[];
+  lines: string[];
   /** Whole on this page, in the working file's segment, plain text. */
   revertible: boolean;
+  /** Whole on this page and plain text: Stage / Unstage can take it. A
+   *  new or deleted file is staged as a whole file instead. */
+  stageable: boolean;
 }
 
 /** The hunks of a diff page, in the order its hunk rows appear. A hunk
- *  cut by the page edge, a staged (base-to-index) segment of a workspace
- *  diff, or a hunk with "\ No newline" is shown but cannot be reverted. */
+ *  cut by the page edge or with "\ No newline" is shown but can be neither
+ *  reverted nor staged; a staged (base-to-index) hunk cannot be reverted. */
 export function reviewHunks(diff: string, op?: string): ReviewHunk[] {
-  const hunks: (ReviewHunk & { oldCount: number; newCount: number })[] = [];
+  type Draft = ReviewHunk & { oldCount: number; newCount: number; inIndex: boolean; plain: boolean };
+  const hunks: Draft[] = [];
   let staged = false;
-  let current: (typeof hunks)[number] | null = null;
+  let current: Draft | null = null;
   for (const row of parseUnifiedDiff(diff)) {
     if (row.kind === "meta") {
       if (row.text.startsWith("+++")) staged = row.text.includes("[base-to-index]");
-      else if (row.text.startsWith("\\") && current) current.revertible = false;
+      else if (row.text.startsWith("\\") && current) current.plain = false;
       continue;
     }
     if (row.kind === "hunk") {
       const match = HUNK.exec(row.text);
       current = {
+        old_start: match ? Number(match[1]) : 0,
         new_start: match ? Number(match[3]) : 0,
         old_lines: [],
         new_lines: [],
-        revertible: !!match && !staged && op !== "add" && op !== "delete",
+        lines: [],
+        revertible: false,
+        stageable: false,
+        inIndex: staged,
+        plain: !!match && op !== "add" && op !== "delete",
         oldCount: match ? (match[2] === undefined ? 1 : Number(match[2])) : -1,
         newCount: match ? (match[4] === undefined ? 1 : Number(match[4])) : -1,
       };
@@ -71,20 +83,46 @@ export function reviewHunks(diff: string, op?: string): ReviewHunk[] {
     }
     if (!current) continue;
     const text = row.text.slice(1);
+    current.lines.push(row.text);
     if (row.kind !== "add") current.old_lines.push(text);
     if (row.kind !== "del") current.new_lines.push(text);
   }
-  return hunks.map(({ oldCount, newCount, ...hunk }) => ({
-    ...hunk,
-    revertible: hunk.revertible && hunk.old_lines.length === oldCount && hunk.new_lines.length === newCount,
-  }));
+  return hunks.map(({ oldCount, newCount, inIndex, plain, ...hunk }) => {
+    const whole = plain && hunk.old_lines.length === oldCount && hunk.new_lines.length === newCount;
+    return { ...hunk, revertible: whole && !inIndex, stageable: whole };
+  });
 }
 
-/** A line comment as it goes into the next message. */
-export function lineCommentText(rel: string, row: Pick<DiffLine, "kind" | "text" | "oldNo" | "newNo">, comment: string): string {
-  const where = row.kind === "del"
-    ? `\`${rel}\` line ${row.oldNo} (removed)`
-    : `\`${rel}\` line ${row.newNo}`;
-  const quoted = (row.text.slice(1) || " ").split("\n").map((line) => `> ${line}`).join("\n");
+/** Where a diff row sits in its file: a removed line by its old number,
+ *  any other by its new one. */
+export function rowLine(row: Pick<DiffLine, "kind" | "oldNo" | "newNo">): { side: "old" | "new"; line: number } {
+  return row.kind === "del"
+    ? { side: "old", line: Number(row.oldNo) }
+    : { side: "new", line: Number(row.newNo) };
+}
+
+function commentBlock(rel: string, side: "old" | "new", line: number | string, quote: string, comment: string): string {
+  const where = side === "old" ? `\`${rel}\` line ${line} (removed)` : `\`${rel}\` line ${line}`;
+  const quoted = (quote || " ").split("\n").map((text) => `> ${text}`).join("\n");
   return `${where}:\n${quoted}\n${comment.trim()}`;
+}
+
+/** A line comment as it goes into a message: file and line, the quoted
+ *  line, then the comment. */
+export function lineCommentText(rel: string, row: Pick<DiffLine, "kind" | "text" | "oldNo" | "newNo">, comment: string): string {
+  const { side } = rowLine(row);
+  return commentBlock(rel, side, side === "old" ? row.oldNo : row.newNo, row.text.slice(1), comment);
+}
+
+/** The one message that sends every pending line comment to the agent. */
+export function reviewCommentsMessage(comments: readonly {
+  rel: string; side: "old" | "new"; line: number; quote: string; body: string;
+}[]): string {
+  const blocks = comments.map((comment) => commentBlock(comment.rel, comment.side, comment.line, comment.quote, comment.body));
+  return ["Please address my review comments on these changes:", ...blocks].join("\n\n");
+}
+
+/** The message a finding's Fix sends. */
+export function findingFixText(finding: { rel: string; line: number; severity: string; body: string }): string {
+  return `Please fix this review finding (${finding.severity}) in \`${finding.rel}\` line ${finding.line}:\n\n${finding.body.trim()}`;
 }

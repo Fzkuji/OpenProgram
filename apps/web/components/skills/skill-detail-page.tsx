@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Markdown } from "@/lib/format-utils/markdown";
@@ -13,6 +13,7 @@ import styles from "./skills-page.module.css";
 import { pushPath } from "@/lib/nav/shallow-nav";
 import { confirmAction } from "@/components/ui/confirm-dialog";
 import { showToast } from "@/lib/format-utils/toast";
+import { isAbort, isPermanent, keep, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
 
 type Tab = "skill" | "files" | "versions";
 
@@ -26,6 +27,30 @@ interface InvokeTraceEntry {
 
 function encodePath(name: string): string {
   return name.split("/").map(encodeURIComponent).join("/");
+}
+
+const detailKey = (name: string) => `/api/skills/${encodePath(name)}`;
+const traceKey = (name: string) => `${detailKey(name)}/invoke-trace`;
+
+/** The JSON answer; a failed one throws carrying its HTTP status, so a
+ *  permanent answer (a skill that is not there answers 404) is not retried. */
+async function readJson(url: string, init?: RequestInit): Promise<unknown> {
+  const r = await fetch(url, init);
+  if (!r.ok) throw Object.assign(new Error(`HTTP ${r.status}`), { status: r.status });
+  return await r.json();
+}
+
+async function readDetail(name: string): Promise<SkillDetail> {
+  return await readJson(detailKey(name)) as SkillDetail;
+}
+
+async function readTrace(name: string): Promise<InvokeTraceEntry[]> {
+  const data = await readJson(traceKey(name), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ limit: 100 }),
+  });
+  return Array.isArray(data) ? data as InvokeTraceEntry[] : [];
 }
 
 function relTime(ms: number, locale: Locale): string {
@@ -61,8 +86,8 @@ export function SkillDetailPage({ name }: { name: string }) {
   const router = useRouter();
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const [detail, setDetail] = useState<SkillDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The kept detail draws at once; it is read again behind it.
+  const [detail, setDetail] = useState<SkillDetail | null>(() => lastKept<SkillDetail>(detailKey(name)) ?? null);
   const [tab, setTab] = useState<Tab>("skill");
   const [copied, setCopied] = useState(false);
   // Inline editor
@@ -73,44 +98,40 @@ export function SkillDetailPage({ name }: { name: string }) {
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  // Invoke stats
-  const [trace, setTrace] = useState<InvokeTraceEntry[]>([]);
+  // Invoke stats; null until they arrive. A server that refuses them
+  // (an answer, not a load problem) leaves the Invocations field out.
+  const [trace, setTrace] = useState<InvokeTraceEntry[] | null>(() => lastKept<InvokeTraceEntry[]>(traceKey(name)) ?? null);
+  const [traceRefused, setTraceRefused] = useState(false);
 
+  // A skill that is not there (deleted, renamed) goes back to the list.
+  const routerRef = useRef(router);
+  routerRef.current = router;
   useEffect(() => {
-    let cancelled = false;
-    setDetail(null);
-    setError(null);
-    (async () => {
-      try {
-        const r = await fetch(`/api/skills/${encodePath(name)}`);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = await r.json();
-        if (!cancelled) setDetail(data);
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    })();
-    return () => { cancelled = true; };
+    const controller = new AbortController();
+    setDetail(lastKept<SkillDetail>(detailKey(name)) ?? null);
+    readUntilAnswered(detailKey(name), () => readDetail(name), controller.signal)
+      .then(setDetail)
+      .catch((cause) => {
+        if (isAbort(cause)) return;
+        console.warn(`[skills] detail read refused: ${name}`, cause);
+        routerRef.current.replace("/skills");
+      });
+    return () => controller.abort();
   }, [name]);
 
-  // Fetch invoke trace for the sidebar stats
+  // Invoke trace for the sidebar stats, read again quietly until it answers.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`/api/skills/${encodePath(name)}/invoke-trace`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ limit: 100 }),
-        });
-        if (!r.ok) return;
-        const data: InvokeTraceEntry[] = await r.json();
-        if (!cancelled) setTrace(data);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => { cancelled = true; };
+    const controller = new AbortController();
+    setTrace(lastKept<InvokeTraceEntry[]>(traceKey(name)) ?? null);
+    setTraceRefused(false);
+    readUntilAnswered(traceKey(name), () => readTrace(name), controller.signal)
+      .then(setTrace)
+      .catch((cause) => {
+        if (isAbort(cause)) return;
+        console.warn(`[skills] invocation trace refused: ${name}`, cause);
+        if (isPermanent(cause)) setTraceRefused(true);
+      });
+    return () => controller.abort();
   }, [name]);
 
   // Lazy-fetch a companion file when one is clicked
@@ -132,8 +153,8 @@ export function SkillDetailPage({ name }: { name: string }) {
           const t = await r.text().catch(() => "");
           throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
         }
-        const data: { content: string } = await r.json();
-        if (!cancelled) setFileContent(data.content);
+        const data = await r.json() as { content?: unknown };
+        if (!cancelled) setFileContent(typeof data.content === "string" ? data.content : "");
       } catch (e) {
         if (!cancelled) setFileError(String(e));
       }
@@ -141,26 +162,13 @@ export function SkillDetailPage({ name }: { name: string }) {
     return () => { cancelled = true; };
   }, [openFile, detail]);
 
-  if (error) {
-    return (
-      <div className="main min-w-0 overflow-hidden">
-        <div className={`${styles.view} h-full flex flex-col overflow-visible`}>
-          <div className={styles.topbar}>
-            <Button asChild variant="ghost"><Link href="/skills">← {t("nav.skills")}</Link></Button>
-            <span className={styles.title}>{name}</span>
-          </div>
-          <div className="p-5 text-fs-xs text-accent-red">{error}</div>
-        </div>
-      </div>
-    );
-  }
   if (!detail) {
     return (
       <div className="main min-w-0 overflow-hidden">
         <div className={`${styles.view} h-full flex flex-col overflow-visible`}>
           <div className={styles.topbar}>
             <Button asChild variant="ghost"><Link href="/skills">← {t("nav.skills")}</Link></Button>
-            <span className={styles.title}>{text("Loading...", "加载中...")}</span>
+            <span className={styles.title}>{name}</span>
           </div>
         </div>
       </div>
@@ -201,9 +209,9 @@ export function SkillDetailPage({ name }: { name: string }) {
     setEditing(true);
     // Lazy: also fetch the raw file so frontmatter survives a save.
     fetch(`/api/skills/${encodePath(detail.name)}/file?path=SKILL.md`)
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => r.ok ? r.json() as Promise<{ content?: unknown }> : null)
       .then((data) => {
-        if (data?.content) setEditText(data.content);
+        if (typeof data?.content === "string" && data.content) setEditText(data.content);
       })
       .catch(() => { /* ignore */ });
   };
@@ -221,8 +229,8 @@ export function SkillDetailPage({ name }: { name: string }) {
         throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
       }
       // Re-fetch detail so the body/frontmatter on screen reflects the save.
-      const fresh = await fetch(`/api/skills/${encodePath(detail.name)}`);
-      if (fresh.ok) setDetail(await fresh.json());
+      const fresh = await readDetail(detail.name);
+      if (fresh) { keep(detailKey(detail.name), fresh); setDetail(fresh); }
       setEditing(false);
     } catch (e) {
       showToast(text(`Save failed: ${e}`, `保存失败：${e}`), { tone: "error" });
@@ -349,9 +357,6 @@ export function SkillDetailPage({ name }: { name: string }) {
                   {openFile && fileError && (
                     <div className="text-fs-2xs text-accent-red">{fileError}</div>
                   )}
-                  {openFile && fileContent === null && !fileError && (
-                    <div className="text-fs-2xs text-text-secondary">{text("Loading...", "加载中...")}</div>
-                  )}
                   {openFile && fileContent !== null && (
                     <pre className="whitespace-pre-wrap text-fs-2xs font-mono text-text-primary">{fileContent}</pre>
                   )}
@@ -422,8 +427,8 @@ export function SkillDetailPage({ name }: { name: string }) {
               {detail.enabled ? text("yes", "是") : text("no", "否")}
             </SideField>
 
-            <SideField label={text("Invocations", "调用次数")}>
-              {trace.length === 0 ? (
+            {traceRefused ? null : <SideField label={text("Invocations", "调用次数")}>
+              {trace === null ? null : trace.length === 0 ? (
                 <span className="text-text-secondary">{text("never invoked", "从未调用")}</span>
               ) : (
                 <>
@@ -436,7 +441,7 @@ export function SkillDetailPage({ name }: { name: string }) {
                   </div>
                 </>
               )}
-            </SideField>
+            </SideField>}
           </aside>
         </div>
       </div>

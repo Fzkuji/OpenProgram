@@ -1,38 +1,48 @@
 <title>Run conversations on another machine</title>
-<meta name="description" content="Local, SSH and Docker environments: where a conversation runs commands and touches files.">
+<meta name="description" content="A project is a folder on one machine: this computer, an SSH host or a Docker container. Its conversations run there, in that folder. Machines are added in Settings → Devices.">
 <h1>Run conversations on another machine</h1>
+<p>A machine is any computer OpenProgram reaches. A project is a folder on one machine with a shell, and every conversation in the project runs on that machine, in that folder.</p>
 <table class="stack">
 <thead><tr><th scope="col">Environment</th><th scope="col">Commands run</th><th scope="col">Files read and written</th></tr></thead>
 <tbody>
-<tr><th scope="row">Local (always exists)</th><td>This computer</td><td>This computer</td></tr>
-<tr><th scope="row">SSH</th><td>Remote host, starting in its remote folder</td><td>Remote host</td></tr>
-<tr><th scope="row">Docker</th><td>A container for this conversation</td><td>This computer; the conversation's folders are mounted at the same paths</td></tr>
+<tr><th scope="row">This computer (always exists)</th><td>This computer</td><td>This computer</td></tr>
+<tr><th scope="row">SSH host</th><td>Remote host, in the project's folder there</td><td>Remote host</td></tr>
+<tr><th scope="row">Docker container</th><td>A container for this conversation</td><td>This computer; the project's folder is mounted at the same path</td></tr>
 </tbody>
 </table>
 <p class="note">A <a href="../integrations/channels.html">channel</a> only decides where messages are mirrored. Binding one never moves where tools run.</p>
-<h2 id="pick-an-environment-for-a-new-chat">Pick one for a new chat</h2>
-<p>The first chip above the message box. The choice is pinned by the first message; to work elsewhere, start a new chat. New chats and conversations older than environments use the default.</p>
+<h2 id="pick-an-environment-for-a-new-chat">Open a project on a machine</h2>
+<ol class="flow fig-narrow">
+<li>In a new chat, open the project menu in the top bar and choose <strong>Open folder on…</strong>, or <strong>Add project folder…</strong> on the Projects page.</li>
+<li>Pick the machine. One that is not connected is greyed; <strong>Add device…</strong> opens Settings → Devices.</li>
+<li>Pick the folder. This computer and a Docker machine use the usual folder picker. An SSH host opens a browser of its folders, starting in its remote folder; type a path or step into a subfolder.</li>
+</ol>
+<p>The project menu lists projects under their machine, this computer first. The home project is always on this computer. The machine chip above the message box shows the project's machine; it cannot be switched there, because the project decides. To run on another machine, open a project there.</p>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Chip icon</th><th scope="col">Connection to the worker</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Dot beside a machine's icon</th><th scope="col">Means</th></tr></thead>
 <tbody>
-<tr><th scope="row">Yellow</th><td>Connecting or paused</td></tr>
-<tr><th scope="row">Red</th><td>Disconnected</td></tr>
+<tr><th scope="row">Green</th><td>Connected</td></tr>
+<tr><th scope="row">Turning ring</th><td>Connecting</td></tr>
+<tr><th scope="row">Grey</th><td>Switched off</td></tr>
+<tr><th scope="row">Red</th><td>Could not be reached</td></tr>
 </tbody>
 </table>
-<h2 id="add-an-environment">Add one</h2>
-<p>In <strong>Settings → Environments</strong>, or from the terminal. The page also has <strong>Test</strong>, <strong>Make default</strong> and <strong>Remove</strong>. <code translate="no">openprogram setup</code> has a <strong>Default environment</strong> step.</p>
+<p>The sidebar shows a project on another machine with that machine's icon, dot and name beside the project's name.</p>
+<h2 id="add-an-environment">Add a machine</h2>
+<p>In <strong>Settings → Devices</strong>, or from the terminal. Each machine there has <strong>Test</strong>, <strong>Edit</strong>, <strong>Remove</strong> and an on/off switch. <code translate="no">openprogram setup</code> has a <strong>Machines</strong> step.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram environments add ssh devbox --target me@devbox --workdir ~/work</code></th><td><code translate="no">--target</code> is <code translate="no">user@host</code> or a host from <code translate="no">~/.ssh/config</code>. <code translate="no">--workdir</code> is an absolute or <code translate="no">~</code> path; blank is the remote home.</td></tr>
-<tr><th scope="row"><code translate="no">openprogram environments add docker sandbox --image python:3.12 --default</code></th><td>Default image <code translate="no">ubuntu:24.04</code>. <code translate="no">--default</code> also makes it the default.</td></tr>
-<tr><th scope="row"><code translate="no">openprogram environments list</code></th><td>All, with the default marked</td></tr>
-<tr><th scope="row"><code translate="no">openprogram environments test devbox</code></th><td>Checks it can run a command</td></tr>
-<tr><th scope="row"><code translate="no">openprogram environments default &lt;id&gt;</code></th><td>Sets the default</td></tr>
-<tr><th scope="row"><code translate="no">openprogram environments rm &lt;id&gt;</code></th><td>Removes it</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add devbox --name "Dev box" --shell ssh target=me@devbox workdir=~/work</code></th><td><code translate="no">target</code> is <code translate="no">user@host</code> or a host from <code translate="no">~/.ssh/config</code>. <code translate="no">workdir</code> is an absolute or <code translate="no">~</code> path; blank is the remote home. This computer on port 22 is refused; on another port, as in <code translate="no">ssh://me@127.0.0.1:2222</code>, it reaches a virtual machine or container whose port is forwarded.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add sandbox --shell docker image=python:3.12</code></th><td>Default image <code translate="no">ubuntu:24.04</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines list --kinds</code></th><td>All machines, on or off; <code translate="no">--kinds</code> adds each connection kind and its settings</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines test devbox</code></th><td>Checks that each connection answers</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines disable devbox</code></th><td>Switches it off: its projects are greyed and take no new conversation, their conversations' next commands and file calls stop with an error, and its containers are removed with the files in them before the command returns. Switched off in Settings, the machine first lets the commands already running there finish (up to 5 minutes), and switching it back on meanwhile keeps its containers. <code translate="no">enable</code> switches it back on.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines remove devbox</code></th><td>Removes it, in the same way</td></tr>
 </tbody>
 </table>
-<p class="note">IDs are lowercase letters, digits, <code translate="no">-</code> or <code translate="no">_</code>. <code translate="no">--name</code> sets a display name.</p>
+<p class="note">IDs are lowercase letters, digits, <code translate="no">-</code> or <code translate="no">_</code>, and never change; only the name is edited. The <code translate="no" data-claim="example">environments</code> section of an older configuration is not read: add those places again as machines.</p>
+<p>A machine can also have window, screen and browser connections, each giving <a href="computer-use.html">computer use</a> one type of target, called as <code translate="no">device="devbox", type="window"</code>, <code translate="no">device="lab", type="screen"</code> or <code translate="no">type="browser"</code>. This computer's own are built in; an OSWorld server, which gives a screen only, is always added as a machine of its own.</p>
 <h2 id="ssh-requirements">Requirements</h2>
 <span id="docker-requirements"></span>
 <table class="stack fixed">
@@ -41,13 +51,14 @@
 <tr><th scope="row">SSH sign-in</th><td>System <code translate="no">ssh</code> with <code translate="no">BatchMode=yes</code>: nothing may prompt. Use a key your SSH agent or <code translate="no">~/.ssh/config</code> provides. New host keys are accepted once, then checked. Connections are shared for five minutes.</td></tr>
 <tr><th scope="row">SSH host</th><td>A POSIX shell, <code translate="no">find</code> and <code translate="no">grep</code>; <code translate="no">rg</code> when installed</td></tr>
 <tr><th scope="row">Docker</th><td><code translate="no">docker</code> on the PATH and the daemon running</td></tr>
-<tr><th scope="row">Docker container</th><td>One per conversation, <code translate="no">openprogram-&lt;environment&gt;-&lt;conversation&gt;</code>. The first command starts it, later ones reuse it, so installed packages persist. Recreated if the conversation's folders change. Removed with the conversation.</td></tr>
+<tr><th scope="row">Docker container</th><td>One per conversation, <code translate="no">openprogram-&lt;machine&gt;-&lt;conversation&gt;</code>. The first command starts it, later ones reuse it, so installed packages persist. Started again by the next command after a Docker restart, <code translate="no">docker stop</code> or removal by hand. Recreated if the conversation's folders change. Removed with its files when the conversation is deleted, alone or by Clear all, and when its machine is removed or switched off. Another OpenProgram installation using the same Docker keeps its own containers.</td></tr>
 </tbody>
 </table>
 <h2 id="limits">Limits</h2>
 <ul>
 <li>A turn's undo does not cover files changed on an SSH host; files on this computer are still restored.</li>
-<li>In SSH a file must be read before it is edited, and an edit is refused if it changed since that read.</li>
-<li>The local sandbox applies only to Local. SSH and Docker have the permissions of the remote account or container.</li>
-<li>If the environment is removed its tools stop with an error, never falling back to this computer. Add it back with the same ID, or start a new chat.</li>
+<li>A project on an SSH host has no git pill, worktrees, automatic commits or <strong>Reveal in file manager</strong>; the Files panel and <code translate="no">@</code> file search read the folder on the host.</li>
+<li>On an SSH host a file must be read before it is edited, and an edit is refused if it changed since that read.</li>
+<li>The local sandbox applies only to this computer. SSH and Docker have the permissions of the remote account or container.</li>
+<li>If the machine is removed, switched off or loses its shell, even during a turn, the conversation's next command or file call stops with an error, never falling back to this computer. Add it back with the same ID, switch it on, or open the project's folder on another machine.</li>
 </ul>

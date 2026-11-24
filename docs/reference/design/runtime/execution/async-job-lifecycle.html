@@ -88,7 +88,7 @@
 
 <h2 id="handoffs">Hand-offs across a crash</h2>
 
-<p>A sub-agent request crosses three hand-offs between the parent and the run. Each writes what it is about to do before doing it, the step after it is idempotent, and the Worker's resource reconciliation (at start and every 5 seconds) finishes whatever a dead process left half done. <code translate="no">openprogram/runtime/jobs/handoff.py</code> holds the shared pieces.</p>
+<p>A sub-agent request crosses three hand-offs between the parent and the run. Each writes what it is about to do before doing it, the step after it is idempotent, and the Worker's resource reconciliation (at start, on run-table changes and at least every 60 seconds) finishes whatever a dead process left half done. <code translate="no">openprogram/runtime/jobs/handoff.py</code> holds the shared pieces.</p>
 
 <figure>
 <ol class="flow">

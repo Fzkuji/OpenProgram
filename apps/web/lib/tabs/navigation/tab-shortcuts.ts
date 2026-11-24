@@ -1,7 +1,8 @@
 // Keyboard tab switching, as in a browser: Cmd+1…8 picks the strip entry at
 // that position, Cmd+9 the last one, Cmd+Shift+[ / ] the previous / next one
 // (wrapping), Cmd+Shift+T reopens the last closed tab, Cmd+, opens Settings. A split is one strip
-// entry and lands on its focused pane.
+// entry and lands on its focused pane. Cmd+Option+U switches the sidebar list
+// to Activity and back, as Codex's sidebar bell does.
 import { topLevelTabs } from "../../browser/web-tab/web-page-management";
 import { centerTabStripEntries, findCenterTabGroup, type CenterTabStripEntry } from "../center-tab-groups";
 import type { CenterTabsState } from "../store/types";
@@ -12,6 +13,7 @@ export type TabShortcut =
   | { action: "new-chat" }
   | { action: "reopen-tab" }
   | { action: "open-settings" }
+  | { action: "toggle-activity" }
   | { action: "next-tab" }
   | { action: "previous-tab" }
   | { action: "select-tab"; index: number };
@@ -51,7 +53,9 @@ export function tabForShortcut(s: Strip, shortcut: TabShortcut): string | null {
 /** Map a key press to a shortcut (Cmd on macOS, Ctrl elsewhere). */
 export function shortcutForKey(event: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">, mac: boolean): TabShortcut | null {
   const primary = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-  if (!primary || event.altKey) return null;
+  if (!primary) return null;
+  // Option+U types a dead key on macOS: the key's place says which it is.
+  if (event.altKey) return !event.shiftKey && event.code === "KeyU" ? { action: "toggle-activity" } : null;
   if (event.shiftKey) {
     if (event.code === "BracketRight" || event.key === "}") return { action: "next-tab" };
     if (event.code === "BracketLeft" || event.key === "{") return { action: "previous-tab" };

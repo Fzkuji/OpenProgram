@@ -11,6 +11,11 @@ import {
   takeLiveSystemAccessWaits,
   type SystemAccessWait,
 } from "@/lib/access/system-access-wait-state";
+import { useChanged } from "@/lib/net/ws/changes";
+
+/** The Worker's topic for a conversation's open system-access waits: a wait
+ *  opens and closes with its run's pause and resume (event_effects.py). */
+const SYSTEM_ACCESS_WAITS = "system_access.waits";
 
 type AccessWait = SystemAccessWait;
 
@@ -19,8 +24,10 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
   const [waits, setWaits] = useState<AccessWait[]>([]);
   const live = useRef(new Set<string>());
   const verified = useRef(new Set<string>());
-  const hasWaits = useRef(false);
-  hasWaits.current = waits.length > 0;
+  const reloadWaits = useRef<() => void>(() => {});
+  // A run of this conversation (or one below it) paused or went on, or the
+  // socket came back after frames may have been missed: read the waits again.
+  useChanged(SYSTEM_ACCESS_WAITS, () => reloadWaits.current(), sessionId ? [sessionId] : []);
   useEffect(() => {
     const restored = sessionId ? rememberedSystemAccessWaits(sessionId) : [];
     const liveRestored = sessionId ? takeLiveSystemAccessWaits(sessionId) : [];
@@ -88,24 +95,18 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
       void refresh();
     }
     const reload = () => { void refresh(); };
-    const executionChanged = (event: Event) => {
-      if ((event as CustomEvent).detail?.execution?.session_id === sid) reload();
-    };
+    reloadWaits.current = reload;
     const connected = (event: Event) => { if ((event as CustomEvent).detail?.connected) reload(); };
     window.addEventListener("op:system-access", update);
     window.addEventListener("op:browser-connection", connected);
     window.addEventListener("focus", reload);
-    window.addEventListener("op:execution-update", executionChanged);
-    // Refresh presentation after a missed frame; execution recovery is in the worker.
-    const timer = window.setInterval(() => { if (hasWaits.current) reload(); }, 2000);
     void refresh();
     return () => {
       controller.abort();
-      window.clearInterval(timer);
+      reloadWaits.current = () => {};
       window.removeEventListener("op:system-access", update);
       window.removeEventListener("op:browser-connection", connected);
       window.removeEventListener("focus", reload);
-      window.removeEventListener("op:execution-update", executionChanged);
     };
   }, [sessionId]);
   if (!waits.length) return null;

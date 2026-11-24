@@ -274,6 +274,10 @@ def _set_live_proc(proc: Optional[subprocess.Popen]) -> None:
         _live_proc = proc
 
 
+#: The frontend's ``.next/BUILD_ID`` changed: a new build is there to serve.
+_BUILD_ID_TOPIC = "web.build"
+
+
 def _start_build_id_watcher(
     wd: Path,
     backend_port: int,
@@ -293,15 +297,18 @@ def _start_build_id_watcher(
             return None
 
     last_seen = _read_id()
+    # A build replaces BUILD_ID; the file event wakes the loop. Without file
+    # events it reads the file every two seconds as before.
+    from openprogram.host._platform import changes
+    changes.watch(build_id_path.parent, _BUILD_ID_TOPIC, names={build_id_path.name})
+    listener = changes.listen(_BUILD_ID_TOPIC)
 
     def _loop() -> None:
-        import time as _t
-
         from openprogram.host._platform.process_ownership import no_window_creation_flags
 
         nonlocal last_seen
         while True:
-            _t.sleep(2.0)
+            changes.wait_for(listener, resync=300.0, poll=2.0)
             cur = _read_id()
             if cur is None or cur == last_seen:
                 continue

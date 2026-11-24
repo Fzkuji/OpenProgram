@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { listSessionProjects } from "@/lib/projects/list-projects";
+import { onReconnected } from "@/lib/net/ws/changes";
 import { useSessionStore } from "@/lib/session-store";
 import {
   fileScopeKey,
@@ -92,18 +93,14 @@ export function useCurrentProject(scope?: { sessionId: string | null; chatKey: s
 
   useEffect(() => {
     let cancelled = false;
-    let tries = 0;
-    const attempt = () => {
-      if (cancelled) return;
-      resolve().then((ok) => {
-        if (!ok && !cancelled && tries++ < 20) setTimeout(attempt, 300);
-      });
-    };
-    attempt();
+    void resolve();
+    // Unanswered while the socket is down: asked again as it opens.
+    const offOpen = onReconnected(() => { if (!cancelled) void resolve(); });
     const onChanged = () => resolve();
     window.addEventListener("project-changed", onChanged);
     return () => {
       cancelled = true;
+      offOpen();
       resolveGeneration.current += 1;
       resolveController.current?.abort();
       resolveController.current = null;

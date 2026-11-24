@@ -1,4 +1,4 @@
-/* Overview pane of LLM Providers (routing-overview.tsx). Sessions sit in
+/* Routing pane of Model services (routing-overview.tsx). Sessions sit in
    the left column, models in the right; the SVG layer behind both draws
    the edges between measured row anchors. Layout lives in the JSX; this
    module keeps colour, type, state and the pieces Tailwind cannot say. */

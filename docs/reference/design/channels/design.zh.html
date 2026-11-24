@@ -78,6 +78,7 @@ send("telegram", "default", "1234", "Good morning")</code></pre>
 <tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown 转 Telegram HTML（全部转义；实体被拒时回退为去标签文本）、Slack mrkdwn、Discord 直通、微信纯文本。代码用占位保护。</td></tr>
 <tr><th scope="row">适配器</th><td>只负责事件循环和解析成 <code translate="no">ChannelMessage</code>。<strong>它们不发送</strong>；解析之后的一切在 <code translate="no">handle_inbound</code>。</td></tr>
 <tr><th scope="row"><code translate="no">run_forever(stop)</code></th><td><code translate="no">run()</code> 抛异常时重连：5 秒起翻倍，上限 300 秒，存活 60 秒后重置。正常返回表示永久停止，如微信 token 失效。</td></tr>
+<tr><th scope="row"><code translate="no">waiting_for_platform()</code></th><td>包住一次长轮询。worker 停止时最多等适配器线程 2 秒，但不等正在轮询里的线程：停止之后才到的应答不读取，游标或 offset 不动，重启后会再次拿到。</td></tr>
 </tbody>
 </table>
 <h3 id="structured-errors">结构化错误</h3>
@@ -134,7 +135,7 @@ register_channel("whatsapp", WhatsAppChannel)</code></pre>
 <tr><th scope="row"><code translate="no">_broadcast.py</code></th><td>事件总线上的 WS 帧（<code translate="no">emit_ws_frame</code> → <code translate="no">ws.frame</code>）；渠道从不导入 webui</td><td><code translate="no">dispatch_inbound</code></td></tr>
 <tr><th scope="row"><code translate="no">_question_bridge.py</code></th><td>把待回答的 <code translate="no">runtime.ask</code> 推送到聊天</td><td>问题路径</td></tr>
 <tr><th scope="row"><code translate="no">_question_commands.py</code></th><td><code translate="no">/answer</code>、<code translate="no">/decline</code></td><td><code translate="no">_conversation</code></td></tr>
-<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>适配器心跳注册表</td><td>状态 API</td></tr>
+<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>适配器运行标记：线程启动时设置，结束时清除</td><td>状态 API</td></tr>
 <tr><th scope="row"><code translate="no">bound_reply.py</code></th><td>把绑定聊天的助手回复发到渠道，用于不是从渠道发起的回合</td><td><code translate="no">openprogram.runtime.conversation.bound_reply</code></td></tr>
 <tr><th scope="row"><code translate="no">link_registration.py</code></th><td>实现 <code translate="no">openprogram.runtime.channel_link</code>，核心代码无需导入本接口即可访问渠道</td><td>核心，导入时注册</td></tr>
 <tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">CHANNEL_CLASSES</code>、<code translate="no">register_channel</code>、entry points</td><td>Web UI 状态、worker</td></tr>
@@ -185,7 +186,7 @@ register_channel("whatsapp", WhatsAppChannel)</code></pre>
 <tr><th scope="row">TUI 活动流</th><td><code translate="no">apps/cli/src/components/ChannelActivityFeed.tsx</code></td></tr>
 <tr><th scope="row">TUI 渠道回合</th><td><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td></tr>
 <tr><th scope="row">输入框渠道 chip，始终显示</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/channel-chip.tsx</code>, <code translate="no">apps/web/components/chat/top-bar/menus/channel-choices.ts</code></td></tr>
-<tr><th scope="row">健康徽标</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>：alive、stale、unknown</td></tr>
+<tr><th scope="row">健康徽标</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>：alive、reconnecting、signed_out、failed、unknown</td></tr>
 <tr><th scope="row">本地访问管理</th><td><code translate="no">apps/web/components/settings/channels/access-list.tsx</code>，仅回环的 <code translate="no">/api/channels/access</code></td></tr>
 </tbody>
 </table>

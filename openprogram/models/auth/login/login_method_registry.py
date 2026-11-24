@@ -437,16 +437,124 @@ _WAY_OF: dict[str, tuple[Company, Way]] = {
 }
 
 
+_placed_for: tuple = ()
+_placed: tuple[tuple[Company, ...], dict[str, tuple[Company, Way]]] = (COMPANIES, _WAY_OF)
+
+
+def _catalogue_entries() -> list[dict]:
+    try:
+        from openprogram.models.providers.catalog.sources import models_dev
+        return [p for p in models_dev.list_providers() if p.get("id")]
+    except Exception:
+        return []
+
+
+def _own_placement() -> dict[str, str]:
+    """``config.json``'s ``provider_companies``: an unlisted entry's id to
+    the company it belongs to, the person's correction of :func:`_place`
+    (the entry's own id: a company of its own)."""
+    try:
+        from openprogram.state.config import read_config_value
+        found = read_config_value("provider_companies")
+    except Exception:
+        return {}
+    return {str(k): str(v) for k, v in found.items() if k and v} if isinstance(found, dict) else {}
+
+
+def _place(entries: list[dict], own: Optional[dict[str, str]] = None,
+           ) -> tuple[tuple[Company, ...], dict[str, tuple[Company, Way]]]:
+    """The table with the catalogue's unlisted entries placed.
+
+    The catalogue (models.dev) lists entries flat, with no company. An entry
+    the table does not list joins the company whose id, or one of whose
+    entries' ids, its own id extends at a hyphen (a new
+    ``minimax-…`` is MiniMax's). Unlisted entries that read one key variable
+    and extend one another's id are a company of their own, named after the
+    shortest. Anything else stays a company of its own. ``own`` (entry id to
+    company id) places an unlisted entry before any of that: on a company of
+    the table, on another entry's, or, given its own id, by itself."""
+    own = own or {}
+    stems: dict[str, str] = {}
+    for company in COMPANIES:
+        stems[company.id] = company.id
+        for way in company.ways:
+            stems.setdefault(way.provider, company.id)
+    extra: dict[str, list[Way]] = {}
+    said: dict[str, list[Way]] = {}
+    loose: list[dict] = []
+    for entry in entries:
+        pid = entry["id"]
+        if pid in _WAY_OF:
+            continue
+        label = entry.get("label") or pid
+        if pid in own:
+            if own[pid] != pid:
+                said.setdefault(own[pid], []).append(Way(pid, label, label, label, label))
+            continue
+        parts = pid.split("-")
+        owner = next((stems[stem] for n in range(len(parts) - 1, 0, -1)
+                      if (stem := "-".join(parts[:n])) in stems), None)
+        if owner is None:
+            loose.append(entry)
+            continue
+        extra.setdefault(owner, []).append(Way(pid, label, label, label, label))
+    listed = {c.id for c in COMPANIES}
+    for target in [t for t in said if t not in listed]:
+        # Placed on another unlisted entry: the two are a company named after it.
+        head = next((e for e in loose if e["id"] == target), None)
+        if head is None:
+            continue
+        loose.remove(head)
+        name = head.get("label") or target
+        said[target].insert(0, Way(target, name, name, name, name))
+    companies = [Company(c.id, c.label, c.ways + tuple(extra.get(c.id, ())) + tuple(said.get(c.id, ())))
+                 for c in COMPANIES]
+    by_id = {e["id"]: e for e in entries}
+    companies += [Company(t, by_id[t].get("label") or t, tuple(ways))
+                  for t, ways in said.items() if t not in listed and ways and ways[0].provider == t]
+    by_var: dict[str, list[dict]] = {}
+    for entry in loose:
+        if entry.get("env_var"):
+            by_var.setdefault(entry["env_var"], []).append(entry)
+    for group in by_var.values():
+        group.sort(key=lambda e: (len(e["id"]), e["id"]))
+        head = group[0]
+        rest = [e for e in group[1:] if e["id"].startswith(head["id"] + "-")]
+        if not rest:
+            continue
+        ways = tuple(Way(e["id"], e.get("label") or e["id"], e.get("label") or e["id"],
+                         e.get("label") or e["id"], e.get("label") or e["id"]) for e in [head, *rest])
+        companies.append(Company(head["id"], head.get("label") or head["id"], ways))
+    placed = tuple(companies)
+    return placed, {way.provider: (company, way) for company in placed for way in company.ways}
+
+
+def _current() -> tuple[tuple[Company, ...], dict[str, tuple[Company, Way]]]:
+    global _placed_for, _placed
+    entries = _catalogue_entries()
+    own = _own_placement()
+    key = (tuple(sorted((e["id"], e.get("env_var") or "") for e in entries)), tuple(sorted(own.items())))
+    if key != _placed_for:
+        _placed, _placed_for = _place(entries, own), key
+    return _placed
+
+
+def companies() -> tuple[Company, ...]:
+    """Every company with its entries: the table, with the catalogue's
+    unlisted entries placed by name (:func:`_place`)."""
+    return _current()[0]
+
+
 def company_of(provider: str) -> Optional[tuple[Company, Way]]:
     """The company ``provider`` is one way of, with that way; ``None`` for a
     provider that is a company of its own."""
-    return _WAY_OF.get(provider)
+    return _current()[1].get(provider)
 
 
 def offered_ways(provider: str) -> list[str]:
     """The other ways of ``provider``'s company that Add provider offers
     beside it as tabs, in the table's order."""
-    found = _WAY_OF.get(provider)
+    found = company_of(provider)
     if found is None:
         return []
     return [w.provider for w in found[0].ways if w.offered and w.provider != provider]
@@ -474,7 +582,7 @@ def describe(provider: str) -> dict:
 
 __all__ = [
     "API_KEY", "COMPANIES", "Company", "LoginMethod", "ProviderAuth", "Way", "accepts_api_key",
-    "check_style", "company_of", "console_url", "default_method", "describe", "env_vars",
+    "check_style", "companies", "company_of", "console_url", "default_method", "describe", "env_vars",
     "listed_providers", "login_method_list", "login_method_payload", "login_methods",
     "offered_ways", "provider_auth", "provider_for_env_var", "signin_name",
 ]

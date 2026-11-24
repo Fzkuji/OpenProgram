@@ -124,7 +124,7 @@ class CallScope:
         finally:
             self._stack.close()
         if (self.capture_io and self.status == 'completed'
-                and isinstance(self.output, dict) and 'target' in self.output):
+                and isinstance(self.output, dict) and 'window' in self.output):
             # A step that acted on a native app window: the chat preview
             # follows it the way it follows web pages.
             try:

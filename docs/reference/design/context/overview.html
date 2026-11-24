@@ -54,7 +54,7 @@
 <thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row">New message</th><td>Node under HEAD; HEAD advances</td></tr>
-<tr><th scope="row">Retry</th><td>Sibling with the same content</td></tr>
+<tr><th scope="row">Retry</th><td>Sibling with the same content; it replaces a turn whose reply is only an error</td></tr>
 <tr><th scope="row">Edit</th><td>Sibling with different content</td></tr>
 <tr><th scope="row">Switch version <code translate="no">&lt; N/M &gt;</code></th><td>Checkout to a sibling; re-renders only</td></tr>
 <tr><th scope="row">Copy conversation</th><td>New session holding the history up to HEAD</td></tr>
@@ -139,6 +139,7 @@
 <tr><th scope="row">Retry and edit</th><td>A retry copies the message's <code translate="no">media</code> to the new branch and sends the same pictures again, read from the kept files. An edit sends and keeps only the attachments the edit carries</td></tr>
 <tr><th scope="row">Steer</th><td>A message sent while a turn runs is delivered as its text, then its pictures; the node records them at those indexes</td></tr>
 <tr><th scope="row">Adapters</th><td>Every built-in wire format carries a kept picture, a person's or a tool's: Anthropic, OpenAI chat and Responses, Codex, Azure, Bedrock, Gemini and the Gemini subscription. The Gemini API adapter builds its contents through the shared Gemini conversion, so it also gets the image budget, the instructions after tool results and a tool result's pictures</td></tr>
+<tr><th scope="row">Earlier pictures</th><td>Only the latest message that carries pictures attaches them. An earlier one sends its text and a note naming each file's path, which <code translate="no">image_analyze</code> can open again (<code translate="no">media.as_references</code>). Follows Hermes, which keeps only the latest; each picture otherwise rides on every request</td></tr>
 <tr><th scope="row">Older conversations</th><td>A message stored before pictures were kept has no <code translate="no">media</code> and is sent as its text, as it was. Its text names the saved upload's path, which the model can read again</td></tr>
 <tr><th scope="row">Long paste</th><td>Stored and sent whole on every request; only the 1,048,576-character limit refuses a send</td></tr>
 </tbody>
@@ -194,13 +195,13 @@
 
 <h3 id="occupancy">Occupancy: one record, two readers</h3>
 <pre translate="no" tabindex="0"><code>{"window": int, "total_used": int, "basis": "measured" | "estimated",
- "estimated": int, "calibration": float}   # calibration only when measured</code></pre>
+ "estimated": int, "offset": int}   # offset: the last count less its estimate</code></pre>
 <p class="note"><code translate="no">openprogram/runtime/context/token_accounting/session_stats.py</code> builds it; <code translate="no">server.session_context_stats</code> serves <code translate="no">/context</code>; <code translate="no">server._broadcast_context_stats</code> pushes the <code translate="no">context_stats</code> frame. <a href="occupancy-status.html">Occupancy and compaction</a></p>
 <table class="stack">
 <thead><tr><th scope="col">Basis</th><th scope="col">When</th><th scope="col"><code translate="no">total_used</code></th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">measured</code></th><td>A real request just completed</td><td>What the provider billed for that prompt: <code translate="no">input_tokens + cache_read</code>. <code translate="no">calibration</code> is measured ÷ estimated for the same graph</td></tr>
-<tr><th scope="row"><code translate="no">estimated</code></th><td>The graph moved since</td><td>Recomputed from the current branch with the local tokenizer</td></tr>
+<tr><th scope="row"><code translate="no">measured</code></th><td>A real request just completed</td><td>What the provider billed for that prompt: <code translate="no">input_tokens + cache_read + cache_write</code>, by the rule of <a href="compaction.html#measuring">How large a request is</a>. A count over the window, or over twice its request's estimate, is not a measurement. <code translate="no">offset</code> is the count less that estimate</td></tr>
+<tr><th scope="row"><code translate="no">estimated</code></th><td>The graph moved since</td><td>Recomputed from the current branch with the local tokenizer, plus the last <code translate="no">offset</code> on the same model. A ratio is never applied: a stored <code translate="no">calibration</code> is dropped when the conversation reopens, and the record worked out again</td></tr>
 </tbody>
 </table>
 
@@ -218,7 +219,7 @@
 </table>
 <ul>
 <li>A measurement belongs to its branch; another head is re-estimated.</li>
-<li>Occupancy uses the last measured request, never the sum of a turn's requests. Empty terminal events keep the last measurement. With none, the UI uses a local estimate. Usage and calibration in the older cumulative format are invalidated; cumulative billing totals are unchanged.</li>
+<li>Occupancy uses the last measured request, never the sum of a turn's requests. Empty terminal events keep the last measurement, as do a reply that ran provider-side tools (passes summed) and an implausible count. With none, the UI uses a local estimate. Usage in the older cumulative format is invalidated; cumulative billing totals are unchanged.</li>
 <li>Window: the window of the Model the request ran on, resolved each time and never read back from a saved record; a model that does not resolve has none, and the UI then shows tokens without a limit (<a href="occupancy-status.html#window">The window</a>).</li>
 <li>The WebSocket chat runner records each request's prompt size as it finishes, so ring and panel update between tool calls. At turn end it refreshes the branch head and persists the final measurement.</li>
 <li>Session loading recovers a newer provider usage record from an older turn that never broadcast, unless a later session edit superseded it.</li>
@@ -234,7 +235,6 @@
 <tr><th scope="row">Tools</th><td>Loaded, on demand, MCP</td></tr>
 <tr><th scope="row">Memory</th><td><code translate="no">MEMORY.md</code> of each layer</td></tr>
 <tr><th scope="row">Conversation</th><td>By kind (<code translate="no">messages_detail.groups</code>) and largest messages (<code translate="no">messages_detail.top</code>), each linking to its transcript row</td></tr>
-<tr><th scope="row">Last compaction</th><td>One note under Compact conversation (<code translate="no">last_compaction</code>): when, how many messages, tokens before and after</td></tr>
 </tbody>
 </table>
 <ul>

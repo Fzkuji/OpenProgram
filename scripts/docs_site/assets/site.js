@@ -58,9 +58,12 @@
       if (el.dataset.titleEn == null) el.dataset.titleEn = el.textContent; // capture once
       el.textContent = lang === "zh" ? el.getAttribute("data-title-zh") : el.dataset.titleEn;
     });
-    document.querySelectorAll("[data-href-en][data-href-zh]").forEach((el) => {
-      const hrefZh = el.getAttribute("data-href-zh");
-      const hrefEn = el.getAttribute("data-href-en");
+    document.querySelectorAll("[data-zh],[data-href-zh]").forEach((el) => {
+      // The markup's own href is the English page; keep it before the first switch.
+      if (el.dataset.hrefEn == null) el.dataset.hrefEn = el.getAttribute("href") || "";
+      const hrefEn = el.dataset.hrefEn;
+      // data-zh: the Chinese page is the English one with .zh before .html.
+      const hrefZh = el.getAttribute("data-href-zh") || hrefEn.replace(/\.html(?=$|[?#])/, ".zh.html");
       if (lang === "zh" && hrefZh) el.setAttribute("href", hrefZh);
       else if (lang !== "zh" && hrefEn) el.setAttribute("href", hrefEn);
     });

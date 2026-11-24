@@ -9,6 +9,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { SecretInput } from "@/components/ui/secret-input";
 import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
 import type { KeyCheck } from "@/lib/settings/provider-status.generated";
 
 import { credentialUrl, credentialsUrl } from "../detail/credential-model";
@@ -135,10 +136,21 @@ export async function storeKey(
   const url = opts.replace ? `${credentialUrl(providerId, opts.replace)}/replace` : credentialsUrl(providerId);
   const body = opts.replace ? { api_key: key } : { api_key: key, validate: true, ...(opts.label ? { label: opts.label } : {}) };
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({}));
+  const d = await r.json().catch((): StoreKeyReply => ({})) as StoreKeyReply;
   if (r.ok && d.ok) return { ok: true, stored: { name: String(d.credential?.id ?? ""), check: d.check ?? null } };
-  return { ok: false, status: r.status, check: d.check ?? null, error: String(d.error ?? "") };
+  return { ok: false, status: r.status, check: d.check ?? null, error: d.error == null ? "" : errorDetailText(d.error, "") };
 }
+
+/** What storing or replacing a key answers. */
+interface StoreKeyReply {
+  ok?: boolean;
+  credential?: { id?: string } | null;
+  check?: KeyCheck | null;
+  error?: unknown;
+}
+
+/** What checking a key answers. */
+interface CheckReply { check?: KeyCheck | null }
 
 /** Check a pasted key with the provider without storing it (for `replace`,
  *  against that stored key's endpoint). The worker keeps the result for a
@@ -151,15 +163,15 @@ export async function checkKey(
     body: JSON.stringify({ api_key: key, ...(opts.replace ? { replace: opts.replace } : {}) }),
   });
   if (!r.ok) throw new Error(String(r.status));
-  const d = await r.json().catch(() => ({}));
-  return (d.check as KeyCheck | undefined) ?? null;
+  const d = await r.json().catch((): CheckReply => ({})) as CheckReply;
+  return d.check ?? null;
 }
 
 /** Check a stored credential again; its new check, or null when the request failed. */
 export async function recheck(providerId: string, id: string): Promise<KeyCheck | null> {
   const r = await fetch(`${credentialUrl(providerId, id)}/check`, { method: "POST" });
-  const d = await r.json().catch(() => ({}));
-  return (d.check as KeyCheck | undefined) ?? null;
+  const d = await r.json().catch((): CheckReply => ({})) as CheckReply;
+  return d.check ?? null;
 }
 
 /** One masked key field, checked when pasted, on Enter, when it loses

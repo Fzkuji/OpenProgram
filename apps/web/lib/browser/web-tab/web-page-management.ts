@@ -26,6 +26,21 @@ export function revealExistingWebTab(tabId: string, store: CenterTabsRevealStore
   return true;
 }
 
+/** A conversation's page that is closed everywhere and is not in the strip has
+ *  nothing left to show, so its tab goes too. Pages in the strip, on the
+ *  canvas, or with no record at all stay. */
+export function closedHiddenPageTabs(tabs: readonly CenterTab[], groups: readonly CenterTabGroup[]): string[] {
+  const open = new Map<string, boolean>();
+  for (const row of listedBrowserResources()) {
+    if (!row.tabId || row.kind !== "web") continue;
+    open.set(row.tabId, !!open.get(row.tabId) || row.status !== "closed");
+  }
+  if (![...open.values()].includes(false)) return [];
+  const top = new Set(topLevelTabs(tabs, groups).map(tab => tab.id));
+  return tabs.filter(tab => tab.kind === "web" && !tab.canvasAnchor && !top.has(tab.id) && open.get(tab.id) === false)
+    .map(tab => tab.id);
+}
+
 export function groupWebPages(tabs: readonly CenterTab[]) {
   const groups = new Map<string, { key: string; sessionId: string | null; agent: boolean; tabs: CenterTab[] }>();
   for (const tab of tabs) {

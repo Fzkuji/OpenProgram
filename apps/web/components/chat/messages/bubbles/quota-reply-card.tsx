@@ -41,7 +41,7 @@ import {
 } from "@/lib/models/provider-state";
 import type { FallbackModel } from "@/lib/settings/provider-status.generated";
 import { ModelMark } from "../../top-bar/chips/model-mark";
-import { AgentSelector } from "../../top-bar/menus/agent-selector";
+import { AgentSelector, PICKER_PANEL } from "../../top-bar/menus/agent-selector";
 
 /** The whole card: icon, title and reset line, the raw error (`children`,
  *  the bubble's collapsed details), the buttons, then `after`. */
@@ -109,7 +109,6 @@ export function QuotaActions({ msg, cause, sessionId }: { msg: ChatMsg; cause: F
     queryKey: ["provider-fallback", provider, model, Math.round(contextTokens / 1000)],
     queryFn: () => fetchFallback(provider, model, contextTokens),
     enabled: !!sessionId && !!provider && !!model && !waiting,
-    staleTime: 60_000,
   });
   if (!sessionId || waiting) return null;
   const state = picker?.providers[provider];
@@ -158,7 +157,7 @@ export function QuotaActions({ msg, cause, sessionId }: { msg: ChatMsg; cause: F
             {text("Other model…", "其他模型…")}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" sideOffset={6} className={cn(MENU_PANEL, "text-text-primary")}>
+        <DropdownMenuContent side="top" align="start" sideOffset={6} className={cn(MENU_PANEL, PICKER_PANEL, "text-text-primary")}>
           {alternatives.length ? (
             <>
               <div className={GROUP_LABEL}>{text("Has room", "还有额度")}</div>

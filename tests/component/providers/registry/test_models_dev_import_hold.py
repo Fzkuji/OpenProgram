@@ -65,6 +65,9 @@ def test_importing_a_utils_module_first_with_a_stale_catalogue(tmp_path):
     (state / "cache" / "models_dev.json").write_text(json.dumps({
         "deepinfra": {"id": "deepinfra", "name": "DeepInfra", "api": "https://api.deepinfra.com/v1/openai", "models": {}},
     }), encoding="utf-8")
+    # Stale: fetched longer ago than the catalogue stays fresh.
+    fetched = (state / "cache" / "models_dev.json").stat().st_mtime - md._TTL_SECONDS - 60
+    os.utime(state / "cache" / "models_dev.json", (fetched, fetched))
     (state / "config.json").write_text(json.dumps({
         "providers": {"deepinfra": {"enabled": True, "models": [{"id": "x"}]}},
     }), encoding="utf-8")

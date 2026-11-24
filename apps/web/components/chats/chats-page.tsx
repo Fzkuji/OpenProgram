@@ -15,7 +15,7 @@
  * (dropped `archived` / `updated_at`, so the status filter was dead and
  * recency was computed off creation time).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import styles from "./chats-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { RailCount, RailGroupLabel, RailItem, SecondaryRail } from "@/components/ui/secondary-rail";
@@ -28,6 +28,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { parseAttachments } from "@/components/chat/messages/attachments/user-attachments";
 import { formatRelativeTime } from "@/lib/format-utils/format";
+import { AGO, LOCAL_DAY, useNow } from "@/lib/clock/use-now";
 import { pushPath } from "@/lib/nav/shallow-nav";
 import { useSessionStore, type ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
@@ -96,15 +97,10 @@ export function ChatsPage({
   const [sort, setSort] = useState<SortKey>("recent");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
-  // Bucketing is relative to "now"; pin it per render pass so every row
-  // in one pass is bucketed against the same instant, and re-pin it on a
-  // timer so a page left open overnight doesn't keep yesterday's rows
-  // under "Today".
-  const [nowTs, setNowTs] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const id = setInterval(() => setNowTs(Math.floor(Date.now() / 1000)), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // Buckets are calendar days; every row in one pass is bucketed against
+  // the same instant, renewed at local midnight so a page left open
+  // overnight does not keep yesterday's rows under "Today".
+  const nowTs = Math.floor(useNow(LOCAL_DAY) / 1000);
 
   const untitled = t("sidebar.untitled");
 
@@ -408,6 +404,12 @@ export function ChatsPage({
   return <div className="main">{view}</div>;
 }
 
+/** "5m ago", renewed when it would read differently. */
+function ActivityTime({ ts, locale }: { ts: number; locale: Locale }) {
+  const now = useNow(ts ? AGO : null, ts * 1000);
+  return <span className="shrink-0 text-fs-xs text-text-muted">{formatRelativeTime(ts, locale, now / 1000)}</span>;
+}
+
 function ChatRow({
   conv,
   locale,
@@ -445,7 +447,7 @@ function ChatRow({
         </span>
         {asked ? <span className="truncate text-fs-base text-text-muted">{asked}</span> : null}
       </span>
-      <span className="shrink-0 text-fs-xs text-text-muted">{formatRelativeTime(activityTs(conv), locale)}</span>
+      <ActivityTime ts={activityTs(conv)} locale={locale} />
     </button>
   );
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -97,7 +98,7 @@ def test_revert_turn_action_reports_error(store):
 
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
-        "review_scope", "review_file_diff", "review_revert_hunk",
+        "review_scope", "review_file_diff", "review_revert_hunk", "review_stage", "review_agent", "review_agent_cancel", "review_agent_wait",
         "turn_history_state", "turn_operation_status", "revert_turn", "reapply_turn",
     }
 
@@ -310,7 +311,7 @@ def test_workspace_diff_rejects_ignored_path_not_in_scope(store, tmp_path, monke
     assert "not in workspace scope" in result["error"]
     ws = FakeWS()
     _run(tf.handle_review_file_diff(ws, {
-        "session_id": "session", "scope": "workspace",
+        "session_id": "session", "scope": "unstaged",
         "path": str(secret), "snapshot_id": scope["snapshot_id"],
         "request_id": "ignored-probe",
     }))
@@ -371,7 +372,8 @@ def test_workspace_scope_preserves_rename_identity(store, tmp_path, monkeypatch)
     subprocess.run(["git", "-C", str(root), "mv", "old.txt", "new.txt"], check=True)
     monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
 
-    result = tf._workspace_scope("session")
+    assert tf._workspace_scope("session")["files"] == []
+    result = tf._workspace_scope("session", segment="staged")
 
     assert result["files"][0]["op"] == "rename"
     assert result["files"][0]["old_rel"] == "old.txt"
@@ -415,7 +417,7 @@ def test_review_scope_pages_file_rows_and_echoes_request_id(store, tmp_path):
 def test_review_scope_error_echoes_filter_context(store):
     ws = FakeWS()
     _run(tf.handle_review_scope(ws, {
-        "session_id": "session", "scope": "workspace",
+        "session_id": "session", "scope": "unstaged",
         "category": "Invalid", "query": "needle", "sort": "path",
         "snapshot_id": "snapshot-old", "request_id": "error-request",
     }))
@@ -431,7 +433,7 @@ def test_review_scope_error_echoes_filter_context(store):
 def test_review_scope_rejects_invalid_limit_and_cursor_with_context():
     ws = FakeWS()
     _run(tf.handle_review_scope(ws, {
-        "session_id": "session", "scope": "workspace", "category": "Code",
+        "session_id": "session", "scope": "unstaged", "category": "Code",
         "query": "needle", "sort": "recent", "limit": "20", "cursor": 4,
         "snapshot_id": "snapshot-old", "request_id": "invalid-request",
     }))
@@ -542,7 +544,7 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
 
     ws = FakeWS()
     _run(tf.handle_review_scope(ws, {
-        "session_id": "session", "scope": "workspace", "category": "Code",
+        "session_id": "session", "scope": "unstaged", "category": "Code",
         "query": "tracked", "snapshot_id": first["snapshot_id"],
         "cursor": "", "limit": 100,
     }))
@@ -576,7 +578,7 @@ def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, mo
 
     first_ws = FakeWS()
     _run(tf.handle_review_scope(first_ws, {
-        "session_id": "session", "scope": "workspace", "cursor": "", "limit": 20,
+        "session_id": "session", "scope": "unstaged", "cursor": "", "limit": 20,
     }))
     first = first_ws.sent[0]["data"]
     assert first["status"] == "ready"
@@ -586,7 +588,7 @@ def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, mo
     (root / "tracked_0.py").write_text("changed-after-page\n", encoding="utf-8")
     next_ws = FakeWS()
     _run(tf.handle_review_scope(next_ws, {
-        "session_id": "session", "scope": "workspace", "cursor": first["next_cursor"],
+        "session_id": "session", "scope": "unstaged", "cursor": first["next_cursor"],
         "snapshot_id": first["snapshot_id"], "limit": 20,
     }))
     data = next_ws.sent[0]["data"]
@@ -597,7 +599,7 @@ def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, mo
     assert data["sort"] == "path"
 
 
-def test_workspace_review_diff_includes_staged_and_unstaged_segments(store, tmp_path, monkeypatch):
+def test_workspace_review_splits_staged_and_unstaged_scopes(store, tmp_path, monkeypatch):
     root = tmp_path / "staged-worktree-repo"
     root.mkdir()
     subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -605,22 +607,271 @@ def test_workspace_review_diff_includes_staged_and_unstaged_segments(store, tmp_
     subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
     target = root / "tracked.py"
     target.write_text("base\n", encoding="utf-8")
+    (root / "only_staged.py").write_text("one\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
     target.write_text("staged\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "tracked.py"], check=True)
+    (root / "only_staged.py").write_text("two\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     target.write_text("unstaged\n", encoding="utf-8")
+    (root / "new_file.py").write_text("fresh\n", encoding="utf-8")
     monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
 
-    scope = tf._workspace_scope("session")
-    row = scope["files"][0]
-    assert row["added"] == 1
-    assert row["removed"] == 1
-    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])
-    assert "base-to-index" in diff["diff"]
-    assert "index-to-worktree" in diff["diff"]
-    assert "staged" in diff["diff"]
-    assert "unstaged" in diff["diff"]
+    unstaged = tf._workspace_scope("session", segment="unstaged")
+    staged = tf._workspace_scope("session", segment="staged")
+    assert unstaged["scope"] == "unstaged" and staged["scope"] == "staged"
+    assert {row["rel"]: row["op"] for row in unstaged["files"]} == {
+        "tracked.py": "modify", "new_file.py": "add",
+    }
+    assert {row["rel"] for row in staged["files"]} == {"tracked.py", "only_staged.py"}
+    assert all(row["added"] == 1 and row["removed"] == 1 for row in staged["files"])
+    unstaged_diff = tf._workspace_file_diff("session", str(target), unstaged["snapshot_id"])["diff"]
+    staged_diff = tf._workspace_file_diff("session", str(target), staged["snapshot_id"])["diff"]
+    assert "-staged\n+unstaged" in unstaged_diff and "base\n" not in unstaged_diff
+    assert "-base\n+staged" in staged_diff and "unstaged" not in staged_diff
+    assert "[base-to-index]" in staged_diff and "[index-to-worktree]" in unstaged_diff
+
+
+def _stage_repo(tmp_path, monkeypatch, name="stage-repo"):
+    root = tmp_path / name
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    lines = [f"line {i}" for i in range(1, 21)]
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    edited = list(lines)
+    edited[1] = "first change"
+    edited[17] = "second change"
+    target.write_text("\n".join(edited) + "\n", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    from openprogram.interfaces.server.ws_actions.turn_files import diff as turn_files_diff
+    monkeypatch.setattr(turn_files_diff, "_staging_allowed", lambda _sid: True)
+    return root, target
+
+
+def _stage_hunks(diff):
+    """Hunks as the Review pane sends them for staging."""
+    hunks = []
+    for line in diff.splitlines():
+        match = re.match(r"^@@ -(\d+)(?:,\d+)? \+(\d+)", line)
+        if match:
+            hunks.append({"old_start": int(match.group(1)), "new_start": int(match.group(2)), "lines": []})
+        elif hunks and line[:1] in " -+" and not line.startswith(("---", "+++")):
+            hunks[-1]["lines"].append(line)
+    return hunks
+
+
+def _index_text(root, rel="tracked.py"):
+    return subprocess.run(
+        ["git", "-C", str(root), "show", f":{rel}"], check=True, capture_output=True, text=True,
+    ).stdout
+
+
+def test_review_stage_and_unstage_one_hunk_through_the_index(store, tmp_path, monkeypatch):
+    root, target = _stage_repo(tmp_path, monkeypatch)
+    scope = tf._workspace_scope("session", segment="unstaged")
+    assert scope["staging"] is True
+    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])["diff"]
+    first, second = _stage_hunks(diff)
+    request = {
+        "session_id": "session", "scope": "unstaged", "path": str(target),
+        "snapshot_id": scope["snapshot_id"], "request_id": "r1", "idempotency_key": "k1",
+    }
+
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {**request, "hunk": second}))
+    data = ws.sent[0]["data"]
+    assert data["action"] == "review_stage" and data["request_id"] == "r1"
+    assert data["status"] == "ready", data
+    index = _index_text(root).splitlines()
+    assert index[17] == "second change" and index[1] == "line 2"
+    # The working file is untouched.
+    assert target.read_text(encoding="utf-8").splitlines()[1] == "first change"
+
+    # The index moved, so the snapshot the client holds is stale.
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {**request, "hunk": first}))
+    assert ws.sent[0]["data"]["error_code"] == "STALE_SNAPSHOT"
+
+    # A hunk the index no longer matches is a conflict and changes nothing.
+    fresh = tf._workspace_scope("session", segment="unstaged")["snapshot_id"]
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {**request, "snapshot_id": fresh, "hunk": second}))
+    assert ws.sent[0]["data"]["status"] == "conflict"
+    assert _index_text(root).splitlines()[1] == "line 2"
+
+    # Unstage it again from the Staged scope.
+    staged = tf._workspace_scope("session", segment="staged")
+    staged_diff = tf._workspace_file_diff("session", str(target), staged["snapshot_id"])["diff"]
+    (staged_hunk,) = _stage_hunks(staged_diff)
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {
+        **request, "scope": "staged", "snapshot_id": staged["snapshot_id"], "hunk": staged_hunk,
+    }))
+    assert ws.sent[0]["data"]["status"] == "ready", ws.sent[0]["data"]
+    assert _index_text(root).splitlines()[17] == "line 18"
+
+
+def test_review_stage_whole_files_and_refuses_where_staging_is_off(store, tmp_path, monkeypatch):
+    root, target = _stage_repo(tmp_path, monkeypatch, "stage-file-repo")
+    fresh = root / "fresh.py"
+    fresh.write_text("new\n", encoding="utf-8")
+    base = {"session_id": "session", "request_id": "r", "idempotency_key": "k"}
+    for path in (target, fresh):
+        ws = FakeWS()
+        _run(tf.handle_review_stage(ws, {
+            **base, "scope": "unstaged", "path": str(path),
+            "snapshot_id": tf._workspace_scope("session", segment="unstaged")["snapshot_id"],
+        }))
+        assert ws.sent[0]["data"]["status"] == "ready", ws.sent[0]["data"]
+    assert tf._workspace_scope("session", segment="unstaged")["files"] == []
+    assert {row["rel"] for row in tf._workspace_scope("session", segment="staged")["files"]} == {
+        "tracked.py", "fresh.py",
+    }
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {
+        **base, "scope": "staged", "path": str(fresh),
+        "snapshot_id": tf._workspace_scope("session", segment="staged")["snapshot_id"],
+    }))
+    assert ws.sent[0]["data"]["status"] == "ready"
+    assert {row["rel"] for row in tf._workspace_scope("session", segment="unstaged")["files"]} == {"fresh.py"}
+
+    # A conversation in an SSH environment, or another scope, stages nothing.
+    from openprogram.interfaces.server.ws_actions.turn_files import diff as turn_files_diff
+    monkeypatch.setattr(turn_files_diff, "_staging_allowed", lambda _sid: False)
+    remote = tf._workspace_scope("session", segment="unstaged")
+    assert remote["staging"] is False
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {
+        **base, "scope": "unstaged", "path": str(fresh), "snapshot_id": remote["snapshot_id"],
+    }))
+    assert ws.sent[0]["data"]["error_code"] == "UNAVAILABLE"
+    ws = FakeWS()
+    _run(tf.handle_review_stage(ws, {
+        **base, "scope": "turn", "path": str(fresh), "snapshot_id": remote["snapshot_id"],
+    }))
+    assert ws.sent[0]["data"]["error_code"] == "INVALID_REQUEST"
+
+
+def test_review_agent_sends_the_scope_diff_and_returns_findings(store, tmp_path, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.turn_files import agent_review
+
+    root, target = _stage_repo(tmp_path, monkeypatch, "agent-review-repo")
+    scope = tf._workspace_scope("session", segment="unstaged")
+    seen = {}
+
+    async def fake_review(session_id, context):
+        seen["context"] = context
+        return {"findings": [
+            {"path": "tracked.py", "line": 18, "severity": "high", "body": "Wrong value."},
+            {"path": "elsewhere.py", "line": 1, "severity": "low", "body": "Not in scope."},
+            {"path": "tracked.py", "line": 2, "severity": "urgent", "body": "Bad severity."},
+        ]}
+
+    monkeypatch.setattr(agent_review, "run_agent_review", fake_review)
+    ws = FakeWS()
+
+    async def go():
+        task = await tf.handle_review_agent(ws, {
+            "session_id": "session", "scope": "unstaged",
+            "snapshot_id": scope["snapshot_id"], "request_id": "r-agent",
+        })
+        await task
+
+    _run(go())
+    data = ws.sent[0]["data"]
+    assert data["action"] == "review_agent" and data["request_id"] == "r-agent"
+    assert data["findings"] == [
+        {"path": "tracked.py", "line": 18, "severity": "high", "body": "Wrong value."},
+    ]
+    assert "File: tracked.py" in seen["context"] and "+second change" in seen["context"]
+
+
+def test_review_agent_answer_waits_for_a_client_whose_socket_dropped(store, tmp_path, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.turn_files import agent_review
+
+    _stage_repo(tmp_path, monkeypatch, "agent-review-wait-repo")
+    scope = tf._workspace_scope("session", segment="unstaged")
+    state = {}
+
+    async def slow_review(session_id, context):
+        state["started"].set()
+        await state["release"].wait()
+        return {"findings": [{"path": "tracked.py", "line": 18, "severity": "low", "body": "Kept."}]}
+
+    monkeypatch.setattr(agent_review, "run_agent_review", slow_review)
+
+    class GoneWS(FakeWS):
+        async def send_text(self, text):
+            raise RuntimeError("socket closed")
+
+    later = FakeWS()
+    after = FakeWS()
+    unknown = FakeWS()
+
+    async def go():
+        state["started"], state["release"] = asyncio.Event(), asyncio.Event()
+        task = await tf.handle_review_agent(GoneWS(), {
+            "session_id": "session", "scope": "unstaged", "review_id": "rev-wait",
+            "snapshot_id": scope["snapshot_id"], "request_id": "r-agent",
+        })
+        await asyncio.wait_for(state["started"].wait(), 10)
+        # Asked again while it runs: answered when it finishes.
+        waiting = await tf.handle_review_agent_wait(later, {"review_id": "rev-wait", "request_id": "w1"})
+        state["release"].set()
+        await task
+        await waiting
+        # Asked again after it finished: answered at once from what was kept.
+        await (await tf.handle_review_agent_wait(after, {"review_id": "rev-wait", "request_id": "w2"}))
+        await (await tf.handle_review_agent_wait(unknown, {"review_id": "never", "request_id": "w3"}))
+
+    _run(go())
+    for ws, request_id in ((later, "w1"), (after, "w2")):
+        data = ws.sent[0]["data"]
+        assert data["request_id"] == request_id and data["status"] == "ready"
+        assert data["findings"] == [{"path": "tracked.py", "line": 18, "severity": "low", "body": "Kept."}]
+    assert unknown.sent[0]["data"]["error_code"] == "UNKNOWN_REVIEW"
+
+
+def test_review_agent_cancel_stops_the_model_call_and_answers_nothing(store, tmp_path, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.turn_files import agent_review
+
+    _stage_repo(tmp_path, monkeypatch, "agent-review-cancel-repo")
+    scope = tf._workspace_scope("session", segment="unstaged")
+    state = {}
+
+    async def slow_review(session_id, context):
+        state["started"].set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            state["cancelled"] = True
+            raise
+        return {"findings": []}
+
+    monkeypatch.setattr(agent_review, "run_agent_review", slow_review)
+    ws = FakeWS()
+
+    async def go():
+        state["started"] = asyncio.Event()
+        task = await tf.handle_review_agent(ws, {
+            "session_id": "session", "scope": "unstaged", "review_id": "rev-1",
+            "snapshot_id": scope["snapshot_id"], "request_id": "r-agent",
+        })
+        await asyncio.wait_for(state["started"].wait(), 10)
+        await tf.handle_review_agent_cancel(ws, {"review_id": "rev-1"})
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # Cancelling a review that already ended does nothing.
+        await tf.handle_review_agent_cancel(ws, {"review_id": "rev-1"})
+
+    _run(go())
+    assert state.get("cancelled") is True
+    assert ws.sent == []
 
 
 def test_workspace_snapshot_stops_before_content_budget_overflow(store, tmp_path, monkeypatch):
@@ -833,7 +1084,7 @@ def test_workspace_review_snapshot_detects_same_tree_new_head(store, tmp_path, m
 
     ws = FakeWS()
     _run(tf.handle_review_scope(ws, {
-        "session_id": "session", "scope": "workspace",
+        "session_id": "session", "scope": "unstaged",
         "snapshot_id": first["snapshot_id"], "cursor": "", "limit": 100,
     }))
     assert ws.sent[0]["data"]["status"] == "stale"
@@ -1079,7 +1330,7 @@ def test_review_revert_hunk_restores_one_hunk_through_document_history(store, tm
     diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])["diff"]
     first, second = _hunks(diff)
     request = {
-        "session_id": "session", "scope": "workspace", "path": str(target),
+        "session_id": "session", "scope": "unstaged", "path": str(target),
         "snapshot_id": scope["snapshot_id"], "request_id": "r1", "idempotency_key": "k1",
     }
 
@@ -1146,7 +1397,7 @@ def test_review_diff_of_a_crlf_checkout_shows_only_the_edited_lines(store, tmp_p
 
     ws = FakeWS()
     _run(tf.handle_review_revert_hunk(ws, {
-        "session_id": "session", "scope": "workspace", "path": str(target),
+        "session_id": "session", "scope": "unstaged", "path": str(target),
         "snapshot_id": scope["snapshot_id"], "request_id": "r1", "idempotency_key": "crlf-k1",
         "hunk": second,
     }))
@@ -1171,14 +1422,14 @@ def test_review_revert_hunk_refuses_paths_outside_scope_and_active_runs(store, t
 
     ws = FakeWS()
     _run(tf.handle_review_revert_hunk(ws, {
-        "session_id": "s", "scope": "workspace", "path": str(tmp_path / "x"),
+        "session_id": "s", "scope": "unstaged", "path": str(tmp_path / "x"),
         "snapshot_id": "nope", "hunk": {"new_start": 1, "old_lines": [], "new_lines": []},
     }))
     assert ws.sent[0]["data"]["status"] == "error"
     monkeypatch.setattr(_server, "_is_run_active", lambda _sid: True)
     ws = FakeWS()
     _run(tf.handle_review_revert_hunk(ws, {
-        "session_id": "s", "scope": "workspace", "path": str(tmp_path / "x"),
+        "session_id": "s", "scope": "unstaged", "path": str(tmp_path / "x"),
         "snapshot_id": "nope", "hunk": {"new_start": 1, "old_lines": [], "new_lines": []},
     }))
     assert ws.sent[0]["data"]["error_code"] == "RUN_ACTIVE"

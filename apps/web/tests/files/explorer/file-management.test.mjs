@@ -286,12 +286,12 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.match(query('[data-item-path="src/empty.txt"]').textContent, /0 B/);
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
     const failedPageRequests = requests.length;
-    const autoRetry = [...document.querySelectorAll("button")].find(node => node.textContent.includes("Refresh failed — retry"));
-    assert.ok(autoRetry, "automatic pagination exposes failure instead of silently stopping");
+    assert.doesNotMatch(document.body.textContent, /Refresh failed|retry/i, "a failed page says nothing");
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
     assert.equal(requests.length, failedPageRequests, "failed pagination does not loop");
     failPage = false;
-    await act(async () => autoRetry.dispatchEvent(new window.MouseEvent("click", {bubbles:true,composed:true})));
+    // The failed listing is read again by itself after a short wait.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
 
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
     assert.equal(document.querySelector('button[aria-label="Load more entries"]'), null);
@@ -330,10 +330,9 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     failPage = true;
     await click('button[aria-label="Refresh"]');
     assert.ok(query('[data-item-path="src/data.bin"]'), "failed refresh preserves old content");
-    const retry = [...document.querySelectorAll("button")].find(node => node.textContent.includes("Refresh failed — retry"));
-    assert.ok(retry, "failed page refresh exposes a retry");
+    assert.doesNotMatch(document.body.textContent, /Refresh failed/, "a failed refresh says nothing");
     failPage = false;
-    await act(async () => retry.dispatchEvent(new window.MouseEvent("click", { bubbles: true, composed: true })));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
     assert.ok(query('[data-item-path="src/data.bin"]'));
     assert.doesNotMatch(document.body.textContent, /Refresh failed/);
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });

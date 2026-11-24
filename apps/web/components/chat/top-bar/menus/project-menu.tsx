@@ -7,9 +7,11 @@
  * conversation's main directory is still open to choice:
  *
  *   * **Draft session** (no session_id yet) — the full picker: choose
- *     among registered projects, or bind a new folder. The choice rides
- *     on the first chat frame, which is what places the session repo at
- *     <project>/.openprogram/sessions/<id>/.
+ *     among registered projects, listed under the machine each is on
+ *     (this computer first; a project on a machine that is not connected
+ *     is greyed), or open a new folder: "Open folder on…" picks the
+ *     machine first, then the folder on it. The choice rides on the first
+ *     chat frame; the project's machine is where the conversation runs.
  *   * **Active session** (has turns) — the main directory is frozen, so
  *     the picker is gone. The menu shows the bound project read-only.
  *     The one action left is the repair below.
@@ -22,8 +24,11 @@
  * choice is stored in the session store until chat_ack creates the session.
  * Positioning / click-outside come from the shadcn <Popover> in index.tsx.
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { ChevronRight } from "lucide-react";
 import { SolarIcon } from "@/components/solar-icons";
+import { MachineIcon, useMachineName } from "@/components/machines/machine-icon";
+import { MachineChoiceRows, useOpenFolderOn, type FolderOnMachine } from "@/components/machines/open-folder-on";
 
 import {
   Popover,
@@ -31,7 +36,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
-import { useFolderPicker } from "@/components/ui/folder-picker";
 import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
@@ -45,6 +49,17 @@ import { cn } from "@/lib/utils";
 import { MenuCheck } from "@/components/ui/menu/menu-check";
 import { GitChip } from "../chips/git-chip";
 import { FOLDER_PILL } from "../chips/folder-pill";
+import { onReconnected } from "@/lib/net/ws/changes";
+import {
+  LOCAL_ID,
+  ensureMachines,
+  findMachine,
+  machineKeepsFiles,
+  machineOnline,
+  projectMachineId,
+  useMachines,
+  type MachineInfo,
+} from "@/lib/machines/store";
 
 /** Fired whenever the conversation's project changes so the topbar chip
  * re-fetches its label without a store round-trip. */
@@ -57,6 +72,8 @@ interface Project {
   name: string;
   path: string;
   is_default: boolean;
+  /** The machine the folder is on; its conversations run there. */
+  machine_id?: string;
   custom_name?: boolean;
   hidden?: boolean;
   /** Backend-computed: the folder no longer exists on disk. */
@@ -73,18 +90,23 @@ interface Project {
 export function ProjectMenu({
   onClose,
   pickFolder,
+  openOn,
 }: {
   onClose: () => void;
   pickFolder(start?: string): Promise<string | null>;
+  /** The folder for a new project, chosen on the machine picked first. */
+  openOn(machine: MachineInfo): Promise<FolderOnMachine | null>;
 }) {
   const { text } = useTranslation();
-  const { sessionId: boundSessionId, chatKey: activeChatKey } = useBoundChat();
-  // useBoundChat only carries an id inside a BOUND chat instance — on
-  // the main shell it is null even with a live session open, which
-  // would leave the freeze gate permanently off. The store's
-  // currentSessionId is the main shell's truth (null while drafting).
-  const storeSessionId = useSessionStore((s) => s.currentSessionId);
-  const sessionId = boundSessionId ?? storeSessionId;
+  const machines = useMachines((s) => s.items);
+  const kinds = useMachines((s) => s.kinds);
+  const machineName = useMachineName();
+  const [machineMenuOpen, setMachineMenuOpen] = useState(false);
+  const machineMenuTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The main shell's chat, or the bound one (split view, an application's
+  // conversation). A bound draft has no session yet: it shows its own pending
+  // project, never the main shell's chat.
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const pendingProjectId = useSessionStore((s) =>
     activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
@@ -116,6 +138,12 @@ export function ProjectMenu({
   // arrives as `project-changed` and re-lists in place. Rows are keyed
   // by project id inside the same scrolling list, so its scroll position
   // stays where it was.
+  useEffect(() => {
+    void ensureMachines();
+  }, []);
+
+  useEffect(() => () => clearTimeout(machineMenuTimer.current), []);
+
   useEffect(() => {
     void refresh();
     const onChanged = () => void refresh();
@@ -200,22 +228,28 @@ export function ProjectMenu({
     onClose();
   }
 
-  // "Open folder…" uses the worker's native chooser when available and a
-  // validated server-path dialog on headless hosts.
-  async function openFolder() {
+  // "Open folder on…": the machine first, then the folder on it. This
+  // computer uses the worker's native chooser when available and a
+  // validated server-path dialog on headless hosts; a machine that keeps
+  // its own files is browsed through its shell.
+  async function openFolder(machine: MachineInfo) {
+    setMachineMenuOpen(false);
     setBusy(true);
     setErr(null);
     try {
-      const path = await pickFolder();
-      if (path) {
+      const chosen = await openOn(machine);
+      if (chosen) {
         const created = await wsRequest<{
           ok: boolean;
           project?: Project | null;
           error?: string | null;
         }>(
           "create_project",
-          { path, session_id: sessionId ?? "" },
+          { path: chosen.path, machine_id: chosen.machineId, session_id: sessionId ?? "" },
           "project_created",
+          undefined,
+          // A folder on another machine is checked there over its shell.
+          30_000,
         );
         if (created?.ok && created.project?.id) {
           if (activeChatKey) {
@@ -311,24 +345,88 @@ export function ProjectMenu({
     );
   }
 
-  return (
-    // Only the project list scrolls; the "Recent" label and "Open folder…"
-    // stay in place however many projects there are.
-    <div className={cn(MENU_PANEL, "overflow-hidden")}>
-      <div className={cn(GROUP_LABEL, "shrink-0")}>{text("Recent", "最近")}</div>
+  // Projects under the machine each is on: this computer first, then the
+  // machines in their configured order, then any machine no longer there.
+  const visible = list.filter((p) => !p.hidden || p.id === activeId);
+  const groupIds: string[] = [LOCAL_ID];
+  for (const machine of machines) if (!groupIds.includes(machine.id)) groupIds.push(machine.id);
+  for (const p of visible) if (!groupIds.includes(projectMachineId(p))) groupIds.push(projectMachineId(p));
+  const groups = groupIds
+    .map((id) => ({ id, machine: findMachine(machines, id), projects: visible.filter((p) => projectMachineId(p) === id) }))
+    .filter((group) => group.projects.length > 0);
 
+  function scheduleMachineMenu(next: boolean) {
+    clearTimeout(machineMenuTimer.current);
+    machineMenuTimer.current = setTimeout(() => setMachineMenuOpen(next), next ? 80 : 200);
+  }
+
+  return (
+    // Only the project list scrolls; the machine headers scroll with their
+    // projects and "Open folder on…" stays in place however many there are.
+    <div className={cn(MENU_PANEL, "overflow-hidden")}>
       <div className="project-menu-list -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1">
-      {/* 目录已不存在的项目仍然列出（静默消失会让用户以为项目丢了），
-          点击它走定位修复而不是选中——选一个死路径当主目录没有意义。 */}
-      {list.map((p) => {
-        if (p.hidden && p.id !== activeId) return null;
+      {groups.map((group) => {
+        const offline = group.id !== LOCAL_ID && !machineOnline(group.machine);
+        return (
+          <div key={group.id} className="flex flex-col" data-project-machine={group.id}>
+            <div className={GROUP_LABEL}>
+              {group.id === LOCAL_ID ? null : <MachineIcon machine={group.machine} kinds={kinds} fill />}
+              <span className="truncate">{machineName(group.machine, group.id)}</span>
+              {offline ? <span className="font-normal">{text("offline", "离线")}</span> : null}
+            </div>
+            {/* 目录已不存在的项目仍然列出（静默消失会让用户以为项目丢了），
+                点击它走定位修复而不是选中——选一个死路径当主目录没有意义。 */}
+            {group.projects.map((p) => projectRow(p, offline))}
+          </div>
+        );
+      })}
+      </div>
+
+      <div className={MENU_SEPARATOR} />
+
+      <Popover open={machineMenuOpen} onOpenChange={setMachineMenuOpen}>
+        <PopoverTrigger asChild>
+          <div
+            className={cn(itemCls(false), "shrink-0")}
+            data-open-folder-on=""
+            onMouseEnter={() => scheduleMachineMenu(true)}
+            onMouseLeave={() => scheduleMachineMenu(false)}
+          >
+            <SolarIcon name="folder-with-files" size={16} fit="fill" className="opacity-70" />
+            <span className="flex-1">{text("Open folder on…", "在…上打开文件夹")}</span>
+            <ChevronRight className="menu-row-chevron size-4 shrink-0 text-text-muted" aria-hidden="true" />
+          </div>
+        </PopoverTrigger>
+        <PopoverContent
+          side="right"
+          align="end"
+          sideOffset={8}
+          className="w-auto border-0 bg-transparent p-0 shadow-none"
+          onMouseEnter={() => scheduleMachineMenu(true)}
+          onMouseLeave={() => scheduleMachineMenu(false)}
+        >
+          <div className={MENU_PANEL}>
+            <MachineChoiceRows
+              onPick={(machine) => { if (!busy) void openFolder(machine); }}
+              onAddMachine={onClose}
+            />
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {errorLine}
+    </div>
+  );
+
+  function projectRow(p: Project, offline: boolean) {
         const parent = parents.get(p.id);
         const active = p.id === activeId;
         const unavailable = locationProblem(p) !== null;
         return (
           <div
             key={p.id}
-            className={itemCls(false)}
+            className={cn(itemCls(false), offline && "pointer-events-none opacity-50")}
+            aria-disabled={offline || undefined}
             data-tip={
               unavailable
                 ? text(
@@ -345,7 +443,7 @@ export function ProjectMenu({
             }
             onClick={() =>
               // Keep missing-directory routing explicit: p.path_missing ? locateFolder(p.id) : switchTo(p.id)
-              !busy && (p.path_missing ? locateFolder(p.id) : unavailable ? locateFolder(p.id) : switchTo(p.id))
+              !busy && !offline && (p.path_missing ? locateFolder(p.id) : unavailable ? locateFolder(p.id) : switchTo(p.id))
             }
           >
             <span className="min-w-0 flex-1 truncate">
@@ -367,19 +465,7 @@ export function ProjectMenu({
             )}
           </div>
         );
-      })}
-      </div>
-
-      <div className={MENU_SEPARATOR} />
-
-      <div className={cn(itemCls(false), "shrink-0")} onClick={() => !busy && openFolder()}>
-        <SolarIcon name="folder-with-files" size={16} fit="fill" className="opacity-70" />
-        <span className="flex-1">{text("Open folder…", "打开文件夹…")}</span>
-      </div>
-
-      {errorLine}
-    </div>
-  );
+  }
 }
 
 /* ---- Topbar chip ------------------------------------------------- */
@@ -396,13 +482,10 @@ export function ProjectMenu({
  */
 export function ProjectBadge() {
   const { text } = useTranslation();
-  const { sessionId: boundSessionId, chatKey: activeChatKey } = useBoundChat();
-  // useBoundChat only carries an id inside a BOUND chat instance — on
-  // the main shell it is null even with a live session open, which
-  // would leave the freeze gate permanently off. The store's
-  // currentSessionId is the main shell's truth (null while drafting).
-  const storeSessionId = useSessionStore((s) => s.currentSessionId);
-  const sessionId = boundSessionId ?? storeSessionId;
+  // The main shell's chat, or the bound one (split view, an application's
+  // conversation). A bound draft has no session yet: it shows its own pending
+  // project, never the main shell's chat.
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const pendingProjectId = useSessionStore((s) =>
     activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
@@ -415,7 +498,10 @@ export function ProjectBadge() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [onDefaultProject, setOnDefaultProject] = useState(false);
   const setPendingProject = useSessionStore((s) => s.setPendingProject);
-  const { pickFolder, folderPickerDialog, manualOpen } = useFolderPicker();
+  const { openOn, pickFolder, dialogs, dialogOpen } = useOpenFolderOn();
+  const machines = useMachines((s) => s.items);
+  const kinds = useMachines((s) => s.kinds);
+  const [projectMachine, setProjectMachine] = useState<string>(LOCAL_ID);
 
   // Returns true once it has resolved a project (so the caller can stop
   // retrying). On a fresh page load the WebSocket may not be OPEN yet, so
@@ -447,6 +533,7 @@ export function ProjectBadge() {
     if (cur) {
       setLabel(cur.name);
       setMissing(cur.path_missing === true);
+      setProjectMachine(projectMachineId(cur));
       setGitPath(!cur.is_default && !cur.path_missing && cur.path ? cur.path : null);
       setProjectPath(cur.path || null);
       setOnDefaultProject(cur.is_default);
@@ -457,20 +544,15 @@ export function ProjectBadge() {
 
   useEffect(() => {
     let cancelled = false;
-    let tries = 0;
-    const attempt = () => {
-      if (cancelled) return;
-      refreshLabel().then((ok) => {
-        // Retry (~6s) until the socket is open and answers — otherwise the
-        // chip would stay stuck on the "Project" placeholder.
-        if (!ok && !cancelled && tries++ < 20) setTimeout(attempt, 300);
-      });
-    };
-    attempt();
+    void refreshLabel();
+    // Unanswered while the socket is down: asked again as it opens, so the
+    // chip does not stay on the "Project" placeholder.
+    const offOpen = onReconnected(() => { if (!cancelled) void refreshLabel(); });
     const onChanged = () => refreshLabel();
     window.addEventListener("project-changed", onChanged);
     return () => {
       cancelled = true;
+      offOpen();
       window.removeEventListener("project-changed", onChanged);
     };
   }, [refreshLabel]);
@@ -481,11 +563,19 @@ export function ProjectBadge() {
     return () => window.removeEventListener("topbar-close-menus", close);
   }, []);
 
+  useEffect(() => {
+    void ensureMachines();
+  }, []);
+
+  const projectMachineInfo = findMachine(machines, projectMachine);
+  const folderHere =
+    projectMachine === LOCAL_ID || (!!projectMachineInfo && !machineKeepsFiles(projectMachineInfo, kinds));
+
   function onOpenChange(next: boolean) {
-    // The headless-host fallback is portaled outside the Popover. Keep this
-    // menu mounted while that modal owns focus so the pending create/relocate
-    // operation can resume after path validation.
-    if (!next && manualOpen) return;
+    // The headless-host fallback and the remote folder browser are portaled
+    // outside the Popover. Keep this menu mounted while that modal owns focus
+    // so the pending create/relocate operation can resume after the choice.
+    if (!next && dialogOpen) return;
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
       closeAllPopovers();
@@ -551,11 +641,13 @@ export function ProjectBadge() {
         sideOffset={10}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
-        <ProjectMenu onClose={() => setOpen(false)} pickFolder={pickFolder} />
+        <ProjectMenu onClose={() => setOpen(false)} pickFolder={pickFolder} openOn={openOn} />
       </PopoverContent>
     </Popover>
     <GitChip
-      path={gitPath}
+      // Git runs on this computer's folders: a project on a machine that
+      // keeps its own files has no git pill or worktrees here.
+      path={folderHere ? gitPath : null}
       order={0}
       onUseFolder={moveOntoWorktree}
       useFolderLabel={sessionId ? {
@@ -564,7 +656,7 @@ export function ProjectBadge() {
       } : undefined}
     />
     </span>
-    {folderPickerDialog}
+    {dialogs}
     </>
   );
 

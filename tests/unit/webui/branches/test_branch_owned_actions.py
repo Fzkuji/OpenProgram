@@ -93,6 +93,34 @@ def test_edit_and_retry_open_a_new_branch_while_another_branch_runs(two_branches
     assert [row["id"] for row in h.store.get_branch(h.sid, "r1")] == ["u1", "r1"]
 
 
+def test_a_retry_after_an_error_leaves_no_branch_for_the_failed_attempt(two_branches, monkeypatch):
+    h = two_branches
+    h.store.append_message(h.sid, {"id": "u3", "role": "user", "content": "look", "predecessor": "r1"})
+    h.store.append_message(h.sid, {"id": "r3", "role": "assistant", "predecessor": "u3", "status": "error",
+                                   "content": "[error] ValueError: no image input"})
+    h.store.set_head(h.sid, "r3")
+    failed_branch = h.store.get_session(h.sid)["active_branch_id"]
+    _captured, appended = _fork_harness(monkeypatch, h.store, h.sid)
+
+    def write(_conv, message, **_kw):
+        appended.append(message)
+        h.store.append_message(h.sid, dict(message))
+        h.store.set_head(h.sid, message["id"])
+
+    from openprogram.interfaces.server import server
+    monkeypatch.setattr(server, "_append_msg", write)
+    monkeypatch.setattr(server, "_invalidate_messages", lambda _sid: None)
+    result = routes._fork_user_turn_and_run(h.sid, "r3", None)
+
+    assert "__error__" not in result, result
+    ids = {row["id"] for row in h.store.get_messages(h.sid)}
+    assert result["msg_id"] in ids and not {"u3", "r3"} & ids
+    row = h.store.get_session(h.sid)
+    assert row["head_id"] == result["msg_id"]
+    assert failed_branch not in row["branch_refs"] or row["branch_refs"][failed_branch]["head_id"] == result["msg_id"]
+    assert all(ref["head_id"] in ids for ref in row["branch_refs"].values())
+
+
 def test_edit_waits_while_its_own_branch_runs(two_branches, monkeypatch):
     h = two_branches
     _fork_harness(monkeypatch, h.store, h.sid, selected_running=True)

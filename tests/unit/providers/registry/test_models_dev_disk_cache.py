@@ -26,12 +26,44 @@ def _reset_mem_cache():
     })
 
 
+def _age(path, seconds):
+    import os
+    import time
+
+    then = time.time() - seconds
+    os.utime(path, (then, then))
+
+
+def test_a_disk_cache_fetched_within_the_hour_starts_no_refresh(tmp_path, monkeypatch):
+    # Each command is a new process with nothing in memory; one that took
+    # the disk copy for stale whatever its age downloaded the catalogue
+    # again and waited for the download on its way out.
+    cache = tmp_path / "cache" / "models_dev.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({"openai": {"name": "OpenAI", "models": {"gpt": {}}}}))
+    _age(cache, models_dev._TTL_SECONDS - 60)
+    monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
+    scheduled = []
+    monkeypatch.setattr(models_dev, "_start_background_refresh", lambda: scheduled.append(True))
+    _reset_mem_cache()
+
+    assert "openai" in models_dev._load()
+    assert "openai" in models_dev._load()
+    assert scheduled == []
+
+    _reset_mem_cache()
+    _age(cache, models_dev._TTL_SECONDS + 60)
+    assert "openai" in models_dev._load()
+    assert scheduled == [True]
+
+
 def test_expired_disk_cache_returns_stale_and_schedules_refresh(
     tmp_path, monkeypatch
 ):
     cache = tmp_path / "cache" / "models_dev.json"
     cache.parent.mkdir(parents=True)
     cache.write_text(json.dumps({"openai": {"name": "OpenAI", "models": {"gpt": {}}}}))
+    _age(cache, models_dev._TTL_SECONDS + 1)
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
     request_called = False
 
@@ -164,6 +196,7 @@ def test_structured_output_tri_state_survives_disk_model_and_web_listing(
             },
         }
     }))
+    _age(cache, models_dev._TTL_SECONDS + 1)
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
     # This test covers disk-to-model projection, not network scheduling.
     # Keep stale refresh queued so no real thread survives fixture teardown.
@@ -297,3 +330,38 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
         enabled_models.reload()
         listing._reset_browse_cache()
         _reset_mem_cache()
+
+
+def test_a_refresh_wanted_while_the_process_starts_waits(monkeypatch):
+    import time
+
+    from openprogram.models.providers.catalog.sources import models_dev
+
+    fetched = []
+    waited = []
+
+    class Exiting:
+        def __init__(self, ends: bool) -> None:
+            self.ends = ends
+
+        def wait(self, seconds: float) -> bool:
+            waited.append(seconds)
+            return self.ends
+
+    monkeypatch.setattr(models_dev, "_refresh_cache", lambda: fetched.append(1))
+
+    # Long after the start: at once.
+    monkeypatch.setattr(models_dev, "_process_started", time.monotonic() - 3600)
+    monkeypatch.setattr(models_dev, "_exiting", Exiting(False))
+    models_dev._refresh_after_start()
+    assert (fetched, waited) == ([1], [])
+
+    # While starting: after the quiet time.
+    monkeypatch.setattr(models_dev, "_process_started", time.monotonic())
+    models_dev._refresh_after_start()
+    assert len(fetched) == 2 and 0 < waited[0] <= models_dev._QUIET_START_SECONDS
+
+    # A process that ends first does not fetch.
+    monkeypatch.setattr(models_dev, "_exiting", Exiting(True))
+    models_dev._refresh_after_start()
+    assert len(fetched) == 2

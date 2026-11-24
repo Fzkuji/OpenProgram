@@ -1320,7 +1320,7 @@ def _commands_of(store, active, tmp_path, monkeypatch):
     def running(execution_id, *, background=False):
         record = records.create(session_id=session_id, execution_id=execution_id, tool_call_id="call",
                                 command="sleep 120", cwd=str(tmp_path), backend_id="local")
-        return records.update(record["id"], status="running", heartbeat=time.time(), background=background)["id"]
+        return records.update(record["id"], status="running", background=background)["id"]
 
     ids = SimpleNamespace(waited_on=running(active.execution_id),
                           left_running=running(active.execution_id, background=True),

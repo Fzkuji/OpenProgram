@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import { useEffectEvent } from "@/lib/hooks/use-effect-event";
 import { findAtToken, mentionScopeParams, type MentionScope } from "./at-mention";
 import type { FileMatch } from "./file-menu";
-import { matchApps, matchTabs, mentionInsert, type FileMention, type MentionSources } from "./mention-sources";
+import { matchApps, matchTabs, matchWindows, mentionInsert, type FileMention, type MentionSources } from "./mention-sources";
 
 /** Debounce delay (ms) before firing /api/file-search after the
  *  partial token changes. 100 ms keeps typing-driven flicker low. */
@@ -68,6 +68,8 @@ export function useFileMention({
   scope,
 }: UseFileMentionArgs): UseFileMentionResult {
   const [caretPos, setCaretPos] = useState(0);
+  /** The @ being typed, numbered so each new one is told apart. */
+  const mention = React.useRef({ start: -1, n: 0 });
   const atToken = React.useMemo(
     () => findAtToken(input, caretPos),
     [input, caretPos],
@@ -89,10 +91,14 @@ export function useFileMention({
   const searchToken = useEffectEvent(() => {
     if (dismissedKey !== null && dismissedKey !== tokenKey) setDismissedKey(null);
     if (!atToken) {
+      mention.current.start = -1;
       setDismissedKey(null);
       setFileMenuPos(null);
       return;
     }
+    // A new @ (not the same one typed further) reads the running apps again.
+    if (atToken.start !== mention.current.start) mention.current = { start: atToken.start, n: mention.current.n + 1 };
+    const appsFor = String(mention.current.n);
     if (!activeToken || tokenKey === null) return;
     setResult({ key: tokenKey, matches: [], loading: true });
     let cancelled = false;
@@ -111,13 +117,15 @@ export function useFileMention({
           return [];
         }
       };
-      const [files, apps] = await Promise.all([
+      const [files, apps, pages] = await Promise.all([
         searchFiles(),
-        sources ? sources.apps().catch(() => []) : Promise.resolve([]),
+        sources ? sources.apps(appsFor).catch(() => []) : Promise.resolve([]),
+        sources ? sources.pages().catch(() => []) : Promise.resolve([]),
       ]);
       if (cancelled) return;
       const matches: FileMatch[] = [
-        ...matchTabs(sources?.tabs() ?? [], atToken.partial),
+        ...matchTabs(pages, atToken.partial),
+        ...matchWindows(sources?.tabs() ?? [], atToken.partial),
         ...matchApps(apps, atToken.partial),
         ...files,
       ];

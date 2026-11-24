@@ -13,14 +13,33 @@ _log = logging.getLogger(__name__)
 # Seconds to keep reading after finish_reason for a usage-only chunk.
 USAGE_DRAIN_S = 1.5
 
-# The ``openai`` SDK is a base dependency (installed by default). This
-# guarded import only stays defensive so importing this module succeeds
-# even in a stripped env and the provider *catalog* stays usable.
-# Functions below re-check ``_openai`` and raise a clear error.
-try:
-    import openai as _openai
-except ImportError:  # pragma: no cover — base dep, normally present
-    _openai = None  # type: ignore[assignment]
+
+
+def _sdk():
+    """The ``openai`` SDK, imported when a request first needs it.
+
+    The provider catalog imports this module in every process to register
+    the provider; the SDK takes 0.25 s to import and is used only by a
+    request through this adapter, so a command or a turn on another
+    provider does not pay for it.
+    """
+    try:
+        import openai
+    except ImportError as exc:  # pragma: no cover - base dependency, normally present
+        raise ImportError(
+            "The 'openai' Python SDK is required to use the OpenAI "
+            "(Chat Completions) provider. It ships as a base dependency, so "
+            "this means the installation is incomplete; reinstall the "
+            "complete OpenProgram release."
+        ) from exc
+    return openai
+
+
+def __getattr__(name: str):
+    # ``_openai`` read from outside the module is the SDK itself.
+    if name == "_openai":
+        return _sdk()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 from ...types import (
     AssistantMessage,
@@ -257,13 +276,7 @@ async def stream_simple(
     options: SimpleStreamOptions | None = None,
 ) -> AsyncGenerator[AssistantMessageEvent, None]:
     """Stream a response from the OpenAI Chat Completions API."""
-    if _openai is None:
-        raise ImportError(
-            "The 'openai' Python SDK is required to use the OpenAI "
-            "(Chat Completions) provider. It ships as a base dependency, so "
-            "this means the installation is incomplete; reinstall the "
-            "complete OpenProgram release."
-        )
+    _sdk()
     opts = options or SimpleStreamOptions()
 
     from openprogram.models.auth.provider_policy import require_supported_provider
@@ -314,7 +327,7 @@ async def stream_simple(
             # Explicit SDK value prevents fallback to OPENAI_API_KEY.
             _client_api_key = "openprogram-local-no-key"
             # The SDK validates explicit omission in per-request headers.
-            request_headers["Authorization"] = _openai.Omit()
+            request_headers["Authorization"] = _sdk().Omit()
     if not _client_api_key:
         # No key in the AuthStore. Fail here with a precise message —
         # NEVER hand api_key=None to the SDK, which would silently
@@ -324,7 +337,7 @@ async def stream_simple(
         raise LLMError(
             message=(
                 f"No API key configured for provider '{model.provider}'. "
-                f"Add one in Settings → Providers, or run: "
+                f"Add one in Settings → Model services, or run: "
                 f"openprogram providers keys {model.provider} add"
             ),
             reason=ErrorReason.AUTHENTICATION,
@@ -343,7 +356,7 @@ async def stream_simple(
     configured_url = base_url or "https://api.openai.com/v1"
     configured_origin = normalize_origin(configured_url)
 
-    client = _openai.AsyncOpenAI(
+    client = _sdk().AsyncOpenAI(
         api_key=_client_api_key,
         base_url=base_url,
         default_headers=extra_headers or None,
@@ -644,7 +657,7 @@ async def stream_simple(
                     if recovery is not None:
                         recovery.refund("transport", transport_reserved)
                 break
-            except (_openai.APIError, StreamIdleTimeout) as e:
+            except (_sdk().APIError, StreamIdleTimeout) as e:
                 _, retryable = classify_error(
                     e, http_status=getattr(e, "status_code", None),
                 )
@@ -785,7 +798,7 @@ async def stream_simple(
         else:
             yield EventDone(type="done", reason=stop_reason, message=final)
 
-    except _openai.APIError as e:
+    except _sdk().APIError as e:
         # Re-raise so the classification layer (_build_llm_error /
         # should_failover / retry) sees the real exception — yielding
         # EventError here made agent_loop treat the failure as a normal

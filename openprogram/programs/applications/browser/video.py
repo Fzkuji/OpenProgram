@@ -1,4 +1,4 @@
-"""Video recording of one pane of the App, for ``computer_use_agent(target="browser")``.
+"""Video recording of one pane of the App, for ``computer_use(type="browser")``.
 
 The App records itself: the window that shows the conversation captures its
 own page as a stream, crops it to the pane and writes an H.264 MP4 (see
@@ -7,7 +7,7 @@ file, sends the three commands over the desktop link and words the results.
 It keeps no state: the window holds the recording, so a stop finds it
 whichever process asks.
 
-- ``panes``: the panes on screen in that window.
+- ``list_panes``: the panes on screen in that window.
 - ``start_video_recording(pane, max_duration)``: returns at once; the Agent
   acts while it records.
 - ``stop_video_recording(discard)``: the file, its length and its size.
@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-ACTIONS = ("panes", "start_video_recording", "stop_video_recording")
+ACTIONS = ("list_panes", "start_video_recording", "stop_video_recording")
 
 DEFAULT_SECONDS = 60.0
 MAX_SECONDS = 600.0
@@ -86,7 +86,7 @@ def _pane_list(panes: list[dict]) -> str:
 
 def run(action: str, args: dict[str, Any], session: str) -> dict[str, Any]:
     """One recording action; a failure is a result with ``ok: False``."""
-    if action == "panes":
+    if action == "list_panes":
         reply = _request({"op": "record_panes"}, session, 5.0)
         if not reply.get("ok"):
             return _failure(reply)
@@ -106,7 +106,7 @@ def run(action: str, args: dict[str, Any], session: str) -> dict[str, Any]:
         pane = str(args.get("pane") or "").strip()
         if not pane:
             return {"ok": False, "reason_code": "invalid_argument",
-                    "error": "pane is required: \"conversation\", \"window\", or an id from panes"}
+                    "error": "pane is required: \"conversation\", \"window\", or an id from list_panes"}
         path = new_path(pane)
         reply = _request({"op": "record_start", "pane": pane, "max_duration": limit, "path": str(path)},
                          session, 15.0)

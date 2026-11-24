@@ -9,12 +9,10 @@
 <thead><tr><th scope="col">标题，按面板顺序</th><th scope="col">类型</th></tr></thead>
 <tbody>
 <tr><th scope="row">网页</th><td><code translate="no">web</code>；来源 <code translate="no">web</code> 和 <code translate="no">browser</code> 都归这里。</td></tr>
-<tr><th scope="row">虚拟机</th><td><code translate="no">vm</code>，由实际集成声明</td></tr>
-<tr><th scope="row">桌面</th><td><code translate="no">desktop</code></td></tr>
+<tr><th scope="row">桌面</th><td><code translate="no">desktop</code>：调用在这台电脑上操作的对象</td></tr>
+<tr><th scope="row">机器</th><td><code translate="no">machine</code>：调用在另一台机器上操作的对象</td></tr>
 <tr><th scope="row">终端</th><td><code translate="no">terminal</code>。</td></tr>
 <tr><th scope="row">应用</th><td><code translate="no">application</code>。</td></tr>
-<tr><th scope="row">容器</th><td><code translate="no">docker</code></td></tr>
-<tr><th scope="row">远程环境</th><td><code translate="no">remote</code></td></tr>
 <tr><th scope="row">其他资源</th><td>其余类型；详情保留原类型和来源</td></tr>
 </tbody>
 </table>
@@ -25,12 +23,12 @@
 <tbody>
 <tr><th scope="row">条目标题</th><td>资源的实际名称。页面标题变化只更新条目，不改分组。</td></tr>
 <tr><th scope="row">条目副标题</th><td>状态（操作中、运行中、连接失败），需要时加所属 Agent、来源、分支和连接。没有会话标题这一层。</td></tr>
-<tr><th scope="row">外部</th><td>是来源，不是类型：外部虚拟机仍在虚拟机下，外部网页仍在网页下</td></tr>
+<tr><th scope="row">外部</th><td>是来源，不是类型：外部网页仍在网页下</td></tr>
 <tr><th scope="row">范围</th><td>只显示与当前会话关联的资源。跨分支的同类资源在同一组。</td></tr>
 <tr><th scope="row">数量</th><td>该类型的有效资源数。切换 Agent 或改名不改变分组顺序。</td></tr>
 <tr><th scope="row">已关闭或已退出</th><td>离开活动列表；历史可在详情中显示</td></tr>
 <tr><th scope="row">状态不确定</th><td>留在原类型下并显示错误，不当作已关闭</td></tr>
-<tr><th scope="row">刷新失败</th><td>已知类型和条目保留并显示失败。不改名，不自动选别的资源，不重试结果未知的关闭。</td></tr>
+<tr><th scope="row">刷新失败</th><td>已知类型和条目保留，不提示，在后台重新读取状态。不改名，不自动选别的资源，不重试结果未知的关闭。</td></tr>
 </tbody>
 </table>
 
@@ -45,7 +43,7 @@
 <tr><th scope="row">小窗：打开页面</th><td>同一资源的完整视图；网页用顶部标签。没有完整视图时隐藏。</td><td>不创建副本</td></tr>
 <tr><th scope="row">小窗：关闭小窗（X）</th><td>小窗隐藏，条目保留</td><td>页面仍在，环境继续运行</td></tr>
 <tr><th scope="row">小窗：查看请求</th><td>Agent 等待确认时显示</td><td>不变</td></tr>
-<tr><th scope="row">更多：自动显示 Agent 正在操作的网页</th><td>开：显示本会话正在操作的页面。关：保持当前页面。</td><td>不改变 Agent 目标和任务</td></tr>
+<tr><th scope="row">更多：自动显示 Agent 正在操作的内容</th><td>开：显示本会话正在操作的页面。关：保持当前页面。</td><td>不改变 Agent 目标和任务</td></tr>
 <tr><th scope="row">终止环境</th><td>文字菜单中写明对象的显式操作；仅在支持时出现</td><td>沿用现有确认和权限规则</td></tr>
 </tbody>
 </table>
@@ -62,7 +60,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row">网页上的项目</th><td>自动显示 Agent 正在操作的网页（复选框、可换行标题、可见说明）；显示操作（复选框）；操作历史（子菜单）。虚拟机、终端和应用只显示实际支持的功能。</td></tr>
+<tr><th scope="row">网页上的项目</th><td>自动显示 Agent 正在操作的内容（复选框、可换行标题、可见说明）；显示操作（复选框）；操作历史（子菜单）。桌面、机器、终端和应用只显示实际支持的功能。</td></tr>
 <tr><th scope="row">载体</th><td>应用自己的菜单。桌面端在原生页面上方的 HTML 浮层绘制，主进程 IPC 和控制浮层共用同一个原生菜单服务。Web 用相同的内容和样式。</td></tr>
 <tr><th scope="row">切换时</th><td>菜单保持打开，勾选立即更新；自动切换页面也不关闭菜单</td></tr>
 <tr><th scope="row">关闭方式</th><td>Escape、点击外部、再次点更多、关闭小窗</td></tr>
@@ -77,7 +75,7 @@
 <tr><th scope="row">小窗隐藏</th><td>点击条目</td><td>显示该资源。手动选择页面会关闭跟随。</td></tr>
 <tr><th scope="row">小窗可见</th><td>关闭小窗</td><td>只隐藏视图，保留选择和模式。之后的 Agent 活动不会重新打开。</td></tr>
 <tr><th scope="row">跟随开启，小窗可见</th><td>Agent 切换页面</td><td>小窗更新，只限本会话允许的页面</td></tr>
-<tr><th scope="row">正在查看虚拟机、终端或应用</th><td>Agent 切换页面</td><td>页面跟随不替换它</td></tr>
+<tr><th scope="row">正在查看桌面、机器、终端或应用</th><td>Agent 切换页面</td><td>页面跟随不替换它</td></tr>
 <tr><th scope="row">重新打开网页</th><td>重新打开</td><td>应用会话保存的显示策略；明确选择的页面保持不变</td></tr>
 <tr><th scope="row">任意</th><td>切换资源</td><td>替换唯一小窗的视图</td></tr>
 <tr><th scope="row">任意</th><td>切换会话</td><td>隐藏旧小窗；恢复新会话自己的选择和可见性</td></tr>
@@ -93,9 +91,9 @@
 <table class="stack">
 <thead><tr><th scope="col">部分</th><th scope="col">代码</th><th scope="col">必须成立</th></tr></thead>
 <tbody>
-<tr><th scope="row">类型分组</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/resources/session-resources.ts"><code translate="no">session-resources.ts</code></a>：<code translate="no">groupSessionResources</code>、资源类型、预览偏好。<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx"><code translate="no">session-resources-panel.tsx</code></a>：标题、行按钮、折叠。</td><td>网页和虚拟机分属不同组；改名不改分组；同类跨分支在一起</td></tr>
+<tr><th scope="row">类型分组</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/resources/session-resources.ts"><code translate="no">session-resources.ts</code></a>：<code translate="no">groupSessionResources</code>、资源类型、预览偏好。<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx"><code translate="no">session-resources-panel.tsx</code></a>：标题、行按钮、折叠。</td><td>网页和机器分属不同组；改名不改分组；同类跨分支在一起</td></tr>
 <tr><th scope="row">小窗和菜单</th><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/pip/web-tab-pip.tsx"><code translate="no">web-tab-pip.tsx</code></a></td><td>X 隐藏；行上的预览按钮重新打开；行按钮不变；跟随语义一致</td></tr>
-<tr><th scope="row">各资源的视图</th><td>现有终端和应用视图、provider 能力</td><td>显示和隐藏语义相同；不新增虚拟机控制后端；不支持预览时回退到详情</td></tr>
+<tr><th scope="row">各资源的视图</th><td>现有终端和应用视图、provider 能力</td><td>显示和隐藏语义相同；不新增机器控制后端；不支持预览时回退到详情</td></tr>
 <tr><th scope="row">状态</th><td>资源存储、会话选择、已保存偏好</td><td>会话隔离，隐藏后不重开，刷新后恢复，最小宽度下关闭小窗不被遮挡</td></tr>
 <tr><th scope="row">桌面菜单</th><td>原生菜单服务</td><td>授权窗口弹出、选择返回、取消清理</td></tr>
 </tbody>

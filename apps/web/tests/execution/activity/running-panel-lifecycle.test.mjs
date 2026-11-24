@@ -103,8 +103,10 @@ test("activity never overlaps polls for the same resource and aborts on unmount"
       assert.equal(host.querySelector('button[aria-label="Refresh activity"]'), null);
     });
     // Executions, programs, the conversation's own work (always-on, open
-    // work, scheduled tasks) and the agents' roster: one read each.
-    assert.equal(requests.length, 4);
+    // work, scheduled tasks), the agents' roster and the chart's runs:
+    // one read each.
+    assert.equal(requests.length, 5);
+    assert.ok(requests.some(request => request.url.includes("/activity/runs")));
     assert.ok(requests.some(request => request.url.endsWith("/api/session/session-one/activity/roster")));
     assert.ok(requests.some(request => request.url.endsWith("/api/sessions/session-one/work")));
     assert.equal(new Set(requests.map(request => request.url)).size, requests.length);
@@ -112,16 +114,26 @@ test("activity never overlaps polls for the same resource and aborts on unmount"
   assert.ok(requests.every(request => request.signal.aborted));
 });
 
-test("runs that cannot be read stay quiet a moment, then say so under Agents", async (t) => {
+test("runs that cannot be read stay quiet and are read again behind the main agent", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  respond = async () => response({ error: "denied" }, 403);
+  const warn = t.mock.method(console, "warn", () => {});
+  let reads = 0;
+  respond = async (url) => {
+    if (String(url).endsWith("/executions")) reads++;
+    return response({ error: "denied" }, 403);
+  };
   await mount(RunningPanel, { sessionId: "session-one", active: true }, async (host) => {
     // Nothing read yet: the main agent is listed, with no loading text.
     assert.match(host.textContent, /Main agent/);
     assert.doesNotMatch(host.textContent, /Could not read|unavailable|Retrying|Loading/);
-    await act(async () => { t.mock.timers.tick(5000); });
-    assert.match(host.textContent, /Could not read this conversation's runs/);
-    assert.doesNotMatch(host.textContent, /Retrying|Updating|saved records/);
+    await act(async () => { await Promise.resolve(); });
+    const first = reads;
+    for (let second = 0; second < 30; second++) await act(async () => { t.mock.timers.tick(1000); await Promise.resolve(); });
+    assert.match(host.textContent, /Main agent/);
+    assert.doesNotMatch(host.textContent, /Could not read|unavailable|Retry|Loading|Updating|saved records/);
+    assert.equal(host.querySelectorAll("[role=alert]").length, 0);
+    assert.ok(reads > first, "a failed read is tried again");
+    assert.ok(warn.mock.callCount() > 0, "the failure goes to the console");
   });
 });
 
@@ -165,6 +177,39 @@ test("a conversation's last read draws at once, and a fresh one is not read agai
   useSessionStore.setState({ wsStatus: "connecting" });
 });
 
+test("an open program is asked for together with the list, not after it", async () => {
+  const { useManagedProcesses } = await import("../../../lib/execution/use-managed-processes.ts");
+  const requests = [];
+  // Neither read answers: the program must not wait for the list.
+  respond = async (url) => { requests.push(String(url)); return new Promise(() => {}); };
+  const Probe = () => { useManagedProcesses(true, "session-program", "proc-1"); return null; };
+  await mount(Probe, {}, async () => {
+    await act(async () => { await Promise.resolve(); });
+    assert.ok(requests.some(url => url.endsWith("/api/session/session-program/processes")));
+    assert.ok(requests.some(url => url.includes("/api/process/proc-1")));
+  });
+});
+
+test("programs are read again when the Worker says the records changed, never on a timer", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { useManagedProcesses } = await import("../../../lib/execution/use-managed-processes.ts");
+  const { dispatchChanged } = await import("../../../lib/net/ws/changes.ts");
+  let reads = 0;
+  respond = async (url) => {
+    if (String(url).endsWith("/api/session/session-quiet/processes")) reads++;
+    return response({ items: [], calls: [], spawns: [], now: 1 });
+  };
+  const Probe = () => { useManagedProcesses(true, "session-quiet", null); return null; };
+  await mount(Probe, {}, async () => {
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    assert.equal(reads, 1);
+    for (let second = 0; second < 30; second++) await act(async () => { t.mock.timers.tick(1000); await Promise.resolve(); });
+    assert.equal(reads, 1, "nothing is read on a timer");
+    await act(async () => { dispatchChanged("processes", null); await Promise.resolve(); await Promise.resolve(); });
+    assert.equal(reads, 2);
+  });
+});
+
 test("conversation parent ignores historical update fixtures", async () => {
   const calls = [];
   respond = async (...args) => { calls.push(args); throw new Error("unexpected update request"); };
@@ -202,11 +247,13 @@ test("activity list does not load unselected execution events or debugger bodies
       event_sequence: 100, status_version: 1,
     } }] });
     if (String(url).includes("/processes")) return response({ items: [] });
+    if (String(url).includes("/activity/runs")) return response({ runs: [], offset: 0, total: 0 });
     throw new Error("Unselected detail should not be requested");
   };
   await mount(RunningPanel, { sessionId: "session-one", active: true }, async () => {
     assert.ok(urls.some(url => url.endsWith("/executions")));
     assert.equal(urls.filter(url => /\/(events|debugger)[?]/.test(url)).length, 0);
-    assert.equal(urls.filter(url => url.includes("/activity/runs")).length, 0);
+    // The chart reads the branch's runs once, steps included; no run is opened.
+    assert.equal(urls.filter(url => url.includes("/activity/runs")).length, 1);
   });
 });

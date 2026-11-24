@@ -5,7 +5,7 @@ import type { BuiltinPage } from "@/lib/tabs/center-tab-ids";
 import { type TabPageHistory } from "../navigation/page-history";
 import { type SessionTabHistory } from "../navigation/session-history";
 import type { ClosedTabEntry } from "./closed-tabs";
-export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin" | "application";
+export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin" | "application" | "window";
 
 export interface CenterTab {
   /** Empty canvas layout tab; removed once real content occupies the layout. */
@@ -63,12 +63,21 @@ export interface CenterTab {
   /** Web tabs only — favicon URL reported by the desktop shell; the
    *  strip falls back to the Chrome icon when absent or unloadable. */
   faviconUrl?: string;
+  /** Window tabs only — the other application's window it shows (a window
+   *  server id, HWND or X window id) and that application's name; absent
+   *  while the tab offers the open windows to choose from. */
+  nativeWindowId?: number;
+  nativeWindowApp?: string;
   /** Builtin tabs only — which built-in page this tab shows. */
   page?: BuiltinPage;
+  /** Terminal tabs only — a terminal the Agent uses, shown instead of the
+   *  user's own shell, and the conversation it belongs to. */
+  terminalId?: string;
+  terminalSessionId?: string;
   /** Review tab only — current scope and source turn. */
   reviewSessionId?: string;
   reviewMsgId?: string;
-  reviewScope?: "turn" | "branch" | "workspace";
+  reviewScope?: "turn" | "unstaged" | "staged" | "branch";
   reviewPath?: string;
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
@@ -205,10 +214,18 @@ export interface CenterTabsState {
   /** Focus-or-create the singleton tab for a built-in page. */
   openBuiltinTab: (page: BuiltinPage) => void;
   openApplicationTab: (appId: string, instanceId: string, title: string, sessionId?: string) => void;
+  /** A tab for another application's window; it starts on the list of open windows. */
+  openWindowTab: () => void;
+  /** Show this window in a tab: the tab already holding it, or a new one. */
+  openWindowTabFor: (target: { id: number; app: string; title: string }) => void;
+  /** A terminal the Agent uses, in a tab of its own (the same terminal, not a new shell). */
+  openTerminalResourceTab: (terminalId: string, title: string, sessionId?: string) => void;
+  setWindowTabTarget: (id: string, target: { id: number; app: string; title: string } | null) => void;
+  setWindowTabTitle: (id: string, title: string) => void;
   openReviewTab: (
     sessionId: string,
     assistantMsgId?: string,
-    scope?: "turn" | "branch" | "workspace",
+    scope?: "turn" | "unstaged" | "staged" | "branch",
     path?: string,
   ) => void;
   /** Create a distinct new-tab page with its own navigation history. */

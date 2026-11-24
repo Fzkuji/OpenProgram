@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
 
-import { AgentSelector } from "./menus/agent-selector";
+import { AgentSelector, PICKER_PANEL } from "./menus/agent-selector";
 import { TriggerMark } from "./menus/provider-quota";
 import { PICKER_QUERY_KEY, triggerMark } from "@/lib/models/provider-state";
 import { ModelMark } from "./chips/model-mark";
@@ -197,7 +197,7 @@ export function AgentBadge({
            与输入框可见边缘完全贴合。 */
         sideOffset={9}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className={cn(MENU_PANEL, "text-text-primary")}
+        className={cn(MENU_PANEL, PICKER_PANEL, "text-text-primary")}
       >
         <AgentSelector
           currentProvider={provider}

@@ -80,21 +80,25 @@ export function SessionScopeProvider({
 /**
  * Subscribe to this subtree's session state.
  *
- * Throws when no provider encloses the component. That is deliberate: a
- * silent fallback to "the focused session" is the exact bug this layer exists
- * to remove, and it would surface only in a split view after a specific
- * interaction sequence. Failing on first render makes a missing wrap obvious
- * while it is still being written.
+ * With no provider around the component it reads an empty scope (no
+ * session), never "the focused session": that fallback is the exact bug this
+ * layer exists to remove. A missing wrap is reported once in the console
+ * instead of throwing, so one misplaced component cannot take the page down.
  */
 export function useSessionScope<T>(selector: (s: SessionScopeState) => T): T {
   const store = useContext(SessionScopeContext);
-  if (!store) {
-    throw new Error(
-      "useSessionScope must be used inside a <SessionScopeProvider>. "
-        + "Wrap the pane (or the single-session shell) in one.",
-    );
-  }
-  return useStore(store, selector);
+  if (!store) warnMissingScope();
+  return useStore(store ?? EMPTY_SCOPE_STORE, selector);
+}
+
+const missingScopeWarning = { shown: false };
+function warnMissingScope(): void {
+  if (missingScopeWarning.shown) return;
+  missingScopeWarning.shown = true;
+  console.warn(
+    "useSessionScope used outside a <SessionScopeProvider>; reading an empty scope. "
+      + "Wrap the pane (or the single-session shell) in one.",
+  );
 }
 
 /** This subtree's session id. */

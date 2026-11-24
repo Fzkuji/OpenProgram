@@ -353,18 +353,6 @@ def _validate_fallback_models(value: Any) -> Optional[str]:
     return None
 
 
-def _validate_vm_url(value: Any) -> Optional[str]:
-    from urllib.parse import urlparse
-
-    text = str(value or "").strip()
-    if not text:
-        return None
-    parsed = urlparse(text)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return "must be an http:// or https:// URL"
-    return None
-
-
 def _validate_web_bind_host(value: Any) -> Optional[str]:
     from openprogram.host.security.backend_endpoint import OwnerAuthError, canonicalize_bind_host
 
@@ -680,33 +668,36 @@ SETTINGS: list[SettingSpec] = [
              "whisper-large-v3-turbo (Groq), large-v3-turbo-q5_0 (local). Applies only when an engine is chosen.",
     ),
     SettingSpec(
-        key="computer_use.vm_url", path=("computer_use", "vm_url"),
-        group="Computer use", label="Virtual machine server", widget="text",
-        apply=APPLY_LIVE, default="", validate=_validate_vm_url,
-        help="Base URL of an OSWorld-compatible server (GET /screenshot, POST /execute), "
-             "e.g. http://192.168.64.2:5000. Set it to give computer_use_agent its vm target; empty turns it off.",
-    ),
-    SettingSpec(
         key="computer_use.refused_apps", path=("computer_use", "refused_apps"),
         group="Computer use", label="Refused apps", widget="json",
         apply=APPLY_LIVE, default=[],
         validate=lambda v: (None if isinstance(v, list) and all(isinstance(x, str) for x in v)
                             else "must be a JSON list of app names or bundle ids"),
-        help="Applications computer_use_agent refuses to read or operate, as a JSON list of names or bundle ids. "
+        help="Applications computer_use refuses to read or operate, as a JSON list of names or bundle ids. "
              "Empty by default. For example com.apple.keychainaccess.",
     ),
     SettingSpec(
         key="computer_use.refuse_password_fields", path=("computer_use", "refuse_password_fields"),
         group="Computer use", label="Refuse password fields", widget="toggle",
         apply=APPLY_LIVE, default=False,
-        help="When on, computer_use_agent will not type into password fields. Off by default.",
+        help="When on, computer_use will not type into password fields. Off by default.",
+    ),
+    SettingSpec(
+        key="computer_use.whole_screen", path=("computer_use", "whole_screen"),
+        group="Computer use", label="Whole screen", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="When on, computer_use also offers type=\"screen\": a whole display of this computer, "
+             "operated with your real pointer and keyboard (macOS). Off by default: the agent operates one "
+             "application at a time.",
     ),
     SettingSpec(
         key="computer_use.chrome_extension_token", path=("computer_use", "chrome_extension_token"),
-        group="Computer use", label="Chrome extension token", widget="text",
+        group="Computer use", label="Playwright Extension token", widget="text",
         apply=APPLY_LIVE, default="", secret=True,
-        help="The token shown by the Playwright Extension in your Chrome or Edge. With it, computer_use_agent's "
-             "browser target connects to your own browser without asking which tab to share; empty asks each time.",
+        help="The token shown by the Playwright Extension in your Chromium browser (Chrome, Edge, Brave, Vivaldi, "
+             "Opera, Arc or Chromium). With it, computer_use with that browser as app (app=\"chrome\", "
+             "app=\"brave\", ...) connects to it without asking which tab to share; empty asks each time. Each "
+             "browser's extension shows its own token. Safari and Firefox need no token.",
     ),
     SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),

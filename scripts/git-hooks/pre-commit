@@ -1,9 +1,9 @@
 #!/bin/sh
 # Installed into .git/hooks by scripts/git-hooks/install.sh, on every deploy and publish.
-# Local main is the slow line GitHub carries; it only takes squashed versions
+# Local main is the line GitHub carries; it only takes squashed syncs
 # from scripts/publishing/publish-github.sh. Everyday commits go to dev.
 if test "$(git symbolic-ref -q HEAD)" = "refs/heads/main"; then
-  echo "committing on main is refused: commit on dev; main only takes versions from scripts/publishing/publish-github.sh" >&2
+  echo "committing on main is refused: commit on dev; main only takes syncs from scripts/publishing/publish-github.sh" >&2
   exit 1
 fi
 

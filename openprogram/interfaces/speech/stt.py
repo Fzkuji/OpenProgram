@@ -255,7 +255,7 @@ def _request_http(engine: str, audio: bytes, *, model: str, language: str, respo
     key = _provider_key(engine)
     if not key:
         name = "OpenAI" if engine == "openai" else "Groq"
-        raise VoiceError(f"No {name} API key. Add one in Settings → Providers, "
+        raise VoiceError(f"No {name} API key. Add one in Settings → Model services, "
                          "or pick another engine in Settings → Voice.")
     data: dict[str, Any] = {"model": model, "response_format": response_format}
     if language != "auto":
@@ -374,7 +374,7 @@ def _engine_for(audio: bytes) -> tuple[str, str, VoiceSettings]:
     engine = resolve_engine(settings)
     if engine is None:
         raise VoiceError("No speech engine is set up. Add an OpenAI or Groq key in "
-                         "Settings → Providers, or install whisper.cpp.")
+                         "Settings → Model services, or install whisper.cpp.")
     return engine, model_for(engine, settings), settings
 
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SettingsPage } from "../settings-ui";
 import local from "./usage.module.css";
-import { cachedFetch } from "@/lib/prefs/settings-cache";
+import { useSettingsData } from "@/lib/prefs/settings-cache";
+import { usageUrls } from "@/lib/settings/settings-urls";
 import { useTranslation } from "@/lib/i18n";
 import { ChartNoAxesColumn } from "lucide-react";
 import { ManageEmptyState, ManageSubnav } from "@/components/ui/manage-page";
@@ -217,62 +218,18 @@ function costCard(totals: Summary["totals"], label: string, text: (en: string, z
 // ── main component ───────────────────────────────────────────────────────────
 
 
-const USAGE_DAYS = 30;
-const DAY_SECONDS = 86_400;
-
-/** Everything on this page covers the same 30 days. The window starts on a
- *  day boundary so the request stays cacheable, and matches the chart's. */
-function usageRequests() {
-  const today = Math.floor(Date.now() / 1000 / DAY_SECONDS);
-  const since = (today - USAGE_DAYS + 1) * DAY_SECONDS;
-  const trend = (group: string) =>
-    cachedFetch<GroupedTrendResp>(`/api/usage/trend?bucket=day&days=${USAGE_DAYS}&group=${group}`);
-  return Promise.all([
-    cachedFetch<Summary>(`/api/usage/summary?since=${since}`),
-    trend("call_kind"),
-    trend("model_id"),
-    trend("call_label"),
-  ]);
-}
-
-/** Start loading the page when Settings opens, so it appears already filled. */
-export function prefetchUsagePage(): void {
-  void usageRequests().catch(() => {});
-}
-
 export function TokenUsageSection() {
   const { t, text } = useTranslation();
-  const [summary, setSummary] = useState<Summary | null>(null);
   const [dim, setDim] = useState<Dimension>("call_kind");
-  const [trendData, setTrendData] = useState<Record<string, GroupedTrendResp>>(
-    {}
-  );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  // initial load: summary + all 3 grouped trends
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [s, tKind, tModel, tLabel] = await usageRequests();
-        if (!alive) return;
-        setSummary(s);
-        setTrendData({
-          call_kind: tKind,
-          model_id: tModel,
-          call_label: tLabel,
-        });
-      } catch {
-        if (alive) setError(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // Read as Settings opens (settings-urls), so these are usually here already;
+  // the last answer shows at once and refreshes behind.
+  const urls = usageUrls();
+  const summary = useSettingsData<Summary>(urls.summary);
+  const trendData: Partial<Record<Dimension, GroupedTrendResp>> = {
+    call_kind: useSettingsData<GroupedTrendResp>(urls.call_kind),
+    model_id: useSettingsData<GroupedTrendResp>(urls.model_id),
+    call_label: useSettingsData<GroupedTrendResp>(urls.call_label),
+  };
 
   const totals = summary?.totals;
 
@@ -340,9 +297,7 @@ export function TokenUsageSection() {
 
   return (
     <SettingsPage title={t("settings.tab.usage")} description={t("usage.desc")} bodyClassName={local.usagePage}>
-        {loading && <div className={local.muted}>{t("usage.loading")}</div>}
-        {error && <div className={local.muted}>{t("usage.error")}</div>}
-        {!loading && !error && totals && totals.events === 0 && (
+        {totals && totals.events === 0 && (
           <ManageEmptyState
             compact
             icon={<ChartNoAxesColumn />}
@@ -350,7 +305,7 @@ export function TokenUsageSection() {
             description={t("usage.empty")}
           />
         )}
-        {!loading && !error && totals && totals.events > 0 && (
+        {totals && totals.events > 0 && curTrend && (
           <>
             {/* stat cards */}
             <h3 className={local.sectionTitle}>{text("Last 30 days", "最近 30 天")}</h3>

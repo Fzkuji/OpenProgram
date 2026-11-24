@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from openprogram.state.paths import get_state_dir
+from openprogram.state import paths as state_paths
 from openprogram.state import frontmatter as _h
 
 DEFAULT_STYLE = "default"
@@ -66,7 +66,7 @@ BUILTIN_STYLES: dict[str, str] = {
 
 
 def user_dir() -> Path:
-    return get_state_dir() / "output-styles"
+    return state_paths.get_state_dir() / "output-styles"
 
 
 def project_dir(cwd: str | os.PathLike | None = None) -> Path:

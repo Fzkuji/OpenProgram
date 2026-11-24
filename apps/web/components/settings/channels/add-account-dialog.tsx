@@ -1,7 +1,9 @@
 "use client";
 
 import { jsonFetch } from "@/lib/net/fetch-client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getSocket } from "@/lib/runtime-bridge/state";
+import { QrCode } from "@/components/ui/qr-code";
 
 import styles from "./channels.module.css";
 import { SimpleSelect } from "@/components/ui/select";
@@ -37,16 +39,16 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const isWeChat = channel === "wechat";
+  const wechat = useWeChatLogin(onAdded);
 
   const submit = async () => {
     setError(null);
     if (isWeChat) {
-      setError(
-        text(
-          "WeChat needs QR-code login, which the web UI does not render. Run in a terminal: openprogram channels accounts login wechat --id ",
-          "WeChat 需要二维码登录，当前 Web UI 不渲染二维码。请在终端运行：openprogram channels accounts login wechat --id ",
-        ) + accountId,
-      );
+      if (!accountId.trim()) {
+        setError(text("Give the bot a name first.", "请先给 bot 命名。"));
+        return;
+      }
+      wechat.start(accountId.trim());
       return;
     }
     if (!accountId.trim() || !token.trim()) {
@@ -104,13 +106,16 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
           </label>
 
           {isWeChat ? (
-            <div className={styles.emptyHint}>
-              {text("WeChat uses QR-code login, which the web UI does not render. Run this in a terminal:", "WeChat 使用二维码登录，当前 Web UI 不渲染二维码。请在终端运行：")}
-              <pre className={styles.codeBlock}>
-                openprogram channels accounts login wechat --id {accountId || "default"}
-              </pre>
-              {text("After you scan, the new bot shows up in the list above automatically. No need to refresh this page.", "扫码后，新 bot 会自动显示在上方列表，无需刷新页面。")}
-            </div>
+            wechat.state.phase === "idle" ? (
+              <span className={styles.formHint}>
+                {text(
+                  "WeChat signs in by QR code: get one, then scan it with WeChat on your phone.",
+                  "微信用二维码登录：获取二维码后，用手机微信扫码。",
+                )}
+              </span>
+            ) : (
+              <WeChatPanel state={wechat.state} onRetry={() => wechat.start(accountId.trim())} />
+            )
           ) : (
             <label className="flex flex-col gap-[6px]">
               <span className={styles.formLabel}>Bot token</span>
@@ -138,7 +143,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
           >
             {t("sidebar.cancel")}
           </Button>
-          {!isWeChat && (
+          {!isWeChat ? (
             <Button
               onClick={submit}
               disabled={submitting}
@@ -146,9 +151,105 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
             >
               {submitting ? text("Adding...", "添加中...") : text("Add bot", "添加 bot")}
             </Button>
-          )}
+          ) : wechat.state.phase === "idle" ? (
+            <Button onClick={submit} type="button">{text("Get QR code", "获取二维码")}</Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type WeChatPhase = "idle" | "starting" | "qr_ready" | "scanned" | "confirmed" | "done" | "expired" | "error";
+
+interface WeChatState {
+  phase: WeChatPhase;
+  url: string;
+  message: string;
+}
+
+/** The QR login the worker runs (`start_channel_login`): its `qr_login` frames for this bot, phase by phase. */
+function useWeChatLogin(onAdded: () => void | Promise<void>) {
+  const [state, setState] = useState<WeChatState>({ phase: "idle", url: "", message: "" });
+  const stop = useRef<(() => void) | null>(null);
+  const done = useRef(onAdded);
+  done.current = onAdded;
+
+  useEffect(() => () => stop.current?.(), []);
+
+  function start(accountId: string) {
+    stop.current?.();
+    const ws = getSocket();
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setState({ phase: "error", url: "", message: "" });
+      return;
+    }
+    const onMessage = (event: MessageEvent) => {
+      let frame: { type?: string; data?: Record<string, unknown> };
+      try {
+        frame = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      const data = frame?.data;
+      if (frame?.type !== "qr_login" || !data || data.account_id !== accountId) return;
+      const phase = String(data.phase || "") as WeChatPhase;
+      setState((before) => ({
+        phase,
+        url: typeof data.url === "string" ? data.url : before.url,
+        message: typeof data.message === "string" ? data.message : "",
+      }));
+      if (phase === "done") {
+        stop.current?.();
+        void done.current();
+      }
+      if (phase === "expired" || phase === "error") stop.current?.();
+    };
+    ws.addEventListener("message", onMessage);
+    stop.current = () => {
+      ws.removeEventListener("message", onMessage);
+      stop.current = null;
+    };
+    setState({ phase: "starting", url: "", message: "" });
+    ws.send(JSON.stringify({ action: "start_channel_login", channel: "wechat", account_id: accountId }));
+  }
+
+  return { state, start };
+}
+
+function WeChatPanel({ state, onRetry }: { state: WeChatState; onRetry: () => void }) {
+  const { text } = useTranslation();
+  const { phase, url } = state;
+  const faded = phase === "scanned" || phase === "confirmed" || phase === "expired" || phase === "error";
+  const [title, hint] = phase === "scanned" || phase === "confirmed"
+    ? [text("Scanned", "已扫码"), text("Confirm the login on your phone.", "请在手机上确认登录。")]
+    : phase === "done"
+      ? [text("Connected", "已连接"), text("The bot is added and running.", "bot 已添加并运行。")]
+      : phase === "expired" || phase === "error"
+        ? [text("This code has expired", "二维码已失效"), text("Get a new one to try again.", "换一个新的再试。")]
+        : [text("Scan with WeChat", "用微信扫码"), text("Open WeChat on your phone and scan this code.", "打开手机微信，扫描这个二维码。")];
+  return (
+    <div className="flex items-center gap-5 rounded-lg border bg-muted/40 p-4">
+      <div className="relative w-[168px] shrink-0">
+        {url ? (
+          <QrCode
+            value={url}
+            label={text("WeChat login QR code", "微信登录二维码")}
+            className={`w-full border p-2 ${faded ? "opacity-20 blur-[2px]" : ""}`}
+          />
+        ) : (
+          <div className="aspect-square w-full rounded-md border bg-white" aria-hidden="true" />
+        )}
+        {phase === "expired" || phase === "error" ? (
+          <Button className="absolute inset-0 m-auto w-fit" onClick={onRetry} type="button">
+            {text("Get new code", "换新码")}
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-fs-base font-medium text-text-primary">{title}</span>
+        <span className="text-fs-sm text-text-muted">{hint}</span>
+      </div>
+    </div>
   );
 }

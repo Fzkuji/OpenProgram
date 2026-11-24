@@ -10,7 +10,6 @@ import {
   collectAlwaysLive,
   decideLiveRows,
   flushHeightPersist,
-  foldKey,
   forgetHeightMemory,
   getRowHeight,
   heightsFor,
@@ -84,20 +83,20 @@ test("measured offscreen rows recycle; last and rail target stay live", () => {
   assert.equal(live.has("m20"), false);
 });
 
-test("compaction fold height sits in the offset chain", () => {
+test("a row's offset is the sum of the measured rows above it", () => {
   clearHeights();
   const list = [
-    { kind: "fold", id: "c0" },
+    { kind: "row", id: "c0" },
     { kind: "row", id: "card" },
     { kind: "row", id: "tail" },
   ];
   const heights = new Map([
-    [foldKey("c0"), 0],
+    ["c0", 40],
     ["card", 80],
     ["tail", 120],
   ]);
-  assert.equal(offsetOf(list, heights, "card", 0), 0);
-  assert.equal(offsetOf(list, heights, "tail", 0), 80);
+  assert.equal(offsetOf(list, heights, "card", 0), 40);
+  assert.equal(offsetOf(list, heights, "tail", 0), 120);
   assert.equal(offsetOf(list, heights, "missing", 0), null);
   const incomplete = new Map([["card", 80]]);
   assert.equal(offsetOf(list, incomplete, "tail", 0), null);
@@ -240,14 +239,13 @@ test("unknown width does not drop persisted heights", () => {
   clearHeights();
 });
 
-// ── The transcript around a compaction: the summary card, the folded
-// originals it covers, event dividers and pending rows, rendered through
+// ── The transcript around a compaction: the compaction row, the originals
+// it covers (drawn like any row), event dividers and pending rows, rendered through
 // the real MessageList. Loaded lazily so the pure tests above stay DOM-free.
 async function loadTranscript() {
   const { installLoader } = await import("../../../_support/load.mjs");
   const { installDom, render } = await import("../../../_support/dom.mjs");
   installLoader();
-  // Reduced motion: folds and the summary expander switch without animating.
   installDom({ pathname: "/chat", media: (query) => query.includes("prefers-reduced-motion: reduce") });
   const { createElement } = await import("react");
   const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
@@ -286,55 +284,52 @@ const compactedRows = () => [
   { id: "a3", role: "assistant", content: "third answer", status: "done", timestamp: T },
 ];
 
-test("a compaction card folds its covered originals and keeps them off the rail until shown", async () => {
+test("a compaction leaves its covered originals in place and keeps them on the rail", async () => {
   const { createElement, render, MessageList, useSessionStore } = await transcript;
   seedTranscript(useSessionStore, compactedRows());
   const view = await render(createElement(MessageList));
   const $ = (selector) => view.container.querySelector(selector);
   try {
-    const fold = $(".compaction-orig-fold");
-    assert.equal(fold.getAttribute("data-open"), "0");
-    assert.deepEqual([...fold.querySelectorAll("[data-msg-id]")].map((el) => el.getAttribute("data-msg-id")), ["u1", "a1"]);
+    assert.equal($(".compaction-orig-fold"), null);
+    assert.equal($(".covered-turn"), null);
+    assert.ok($('.message.user[data-msg-id="u1"]'));
+    assert.ok($('.message.assistant[data-msg-id="a1"]'));
     const ticks = () => [...view.container.querySelectorAll(".msg-rail-dash")].map((el) => el.getAttribute("aria-label"));
-    assert.deepEqual(ticks(), ["second question", "third question"]);
-    // The bar above the card: inert count text, then the originals toggle.
+    assert.deepEqual(ticks(), ["first question", "second question", "third question"]);
+    // Where the compaction ran: inert count text, then the summary toggle.
     const bar = $(".compaction-card-bar");
     assert.equal(bar.querySelector(".compaction-card-info").tagName, "SPAN");
     assert.match(bar.querySelector(".compaction-card-info").textContent, /^Compacted 2 earlier messages/);
-    assert.equal($(".compaction-card .compaction-orig-toggle"), null);
-    const toggle = bar.querySelector("button.compaction-orig-toggle");
-    assert.equal(toggle.textContent, "Show original messages");
-    await view.act(() => toggle.click());
-    assert.equal($(".compaction-orig-fold").getAttribute("data-open"), "1");
-    assert.equal(toggle.textContent, "Hide original messages");
-    assert.deepEqual(ticks(), ["first question", "second question", "third question"]);
-    await view.act(() => toggle.click());
-    assert.equal($(".compaction-orig-fold").getAttribute("data-open"), "0");
   } finally { await view.unmount(); }
 });
 
-test("the summary card renders its markdown and expands with Show all", async () => {
+test("the compaction summary is closed until its toggle opens it, then shows in full", async () => {
+  const { createElement, render, MessageList, useSessionStore } = await transcript;
+  seedTranscript(useSessionStore, compactedRows());
+  const view = await render(createElement(MessageList));
+  const $ = (selector) => view.container.querySelector(selector);
+  try {
+    const toggle = $(".compaction-card-bar button.compaction-summary-toggle");
+    assert.equal(toggle.textContent, "Show summary");
+    assert.equal($(".compaction-card-md"), null);
+    await view.act(() => toggle.click());
+    assert.ok($(".message.compaction-card .compaction-card-md strong"));
+    assert.equal(toggle.textContent, "Hide summary");
+    assert.equal($(".compaction-card-more"), null);
+    await view.act(() => toggle.click());
+    assert.equal($(".compaction-card-md"), null);
+    assert.equal(toggle.textContent, "Show summary");
+  } finally { await view.unmount(); }
+});
+
+test("a compacted conversation shows its compaction row and no divider where the compaction ran", async () => {
   const { createElement, render, MessageList, useSessionStore } = await transcript;
   seedTranscript(useSessionStore, compactedRows());
   const view = await render(createElement(MessageList));
   try {
-    const card = view.container.querySelector(".message.compaction-card");
-    assert.ok(card.querySelector(".compaction-card-md strong"));
-    const more = card.querySelector(".compaction-card-more");
-    assert.equal(more.textContent, "… Show all");
-    assert.equal(card.getAttribute("data-full"), "0");
-    await view.act(() => more.click());
-    assert.equal(card.getAttribute("data-full"), "1");
-    assert.equal(more.textContent, "Collapse");
-  } finally { await view.unmount(); }
-});
-
-test("a compacted conversation shows its card and no divider where the compaction ran", async () => {
-  const { createElement, render, MessageList, useSessionStore } = await transcript;
-  seedTranscript(useSessionStore, compactedRows());
-  const view = await render(createElement(MessageList));
-  try {
-    assert.ok(view.container.querySelector(".message.compaction-card"));
+    const row = view.container.querySelectorAll('.message.compaction-row[data-msg-id="card"]');
+    assert.equal(row.length, 1);
+    assert.ok(row[0].querySelector(".compaction-card-bar"));
     assert.equal(view.container.querySelector(".message.system-event"), null);
     assert.doesNotMatch(view.container.textContent, /Context compacted/);
   } finally { await view.unmount(); }

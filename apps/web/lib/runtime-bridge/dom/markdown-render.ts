@@ -1,12 +1,14 @@
-import renderMathInElement from "katex/contrib/auto-render";
+import katex from "katex";
 import { marked as npmMarked, type MarkedExtension } from "marked";
 import markedFootnote from "marked-footnote";
-import { cjkEmphasis } from "../../markdown/cjk-emphasis.ts";
+import { formulaSource, mathMarkdown } from "../../markdown/math.ts";
+import { proseMarkdown } from "../../markdown/prose.ts";
 
-// The shared `marked` singleton (chat, memory, file previews) closes
-// `**bold**` in CJK prose the way readers expect; see cjk-emphasis.ts.
+// The shared `marked` singleton (chat, memory, file previews) reads Chinese
+// prose the way readers expect (../../markdown/prose.ts) and finds formulas
+// as tokens (../../markdown/math.ts).
 // It also renders GFM footnotes (`[^1]`) instead of a dead link.
-npmMarked.use(cjkEmphasis);
+npmMarked.use(...proseMarkdown, mathMarkdown);
 // Its types name the workspace root's older `marked`; the extension itself
 // works with any marked from 7 on.
 npmMarked.use(markedFootnote() as unknown as MarkedExtension);
@@ -91,22 +93,9 @@ export function renderMd(s: unknown, { cache = true }: { cache?: boolean } = {})
     mdCache.set(src, hit);
     return hit;
   }
-  let str = src;
-  const mathBlocks: string[] = [];
-  const stash = (m: string): string => {
-    mathBlocks.push(m);
-    return "%%MATH" + (mathBlocks.length - 1) + "%%";
-  };
-  str = str.replace(/\$\$([\s\S]*?)\$\$/g, stash);
-  str = str.replace(/\\\[([\s\S]*?)\\\]/g, stash);
-  str = str.replace(/\\\(([\s\S]*?)\\\)/g, stash);
-  str = str.replace(/\$([^$\n]+?)\$/g, stash);
-  // Restore the formula delimiters as escaped text after sanitization. KaTeX
-  // reads the resulting text nodes; embedded HTML cannot become DOM content.
-  let html = sanitizeHtml(npmMarked.parse(str, { breaks: true }) as string);
-  for (let i = 0; i < mathBlocks.length; i++) {
-    html = html.replace("%%MATH" + i + "%%", () => escHtml(mathBlocks[i]));
-  }
+  // Formulas come out as `.md-math` elements holding their escaped source,
+  // which typesetFormulas() hands to KaTeX.
+  const html = sanitizeHtml(npmMarked.parse(src, { breaks: true }) as string);
   const out = '<span class="md-rendered">' + html + "</span>";
   const cost = 2 * (src.length + out.length);
   if (cache && cost <= MD_CACHE_BYTES) {
@@ -123,18 +112,17 @@ export function renderMd(s: unknown, { cache = true }: { cache?: boolean } = {})
 
 export function typesetMath(root: ParentNode): void {
   if (typeof document === "undefined") return;
-  // The selector skips typeset blocks itself: this runs on every chat
-  // resize, and a pane drag resizes the chat every frame.
-  root.querySelectorAll<HTMLElement>(".md-rendered:not([data-math-rendered])").forEach((el) => {
-    renderMathInElement(el, {
-      delimiters: [
-        { left: "$$", right: "$$", display: true },
-        { left: "$", right: "$", display: false },
-        { left: "\\[", right: "\\]", display: true },
-        { left: "\\(", right: "\\)", display: false },
-      ],
-      throwOnError: false,
-    });
+  // Only the formulas the lexer found are typeset; text is never scanned
+  // for dollars. The selector skips typeset ones itself: this runs on every
+  // chat resize, and a pane drag resizes the chat every frame.
+  root.querySelectorAll<HTMLElement>(".md-math:not([data-math-rendered])").forEach((el) => {
+    const { tex, display } = formulaSource(el.textContent ?? "");
+    el.dataset.mathSource = el.textContent ?? "";
+    try {
+      katex.render(tex, el, { displayMode: display || el.dataset.display === "true", throwOnError: false });
+    } catch {
+      // A formula KaTeX cannot draw keeps its source.
+    }
     el.dataset.mathRendered = "1";
   });
 }

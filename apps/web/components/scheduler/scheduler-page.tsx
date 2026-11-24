@@ -11,10 +11,14 @@ import {
 } from "@/components/ui/dialog";
 import { SearchInput } from "@/components/ui/search-input";
 import { SimpleSelect } from "@/components/ui/select";
-import { ManageEmptyState, ManageIconButton, ManagePage, ManagePageHeader, ManageRow, ManageSubnav, ManageSummary, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManageIconButton, ManagePage, ManageRow, ManageSubnav, ManageSummary, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { TasksHeader } from "@/components/tasks/tasks-tabs";
 import { PlusIcon, RefreshCwIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { useEffectEvent } from "@/lib/hooks/use-effect-event";
+import { isAbort, keep, lastKept, readKept, readUntilAnswered } from "@/lib/abilities/kept-read";
+import { errorDetailText } from "@/lib/net/error-text";
+import { MEMORY_REFS_KEY, readMemoryRefs, readTasks, TASKS_KEY } from "./scheduler-reads";
 import styles from "./scheduler-page.module.css";
 import {
   actionAccessibleName,
@@ -88,12 +92,19 @@ const EMPTY_FORM = {
   memoryId: "",
 };
 
-export function SchedulerPage() {
-  const { t, text, locale } = useTranslation();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [memoryRefs, setMemoryRefs] = useState<MemoryRef[]>([]);
+/** The Tasks page's Scheduled tab: every scheduled task, as a list or a calendar. */
+export function ScheduledTasks({ header, onCountChange }: {
+  header: TasksHeader;
+  /** The task count, for the Tasks page's tab. */
+  onCountChange?: (count: number) => void;
+}) {
+  const { text, locale } = useTranslation();
+  // The kept lists draw at once and are read again behind them; until the
+  // first task list arrives the panel stays empty.
+  const [tasks, setTasks] = useState<Task[]>(() => lastKept<Task[]>(TASKS_KEY) ?? []);
+  const [memoryRefs, setMemoryRefs] = useState<MemoryRef[]>(() => lastKept<MemoryRef[]>(MEMORY_REFS_KEY) ?? []);
   const [loading, setLoading] = useState(true);
-  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(() => lastKept(TASKS_KEY) !== undefined);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [open, setOpen] = useState(false);
@@ -128,30 +139,39 @@ export function SchedulerPage() {
     setDetailOpen(true);
   }
 
+  // The Refresh button: one read, and its failure is said.
   async function reload() {
     setLoading(true);
     setPageError("");
     try {
-      const response = await fetch("/api/scheduler/tasks");
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(text("Could not load scheduled tasks", "无法加载定时任务"));
-      setTasks(Array.isArray(data) ? data : []);
+      setTasks(await readKept(TASKS_KEY, readTasks) as Task[]);
       setLoadedOnce(true);
-    } catch (reason) {
-      setPageError(reason instanceof Error ? reason.message : text("Could not load scheduled tasks", "无法加载定时任务"));
+    } catch {
+      setPageError(text("Could not load scheduled tasks", "无法加载定时任务"));
     } finally {
       setLoading(false);
     }
   }
 
-  const loadTasks = useEffectEvent(reload);
+  // Opening: both lists are read side by side; a failed read keeps what is
+  // shown and is tried again quietly.
   useEffect(() => {
-    void loadTasks();
-    fetch("/api/memory/refs?limit=200")
-      .then((response) => response.ok ? response.json() : [])
-      .then((data) => setMemoryRefs(Array.isArray(data) ? data : []))
-      .catch(() => setMemoryRefs([]));
+    const controller = new AbortController();
+    const quiet = (cause: unknown) => { if (!isAbort(cause)) console.warn("[scheduler] read failed", cause); };
+    readUntilAnswered(TASKS_KEY, readTasks, controller.signal)
+      .then((data) => { setTasks(data as Task[]); setLoadedOnce(true); setLoading(false); })
+      .catch(quiet);
+    readUntilAnswered(MEMORY_REFS_KEY, readMemoryRefs, controller.signal)
+      .then((data) => setMemoryRefs(data as MemoryRef[]))
+      .catch(quiet);
+    return () => controller.abort();
   }, []);
+  // A change made here is kept too, for the next visit.
+  useEffect(() => {
+    if (!loadedOnce) return;
+    keep(TASKS_KEY, tasks);
+    onCountChange?.(tasks.length);
+  }, [loadedOnce, tasks, onCountChange]);
 
   const visible = useMemo(() => filterTasks(tasks, filter, search) as Task[], [filter, search, tasks]);
   const counts = useMemo(() => taskCounts(tasks) as Record<TaskFilter, number>, [tasks]);
@@ -193,8 +213,11 @@ export function SchedulerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error?.message || data.error || failed);
+      const data = await response.json().catch(() => ({})) as Task & { error?: unknown };
+      if (!response.ok) {
+        const detail = (data.error as { message?: unknown } | null | undefined)?.message ?? data.error;
+        throw new Error(errorDetailText(detail, failed));
+      }
       setTasks((current) => existing ? current.map((row) => row.id === existing.id ? data : row) : [...current, data]);
       setOpen(false);
     } catch (reason) {
@@ -212,8 +235,8 @@ export function SchedulerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !task.enabled }),
       });
-      const updated = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(text("Could not update task", "无法更新任务"));
+      const updated = await response.json().catch(() => null) as Task | null;
+      if (!response.ok || !updated) throw new Error(text("Could not update task", "无法更新任务"));
       setTasks((current) => current.map((row) => row.id === task.id ? updated : row));
     } catch (reason) {
       setPageError(reason instanceof Error ? reason.message : text("Could not update task", "无法更新任务"));
@@ -248,22 +271,12 @@ export function SchedulerPage() {
   const rowsBusy = loading || deleting;
   const detailTask = detailId ? tasks.find((task) => task.id === detailId) ?? null : null;
   const editingTask = editingId ? tasks.find((task) => task.id === editingId) ?? null : null;
-  const viewTabs = [
-    { id: "list", label: text("List", "列表") },
-    { id: "calendar", label: text("Calendar", "日历") },
-  ];
   const hiddenWebhooks = visible.length - calendarTaskCount(visible);
 
   return (
     <ManagePage className={styles.view}>
-        <ManagePageHeader
-          title={t("nav.scheduler")}
-          tabs={viewTabs}
-          activeTab={view}
-          onTabChange={(id) => chooseView(id as SchedulerView)}
-          tabLabel={text("Scheduler view", "定时任务视图")}
-          panelId="scheduler-panel"
-          toolbar={(
+        {header({
+          toolbar: (
             <>
               {loadedOnce && tasks.length > 0 && (
                 <ManageSummary>{text(`${activeCount} of ${tasks.length} active`, `已启用 ${activeCount}/${tasks.length} 个`)}</ManageSummary>
@@ -275,18 +288,29 @@ export function SchedulerPage() {
                 onChange={setSearch}
               />
             </>
-          )}
-          actions={[
+          ),
+          actions: [
             { label: text("Refresh", "刷新"), onClick: () => void reload(), icon: RefreshCwIcon, iconOnly: true, disabled: loading },
             { label: text("New task", "新建任务"), onClick: () => begin(), icon: PlusIcon, primary: true, disabled: !loadedOnce || loading },
-          ]}
-        />
+          ],
+        })}
         <ManageSubnav
           tabs={filterTabs}
           activeTab={filter}
           onTabChange={(id) => setFilter(id as TaskFilter)}
           ariaLabel={text("Task types", "任务类型")}
           panelId="scheduler-panel"
+          end={(
+            <ToggleGroup
+              type="single" variant="elevated" size="sm" spacing={1}
+              value={view}
+              onValueChange={(value) => { if (value) chooseView(value as SchedulerView); }}
+              aria-label={text("Scheduled tasks view", "定时任务视图")}
+            >
+              <ToggleGroupItem value="list">{text("List", "列表")}</ToggleGroupItem>
+              <ToggleGroupItem value="calendar">{text("Calendar", "日历")}</ToggleGroupItem>
+            </ToggleGroup>
+          )}
         />
         {pageError && <div className={shared.errorBar} role="alert">{pageError}</div>}
         <main className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
@@ -298,16 +322,7 @@ export function SchedulerPage() {
               ? "flex flex-col flex-1 min-w-0 min-h-0 gap-[8px] p-[16px_24px_24px]"
               : styles.content}
           >
-            {loading && !loadedOnce ? (
-              <ManageLoadingState>{text("Loading…", "加载中…")}</ManageLoadingState>
-            ) : !loadedOnce ? (
-              <ManageEmptyState
-                icon={<CalendarClock />}
-                title={text("Scheduled tasks are unavailable", "暂时无法加载定时任务")}
-                description={text("Check the error above, then try again.", "请查看上方错误后重试。")}
-                action={<Button variant="elevated" onClick={() => void reload()}>{text("Retry", "重试")}</Button>}
-              />
-            ) : view === "calendar" ? (
+            {!loadedOnce ? null : view === "calendar" ? (
               <>
                 {hiddenWebhooks > 0 && (
                   <p className={styles.calendarNote} role="status">

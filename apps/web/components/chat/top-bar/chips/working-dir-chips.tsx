@@ -23,7 +23,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
-import { useFolderPicker } from "@/components/ui/folder-picker";
+import { useFolderPickerOn } from "@/components/machines/open-folder-on";
+import { projectFolderHere, projectMachineId, useMachines } from "@/lib/machines/store";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
@@ -52,6 +53,7 @@ interface Project {
   is_default: boolean;
   session_count: number;
   source_folders?: string[];
+  machine_id?: string;
 }
 
 export function WorkingDirChips() {
@@ -77,7 +79,11 @@ export function WorkingDirChips() {
   const workingDirs = explicitWorkingDirs ?? selectedProject?.source_folders ?? NO_WORKING_DIRS;
   const refreshGeneration = useRef(0);
   const [pickerError, setPickerError] = useState<string | null>(null);
-  const { pickFolder, folderPickerDialog } = useFolderPicker();
+  // Working folders are on the project's machine: an SSH host's are chosen
+  // there and have no git pill here, where git cannot read them.
+  const projectMachine = projectMachineId(selectedProject);
+  const { pickFolder, dialogs: folderPickerDialog } = useFolderPickerOn(projectMachine);
+  const folderHere = projectFolderHere(selectedProject, useMachines((s) => s.items), useMachines((s) => s.kinds));
 
   // Whole-list replace: optimistic store write, then backend persist for
   // real (non-draft) sessions.
@@ -110,6 +116,8 @@ export function WorkingDirChips() {
     return () => window.removeEventListener("op:workdir-add", onAdd);
   }, []);
 
+  const answeredRef = useRef(false);
+  const socketOpen = useSessionStore(s => s.wsStatus === "open");
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
     const data = await listSessionProjects<{
@@ -132,17 +140,25 @@ export function WorkingDirChips() {
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let tries = 0;
     const refreshes = refreshGeneration;
     const attempt = async () => {
-      if (!await refresh() && !cancelled && tries++ < 20) timer = setTimeout(attempt, 300);
+      const ok = await refresh();
+      if (!cancelled) answeredRef.current = ok;
     };
-    const changed = () => { tries = 0; void attempt(); };
+    const changed = () => void attempt();
     void attempt();
     window.addEventListener("project-changed", changed);
-    return () => { cancelled = true; ++refreshes.current; clearTimeout(timer); window.removeEventListener("project-changed", changed); };
+    return () => { cancelled = true; ++refreshes.current; window.removeEventListener("project-changed", changed); };
   }, [refresh]);
+
+  // On a fresh page the socket may not be open yet: a read that got no
+  // answer is asked again when the socket opens, not on a timer.
+  useEffect(() => {
+    if (!socketOpen || answeredRef.current) return;
+    let cancelled = false;
+    void refresh().then(ok => { if (!cancelled) answeredRef.current = ok; });
+    return () => { cancelled = true; };
+  }, [socketOpen, refresh]);
 
   // Mirror ProjectBadge: only one topbar dropdown open at a time.
   useEffect(() => {
@@ -186,6 +202,7 @@ export function WorkingDirChips() {
   const recent = projects.filter(
     (p) =>
       p.path &&
+      projectMachineId(p) === projectMachine &&
       !workingDirs.includes(p.path) &&
       p.path !== currentProjectPath,
   );
@@ -232,7 +249,7 @@ export function WorkingDirChips() {
             </HoverTip>
           </span>
           <GitChip
-            path={dir}
+            path={folderHere ? dir : null}
             order={index + 1}
             onUseFolder={(next) => applyWorkingDirs(workingDirs.map((d) => (d === dir ? next : d)))}
           />

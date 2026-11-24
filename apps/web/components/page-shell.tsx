@@ -219,10 +219,6 @@ export const PageShell = memo(function PageShell({ page }: { page: Page }) {
         clearTimeout(runtimeState.reconnectTimer);
         runtimeState.reconnectTimer = null;
       }
-      if (runtimeState._elapsedTimer) {
-        clearInterval(runtimeState._elapsedTimer);
-        runtimeState._elapsedTimer = null;
-      }
       if (host) host.innerHTML = "";
     };
     // Deliberately NOT depending on pathname — all chat routes (/chat,

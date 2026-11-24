@@ -62,7 +62,6 @@
 <tr><th scope="row">终端客户端</th><td>底栏按对话记下 <code translate="no">context_stats</code> 里的窗口。帧里的 <code translate="no">context_window</code> 为 null 时删掉它：底栏只显示 token 数，不显示上限和百分比，和圆环一致</td></tr>
 <tr><th scope="row">压缩中</th><td>分支正在运行的是 <code translate="no">compact</code> 操作，或处在压缩阶段的轮次时（<code translate="no">isCompacting</code>，从 <code translate="no">compaction_started</code> 到结束或失败）：圆环忙碌，面板按钮禁用</td></tr>
 <tr><th scope="row">压缩对话</th><td>面板行发送 <code translate="no">{action:"compact", session_id}</code>，与 <code translate="no">/compact</code> 同一 WebSocket 路径。无会话或压缩中时禁用。刚压缩完仍可点，服务端回答没有可压缩的内容</td></tr>
-<tr><th scope="row">上次压缩</th><td>这一行下面的一条说明，来自快照的 <code translate="no">last_compaction</code>（分支上生效的摘要）：上次压缩 <i>时间</i>：N 条消息，X → Y。分支上没有摘要时不显示</td></tr>
 </tbody>
 </table>
 
@@ -72,9 +71,9 @@
 <thead class="sr"><tr><th scope="col">事件</th><th scope="col">文案</th></tr></thead>
 <tbody>
 <tr><th scope="row">开始</th><td>不加消息：运行条显示“正在压缩上下文…”</td></tr>
-<tr><th scope="row">结束</th><td>不加消息。对话重新读取，摘要卡片（已压缩 N 条更早的消息，带时间）折叠被盖住的消息，只出现在含有整段被盖住消息的分支上；从这段中间分出的分支没有被压缩过。压缩发生的位置不留任何标记：那里的一行与卡片重复，还把 token 数夹在两条对话消息之间。上次压缩改由面板说明</td></tr>
+<tr><th scope="row">结束</th><td>不加消息。对话重新读取，被盖住的消息之后多一行（已压缩 N 条更早的消息，带时间），只出现在含有整段被盖住消息的分支上；从这段中间分出的分支没有被压缩过。被盖住的消息留在对话里，和其他消息一样显示、分页、回收；摘要是给模型读的，所以默认收起，从这一行展开。压缩前后的大小留在摘要节点上供日志使用，界面不显示</td></tr>
 <tr><th scope="row">失败</th><td>上下文压缩失败[：错误]</td></tr>
-<tr><th scope="row">结束且 <code translate="no">no_op</code></th><td>上下文保持不变，本次没有应用更小的摘要</td></tr>
+<tr><th scope="row">结束且 <code translate="no">no_op</code></th><td>来自 <code translate="no">/compact</code>：上下文保持不变，本次没有应用更小的摘要。来自轮次自己的压缩：不显示，历史照旧</td></tr>
 </tbody>
 </table>
 

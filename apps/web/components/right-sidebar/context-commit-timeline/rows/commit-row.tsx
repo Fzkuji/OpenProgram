@@ -42,14 +42,7 @@ export function CommitRow(props: {
       <div className={styles.popoutWrap + (open ? " " + styles.open : "")}>
         <div className={styles.popoutClip}>
           <div className={styles.popout}>
-            {!detail && (
-              <div className={styles.empty}>Loading…</div>
-            )}
-            {detail?.error && (
-              <div className={styles.empty} style={{ color: "var(--commit-error)" }}>
-                {detail.error}
-              </div>
-            )}
+            {/* Nothing until the items arrive; a read that failed is asked again. */}
             {detail?.items && (
               <ItemList items={detail.items} />
             )}

@@ -5,7 +5,7 @@
 // token, the extension also focuses the browser's window; its own
 // background option turns that off. The browser coming in front of the other
 // applications when the connect page opens is Chrome's doing and is undone
-// by computer_use_agent/desktop/front.py.
+// by computer_use/desktop/front.py.
 "use strict";
 
 const Module = require("module");

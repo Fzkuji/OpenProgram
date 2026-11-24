@@ -157,3 +157,62 @@ def test_a_new_start_forgets_the_old_stop_and_a_failed_build_is_recorded(
     assert sup.sync() == []
     assert _heartbeats.get_stop("wechat", "stop-build") == _heartbeats.STOP_FAILED
     _heartbeats.clear_stop("wechat", "stop-build")
+
+
+def test_a_stopping_worker_waits_only_for_adapters_that_hold_work(world) -> None:
+    """An adapter inside a long poll holds nothing; three of them used the
+    whole two seconds a stop allows for threads, on every stop."""
+    sup, rows, row, runs, _creds = world
+    rows.extend([row("polling"), row("handling")])
+    sup.sync()
+    assert _wait(lambda: len(runs) == 2)
+    next(run for run in runs if run.label == "wechat:polling").awaiting_platform = True
+    assert [label for label, _ in sup.threads_holding_work()] == ["wechat:handling"]
+    assert sorted(label for label, _ in sup.threads()) == ["wechat:handling", "wechat:polling"]
+
+
+def test_an_account_change_wakes_the_supervisor_without_a_timer(world, monkeypatch) -> None:
+    """The supervisor sleeps until the channels topic is signalled (an
+    account written, an adapter stopped), not on a five-second tick."""
+    from openprogram.host._platform import changes
+
+    sup, rows, row, runs, _creds = world
+    monkeypatch.setattr(changes, "watch", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sup, "RESYNC_S", 60.0)
+    monkeypatch.setattr(sup, "POLL_S", 60.0)
+    sup.start_watcher()
+    rows.append(row("late"))
+    assert not _wait(lambda: runs, timeout=0.5), "nothing looks before a change"
+    changes.signal("channels", "wechat:late")
+    assert _wait(lambda: len(runs) == 1)
+
+
+def test_an_adapter_is_marked_once_and_its_end_clears_the_mark(world, monkeypatch) -> None:
+    """The running mark is set when the adapter starts and cleared when its
+    thread says it ended; nothing stamps it on a timer."""
+    from openprogram.host._platform import changes
+
+    sup, rows, row, runs, _creds = world
+    monkeypatch.setattr(changes, "watch", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sup, "RESYNC_S", 60.0)
+    monkeypatch.setattr(sup, "POLL_S", 60.0)
+    _heartbeats.clear("wechat", "marked")
+    rows.append(row("marked"))
+    sup.sync()
+    assert _wait(lambda: len(runs) == 1)
+    sup.start_watcher()
+    first = _heartbeats.get_last_seen("wechat", "marked")
+    assert first is not None
+    # The adapter gives up: its thread's end wakes the supervisor.
+    sup._running["wechat:marked"][1].set()
+    assert _wait(lambda: _heartbeats.get_last_seen("wechat", "marked") is None)
+
+
+def test_an_ending_adapter_thread_says_so() -> None:
+    from openprogram.host._platform import changes
+
+    ended = threading.Event()
+    with changes.listen("channels") as listener:
+        runner._safe_run_channel("wechat:ends", _StoppedByOwnerChannel(), threading.Event(), ended)
+        assert ended.is_set()
+        assert "channels:wechat:ends" in listener.wait(0)

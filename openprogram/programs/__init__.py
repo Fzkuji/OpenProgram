@@ -111,10 +111,11 @@ DEFAULT_TOOLS: list[str] = [
     "skill",
     # Reads a tool guide by name; results of guided tools point here.
     "help",
-    # One entry for every screen: application windows, built-in browser
-    # Pages, a VM. Resident: its description is a short catalogue of
-    # targets, and each target's guide arrives with the first call to it.
-    "computer_use_agent",
+    # One entry for every screen of every machine: application windows,
+    # whole displays, built-in browser Pages, the user's own browsers.
+    # Resident: its description lists the targets by machine, and each
+    # family's guide and each target's note arrive with the first call to it.
+    "computer_use",
     # Offered only in a turn whose selector says Plan (see ``loop_runner``).
     # Plan comes from the selector alone, so no enter tool is offered.
     "exit_plan_mode",

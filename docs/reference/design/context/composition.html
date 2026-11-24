@@ -141,7 +141,8 @@ class ContextComponent:
 OS: {os} · Shell: {name} ({path})            # the shell commands run in (the sandbox's when it is on), not the login shell
 Working directory: {cwd}
 Git repository: {root}                       # when cwd is inside one
-Runs on SSH host … / in a Docker container … # remote environments
+Environment: machine {id} ({name}; {shell}) …  # environment on another machine
+The chat itself and OpenProgram run on this computer …
 Also writable: {dirs}
 {channel rule}                               # telegram / discord / slack / wechat / web
 &lt;/environment&gt;</code></pre>

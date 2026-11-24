@@ -6,8 +6,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">安装方式</th><th scope="col"><code translate="no">self_update(action="prepare")</code></th></tr></thead>
 <tbody>
-<tr><th scope="row">有 <code translate="no">stable</code> 分支的源码仓库</th><td>把提交落到 <code translate="no">dev</code>，部署到开发版并检查，再晋升到稳定版 App。<a href="development-checkout.zh.html">开发 checkout</a></td></tr>
-<tr><th scope="row">macOS 上的打包 App</th><td>构建并安装进 App，见下文</td></tr>
+<tr><th scope="row">开发版（<code translate="no">dev</code> profile，源码仓库有 <code translate="no">dev</code> 分支）</th><td>把提交落到 <code translate="no">dev</code>，部署到开发版并在那里检查，这就是整个更新。<a href="development-checkout.zh.html">开发 checkout</a></td></tr>
+<tr><th scope="row">正式版 App（Developer ID 签名）</th><td>创建请求前说明无法重建已发布的 App，并指向设置里的<strong>检查更新</strong></td></tr>
+<tr><th scope="row">macOS 上的其他打包 App</th><td>构建并安装进 App，见下文</td></tr>
 <tr><th scope="row">Windows 或 Linux 上的打包 App 或 release 安装</th><td>创建请求前说明这台机器没有源码更新控制器</td></tr>
 <tr><th scope="row">普通开发者 checkout</th><td>说明不激活任何东西；从 checkout 重启 worker</td></tr>
 </tbody>
@@ -59,7 +60,7 @@
 <tbody>
 <tr><th scope="row">版本号</th><td>回到正好那个版本，之后的内容不再运行。被丢下的提交留在 <code translate="no">refs/openprogram/undone/</code>。不在磁盘上的版本从其提交重新构建。</td></tr>
 <tr><th scope="row">提交</th><td>revert 这一个提交，后面的保留。后面的提交改过同样的行时，停下并列出文件。</td></tr>
-<tr><th scope="row">有 <code translate="no">stable</code> 的机器</th><td>目标是提交：revert 落到 <code translate="no">dev</code> 并晋升，因为 <code translate="no">stable</code> 只向前移动。</td></tr>
+<tr><th scope="row">在开发版里</th><td>目标是提交：revert 落到 <code translate="no">dev</code>，和其他改动一样部署。</td></tr>
 </tbody>
 </table>
 <p>在终端里，当前版本坏了也能用：</p>

@@ -324,7 +324,10 @@ def leave_stopped(code: int = STOPPED_EXIT_CODE, *, left_running: bool = False,
     once (:func:`leave`); so does a command that had a further signal while
     it stopped. Otherwise the process exits normally with ``code``. A signal
     while the interpreter waits for its threads leaves at once with the same
-    code. After that wait, the interpreter runs its exit callbacks and then
+    code. Every one of these leaves calls ``before_leaving`` first: a turn
+    that has ended may still have a thread on its way to stop the turn's
+    command, and leaving at once ends that thread before it has. After that
+    wait, the interpreter runs its exit callbacks and then
     takes its modules down, the last part with no Python signal handler
     running and, past a point, the default handlers back: a signal there
     would kill the process with its own status, so from the first exit
@@ -334,24 +337,28 @@ def leave_stopped(code: int = STOPPED_EXIT_CODE, *, left_running: bool = False,
     import atexit
     import signal
 
-    if left_running:
+    def leave_now(*_signal) -> None:
         if before_leaving is not None:
-            before_leaving()
+            with contextlib.suppress(Exception):  # noqa: BLE001 - leaving regardless
+                before_leaving()
         leave(code)
+
+    if left_running:
+        leave_now()
     if threading.current_thread() is threading.main_thread():
         for name in _STOP_SIGNALS:
             number = getattr(signal, name, None)
             if number is None:
                 continue
             try:
-                signal.signal(number, lambda _signum, _frame: leave(code))
+                signal.signal(number, leave_now)
             except (OSError, ValueError):
                 pass
         # Registered last, so it runs first of the exit callbacks, which
         # come after the interpreter has joined its threads.
         atexit.register(_ignore_signals)
     if _noted.is_set():
-        leave(code)
+        leave_now()
 
 
 def _ignore_signals() -> None:

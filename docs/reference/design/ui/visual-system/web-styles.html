@@ -40,6 +40,7 @@
 <tr><th scope="row">Layer</th><td>The layer of its box: the z-index of the box's outermost layered ancestor (a dialog, a popover, a drawer), or the sticky layer for a box in the page, so a menu opened over a scrolling box covers its thumb. <code translate="no">data-scrollbar-layer="content"</code> keeps it above the box's rows and under a control on its edge (Agent list, Agent grid).</td></tr>
 <tr><th scope="row">Press</th><td>A press on the thumb stays with the thumb. The thumb is a child of <code translate="no">&lt;body&gt;</code>, outside any menu or dialog, so a menu or dialog would otherwise read the press as one outside it and close.</td></tr>
 <tr><th scope="row">Shadow root</th><td>Hides its own bar and calls <code translate="no">attachOverlayScrollbar</code></td></tr>
+<tr><th scope="row">No thumb</th><td><code translate="no">data-scrollbar="none"</code> on a box that must show none: the message rail, whose ticks are its position</td></tr>
 </tbody>
 </table>
 

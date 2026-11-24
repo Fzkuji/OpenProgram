@@ -1,0 +1,30 @@
+<title>Sidebar Activity view</title>
+<meta name="description" content="The sidebar bell: the chat list switches in place to the conversations that need the person.">
+<meta name="covers" content="apps/web/components/sidebar/sessions/">
+<h1>Sidebar Activity view</h1>
+
+<p>A bell beside the list's filter button switches the sidebar chat list in place to <strong>Activity</strong>: the last 7 days' conversations that are running, waiting for the person, failed or unread, by day, newest first. The bell again, or <strong>Cmd+Option+U</strong>, returns to the project list.</p>
+<p class="note">Reference: Codex's sidebar bell, which does the same over the same window.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Place</th><td>The list itself, not a page or panel. The section label reads <strong>Activity</strong> and the bell shows pressed.</td><td>The status dots on rows, the Running panel and the Tasks Inbox each answered part of "what needs me"; one view in the place the person already looks answers all of it without leaving the conversation.</td></tr>
+<tr><th scope="row">Who is listed</th><td>The marker state of <a href="session-status.html">session status</a>: needs input, running, failed and unread, unread. Archived conversations never. Last activity within 7 days.</td><td>The list says exactly what the dots say, so the two never disagree.</td></tr>
+<tr><th scope="row">Row</th><td>The real chat row (<code translate="no">ConvItem</code>) with its marker, a second line with the project and a status word (waiting, failed, running), and the relative time on the right, which steps aside for ⋯ on hover.</td><td>Click, menu, rename and the unread clearing on open all stay the row's own.</td></tr>
+<tr><th scope="row">Groups</th><td>Today, Yesterday, then the date</td><td>Codex groups the same way; a week fits in a few headers.</td></tr>
+<tr><th scope="row">Bell dot</th><td>Amber (<code translate="no">--status-needs-input</code>) while any non-archived conversation waits for input</td><td>Waiting is the one state that blocks work; the other states can wait for the person to look.</td></tr>
+<tr><th scope="row">⋯ menu</th><td><strong>Mark all as read</strong>: the WebSocket action <code translate="no">mark_sessions_read</code> clears <code translate="no">unread</code> and the pending news of the listed ids, like opening each one, and broadcasts <code translate="no">session_updated</code>. It moves no client's focus.</td><td><code translate="no">mark_session_read</code> also records the socket's focus, which a bulk clear must not do.</td></tr>
+<tr><th scope="row">Empty</th><td>The header and one muted line: "Nothing needs you"</td><td>No loading, error or retry notices in the sidebar.</td></tr>
+<tr><th scope="row">Remembered</th><td><code translate="no">activity</code> in the per-browser list view (<code translate="no">lib/prefs/recents-view.ts</code>)</td><td>Like the other list view choices, it describes this browser's display.</td></tr>
+<tr><th scope="row">Shortcut</th><td><code translate="no">toggle-activity</code> in <code translate="no">lib/tabs/navigation/tab-shortcuts.ts</code>; the App's View menu sends it as an accelerator</td><td>Codex's key; the App's menu accelerators work while a web page has focus.</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li><strong>Code</strong>: <code translate="no">activity.ts</code> (selection and grouping), <code translate="no">activity-header.tsx</code> (bell and menu), <code translate="no">sessions-list.tsx</code> (the list in place), <code translate="no">conv-item.tsx</code> (the two-line row); backend <code translate="no">openprogram/interfaces/server/ws_actions/session/lifecycle.py</code>.</li>
+<li><strong>Tests</strong>: <code translate="no">apps/web/tests/ui/rails/sidebar-activity.test.mjs</code>, <code translate="no">tests/component/webui/runtime/test_session_unread_dot.py</code>.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented.</p>

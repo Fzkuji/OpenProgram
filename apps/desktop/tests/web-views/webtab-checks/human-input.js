@@ -2,8 +2,8 @@
 module.exports = function createChecks(testContext) {
 async function checkHumanInputYieldingAndActionCue() {
   testContext.hooks.registerWebTabIpc();
-  const winA = testContext.fakeWindow(801);
-  const winB = testContext.fakeWindow(802);
+  const winA = testContext.shownWindow(801);
+  const winB = testContext.shownWindow(802);
   const ctxA = testContext.registerContext("human-a", winA);
   const ctxB = testContext.registerContext("human-b", winB);
   const record = testContext.hooks.ensureView(ctxA, "live-page", "https://example.com/live");
@@ -187,6 +187,10 @@ async function checkHumanInputYieldingAndActionCue() {
   );
   testContext.assert.equal(record.actionCueWindow.focusable, false);
   testContext.assert.ok((record.actionCueWindow.showInactiveCalls || 0) >= 1, "cue must not steal focus");
+  testContext.assert.equal(record.actionCueWindow.parentWindow, undefined,
+    "cue must not be a child window: showing a child orders the whole App window in front of other apps");
+  testContext.assert.equal(record.actionCueWindow.moveAboveCalls?.at(-1), winA.getMediaSourceId(),
+    "cue sits directly above its App window in the stack");
   // The overlay lies over the whole page with a 24pt margin for the
   // cursor (the agent-control page draws the glow and cursor in it).
   const overlayOver = (content, page) => ({
@@ -320,7 +324,7 @@ async function checkHumanInputYieldingAndActionCue() {
     }),
     true,
   );
-  const destWin = testContext.fakeWindow(803);
+  const destWin = testContext.shownWindow(803);
   const dest = testContext.registerContext("human-dest", destWin);
   const hidesBeforeTransfer = hideCount();
   testContext.hooks.reparentRecords(ctxA, dest, [record]);

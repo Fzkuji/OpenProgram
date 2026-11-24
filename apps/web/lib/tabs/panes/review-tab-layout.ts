@@ -7,7 +7,7 @@ import {
 import { reviewTabId } from "../center-tab-ids.ts";
 import type { CenterTab } from "../center-tabs-store.ts";
 
-type ReviewScope = "turn" | "branch" | "workspace";
+type ReviewScope = "turn" | "unstaged" | "staged" | "branch";
 
 export function openReviewTabLayout(
   tabsBefore: readonly CenterTab[],

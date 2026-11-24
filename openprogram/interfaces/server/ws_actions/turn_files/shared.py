@@ -15,7 +15,8 @@ _MAX_DIFF_LINES = 200
 _MAX_DIFF_LINE_BYTES = 64 * 1024
 _REVIEW_CATEGORIES = {"All", "Code", "Tests", "Docs", "Large"}
 _REVIEW_SORTS = {"path", "alpha", "category", "recent"}
-_REVIEW_SCOPES = {"turn", "branch", "workspace"}
+_REVIEW_SCOPES = {"turn", "unstaged", "staged", "branch"}
+_WORKSPACE_SCOPES = {"unstaged", "staged"}
 _MAX_REVIEW_SNAPSHOTS = 256
 _MAX_REVIEW_SNAPSHOT_BYTES = 16 * 1024 * 1024
 _MAX_REVIEW_SNAPSHOT_ITEMS = _MAX_SCOPE_FILES
@@ -37,10 +38,11 @@ def _setting(name: str):
 
 def _project_root(session_id: str) -> Path | None:
     try:
-        from openprogram.state.store.project.project_store import project_for_session
+        from openprogram.state.store.project.project_store import folder_is_here, project_for_session
 
         project = project_for_session(session_id)
-        if project and project.path:
+        # A folder on another machine has no root on this computer's disk.
+        if project and project.path and folder_is_here(project):
             return Path(project.path).expanduser().resolve()
     except Exception:
         # No project root: callers fall back to the session's own paths.

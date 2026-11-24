@@ -84,7 +84,7 @@ export function CommandPalette() {
     { id: "projects", label: t("nav.projects"), path: "/projects", icon: FolderKanban },
     { id: "history", label: t("nav.history"), path: "/chats", icon: History },
     { id: "memory", label: t("nav.memory"), path: "/memory", icon: Brain },
-    { id: "scheduler", label: t("nav.scheduler"), path: "/scheduler", icon: CalendarDays },
+    { id: "tasks", label: t("nav.tasks"), path: "/tasks", icon: CalendarDays },
     { id: "settings", label: t("settings.title"), path: "/settings/general", icon: Settings },
   ];
 

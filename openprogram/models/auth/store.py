@@ -9,11 +9,14 @@ lists in memory, re-reads a file another process changed (byte revision),
 serialises writes per process and per file, and fans an
 :class:`AuthEvent` out to subscribers on every change.
 
-A key held in an environment variable the provider reads
-(``login_method_registry.env_vars``) is a row of the list too, marked
-``source="env"`` and read-only: it is read from the environment when it is
-used and never written. Its place in the order and its state are kept in
-the file as a row without a secret, so it can be moved like any other.
+An API key is stored once, for the company that issued it
+(:mod:`.company_keys`, ``<state>/auth/_keys/<company>.json``), and is a row
+of every way of the company that takes a key. A key held in an environment
+variable the provider reads (``login_method_registry.env_vars``) is a row
+too, marked ``source="env"`` and read-only: it is read from the environment
+when it is used and never written. Both keep their place in the order and
+their state in the way's file as a row without a secret, so they can be
+moved like any other, and a way a key does not work on marks only its own row.
 
 Before the first read the store carries the old layout (one file per
 account plus ``_active`` / ``_rotation`` / ``_account_priority`` side files)
@@ -48,6 +51,8 @@ from .types import (
 import logging
 
 _log = logging.getLogger(__name__)
+
+from .company_keys import COMPANY_MARK, KEYS_DIR
 
 FILE_NAME = "credentials.json"
 USAGE_FILE_NAME = "usage.json"
@@ -86,22 +91,31 @@ def canonical_provider(provider_id: str) -> str:
         return provider_id
 
 
-def env_rows(provider_id: str, stored: list[Credential]) -> list[Credential]:
-    """``stored`` with the provider's set environment variables as rows.
+def shared_rows(provider_id: str, stored: list[Credential],
+                keys: list[dict] = ()) -> list[Credential]:
+    """``stored`` with the company's keys and the provider's set environment
+    variables as rows.
 
-    A stored env row whose variable is unset is left out; a set variable
-    without a stored row is added at the end. A variable that holds the
-    same key as a stored row is left out too: the stored row is that key,
-    and it keeps working when the variable is not set (one row per key,
-    decided here at read time, so no stored secret is ever turned into a
-    variable's row)."""
+    A company key (``company_keys.py``) is a row of every way that takes a
+    key: a stored row of it keeps this way's place and state and gets its
+    secret from ``keys``; a key without one is added at the end; a row whose
+    key is gone is left out. A stored env row whose variable is unset is left
+    out; a set variable without a stored row is added at the end. A variable
+    that holds the same key as a stored row or a company key is left out too:
+    that row is the key, and it keeps working when the variable is not set
+    (one row per key, decided here at read time)."""
     import hmac
 
     from openprogram.models.auth.login.login_method_registry import env_vars
 
+    from .company_keys import COMPANY_MARK
+
+    by_id = {k["id"]: k for k in keys}
     names = [n for n in env_vars(provider_id) if "OAUTH" not in n.upper()]
     kept = [(c.payload.auth_value or "").strip().encode() for c in stored
-            if c.source != "env" and c.kind == "api_key" and (c.payload.auth_value or "").strip()]
+            if c.source != "env" and not c.metadata.get(COMPANY_MARK)
+            and c.kind == "api_key" and (c.payload.auth_value or "").strip()]
+    kept += [(k.get("value") or "").strip().encode() for k in keys]
 
     def _held_by_a_stored_row(name: str) -> bool:
         value = (os.environ.get(name) or "").strip().encode()
@@ -110,18 +124,56 @@ def env_rows(provider_id: str, stored: list[Credential]) -> list[Credential]:
     present = {n for n in names if (os.environ.get(n) or "").strip() and not _held_by_a_stored_row(n)}
     out: list[Credential] = []
     seen: set[str] = set()
+    placed: set[str] = set()
     for cred in stored:
         if cred.source == "env":
             name = cred.metadata.get("env_var") or ""
             if name not in present or name in seen:
                 continue
             seen.add(name)
+        elif cred.metadata.get(COMPANY_MARK):
+            entry = by_id.get(cred.id)
+            if entry is None or cred.id in placed:
+                continue
+            placed.add(cred.id)
+            cred = _with_key(cred, entry)
         out.append(cred)
+    for entry in keys:
+        if entry["id"] not in placed:
+            placed.add(entry["id"])
+            out.append(company_credential(provider_id, entry))
     for name in names:
         if name in present and name not in seen:
             seen.add(name)
             out.append(env_credential(provider_id, name))
     return out
+
+
+def _with_key(row: Credential, entry: dict) -> Credential:
+    """A way's row of a company key, with the key's secret and name."""
+    row = Credential.from_dict(row.to_dict())
+    row.kind = "api_key"
+    row.payload.auth_value = entry.get("value") or ""
+    row.label = entry.get("label") or ""
+    row.source = entry.get("source") or "web"
+    return row
+
+
+def company_credential(provider_id: str, entry: dict) -> Credential:
+    """A way's row of a company key it has no stored place for yet."""
+    from .company_keys import COMPANY_MARK, company_for
+
+    return Credential(
+        provider_id=provider_id,
+        kind="api_key",
+        payload=CredentialData(kind="api_key", auth_value=entry.get("value") or ""),
+        id=entry["id"],
+        label=entry.get("label") or "",
+        source=entry.get("source") or "web",
+        metadata={COMPANY_MARK: company_for(provider_id)},
+        created_at_ms=int(entry.get("created_at_ms") or 0),
+        updated_at_ms=int(entry.get("updated_at_ms") or 0),
+    )
 
 
 def env_credential(provider_id: str, name: str) -> Credential:
@@ -162,6 +214,13 @@ class AuthStore:
         self._sync_lock = threading.RLock()
         self._async_locks: dict[str, asyncio.Lock] = {}
         self._listeners: list[AuthEventListener] = []
+        if carry_over:
+            try:
+                from .key_move import move_keys_to_companies
+
+                move_keys_to_companies(self)
+            except Exception:
+                _log.warning("moving keys to their companies failed under %s", self._root, exc_info=True)
 
     # -- configuration --------------------------------------------------------
 
@@ -222,8 +281,9 @@ class AuthStore:
         """The list a request chooses from: stored rows and environment rows,
         in order. A snapshot: change the list through :meth:`mutate`."""
         stored = self.stored(provider_id)
-        rows = env_rows(stored.provider_id, stored.credentials)
-        if [c.id for c in rows] == [c.id for c in stored.credentials]:
+        rows = shared_rows(stored.provider_id, stored.credentials, self._keys_of(stored.provider_id))
+        if [c.id for c in rows] == [c.id for c in stored.credentials] \
+                and not any(c.metadata.get(COMPANY_MARK) for c in rows):
             return stored
         view = CredentialPool(provider_id=stored.provider_id, strategy=stored.strategy,
                               credentials=rows, cursor=stored.cursor)
@@ -249,6 +309,12 @@ class AuthStore:
             if provider not in out and any((os.environ.get(n) or "").strip()
                                            for n in env_vars(provider) if "OAUTH" not in n.upper()):
                 out.add(provider)
+        from .company_keys import key_ways
+        folder = base / KEYS_DIR
+        if folder.is_dir():
+            for f in folder.glob("*.json"):
+                if self.company_keys(f.stem):
+                    out.update(key_ways(f.stem))
         return sorted(out)
 
     def list_pools(self) -> list[CredentialPool]:
@@ -258,7 +324,7 @@ class AuthStore:
 
     # -- writes ---------------------------------------------------------------
 
-    def mutate(self, provider_id: str, change):
+    def mutate(self, provider_id: str, change, *, forget: frozenset[str] = frozenset()):
         """Apply ``change(pool)`` to the list as it is on disk now and save it.
 
         The file's lock is held from the read to the write, so a change made
@@ -267,7 +333,8 @@ class AuthStore:
         sees the current file. ``pool`` includes the environment rows; they
         keep only their place and state. ``change`` returns what
         :meth:`mutate` returns; returning :data:`UNCHANGED` writes nothing
-        (and :meth:`mutate` returns ``None``)."""
+        (and :meth:`mutate` returns ``None``). ``forget`` names environment
+        rows to drop from the file, which are otherwise kept while unlisted."""
         provider_id = canonical_provider(provider_id)
         path = self.pool_file(provider_id)
         from openprogram.models.auth.credentials import _private_file_lock
@@ -277,14 +344,16 @@ class AuthStore:
                                                  timeout=FILE_LOCK_TIMEOUT_SECONDS):
             fresh = self._load(provider_id) or CredentialPool(provider_id=provider_id)
             self._overlay_usage(fresh)
+            keys = self._keys_of(provider_id)
             view = CredentialPool(provider_id=provider_id, strategy=fresh.strategy,
-                                  credentials=env_rows(provider_id, fresh.credentials),
+                                  credentials=shared_rows(provider_id, fresh.credentials, keys),
                                   cursor=fresh.cursor)
             result = change(view)
             if result is UNCHANGED:
                 self._pools[provider_id] = fresh
                 return None
-            merged = _with_stored_rows(fresh, view)
+            self._save_key_edits(provider_id, keys, view)
+            merged = _with_stored_rows(fresh, view, forget)
             merged.provider_id = provider_id
             self._persist(merged)
             saved = CredentialPool.from_dict(merged.to_dict())
@@ -300,6 +369,8 @@ class AuthStore:
         its place, name and id: signing in again never adds a second row.
         Returns the row as stored."""
         cred.provider_id = canonical_provider(cred.provider_id)
+        if _is_company_key(cred):
+            return self._add_company_key_row(cred)
 
         def _add(pool: CredentialPool) -> Credential:
             same = _same_account(pool, cred)
@@ -332,6 +403,10 @@ class AuthStore:
         """Remove one row. The file stays (it keeps the strategy); the
         replaced generation (``.bak``) goes, so the secret leaves the disk."""
 
+        row = self.find(provider_id, credential_id)
+        if row is not None and row.metadata.get(COMPANY_MARK):
+            return self.remove_company_key(row.metadata[COMPANY_MARK], credential_id)
+
         def _remove(pool: CredentialPool):
             kept = [c for c in pool.credentials if c.id != credential_id]
             if len(kept) == len(pool.credentials):
@@ -348,11 +423,183 @@ class AuthStore:
         self.changed(provider_id)
         return True
 
+    # -- company keys ---------------------------------------------------------
+
+    def keys_file(self, company: str) -> Path:
+        from .company_keys import keys_path
+        return keys_path(self.base_dir(), company)
+
+    def company_keys(self, company: str) -> list[dict]:
+        """``company``'s keys, secrets included (``company_keys.py``)."""
+        path = self.keys_file(company)
+        if not path.exists():
+            return []
+        from openprogram.models.auth.credentials import _private_file_lock, _read_private_bytes
+        from .company_keys import parse
+
+        with _private_file_lock(path, root=self._root, timeout=FILE_LOCK_TIMEOUT_SECONDS):
+            raw = _read_private_bytes(path, root=self._root)
+        return parse(raw, path)
+
+    def _keys_of(self, provider_id: str) -> list[dict]:
+        from .company_keys import company_for, takes_company_keys
+        if not takes_company_keys(provider_id):
+            return []
+        return self.company_keys(company_for(provider_id))
+
+    def update_company_keys(self, company: str, change) -> object:
+        """Apply ``change(keys)`` to ``company``'s keys as they are on disk
+        now and save them; ``change`` returns what this returns, or
+        :data:`UNCHANGED` to write nothing."""
+        path = self.keys_file(company)
+        from openprogram.models.auth.credentials import _private_atomic_update
+        from .company_keys import dump, parse
+
+        box: dict = {}
+
+        def _update(raw):
+            keys = parse(raw, path)
+            box["result"] = change(keys)
+            return raw if box["result"] is UNCHANGED and raw is not None else dump(keys)
+
+        self._private_folder(path)
+        with self._sync_lock:
+            _private_atomic_update(path, _update, root=self._root, lock_timeout=FILE_LOCK_TIMEOUT_SECONDS)
+        result = box.get("result")
+        return None if result is UNCHANGED else result
+
+    def add_company_key(self, company: str, value: str, *, label: str = "", source: str = "web",
+                        key_id: str = "", first: bool = False) -> str:
+        """Store ``value`` for ``company`` (the same key again keeps its one
+        entry); returns its id. ``first`` puts it before the company's
+        other keys."""
+        from .company_keys import new_entry, same_value
+
+        found: dict = {}
+
+        def _add(keys: list[dict]):
+            same = next((k for k in keys if same_value(k, value)), None)
+            if same is not None:
+                found["id"] = same["id"]
+                moved = first and keys[0] is not same
+                if moved:
+                    keys.remove(same)
+                    keys.insert(0, same)
+                if label and not same.get("label"):
+                    same["label"] = label
+                    return same["id"]
+                return same["id"] if moved else UNCHANGED
+            taken = {k["id"] for k in keys}
+            kid = key_id if key_id and key_id not in taken else _new_id("cred")
+            keys.insert(0 if first else len(keys), new_entry(kid, value, label=label, source=source))
+            return kid
+
+        kid = self.update_company_keys(company, _add) or found["id"]
+        self._drop_key_generations(company)
+        self._company_changed(company, kid, AuthEventType.POOL_MEMBER_ADDED)
+        return kid
+
+    def remove_company_key(self, company: str, key_id: str) -> bool:
+        """Remove one of ``company``'s keys: it leaves every way at once."""
+
+        def _remove(keys: list[dict]):
+            kept = [k for k in keys if k["id"] != key_id]
+            if len(kept) == len(keys):
+                return UNCHANGED
+            keys[:] = kept
+            return True
+
+        if not self.keys_file(company).exists() or not self.update_company_keys(company, _remove):
+            return False
+        self._drop_key_generations(company)
+        from .company_keys import key_ways
+        for way in key_ways(company):
+            # A way's older copies may predate the company file and hold the key.
+            if self.pool_file(way).parent.is_dir():
+                self._drop_old_generations(way)
+        _clear_runtime_credential_caches()
+        self._company_changed(company, key_id, AuthEventType.POOL_MEMBER_REMOVED)
+        return True
+
+    def _company_changed(self, company: str, key_id: str, kind: AuthEventType) -> None:
+        from .company_keys import key_ways
+        for way in key_ways(company) or [company]:
+            self._pools.pop(canonical_provider(way), None)
+            self.emit(AuthEvent(type=kind, provider_id=canonical_provider(way), credential_id=key_id,
+                                detail={"kind": "api_key", "company": company}))
+            self.changed(way)
+
+    def _drop_key_generations(self, company: str) -> None:
+        """A removed or replaced key must not stay in the keys file's older copies."""
+        for old in _generations(self.keys_file(company))[1:]:
+            old.unlink(missing_ok=True)
+
+    def _add_company_key_row(self, cred: Credential) -> Credential:
+        """``add_credential`` for an API key: stored for the company, its row
+        on this way renewed (a key added again starts over here)."""
+        from .company_keys import company_for
+        company = company_for(cred.provider_id)
+        kid = self.add_company_key(company, cred.payload.auth_value, label=cred.label,
+                                   source=cred.source, key_id=cred.id)
+
+        def _renew(pool: CredentialPool):
+            row = pool.find(kid)
+            if row is None:
+                return UNCHANGED
+            row.status = "ready"
+            row.cooldown_until_ms = 0
+            row.blocked_models = {}
+            row.last_error = None
+            row.strikes = 0
+            row.enabled = True
+            return True
+
+        self.mutate(cred.provider_id, _renew)
+        return self.find(cred.provider_id, kid) or cred
+
+    def _save_key_edits(self, provider_id: str, keys: list[dict], view: CredentialPool) -> None:
+        """A company key renamed or replaced on a way is renamed or replaced
+        for the company (the name and the secret are the key's, not the way's)."""
+        by_id = {k["id"]: k for k in keys}
+        edits = {}
+        for row in view.credentials:
+            entry = by_id.get(row.id) if row.metadata.get(COMPANY_MARK) else None
+            if entry is None:
+                continue
+            value = row.payload.auth_value or ""
+            if (row.label or "") != (entry.get("label") or "") or (value and value != entry.get("value")):
+                edits[row.id] = (row.label or "", value or entry.get("value"))
+        if not edits:
+            return
+        company = next(r.metadata[COMPANY_MARK] for r in view.credentials if r.id in edits)
+
+        def _edit(entries: list[dict]):
+            now = int(time.time() * 1000)
+            for e in entries:
+                if e["id"] in edits:
+                    e["label"], e["value"] = edits[e["id"]]
+                    e["updated_at_ms"] = now
+            return True
+
+        self.update_company_keys(company, _edit)
+        self._drop_key_generations(company)
+        from .company_keys import key_ways
+        for way in key_ways(company):
+            if canonical_provider(way) != provider_id:
+                self._pools.pop(canonical_provider(way), None)
+                self.changed(way)
+
     def delete_provider(self, provider_id: str) -> None:
         """Remove every stored credential of ``provider_id``, with every copy
         of them (the last good generation, set-aside unreadable copies), the
-        usage counts, the lock files and the folder when that leaves it empty."""
+        usage counts, the lock files and the folder when that leaves it empty.
+        Its company's keys are among its credentials, so they go too, from
+        every way of the company."""
         provider_id = canonical_provider(provider_id)
+        from .company_keys import company_for
+        company = company_for(provider_id)
+        for entry in self._keys_of(provider_id):
+            self.remove_company_key(company, entry["id"])
         path = self.pool_file(provider_id)
         from openprogram.models.auth.credentials import _private_file_lock, _private_unlink
 
@@ -561,6 +808,15 @@ class AuthStore:
         self._pools.pop(provider_id, None)
 
 
+def _is_company_key(cred: Credential) -> bool:
+    """A pasted API key for an address the way decides is its company's."""
+    from .company_keys import takes_company_keys
+    return (cred.kind == "api_key" and cred.source != "env" and not cred.read_only
+            and bool((cred.payload.auth_value or "").strip())
+            and not cred.payload.base_url and not cred.payload.headers
+            and not cred.metadata.get(COMPANY_MARK) and takes_company_keys(cred.provider_id))
+
+
 def _same_account(pool: CredentialPool, cred: Credential) -> Optional[Credential]:
     """The stored row ``cred`` renews, if any: the same API key, or a
     sign-in of the same account."""
@@ -581,11 +837,13 @@ def _same_account(pool: CredentialPool, cred: Credential) -> Optional[Credential
     return None
 
 
-def _with_stored_rows(stored: CredentialPool, view: CredentialPool) -> CredentialPool:
+def _with_stored_rows(stored: CredentialPool, view: CredentialPool,
+                      forget: frozenset[str] = frozenset()) -> CredentialPool:
     """``view`` saved over ``stored``: every row ``view`` shows in its order,
-    then stored env rows whose variable is unset now (kept for when it is set again)."""
+    then stored env rows whose variable is unset now (kept for when it is set
+    again), except the ones in ``forget``."""
     shown = {c.id for c in view.credentials}
-    hidden = [c for c in stored.credentials if c.id not in shown and c.source == "env"]
+    hidden = [c for c in stored.credentials if c.id not in shown and c.source == "env" and c.id not in forget]
     return CredentialPool(provider_id=view.provider_id, strategy=view.strategy,
                           credentials=list(view.credentials) + hidden, cursor=view.cursor)
 
@@ -661,9 +919,10 @@ __all__ = [
     "UNCHANGED",
     "USAGE_FILE_NAME",
     "canonical_provider",
+    "company_credential",
     "default_root",
     "env_credential",
-    "env_rows",
+    "shared_rows",
     "get_store",
     "set_store_for_testing",
 ]

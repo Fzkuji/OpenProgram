@@ -80,10 +80,15 @@ def revert_review_hunk(session_id: str, path: str, hunk: dict, idempotency_key: 
     new_start = hunk.get("new_start")
     if not _valid_side(old) or not _valid_side(new) or not isinstance(new_start, int) or new_start < 0:
         return {"status": "error", "error_code": "INVALID_REQUEST", "error": "invalid hunk"}
-    from openprogram.state.store.project.project_store import DEFAULT_PROJECT_ID, get_project, project_for_session
+    from openprogram.state.store.project.project_store import (
+        DEFAULT_PROJECT_ID, folder_is_here, get_project, project_for_session,
+    )
     project = project_for_session(session_id) or get_project(DEFAULT_PROJECT_ID)
     if project is None or not project.path:
         return {"status": "error", "error_code": "OUTSIDE_PROJECT", "error": "the session has no project folder"}
+    if not folder_is_here(project):
+        return {"status": "error", "error_code": "OUTSIDE_PROJECT",
+                "error": "the project folder is on another machine"}
     root = Path(project.path).expanduser().resolve()
     target = Path(path).resolve()
     if not target.is_relative_to(root) or target == root:

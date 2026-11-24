@@ -292,16 +292,19 @@ def managed_clients(monkeypatch: pytest.MonkeyPatch, server: _Server):
         return (str(ipaddress.ip_address(hostname)),)
 
     clients = []
+    managed = safe_http.safe_client
 
     def factory(consumer: str):
-        client = safe_http.safe_client(
+        client = managed(
             consumer, security=OutboundSecurityConfig(resolver=resolver)
         )
         clients.append(client)
         return client
 
-    for module in (_attachments, _transport, image_generate, gemini):
+    for module in (_attachments, _transport):
         monkeypatch.setattr(module, "safe_client", factory, raising=False)
+    # The image tools import the client when they first download.
+    monkeypatch.setattr(safe_http, "safe_client", factory)
     return clients
 
 
@@ -676,7 +679,7 @@ def test_derived_download_checks_4xx_before_consuming_body_and_closes(
         assert result == []
         assert "download HTTP 403" in caplog.text
     else:
-        monkeypatch.setattr(gemini, "safe_client", factory)
+        monkeypatch.setattr(safe_http, "safe_client", factory)
         with pytest.raises(RuntimeError, match="HTTP 403"):
             gemini._url_to_b64("https://public.test/private.png")
 

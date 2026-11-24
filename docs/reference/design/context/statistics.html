@@ -4,7 +4,7 @@
 
 <h2 id="snapshot">One snapshot per response</h2>
 <ol>
-<li>Read the current branch: compacted rendered history, latest system prompt, frozen tool set.</li>
+<li>Read the current branch: compacted rendered history, latest system prompt, frozen tool set. Messages are rendered as the next request sends them: replies of the conversation's model with their reasoning (its encrypted payload counted once), and only the latest message's pictures.</li>
 <li>Categorize locally: message structure, tool schemas, Skills, Memory. Subtract nested items from their parents.</li>
 <li>Calibrate: combine the latest provider total for the same HEAD and compute the uncategorized difference.</li>
 </ol>

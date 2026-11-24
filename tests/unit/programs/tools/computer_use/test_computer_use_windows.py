@@ -9,9 +9,11 @@ import zlib
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import backends, windows, windows_audio
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop.base import ComputerUseError
-from openprogram.programs.tools.computer_use.computer_use_agent.targets import app as tool
+from openprogram.host import machines
+
+from openprogram.programs.tools.computer_use.computer_use.desktop import backends, windows, windows_audio
+from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
+from openprogram.programs.tools.computer_use.computer_use.providers import desktop as provider
 
 
 def _png_pixels(png: bytes) -> tuple[int, int, bytes]:
@@ -91,9 +93,11 @@ def test_support_reports_hosts_other_than_windows(monkeypatch):
         backends.backend()
 
 
-def test_windows_guide_replaces_every_macos_only_sentence():
-    for mac, windows_text in tool._WINDOWS_GUIDE:
-        assert mac in tool._GUIDE or windows_text in tool._GUIDE
+def test_the_windows_note_says_what_the_platform_lacks_and_how_keys_are_named(local_machine):
+    app = provider.AppProvider(local_machine, system="Windows")
+    note = app.note()
+    assert "Windows key" in note and "ctrl+c, not super+c" in note and "There is no open_file" in note
+    assert "open_file" not in app.extra_actions()
 
 
 def test_recording_format_is_the_shared_16k_mono_float():
@@ -149,3 +153,54 @@ def test_a_window_brought_forward_for_input_goes_back_under_the_window_it_stood_
     assert front._standing["forward"] == 0
     # Forward, the user's window back in front, then the operated one under its old neighbour without activating.
     assert calls == [("front", OPERATED), ("front", USERS), ("place", OPERATED, ABOVE, 0x13)]
+
+
+@pytest.fixture
+def local_machine():
+    return machines.local_machine({})
+
+
+def test_a_drag_posted_to_the_window_names_where_it_dropped(monkeypatch):
+    posted = []
+
+    class _User32:
+        def PostMessageW(self, hwnd, message, wparam, lparam):
+            posted.append(hwnd)
+
+        def ScreenToClient(self, hwnd, point):
+            return True
+
+    computer = object.__new__(windows.WindowsComputer)
+    ends = iter([((10.0, 10.0), 'button "A"'), ((50.0, 50.0), 'list "Inbox"')])
+    monkeypatch.setattr(computer, "_drag_end", lambda state, args, *names: next(ends), raising=False)
+    monkeypatch.setattr(computer, "_foreground_only", lambda state: False, raising=False)
+    monkeypatch.setattr(computer, "_target_child", lambda hwnd, x, y: (1312456, 1, 1), raising=False)
+    monkeypatch.setattr(windows, "_user32", lambda: _User32())
+    monkeypatch.setattr(windows.time, "sleep", lambda seconds: None)
+    state = windows.WindowState(pid=1, window_title="Mail", window_id=7, origin=(0, 0), size=(100, 100))
+    said = computer._do_drag(None, state, {"element": 1, "to_element": 2})
+    assert said == 'dragged from button "A" to list "Inbox"'
+    assert set(posted) == {1312456}
+
+
+def test_a_running_app_takes_its_own_start_menu_row_not_a_match_in_part(monkeypatch):
+    computer = object.__new__(windows.WindowsComputer)
+    installed = [{"name": "Notepad++", "app_id": "notepad++"}, {"name": "Notepad", "app_id": "Microsoft.Notepad!App"}]
+    monkeypatch.setattr(computer, "_installed", lambda: installed, raising=False)
+    monkeypatch.setattr(computer, "_running", lambda: [windows.App(pid=7, name="note", exe="C:\\Tools\\note.exe")],
+                        raising=False)
+    monkeypatch.setattr(windows.WindowsComputer, "_refused", classmethod(lambda cls, app: False))
+    info = computer.app_info("note")
+    assert info["running"] and info["name"] == "note" and not info["installed"]
+    monkeypatch.setattr(computer, "_running", lambda: [], raising=False)
+    assert computer.app_info("Notepad")["name"] == "Notepad"
+
+
+def test_the_rule_name_comes_from_the_process_and_never_from_powershell(monkeypatch):
+    computer = object.__new__(windows.WindowsComputer)
+    monkeypatch.setattr(computer, "_installed", lambda: pytest.fail("Get-StartApps takes seconds"), raising=False)
+    monkeypatch.setattr(windows, "_exe", lambda pid: "C:\\Program Files\\App\\Code.exe" if pid == 7 else "")
+    assert computer.app_name("7") == "Code"
+    assert computer.app_name("C:\\Program Files\\App\\Code.exe") == "Code" and computer.app_name("code.exe") == "code"
+    assert computer.app_name("Visual Studio Code") == "" and computer.app_name("8") == ""
+

@@ -27,8 +27,11 @@ import shutil
 import threading
 import time
 from dataclasses import asdict, dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
+
+from openprogram.host._platform.changes import signal
 
 
 SUPPORTED_CHANNELS = ("wechat", "telegram", "discord", "slack")
@@ -36,6 +39,18 @@ DEFAULT_ACCOUNT_ID = "default"
 _VALID_ID = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 
 _lock = threading.RLock()
+
+
+def _announces(fn):
+    """Tell open windows the account's status may read differently now
+    (``channels`` topic, keyed ``<channel>:<account>``; see _heartbeats)."""
+    @wraps(fn)
+    def wrapped(channel: str, account_id: str = DEFAULT_ACCOUNT_ID, *args, **kwargs):
+        try:
+            return fn(channel, account_id, *args, **kwargs)
+        finally:
+            signal("channels", f"{channel}:{account_id}")
+    return wrapped
 
 
 @dataclass
@@ -156,6 +171,7 @@ def get(channel: str, account_id: str) -> Optional[ChannelAccount]:
     return ChannelAccount.from_dict(raw)
 
 
+@_announces
 def create(
     channel: str, account_id: str = DEFAULT_ACCOUNT_ID, *, name: str = ""
 ) -> ChannelAccount:
@@ -209,6 +225,7 @@ def create(
         return acct
 
 
+@_announces
 def delete(channel: str, account_id: str) -> None:
     """Remove an account's directory, or raise if anything survives.
 
@@ -240,6 +257,7 @@ def load_credentials(channel: str, account_id: str) -> dict[str, Any]:
         return {}
 
 
+@_announces
 def save_credentials(
     channel: str,
     account_id: str,
@@ -261,6 +279,7 @@ def save_credentials(
         )
 
 
+@_announces
 def update_credentials(
     channel: str, account_id: str, patch: dict[str, Any]
 ) -> dict[str, Any]:
@@ -394,6 +413,7 @@ def get_settings(channel: str, account_id: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in settings.items() if k != _RETIRED_SETTING}
 
 
+@_announces
 def set_setting(channel: str, account_id: str, key: str, value: str) -> None:
     """设置一个账号行为开关. key/value 必须在 :data:`ACCOUNT_SETTINGS`
     里登记, 否则 ValueError (拒绝静默拼错)."""
@@ -436,6 +456,7 @@ def is_enabled(channel: str, account_id: str) -> bool:
     return bool(raw.get("enabled", True))
 
 
+@_announces
 def set_enabled(channel: str, account_id: str, enabled: bool) -> None:
     with _lock:
         raw_path = account_meta_path(channel, account_id)

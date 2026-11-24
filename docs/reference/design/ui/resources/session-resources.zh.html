@@ -20,12 +20,12 @@
 <thead><tr><th scope="col">资源</th><th scope="col">权威来源</th><th scope="col">生命周期</th></tr></thead>
 <tbody>
 <tr><th scope="row">网页</th><td><code translate="no">CenterTab</code> 记录和记录的会话来源；Agent 打开的标签页通过桌面命令携带可信的运行时会话 ID</td><td>直到网页关闭。Agent 页面留在资源中，用户打开和置顶的页面留在标签条。</td></tr>
-<tr><th scope="row">GUI 桌面、虚拟机</th><td>可信使用登记表和配置的应用或虚拟机端点</td><td>集成附着期间</td></tr>
+<tr><th scope="row">桌面、机器</th><td>可信使用登记表：<code translate="no">computer_use</code> 调用操作的对象，由其目标报告（<code translate="no">desktop</code>：这台电脑上的窗口、屏幕或用户的浏览器；<code translate="no">machine</code>：另一台机器）</td><td>调用操作期间</td></tr>
 <tr><th scope="row">其他集成</th><td>相同可信上下文下的 <code translate="no">resource_use(kind, title, target)</code></td><td>上报的实际使用期</td></tr>
 <tr><th scope="row">后台终端</th><td>bash 调用留在运行的命令（设置了 <code translate="no">background</code>），<code translate="no">ProcessStore</code> 唯一的投影；见<a href="../../runtime/execution/command-sessions.zh.html">命令会话</a></td><td>直到退出；只读行，带停止</td></tr>
 </tbody>
 </table>
-<p class="note">集成必须指明实际的容器、虚拟机、应用或远程环境。单条命令的 Docker 调用和 SSH 子进程不登记，登记表不扫描主机，也不从 shell 文本推断对象。</p>
+<p class="note">集成必须指明实际的应用或机器。单条命令的 Docker 调用和 SSH 子进程不登记，登记表不扫描主机，也不从 shell 文本推断对象。</p>
 
 <details>
 <summary>授权和显示限制</summary>
@@ -52,6 +52,17 @@
 </tbody>
 </table>
 
+<h2 id="views-on-demand">用到时才创建视图</h2>
+<p>一个网页的原生视图是一整个浏览器进程，约 100 MB。一个窗口保留着所有对话打开过的网页：实测 99 个网页，全部带视图时占 10 GB。</p>
+<table class="stack">
+<thead><tr><th scope="col">网页</th><th scope="col">创建视图的时机</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户自己的标签</th><td>App 启动时</td></tr>
+<tr><th scope="row">屏幕上的对话的网页</th><td>App 启动时，或该对话显示到屏幕上时</td></tr>
+<tr><th scope="row">其他对话的网页</th><td>它的对话显示到屏幕上、有面板显示它，或 Agent 列出、使用它时</td></tr>
+</tbody>
+</table>
+<p>等待视图的网页在存储里是 <code translate="no">dormant</code>，显示为已打开，没有任何提示：渲染进程的恢复清单在 <code translate="no">dormant_tabs</code> 里报出它的标签，Worker 就不把它算作失败。视图创建后，它的记录转给新网页。标签已不在的 dormant 网页显示为失败。</p>
 <h2>关闭标签</h2>
 <table class="stack">
 <thead><tr><th scope="col">操作</th><th scope="col">页面</th><th scope="col">效果</th></tr></thead>
@@ -85,7 +96,7 @@
 <tr><th scope="row"><code translate="no">close</code></th><td>请求终止，等待退出</td><td>仅在声明时</td></tr>
 </tbody>
 </table>
-<p class="note">不支持的动作返回能力错误，不做虚构。网页不是这里的 provider：列出、打开、操作和关闭网页都用 <code translate="no">computer_use_agent(target="browser")</code>。<code translate="no">terminal_use</code> 仍是公开入口。资源标识符不是访问授权。隐藏视图、释放 Agent 访问和终止环境是不同的操作。</p>
+<p class="note">不支持的动作返回能力错误，不做虚构。网页不是这里的 provider：列出、打开、操作和关闭网页都用 <code translate="no">computer_use(type="browser")</code>。<code translate="no">terminal_use</code> 仍是公开入口。资源标识符不是访问授权。隐藏视图、释放 Agent 访问和终止环境是不同的操作。</p>
 
 <details>
 <summary>信任与失败</summary>

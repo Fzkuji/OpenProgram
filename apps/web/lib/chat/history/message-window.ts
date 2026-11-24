@@ -10,9 +10,7 @@ export const RECYCLE_MIN_ROWS = 40;
 export const OVERSCAN_PX = 1600;
 export const LIST_LEAD_PX = 24;
 
-export type WindowNode =
-  | { kind: "fold"; id: string }
-  | { kind: "row"; id: string };
+export type WindowNode = { kind: "row"; id: string };
 
 export type HeightWrite = "first" | "update" | "same";
 
@@ -34,10 +32,6 @@ const hydrated = new Set<string>();
 const dirty = new Set<string>();
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let boundStorage: StorageLike | null | undefined;
-
-export function foldKey(firstCoveredId: string): string {
-  return `fold:${firstCoveredId}`;
-}
 
 export function bindHeightStorage(storage: StorageLike | null): void {
   boundStorage = storage;
@@ -248,9 +242,8 @@ export function offsetOf(
 ): number | null {
   let y = lead;
   for (const node of nodes) {
-    const key = node.kind === "fold" ? foldKey(node.id) : node.id;
-    if (node.kind === "row" && node.id === targetId) return y;
-    const h = heights.get(key);
+    if (node.id === targetId) return y;
+    const h = heights.get(node.id);
     if (h == null) return null;
     y += h;
   }
@@ -308,9 +301,7 @@ export function decideLiveRows(opts: {
 
   const live = new Set<string>(opts.always);
   if (opts.viewH <= 0) {
-    for (const node of opts.nodes) {
-      if (node.kind === "row") live.add(node.id);
-    }
+    for (const node of opts.nodes) live.add(node.id);
     return live;
   }
 
@@ -321,7 +312,7 @@ export function decideLiveRows(opts: {
   if (!Number.isFinite(scrollTop)) {
     let total = opts.lead ?? LIST_LEAD_PX;
     for (const node of opts.nodes) {
-      total += opts.heights.get(node.kind === "fold" ? foldKey(node.id) : node.id) ?? 0;
+      total += opts.heights.get(node.id) ?? 0;
     }
     scrollTop = Math.max(0, total - opts.viewH);
   }
@@ -331,15 +322,7 @@ export function decideLiveRows(opts: {
   let prefixKnown = true;
 
   for (const node of opts.nodes) {
-    const key = node.kind === "fold" ? foldKey(node.id) : node.id;
-    const h = opts.heights.get(key);
-
-    if (node.kind === "fold") {
-      if (h == null) prefixKnown = false;
-      else y += h;
-      continue;
-    }
-
+    const h = opts.heights.get(node.id);
     if (!prefixKnown || h == null) {
       live.add(node.id);
       if (h == null) prefixKnown = false;
@@ -359,7 +342,7 @@ export function retainRowHeights(chatKey: string, ids: ReadonlySet<string>): voi
   const heights = byChat.get(chatKey);
   if (!heights) return;
   for (const key of heights.keys()) {
-    if (!ids.has(key) && !(key.startsWith("fold:") && ids.has(key.slice(5)))) heights.delete(key);
+    if (!ids.has(key)) heights.delete(key);
   }
   dirty.add(chatKey);
 }

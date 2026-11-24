@@ -12,7 +12,8 @@ of the regular subscription — see https://help.kagi.com/kagi/api/search.html
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import get_json
@@ -35,10 +36,10 @@ class KagiProvider:
     requires_env: tuple = ("KAGI_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("KAGI_API_KEY"))
+        return bool(service_key("kagi"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("KAGI_API_KEY", "")
+        key = service_key("kagi")
         if not key:
             raise RuntimeError("KAGI_API_KEY not set")
         data = get_json(

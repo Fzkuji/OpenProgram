@@ -247,7 +247,15 @@ def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, caplog
     from openprogram.host.security import safe_http
 
     secret = "peer-secret-query"
-    stop = threading.Event()
+
+    class Stop(threading.Event):
+        """Stops in the wait that follows the refused poll."""
+
+        def wait(self, timeout=None):
+            self.set()
+            return True
+
+    stop = Stop()
 
     class Response:
         status_code = 400
@@ -265,7 +273,6 @@ def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, caplog
             return False
 
         def get(self, *_args, **_kwargs):
-            stop.set()
             return Response()
 
     channel = TelegramChannel.__new__(TelegramChannel)

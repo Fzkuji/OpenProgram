@@ -67,9 +67,11 @@
 <thead><tr><th scope="col">Source</th><th scope="col">State</th><th scope="col">Shape taken from</th></tr></thead>
 <tbody>
 <tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>On; keeps the remaining amount, not a yes/no</td><td>OpenRouter docs, Hermes</td></tr>
-<tr><th scope="row">Codex usage</th><td>Off until verified</td><td>Oh My Pi, codex-rs</td></tr>
+<tr><th scope="row">Codex usage</th><td>On; the weekly and 5h windows and the credits</td><td>Oh My Pi, codex-rs; a real response</td></tr>
+<tr><th scope="row">DeepSeek <code translate="no">/user/balance</code></th><td>On; the balance in its own currency, spent when the account cannot pay for a call</td><td>A real response</td></tr>
+<tr><th scope="row">MiniMax Token Plan, OpenCode Go</th><td>On; the plan's windows. A 401 from a plan's endpoint marks nothing on the key</td><td>Oh My Pi; a real response</td></tr>
 <tr><th scope="row">Z.ai</th><td>Off until verified</td><td>Oh My Pi, ZCode</td></tr>
-<tr><th scope="row">MiniMax, OpenCode Go, GitHub Copilot</th><td>Off until verified</td><td>Oh My Pi</td></tr>
+<tr><th scope="row">GitHub Copilot</th><td>Off until verified</td><td>Oh My Pi</td></tr>
 </tbody>
 </table>
 
@@ -136,7 +138,7 @@
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
 <li>No web UI reads the status route yet; the pages that will are in <a href="provider-management.html">Provider management</a>.</li>
-<li>No reader for Kimi Coding (its payload is not settled), DeepSeek or Moonshot balances, or OpenRouter <code translate="no">/credits</code> (no peer documents their responses).</li>
-<li>The unverified readers above are off.</li>
+<li>No reader for Kimi Coding (its payload is not settled), Moonshot balances, or OpenRouter <code translate="no">/credits</code> (no peer documents their responses). Anthropic, OpenAI, Google, Perplexity and Xiaomi API keys have no balance endpoint; a card shows their 30-day spend.</li>
+<li>The Z.ai and GitHub Copilot readers are off: no real response has been seen.</li>
 <li>Not built: a REPL <code translate="no">/status</code>. A top-level <code translate="no">openprogram status</code> alias is not possible: that name is the background service's.</li>
 </ul>

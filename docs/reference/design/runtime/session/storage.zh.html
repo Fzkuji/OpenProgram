@@ -49,13 +49,21 @@
 <li>读取时按时间戳折叠所有文件，跳过 <code translate="no">crc</code> 失败的行，这只可能是已停止写者的最后一行。</li>
 <li>进程保留折叠结果，只读新增内容。已知文件被替换或变短，或新行排在已折叠内容之前时，从头重新折叠。</li>
 <li>回复的轨迹（<code translate="no">metadata.extra</code>）在折叠结果交出时才算一次：从最后一次整份存它的那行（大的会压缩）加上之后的 <code translate="no">node.stream</code> 行算出。被后面的行替换掉的版本从不解压或解析。</li>
+<li>为折叠而读时，被替换掉的版本交回时不带轨迹，同一条不断变长的轨迹不会有多份同时留在内存里。日志文件逐行读。</li>
 <li><code translate="no">node.stream</code> 行给某个块或输出追加的文字先按片段留着，到这时才拼一次。折叠一条回复的开销只看它的长度，与它分多少行流出无关。</li>
 <li>一次折叠读了至少 4 MB、且不少于上一个检查点的大小时，写 <code translate="no">checkpoint/fold.json</code>（折叠出的节点、元数据、状态文件、运行行）和 <code translate="no">checkpoint/records.json</code>（状态文件和运行行）。每份按文件记下覆盖到的偏移和那里结尾的字节。检查点的开销不超过它覆盖的日志的两倍。</li>
 <li>冷打开读检查点，再只读它之后的行。某个文件的 inode、长度或覆盖段结尾对不上，就从头读。</li>
-<li>状态文件和运行行一起读，从记录检查点开始，只扫这两类行，一遍完成。</li>
+<li>状态文件和运行行一起读，从记录检查点开始，只扫这两类行，一遍完成。第一次读过了至少 256 KB 日志时，自己写 <code translate="no">checkpoint/records.json</code>：否则够不上折叠检查点的小对话，每个来找它任务的进程都要整份读一遍。</li>
 <li>只有实时推送片段不保留。</li>
 </ul>
 <p>以前流式输出每来一个 delta 就重写回复的整条轨迹：有个日志涨到 731 MB，其中 675 MB 是重写，冷打开要 8 秒。现在一行只记新增部分。pi-mono、Claude Code 和 Codex 一条完成的条目写一行，opencode 原地更新 part，没有一家每个 delta 重写整条消息。</p>
+<p>在那之前写下的日志里还留着这些重写。<code translate="no">log_compaction.compact_session</code> 在没有进程写入的会话上把它们去掉：</p>
+<ul>
+<li>每个文件里，凡是写入整条轨迹的 <code translate="no">node.patch</code> 都去掉轨迹，只留每个节点的最后一条。写入轨迹的 patch 会整体替换之前的内容，所以折叠结果不变。</li>
+<li>新文件写在旧文件旁边。分别用旧文件和新文件折叠整个会话，两次结果相同才替换文件。</li>
+<li>检查点随之删除；下次打开会为新文件写一份。</li>
+</ul>
+<p>在一份 profile 副本上实测：66 个对话，30 秒内从 2621 MB 降到 693 MB，每个折叠结果都相同。这是唯一会改写日志文件的地方，所以它从不在 Worker 运行时执行。</p>
 
 <h3 id="turn-weight">一轮除回复外还写什么</h3>
 <p>一行只记算不出来的东西，只记一次。</p>
@@ -63,7 +71,7 @@
 <thead><tr><th scope="col">行</th><th scope="col">记录</th><th scope="col">不记什么，从哪里来</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">turn.snapshot</code></th><td>每轮一次：模型、请求设置、提示词或其哈希，以及每个工具的名字和两个摘要：<code translate="no">declaration_sha256</code>（描述、参数、缓存控制、权限、审批）和 <code translate="no">implementation_sha256</code>（实际运行的代码）</td><td>工具的描述和参数结构。恢复时重新解析当前的工具并比较摘要；对不上时指出是哪个工具、两项里哪一项变了</td></tr>
-<tr><th scope="row"><code translate="no">meta.patch</code> 的 <code translate="no">_last_context_stats</code></th><td>每次模型请求之后：实测总量、依据、估算值和校准系数</td><td>按类别的明细及其中的工具行和提示词行。明细由对话的节点、提示词和工具数出来；首次打开会重新数，面板自己取</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code> 的 <code translate="no">_last_context_stats</code></th><td>每次模型请求之后：实测总量、依据、估算值和偏差（offset）</td><td>按类别的明细及其中的工具行和提示词行。明细由对话的节点、提示词和工具数出来；首次打开会重新数，面板自己取</td></tr>
 </tbody>
 </table>
 <p>在一轮六次模型请求、81 个工具的对话上实测：回复和 journal 之外多写 27 KB，其中快照 18 KB、上下文统计 4 KB。如果把工具结构和明细也抄进这些行，同一轮要写 224 KB（127 KB 和 97 KB）。</p>
@@ -133,7 +141,6 @@
 <tr><th scope="row"><code translate="no">group</code></th><td>str?</td><td>是</td><td>分组标签</td></tr>
 <tr><th scope="row"><code translate="no">status</code></th><td>str</td><td>是</td><td>见下</td></tr>
 <tr><th scope="row"><code translate="no">unread</code></th><td>bool</td><td>是</td><td>未读标记</td></tr>
-<tr><th scope="row"><code translate="no">environment_id</code></th><td>str?</td><td>是</td><td><a href="environments.zh.html#conversation-binding">运行环境</a></td></tr>
 <tr><th scope="row"><code translate="no">sort_at</code></th><td>float</td><td>是</td><td><a href="operations.zh.html#place-in-project-list">项目列表中的位置</a>；0 表示没有</td></tr>
 <tr><th scope="row"><code translate="no">sort_since</code></th><td>float</td><td>是</td><td>放置时的 <code translate="no">updated_at</code>；之后有活动即失效</td></tr>
 <tr><th scope="row"><code translate="no">_auto_titled</code></th><td>bool</td><td>否</td><td>内部标记，不返回前端</td></tr>

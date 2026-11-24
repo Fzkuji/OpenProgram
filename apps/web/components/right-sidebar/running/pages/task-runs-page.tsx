@@ -5,7 +5,7 @@
  *  day, newest first, a page at a time. One line per run: a dot, when it
  *  began, how long it took and how it came out. A run that did not finish or
  *  could not check opens to one sentence of why and the helpers it started.
- *  Below the runs: Open in Scheduler and the task itself. */
+ *  Below the runs: Open in Tasks and the task itself. */
 import { useMemo, useState, type ReactNode } from "react";
 import { Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,7 +69,7 @@ export function TaskRunsPage({ target, context }: ActivityPageProps<"task">) {
   const [filter, setFilter] = useState<TaskRunFilter>("all");
   const [opened, setOpened] = useState<Set<string>>(() => new Set());
   const task = work?.routines.find(entry => entry.id === target.taskId);
-  const { head, runs, loaded, failed, showEarlier } = useTaskRuns({ sessionId: context.sessionId, taskId: target.taskId, filter, active: context.active });
+  const { head, runs, loaded, showEarlier } = useTaskRuns({ sessionId: context.sessionId, taskId: target.taskId, filter, active: context.active });
   const helpers = useMemo(() => helpersOf(context.controller.executions), [context.controller.executions]);
   if (!task) return work ? activityGoneFrame(text) : <ActivityPageFrame kind={null} title={null} backLabel={text("Scheduled task", "定时任务")} axis={null}>{null}</ActivityPageFrame>;
 
@@ -124,12 +124,10 @@ export function TaskRunsPage({ target, context }: ActivityPageProps<"task">) {
       </TabsList>
     </Tabs>
     {rows}
-    {loaded && runs.length === 0 ? <p className={styles.empty}>{failed
-      ? text("Could not read the runs. Retrying automatically.", "读不到运行记录，正在自动重试。")
-      : filter === "all" ? text("No runs yet.", "还没有运行。") : filter === "unfinished" ? text("Every run finished.", "每次运行都完成了。") : text("No run has told you anything yet.", "还没有哪次运行通知过你。")}</p> : null}
+    {loaded && runs.length === 0 ? <p className={styles.empty}>{filter === "all" ? text("No runs yet.", "还没有运行。") : filter === "unfinished" ? text("Every run finished.", "每次运行都完成了。") : text("No run has told you anything yet.", "还没有哪次运行通知过你。")}</p> : null}
     {earlier > 0 ? <ActivityShowMore label={text(`Show ${earlier} earlier`, `显示更早的 ${earlier} 次`)} onClick={() => void showEarlier().catch(() => {})} /> : null}
     <div className="mt-3">
-      <ActivityActionRow icon={Calendar} label={text("Open in Scheduler", "在定时任务中打开")} note={text("Change or pause this task", "修改或暂停这个任务")} onClick={() => navigate("/scheduler")} />
+      <ActivityActionRow icon={Calendar} label={text("Open in Tasks", "在任务中打开")} note={text("Change or pause this task", "修改或暂停这个任务")} onClick={() => navigate("/tasks?tab=scheduled")} />
       <ActivityRow id="task-details" status={taskLine(task, context)}>{() => <TaskDetails task={task} context={context} />}</ActivityRow>
     </div>
   </ActivityPageFrame>;

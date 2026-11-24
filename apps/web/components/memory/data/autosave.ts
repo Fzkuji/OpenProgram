@@ -1,4 +1,24 @@
 /** One serialized writer per document; navigation does not discard in-flight edits. */
+import { errorDetailText } from "../../../lib/net/error-text.ts";
+
+/** The pause before a failed read is tried again: 0.5 s doubling to 30 s (as lib/abilities/kept-read.ts). */
+function retryDelay(attempt: number): number {
+  return Math.min(500 * 2 ** attempt, 30_000);
+}
+
+/** A 4xx other than 408/425/429 is the server's final answer (as isPermanent in lib/abilities/kept-read.ts). */
+function permanent(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 425 && status !== 429;
+}
+
+/** What a memory file read or save answers. */
+interface MemoryFileReply {
+  content?: unknown;
+  warning?: unknown;
+  removed?: unknown;
+  error?: unknown;
+}
+
 export interface DraftState {
   content: string;
   base: string;
@@ -10,12 +30,16 @@ export interface DraftState {
   warning: string;
   /** The last save left only headings, so the server keeps no file for it. */
   removed: boolean;
+  /** The file is not there (or the server refuses it): its editor closes. */
+  gone: boolean;
 }
 export class MemoryDraft {
-  state: DraftState = { content: "", base: "", original: "", loaded: false, saving: false, restoring: false, error: "", warning: "", removed: false };
+  state: DraftState = { content: "", base: "", original: "", loaded: false, saving: false, restoring: false, error: "", warning: "", removed: false, gone: false };
   listeners = new Set<() => void>();
   timer: ReturnType<typeof setTimeout> | undefined;
   loading: Promise<void> | undefined;
+  reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  loadFailures = 0;
   editVersion = 0;
   undoStack: string[] = [];
   redoStack: string[] = [];
@@ -42,27 +66,42 @@ export class MemoryDraft {
     if (this.loading) return this.loading;
     if (this.state.loaded && (this.state.saving || this.state.restoring || this.state.content !== this.state.base)) return;
     const editVersion = this.editVersion;
+    clearTimeout(this.reloadTimer);
     this.loading = (async () => {
       try {
         const response = await this.request(this.url);
-        if (!response.ok) throw new Error("Could not load memory");
-        const data = await response.json();
+        // A file that is not there (or refused) is not read again: its editor closes.
+        if (permanent(response.status)) {
+          console.warn(`[memory] ${this.url} is not there: HTTP ${response.status}`);
+          this.loadFailures = 0;
+          this.publish({ gone: true });
+          return;
+        }
+        if (!response.ok) throw new Error(`Could not load memory: HTTP ${response.status}`);
+        const data = await response.json() as MemoryFileReply;
+        this.loadFailures = 0;
         if (this.editVersion !== editVersion) return;
         let draft;
         try { draft = JSON.parse(this.storage?.getItem(this.key) || "null"); } catch { /* no recoverable draft */ }
         const valid = draft && typeof draft.content === "string" && typeof draft.base === "string";
+        const content = typeof data.content === "string" ? data.content : "";
         this.publish({
-          content: valid ? draft.content : data.content,
-          base: valid ? draft.base : data.content,
-          original: valid ? draft.original ?? draft.base : data.content,
-          loaded: true, error: valid && draft.base !== data.content ? "This memory changed elsewhere. Review the latest version before retrying." : "",
+          content: valid ? draft.content : content,
+          base: valid ? draft.base : content,
+          original: valid ? draft.original ?? draft.base : content,
+          loaded: true, error: valid && draft.base !== content ? "This memory changed elsewhere. Review the latest version before retrying." : "",
           // A file held aside opens saying what keeps it out of memory.
-          warning: data.warning || "",
+          warning: typeof data.warning === "string" ? data.warning : "",
           // What the server answers with is a file it keeps.
           removed: false,
+          gone: false,
         });
         if (valid && !this.state.error) this.schedule();
-      } catch (error) { this.publish({ error: String(error) }); }
+      } catch (error) {
+        // Nothing on screen: the read is tried again after a growing pause.
+        console.warn(`[memory] ${this.url} read failed; trying again`, error);
+        this.reloadTimer = setTimeout(() => { void this.load(); }, retryDelay(this.loadFailures++));
+      }
     })().finally(() => { this.loading = undefined; });
     return this.loading;
   }
@@ -92,12 +131,13 @@ export class MemoryDraft {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, base_content: base, autosave: true }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not save memory");
+      const result = await response.json() as MemoryFileReply;
+      if (!response.ok) throw new Error(errorDetailText(result.error, "Could not save memory"));
+      const saved = typeof result.content === "string" ? result.content : content;
       this.publish({
-        base: result.content,
-        content: this.state.content === content ? result.content : this.state.content,
-        warning: result.warning || "",
+        base: saved,
+        content: this.state.content === content ? saved : this.state.content,
+        warning: typeof result.warning === "string" ? result.warning : "",
         removed: result.removed === true,
       });
       this.persist();
@@ -130,7 +170,8 @@ export class MemoryDraft {
 const drafts = new Map<string, MemoryDraft>();
 export function memoryDraft(url: string) {
   let draft = drafts.get(url);
-  if (!draft) {
+  // A file found gone is asked about afresh when opened again (it may be back).
+  if (!draft || draft.state.gone) {
     let storage: Storage | undefined;
     try { storage = window.localStorage; } catch { /* server saving still works */ }
     draft = new MemoryDraft(url, fetch, storage);

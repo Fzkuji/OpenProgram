@@ -7,6 +7,10 @@
  * Imported for side effects by AppShell.
  */
 
+import { jsonFetch } from "@/lib/net/fetch-client";
+import { sharedRead } from "@/lib/net/shared-get";
+import { errorDetailText } from "@/lib/net/error-text";
+import type { FunctionsMeta } from "@/lib/types";
 import { useSessionStore } from "@/lib/session-store";
 import { addAssistantMessage } from "../session/chat-handlers";
 import { runtimeState } from "../state";
@@ -23,9 +27,8 @@ interface FnDef {
 
 export async function loadProgramsMeta(): Promise<void> {
   try {
-    const resp = await fetch("/api/programs/meta");
-    const meta = (await resp.json()) || { favorites: [], folders: {} };
-    runtimeState.programsMeta = meta;
+    const meta = (await sharedRead("/api/programs/meta", () => jsonFetch<FunctionsMeta>("/api/programs/meta"))) || { favorites: [], folders: {} };
+    runtimeState.programsMeta = { ...meta };
     const { useFunctions } = await import("@/lib/abilities/functions-store");
     useFunctions.getState().setMeta(meta);
   } catch {
@@ -47,12 +50,12 @@ export async function deleteFunction(name: string): Promise<void> {
     const resp = await fetch("/api/function/" + encodeURIComponent(name), {
       method: "DELETE",
     });
-    const data = await resp.json();
+    const data = await resp.json() as { deleted?: unknown; error?: unknown };
     if (data.deleted) {
       addAssistantMessage('Deleted function "' + name + '".');
       await refreshFunctionsList();
     } else {
-      addAssistantMessage("Cannot delete: " + (data.error || "unknown error"));
+      addAssistantMessage("Cannot delete: " + errorDetailText(data.error, "unknown error"));
     }
   } catch (e) {
     showToast("Delete failed: " + (e as Error).message, { tone: "error" });

@@ -10,6 +10,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
+import { retryDelay } from "@/lib/abilities/kept-read";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { XIcon } from "lucide-react";
@@ -51,14 +52,18 @@ export function PermissionsSection({ projectId }: { projectId: string }) {
     setRules(EMPTY);
     setDraft({ deny: "", ask: "", allow: "" });
     setNotice("");
+    // A failed read is tried again quietly until the rules come.
     const refresh = async () => {
-      const d = await request("list_permission_rules");
-      if (controller.signal.aborted) return;
-      if (!d || d.status === "error") {
-        setNotice(d?.error || text("Could not load rules. Reconnect and reopen this project.", "无法加载规则，请恢复连接后重新打开项目。"));
-        return;
+      for (let attempt = 0; !controller.signal.aborted; attempt++) {
+        const d = await request("list_permission_rules");
+        if (controller.signal.aborted) return;
+        if (d && d.status !== "error") {
+          setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+          return;
+        }
+        console.warn("[projects] permission rules read failed; trying again", d?.error);
+        await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt)));
       }
-      setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
     };
     function onRules(e: WindowEventMap["op:permission-rules"]) {
       const d = e.detail as Reply;

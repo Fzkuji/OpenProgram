@@ -11,6 +11,14 @@ from openprogram.state.store import SessionNodeWriter
 from openprogram.state.store.session.session_store import SessionStore
 
 
+def _scope(monkeypatch, executions, parents=lambda *args: {}):
+    """Stand in for the conversation's execution scope."""
+    monkeypatch.setattr(
+        "openprogram.runtime.execution.conversation_scope.conversation_execution_scope",
+        lambda *args, **kwargs: (tuple(executions(*args)), parents(*args)),
+    )
+
+
 def _conversation(tmp_path):
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "parent")
@@ -50,14 +58,7 @@ def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monke
     store.clear_execution_use("exec-1")
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [_exec("exec-1", "parent")],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-1": None},
-    )
+    _scope(monkeypatch, lambda *args: [_exec("exec-1", "parent")], lambda *args: {"exec-1": None})
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -100,14 +101,7 @@ def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatc
     store.clear_execution_use("exec-1")
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [_exec("exec-1", "parent")],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-1": None},
-    )
+    _scope(monkeypatch, lambda *args: [_exec("exec-1", "parent")], lambda *args: {"exec-1": None})
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -157,7 +151,7 @@ def test_resource_endpoint_reuses_branch_graph_within_each_request(tmp_path, mon
     db.set_branch_name("parent", "a2retry", "retry")
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
-    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", lambda *args: ())
+    _scope(monkeypatch, lambda *args: ())
     monkeypatch.setattr(processes, "_authorize", lambda *args: None)
     store = resources.BrowserResourceStore()
     writer = SessionNodeWriter(db, "parent")
@@ -318,14 +312,7 @@ def test_control_rejects_stale_generation_and_does_not_label_paused_from_request
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({"authority_tier": "owner"}, None))
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [_exec("exec-1", "parent")],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-1": None},
-    )
+    _scope(monkeypatch, lambda *args: [_exec("exec-1", "parent")], lambda *args: {"exec-1": None})
     pauses = []
 
     class _Service:
@@ -424,9 +411,7 @@ def test_operation_event_uses_operating_execution_branch_not_first_association(
         captured.append(dict(row))
 
     monkeypatch.setattr("openprogram.programs.applications.browser.pages.emit_browser_resource", _emit)
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [
+    _scope(monkeypatch, lambda *args: [
             SimpleNamespace(
                 execution_id="exec-old", session_id="parent", parent_execution_id=None,
                 status=SimpleNamespace(value="completed"),
@@ -435,12 +420,7 @@ def test_operation_event_uses_operating_execution_branch_not_first_association(
                 execution_id="exec-new", session_id="parent", parent_execution_id=None,
                 status=SimpleNamespace(value="running"),
             ),
-        ],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-old": None, "exec-new": None},
-    )
+        ], lambda *args: {"exec-old": None, "exec-new": None})
     monkeypatch.setattr(
         "openprogram.runtime.execution.default_store",
         lambda: SimpleNamespace(
@@ -487,14 +467,7 @@ def test_completed_owner_becomes_idle_when_page_is_released_and_effects_are_clea
         execution_id="exec-term", session_id="parent", parent_execution_id=None,
         status=SimpleNamespace(value="completed"),
     )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [completed],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-term": None},
-    )
+    _scope(monkeypatch, lambda *args: [completed], lambda *args: {"exec-term": None})
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",
@@ -536,14 +509,7 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed(
         execution_id="exec-fail", session_id="parent", parent_execution_id=None,
         status=SimpleNamespace(value="failed"),
     )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [failed],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-fail": None},
-    )
+    _scope(monkeypatch, lambda *args: [failed], lambda *args: {"exec-fail": None})
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",
@@ -606,14 +572,7 @@ def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monke
             return None
 
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: _Store())
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [paused],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-wait": None},
-    )
+    _scope(monkeypatch, lambda *args: [paused], lambda *args: {"exec-wait": None})
     monkeypatch.setattr(
         "openprogram.runtime.execution.conversation_scope.authorize_conversation_execution",
         lambda *args, **kwargs: None,
@@ -673,14 +632,7 @@ def test_ordinary_paused_execution_still_projects_paused(tmp_path, monkeypatch):
         current_attempt_id=None,
         reason_code=None,
     )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_executions",
-        lambda *args: [paused],
-    )
-    monkeypatch.setattr(
-        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-paused": None},
-    )
+    _scope(monkeypatch, lambda *args: [paused], lambda *args: {"exec-paused": None})
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",

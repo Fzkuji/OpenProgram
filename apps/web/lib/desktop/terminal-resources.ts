@@ -27,7 +27,11 @@ export type TerminalResourceApi = {
   resource: (action: string, request?: Record<string, unknown>) => Promise<TerminalReply>;
   agentTicket: (ticket: string) => Promise<TerminalReply>;
   onResource: (callback: (resource: TerminalResource) => void) => () => void;
+  /** Output as the terminal writes it; a view reads from its cursor when told. */
+  onData?: (callback: (chunk: TerminalOutput) => void) => () => void;
 };
+/** A piece of output the native host pushes as the terminal writes it. */
+export type TerminalOutput = { id: string; generation: string; data?: string; done?: boolean };
 declare global { interface Window { openprogramTerminals?: TerminalResourceApi } }
 export function terminalResourceApi(): TerminalResourceApi | undefined {
   return typeof window === "undefined" ? undefined : window.openprogramTerminals;

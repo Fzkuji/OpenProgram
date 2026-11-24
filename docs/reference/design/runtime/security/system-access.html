@@ -30,7 +30,7 @@
 <tr><th scope="row"><code translate="no">request_mode</code></th><td><code translate="no">native</code>: OS request. <code translate="no">settings</code>: settings only. <code translate="no">targeted</code>: a target application is required. <code translate="no">operation</code>: only the real operation verifies it. <code translate="no">none</code>: no request API</td></tr>
 <tr><th scope="row"><code translate="no">settings</code></th><td>Fixed capability-specific System Settings URL or instruction; opened only after the owner clicks</td></tr>
 <tr><th scope="row"><code translate="no">identity</code></th><td>Bundle id and designated requirement, or provider or path identity</td></tr>
-<tr><th scope="row"><code translate="no">operations</code></th><td>Tools needing the capability. GUI desktop needs screen recording and accessibility; browser, VM and ordinary CLI do not</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>Tools needing the capability. <code translate="no">computer_use</code> on this computer's <code translate="no">app</code> and <code translate="no">screen</code> needs screen recording and accessibility; browser targets, other machines and ordinary CLI do not</td></tr>
 </tbody>
 </table>
 <p class="note">Import validation: unique ids; every native entry has a non-prompting check and explicit request style; scoped entries specify status semantics; every settings action has a fixed destination; every operation points to a declared capability.</p>
@@ -53,7 +53,8 @@
 <tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>Report (schema 2): platform, host, executing identity, timestamp, rows with id, category, status, detail, instruction, request mode, settings availability, operations, recovery metadata</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/system/access/waits</code></th><td>Open waits, with the same ids and schema</td></tr>
 <tr><th scope="row"><code translate="no">POST /api/system/access/setup</code></th><td>Owner and loopback only. Requests every registered native runtime capability, one consolidated report</td></tr>
-<tr><th scope="row"><code translate="no">POST /api/system/access/{id}</code></th><td>Per-row: recheck, optional native request, fresh row. <code translate="no">open_settings=true</code> only opens the destination and never claims a grant</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/guide</code></th><td>Owner and loopback only. Body <code translate="no">{"capabilities": [id, ...]}</code>. Takes each missing one in order in the background: a dialog capability gets macOS's dialog, a list capability its pane and the drag guide. Returns <code translate="no">{"ok": true, "started": [ids]}</code>; off macOS <code translate="no">started</code> is empty; an unknown id is a 400</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/{id}</code></th><td>Per-row: recheck, optional native request, fresh row. <code translate="no">open_settings=true</code> only opens the destination (with the drag guide for a list capability) and never claims a grant</td></tr>
 </tbody>
 </table>
 <p class="note">Responses are no-store and hold no secrets. The first two rows keep the old <code translate="no">screen_recording</code> and <code translate="no">accessibility</code> wire shape; old receipts are read with the legacy shape. An unknown id is a client error and opens nothing. Permission rules, Auto mode, profiles, Workers and ports are unaffected.</p>
@@ -61,9 +62,9 @@
 <h2 id="flow">First run and operations</h2>
 <ol>
 <li>Web settings shows the registry by product area, why each is needed, and one read-only check per page load.</li>
-<li>The user chooses “Set up all OpenProgram access” or a row's “Request authorization” / “Open System Settings”. Page mount, reconnect, polling, history replay and model output never send a request.</li>
+<li>The user chooses “Set up all OpenProgram access” or a row's “Request authorization” / “Open System Settings”. Page mount, reconnect, polling, history replay and model output never send a request; the one automatic action is the settings guide when a tool's wait opens.</li>
 <li>The backend serializes one native request per executor, using the named runtime, then checks afresh. macOS may still show separate dialogs; the UI reports each result.</li>
-<li>Before an operation, the Worker runs one fresh report and creates a durable <code translate="no">system_access</code> wait only for missing required capabilities. Browser and VM operations bypass this.</li>
+<li>Before an operation, the Worker runs one fresh report and creates a durable <code translate="no">system_access</code> wait only for missing required capabilities. The tool says which operation a call needs: for <code translate="no">computer_use</code> the target's provider answers, through the source the runtime installs with <code translate="no">register_operation_source</code>, so the host names no target. Listing applications or displays, browser targets and other machines need nothing.</li>
 <li>Returning to the app triggers a read-only refresh. A grant resolves the wait through Worker reconciliation and continues the same execution from its checkpoint: no fake answer, retry or new execution.</li>
 </ol>
 <table class="stack fixed">
@@ -72,8 +73,42 @@
 <tr><th scope="row">Capabilities found granted</th><td>Not reported again for later steps; a report starts a process, about 0.4 s</td></tr>
 <tr><th scope="row">A capability is missing</th><td>Every step reports, so a grant is seen at once</td></tr>
 <tr><th scope="row">A grant withdrawn mid-turn</th><td>The desktop backend fails the step and names the setting; the next turn reports again</td></tr>
+<tr><th scope="row">Nobody can answer the wait</th><td>The call fails with <code translate="no">PERMISSION_MISSING:</code>, the missing grants and where to give them, so the model can tell the user</td></tr>
 </tbody>
 </table>
+
+<h2 id="settings-guide">System Settings guide</h2>
+<p>Screen Recording and Accessibility (registry flag <code translate="no">settings_list</code>, row field <code translate="no">settings_guide</code>) have no dialog that grants them: the grant is a switch in a list of applications in System Settings, and opening the pane alone leaves the user hunting for the right entry.</p>
+<p>OpenAI's Codex Computer Use solves this with a small accessory window pinned to the System Settings window (its classes <code translate="no">SystemSettingsAccessoryWindow</code>, <code translate="no">DraggableApplicationView</code>, <code translate="no">DragHintView</code>). OpenProgram copies it.</p>
+<figure>
+<svg viewBox="0 0 520 250" role="img" aria-label="The guide panel sits just below the System Settings window; the user drags the app icon up into the list">
+<rect x="70" y="10" width="380" height="170" rx="10" fill="none" stroke="currentColor" opacity=".5"/>
+<text x="90" y="38" font-size="13" fill="currentColor">System Settings › Accessibility</text>
+<rect x="90" y="54" width="340" height="26" rx="4" fill="none" stroke="currentColor" opacity=".35"/>
+<rect x="90" y="84" width="340" height="26" rx="4" fill="none" stroke="currentColor" opacity=".35"/>
+<rect x="90" y="114" width="340" height="26" rx="4" fill="none" stroke="currentColor" stroke-dasharray="4 3" opacity=".6"/>
+<text x="102" y="132" font-size="11" fill="currentColor" opacity=".7">drop here</text>
+<rect x="60" y="188" width="400" height="54" rx="10" fill="none" stroke="currentColor"/>
+<rect x="74" y="197" width="36" height="36" rx="8" fill="currentColor" opacity=".25"/>
+<path d="M124 232 V200 M118 207 L124 200 L130 207" stroke="currentColor" fill="none" stroke-width="2"/>
+<text x="142" y="212" font-size="12" font-weight="bold" fill="currentColor">Drag OpenProgram to the list above…</text>
+<text x="142" y="230" font-size="11" fill="currentColor" opacity=".7">Already in the list? Turn on the switch…</text>
+<path d="M92 196 C 92 160, 100 140, 120 128" stroke="currentColor" fill="none" stroke-dasharray="3 3"/>
+</svg>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pane</th><td>The exact Privacy pane opens (<code translate="no">Privacy_ScreenCapture</code>, <code translate="no">Privacy_Accessibility</code>)</td></tr>
+<tr><th scope="row">Window</th><td>A borderless non-activating floating panel, centred just below the System Settings window, or over its bottom edge when the screen has no room below. It follows the window on a 0.2 s timer and hides while the window is off screen. System Settings is found with <code translate="no">CGWindowListCopyWindowInfo</code> by the pid of <code translate="no">com.apple.systempreferences</code></td></tr>
+<tr><th scope="row">Icon</th><td>The runtime app's icon, an <code translate="no">NSDraggingSource</code> that drags the app's file URL into the list. Line two says to turn the switch on when the app is already listed</td></tr>
+<tr><th scope="row">Identity</th><td>A short-lived helper process started with the executable the worker runs under (<code translate="no">openprogram.host.system_access.guide</code>), so the icon it offers and the grant it checks belong to the identity macOS grants</td></tr>
+<tr><th scope="row">Closes</th><td>On the grant (a fresh check every 1.5 s), the × button, System Settings closing, or after 10 minutes. On a grant the next missing capability of the batch starts; any other close ends the batch</td></tr>
+<tr><th scope="row">Batch</th><td>One guide at a time; a newer request replaces the running one. Dialog capabilities (Calendar, Reminders, Microphone, Camera) keep macOS's own dialog and get no guide</td></tr>
+</tbody>
+</table>
+<p>The explicit flows use it: <code translate="no">POST /api/system/access/guide</code>, <code translate="no">open_settings=true</code> and “Set up all OpenProgram access”. When a tool's <code translate="no">system_access</code> wait opens, the guide starts by itself, once per wait, at the first missing list capability and goes on through the rest; the task waits on the durable wait and resumes when reconciliation sees the grant.</p>
+<p>The guide opens a page and a window; it never requests or claims a grant.</p>
 
 <h2 id="identity-and-recovery">Identity and recovery</h2>
 <ul>
@@ -81,7 +116,7 @@
 <li>Status reads, startup reconciliation, retries and duplicate events never run <code translate="no">tccutil</code> and never reset another application.</li>
 <li>A verified stale receipt can authorize one explicit migration for the fixed OpenProgram bundle identity; a marker written before the OS call prevents loops. Everything else (unverified code, unknown checks, unchanged requirements, Accessibility migration, other applications) goes through System Settings.</li>
 <li>The product cannot pre-authorize an application it never targeted, a path never selected, or a revoked permission. Full Disk Access is never inferred or requested as a workaround.</li>
-<li>Linux portals and Windows integrity rules stay platform-specific. Browser and VM surfaces use their provider or session boundary.</li>
+<li>Linux portals and Windows integrity rules stay platform-specific. Browser targets and other machines use their provider or session boundary.</li>
 </ul>
 
 <h2 id="trust">Trust and concurrency</h2>
@@ -118,4 +153,5 @@
 </details>
 
 <h2 id="implementation-status">Implementation status</h2>
-<p>Implemented: registry, native EventKit and AVFoundation checks and requests, versioned report, identity metadata, package checks, explicit setup UI, no-auto-request recovery, operation preflight, terminal handling for unavailable or unsupported desktop access. Open: verifying the installed default App on port <code translate="no">18100</code> against its current macOS grants.</p>
+<p>Implemented: registry, native EventKit and AVFoundation checks and requests, versioned report, identity metadata, package checks, explicit setup UI, no-auto-request recovery, operation preflight, terminal handling for unavailable or unsupported desktop access, the System Settings drag guide.</p>
+<p>Open: dragging the icon into a real System Settings list and the panel following a moved window, checked by hand on a desktop; verifying the installed default App on port <code translate="no">18100</code> against its current macOS grants.</p>

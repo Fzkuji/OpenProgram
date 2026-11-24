@@ -15,11 +15,6 @@ installLoader({
   },
   replace: {
     ...UI_STUBS,
-    "/lib/prefs/settings-cache.ts": [
-      "export const readCachedSettings = () => undefined;",
-      "export const invalidate = () => {};",
-      "export const cachedFetch = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };",
-    ].join("\n"),
     "/lib/net/api.ts": "export const api = { switchModel: async (...args) => { (globalThis.switched ??= []).push(args); return {}; } };",
     "/lib/runtime-bridge/providers.ts": "export const loadAgentSettings = () => {};",
     "/components/settings/providers/auth/provider-login.tsx": "import { createElement as h } from 'react'; export const ProviderLogin = ({ provider, onChanged }) => h('button', { type: 'button', 'data-login': provider.id, onClick: () => onChanged?.() }, 'Sign in with browser'); export const MethodChoices = () => null;",
@@ -31,6 +26,8 @@ installDom();
 
 const { createElement: h } = await import("react");
 const { AddProviderDialog } = await import("../../../components/settings/providers/add/add-provider-dialog.tsx");
+const { invalidateAllSettings } = await import("../../../lib/prefs/settings-cache.ts");
+console.warn = () => {};
 
 const KEY = "sk-test-placeholder-0000";
 const connected = [];
@@ -60,7 +57,7 @@ async function pasteKey(view, value = KEY) {
   await settle(view);
 }
 
-afterEach(() => { document.body.innerHTML = ""; connected.length = 0; opened.length = 0; globalThis.switched = []; globalThis.__routerCalls?.splice(0); });
+afterEach(() => { document.body.innerHTML = ""; invalidateAllSettings(); connected.length = 0; opened.length = 0; globalThis.switched = []; globalThis.__routerCalls?.splice(0); });
 
 describe("pick", () => {
   test("search narrows every provider; picking one goes to its key step", async () => {

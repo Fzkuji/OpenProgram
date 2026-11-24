@@ -128,6 +128,7 @@
 <thead><tr><th scope="col">Seam</th><th scope="col">Core default</th><th scope="col">Platform registration</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">set_cancellation_check</code> (<code translate="no">openprogram.host.cancellation</code>)</th><td>No-op</td><td><code translate="no">openprogram.runtime.conversation.run_control</code> registers the exact execution check at import</td></tr>
+<tr><th scope="row"><code translate="no">set_cancellation_waker</code> (<code translate="no">openprogram.host.cancellation</code>)</th><td>None; a blocking host wait (a command's <code translate="no">collect</code>) notices a stop only at its own timeout or resync</td><td><code translate="no">run_control</code> wakes it when the tool call's, the turn's or the Worker's stop is fired</td></tr>
 <tr><th scope="row"><code translate="no">set_session_id_provider</code></th><td><code translate="no">None</code>; <code translate="no">runtime.can_ask()</code> is <code translate="no">False</code></td><td><code translate="no">run_control</code> provides the active session id</td></tr>
 <tr><th scope="row"><code translate="no">session_scope(store, id)</code></th><td>Unset; no persistence</td><td>The dispatcher binds the per-turn store</td></tr>
 </tbody>

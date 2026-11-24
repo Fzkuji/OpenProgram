@@ -299,111 +299,87 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
     assert persisted[second["id"]]["last_fired_minute"] == "2026-08-14T10:00"
 
 
-@pytest.mark.parametrize(
-    ("failure_call", "expected_calls", "expected_sleeps"),
-    [
-        (1, [True, False], [1.0, 1.0]),
-        (2, [True, False, False], [1.0, 1.0, 1.0, 1.0]),
-    ],
-)
-def test_worker_loop_recovers_from_one_transient_tick_failure(
-    scheduler_env,
-    monkeypatch,
-    caplog,
-    failure_call,
-    expected_calls,
-    expected_sleeps,
-):
+def test_worker_loop_recovers_from_one_transient_tick_failure(scheduler_env, monkeypatch, caplog):
+    """A failed tick is tried again at the next minute, then the loop sleeps
+    until the next due entry."""
     from openprogram.programs.tools.jobs.cron import worker
 
     stop = threading.Event()
     tick_calls = []
-    sleeps = []
-    elapsed = 0.0
-
-    class NearMinute(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            value = cls(2026, 8, 14, 10, 0, 58)
-            return value if tz is None else value.replace(tzinfo=tz)
-
-    def tick(_state, *, reboot=False):
-        tick_calls.append(reboot)
-        if len(tick_calls) == failure_call:
-            raise RuntimeError("transient tick")
-        if len(tick_calls) == failure_call + 1:
-            stop.set()
-        return 0
-
-    monkeypatch.setattr(worker, "_load_state", lambda: {})
-    monkeypatch.setattr(worker, "_tick", tick)
-    def sleep(seconds):
-        nonlocal elapsed
-        sleeps.append(seconds)
-        elapsed += seconds
-
-    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=NearMinute))
-    monkeypatch.setattr(
-        worker,
-        "time",
-        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
-    )
-
-    with caplog.at_level("WARNING", logger=worker.__name__):
-        worker.run_forever(stop)
-
-    assert tick_calls == expected_calls
-    assert sleeps == expected_sleeps
-    records = [record for record in caplog.records if record.name == worker.__name__]
-    assert len(records) == 1
-    assert records[0].getMessage() == (
-        "scheduler tick failed: RuntimeError: transient tick"
-    )
-    assert records[0].exc_info is not None
-    assert records[0].exc_info[0] is RuntimeError
-
-
-def test_worker_loop_rechecks_elapsed_time_after_oversleep(
-    scheduler_env, monkeypatch,
-):
-    from openprogram.programs.tools.jobs.cron import worker
-
-    stop = threading.Event()
-    tick_calls = []
-    sleeps = []
-    elapsed = 0.0
-
-    class StartOfMinute(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            value = cls(2026, 8, 14, 10, 0, 0)
-            return value if tz is None else value.replace(tzinfo=tz)
+    waits = []
 
     def tick(_state, *, reboot=False):
         tick_calls.append(reboot)
         if len(tick_calls) == 1:
             raise RuntimeError("transient tick")
-        stop.set()
         return 0
 
-    def sleep(seconds):
-        nonlocal elapsed
-        sleeps.append(seconds)
-        elapsed += 70.0
+    def wait(due, stopped, slice_seconds):
+        waits.append(due)
+        if len(waits) == 2:
+            stop.set()
 
+    now = datetime(2026, 8, 14, 10, 0, 58).timestamp()
     monkeypatch.setattr(worker, "_load_state", lambda: {})
     monkeypatch.setattr(worker, "_tick", tick)
-    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=StartOfMinute))
-    monkeypatch.setattr(
-        worker,
-        "time",
-        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
-    )
+    monkeypatch.setattr(worker, "_wait", wait)
+    monkeypatch.setattr(worker, "_watch_files", lambda: None)
+    monkeypatch.setattr(worker, "time", SimpleNamespace(time=lambda: now))
 
-    worker.run_forever(stop)
+    with caplog.at_level("WARNING", logger=worker.__name__):
+        worker.run_forever(stop)
 
     assert tick_calls == [True, False]
-    assert sleeps == [1.0]
+    assert waits == [datetime(2026, 8, 14, 10, 1).timestamp(), None], "no entries: only a change wakes it"
+    records = [record for record in caplog.records if record.name == worker.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == "scheduler tick failed: RuntimeError: transient tick"
+    assert records[0].exc_info is not None
+    assert records[0].exc_info[0] is RuntimeError
+
+
+def test_the_loop_sleeps_until_the_next_due_entry(scheduler_env):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    now = datetime(2026, 8, 14, 10, 7, 30).timestamp()
+    recurring = {"id": "r", "cron": "*/15 * * * *"}
+    later = datetime(2026, 8, 14, 12, 0).astimezone()
+    once = {"id": "o", "type": "once", "run_at": later.isoformat()}
+    assert worker._next_due([recurring], {}, now) == datetime(2026, 8, 14, 10, 15).timestamp()
+    assert worker._next_due([once], {}, now) == later.timestamp()
+    assert worker._next_due([once], {"o": "2026-08-14T09:00"}, now) is None, "a fired one-time task is done"
+    assert worker._next_due([{**recurring, "enabled": False}, {"id": "b", "cron": "@reboot"}], {}, now) is None
+    assert worker._next_due([{"id": "y", "cron": "0 0 29 2 *"}], {}, now) == datetime(2028, 2, 29).timestamp()
+    past = {"id": "p", "type": "once", "run_at": datetime(2026, 8, 14, 9, 0).astimezone().isoformat()}
+    assert worker._next_due([past], {}, now) == datetime(2026, 8, 14, 10, 8).timestamp(), \
+        "what a tick left undone is tried again a minute later, not at once"
+
+
+def test_a_saved_task_file_wakes_the_waiting_loop(scheduler_env, monkeypatch):
+    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.programs.tools.jobs.cron import worker
+
+    monkeypatch.setattr(worker.changes, "file_events_available", lambda: True)
+    worker._listener.wait(0)
+    done = threading.Event()
+    stop = threading.Event()
+    thread = threading.Thread(target=lambda: (worker._wait(None, stop.is_set), done.set()), daemon=True)
+    thread.start()
+    assert not done.wait(0.3), "nothing due and nothing changed: it sleeps"
+    cron_tool._save(cron_tool._resolve_path(), [])
+    assert done.wait(2.0), "the save woke it"
+
+
+def test_stopping_the_worker_ends_its_wait(scheduler_env, monkeypatch):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    monkeypatch.setattr(worker.changes, "file_events_available", lambda: True)
+    worker._listener.wait(0)
+    stop = worker._Stop()
+    done = threading.Event()
+    threading.Thread(target=lambda: (worker._wait(None, stop.is_set), done.set()), daemon=True).start()
+    stop.set()
+    assert done.wait(2.0)
 
 
 def test_worker_loop_does_not_swallow_base_exception(

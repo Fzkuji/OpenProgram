@@ -17,7 +17,7 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,6 +51,11 @@ _SCHEMA = {
     "additionalProperties": False,
 }
 _RESPONSE_FORMAT = JsonSchemaOutput(schema=_SCHEMA, name="message_topics", fallback="prompt", max_validation_retries=1)
+
+#: A conversation's topics were written, or its sorting ended: the Activity
+#: chart reads its runs again (``host/_platform/changes.py``). Keyed by
+#: session id.
+RUNS_TOPIC = "runs"
 
 _lock = threading.Lock()
 _running: set[str] = set()
@@ -151,8 +156,10 @@ def _ask_model(book: TopicBook, previous: str | None, asks: Sequence[Ask]) -> li
     return cleaned if all(cleaned) else None
 
 
-def sort_asks(session_dir: Path, asks: Sequence[Ask]) -> bool:
-    """Give every unsorted message a topic; False when some stayed unsorted."""
+def sort_asks(session_dir: Path, asks: Sequence[Ask], on_written: Callable[[], None] | None = None) -> bool:
+    """Give every unsorted message a topic; False when some stayed unsorted.
+
+    ``on_written`` hears each batch written, so a long backfill shows as it goes."""
     book = read_book(session_dir)
     position = {ask.message_id: number for number, ask in enumerate(asks)}
     pending = [ask for ask in asks if ask.message_id not in book.messages]
@@ -181,9 +188,17 @@ def sort_asks(session_dir: Path, asks: Sequence[Ask]) -> bool:
             else:
                 complete = False
         _write_book(session_dir, book)
+        if on_written is not None:
+            on_written()
         if not complete:
             break
     return complete
+
+
+def _runs_changed(session_id: str) -> None:
+    from openprogram.host._platform import changes
+
+    changes.signal(RUNS_TOPIC, session_id)
 
 
 def _sort_session(session_id: str) -> None:
@@ -193,16 +208,21 @@ def _sort_session(session_id: str) -> None:
     done = False
     try:
         asks = store.read_index(session_id, lambda index: asks_on_branch(index, session_id, index.head_id))
-        done = asks is None or sort_asks(store._session_dir(session_id), asks)
+        done = asks is None or sort_asks(store._session_dir(session_id), asks, lambda: _runs_changed(session_id))
     except Exception:
         _log.warning("topic sorting failed for %s", session_id, exc_info=True)
     finally:
         with _lock:
             _running.discard(session_id)
-            if done:
-                _retry_at.pop(session_id, None)
-            else:
-                _retry_at[session_id] = time.monotonic() + _RETRY_AFTER_SECONDS
+            # A chart read waits a while before it asks again, even after a
+            # complete pass: a message the pass could not see (another branch,
+            # no index) would otherwise restart it on every read the pass's own
+            # change notice causes. A new turn still sorts at once.
+            _retry_at[session_id] = time.monotonic() + _RETRY_AFTER_SECONDS
+            if not done:
+                _log.info("topic sorting left messages unsorted in %s", session_id)
+        # The chart stops waiting for topics once nothing is sorting.
+        _runs_changed(session_id)
 
 
 def _start(session_id: str) -> None:

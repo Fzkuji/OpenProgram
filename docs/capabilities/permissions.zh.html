@@ -50,7 +50,7 @@
 <tr><th scope="row">提问卡片</th><td>每个问题在控件上方。多问题和表单字段一起用<strong>提交回答</strong>提交，答案继续对应问题显示。跳过会告诉模型该问题没有回答。</td></tr>
 <tr><th scope="row">先讨论</th><td>写的话代替回答交给模型，模型在同一轮回应，卡片保留你写的内容。</td></tr>
 <tr><th scope="row">主输入框</th><td>仍用于普通消息。</td></tr>
-<tr><th scope="row"><strong>允许此对话</strong></th><td>规则只保存到当前会话。目前 <a href="computer-use.zh.html#approval"><code translate="no">computer_use_agent</code></a> 提供；规则按应用、虚拟机或你的浏览器命名，覆盖在里面做的一切，包括页面脚本。</td></tr>
+<tr><th scope="row"><strong>允许此对话</strong></th><td>规则只保存到当前会话。目前 <a href="computer-use.zh.html#approval"><code translate="no">computer_use</code></a> 提供；规则按应用、整个屏幕或你的 Chrome、Edge 命名，覆盖在里面做的一切，包括页面脚本。应用名含 <code translate="no">*</code>、<code translate="no">?</code> 或 <code translate="no">[</code>，或以 <code translate="no">:*</code> 结尾时，只能允许一次。你设置的机器直接操作，不询问；判定调用时找不到的目标改按模式处理。</td></tr>
 <tr><th scope="row"><strong>始终允许</strong></th><td>提供时，把支持的确切操作规则保存到当前项目。只允许单次的请求不提供持久授权。</td></tr>
 </tbody></table>
 <details>
@@ -166,7 +166,7 @@
 <tr><th scope="row">新 owner 轮次，Bypass permissions 或 Auto</th><td>不继承中断轮次的审批要求。旧结果保留为未知，不重放。显式 deny、ask 仍生效。</td></tr>
 <tr><th scope="row">之前某步结果未知</th><td>第一个非核查类工具结果的开头点名那一步，每次执行一次。不拦截，由模型决定核对什么。</td></tr>
 <tr><th scope="row">恢复同一执行</th><td>仍需核对结果或批准确切操作</td></tr>
-<tr><th scope="row">屏幕步骤</th><td>中断的 <a href="computer-use.zh.html"><code translate="no">computer_use_agent</code></a> 步骤告诉 agent 结果未知，它看一眼再继续，步骤留在 Activity。没到达应用就停下的（元素隐藏或消失）算未开始。</td></tr>
+<tr><th scope="row">屏幕步骤</th><td>中断的 <a href="computer-use.zh.html"><code translate="no">computer_use</code></a> 步骤告诉 agent 结果未知，它看一眼再继续，步骤留在 Activity。没到达应用就停下的（元素隐藏或消失，或在等别的 agent 用完时被停下）算未开始。</td></tr>
 </tbody></table>
 <p class="note">这些都不改变 macOS 权限，也不会让只读卷变成可写。</p>
 <h2 id="host-capabilities-use-one-setup-path">系统权限</h2>
@@ -184,9 +184,9 @@
 <thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>只做不弹窗的检查</td></tr>
-<tr><th scope="row"><strong>设置 → 系统权限</strong></th><td>分组显示。<strong>初始化全部 OpenProgram 权限</strong>是首次设置的统一入口，返回一份报告；<strong>请求授权</strong>和<strong>打开系统设置</strong>按行使用。都要本机用户点击。</td></tr>
+<tr><th scope="row"><strong>设置 → 设备 → 这台电脑</strong></th><td>列出可以打开的权限，每行显示已打开或<strong>打开</strong>；需要本机用户点击。屏幕录制和辅助功能会打开对应的系统设置页，并贴一个小窗口，把 OpenProgram 拖进列表即可；开关打开后小窗口自动关闭。</td></tr>
 <tr><th scope="row">绝不弹窗</th><td>重连、轮询、历史回放、模型输出、启动检查、普通重试</td></tr>
-<tr><th scope="row">缺少权限</th><td>只暂停声明它的操作；浏览器、虚拟机、无桌面和普通聊天不受影响</td></tr>
+<tr><th scope="row">缺少权限</th><td>只暂停声明它的操作；浏览器、其他机器、无桌面和普通聊天不受影响</td></tr>
 </tbody></table>
 <details>
 <summary>macOS 在更新后再次询问权限</summary>

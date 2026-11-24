@@ -2,10 +2,11 @@
 <meta name="description" content="Which releases count as updates, and how Desktop and the managed CLI verify and apply them.">
 <h1>Stable release automatic updates</h1>
 <p>An update is a complete stable GitHub Release verified against its manifest. New commits are not updates. The update unit is the whole product: wheel, Web, Programs, OCR, Browser and models are never updated separately. The macOS App and terminal installs take a whole package; Windows and Linux Apps take a signed <a href="#official-replay">sealed version</a>.</p>
+<p>An App that can replace itself downloads and checks the release in the background, then shows <strong>New</strong> beside the sidebar wordmark; one click on <strong>Restart to update</strong> swaps it in.</p>
 
 <h2 id="architecture">From Release to platform</h2>
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest accepts only non-draft, non-prerelease vX.Y.Z tags. The Release gate requires unique assets. The manifest gate checks version, bytes and SHA-256. Install type and architecture then pick a route. Desktop on macOS, and on Windows or Linux when the shell must change, selects the exact installer, streams it to a resumable .part file, verifies bytes and SHA-256, on Windows also checks Authenticode for this App's line, and opens the installer for the user to confirm. The managed CLI on macOS, Linux or Windows fetches the installer from the immutable tag, verifies archive and capability manifest, runs a version probe and isolated worker cold start, then macOS and Linux switch current and Windows replaces its launchers; the user restarts a running worker.">
+<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest accepts only non-draft, non-prerelease vX.Y.Z tags. The Release gate requires unique assets. The manifest gate checks version, bytes and SHA-256. Install type and architecture then pick a route. Desktop on macOS, and on Windows or Linux when the shell must change, selects the exact installer, streams it to a resumable .part file, verifies bytes and SHA-256, on Windows also checks Authenticode for this App's line, then, on an App that can replace itself, prepares it and offers Restart to update; otherwise it opens the installer for the user to confirm. The managed CLI on macOS, Linux or Windows fetches the installer from the immutable tag, verifies archive and capability manifest, runs a version probe and isolated worker cold start, then macOS and Linux switch current and Windows replaces its launchers; the user restarts a running worker.">
   <defs><marker id="au-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="34">GitHub latest</text>
   <text class="t-soft" x="0" y="58">non-draft, non-prerelease</text>
@@ -26,7 +27,7 @@
   <text class="t-note" x="16" y="268">2  Stream to a resumable .part file</text>
   <text class="t-note" x="16" y="292">3  Verify bytes and SHA-256</text>
   <text class="t-note" x="16" y="316">4  Windows: Authenticode check for this App's line</text>
-  <text class="t-note" x="16" y="340">5  Open installer; the user confirms</text>
+  <text class="t-note" x="16" y="340">5  Prepare, then Restart to update; or open installer</text>
   <rect class="tile" x="348" y="156" width="332" height="224" rx="8"/>
   <text class="t-big" x="364" y="190">Managed CLI and server</text>
   <text class="t-soft" x="364" y="212">macOS · Linux · Windows</text>
@@ -41,7 +42,7 @@
   <li><strong>GitHub latest</strong><small>Non-draft, non-prerelease, <code translate="no">vX.Y.Z</code></small></li>
   <li><strong>Release gate</strong><small>Unique assets</small></li>
   <li><strong>Manifest gate</strong><small>Version, bytes, SHA-256</small></li>
-  <li><strong>Desktop</strong><small>macOS; Windows and Linux when the shell changes</small><small>Select the exact installer; stream to a resumable <code translate="no">.part</code> file; verify bytes and SHA-256; on Windows check Authenticode for this App's line; open the installer for the user to confirm</small></li>
+  <li><strong>Desktop</strong><small>macOS; Windows and Linux when the shell changes</small><small>Select the exact installer; stream to a resumable <code translate="no">.part</code> file; verify bytes and SHA-256; on Windows check Authenticode for this App's line; prepare it and offer Restart to update, or open the installer where the App cannot replace itself</small></li>
   <li class="flow-end"><strong>Managed CLI and server</strong><small>macOS, Linux, Windows</small><small>Fetch the installer from the immutable tag; verify archive and capability manifest; version probe and isolated worker cold start; macOS, Linux: switch <code translate="no">current</code>; Windows: replace launchers; the user restarts a running worker</small></li>
 </ol>
 </figure>
@@ -60,14 +61,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Asset</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td><code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>, falling back to <code translate="no">-unsigned.dmg</code>. Saved to a location the user picks. The running App is never replaced</td></tr>
-<tr><th scope="row">Windows</th><td>Only when the release needs a newer shell: <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>, or <code translate="no">-unsigned.exe</code> on an App built unsigned. Opens the per-user NSIS wizard</td></tr>
+<tr><th scope="row">macOS</th><td>A Developer ID App in a writable folder unpacks <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code> in its data folder and keeps the copy only if <code translate="no">codesign --verify --deep --strict</code> passes, the team is its own and the version is the release's. On restart a detached shell waits for the App to exit, swaps the bundles with two renames (undoing the first if the second fails) and opens the App</td></tr>
+<tr><th scope="row">macOS, otherwise</th><td>A local build (no team), a translocated or read-only App, or a release without the <code translate="no">.zip</code>: <code translate="no">-mac-&lt;arch&gt;.dmg</code>, then <code translate="no">-unsigned.dmg</code>, saved where the user picks</td></tr>
+<tr><th scope="row">Windows</th><td>Only when the release needs a newer shell: <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>, or <code translate="no">-unsigned.exe</code> on an App built unsigned. Downloaded to the App's data folder and checked; Restart to update quits and runs it with <code translate="no">/S --updated --force-run</code>, which installs silently and starts the new App</td></tr>
 <tr><th scope="row">Linux deb</th><td>Only when the release needs a newer shell. The App sits under <code translate="no">/opt</code>, which it cannot write, so it replaces nothing itself: the <code translate="no">.deb</code> is saved where the user picks and opened with the system's package installer, which asks for the administrator password</td></tr>
-<tr><th scope="row">Linux AppImage</th><td>Only when the release needs a newer shell. Downloaded beside the running file, verified, made executable and renamed over it in one step; the running copy keeps its old file open, and the App restarts from the new one. In a folder it cannot write, the file is saved where the user picks</td></tr>
+<tr><th scope="row">Linux AppImage</th><td>Only when the release needs a newer shell. Downloaded beside the running file, verified and made executable; Restart to update renames it over the running file in one step, and the App restarts from the new one. In a folder it cannot write, the file is saved where the user picks</td></tr>
 </tbody>
 </table>
 
-<h2 id="desktop-states">Settings → General → Application</h2>
+<h2 id="desktop-states">Settings → Versions and updates → Application</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">State</th><th scope="col">Shows</th></tr></thead>
 <tbody>
@@ -76,6 +78,7 @@
 <tr><th scope="row">Up to date</th><td>Same or lower version. Stable downgrades are not offered</td></tr>
 <tr><th scope="row">Update available</th><td>Version, date, plain-text notes summary. Full notes open only the fixed GitHub Release page</td></tr>
 <tr><th scope="row">Downloading</th><td>Bytes and percent, published at most every 250 ms, with a guaranteed final state</td></tr>
+<tr><th scope="row">Ready</th><td>Downloaded, checked and prepared; <code translate="no">readyVersion</code> names it. Settings shows <strong>Restart to update</strong>, the sidebar shows <strong>New</strong> beside the wordmark with the same action and the release page, and the App menu (File on Windows and Linux) gets <strong>Restart to Update to X</strong>. The menu says when a task is running, since the new App restarts the worker. A later check of the same release keeps it ready</td></tr>
 <tr><th scope="row">Retryable error</th><td>Keeps verified release metadata, so retry needs no new check. <code translate="no">errorKind</code> is <code translate="no">rate-limited</code>, <code translate="no">network</code> or <code translate="no">failed</code></td></tr>
 <tr><th scope="row">Not published</th><td>A newer release exists with no file for this computer. The current App keeps working</td></tr>
 </tbody>
@@ -83,7 +86,7 @@
 <p class="note">Plain Web shows the CLI instruction instead.</p>
 
 <h2>Scheduling</h2>
-<p>Automatic checks only discover. Manual checks always refresh. Development mode does not check automatically.</p>
+<p>Automatic checks discover; on an App that can replace itself they also download and prepare the release, at start too for one found before the last quit. Nothing is installed until the user restarts. Manual checks always refresh. Development mode does not check automatically.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">When</th><th scope="col">Next check</th></tr></thead>
 <tbody>
@@ -132,8 +135,8 @@
 <thead class="sr"><tr><th scope="col">Reference</th><th scope="col">Use</th></tr></thead>
 <tbody>
 <tr><th scope="row"><a href="https://docs.github.com/en/rest/releases/releases#get-the-latest-release">GitHub Releases API</a></th><td>Adopted for metadata, notes and assets; clients still validate independently</td></tr>
-<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></th><td>Adapted: check, available, download, error. Ends by opening the verified installer</td></tr>
-<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron <code translate="no">autoUpdater</code></a></th><td>Not used. No built-in Linux updater, and it does not fit opening a verified installer</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></th><td>Adapted: check, available, download, ready, restart to install, error</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron <code translate="no">autoUpdater</code></a></th><td>Not used. No built-in Linux updater, and the swap it does on macOS (Squirrel) is a few lines here, held to the manifest's hash and the running App's team</td></tr>
 <tr><th scope="row"><a href="https://www.electron.build/docs/features/auto-update/"><code translate="no">electron-updater</code></a></th><td>Not used. No new updater package: Electron, Node, Python and shell cover it</td></tr>
 </tbody>
 </table>
@@ -145,10 +148,12 @@
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
 <tbody>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/update-service.js"><code translate="no">update-service.js</code></a></th><td>Metadata, state, cache, scheduling, asset selection, download, hash, public projection</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>Replacing the App on restart: macOS unpack, signature and swap; silent NSIS; AppImage rename</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/windows-signature.js"><code translate="no">windows-signature.js</code></a></th><td>Authenticode status, subject, thumbprint</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><code translate="no">apps/desktop/main.js</code></a></th><td>Timer, resume, IPC, multi-window broadcast</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/preload.js"><code translate="no">main/preload.js</code></a></th><td>Fixed renderer bridge</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/settings/sections/general-section.tsx"><code translate="no">general-section.tsx</code></a></th><td>Settings states and Web fallback</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/sidebar/update-badge.tsx"><code translate="no">update-badge.tsx</code></a></th><td>New beside the wordmark and its restart menu</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/cli/commands/updates/upgrade.py"><code translate="no">commands/updates/upgrade.py</code></a></th><td>Install-type routing, Release gate, dry-run, JSON, installer execution</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/github_release/github.py"><code translate="no">github_release/github.py</code></a></th><td>Stable metadata, manifest, immutable installer retrieval</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><code translate="no">scripts/install-release.sh</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><code translate="no">.ps1</code></a></th><td>Published compatibility entry points; fetch the real installer from the same tag</td></tr>
@@ -182,11 +187,11 @@
 <tr><th scope="row">Managed CLI path</th><td>Implemented. <code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code></td></tr>
 <tr><th scope="row">Security and failure paths</th><td>Verified. <code translate="no">apps/desktop/tests/self-update/check-update-service.js</code></td></tr>
 <tr><th scope="row">Release gate</th><td>Every stable release passes runtime, CLI, Desktop, manifest and checksum checks before publication. These prove what was published, not behaviour on a running client</td></tr>
-<tr><th scope="row">Installed client</th><td>Open: discovery, opening the installer, long runs and sleep/resume, operated on a real install; Authenticode with a real certificate on an official runner; real GitHub responses, a real proxy</td></tr>
+<tr><th scope="row">Installed client</th><td>Open: the background download, the macOS swap and the silent Windows install on a real install of a published release; long runs and sleep/resume, operated on a real install; Authenticode with a real certificate on an official runner; real GitHub responses, a real proxy</td></tr>
 <tr><th scope="row">Version-store assets and replay</th><td>Implemented, tested with a local directory as the release source. <code translate="no">pytest -q tests/component/self_update/official/test_replay.py</code></td></tr>
 <tr><th scope="row">Version-store release path</th><td>Implemented and passing end to end on macOS against a local server imitating GitHub (update, resume, go back, refusals). Installed copies trust the official signing key. The Release workflow has published signed update files for Linux only, in v1.1.0; its macOS and Windows asset steps failed in that run and have not run since. Linux activation needs one more run</td></tr>
 <tr><th scope="row">Upgrading from v0.6.6 or earlier</th><td>No updater before v0.7.0: install the current DMG once by hand. CLI and server rerun the public installer once</td></tr>
 </tbody>
 </table>
 
-<p class="note">Out of scope: Windows sandboxing, PyPI product installation, background replacement of a running application.</p>
+<p class="note">Out of scope: Windows sandboxing, PyPI product installation, replacing a running App while it runs: the swap happens only on Restart to update.</p>

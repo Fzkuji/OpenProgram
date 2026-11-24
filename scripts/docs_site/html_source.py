@@ -14,7 +14,8 @@ from __future__ import annotations
 import html as _html
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from html.parser import HTMLParser
 
 _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
@@ -71,7 +72,13 @@ class _TreeBuilder(HTMLParser):
         self.stack[-1].children.append(data)
 
 
+@lru_cache(maxsize=4096)
 def _parse(source: str) -> Node:
+    """The tree of ``source``. Shared between callers: read it, never change it.
+
+    One build asks for a page's tree several times (the format check, its
+    text, its description, its Markdown twin), and parsing was half of it.
+    """
     builder = _TreeBuilder()
     builder.feed(source)
     builder.close()
@@ -223,9 +230,9 @@ def page_description(source: str, body: str, *, limit: int = 160) -> str:
             written = _collapse(node.attrs.get("content", ""))
             if written:
                 return written
-    tree = _parse(body)
-    tree.children = [child for child in tree.children
-                     if not (isinstance(child, Node) and child.tag == "h1")]
+    parsed = _parse(body)
+    tree = replace(parsed, children=[child for child in parsed.children
+                                     if not (isinstance(child, Node) and child.tag == "h1")])
     parts: list[str] = []
     _visible_text(tree, parts)
     text = _collapse("".join(parts))

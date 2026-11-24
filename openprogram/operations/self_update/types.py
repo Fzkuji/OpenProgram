@@ -19,7 +19,7 @@ SCHEMA_VERSION = 2
 # not know in such a file instead of calling it corrupt.
 PROTOCOL_VERSION = 1
 _READABLE_SCHEMAS = frozenset({1, SCHEMA_VERSION})
-# Only the legacy_app and dev_stable backends still build into a fixed App path.
+# Only the legacy_app backend still builds into a fixed App path.
 DEFAULT_APP_PATH = "/Applications/OpenProgram.app"
 UPDATE_KINDS = ("change", "undo_to", "undo_commit", "official")
 _UPDATE_ID = re.compile(r"^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -88,13 +88,14 @@ VALID_TRANSITIONS = frozenset(
         (UpdatePhase.PREPARING, UpdatePhase.TRIAL),  # undo_to reuses a built version.
         (UpdatePhase.PREPARING, UpdatePhase.ABORTED),
         (UpdatePhase.BUILDING, UpdatePhase.TRIAL),
-        (UpdatePhase.BUILDING, UpdatePhase.READY),  # dev_stable and legacy_app have no trial phase.
+        (UpdatePhase.BUILDING, UpdatePhase.READY),  # legacy_app has no trial phase.
+        (UpdatePhase.BUILDING, UpdatePhase.SUCCEEDED),  # dev_deploy: the deploy is the whole update.
         (UpdatePhase.BUILDING, UpdatePhase.ABORTED),
         (UpdatePhase.TRIAL, UpdatePhase.READY),
         (UpdatePhase.TRIAL, UpdatePhase.ABORTED),
         (UpdatePhase.READY, UpdatePhase.BUILDING),
         (UpdatePhase.READY, UpdatePhase.QUIESCING),
-        (UpdatePhase.READY, UpdatePhase.ACTIVATING),  # dev_stable and legacy_app.
+        (UpdatePhase.READY, UpdatePhase.ACTIVATING),  # legacy_app.
         (UpdatePhase.READY, UpdatePhase.ABORTED),
         (UpdatePhase.QUIESCING, UpdatePhase.ACTIVATING),
         (UpdatePhase.QUIESCING, UpdatePhase.ABORTED),

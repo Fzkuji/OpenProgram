@@ -49,16 +49,15 @@ def one_shot_approval(name: str, args: dict | None) -> bool:
     return sends_on_behalf(name)
 
 
-# A screen is granted whole, once: an application, a VM endpoint, or the
-# user's own browser, with everything done in it (clicks, typing, page
-# scripts, uploads). In the modes that ask, the first touch asks until an
-# allow rule (this conversation or the project) names it. Bypass runs it.
-# Auto reviews the first call to it and lets that review stand for the
-# conversation (``app_grants``). Calls the tool marks approval-free
-# (list_apps, the guide, built-in browser Pages) skip all of this.
-_APP_GRANT_TOOLS = {"computer_use_agent"}
-# Rules written for the tool's earlier name still grant the same app.
-_RULE_ALIASES = {"computer_use_agent": {"computer_use"}}
+# A screen is granted whole, once: what the target's provider asks about
+# (an application, the whole screen, the user's own browser), with everything
+# done in it (clicks, typing, page scripts). In the modes that ask, the first
+# touch asks until an allow rule (this conversation or the project) names it.
+# Bypass runs it. Auto reviews the first call to it and lets that review stand
+# for the conversation (``app_grants``). A call the provider asks nothing about
+# (listing applications, the guide, a machine that was set up) skips all of
+# this, and the conversation's own Pages have their grant.
+_APP_GRANT_TOOLS = {"computer_use"}
 # Audited when one of these runs in a turn with no one at the keyboard.
 _DELEGATED_SOURCES = {"agent_spawn", "cron", "scheduler", "mcp"}
 
@@ -77,10 +76,9 @@ def rules_for_tool(rules, tool_name: str) -> tuple[tuple[str, str], ...]:
     if rules is None:
         return ()
     from openprogram.runtime.permissions.rule import parse_rule
-    names = {tool_name, *_RULE_ALIASES.get(tool_name, ())}
     return tuple((behavior, raw) for behavior, ruleset in (("deny", rules.deny), ("ask", rules.ask),
                                                           ("allow", rules.allow))
-                 for raw in ruleset if parse_rule(raw).tool_name in names)
+                 for raw in ruleset if parse_rule(raw).tool_name == tool_name)
 
 
 def match_rule(rules, tool_name: str, args: dict) -> tuple[str | None, str | None]:
@@ -102,7 +100,7 @@ def match_rule(rules, tool_name: str, args: dict) -> tuple[str | None, str | Non
             return "ask", unread
         for raw in ruleset:
             rv = parse_rule(raw)
-            if rv.tool_name != tool_name and rv.tool_name not in _RULE_ALIASES.get(tool_name, ()):
+            if rv.tool_name != tool_name:
                 continue
             if rv.pattern is None:
                 return behavior, raw
@@ -126,23 +124,18 @@ def _audit_delegated_risky(tool_name: str, req: "TurnRequest") -> None:
         )
 
 
-def _user_browser(args: dict) -> str:
-    """The user's own Chrome or Edge, which the conversation's Page grant does not cover."""
-    from openprogram.programs._host import services as _services
-    browser = _services.lookup("browser")
-    if browser is None:
-        return ""
-    nested = args.get("args") if isinstance(args.get("args"), dict) else {}
-    return browser.browser_of(nested)
+def _screen():
+    from openprogram.programs.tools.computer_use.computer_use import tool
+    return tool
 
 
-def _app_grant_needed(agent_tool, args: dict) -> bool:
-    from openprogram.programs import tool_requires_approval
+def _app_grant_needed(args) -> bool:
+    """Whether the call's target asks the user before it is operated, as its provider says."""
     try:
-        needed, _reason = tool_requires_approval(agent_tool, args)
+        asked = _screen().approval(args)
     except Exception:
         return True
-    return bool(needed)
+    return asked is not None and bool(asked.shown)
 
 
 def can_approve(req) -> bool:
@@ -183,10 +176,28 @@ def nobody_answers(req) -> bool:
         authority.get("speaker_kind") != "human")
 
 
+def _page_surface(args: dict) -> bool:
+    """Whether the call stays inside the conversation's own Pages; a user's own browser never does."""
+    try:
+        return _screen().page_surface(args)
+    except Exception:
+        return False
+
+
+def _resolved(args) -> bool:
+    """Whether the call's target resolves now. One that does not is never let
+    through as asking nothing: dispatch resolves it again and may find it."""
+    try:
+        return _screen().facts(args) is not None
+    except Exception:
+        return False
+
+
 def surface_grant_applies(name: str, req, args) -> bool:
-    """Whether the conversation's grant over its own browser Pages covers this call."""
-    if not (name == "computer_use_agent" and isinstance(args, dict)
-            and args.get("target") == "browser" and not _user_browser(args)):
+    """Whether the conversation's grant over its own browser Pages covers this call.
+    A call on the Pages that its provider asks about (an upload) is reviewed alone."""
+    if (name not in _APP_GRANT_TOOLS or not isinstance(args, dict) or not _page_surface(args)
+            or _app_grant_needed(args)):
         return False
     from openprogram.runtime.permissions.session_facts import facts
     return facts().browser_pages_available(getattr(req, "surface_context", None))
@@ -225,7 +236,7 @@ def _ask_or_nobody(agent_tool, req, args, code: str, layer: str, rule: str | Non
 def _free_code(agent_tool, req, args) -> str | None:
     """Calls that need no decision in any mode, by the reason they need none."""
     name = agent_tool.name
-    if name in _APP_GRANT_TOOLS and req.permission_mode != "auto" and _app_grant_needed(agent_tool, args):
+    if name in _APP_GRANT_TOOLS and req.permission_mode != "auto" and _app_grant_needed(args):
         # Operating a screen asks on first touch in Ask and Plan, whichever target it names.
         return None
     if surface_grant_applies(name, req, args):
@@ -233,9 +244,11 @@ def _free_code(agent_tool, req, args) -> str | None:
     if _session_poll(name, args):
         # The command itself was approved when bash started it.
         return "SESSION_POLL"
-    if (name in _APP_GRANT_TOOLS and isinstance(args, dict) and args.get("target") != "browser"
-            and not _app_grant_needed(agent_tool, args)):
-        # Listing applications or showing a guide touches no application.
+    if (name in _APP_GRANT_TOOLS and isinstance(args, dict) and _resolved(args)
+            and not _page_surface(args) and not _app_grant_needed(args)):
+        # Listing applications or showing a guide touches no application, and
+        # setting a machine up was the consent to operate it. The conversation's
+        # Pages are left to their own grant above: without Pages they ask.
         return "APP_GRANT_FREE"
     if req.source in {"cron", "scheduler"} and name in identity.SCHEDULED_MEMORY_TOOLS:
         return "SCHEDULED_MEMORY"

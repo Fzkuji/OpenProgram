@@ -391,6 +391,18 @@ def render_breadcrumb(chain, title, title_zh=""):
     return f'<nav class="breadcrumb">{sep.join(segs)}</nav>'
 
 
+def zh_link_attr(href: str, zh_href: str) -> str:
+    """What tells the language switch where a link's Chinese page is.
+
+    A Chinese page is its English one with ``.zh`` before ``.html``, so the
+    link only says it has one; an address that breaks the rule is written out.
+    Every link of every page carried the full address, 14 MB of the site.
+    """
+    if href.endswith(".html") and zh_href == href[:-5] + ".zh.html":
+        return " data-zh"
+    return f' data-href-zh="{zh_href}"'
+
+
 def render_prevnext(prev_p, next_p):
     if not prev_p and not next_p:
         return ""
@@ -398,7 +410,7 @@ def render_prevnext(prev_p, next_p):
         if page is None:
             return ""
         href = DEPLOY_BASE + page.out.as_posix()
-        paths = (f' data-href-en="{href}" data-href-zh="{DEPLOY_BASE}{page.zh_out.as_posix()}"'
+        paths = (zh_link_attr(href, f"{DEPLOY_BASE}{page.zh_out.as_posix()}")
                  if page.zh_out else "")
         title = (f' data-title-zh="{_html.escape(page.title_zh, quote=True)}"'
                  if page.title_zh else "")
@@ -415,9 +427,29 @@ _GIT_MTIME_CACHE: dict[str, str] = {}
 def git_mtime(src: Path) -> str:
     """Last commit date (YYYY-MM-DD) for a file, or '' if not tracked."""
     key = str(src)
+    import subprocess
+    if not _GIT_MTIME_CACHE:
+        # One walk of the docs history instead of a git process per page:
+        # the first commit a path appears in, newest first, is its last.
+        _GIT_MTIME_CACHE[""] = ""
+        try:
+            log = subprocess.run(
+                ["git", "-c", "core.quotepath=off", "log", "--format=%x00%ad", "--date=short",
+                 "--name-only", "--", "docs"],
+                cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60,
+            )
+            date = ""
+            for line in log.stdout.splitlines() if log.returncode == 0 else ():
+                if line.startswith("\x00"):
+                    date = line[1:]
+                elif line:
+                    _GIT_MTIME_CACHE.setdefault(str(REPO_ROOT / line), date)
+        except Exception:
+            pass
     if key in _GIT_MTIME_CACHE:
         return _GIT_MTIME_CACHE[key]
-    import subprocess
+    # A path the walk did not name (outside docs, changed only by a merge,
+    # or never committed) is asked for on its own.
     try:
         out = subprocess.run(
             ["git", "log", "-1", "--format=%ad", "--date=short", "--", str(src)],
@@ -440,7 +472,7 @@ def render_tabbar(tabs, active_key: str, base: str) -> str:
               if t.title_zh and t.title_zh != t.title else "")
         landing = next((p for sec in t.sections for p in sec.pages if p.out == t.landing), None)
         if landing and landing.zh_out:
-            zh += f' data-href-en="{href}" data-href-zh="{base}{landing.zh_out.as_posix()}"'
+            zh += zh_link_attr(href, f"{base}{landing.zh_out.as_posix()}")
         links.append(f'<a class="tablink{cls}" href="{href}"{zh}>{_html.escape(t.title)}</a>')
     return "".join(links)
 
@@ -452,12 +484,14 @@ def render_nav(sections, current_out: Path, base: str, *, collapsible: bool = Fa
         href = base + str(p.out).replace("\\", "/")
         active = " active" if p.out == current_out else ""
         # If a Chinese version exists, carry its label + URL so the language
-        # toggle can switch this sidebar entry to Chinese.
+        # toggle can switch this sidebar entry to Chinese. The English URL is
+        # the href itself: written a second time on every link of every page,
+        # it was a sixth of the built site.
         extra = ""
         if p.zh_out is not None:
             zh_href = base + str(p.zh_out).replace("\\", "/")
             extra = (f' data-title-zh="{_html.escape(p.title_zh or p.title, quote=True)}"'
-                     f' data-href-en="{href}" data-href-zh="{zh_href}"')
+                     + zh_link_attr(href, zh_href))
         return f'<a class="navlink{active}" href="{href}"{extra}>{_html.escape(p.title)}</a>'
 
     def title_attrs(title, title_zh):

@@ -149,7 +149,7 @@ def profile(tmp_path, monkeypatch):
         saved.append(project_id)
         projects[project_id] = settings
 
-    monkeypatch.setattr(open_permissions, "get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     project_store = "openprogram.state.store.project.project_store"
     monkeypatch.setattr(f"{project_store}.list_projects", lambda: [SimpleNamespace(id=pid) for pid in projects])

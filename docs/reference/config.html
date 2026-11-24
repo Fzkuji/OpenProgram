@@ -20,6 +20,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <thead><tr><th scope="col">Key</th><th scope="col">Meaning</th><th scope="col">Default</th><th scope="col">Applies</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">search.default_provider</code></th><td><code translate="no">auto</code> picks the highest-priority configured one</td><td>auto</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">search.google_pse_cx</code></th><td>Google Programmable Search engine id. <code translate="no">GOOGLE_PSE_CX</code> is read when it is empty.</td><td>empty</td><td>live</td></tr>
 <tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>, or <code translate="no">none</code>: no prompt memory, recall, automatic writes, organizer or memory threads</td><td>local</td><td>next start</td></tr>
 <tr><th scope="row"><code translate="no">memory.writer.model</code></th><td>Optional <code translate="no">provider/model</code> for background writing; empty uses the default chat agent's</td><td>empty</td><td>live</td></tr>
 <tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>Per-tool switch; members of the <code translate="no">tools.disabled</code> list</td><td>all enabled</td><td>live</td></tr>
@@ -60,9 +61,10 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{disabled: [tool name, ...]}</code></td><td><code translate="no">openprogram/operations/setup.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
 <tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}</code></td><td><code translate="no">openprogram/host/sandbox/__init__.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
 <tr><th scope="row"><code translate="no">last_used_model</code></th><td><code translate="no">{provider, model}</code> a new conversation starts on. Empty on a fresh install.</td><td><code translate="no">openprogram/models/providers/catalog/last_used.py</code></td></tr>
+<tr><th scope="row"><code translate="no">provider_companies</code></th><td>Catalogue entry id → company id: which company's card and keys an entry the built-in table does not list belongs to. Its own id makes it stand alone.</td><td><code translate="no">openprogram/models/auth/login/login_method_registry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">default_workdir</code></th><td>Default agent working directory</td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
 <tr><th scope="row"><code translate="no">providers</code></th><td>Per-provider subtree (enabled and custom models), managed by the Web UI model listing</td><td><code translate="no">openprogram/models/providers/settings/config_read.py</code>, <code translate="no">storage.py</code></td></tr>
-<tr><th scope="row"><code translate="no">api_keys</code></th><td>Env name → key, from the setup wizard, exported at worker startup. For web search and TTS; LLM keys live in the credential store.</td><td><code translate="no">openprogram/interfaces/cli/setup_sections/sections.py</code>, <code translate="no">openprogram/interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">api_keys</code></th><td>No longer written. Keys found here move into the credential store at start, and the name leaves the file; a name no service reads stays.</td><td><code translate="no">openprogram/models/auth/key_move.py</code></td></tr>
 <tr><th scope="row"><code translate="no">spec_migration_version</code></th><td>One-time marker for the model-spec migration</td><td><code translate="no">openprogram/models/providers/settings/storage.py</code></td></tr>
 </tbody>
 </table>

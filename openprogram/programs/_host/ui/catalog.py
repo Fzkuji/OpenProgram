@@ -28,7 +28,9 @@ from openprogram.host._platform.filesystem import replace_file
 
 ID = re.compile(r"[a-z][a-z0-9._-]{0,95}\Z")
 ICON = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
-CAPABILITIES = {"model.invoke", "storage.app", "files.project.read", "files.project.write"}
+#: ``chat`` lets the window show the owner's composer for conversations it keeps
+#: (``state.conversation``), each working in a folder the window names.
+CAPABILITIES = {"model.invoke", "storage.app", "files.project.read", "files.project.write", "chat"}
 #: Capabilities that need the owner's explicit trust at install, besides a Python backend.
 TRUSTED_CAPABILITIES = {"files.project.write"}
 #: Directories that are never part of an application's content.
@@ -196,10 +198,37 @@ def package_digest(root: Path) -> str:
 
 def tree_stamp(root: Path) -> tuple:
     """A cheap change marker of an application tree: paths, sizes and mtimes."""
+    rows: list[tuple[str, int, int]] = []
     try:
-        return tuple((p.relative_to(root).as_posix(), p.stat().st_size, p.stat().st_mtime_ns) for p in _walk(root))
+        _stamp_folder(os.fspath(root), "", rows)
     except (OSError, ValueError):
         return ()
+    return tuple(rows)
+
+
+def _stamp_folder(folder: str, prefix: str, rows: list) -> None:
+    """:func:`_walk`'s files in its order, read from the directory listing.
+
+    The Programs watcher stamps every enabled application every two seconds;
+    a path object and two ``stat`` calls per file made that pass the largest
+    use of the processor in an idle Worker.
+    """
+    files, folders = [], []
+    with os.scandir(folder) as listing:
+        for entry in listing:
+            is_folder = entry.is_dir()
+            if is_folder and entry.name in IGNORED_DIRS:
+                continue
+            if entry.is_symlink():
+                raise ValueError("application packages cannot contain symlinks")
+            (folders if is_folder else files).append(entry)
+    for entry in sorted(files, key=lambda item: item.name):
+        if entry.name.endswith((".pyc", ".pyo")):
+            continue
+        found = entry.stat(follow_symlinks=False)
+        rows.append((prefix + entry.name, found.st_size, found.st_mtime_ns))
+    for entry in sorted(folders, key=lambda item: item.name):
+        _stamp_folder(entry.path, f"{prefix}{entry.name}/", rows)
 
 
 # registrations

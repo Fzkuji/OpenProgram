@@ -85,7 +85,7 @@ name. To build one:
    The archive is named `OfficeAssets-<editor>-<patch>-<pack>.zip`, the last
    part from the pack's manifest digest, and the command writes its name,
    size and SHA-256 into `install.py` and the limit into `safe_http.py`.
-4. Commit, promote, then tag with the file; before anything moves, the
+4. Commit, then tag with the file; before anything moves, the
    publish script puts it on the tag's draft release when GitHub has no copy:
 
    ```sh

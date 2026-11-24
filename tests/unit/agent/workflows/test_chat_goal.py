@@ -160,6 +160,8 @@ def test_a_goal_turn_started_from_the_controls_holds_the_run_slot(monkeypatch):
             events.append(("failed", reason_code))
 
     monkeypatch.setattr(run_slot, "_port", Port())
+    # Nothing here says the slot was given back; the wait's resync asks again.
+    monkeypatch.setattr(run_slot, "HOLD_RESYNC_SECONDS", 0.05)
     monkeypatch.setattr(goals, "load_goal", lambda _sid: {"status": "active", "text": "go", "id": "g"})
     monkeypatch.setattr(goals, "_db", lambda: SimpleNamespace(get_session=lambda _sid: {"agent_id": "main"}))
     monkeypatch.setattr(chat, "identity", lambda _goal: {"id": "g"})

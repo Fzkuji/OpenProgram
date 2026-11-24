@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { FileText, Presentation, Sheet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ManageEmptyState, ManagePage, ManagePageHeader, ManageSummary, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManagePage, ManagePageHeader, ManageSummary, managePageStyles as shared } from "@/components/ui/manage-page";
 import { useCurrentProject } from "@/lib/files/files-shared";
 import { useTranslation } from "@/lib/i18n";
 import { useApplicationList } from "@/lib/net/application-list";
@@ -23,25 +23,40 @@ const KIND_OF: Record<string, OfficeKind> = {
 };
 const ICONS = { docx: FileText, xlsx: Sheet, pptx: Presentation };
 
+/** Each project's document list as last read: the window opened again shows it at once. */
+const documentsRead = new Map<string, { paths: string[]; tooLarge: boolean }>();
+
 export function OfficeWindow() {
   const { text } = useTranslation();
   const project = useCurrentProject();
   const { builtin } = useApplicationList();
   const enabled = builtin.find(item => item.id === "office_editor")?.enabled !== false;
-  const [documents, setDocuments] = useState<string[] | null>(null);
-  const [tooLarge, setTooLarge] = useState(false);
+  const [documents, setDocuments] = useState<string[] | null>(() => (project ? documentsRead.get(project.id)?.paths ?? null : null));
+  const [tooLarge, setTooLarge] = useState(() => (project ? documentsRead.get(project.id)?.tooLarge ?? false : false));
+  const [listRetry, setListRetry] = useState(0);
   const [busy, setBusy] = useState<OfficeKind | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!project) return;
     let live = true;
-    setDocuments(null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const held = documentsRead.get(project.id);
+    if (listRetry === 0) { setDocuments(held?.paths ?? null); setTooLarge(held?.tooLarge ?? false); }
     listOfficeDocuments(project.id)
-      .then(list => { if (live) { setDocuments(list.paths); setTooLarge(list.tooLarge && !list.paths.length); } })
-      .catch(reason => { if (live) { setDocuments([]); setError(String(reason?.message ?? reason)); } });
-    return () => { live = false; };
-  }, [project]);
+      .then(list => {
+        const read = { paths: list.paths, tooLarge: list.tooLarge && !list.paths.length };
+        documentsRead.set(project.id, read);
+        if (live) { setDocuments(read.paths); setTooLarge(read.tooLarge); }
+      })
+      .catch((reason: unknown) => {
+        // The list on screen stays; the read is asked again, quietly.
+        if (!live) return;
+        console.warn("office document list read failed; reading again", reason);
+        timer = setTimeout(() => setListRetry(n => n + 1), Math.min(30_000, 1000 * 2 ** listRetry));
+      });
+    return () => { live = false; clearTimeout(timer); };
+  }, [project, listRetry]);
 
   const open = (path: string) => { if (project) useCenterTabs.getState().openFileTab(project.id, path); };
   const create = async (kind: OfficeKind) => {
@@ -91,9 +106,7 @@ export function OfficeWindow() {
         </section>
         <section aria-label={text("Documents", "文档")}>
           <h2 className={styles.heading}>{project ? text(`Documents in ${project.name}`, `${project.name} 中的文档`) : text("Documents", "文档")}</h2>
-          {project === undefined || (project && documents === null) ? (
-            <ManageLoadingState>{text("Looking for documents…", "正在查找文档…")}</ManageLoadingState>
-          ) : !project ? (
+          {project === undefined || (project && documents === null) ? null : !project ? (
             <ManageEmptyState compact icon={<FileText size={20} />} title={text("No project", "没有项目")} description={text("Open a project to create and edit documents in it.", "打开一个项目后，即可在其中新建和编辑文档。")} />
           ) : tooLarge ? (
             <ManageEmptyState compact icon={<FileText size={20} />} title={text("This project is too large to list", "这个项目太大，无法列出文档")} description={text("Open documents from Files, or work in a smaller project to see them here. New documents still work.", "请从文件里打开文档，或在较小的项目里使用，即可在这里看到。新建文档不受影响。")} />

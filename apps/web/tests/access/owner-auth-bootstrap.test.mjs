@@ -109,6 +109,53 @@ describe("owner auth bootstrap", () => {
     });
   }
 
+  test("a pairing fragment is removed at once and redeemed for a device cookie", async () => {
+    const browser = browserState(`#pair=${TOKEN}`);
+    const requests = [];
+    const coordinator = coordinatorFor(browser, async (url, init) => {
+      requests.push({ url, init, hash: browser.location.hash });
+      return { status: 204 };
+    });
+    assert.equal(browser.location.hash, "");
+    await coordinator.wait();
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "/api/auth/pair");
+    assert.equal(requests[0].hash, "");
+    assert.deepEqual(JSON.parse(requests[0].init.body), { code: TOKEN });
+    assert.equal(requests[0].init.credentials, "same-origin");
+  });
+
+  test("a pairing link naming the computer's other addresses redeems the same code", async () => {
+    const browser = browserState(`#pair=${TOKEN}&via=https%3A%2F%2Fstudio.tail1.ts.net`);
+    const bodies = [];
+    const coordinator = coordinatorFor(browser, async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return { status: 204 };
+    });
+    assert.equal(browser.location.hash, "");
+    await coordinator.wait();
+    assert.deepEqual(bodies, [{ code: TOKEN }]);
+  });
+
+  test("a spent pairing link still opens on a device that is already paired", async () => {
+    const urls = [];
+    const coordinator = coordinatorFor(browserState(`#pair=${TOKEN}`), async (url) => {
+      urls.push(url);
+      return { status: url === "/api/auth/pair" ? 401 : 204 };
+    });
+    await coordinator.wait();
+    assert.deepEqual(urls, ["/api/auth/pair", "/api/auth/session"]);
+  });
+
+  test("a spent pairing link on an unpaired device says so without repeating the code", async () => {
+    const coordinator = coordinatorFor(browserState(`#pair=${TOKEN}`), async () => ({ status: 401 }));
+    await assert.rejects(coordinator.wait(), (error) => {
+      assert.match(String(error), /pairing link has expired/);
+      assert.equal(String(error).includes(TOKEN), false);
+      return true;
+    });
+  });
+
   test("a refused exchange fails without repeating the token in the error", async () => {
     const coordinator = coordinatorFor(browserState(`#token=${TOKEN}`), async () => ({ status: 401 }));
     await assert.rejects(coordinator.wait(), (error) => {

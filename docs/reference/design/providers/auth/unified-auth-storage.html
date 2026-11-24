@@ -1,7 +1,7 @@
 <title>Auth storage</title>
 <meta name="description" content="Provider credentials live in one store under ~/.openprogram, with one login registry for CLI, web and TUI.">
 <h1>Auth storage</h1>
-<p><code translate="no">AuthStore</code> (<code translate="no">models/auth/store.py</code>): <code translate="no">~/.openprogram/auth/&lt;provider_id&gt;/credentials.json</code>, one ordered list per provider, atomic write, a cross-process lock held from read to write (<code translate="no">mutate</code>), reload when the file changes underneath.</p>
+<p><code translate="no">AuthStore</code> (<code translate="no">models/auth/store.py</code>): <code translate="no">~/.openprogram/auth/&lt;provider_id&gt;/credentials.json</code>, one ordered list per provider, atomic write, a cross-process lock held from read to write (<code translate="no">mutate</code>), reload when the file changes underneath. An API key's secret is in <a href="credential-model.html">its company's file</a>, <code translate="no">auth/_keys/&lt;company&gt;.json</code>, written the same way.</p>
 <p>What requests count (uses, last use, uses today, the rotation cursor) lives beside it in <code translate="no">usage.json</code>, so a request never rewrites the secrets file. <code translate="no">CredentialProvider</code> serves what is on disk and never re-discovers; import is an explicit step.</p>
 <table class="stack">
 <thead><tr><th scope="col">Provider</th><th scope="col">Login method</th><th scope="col">Storage</th><th scope="col">Refresh</th></tr></thead>

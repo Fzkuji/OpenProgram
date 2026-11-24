@@ -234,6 +234,21 @@ def stop_overdue(now: float | None = None) -> list[str]:
     return stopped
 
 
+def limited_runs_open() -> bool:
+    """Whether any unfinished run has a limit, so :func:`stop_overdue` has
+    something to look at. With none, the Worker's ticker does not wake for it."""
+    from openprogram.runtime.execution import default_store
+
+    store = default_store()
+    for execution in store.list_nonterminal():
+        try:
+            if _limit(store, _root(store, execution)) is not None:
+                return True
+        except Exception:  # noqa: BLE001 - looked at again soon
+            return True
+    return False
+
+
 def watch(execution_id: str) -> Callable[[], None]:
     """Stop this process's run at its limit; returns the call that ends the watch."""
     from openprogram.runtime.execution import default_store

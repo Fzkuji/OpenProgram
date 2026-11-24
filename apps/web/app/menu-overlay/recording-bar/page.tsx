@@ -17,11 +17,30 @@ import { Mic, MicOff, Square, Trash2 } from "lucide-react";
 import { desktopBridge } from "@/lib/desktop/bridge/bridge-api";
 import { useTranslation } from "@/lib/i18n";
 import { VoiceRecorder } from "@/lib/voice/recorder";
+import { errorDetailText } from "@/lib/net/error-text";
+import { SECONDS, useNow } from "@/lib/clock/use-now";
 import { Button } from "@/components/ui/button";
 import { POPOVER_SURFACE } from "@/components/ui/menu/menu-styles";
 import styles from "./recording-bar.module.css";
 
-const POLL_MS = 500;
+/** How soon the status stream is opened again after the Worker closed it
+ *  without an answer (it restarted); the browser reconnects a dropped
+ *  stream by itself. */
+const REOPEN_MS = 2000;
+
+/** What the worker sends back for a recording: its status while it runs,
+ *  its summary when it stops, or the reason it could not. */
+interface RecordingReply {
+  elapsed_ms?: unknown;
+  steps?: unknown;
+  state?: unknown;
+  error?: unknown;
+}
+
+/** A transcribed phrase. */
+interface TranscribeReply {
+  text?: unknown;
+}
 const WARN_SECONDS = 30;
 
 function clock(ms: number): string {
@@ -41,7 +60,9 @@ function RecordingBar() {
   const maxSeconds = Number(params.get("max")) || 600;
   const deviceId = params.get("device") || undefined;
 
-  const [elapsed, setElapsed] = useState(0);
+  // The instant the recording started on this page's clock (epoch ms),
+  // from the worker's elapsed time; null until the worker first says.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [steps, setSteps] = useState(0);
   const [micOn, setMicOn] = useState(params.get("mic") === "1");
   const [speaking, setSpeaking] = useState(false);
@@ -81,8 +102,8 @@ function RecordingBar() {
     await Promise.race([Promise.all([...pending.current]), deadline]);
     try {
       const response = await fetch(`/api/recordings/${id}/stop`, { method: "POST" });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) finish(null, String(body.error || "The recording could not be stopped."));
+      const body = await response.json().catch(() => ({})) as RecordingReply;
+      if (!response.ok) finish(null, errorDetailText(body.error, "The recording could not be stopped."));
       else finish(body);
     } catch {
       finish(null, "Could not reach the worker.");
@@ -98,38 +119,54 @@ function RecordingBar() {
     finish(null);
   }, [ending, finish, id]);
 
-  // Status from the worker; a recording that ended by itself (the time
-  // limit) is finished as if Done had been pressed.
+  // Status from the worker, pushed as it changes (a step, the end:
+  // GET /api/recordings/{id}/events); a recording that ended by itself (the
+  // time limit) is finished as if Done had been pressed. The clock between
+  // pushes runs here from the worker's elapsed time.
   useEffect(() => {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
     let live = true;
-    const poll = async () => {
-      try {
-        const response = await fetch(`/api/recordings/${id}`, { cache: "no-store" });
+    let source: EventSource | null = null;
+    let reopen: ReturnType<typeof setTimeout> | undefined;
+    const open = () => {
+      if (!live) return;
+      source = new EventSource(`/api/recordings/${id}/events`);
+      source.onmessage = (event) => {
+        let status: RecordingReply;
+        try { status = JSON.parse(event.data) as RecordingReply; } catch { return; }
         if (!live) return;
-        if (response.status === 404) {
+        if (status.state === "missing") {
+          source?.close();
           finish(null, "The recording no longer exists.");
           return;
         }
-        const status = await response.json();
-        if (!live) return;
-        base.current = { elapsed: Number(status.elapsed_ms) || 0, at: performance.now() };
+        if (typeof status.elapsed_ms === "number") {
+          base.current = { elapsed: status.elapsed_ms, at: performance.now() };
+          const start = Math.round(performance.timeOrigin + base.current.at - status.elapsed_ms);
+          // Only a moved start draws again: a push that agrees keeps the clock.
+          setStartedAt(current => (current !== null && Math.abs(current - start) < 50 ? current : start));
+        }
         setSteps(Number(status.steps) || 0);
-        if (status.state === "finished" && !ended.current) void stop();
-      } catch {
-        /* the next poll tries again */
-      }
+        if (status.state === "finished") {
+          source?.close();
+          if (!ended.current) void stop();
+        }
+      };
+      // A dropped stream is reconnected by the browser; one the Worker
+      // refused (it was restarting) is opened again a moment later.
+      source.onerror = () => {
+        if (!live || source?.readyState !== EventSource.CLOSED) return;
+        reopen = setTimeout(open, REOPEN_MS);
+      };
     };
-    void poll();
-    const timer = setInterval(poll, POLL_MS);
-    const tick = setInterval(() => setElapsed(now()), 250);
+    open();
     return () => {
       live = false;
-      clearInterval(timer);
-      clearInterval(tick);
+      source?.close();
+      clearTimeout(reopen);
     };
-  }, [finish, id, now, stop]);
+  }, [finish, id, stop]);
 
   const narrate = useCallback((wav: Blob) => {
     const t = Math.max(0, Math.round(now() - wavMs(wav)));
@@ -138,8 +175,8 @@ function RecordingBar() {
         const response = await fetch("/api/voice/transcribe", {
           method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav,
         });
-        const body = await response.json().catch(() => ({}));
-        const said = String(body.text || "").trim();
+        const body = await response.json().catch(() => ({})) as TranscribeReply;
+        const said = typeof body.text === "string" ? body.text.trim() : "";
         if (!response.ok || !said) return;
         await fetch(`/api/recordings/${id}/narration`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t, text: said }),
@@ -184,6 +221,9 @@ function RecordingBar() {
     };
   }, [deviceId, micOn, narrate, text]);
 
+  // "0:42" and "12 s left" both change on each whole second from the start.
+  const clockNow = useNow(startedAt !== null ? SECONDS : null, startedAt ?? 0);
+  const elapsed = startedAt === null ? 0 : Math.max(0, clockNow - startedAt);
   const remaining = maxSeconds - elapsed / 1000;
   const warning = remaining <= WARN_SECONDS;
 

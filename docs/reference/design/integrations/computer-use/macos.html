@@ -1,5 +1,6 @@
 <title>macOS delivery</title>
 <meta name="description" content="How the macOS backend delivers input in the background, handles file dialogs and Spaces, waits for busy apps and refuses.">
+<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/macos.py openprogram/programs/tools/computer_use/computer_use/desktop/skylight.py">
 <h1>macOS delivery</h1>
 <p>If a previously observed control disappears and cannot be safely rebound, the tool reads a fresh full state and returns <code translate="no">observation_required</code>. The Agent chooses its next action from that state. The missing-control step and later batch steps are not dispatched; earlier completed steps are retained and never replayed. A refresh that itself fails remains an error.</p>
 
@@ -97,7 +98,7 @@
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">Waits</th><td><code translate="no">get_state</code>, <code translate="no">list_windows</code> and <code translate="no">act</code> wait that way before they ask the app anything, outside the backend's lock, and <code translate="no">settle</code> waits before it reads the window; <code translate="no">wait</code> never does, so the model can let the app finish.</td></tr>
-<tr><th scope="row">Silent step</th><td><code translate="no">targets/app.py</code> returns a step whose app stayed silent as done, without state and with the instruction not to repeat it.</td></tr>
+<tr><th scope="row">Silent step</th><td><code translate="no">providers/desktop.py</code> returns a step whose app stayed silent as done, without state and with the instruction not to repeat it.</td></tr>
 <tr><th scope="row">Refused step</th><td>A step refused because the app is silent sent nothing (<code translate="no">action_dispatched: false</code>), and among several steps the ones before it stay made without a second wait.</td></tr>
 <tr><th scope="row">Other failure</th><td>Any other failure to read the state after a step that was sent (the app quit, the screen locked) is reported after the step's <code translate="no">Done</code>, never as a step that did not happen.</td></tr>
 </tbody>

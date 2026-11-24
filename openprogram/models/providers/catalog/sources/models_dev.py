@@ -4,9 +4,10 @@ Pulls the public JSON catalogue at https://models.dev/api.json (the
 same data OpenCode and several other AI-tooling projects use) and
 normalises it into the schema described in ``sources.__init__``.
 
-Single-process stale-while-revalidate cache with a 1-hour fresh TTL.
-Expired memory or disk data is served immediately while one background
-thread refreshes it; only a first start with no cache waits for the network.
+Stale-while-revalidate cache with a 1-hour fresh TTL, in memory and on disk
+(the disk copy's age is its file's). Expired data is served immediately
+while one background thread refreshes it; only a first start with no cache
+waits for the network.
 """
 from __future__ import annotations
 
@@ -16,7 +17,6 @@ import threading
 import time
 from typing import Any
 
-from openprogram.host.security import safe_http
 from openprogram.host._platform.filesystem import replace_file
 
 
@@ -41,7 +41,74 @@ _cache: dict[str, Any] = {
 _logger = logging.getLogger(__name__)
 
 
+def __getattr__(name: str) -> Any:
+    """``safe_http``, imported when the catalogue is first fetched: it brings
+    in the HTTP client (0.07 s), and every process that reads a model imports
+    this module while few of them refresh the catalogue."""
+    if name == "safe_http":
+        from openprogram.host.security import safe_http
+
+        globals()["safe_http"] = safe_http
+        return safe_http
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+#: The fields of a catalogue row this module reads. The catalogue carries
+#: ten thousand models; kept whole it holds 26 MB for as long as the process
+#: lives, most of it descriptions and ids nothing here reads.
+_PROVIDER_FIELDS = ("name", "env", "api", "doc", "npm")
+_MODEL_FIELDS = (
+    "name", "family", "knowledge", "release_date", "last_updated", "open_weights",
+    "reasoning", "tool_call", "structured_output", "attachment", "temperature",
+    "modalities", "limit", "cost", "experimental",
+)
+
+
+def _slim(data: dict[str, Any]) -> dict[str, Any]:
+    """The catalogue with only the fields read here, its repeated values shared.
+
+    The same model is listed under many providers with the same limits,
+    prices and modalities, so equal values become one object. Nothing here
+    changes a row after it is loaded; readers copy what they hand out.
+    """
+    import json
+    import sys
+
+    values: dict[str, Any] = {}
+
+    def shared(value: Any) -> Any:
+        if isinstance(value, str):
+            return sys.intern(value)
+        if isinstance(value, (list, dict)):
+            key = json.dumps(value, sort_keys=True)
+            kept = values.get(key)
+            if kept is None:
+                if isinstance(value, list):
+                    kept = [shared(item) for item in value]
+                else:
+                    kept = {sys.intern(k) if isinstance(k, str) else k: shared(v)
+                            for k, v in value.items()}
+                values[key] = kept
+            return kept
+        return value
+
+    out: dict[str, Any] = {}
+    for pid, provider in data.items():
+        if not isinstance(provider, dict):
+            continue
+        row = {key: shared(provider[key]) for key in _PROVIDER_FIELDS if key in provider}
+        models = provider.get("models")
+        if isinstance(models, dict):
+            row["models"] = {
+                mid: {key: shared(model[key]) for key in _MODEL_FIELDS if key in model}
+                for mid, model in models.items() if isinstance(model, dict)
+            }
+        out[pid] = row
+    return out
+
+
 def _fetch_catalogue(timeout: float) -> dict[str, Any]:
+    safe_http = __getattr__("safe_http")
     try:
         with safe_http.safe_client("webui.model_listing.fixed") as client:
             response = client.get(_CATALOGUE_URL, timeout=timeout)
@@ -52,7 +119,7 @@ def _fetch_catalogue(timeout: float) -> dict[str, Any]:
             return {}
         if data:
             _write_disk_cache(data)
-        return data
+        return _slim(data)
     except Exception:
         return {}
 
@@ -87,6 +154,7 @@ def _join_refresh() -> None:
     exception not rethrown" and a SIGABRT. The fetch is bounded by its
     timeout, so the wait is too.
     """
+    _exiting.set()
     thread = _refresh_thread
     if thread is not None and thread.is_alive():
         thread.join(timeout=_FETCH_TIMEOUT_SECONDS + 1)
@@ -136,11 +204,28 @@ def _start_background_refresh() -> None:
     _spawn_refresh_thread()
 
 
+#: A refresh wanted while the process is starting waits this long after its
+#: start. The first read of a Worker comes from the first screen of the App,
+#: which is served from the copy on disk; fetching, parsing and rewriting the
+#: catalogue (7 MB, 0.3 s of the interpreter) beside it only slows that screen.
+_QUIET_START_SECONDS = 20.0
+_process_started = time.monotonic()
+_exiting = threading.Event()
+
+
+def _refresh_after_start() -> None:
+    wait = _QUIET_START_SECONDS - (time.monotonic() - _process_started)
+    # A process that ends first (a command) leaves the refresh to the Worker.
+    if wait > 0 and _exiting.wait(wait):
+        return
+    _refresh_cache()
+
+
 def _spawn_refresh_thread() -> None:
     global _refresh_thread
     try:
         _refresh_thread = threading.Thread(
-            target=_refresh_cache,
+            target=_refresh_after_start,
             name="models-dev-refresh",
             daemon=True,
         )
@@ -178,15 +263,21 @@ def _load() -> dict[str, Any]:
             _start_background_refresh()
         return stale
 
-    # Disk data is usable stale data regardless of its age. Reading it before
-    # the cold network path is what keeps session hydration non-blocking.
+    # Disk data is usable regardless of its age. Reading it before the cold
+    # network path is what keeps session hydration non-blocking. Its age is
+    # the file's: each command is a new process, and one that took the file
+    # for stale whatever its age fetched the whole catalogue again and
+    # waited for that fetch on its way out.
     disk_data = _read_disk_cache()
     if disk_data:
+        written_at = min(_disk_cache_written_at(), now)
         with _cache_lock:
             current = _cache["data"]
             if current:
                 return current
-            _cache.update(data=disk_data, fetched_at=0.0)
+            _cache.update(data=disk_data, fetched_at=written_at)
+            if now - written_at < _TTL_SECONDS:
+                return disk_data
             if not _cache["refreshing"]:
                 _cache.update(refreshing=True, last_attempt_at=now)
                 start_refresh = True
@@ -222,6 +313,14 @@ def _disk_cache_path():
     return d / "cache" / "models_dev.json"
 
 
+def _disk_cache_written_at() -> float:
+    """When the disk copy was last fetched; 0 when that cannot be told."""
+    try:
+        return _disk_cache_path().stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _write_disk_cache(data: dict[str, Any]) -> None:
     import json
 
@@ -245,7 +344,7 @@ def _read_disk_cache() -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise TypeError("models.dev cache must be an object")
-        return data
+        return _slim(data)
     except FileNotFoundError:
         return {}
     except (OSError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
@@ -532,14 +631,25 @@ def list_providers() -> list[dict[str, Any]]:
     """Every provider in the cached catalogue, normalised. Used by the
     listing layer to surface community-known providers we haven't yet
     hard-coded in ``providers._PROVIDER_LABELS`` etc."""
+    global _listed
     catalogue = _load()
     if not catalogue:
         return []
-    return [
-        _normalise_provider(pid, raw)
-        for pid, raw in catalogue.items()
-        if isinstance(raw, dict) and isinstance(raw.get("models"), dict)
-    ]
+    # The list is asked for dozens of times per request (once per credential
+    # looked up), and the catalogue it is made from changes once a day.
+    source, rows = _listed
+    if source is not catalogue:
+        rows = [
+            _normalise_provider(pid, raw)
+            for pid, raw in catalogue.items()
+            if isinstance(raw, dict) and isinstance(raw.get("models"), dict)
+        ]
+        _listed = (catalogue, rows)
+    return [dict(row) for row in rows]
+
+
+#: The catalogue :func:`list_providers` last normalised, and its rows.
+_listed: tuple[Any, list[dict[str, Any]]] = (None, [])
 
 
 # Provider id mapping for the few cases where our id differs from the

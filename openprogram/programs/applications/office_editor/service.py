@@ -28,18 +28,27 @@ import threading
 import zipfile
 from typing import Optional
 
-import httpx
 
 from . import host
 from .assets import OFFICE_PATCH_SHA256, OfficeAssetPack
 from .install import OfficeArchiveUnpublished
 
 
+class _InstallErrors:
+    """The retryable failures, with the HTTP client's own imported when first asked for:
+    the Programs load this module in every process, and few of them install anything."""
+
+    def __get__(self, instance, owner) -> tuple[type[BaseException], ...]:
+        import httpx
+
+        return (OSError, ValueError, RuntimeError, httpx.HTTPError, zipfile.BadZipFile)
+
+
 class OfficeEditorService:
     """The OnlyOffice editor, as the server reaches it."""
 
     #: Failures of ``install()`` that leave the previous state and can be retried.
-    INSTALL_ERRORS = (OSError, ValueError, RuntimeError, httpx.HTTPError, zipfile.BadZipFile)
+    INSTALL_ERRORS = _InstallErrors()
     #: The archive is not published for this version; checked before ``INSTALL_ERRORS``.
     UNPUBLISHED_ERRORS = (OfficeArchiveUnpublished,)
     module_version = OFFICE_PATCH_SHA256

@@ -18,14 +18,33 @@ from typing import Any
 from openprogram.state.paths import get_config_path
 
 
+# The last file read and what it parsed to. One provider-status answer asks
+# 1,800 times (once per provider per question), and parsing a 130 KB config
+# each time took a second; the file is parsed again only when it changes.
+_parsed: tuple[tuple[str, int, int, int], dict[str, dict[str, Any]]] | None = None
+
+
 def read_providers_config() -> dict[str, dict[str, Any]]:
     """The ``providers`` sub-tree of config.json, or ``{}`` if absent/broken.
 
     Never raises: a missing or malformed config is a legal fresh-install
-    state (→ empty registry)."""
+    state (→ empty registry). The result is shared between calls until the
+    file changes, so callers read it and do not change it."""
+    global _parsed
+    path = get_config_path()
     try:
-        cfg = json.loads(get_config_path().read_text(encoding="utf-8"))
+        stat = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    cached = _parsed
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    providers = cfg.get("providers")
-    return providers if isinstance(providers, dict) else {}
+    providers = cfg.get("providers") if isinstance(cfg, dict) else None
+    providers = providers if isinstance(providers, dict) else {}
+    _parsed = (key, providers)
+    return providers

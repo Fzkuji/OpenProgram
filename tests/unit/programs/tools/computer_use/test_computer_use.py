@@ -1,20 +1,43 @@
-"""computer_use_agent's app target: pure logic (key chords, tree rendering, diffs, rules, approval)."""
+"""computer_use's app target: the desktop backends' logic (key chords, tree rendering, diffs) and the
+``app`` provider on top of them. Its permission rules are in tests/unit/security/test_computer_use_permissions.py."""
 from __future__ import annotations
+
+import os
+from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import base
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import keys
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import macos
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop import ocr
-from openprogram.programs.tools.computer_use.computer_use_agent.desktop.tree import Node, diff, number, render, role_name, snapshot
-from openprogram.runtime.permissions.rule import exact_rule_for_call, parse_command, rule_to_string
-from openprogram.programs.tools.computer_use.computer_use_agent import tool as entry
-from openprogram.programs.tools.computer_use.computer_use_agent.targets import app as tool
+from openprogram.programs.tools.computer_use.computer_use.desktop import base
+from openprogram.programs.tools.computer_use.computer_use.desktop import keys
+from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+from openprogram.programs.tools.computer_use.computer_use.desktop import ocr
+from openprogram.programs.tools.computer_use.computer_use.desktop.tree import Node, diff, number, render, role_name, snapshot
+from openprogram.host import machines
+from openprogram.programs.tools.computer_use.computer_use import tool as entry
+from openprogram.programs.tools.computer_use.computer_use.contract import Call
+from openprogram.programs.tools.computer_use.computer_use.dispatch import run_steps
+from openprogram.programs.tools.computer_use.computer_use.providers import desktop
+from tests.support.screen_targets import environment, install_machines, local
 
 
 def _decided(decision):
     return decision.outcome, decision.code
+
+
+def _app(system: str = "Darwin") -> desktop.AppProvider:
+    return desktop.AppProvider(machines.local_machine({}), "s", system=system)
+
+
+def _run(steps, subject):
+    """One call of this computer's app target, once the tool has checked it: its locks, then the provider."""
+    return run_steps(_app(), subject, steps, Call(conversation="s", agent="s"))
+
+
+@pytest.fixture
+def listed(monkeypatch):
+    """This computer's app target is the one target set up, as the tool lists it."""
+    install_machines(monkeypatch, [local(window="fake")], {"local": [_app()]})
+    environment(monkeypatch, None)
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +47,7 @@ def _mac_backend_on_every_host(monkeypatch):
     The host dispatcher would pick the Linux or Windows backend on CI and
     refuse before any faked call ran.
     """
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import backends
+    from openprogram.programs.tools.computer_use.computer_use.desktop import backends
     monkeypatch.setattr(backends, "support", lambda: {"available": True})
     monkeypatch.setattr(backends, "backend", lambda: macos.backend())
 
@@ -298,7 +321,7 @@ def test_running_apps_are_looked_up_per_process_so_a_new_launch_is_seen():
             def runningApplicationWithProcessIdentifier_(pid):
                 return me if pid == os.getpid() else None
 
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop.processes import running_applications
+    from openprogram.programs.tools.computer_use.computer_use.desktop.processes import running_applications
     assert running_applications(FakeAppKit) == [me]
 
 
@@ -337,222 +360,53 @@ def test_hold_durations_are_bounded():
             macos._seconds(bad, "duration")
 
 
-# ----------------------------------------------------------------- rules and approval
-
-def test_rule_for_a_call_names_the_app_only():
-    args = {"target": "app", "action": "click", "args": {"app": "  Calculator ", "element_index": 12, "x": 1}}
-    assert parse_command("computer_use_agent", args) == "calculator"
-    assert rule_to_string(exact_rule_for_call("computer_use_agent", args)) == "computer_use_agent(calculator)"
-    assert parse_command("computer_use_agent", {"target": "app", "action": "list_apps"}) is None
-    assert parse_command("computer_use_agent", {"target": "browser", "action": "click", "args": {"ref": "e1"}}) is None
-
-
-def test_every_action_but_list_apps_requires_approval_per_app():
-    assert entry.requires_approval(target="app", action="list_apps") is False
-    assert entry.requires_approval(target="app", action="click", args={"app": "Calculator"}) == \
-        "computer_use_agent controls calculator"
-    assert entry.requires_approval(target="app", action="get_app_state") == "computer_use_agent controls an application"
-    # Opening the target and code both reach the whole app.
-    for call in ({}, {"code": "pass"}):
-        assert entry.requires_approval(target="app", args={"app": "Notes"}, **call) == "computer_use_agent controls notes"
-
+# ----------------------------------------------------------------- the tool
 
 def test_tool_is_a_resident_default_offered_to_chat_channels():
     from openprogram.programs import DEFAULT_TOOLS, DEFERRED_DEFAULT_TOOLS, RESIDENT_TOOLS, _unsafe_in_for
     from openprogram.programs._host.runtime import get
-    registered = get("computer_use_agent")
+    registered = get("computer_use")
     assert registered is not None and not registered._defer
-    assert "computer_use_agent" in DEFAULT_TOOLS and "computer_use_agent" not in DEFERRED_DEFAULT_TOOLS
-    assert "computer_use_agent" in RESIDENT_TOOLS
-    assert set(_unsafe_in_for("computer_use_agent")) == {"plan"}
-    assert registered.parameters["properties"]["target"]["enum"] == ["app", "browser", "vm"]
-    for gone in ("computer_use", "gui_agent", "web_use"):
+    assert "computer_use" in DEFAULT_TOOLS and "computer_use" not in DEFERRED_DEFAULT_TOOLS
+    assert "computer_use" in RESIDENT_TOOLS
+    assert set(_unsafe_in_for("computer_use")) == {"plan"}
+    # The registration is fixed: the types, never the targets set up now, which <devices> lists.
+    assert registered.parameters["properties"]["type"]["enum"] == ["window", "screen", "browser"]
+    assert registered.description == entry.DESCRIPTION
+    for gone in ("computer_use_agent", "gui_agent", "web_use"):
         assert gone not in DEFAULT_TOOLS and gone not in RESIDENT_TOOLS
 
 
-def test_unknown_action_is_an_error_without_touching_the_host():
-    result = tool.run([("fly", {})], {"app": "Notes"}, "s")
-    assert result.is_error and "unknown app action" in result.text
-    result = entry.computer_use_agent(target="printer")
-    assert result.is_error and "unknown target" in result.text
+def test_the_targets_a_turn_lists_are_the_ones_set_up(monkeypatch):
+    from tests.support.screen_targets import PIXELS, FakeProvider, machine
+    install_machines(monkeypatch, [local(window="fake", browser="fake"), machine("lab", screen="fake")],
+                     {"local": [_app(), FakeProvider("browser")],
+                      "lab": [FakeProvider("screen", "lab", capabilities=PIXELS)]})
+    environment(monkeypatch, None)
+    assert entry.available_targets() == ["window", "browser", "lab screen"]
+    assert list(entry.devices()) == [entry.THIS_COMPUTER, "lab"]
 
 
-def test_desktop_access_is_required_for_everything_but_list_apps():
-    from openprogram.host.system_access import _desktop_operation
-    assert _desktop_operation("computer_use_agent", {"target": "app", "action": "list_apps"}) is None
-    assert _desktop_operation("computer_use_agent", {"target": "app", "action": "click", "args": {"app": "Notes"}}) \
-        == "computer_use:desktop"
-    assert _desktop_operation("computer_use_agent", {"target": "app", "code": "pass"}) == "computer_use:desktop"
-    assert _desktop_operation("computer_use_agent", {"target": "browser", "action": "click"}) is None
-
-
-@pytest.fixture
-def decide(monkeypatch):
-    """permission_decision for computer_use with authority and recovery stubbed out."""
-    from types import SimpleNamespace
-    from openprogram.runtime.permissions import tool_authority
-    from openprogram.runtime.permissions import identity, policy
-    from openprogram.programs._host.runtime import get
-    monkeypatch.setattr(identity, "scope_violation", lambda *a, **k: None)
-    monkeypatch.setattr(policy, "can_approve", lambda req: req.source == "web")
-    monkeypatch.setattr(tool_authority, "decide_tool_authority",
-                        lambda *a, **k: SimpleNamespace(allowed=True, reason_code="", capability=""))
-    agent_tool = get("computer_use_agent")
-
-    from openprogram.runtime.permissions.auto_mode import app_grants
-    app_grants.forget()
-
-    def run(args, *, mode="auto", allow=(), source="web", tier="owner", session="s-test"):
-        rules = SimpleNamespace(allow=list(allow), ask=[], deny=[])
-        req = SimpleNamespace(permission_mode=mode, permission_rules=rules, session_id=session,
-                              source=source, surface_context=None, authority_tier=tier, principal_id="owner")
-        return _decided(policy.permission_decision(agent_tool, req, {"target": "app", **args}))
-    run.request = lambda mode="auto", session="s-test": SimpleNamespace(
-        permission_mode=mode, permission_rules=SimpleNamespace(allow=[], ask=[], deny=[]), session_id=session,
-        source="web", surface_context=None, authority_tier="owner", principal_id="owner")
-    yield run
-    app_grants.forget()
-
-
-@pytest.mark.parametrize("mode", ["default", "acceptEdits"])
-def test_first_touch_of_an_app_asks_in_the_modes_that_ask(decide, mode):
-    assert decide({"action": "click", "args": {"app": "Calculator"}}, mode=mode) == ("ask", "MODE_APPROVAL")
-
-
-def test_bypass_runs_and_auto_reviews_app_control_without_a_grant(decide):
-    click = {"action": "click", "args": {"app": "Calculator"}}
-    assert decide(click, mode="bypass") == ("allow", "MODE_UNRESTRICTED")
-    assert decide(click, mode="auto") == ("auto", "AUTO_CLASSIFY")
-
-
-@pytest.mark.parametrize("rule", ["computer_use_agent(calculator)", "computer_use(calculator)"])
-def test_an_allow_rule_for_the_app_lets_it_run_and_names_only_that_app(decide, rule):
-    # Rules saved under the tool's earlier name still grant the app.
-    click = {"action": "click", "args": {"app": "Calculator"}}
-    assert decide(click, allow=[rule], mode="default") == ("allow", "RULE_ALLOW")
-    assert decide({"action": "click", "args": {"app": "Notes"}}, allow=[rule], mode="default") == ("ask", "MODE_APPROVAL")
-
-
-def test_list_apps_needs_no_grant_and_unattended_sources_cannot_grant(decide):
-    assert decide({"action": "list_apps"}, mode="bypass") == ("allow", "MODE_UNRESTRICTED")
-    # Listing applications and showing a guide touch no application, so no mode asks about them.
-    for mode in ("default", "acceptEdits", "auto"):
-        assert decide({"action": "list_apps"}, mode=mode) == ("allow", "APP_GRANT_FREE")
-        assert decide({"action": "guide"}, mode=mode) == ("allow", "APP_GRANT_FREE")
-    assert decide({"action": "click", "args": {"app": "Calculator"}}, mode="default", source="cron")[0] == "deny"
-
-
-def test_auto_reviews_an_application_once_per_conversation(decide):
-    """A click's arguments are an index or two pixels: the review that means
-    something is the first one, of the application. It stands for the
-    conversation, and for nothing else."""
-    from openprogram.runtime.permissions.auto_mode import app_grants
-    click = {"action": "click", "args": {"app": "Calculator", "element_index": 3}}
-    assert decide(click, mode="auto") == ("auto", "AUTO_CLASSIFY")
-    app_grants.grant(decide.request(), "computer_use_agent", {"target": "app", **click})
-    assert decide(click, mode="auto") == ("allow", "AUTO_APP_GRANT")
-    assert decide({"code": "pass", "args": {"app": "calculator"}}, mode="auto") == ("allow", "AUTO_APP_GRANT")
-    # Another application, another conversation and the asking modes are untouched.
-    assert decide({"action": "click", "args": {"app": "Notes"}}, mode="auto") == ("auto", "AUTO_CLASSIFY")
-    assert decide(click, mode="auto", session="s-other") == ("auto", "AUTO_CLASSIFY")
-    assert decide(click, mode="default") == ("ask", "MODE_APPROVAL")
-    app_grants.forget("s-test")
-    assert decide(click, mode="auto") == ("auto", "AUTO_CLASSIFY")
-
-
-def test_a_rule_edit_for_the_tool_ends_what_auto_kept(decide):
-    from openprogram.runtime.permissions.auto_mode import app_grants
-    click = {"action": "click", "args": {"app": "Calculator", "element_index": 3}}
-    app_grants.grant(decide.request(), "computer_use_agent", {"target": "app", **click})
-    assert decide(click, mode="auto") == ("allow", "AUTO_APP_GRANT")
-    # A rule naming the tool appeared (here for another application): the review is made again.
-    assert decide(click, mode="auto", allow=["computer_use_agent(notes)"]) == ("auto", "AUTO_CLASSIFY")
-    # A rule for another tool changes nothing, and with the rules as they were the review still stands.
-    assert decide(click, mode="auto", allow=["bash(ls:*)"]) == ("allow", "AUTO_APP_GRANT")
-    assert decide(click, mode="auto") == ("allow", "AUTO_APP_GRANT")
-
-
-def test_an_allowing_auto_review_of_a_screen_is_kept_and_a_refusal_is_not(decide, monkeypatch):
-    import asyncio
-    from openprogram.programs._host.runtime import get
-    from openprogram.runtime.permissions.auto_mode import auto_review, classifier
-    from openprogram.runtime.permissions.auto_mode.classifier import ReviewResult
-
-    verdicts = iter([ReviewResult(True, "no", "AUTO_CLASSIFIER_DENY"), ReviewResult(False, "ok", "AUTO_CLASSIFIER_ALLOW")])
-    reviewed = []
-
-    async def review(name, args, **_):
-        reviewed.append(args["args"]["app"])
-        return next(verdicts)
-
-    monkeypatch.setattr(classifier, "auto_classify_tool", review)
-    from openprogram.runtime.permissions.auto_mode import auto_history
-    monkeypatch.setattr(auto_history, "for_operation", lambda *a, **k: None)
-    click = {"target": "app", "action": "click", "args": {"app": "Calculator", "element_index": 3}}
-    request = decide.request()
-    request.additional_working_dirs, request.user_text = [], "add these up"
-    # Keeps the review from re-reading live session settings, which this test has none of.
-    request.interaction = "non-interactive"
-    for expected in (("auto", "AUTO_CLASSIFY"), ("allow", "AUTO_APP_GRANT")):
-        prepared = asyncio.run(auto_review.prepare_review(get("computer_use_agent"), request, "call", click))
-        assert prepared is not None
-        assert decide({"action": "click", "args": click["args"]}, mode="auto") == expected
-    # The third call is not sent to the reviewer at all.
-    asyncio.run(auto_review.prepare_review(get("computer_use_agent"), request, "call-3", click))
-    assert reviewed == ["Calculator", "Calculator"]
-
-
-def test_a_page_script_needs_what_any_other_action_in_that_browser_needs(decide, monkeypatch):
-    from openprogram.runtime.permissions import identity, policy, session_facts
-    from openprogram.runtime.permissions.rule import exact_rule_for_call, rule_to_string
-    from openprogram.programs.tools.computer_use.computer_use_agent.targets import browser as browser_target
-    call = {"target": "browser", "actions": [{"action": "evaluate", "args": {"script": "1"}}]}
-    click = {"target": "browser", "action": "click", "args": {"ref": "e1"}}
-    assert identity.page_script("computer_use_agent", call)
-    assert not policy.one_shot_approval("computer_use_agent", call)
-    assert not identity.page_script("computer_use_agent", click)
-    # The built-in browser's tabs are the conversation's: a script there is decided like a click.
-    assert exact_rule_for_call("computer_use_agent", call) is None
-    for mode in ("default", "acceptEdits", "auto", "bypass"):
-        assert decide(call, mode=mode) == decide(click, mode=mode)
-    monkeypatch.setattr(type(session_facts.facts()), "browser_pages_available", lambda self, context: True)
-    for mode in ("default", "acceptEdits", "auto"):
-        assert decide(call, mode=mode) == ("allow", "SURFACE_GRANT")
-    assert decide(call, mode="bypass") == ("allow", "MODE_UNRESTRICTED")
-    # A task the owner scheduled runs it too; an outside client does not.
-    for source in ("cron", "scheduler"):
-        assert decide(call, mode="bypass", source=source) == ("allow", "MODE_UNRESTRICTED")
-    assert decide(call, mode="bypass", source="mcp") == ("deny", "IDENTITY_PAGE_SCRIPT")
-    assert decide(call, mode="bypass", source="agent_spawn", tier="guest") == ("deny", "IDENTITY_PAGE_SCRIPT")
-    # An agent the owner's turn started runs it as its parent does.
-    assert decide(call, mode="bypass", source="agent_spawn") == ("allow", "MODE_UNRESTRICTED")
-    # The user's own Chrome: the grant to operate it covers scripts in it.
-    monkeypatch.setattr(browser_target, "reachable", lambda chosen: True)
-    chrome = {"target": "browser", "action": "evaluate", "args": {"browser": "chrome", "script": "1"}}
-    assert rule_to_string(exact_rule_for_call("computer_use_agent", chrome)) == "computer_use_agent(browser:chrome)"
-    assert decide(chrome, mode="default") == ("ask", "MODE_APPROVAL")
-    assert decide(chrome, mode="default", allow=["computer_use_agent(browser:chrome)"]) \
-        == ("allow", "RULE_ALLOW")
+def test_unknown_action_is_an_error_without_touching_the_host(fake, listed):
+    computer = fake()
+    result = entry.computer_use(type="window", app="Notes", action="fly")
+    assert result.is_error and result.text.startswith("UNKNOWN_ACTION:") and computer.calls == []
+    result = entry.computer_use(type="printer")
+    assert result.is_error and result.text.startswith("UNKNOWN_TARGET:") and 'Targets now: type="window".' in result.text
 
 
 def test_opening_a_site_in_the_built_in_browser_asks_nothing_and_an_upload_does():
-    from openprogram.programs.tools.computer_use.computer_use_agent.targets import browser as browser_target
-    assert browser_target.approval([("open", {"url": "https://example.com"})], {}) is False
-    assert browser_target.approval([("navigate", {"url": "https://example.com"})], {}) is False
-    assert browser_target.approval([("evaluate", {"script": "1"})], {}) is False
-    assert "Upload" in browser_target.approval([("upload", {"path": "/tmp/a.txt"})], {})
-
-
-def test_approval_card_offers_the_conversation_scope_for_computer_use():
-    from openprogram.runtime.permissions.approvals import approval
-    from openprogram.runtime.execution.waits import _APPROVAL_SCOPES
-    assert "computer_use_agent" in approval._SESSION_SCOPE_TOOLS
-    assert "session" in _APPROVAL_SCOPES
+    from openprogram.programs.tools.computer_use.computer_use.providers.built_in_browser import BuiltInBrowser
+    browser = BuiltInBrowser(None)
+    assert browser.approval({}, [("create_tab", {"url": "https://example.com"})]) is None
+    assert browser.approval({}, [("navigate", {"url": "https://example.com"})]) is None
+    assert browser.approval({}, [("evaluate", {"script": "1"})]) is None
+    assert "Upload" in browser.approval({}, [("upload_file", {"path": "/tmp/a.txt"})]).shown
 
 
 @pytest.mark.parametrize("launch", [True, False])
 def test_refused_apps_are_refused_before_launch_whether_or_not_running(monkeypatch, launch):
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
     from openprogram.runtime.permissions.refusal import Refused
     monkeypatch.setattr("openprogram.state.config.read_config",
                         lambda: {"computer_use": {"refused_apps": ["com.apple.Passwords"]}})
@@ -567,9 +421,71 @@ def test_refused_apps_are_refused_before_launch_whether_or_not_running(monkeypat
     assert launched == []
 
 
+def test_the_rule_name_of_an_app_is_its_display_name_looked_up_once_without_an_icon(monkeypatch):
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+
+    class _URL:
+        def path(self):
+            return "/System/Applications/Utilities/Terminal.app"
+
+    class _Running:
+        def bundleURL(self):
+            return _URL()
+
+        def localizedName(self):
+            return "Terminal"
+
+    class _Manager:
+        def displayNameAtPath_(self, path):
+            return {"/System/Applications/Utilities/Terminal.app": "Terminal.app",
+                    "/Applications/Visual Studio Code.app": "Visual Studio Code"}[path]
+
+    appkit = SimpleNamespace(NSFileManager=SimpleNamespace(defaultManager=lambda: _Manager()))
+    monkeypatch.setattr(macos, "_appkit", lambda: appkit)
+    computer = macos.MacComputer()
+    monkeypatch.setattr(computer, "_running_match", lambda q: pytest.fail("the lookup with retries sleeps"))
+    monkeypatch.setattr(computer, "_icon", lambda path: pytest.fail("an icon is not part of a rule"))
+    monkeypatch.setattr(computer, "_running_match_once", lambda q: _Running() if q == "pid:42" else None)
+    monkeypatch.setattr(computer, "_installed_match", lambda q: {
+        "path": "/Applications/Visual Studio Code.app", "display_name": "Visual Studio Code",
+        "bundle_id": "com.microsoft.VSCode", "name": "Visual Studio Code"} if q == "com.microsoft.VSCode" else None)
+    assert computer.app_name("pid:42") == "Terminal"
+    assert computer.app_name("com.microsoft.VSCode") == "Visual Studio Code"
+    assert computer.app_name("Nowhere") == "" and computer.app_name("  ") == ""
+
+
+def test_the_installed_apps_are_read_again_only_when_a_folder_changes(monkeypatch, tmp_path):
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    monkeypatch.setattr(macos, "APP_DIRECTORIES", (str(tmp_path),))
+    computer = macos.MacComputer()
+    scans = []
+    monkeypatch.setattr(computer, "_scan_installed", lambda: scans.append(1) or [{"name": "A"}])
+    assert computer._installed() == [{"name": "A"}] and computer._installed() == [{"name": "A"}]
+    assert len(scans) == 1
+    stat = os.stat(tmp_path)
+    os.utime(tmp_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    computer._installed()
+    assert len(scans) == 2
+
+
+def test_a_name_read_off_a_running_app_finds_its_bundle_once_it_has_quit(monkeypatch):
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    computer = macos.MacComputer()
+    rows = [{"name": "Visual Studio Code", "display_name": "Visual Studio Code", "bundle_id": "com.microsoft.VSCode",
+             "path": "/Applications/Visual Studio Code.app", "bundle_name": "Code"},
+            {"name": "Code", "display_name": "Code", "bundle_id": "com.example.code", "path": "/Applications/Code.app",
+             "bundle_name": "Code"}]
+    monkeypatch.setattr(computer, "_installed", lambda: rows)
+    assert computer._installed_match("Code")["bundle_id"] == "com.example.code"  # its own file name comes first
+    assert computer._installed_match("code ")["path"] == "/Applications/Code.app"
+    monkeypatch.setattr(computer, "_installed", lambda: rows[:1])
+    assert computer._installed_match("Code")["bundle_id"] == "com.microsoft.VSCode"
+    assert computer._installed_match("Cod") is None
+
+
 def test_no_application_is_refused_by_default_and_own_windows_only_where_cards_show():
     from types import SimpleNamespace
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop.base import RefusedApps
+    from openprogram.programs.tools.computer_use.computer_use.desktop.base import RefusedApps
     from openprogram.runtime.agent.turn_request import reset_turn_request, set_turn_request
     own = frozenset({"ai.openprogram.desktop"})
     assert not RefusedApps(own).hits("com.apple.Passwords")
@@ -583,7 +499,7 @@ def test_no_application_is_refused_by_default_and_own_windows_only_where_cards_s
 
 
 def test_password_fields_are_refused_only_when_the_owner_turns_that_on(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop.base import refuse_password_field
+    from openprogram.programs.tools.computer_use.computer_use.desktop.base import refuse_password_field
     from openprogram.runtime.permissions.refusal import Refused
     monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
     refuse_password_field("typing")
@@ -596,7 +512,7 @@ def test_password_fields_are_refused_only_when_the_owner_turns_that_on(monkeypat
 # ----------------------------------------------------------------- text helpers
 
 def test_find_text_honours_prefix_and_suffix_and_utf16_offsets():
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop.macos import find_text, utf16_len
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import find_text, utf16_len
     value = "the cat sat on the mat"
     assert find_text(value, "the") == 0
     assert find_text(value, "the", suffix=" mat") == 15
@@ -623,7 +539,8 @@ class _FakeComputer:
         return 0.0
 
     def get_state(self, session, app, **kwargs):
-        assert kwargs == {"as_diff": True}
+        # After steps the state comes back as what changed.
+        assert kwargs["as_diff"] is True and not kwargs["full"]
         return macos.Observation(text="+ 4 button \"=\"", image=None, app=app)
 
 
@@ -638,50 +555,54 @@ def fake(monkeypatch):
 
 def test_an_action_settles_once_and_returns_the_changed_tree(fake):
     computer = fake("pressed button \"7\"")
-    result = tool.run([("click", {"app": "Calculator", "element_index": 3})], {"app": "Calculator"}, "s")
+    result = _run([("click", {"app": "Calculator", "element": 3})], {"app": "Calculator"})
     assert not result.is_error and computer.settled == 1
     assert result.text == 'Done: pressed button "7".\n\n+ 4 button "="'
-    assert computer.calls[0][1]["element_index"] == 3
+    assert computer.calls[0][1]["element"] == 3
 
 
 def test_a_read_only_result_comes_back_without_a_new_state(fake):
     computer = fake(macos.Report("menu bar: File | Edit"))
-    result = tool.run([("menu", {})], {"app": "Calculator"}, "s")
+    result = _run([("menu", {})], {"app": "Calculator"})
     assert result.text == "menu bar: File | Edit" and computer.settled == 0
 
 
 def test_a_batch_runs_in_order_stops_at_the_first_error_and_reports_the_state_once(fake):
     computer = fake("typed 3 character(s)", macos.ComputerUseError("element 9 no longer exists"), "unused")
-    result = tool.run([("type_text", {"text": "abc"}), ("click", {"element_index": 9}), ("press_key", {"key": "Return"})],
-                      {"app": "Notes"}, "s")
+    result = _run([("type_text", {"text": "abc"}), ("click", {"element": 9}), ("press_key", {"key": "Return"})],
+                  {"app": "Notes"})
     assert result.is_error and computer.settled == 1 and len(computer.calls) == 2
-    assert result.text.startswith("Done:\n1. typed 3 character(s)\nError: step 2 (click) failed: element 9 no longer exists")
+    assert result.text.startswith("Done:\n1. typed 3 character(s)\nError: step 2 (click): element 9 no longer exists "
+                                  "The steps after it did not run.\n1 of 3 steps done.")
     assert all(step["app"] == "Notes" for _, step in computer.calls)
 
 
 @pytest.mark.parametrize("steps, message", [
     ([{"action": "get_app_state"}, {"action": "click"}], "cannot run among several steps"),
-    ([{"action": "click", "args": {"app": "Finder", "element_index": 1}}, {"action": "wait"}], "names another app"),
+    ([{"action": "click", "args": {"app": "Finder", "element": 1}}, {"action": "wait"}], "names another app"),
     ([{"action": "click"}] * 21, "at most 20"),
     ([{"args": {}}], "needs action"),
 ])
-def test_steps_are_checked_before_any_step_runs(fake, steps, message):
+def test_steps_are_checked_before_any_step_runs(fake, listed, steps, message):
     computer = fake()
-    result = entry.computer_use_agent(target="app", args={"app": "Notes"}, actions=steps)
-    assert result.is_error and message in result.text and computer.calls == []
+    result = entry.computer_use(type="window", app="Notes", actions=steps)
+    assert result.is_error and result.text.startswith("BAD_ARGUMENT:") and message in result.text
+    assert computer.calls == []
 
 
-def test_the_first_call_to_a_target_carries_its_guide_once(fake, monkeypatch):
+def test_the_first_call_to_a_target_carries_its_guide_once(fake, listed, monkeypatch):
     from openprogram.models.providers.types import AgentToolResult
     from openprogram.programs._authoring import guides
     from openprogram.models.providers.types import TextContent
     monkeypatch.setattr(entry.code_mode, "available", lambda: True)
     computer = fake()
     computer.list_apps = lambda: "Notes (running)"
-    args = {"target": "app", "action": "list_apps"}
+    args = {"type": "window", "action": "list_apps"}
+    # Each turn reads <devices>, which registers the guides of the targets listed now.
+    entry.devices()
 
     def call():
-        result = entry.computer_use_agent(**args)
+        result = entry.computer_use(**args)
         return guides.attach(entry.NAME, args, AgentToolResult(content=[TextContent(text=result.text)]))
 
     def text(result):
@@ -691,45 +612,50 @@ def test_the_first_call_to_a_target_carries_its_guide_once(fake, monkeypatch):
     token = guides.begin_loop()
     try:
         first = text(call())
-        assert first.startswith('<guide name="computer_use_agent.app">\nGuide: target "app"')
-        # The code guide comes with it, so the first code call is already informed.
-        assert first.endswith("Notes (running)") and '<guide name="computer_use_agent.code">' in first
+        assert first.startswith('<guide name="computer_use.window">\nGuide: type="window".')
+        # The target's own note comes with its family's guide.
+        assert '<guide name="computer_use.note.window">\nNote: type="window" is this computer, a Mac' in first
+        # So does the code guide, so the first code call is already informed.
+        assert first.endswith("Notes (running)") and '<guide name="computer_use.code">' in first
         assert text(call()) == "Notes (running)"
         # A request that no longer holds the guide (compacted, cleared) gets it again.
         guides.observe_request([{"content": "earlier turns, summarized"}])
-        assert text(call()).startswith('<guide name="computer_use_agent.app">')
-        assert entry.computer_use_agent(target="app", action="guide").text.startswith('<guide name="computer_use_agent.app">')
+        assert text(call()).startswith('<guide name="computer_use.window">')
+        assert entry.computer_use(type="window", action="guide").text.startswith('<guide name="computer_use.window">')
     finally:
         guides.end_loop(token)
 
 
-def test_no_call_is_turned_back_for_a_guide(monkeypatch):
+def test_no_call_is_turned_back_for_a_guide(listed, monkeypatch):
     """A call that sends code before any guide was seen runs, and its result carries the guides."""
     from openprogram.programs._authoring import guides
     monkeypatch.setattr(entry.code_mode, "available", lambda: True)
-    call = {"target": "app", "args": {"app": "Notes"}, "code": "pass"}
+    entry.devices()
+    call = {"type": "window", "app": "Notes", "code": "pass"}
     token = guides.begin_loop()
     try:
         guides.observe_request([{"content": "nothing about this tool"}])
         assert guides.missing_required(entry.NAME, call) == []
         assert [guide.name for guide in guides.due(entry.NAME, call, failed=False)] \
-            == ["computer_use_agent.app", "computer_use_agent.code"]
+            == ["computer_use.window", "computer_use.note.window", "computer_use.code"]
     finally:
         guides.end_loop(token)
     # Where code cannot run, its guide is not handed out.
     monkeypatch.setattr(entry.code_mode, "available", lambda: False)
     token = guides.begin_loop()
     try:
-        assert [guide.name for guide in guides.due(entry.NAME, {"target": "app"}, failed=False)] \
-            == ["computer_use_agent.app"]
+        assert [guide.name for guide in guides.due(entry.NAME, {"type": "window"}, failed=False)] \
+            == ["computer_use.window", "computer_use.note.window"]
     finally:
         guides.end_loop(token)
 
 
-def test_every_action_but_list_apps_needs_an_app(fake):
-    fake()
-    result = tool.run([("list_windows", {})], {}, "s")
-    assert result.is_error and "list_windows needs app" in result.text
+def test_every_action_but_list_apps_needs_an_app(fake, listed):
+    computer = fake()
+    computer.list_apps = lambda: "Notes (running)"
+    result = entry.computer_use(type="window", action="list_windows")
+    assert result.is_error and result.text.startswith("BAD_ARGUMENT: list_windows needs app")
+    assert entry.computer_use(type="window", action="list_apps").text == "Notes (running)"
 
 
 # ----------------------------------------------------------------- app lookup for the interface
@@ -804,7 +730,7 @@ def test_app_lookup_rejects_anything_but_a_short_list_of_names():
 # ----------------------------------------------------------------- audio
 
 def test_recording_limits_default_to_a_minute_and_stop_at_five():
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
     assert audio.seconds(None) == 60 and audio.seconds("12.5") == 12.5
     for bad in (0, -1, 301, "long"):
         with pytest.raises(ValueError):
@@ -815,7 +741,7 @@ def test_float_samples_become_a_16_bit_mono_wav_with_their_peak():
     import io
     import wave
     from array import array
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
     data, peak = audio.wav(array("f", [0.0, 0.5, -1.5, 0.25]).tobytes())
     clip = wave.open(io.BytesIO(data))
     assert (clip.getnchannels(), clip.getsampwidth(), clip.getframerate(), clip.getnframes()) == (1, 2, 16000, 4)
@@ -823,7 +749,7 @@ def test_float_samples_become_a_16_bit_mono_wav_with_their_peak():
 
 
 def test_a_recording_keeps_samples_only_up_to_its_limit():
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
     recording = audio.Recording(app="Music", pid=1, limit=1.0)
     recording.take(b"\0" * 4 * 12_000)
     recording.take(b"\0" * 4 * 12_000)
@@ -837,26 +763,27 @@ def _clip(peak, tmp_path):
 def test_a_stopped_recording_reports_its_file_and_transcript(monkeypatch, tmp_path):
     from openprogram.interfaces.speech import stt as voice
     monkeypatch.setattr(voice, "transcribe", lambda data: {"text": " 你好 ", "engine": "local", "model": "m"})
-    text = tool._clip_text(_clip(0.3, tmp_path), transcribe=True)
+    text = desktop._clip_text(_clip(0.3, tmp_path), transcribe=True)
     assert text == f"Recorded 2 seconds of Music, saved to {tmp_path / 'a.wav'}.\nTranscript (local, m):\n你好"
-    assert "silent" in tool._clip_text(_clip(0.0, tmp_path), transcribe=True)
-    assert "Transcript" not in tool._clip_text(_clip(0.3, tmp_path), transcribe=False)
+    assert "silent" in desktop._clip_text(_clip(0.0, tmp_path), transcribe=True)
+    assert "Transcript" not in desktop._clip_text(_clip(0.3, tmp_path), transcribe=False)
 
     def broken(data):
         raise voice.VoiceError("No speech engine is set up.")
     monkeypatch.setattr(voice, "transcribe", broken)
-    assert tool._clip_text(_clip(0.3, tmp_path), transcribe=True).endswith("Not transcribed: No speech engine is set up.")
+    assert desktop._clip_text(_clip(0.3, tmp_path), transcribe=True).endswith("Not transcribed: No speech engine is set up.")
 
 
 def test_audio_actions_reach_the_backend_without_a_state_read(fake):
     computer = fake()
     started = []
     computer.start_audio = lambda session, app, limit: started.append((app, limit)) or macos.Report("Recording Music")
-    assert tool.run([("start_audio_recording", {"max_duration": 30})], {"app": "Music"}, "s").text == "Recording Music"
+    assert _run([("start_audio_recording", {"max_duration": 30})], {"app": "Music"}).text == "Recording Music"
     assert started == [("Music", 30)] and computer.settled == 0
-    assert tool.run([("stop_audio_recording", {})], {}, "s").is_error  # the approval names the app
-    assert entry.requires_approval(target="app", action="start_audio_recording", args={"app": "Music"}) == \
-        "computer_use_agent controls music"
+    stopped = _run([("stop_audio_recording", {})], {})  # the approval names the app
+    assert stopped.is_error and stopped.text.startswith("BAD_ARGUMENT:")
+    assert entry.requires_approval(type="window", app="Music", action="start_audio_recording") == \
+        "computer_use controls music"
 
 
 def test_recordings_are_saved_under_the_state_directory_and_pruned(monkeypatch, tmp_path):
@@ -872,10 +799,10 @@ def test_wait_needs_no_state_and_is_bounded(monkeypatch):
     computer = macos.MacComputer()
     monkeypatch.setattr(computer, "resolve_app", lambda query, launch=True: type(
         "App", (), {"processIdentifier": lambda self: 7})())
-    assert computer.act("s", "wait", {"app": "Music", "duration": 0.05}) == "waited 0.05s"
+    assert computer.act("s", "wait", {"app": "Music", "seconds": 0.05}) == "waited 0.05s"
     with pytest.raises(macos.ComputerUseError):
-        computer.act("s", "wait", {"app": "Music", "duration": 11})
-    assert {"hover", "wait"} <= set(tool.ACTING_ACTIONS)
+        computer.act("s", "wait", {"app": "Music", "seconds": 11})
+    assert {"hover", "wait"} <= desktop.ACTING
 
 
 def test_a_recording_reaches_models_that_hear_audio_and_only_them():
@@ -892,10 +819,10 @@ def test_a_recording_reaches_models_that_hear_audio_and_only_them():
     def contents(inputs):
         model = Model(id="gemini-2.5-pro", name="g", api="google-generative-ai", provider="google",
                       base_url="", input=inputs)
-        calls = [ToolCall(id=f"c{i}", name="computer_use_agent", arguments={}) for i in (1, 2)]
+        calls = [ToolCall(id=f"c{i}", name="computer_use", arguments={}) for i in (1, 2)]
         messages = [UserMessage(content="listen", timestamp=0),
                     AssistantMessage(content=calls, api=model.api, provider=model.provider, model=model.id, timestamp=0),
-                    *[ToolResultMessage(tool_call_id=f"c{i}", tool_name="computer_use_agent", content=result.content, timestamp=0)
+                    *[ToolResultMessage(tool_call_id=f"c{i}", tool_name="computer_use", content=result.content, timestamp=0)
                       for i in (1, 2)]]
         return convert_messages(model, Context(messages=messages))
 
@@ -919,12 +846,12 @@ def test_chat_completions_models_see_tool_result_screenshots_and_hear_recordings
 
     def messages(inputs):
         model = Model(id="m", name="m", api="openai-completions", provider="openrouter", base_url="", input=inputs)
-        calls = [ToolCall(id=f"c{i}", name="computer_use_agent", arguments={}) for i in (1, 2)]
+        calls = [ToolCall(id=f"c{i}", name="computer_use", arguments={}) for i in (1, 2)]
         return _build_messages(Context(messages=[
             UserMessage(content="look and listen", timestamp=0),
             AssistantMessage(content=calls, api=model.api, provider=model.provider, model=model.id, timestamp=0),
-            ToolResultMessage(tool_call_id="c1", tool_name="computer_use_agent", content=clip, timestamp=0),
-            ToolResultMessage(tool_call_id="c2", tool_name="computer_use_agent", content=shot, timestamp=0),
+            ToolResultMessage(tool_call_id="c1", tool_name="computer_use", content=clip, timestamp=0),
+            ToolResultMessage(tool_call_id="c2", tool_name="computer_use", content=shot, timestamp=0),
             UserMessage(content="next", timestamp=0)]), model)
 
     both = messages(["text", "image", "audio"])
@@ -1302,11 +1229,13 @@ def test_open_file_opens_existing_documents_only(monkeypatch, tmp_path, name, mo
 
 
 def test_open_file_is_an_app_action_that_takes_a_path_and_only_macos_documents_it():
-    from openprogram.programs.tools.computer_use.computer_use_agent import params
-    assert "open_file" in tool.ACTING_ACTIONS and "open_file" in macos.MacComputer.STATELESS
-    assert params.ACTION_ARGS["app"]["open_file"] == ("path",)
-    assert "open_file(app, path)" in tool.guide("Darwin")
-    assert "open_file" not in tool.guide("Linux") and "open_file" not in tool.guide("Windows")
+    from openprogram.programs.tools.computer_use.computer_use import vocabulary
+    assert "open_file" in desktop.ACTING and "open_file" in macos.MacComputer.STATELESS
+    assert vocabulary.FAMILIES["window"].arguments("open_file") == ("path",)
+    assert "open_file" in _app("Darwin").extra_actions() and "open_file(path)" in _app("Darwin").note()
+    for system in ("Linux", "Windows"):
+        assert "open_file" not in _app(system).extra_actions()
+        assert "There is no open_file" in _app(system).note()
 
 
 # The suite's conftest makes the screen read as unlocked for every test; this is the function itself.
@@ -1336,7 +1265,7 @@ def test_a_locked_screen_stops_reads_and_steps_and_says_the_windows_are_still_op
     monkeypatch.setattr(macos, "_frameworks", lambda: pytest.fail("nothing is asked of the app"))
     computer = macos.MacComputer.__new__(macos.MacComputer)
     for call in (lambda: computer.get_state("s", "Notes"),
-                 lambda: computer.act("s", "click", {"app": "Notes", "element_index": 1}),
+                 lambda: computer.act("s", "click", {"app": "Notes", "element": 1}),
                  lambda: computer.list_windows("Notes"),
                  lambda: computer.zoom("s", "Notes", 0, 0, 10, 10)):
         with pytest.raises(base.NotDispatched, match="screen is locked.*still open"):
@@ -1349,7 +1278,7 @@ def test_a_locked_screen_is_reported_as_nothing_sent(monkeypatch):
     computer = macos.MacComputer.__new__(macos.MacComputer)
     computer.app_key = lambda query: "pid:1"
     monkeypatch.setattr(macos, "backend", lambda: computer)
-    for steps in ([("get_app_state", {})], [("click", {"element_index": 3})]):
-        result = tool.run(steps, {"app": "Notes"}, "locked-session")
+    for steps in ([("get_state", {})], [("click", {"element": 3})]):
+        result = _run(steps, {"app": "Notes"})
         assert result.is_error and result.text.startswith("Error: The Mac's screen is locked.")
         assert result.json_data == {"action_dispatched": False}

@@ -1,13 +1,15 @@
 "use client";
 
 /**
- * The data of Settings > System, read together so the page appears whole.
- * Settings opening fetches it ahead (`prefetchSystemPage`): the access check
- * asks macOS about each capability and takes most of a second.
+ * The schema-driven setting rows (Model services → Behavior, General → Web
+ * server) and this computer's system access (Machines). Settings opening
+ * fetches both ahead (`prefetchSystemPage`): the access check asks macOS
+ * about each capability and takes most of a second.
  */
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { QUIET_QUERY, warnOnFailure } from "./quiet-query";
 
 export interface SettingRow {
   key: string;
@@ -44,15 +46,20 @@ export interface AccessReport {
 
 export const settingRowsQuery = queryOptions({
   queryKey: ["settings", "rows"] as const,
-  queryFn: () => jsonFetch<{ settings?: SettingRow[] }>("/api/settings").then((data) => data.settings ?? []),
+  queryFn: warnOnFailure("/api/settings", () =>
+    jsonFetch<{ settings?: SettingRow[] }>("/api/settings").then((data) => data.settings ?? [])),
   staleTime: 0,
+  ...QUIET_QUERY,
 });
 
 export const systemAccessQuery = queryOptions({
   queryKey: ["system", "access"] as const,
-  queryFn: () => jsonFetch<AccessReport>("/api/system/access"),
-  staleTime: 0,
+  queryFn: warnOnFailure("/api/system/access", () => jsonFetch<AccessReport>("/api/system/access")),
+  // Each read starts a native check (0.3 s). Settings reads it ahead as it
+  // opens; the Machines page mounting a moment later uses that answer.
+  staleTime: 2000,
   refetchOnWindowFocus: true,
+  ...QUIET_QUERY,
 });
 
 export function prefetchSystemPage(client: QueryClient) {

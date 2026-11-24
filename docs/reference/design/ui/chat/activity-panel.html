@@ -2,53 +2,90 @@
 <meta name="description" content="What the right sidebar's Activity lists, how agents and runs are grouped, and what each page shows.">
 <h1>Activity panel</h1>
 
-<p>The right sidebar's Activity covers one conversation. What a run waits on is never a group: it is the row it concerns, with a red count on its glyph's corner. The one exception is Waiting for you, the reports left for the reader across conversations. Messages are never rows.</p>
+<p>The right sidebar's Activity covers one conversation. What a run waits on is never a group: it is a red count on the glyph of the agent it concerns. The one exception is Waiting for you, the reports left for the reader across conversations. Messages are never rows.</p>
 
 <h2 id="overview">Overview</h2>
-<p>These groups, in this order. Agents is always shown; every other group, header included, is shown only when it has something in it. Only Waiting for you carries a count in its header; Agents adds what its helpers and its scheduled tasks' runs cost. Hovering a group shows its <code translate="no">SectionHeader</code> chevron; clicking the header folds it (per-browser, <code translate="no">lib/prefs/activity-view.ts</code>).</p>
+<p>Two parts: a few groups, then <a href="#task-chart">the chart</a>, where the agents are. Each group, header included, is shown only when it has something in it, in this order. Only Waiting for you carries a count in its header. Hovering a group shows its <code translate="no">SectionHeader</code> chevron; clicking the header folds it (per-browser, <code translate="no">lib/prefs/activity-view.ts</code>).</p>
 <table class="stack">
 <thead><tr><th scope="col">Group</th><th scope="col">Rows</th><th scope="col">Status line</th></tr></thead>
 <tbody>
 <tr><th scope="row">Waiting for you</th><td>Reports from every always-on conversation still waiting for the reader (<code translate="no">lib/agents/pending-inbox</code>). Each opens its conversation.</td><td>"Finding · &lt;Agent&gt; · &lt;time&gt;"</td></tr>
-<tr><th scope="row">Agents</th><td>The main agent, always listed, with the <a href="#agent-roster">helpers it started</a> under it: a conversation whose turns left no execution record still has it, at rest with the conversation's last activity, and its page reads the runs from the transcript. With more than one branch, <a href="#agent-branches">a row per live branch</a>. Then <a href="#task-rows">one row per scheduled task</a> that runs a prompt.</td><td>Running (call or "Waiting for a sub-agent", time, blue); "Failed · &lt;time&gt;" (red); else its last message time, or, while the Agent is <a href="../../runtime/always-on-agents.html">always on</a>, "Always-on · next wake 02:31". Busy, the always-on line goes under the status. A branch in its own <a href="../../runtime/execution/agent-worktree.html">worktree</a> adds a "Worktree" tag and "3 files in worktree". A task: "178 runs · 9 didn't finish · last 23:00" over a strip of its last 24 runs</td></tr>
-<tr><th scope="row">Programs and commands</th><td>Shell calls and background programs running now, and the programs that failed; <a href="#programs-listed">one that finished leaves</a>. Running first, then newest; 20 at a time. <code translate="no">agent</code> calls never appear.</td><td>"Command · Running · 12 s"; "45 / 100 samples · 3.4/s"; "Exited · exit 1"; "Failed at 62 / 200 · exit 1"</td></tr>
+<tr><th scope="row">Sent messages</th><td>A message sent to another conversation and not answered yet, "→ Name". Clicking opens that conversation.</td><td>Waiting, until the other side starts on it; then Running</td></tr>
+<tr><th scope="row">Programs and commands</th><td>Background programs running now; <a href="#programs-listed">one that ended leaves</a>, failed or not. Newest first; 20 at a time. A command the agent waits on is not listed.</td><td>"Command · Running · 12 s"; "45 / 100 samples · 3.4/s"</td></tr>
 <tr><th scope="row">Open work</th><td><a href="../../../../capabilities/agents.html#open-work">Open items</a>, one row each; done items leave</td><td>"Open · &lt;time&gt;"</td></tr>
-<tr><th scope="row">Scheduled tasks</th><td>Reminders and commands scheduled from this conversation (the task's <code translate="no">session_id</code> or its signed spec's), newest first: what the Scheduler does at a time without an agent. A task that runs a prompt is an agent and is <a href="#task-rows">listed in Agents</a> only.</td><td>"Reminder · Nov 20, 9:00 AM"; "Recurring · 0 9 * * 1-5 · when its check changes"</td></tr>
+<tr><th scope="row">Scheduled tasks</th><td>What is scheduled from this conversation (the task's <code translate="no">session_id</code> or its signed spec's), newest first. A reminder or a command is a row with its schedule; a task that runs a prompt is <a href="#task-rows">one row with its runs in short</a>.</td><td>"Reminder · Nov 20, 9:00 AM"; "Recurring · 0 9 * * 1-5 · when its check changes"; "178 runs · 9 didn't finish · last 23:00" over a strip of its last 24 runs</td></tr>
 </tbody>
 </table>
+<p>Before the conversation's first run there is no chart, and the main agent is one row in its place: its name, what it is doing or when it was last active ("Always-on · next wake 02:31" while the Agent is <a href="../../runtime/always-on-agents.html">always on</a>), a red count for what waits on the reader, and a click to its page.</p>
 <p class="note">Statuses: Running, Completed, Failed, Cancelled, Interrupted, Waiting for your answer, Waiting for approval. A row at rest shows only its time. Calls and programs are placed only after executions are read, so they never flash as unowned; unlisted ones count as the main agent's.</p>
 
-<details id="agent-roster">
-<summary>Helpers under an agent</summary>
+<h3 id="task-chart">The work chart</h3>
+<p>Under the groups, the conversation's work as one <a href="#agent-chart">time chart</a>: Topics, Messages, Steps, Inside a step. Rows are topics; reading right goes from a topic to each message in it, and each call. Every agent of the conversation is on it, each drawn once, and listed nowhere else.</p>
+<p>While a chart is drawn the groups take at most half the panel's height and scroll among themselves; the chart has the rest and scrolls on its own.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">Header</th><td>"Agents · $0.14": what the helpers cost together, known prices only. Stop all shows while a helper is going and cancels each topmost one; the stop reaches what it started.</td></tr>
-<tr><th scope="row">Row</th><td>Avatar, name, status badge, the cost of its subtree at the right edge; hovering shows its cost, tokens and tool calls. A row too narrow for all of them drops the cost first, then shortens the name. Indented 16 for each level under the agent. Clicking shows its conversation in the chat, as its card's Switch does.</td></tr>
-<tr><th scope="row">Badges</th><td>Running (filled, pulsing dot); Needs approval, Needs input and Stalled (a yellow dot and the words, no outline, as a row's status line says them); Failed (red); Waiting (queued for a free slot) and Idle (outlined, muted). What runs or waits on the reader comes from the executions and the chat's open cards at once; stalled, queued and stopped by a limit come from the roster read.</td></tr>
-<tr><th scope="row">Listed</th><td>A helper that is going, needs the reader or failed. A finished one stays only while a helper under it is listed. A helper a scheduled run started is its task's and is listed on the task's page, except one that needs the reader: that one is listed here, right under the main agent, since the reader acts on it from this conversation.</td></tr>
-<tr><th scope="row">"N finished"</th><td>The last row. It opens in place to the finished helpers, 50 at a time, each with Idle and its cost.</td></tr>
-<tr><th scope="row">"→ Name"</th><td>A message sent to another agent and not answered yet, Waiting until the other side starts on it. Clicking opens that conversation.</td></tr>
-<tr><th scope="row">Chevron</th><td>The agent's row has one chevron, on the right, and it opens the agent's page; the helpers are not folded away, since with the scheduled runs on their task's page the list under an agent is short. Left on a helper moves the focus to the agent's row. A row reached with the keyboard takes the hover fill.</td></tr>
-<tr><th scope="row">Height</th><td>The roster scrolls inside 360 pixels, so the groups below keep their place</td></tr>
-<tr><th scope="row">Read</th><td><code translate="no">GET /api/session/{id}/activity/roster</code> while the panel shows: on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, at most once a second, and every 30 seconds</td></tr>
+<tr><th scope="row">Topics</th><td>One block per topic, the newest on top: its name and "4 messages · 3 tasks". This column never shows an agent.</td></tr>
+<tr><th scope="row">Messages</th><td>The messages of every branch's main agent in the topic, in one column by time, one block per run. Up to three lines: the title of the task it worked on last, what the reader asked, then <a href="activity-chart-messages.html">what it is doing or how it went</a> ("Thinking · 3m 12s", "2m 42s · 4 commands"). A message with no task yet has no title line.</td></tr>
+<tr><th scope="row">Colour</th><td>In Topics, which topic, in the topic's own order. From Messages on, which agent: a main agent's bars are its branch's lane colour (the folder colour when the conversation has one branch), a sub-agent's a lane colour of its own. What an agent did inside a message is its colour at 60%. Failure and running are in the words.</td></tr>
+<tr><th scope="row">Glyph</th><td>Each agent's glyph is drawn once, in its colour: a main agent's beside the title of its newest message, a sub-agent's on the step that started it. So the newest work of each agent is where the eye finds it, and everything else of it is told by colour.</td></tr>
+<tr><th scope="row">Sub-agents</th><td>A sub-agent is a step of the message that started it: one line in Steps with its glyph, its name and how it went ("Scout · 53s", "Scout · Failed · 4s", "Scout · Never started"). What it did is one column on, in its colour.</td></tr>
+<tr><th scope="row">A sub-agent still going</th><td>Its glyph breathes and its time so far is in the bright colour; the message that waits for it says "Running 1 sub-agent". In a narrow column the name gives way before the time.</td></tr>
+<tr><th scope="row">Deeper sub-agents</th><td>A sub-agent started by a sub-agent is a step in that column, and what it did is a column further. The chart has four columns and one more for each such level, named Inside a step like the fourth.</td></tr>
+<tr><th scope="row">A sub-agent's colour</th><td>One of ten lane colours: the one its job id points at, or the next one that no main agent, its starter or an earlier sub-agent of the same starter wears. A main agent is one starter over all its messages. Nothing started later changes it, and a new branch moves only a sub-agent that wore the branch's colour. With more sub-agents than colours they repeat, and the glyph and the name tell them apart.</td></tr>
+<tr><th scope="row">What links them</th><td>Nothing is guessed. The runtime stamps every block of a reply with the task it was done for, and the server passes the stamp on with each step and sub-agent of a run (<code translate="no">task</code>). A sub-agent started inside a program's call takes that call's task. A call with no stamp belongs to no task.</td></tr>
+<tr><th scope="row">A run on two tasks</th><td>One message, titled by the task it was on last. Its steps say which task each call was for.</td></tr>
+<tr><th scope="row">Next wake</th><td>An always-on conversation's next wake is the chart's first row, with a dashed bar; it opens the main agent's page. Its line says first what holds the agent back, an interrupted check-in (in the bright colour) or a budget used up, then quiet hours and the cadence.</td></tr>
+<tr><th scope="row">Going back</th><td>No page is around this chart, so the column the view starts on, when it is not Topics, shows its name as a button with a left chevron: one column back. Esc on a block does the same; on the first column Esc is left to whatever is around the panel.</td></tr>
+<tr><th scope="row">Keyboard</th><td>The blocks share one Tab stop, always on a block that is drawn; Up, Down, Home and End move among them. A glyph is a button of its own, the next Tab stop after its block.</td></tr>
+<tr><th scope="row">Everything else</th><td>Widths, columns in view, clicks, swipes and opened blocks are <a href="#agent-chart">the Agent chart's</a></td></tr>
+<tr><th scope="row">How much</th><td>The checked-out branch and the five others active most recently; the newest 50 runs of each. A run two branches share is drawn once, as the checked-out branch's.</td></tr>
+<tr><th scope="row">Reading</th><td>One read of each branch's runs on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and when the Worker signals the conversation's <code translate="no">runs</code> changed; never two at once. The panel holds the runs by branch: a branch keeps what it had while it is read again, when the branches change order, and when its read fails.</td></tr>
+<tr><th scope="row">Under a page</th><td>The overview leaves the document while a page rests over it. The runs, the column the reader went to, how far down and the opened blocks are kept, and the chart comes back as it was.</td></tr>
+<tr><th scope="row">Source</th><td><code translate="no">buildWorkChart</code> in <code translate="no">running/agent-chart/agent-chart-model.ts</code> builds the rows; <code translate="no">WorkChart</code> in <code translate="no">agent-chart.tsx</code> draws them with the Agent chart's view, and <code translate="no">chartMarks</code> in <code translate="no">running-panel.tsx</code> says what each glyph knows; <code translate="no">running/runs/use-work-runs.ts</code> reads; <code translate="no">_task_owners</code> in <code translate="no">runtime/execution/projections/activity_runs.py</code> stamps</td></tr>
+</tbody>
+</table>
+<p>What a message says in each state, and the one button it may carry: <a href="activity-chart-messages.html">Messages on the work chart</a>.</p>
+<p>Why topics first. The chart used to start from tasks, and an agent declares a task for most things it does: Tasks had about as many blocks as Messages and said the same twice.</p>
+<p class="note">A topic gathers what the reader and the agent did about one thing; the task names each message in it.</p>
+<p>Why the agents are only here. The overview used to open with an Agents group, a row per main agent with its sub-agents under it, and the chart had an Agents column before Messages. The same agents were on screen three times. What was tried instead:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Way to say who did it</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row">A column of agent blocks</th><td>Dropped: every row repeats every agent, and a column is spent on names</td></tr>
+<tr><th scope="row">A lane per agent</th><td>Dropped: with a few branches the chart turns into the conversation graph, which the Graph panel already is</td></tr>
+<tr><th scope="row">A name tag on every message</th><td>Dropped: a line of every block for something that seldom changes from one block to the next</td></tr>
+<tr><th scope="row">Colour, and one glyph per agent</th><td>Kept. The cost: with one agent and no sub-agent, everything right of Topics is one colour.</td></tr>
+</tbody>
+</table>
+
+<details id="agent-roster">
+<summary>What a glyph knows</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pointed at</th><td>A main agent: its name, "Current" on the checked-out branch, "2 waiting for you", "sub-agents $0.14" (what the sub-agents it started cost together, known prices only) and, in its own <a href="../../runtime/execution/agent-worktree.html">worktree</a>, "3 files in worktree". A sub-agent: its name, its state unless it is at rest ("Running", "Needs approval", "Needs input", "Stalled", "Failed"), the cost of its subtree, its tokens and tool calls.</td></tr>
+<tr><th scope="row">Red count</th><td>What waits on the reader: a main agent's own questions and approvals and its sub-agents', a sub-agent's own and those under it. It comes from the executions and the chat's open cards at once, and from the server's word that a running sub-agent waits for an approval or an answer. A stalled one is not counted: there is nothing to answer.</td></tr>
+<tr><th scope="row">Click</th><td>A main agent: <a href="#pages">its page</a>. A sub-agent: its conversation in the chat, as its card's Switch does. The block around the glyph keeps its own click.</td></tr>
+<tr><th scope="row">Stop sub-agents</th><td>On the block that wears a main agent's glyph, while a sub-agent it started is going: it cancels each topmost one, and the stop reaches what they started. The block is one line taller for it.</td></tr>
+<tr><th scope="row">A scheduled run's helper</th><td>Its task's, listed on the task's page. One that needs the reader is counted on the main agent's glyph, since the reader acts on it from this conversation.</td></tr>
+<tr><th scope="row">Read</th><td>Cost and usage: <code translate="no">GET /api/session/{id}/activity/roster</code> while the panel shows, on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and on <code translate="no">runs</code> and <code translate="no">roster</code> change frames, at most once a second</td></tr>
 </tbody>
 </table>
 </details>
 
 <details id="agent-branches">
-<summary>Branches in Agents</summary>
+<summary>Branches as main agents</summary>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Branch</th><th scope="col">In the list</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Branch</th><th scope="col">On the chart</th></tr></thead>
 <tbody>
-<tr><th scope="row">Checked out</th><td>Its own row, tagged "Current"</td></tr>
-<tr><th scope="row">Something going, waiting on the reader or failed, itself or a helper</th><td>Its own row</td></tr>
-<tr><th scope="row">At rest</th><td>One "N other branches" row for all of them, the same quiet row as "N finished"; it opens in place</td></tr>
-<tr><th scope="row">Opened by the runtime (<a href="../../runtime/dag/branch-collaboration.html#three-operations"><code translate="no">runtime_started</code></a>)</th><td>No row: it is not a branch the reader made. Its runs count as the checked-out branch's. With no other branch left, the conversation is the one "Main agent". Reports an always-on Agent or a task posted where the head stood, and left behind when the reader moved on, are such a part too: no prompt, only <code translate="no">report_…</code> messages.</td></tr>
-<tr><th scope="row">Written by a schedule (<code translate="no">scheduled_task</code>)</th><td>No row: its runs are <a href="#task-rows">its task's</a>. A task's branch record says so, and so does a line whose own part holds only prompts the scheduler wrote, which covers the tips older runs left behind when they were cut off. Never the checked-out branch.</td></tr>
+<tr><th scope="row">Checked out</th><td>A main agent; its glyph says "Current" when there are several</td></tr>
+<tr><th scope="row">Another branch the reader made</th><td>A main agent, with its glyph on its newest message. One with no message of its own (every run it has is the checked-out branch's too) has nothing to draw, and no glyph.</td></tr>
+<tr><th scope="row">Opened by the runtime (<a href="../../runtime/dag/branch-collaboration.html#three-operations"><code translate="no">runtime_started</code></a>)</th><td>Not an agent: it is not a branch the reader made. Its runs count as the checked-out branch's. With no other branch left, the conversation is the one "Main agent". Reports an always-on Agent or a task posted where the head stood, and left behind when the reader moved on, are such a part too: no prompt, only <code translate="no">report_…</code> messages.</td></tr>
+<tr><th scope="row">Written by a schedule (<code translate="no">scheduled_task</code>)</th><td>Not an agent: its runs are <a href="#task-rows">its task's</a>. A task's branch record says so, and so does a line whose own part holds only prompts the scheduler wrote, which covers the tips older runs left behind when they were cut off. Never the checked-out branch.</td></tr>
 </tbody>
 </table>
-<p class="note">A Goal's turns in a conversation saved with one branch record per runtime turn listed as a column of same-named agents. The list is for what the reader can act on, so a branch gets a row for the same reasons a helper does.</p>
+<p class="note">A Goal's turns in a conversation saved with one branch record per runtime turn would draw as a crowd of same-named agents; the chart is for the agents the reader made.</p>
 </details>
 
 <details id="programs-listed">
@@ -57,21 +94,24 @@
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Title</th><td>The bash call's <code translate="no">description</code>, else the script or module it runs, past setup steps such as <code translate="no">cd</code> and <code translate="no">mkdir</code>. The command sits under it in monospace.</td></tr>
-<tr><th scope="row">Listed</th><td>The same rule as the <a href="#agent-roster">helpers</a>: what is going, and what failed (status failed, or exited with a code other than 0). A program that completed, was stopped, was cut short or lost its supervisor leaves the list, and so does a shell call once it returns or is cut short. No "N finished" row: the chat keeps every command and its output. With nothing listed the group is not shown.</td></tr>
+<tr><th scope="row">Listed</th><td>Only background programs that are going. One leaves the moment it ends, whether it completed, failed, was stopped or lost its supervisor; its outcome is read in the chat step that ran it, and the agent is told the exit on its own. No "N finished" row and no failed rows. With nothing listed the group is not shown.</td></tr>
+<tr><th scope="row">Waited-on commands</th><td>A command the agent runs and waits for is not listed: the chat step reads "Running a command…" and the main agent row and the chart's message name it ("Running sleep 25 · 8s").</td></tr>
+<tr><th scope="row">Motion</th><td>A row opens by height and fades in when a program starts, and closes the same way when it ends; the group, header included, opens with its first row and closes with its last, so what sits below glides instead of jumping. 0.24 s, as a project's rows in the sidebar; none under reduced motion.</td></tr>
+<tr><th scope="row">Why ended ones leave</th><td>Kept for the day its record lives, a failed program left a column of stale "Exited · exit 1" rows after an agent retried a build, read as work left undone.</td></tr>
+<tr><th scope="row">Peers</th><td>Follows Claude Code: a background task goes once it has ended and the agent was told (<code translate="no">evictTerminalTask</code>). Codex and OpenCode drop it on exit; Oh My Pi and Hermes keep it 30–60 s; Copilot CLI, Grok Build and Kimi hide ended ones by default.</td></tr>
 <tr><th scope="row">Running, amount known</th><td>Progress over a thin bar, time left at its end ("16s left")</td></tr>
 <tr><th scope="row">Running, no amount</th><td>How long it has run and its last output line, over a sweeping bar</td></tr>
-<tr><th scope="row">Retention</th><td>Record and output stay for a day after it ends (<code translate="no">RETENTION_SECONDS</code>, <code translate="no">openprogram/host/processes/store.py</code>), or a day after the last heartbeat for "Status unknown". The worker's process sweep then deletes it and any exit notice still due.</td></tr>
+<tr><th scope="row">Retention</th><td>Record and output stay for a day after it ends (<code translate="no">RETENTION_SECONDS</code>, <code translate="no">openprogram/host/processes/store.py</code>), or a day after its supervisor ended without saying how for "Status unknown". The worker's process sweep then deletes it and any exit notice still due.</td></tr>
 </tbody>
 </table>
 </details>
 
 <details>
-<summary>Branches in the Agents group</summary>
+<summary>What a branch holds</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Source</th><td>Forks and edits the reader made in the DAG; status and sub-agent line from the runs on that branch (<code translate="no">branches[].execution_ids</code>). A sub-agent belongs to the branch of its top-level run.</td></tr>
-<tr><th scope="row">Row</th><td>The branch's name, a ghost in its lane colour, a Current tag on the checked-out one. No run listed: the branch's own time.</td></tr>
 <tr><th scope="row">Unowned</th><td>Unlisted calls and programs, and calls that started no sub-agent, count as the checked-out branch's</td></tr>
 <tr><th scope="row">Page</th><td>The Agent page for that branch, with Switch to this branch (the Branches panel's checkout) when not current</td></tr>
 <tr><th scope="row">Excluded</th><td>An older session's inline sub-agent turns: their tip, whose chain starts at a spawn root, comes marked <code translate="no">sub_agent</code> from <code translate="no">build_branches_payload</code> and is left out. A run a schedule started (<code translate="no">scheduled_task_id</code> on its execution) and everything under it are its task's, whichever branch holds them.</td></tr>
@@ -81,11 +121,11 @@
 
 <details>
 <summary>Reading always-on, open work and scheduled tasks</summary>
-<p>One read, <code translate="no">GET /api/sessions/{id}/work</code>, when the panel opens, on <code translate="no">always_on_update</code>, <code translate="no">always_on_report</code> and <code translate="no">open_work_update</code> frames, on focus, and every 30 seconds for Scheduler tasks, which publish no event. Each task carries its <code translate="no">summary</code>: runs, unfinished, notified, when the last began, and the last 24 outcomes.</p>
+<p>One read, <code translate="no">GET /api/sessions/{id}/work</code>, when the panel opens, on <code translate="no">always_on_update</code>, <code translate="no">always_on_report</code> and <code translate="no">open_work_update</code> frames, on a <code translate="no">work</code> change frame (a Scheduler task or its run record changed), on reconnect and on focus. Each task carries its <code translate="no">summary</code>: runs, unfinished, notified, when the last began, and the last 24 outcomes.</p>
 </details>
 
 <details id="task-rows" open>
-<summary>Scheduled tasks in Agents</summary>
+<summary>Scheduled tasks that run a prompt</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
@@ -116,7 +156,7 @@
 <tr><th scope="row">Outcome</th><td>The task's record (<code translate="no">task_runs</code>, its last 20) where it has the run; else the execution's status and its reply, judged the way <code translate="no">run_finish</code> judges a run as it ends. A run that ended is judged once and kept.</td></tr>
 <tr><th scope="row">Why</th><td>From the run's <code translate="no">reason_code</code> and how long it ran, in English and Chinese: <code translate="no">agent_runner_error</code>, <code translate="no">time_limit</code>, <code translate="no">owner_lost_before_checkpoint</code>, <code translate="no">unfinished_before_session_logs</code>, <code translate="no">scheduled_run_start_failed</code>, else a plain "failed", "stopped" or "cut off after …"</td></tr>
 <tr><th scope="row">Cost</th><td>The provider calls charged to the run's execution and to its helpers' Jobs. Calls saved before calls carried their execution go to the run that was going in the conversation when they were made.</td></tr>
-<tr><th scope="row">Page read</th><td><code translate="no">GET /api/session/{id}/activity/tasks/{task}?filter=all|unfinished|notified&amp;offset=&amp;limit=</code>: the counts, the last 24, the cost and one page. On a conversation with 177 runs it answers in about 26 ms once the conversation is in memory; the first read of a conversation not yet loaded takes about 0.6 s. It is read on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and every 30 seconds; a refresh replaces the newest rows by id.</td></tr>
+<tr><th scope="row">Page read</th><td><code translate="no">GET /api/session/{id}/activity/tasks/{task}?filter=all|unfinished|notified&amp;offset=&amp;limit=</code>: the counts, the last 24, the cost and one page. On a conversation with 177 runs it answers in about 26 ms once the conversation is in memory; the first read of a conversation not yet loaded takes about 0.6 s. It is read on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and on <code translate="no">runs</code> and <code translate="no">work</code> change frames; a refresh replaces the newest rows by id.</td></tr>
 </tbody>
 </table>
 <p>Why one row: a task that runs every hour has hundreds of runs, and a row per run, or per line its runs left, buries the agents the reader works with. Peers, as the <a href="../../runtime/always-on-agents.html">always-on design</a> compares them, list a task once and keep its history on its own page:</p>
@@ -126,7 +166,7 @@
 <li>DeepSeek Harness has a tasks page with each task's delivery records.</li>
 </ul>
 <p>The row here adds how the last day went, as one strip; the history stays on the task's page, paged and filtered to what did not finish.</p>
-<p class="note">Kept apart from Scheduled tasks on purpose: that group holds what the Scheduler does without an agent, so a task is never in both places.</p>
+<p class="note">It is listed in Scheduled tasks with the reminders and commands: all three are what the Scheduler does for this conversation, and a task is in one place only. Its row differs because its runs are an agent's.</p>
 </details>
 
 <details id="reading-overview">
@@ -135,10 +175,10 @@
 <table class="stack">
 <thead class="sr"><tr><th scope="col">Case</th><th scope="col">What happens</th></tr></thead>
 <tbody>
-<tr><th scope="row">First open</th><td>Agents is open from the start: the checked-out branch's main agent, at rest with the conversation's last activity. The read adds the other branches, helpers and calls in place.</td></tr>
-<tr><th scope="row">Coming back</th><td>Each of the four reads (executions, programs and calls, roster, work) is kept per conversation for the life of the page (<code translate="no">lib/execution/activity-reads.ts</code>) and drawn in the first frame, on the tab or after switching conversations. Executions and roster are not read again while fresh: under 30 seconds old, the socket open throughout, and no <code translate="no">op:execution-update</code> or <code translate="no">op:job-status</code> since the read began. Work is always read, since Scheduler tasks publish no event.</td></tr>
-<tr><th scope="row">While shown</th><td>Executions are read on those events, at most once a second, and every 30 seconds. A failed read is tried again after 2, 4, 8 … seconds, up to 30.</td></tr>
-<tr><th scope="row">Failure</th><td>Nothing is said while there is something to show. Runs that were never read and keep failing for 5 seconds put "Could not read this conversation's runs." with Retry under Agents.</td></tr>
+<tr><th scope="row">First open</th><td>The groups draw from what was last read. Of the agents nothing is drawn until the chart's runs are read: then the chart, or the main agent's row when the conversation has no run.</td></tr>
+<tr><th scope="row">Coming back</th><td>Each of the four reads (executions, programs and calls, roster, work) is kept per conversation for the life of the page (<code translate="no">lib/execution/activity-reads.ts</code>) and drawn in the first frame, on the tab or after switching conversations. Executions and roster are not read again while fresh: the socket open throughout, and no <code translate="no">op:execution-update</code>, <code translate="no">op:job-status</code> or <code translate="no">processes</code> change since the read began. Their age does not matter. Work is always read again.</td></tr>
+<tr><th scope="row">While shown</th><td>Executions are read on those events, on reconnect, on focus and when the window shows again, at most once a second, never on a timer. A failed read is tried again after 2, 4, 8 … seconds, up to 30.</td></tr>
+<tr><th scope="row">Failure</th><td>Nothing is said. What was read stays; runs never read leave their place empty while the read is tried again (<a href="../page-loading-performance.html#no-waiting-text">waiting without words</a>).</td></tr>
 <tr><th scope="row">Server</th><td><code translate="no">GET /api/session/{id}/executions</code> reads each session's Jobs once per request (<code translate="no">jobs.store.session_jobs_reader</code>) and looks every row's Job up in it, the helpers' usage included; a foreground turn, which has no Job, costs no lookup. The conversation's folder comes from the location index, parsed again only when its file changes. A conversation with 203 runs answers in about 0.2 seconds instead of 4 to 6, and three at once no longer queue on the conversation's lock for 18 seconds.</td></tr>
 </tbody>
 </table>
@@ -225,10 +265,17 @@
 <p>A move is one slide of the columns' track by its transform, and nothing else:</p>
 <ul>
 <li>240 ms for a whole column, less for the rest of one (never under 120 ms), on <code translate="no">--ease-standard</code>; a cut with reduced motion.</li>
-<li>The blocks are laid out for where the move ends before it starts. A column coming in is already at its final size; the clicked block, or the block at the top, holds its place on screen.</li>
+<li>The blocks are laid out for where the move ends before it starts, once. A column coming in is already at its final size; the clicked block, or the block at the top, holds its place on screen.</li>
+<li>A block on screen whose place or height changed glides there with the slide, in its time and on its curve: the block by its transform, its bar scaled from its top, and words stuck at the top of the view on their own path. These run off the main thread, so nothing is laid out again while they play.</li>
+<li>A block too far off to be drawn before the move comes in from where the old layout had it, and one that leaves reach rides away before it goes: no block appears or disappears in place while the blocks next to it still move.</li>
 <li>A column deeper than the one the move ends on is not drawn, even while it slides out.</li>
 <li>Nothing grows, fades in or settles after the slide.</li>
-<li>The box never scrolls sideways, only up and down. Blocks more than a screen above or two below the view are not drawn.</li>
+<li>Measured on a conversation of 3 topics and about 40 messages: every frame of a move between columns took about 9 ms, before the glide and with it. Slowed four times, the first move after opening has one frame of about 45 ms either way; the moves after it keep 9 ms.</li>
+<li>The box never scrolls sideways, only up and down. Blocks more than a screen above or two below the view are not in the layout.</li>
+<li>The blocks of a column out of view are not in the layout either: only the columns showing, and one on each side while a move is under way, have theirs. A column a move brings in gets its blocks before it shows.</li>
+<li>The column of the row that has the focus stays in the layout, so the focus and the keys are never dropped; the arrows move among the rows that are in the layout.</li>
+<li>Measured on a conversation of 8 tasks and about 440 rows, processor slowed four times, moving between columns at three columns wide: the slowest task of a frame went from 252 ms to 45 ms, and a style pass from 2,545 elements (52 ms) to 313 (7 ms).</li>
+<li>A block's place is written when it changed, and a block is drawn again only when what it says changed, so a chart rebuilt every few seconds while something runs redraws a handful of blocks.</li>
 </ul>
 <p>Why: the chart used to scroll sideways, with each block's height interpolated from the scroll position. Three things made a move feel wrong:</p>
 <ul>
@@ -241,9 +288,9 @@
 <tbody>
 <tr><th scope="row">Height</th><td>Set by the deepest column in view. A parent spans its children, so the same height is the same time in every column.</td></tr>
 <tr><th scope="row">Time</th><td>A block's top carries its latest moment: minutes for topics and messages, seconds for steps. Long silences and new days are a dashed row across the columns: a new day shows its date in the time column of every column, and a long silence says how long beside the first one.</td></tr>
-<tr><th scope="row">Colour</th><td>Colour says which topic a block belongs to, never how it went. Each topic takes a main colour by when it first appeared, so one that comes back keeps it. Messages are shades of it, and steps and their insides go on from there. Runs nobody asked for, and messages not sorted yet, are grey. Failure and running are in the words.</td></tr>
-<tr><th scope="row">Steps</th><td>Calls of one function in a row share a line, each call in the last column. A failure stands alone with its error under it. A sub-agent's own steps are in the last column. A group in the last column is at most four rows tall and scrolls inside its cell.</td></tr>
-<tr><th scope="row">Buttons</th><td>Only on running, paused or waiting messages. Add instruction turns the buttons into one input, so the block keeps its height.</td></tr>
+<tr><th scope="row">Colour</th><td>Colour says which topic a block belongs to, never how it went. Each topic takes a main colour by when it first appeared, so one that comes back keeps it. Messages are shades of it, and steps and their insides go on from there. Runs nobody asked for are grey. Failure and running are in the words.</td></tr>
+<tr><th scope="row">Steps</th><td>Calls of one function in a row share a line, each call in the last column. A failure stands alone with its error under it. A sub-agent's own steps are in the last column. A step whose rows have nothing under them (a group of calls, a sub-agent's steps) is at most four rows tall, and its rows scroll inside its cell.</td></tr>
+<tr><th scope="row">Buttons</th><td>At most one, on a message that waits for the reader or is paused: <a href="activity-chart-messages.html">Answer or Continue</a>.</td></tr>
 <tr><th scope="row">Data</th><td><code translate="no">activity/runs?chart=true</code> returns the page with a short form of every event (input clipped, a result kept only when the step failed) and each run's topic. Finished runs are cached by revision.</td></tr>
 </tbody>
 </table>
@@ -253,8 +300,8 @@
 <ul>
 <li>After each turn a background pass sorts what has no topic, on the same background model as chat titles. It sees the user's words only.</li>
 <li>A short reply such as "continue" stays with the message before it and costs no call.</li>
-<li>The first time an older chat's chart is opened, the same pass sorts its messages, 40 to a call. Until then they read Not sorted yet.</li>
-<li>When a call fails or no model is available, messages stay unsorted and draw with the message before them. The next message tries again; opening the chart tries again after 10 minutes.</li>
+<li>The first time an older chat's chart is opened, the same pass sorts its messages, 40 to a call. Until then their topic block is room with nothing drawn.</li>
+<li>When a call fails or no model is available, messages stay unsorted and draw with the message before them. The next message tries again; opening the chart tries again no sooner than 10 minutes after the last pass, so a pass's own change notice never starts another.</li>
 </ul>
 
 <h3 id="run-rows">Inside a run</h3>
@@ -276,7 +323,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Read</th><th scope="col">When</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">GET /api/session/{id}/activity/runs</code></th><td>On entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and every 30 seconds, for as many runs as are shown. Rows are replaced by id, so a refresh closes nothing and moves nothing. A run keeps its row when its reply arrives.</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/session/{id}/activity/runs</code></th><td>On entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and on <code translate="no">runs</code> change frames, for as many runs as are shown. Rows are replaced by id, so a refresh closes nothing and moves nothing. A run keeps its row when its reply arrives.</td></tr>
 <tr><th scope="row"><code translate="no">…/activity/runs/{run}/events</code></th><td>When a row opens, and again when its revision moves or it is live. An unopened row reads nothing.</td></tr>
 <tr><th scope="row">Debugger and last 50 events</th><td>Per open run that has an execution, when its version moves</td></tr>
 </tbody>

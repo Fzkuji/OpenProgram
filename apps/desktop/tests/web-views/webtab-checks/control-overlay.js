@@ -2,7 +2,7 @@
 module.exports = function createChecks(testContext) {
 async function checkNativeControlOverlayAndCueReplay() {
   testContext.hooks.registerWebTabIpc();
-  const win = testContext.fakeWindow(901);
+  const win = testContext.shownWindow(901);
   const ctx = testContext.registerContext("overlay-sec", win);
   testContext.hooks.ensureView(ctx, "live-page", "https://example.com/live");
   const pageHarness = testContext.generatedNativeRecords.at(-1);

@@ -92,6 +92,8 @@ class PrefixCheck:
     #: The announced causes this request answers, cleared when it settles.
     seen_expected: Optional[str] = None
     fingerprint: dict = field(default_factory=dict, repr=False, compare=False)
+    #: The units' text, kept in memory for :func:`_log_break` only.
+    texts: tuple = field(default=(), repr=False, compare=False)
 
     def event_fields(self) -> dict[str, Any]:
         return {"prefix_hash": self.prefix_hash, "break_at": self.break_at,
@@ -240,7 +242,8 @@ def check_request(request: Any, *, context: Optional[UsageContext] = None,
     key, family = lane(ctx), _family(ctx)
     check = PrefixCheck(prefix_hash=current["hash"], lane=key, units=len(current["units"]),
                         ttl_s=_ttl_seconds(current["settings"]), sent_at=now, family=family,
-                        session_id=ctx.session_id, fingerprint=current)
+                        session_id=ctx.session_id, fingerprint=current,
+                        texts=_unit_texts(request) if key is not None else ())
     if key is None:
         return check
     lg = _ledger(ledger)
@@ -254,6 +257,8 @@ def check_request(request: Any, *, context: Optional[UsageContext] = None,
     elif previous is None:
         return check
     at, cause = first_break(previous["fingerprint"], current)
+    if cause is not None and not announced:
+        _log_break(key, at, cause, check.texts)
     return replace(check, break_at=at, break_cause=cause,
                    expected=announced or None if cause is not None else None,
                    seen_expected=announced or None,
@@ -277,7 +282,44 @@ def settle_check(check: Optional[PrefixCheck], usage: Any, *, ledger: Any = None
     return check
 
 
+#: The last answered request's unit texts per lane, in this worker only:
+#: what an unannounced break is compared against in the log.
+_texts: dict[str, tuple[float, tuple]] = {}
+#: Lanes whose texts are kept, the most recently answered first.
+TEXTS_KEPT = 16
+#: Characters shown on each side of where two units first differ.
+_SNIPPET = 240
+
+
+def _unit_texts(request: Any) -> tuple:
+    try:
+        return tuple(unit.text for unit in request.units())
+    except Exception:  # noqa: BLE001 - the log is a convenience
+        return ()
+
+
+def _log_break(key: str, at: Optional[int], cause: str, texts: tuple) -> None:
+    """Write where an unannounced break differs to the log: the request's
+    unit and the one the lane's last answered request sent there, from the
+    first character they differ at."""
+    was = (_texts.get(key) or (0.0, ()))[1]
+    if at is None or not texts:
+        return
+    before = was[at] if at < len(was) else ""
+    after = texts[at] if at < len(texts) else ""
+    start = next((i for i, (a, b) in enumerate(zip(before, after)) if a != b),
+                 min(len(before), len(after)))
+    lo = max(0, start - _SNIPPET)
+    _log.info("prompt prefix broke at unit %s (%s) of lane %s, from character %s:\n"
+              "  sent  …%s…\n  now   …%s…", at, cause, key, start,
+              before[lo:start + _SNIPPET], after[lo:start + _SNIPPET])
+
+
 def _keep(lg: Any, check: PrefixCheck, cache_read: Optional[int]) -> None:
+    if check.texts:
+        _texts[check.lane] = (check.sent_at, check.texts)
+        for stale in sorted(_texts, key=lambda lane: _texts[lane][0], reverse=True)[TEXTS_KEPT:]:
+            _texts.pop(stale, None)
     known = _known(lg)
     pending = (known.get(check.lane) or {}).get("expected")
     # A cause announced while this request was out is still owed.

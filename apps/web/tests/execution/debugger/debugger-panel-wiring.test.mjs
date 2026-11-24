@@ -14,3 +14,16 @@ test("debugger renders its empty state before reading execution fields", () => {
     "empty execution state must return before action payloads read snapshot fields",
   );
 });
+
+test("debugger never narrates loading, reconnecting or a failed read", () => {
+  assert.doesNotMatch(panel, /Loading executions|Retrying automatically|Could not load executions|Reconnecting|Event gap|"Stale"|Synced/);
+  // The empty state is shown only once the executions have been read.
+  assert.match(panel, /fetchedAt \? <SidebarNotice>No executions in this conversation\.<\/SidebarNotice>/);
+});
+
+test("a conflict on the user's own optimistic action is still shown", () => {
+  assert.match(panel, /connection\.state === "conflict" && <div className=\{styles\.connectionLine\}/);
+  assert.match(panel, /The server rejected an optimistic version/);
+  // Only the conflict draws the line; no other connection state does.
+  assert.doesNotMatch(panel, /connection\.state !== "connected" && <div className=\{styles\.connectionLine\}/);
+});

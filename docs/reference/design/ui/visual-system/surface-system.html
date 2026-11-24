@@ -139,6 +139,7 @@
 <tr><th scope="row">Close</th><td><code translate="no">ghost</code> <code translate="no">icon-sm</code>, <code translate="no">top-2 right-2</code> (Dialog only)</td></tr>
 <tr><th scope="row">Motion</th><td>100ms fade and <code translate="no">zoom-in-95</code>, no slide</td></tr>
 <tr><th scope="row">Confirmation</th><td><code translate="no">ConfirmDialog</code> or <code translate="no">await confirmAction({...})</code> through <code translate="no">&lt;ConfirmDialogHost /&gt;</code> in <code translate="no">app/providers.tsx</code>. <code translate="no">destructive</code> when it deletes or lowers a safeguard. Escape, outside click and Cancel all cancel.</td></tr>
+<tr><th scope="row">Three answers</th><td><code translate="no">await chooseAction({..., alternateLabel})</code> adds a third button on the left, as macOS sets <strong>Don't Save</strong> apart from Cancel and Save.</td></tr>
 <tr><th scope="row">Module class</th><td>Sizes only: width, <code translate="no">max-width: none</code>, max-height, overflow</td></tr>
 <tr><th scope="row">Edge-to-edge</th><td>Source viewer, function runner, provider setup: <code translate="no">p-0 gap-0</code>, own padding, <code translate="no">DialogFooter</code> <code translate="no">m-0</code></td></tr>
 </tbody>

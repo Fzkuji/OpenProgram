@@ -33,11 +33,13 @@ def test_a_usable_account_without_a_thread_is_unknown(client) -> None:
     assert _state(client[0]) == "unknown"
 
 
-def test_a_fresh_heartbeat_is_alive_and_an_old_one_stale(client) -> None:
-    _heartbeats.heartbeat("telegram", "status-test")
-    assert _state(client[0]) == "alive"
+def test_a_running_mark_is_alive_whatever_its_age(client) -> None:
+    # The supervisor sets the mark once when the adapter starts and clears
+    # it when the thread ends; nothing refreshes it in between.
     _heartbeats.heartbeat("telegram", "status-test", ts=1.0)
-    assert _state(client[0]) == "stale"
+    assert _state(client[0]) == "alive"
+    _heartbeats.clear("telegram", "status-test")
+    assert _state(client[0]) == "unknown"
 
 
 @pytest.mark.parametrize("reason", [_heartbeats.STOP_SIGNED_OUT, _heartbeats.STOP_FAILED])
@@ -64,6 +66,14 @@ def test_a_crash_loop_is_reconnecting_though_the_thread_is_alive(client) -> None
     response = client[0].get("/api/channels/telegram/status-test/status").json()
     assert response["state"] == "reconnecting"
     assert response["alive"] is False
+
+
+def test_reconnecting_says_when_to_read_again(client) -> None:
+    # The mark runs out with no event; the window reads again then.
+    _heartbeats.heartbeat("telegram", "status-test")
+    _heartbeats.record_retry("telegram", "status-test", settles_in=60)
+    response = client[0].get("/api/channels/telegram/status-test/status").json()
+    assert 0 < response["recheck_in"] <= 60
 
 
 def test_a_reconnect_that_settled_is_alive_again(client) -> None:

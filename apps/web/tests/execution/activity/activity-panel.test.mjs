@@ -80,6 +80,7 @@ const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { RunningPanel } = await import("../../../components/right-sidebar/running/running-panel.tsx");
 const { useSessionStore } = await import("../../../lib/session-store/index.ts");
+const { forgetActivityReads } = await import("../../../lib/execution/activity-reads.ts");
 useSessionStore.setState({ conversations: { session: { id: "session", title: "NeurIPS trip" } } });
 const DAY = 86400;
 const now = Math.floor(Date.now() / 1000);
@@ -104,7 +105,8 @@ async function mounted(executions, check, processes = [], stateOverrides = {}, p
       await act(async () => button.click());
     };
     await check(host, click, selected, render);
-  } finally { await act(async () => root.unmount()); host.remove(); }
+    // What one test's pages read is not the next test's.
+  } finally { await act(async () => root.unmount()); host.remove(); forgetActivityReads(); }
 }
 
 const agentCall = { id: "c1", execution_id: "turn", name: "agent", description: "Fix page close",
@@ -134,98 +136,94 @@ const usage = (cost_usd, tokens = 1000, tool_calls = 1) => ({ tokens, cost_usd, 
 const helper = (id, status, label, extra = {}) => run(id, status, now - 100, { parent_execution_id: "live", display: { kind: "job_agent", label }, ...extra });
 const rosterButton = (host, text) => [...host.querySelectorAll("[data-roster-row]")].find(item => item.textContent.includes(text));
 
-test("the main agent lists the helpers still going and folds the finished ones into one row", async () => {
+// A sub-agent as the chart's runs tell it: a step of the message that started it.
+const started = (job_id, name, at, ended_at, extra = {}) => ({ kind: "subagent", at, ended_at, job_id, name, agent_id: null, context: null, status: ended_at === null ? "running" : "completed", never_started: false, failed: false,
+  brief: `Brief of ${name}`, brief_truncated: false, result: null, result_truncated: false, error: null, created_at: at, closed_as: null, conversation: null, children: [], steps: [], ...extra });
+const glyph = (host, name) => host.querySelector(`button[aria-label^="${name}"]`);
+/** The main agent's page: from its glyph on the chart, or from its row before the conversation has a run. */
+const openMain = async (host, click) => {
+  await settle();
+  const mark = glyph(host, "Main agent");
+  if (mark) await act(async () => mark.click()); else await click("Main agent");
+};
+
+test("the agents are on the chart: a glyph says what its agent cost, and the main agent's block stops the sub-agents still going", async () => {
   globalThis.activityRoster = { agents: {
     j_live: { agent_status: "running", queued: false, usage: usage("0.020000", 18400, 12) },
     j_done: { agent_status: "idle", queued: false, usage: usage("0.030000") },
-    j_fix: { agent_status: "idle", queued: false, usage: usage(null) },
   }, outgoing: [] };
   const posted = [];
   const fetchBefore = globalThis.fetch;
   globalThis.fetch = async (url, init) => { if (String(url).startsWith("/api/execution/")) posted.push([String(url), JSON.parse(init?.body ?? "{}")]); return { ok: true, status: 200, async json() { return { status: "accepted" }; } }; };
+  listRuns([activityRun("live", now - 120, { ended_at: now - 80, steps: [started("j_done", "Research", now - 110, now - 90), started("j_live", "Form filler", now - 100, null)] })]);
   try {
     await mounted([
-      run("turn", "reconciliation_required", now - 3 * DAY, { task_label: "check and fix it" }), spawned,
-      run("live", "running", now - 120, { task_label: "fill the form" }),
+      run("live", "completed", now - 120, { terminal_at: now - 80 }),
       run("j_live", "running", now - 100, { parent_execution_id: "live", display: { kind: "job_agent", label: "Form_filler" } }),
-      run("done", "completed", now - 60, { task_label: "what happened" }),
-      run("j_done", "completed", now - 50, { parent_execution_id: "done", display: { kind: "job_agent", label: "Research" } }),
-    ], async (host, click) => {
+      run("j_done", "completed", now - 110, { parent_execution_id: "live", display: { kind: "job_agent", label: "Research" } }),
+    ], async host => {
       await settle();
-      // The header adds up what the helpers cost; an unknown price is left out.
-      assert.match(host.textContent, /^Agents · \$0\.05Stop allMain agentRunning · 2 minForm fillerRunning\$0\.022 finished$/);
-      assert.doesNotMatch(host.textContent, /Research|Fix page close|sub-agents/);
-      assert.doesNotMatch(host.textContent, /check and fix it|fill the form|what happened/);
-      await click("2 finished");
-      assert.match(host.textContent, /2 finishedResearchIdle\$0\.03Fix page closeIdle$/);
-      assert.equal(rosterButton(host, "2 finished").getAttribute("aria-expanded"), "true");
-      await click("2 finished");
-      assert.doesNotMatch(host.textContent, /Research/);
-      // Stop all reaches the helper still going, and only that one.
-      await click("Stop all");
+      // Nothing lists the agents above the chart: the panel starts with it.
+      assert.match(host.textContent, /^Topics/);
+      // Each agent has one glyph; pointed at, it says the agent and what it cost.
+      assert.equal(host.querySelectorAll("button[aria-label]").length - host.querySelectorAll("[data-chart-back]").length, 3);
+      assert.equal(glyph(host, "Main agent").getAttribute("aria-label"), "Main agent · sub-agents $0.05");
+      assert.equal(glyph(host, "Form filler").getAttribute("aria-label"), "Form filler · Running · $0.02 · 18.4k tokens · 12 tool calls");
+      // A sub-agent is a step of the message that started it.
+      assert.match(host.querySelector('[data-chart-column="2"]').textContent, /Form filler· \d+m \d+s.*Research· 20s/);
+      // The one still going is told by its glyph.
+      assert.equal(host.querySelectorAll('[data-chart-column="2"] [data-live]').length, 1);
+      // Stopping reaches the sub-agent still going, and only that one.
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Stop sub-agents").click());
       await settle();
       assert.deepEqual(posted.map(([url, body]) => [url, body.action, body.execution_id]), [["/api/execution/cancel", "execution.cancel", "j_live"]]);
-    }, [], {}, { calls: [agentCall] });
+    });
   } finally { globalThis.fetch = fetchBefore; globalThis.activityRoster = undefined; }
 });
 
-test("each helper wears one status badge, a message still unanswered is its own row, and a row opens where its card's Switch goes", async () => {
-  globalThis.activityRoster = { agents: {
-    j_run: { agent_status: "running", queued: false, usage: usage("0.020000") },
-    j_stall: { agent_status: "stalled", queued: false, usage: usage("0.030000") },
-    j_queue: { agent_status: "running", queued: true, usage: usage("0.000000", 0, 0) },
-    j_limit: { agent_status: "failed", queued: false, usage: usage("0.010000") },
-  }, outgoing: [{ kind: "outgoing", job_id: "d1", sender: "session", to_session: "butler", to: "Butler", status: "waiting", sent_at: now - 30 }] };
+test("a glyph counts what waits on the reader and opens its agent, and a message still unanswered is a row of its own", async () => {
+  globalThis.activityRoster = { agents: { j_run: { agent_status: "running", queued: false, usage: usage("0.020000") } },
+    outgoing: [{ kind: "outgoing", job_id: "d1", sender: "session", to_session: "butler", to: "Butler", status: "waiting", sent_at: now - 30 }] };
   useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_ask", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "[PR Verifier] Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
   globalThis.agentTip = "j_run_reply"; globalThis.navigated = [];
+  listRuns([activityRun("live", now - 120, { ended_at: now - 80, steps: [started("j_run", "Explorer", now - 110, null), started("j_ask", "PR Verifier", now - 100, null)] })]);
   try {
-    await mounted([
-      run("live", "running", now - 120),
-      helper("j_run", "running", "Explorer"), helper("j_ask", "paused", "PR_Verifier"), helper("j_stall", "running", "Test_Runner"),
-      helper("j_queue", "queued", "Linter"), helper("j_failed", "failed", "Scout"), helper("j_limit", "cancelled", "Budget_Hog"),
-    ], async (host, click) => {
+    await mounted([run("live", "completed", now - 120, { terminal_at: now - 80 }), helper("j_run", "running", "Explorer"), helper("j_ask", "paused", "PR_Verifier")], async host => {
       await settle();
-      const badge = name => rosterButton(host, name).querySelector("[data-slot=badge]");
-      const words = name => (badge(name) ?? rosterButton(host, name).querySelector("[data-tone=warn]")).textContent;
-      assert.deepEqual(["Explorer", "PR Verifier", "Test Runner", "Linter", "Scout", "Budget Hog", "Butler"].map(words),
-        ["Running", "Needs approval", "Stalled", "Waiting", "Failed", "Failed", "Waiting"]);
-      // Waiting on the reader and stalled: a yellow dot and the words, not a pill.
-      for (const name of ["PR Verifier", "Test Runner"]) {
-        assert.equal(badge(name), null, name);
-        assert.ok(rosterButton(host, name).querySelector("[data-tone=warn] .indicator-dot.--warn"), name);
-      }
-      assert.equal(badge("Scout").getAttribute("data-variant"), "destructive");
-      assert.match(rosterButton(host, "Butler").textContent, /^→ ButlerWaiting$/);
-      // The request for approval is the red count on the agent's own row.
-      const main = [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
-      assert.match(main.textContent, /^1Main agent/);
-
-      await act(async () => rosterButton(host, "Explorer").click());
+      // The request for approval is the red count on the sub-agent that asks and on the main agent that started it.
+      assert.deepEqual(["Main agent", "PR Verifier", "Explorer"].map(name => glyph(host, name).textContent), ["1", "1", ""]);
+      // A sub-agent's glyph goes where its card's Switch goes.
+      await act(async () => glyph(host, "Explorer").click());
       await settle();
       assert.deepEqual(globalThis.sentCommands.map(command => [command.action, command.head_msg_id]), [["checkout_branch", "j_run_reply"], ["load_session", undefined]]);
+      // A message to another conversation says so to a screen reader; the arrow is decoration.
+      assert.match(host.textContent, /^Sent messages→ ButlerWaiting/);
+      assert.equal(rosterButton(host, "Butler").getAttribute("aria-label"), "Message sent to Butler, Waiting");
       await act(async () => rosterButton(host, "Butler").click());
       assert.deepEqual(globalThis.navigated, ["/s/butler"]);
+      // The main agent's glyph opens its page.
+      await act(async () => glyph(host, "Main agent").click());
+      assert.ok(host.querySelector("[data-timeline]"));
     });
   } finally { useSessionStore.setState({ pendingDecisions: [] }); globalThis.activityRoster = undefined; globalThis.agentTip = undefined; }
 });
 
-test("an agent's row has one chevron, on the right, and its helpers stay listed under it", async () => {
-  useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_ask", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
+test("a sub-agent the server says is waiting for approval has the red count and the words, also while the page holds no question of it", async () => {
+  globalThis.activityRoster = { agents: {
+    j_wait: { agent_status: "needs approval", queued: false, usage: usage("0.020000") },
+    j_slow: { agent_status: "stalled", queued: false, usage: null },
+  }, outgoing: [] };
+  listRuns([activityRun("live", now - 120, { ended_at: now - 80, steps: [started("j_wait", "Explorer", now - 110, null), started("j_slow", "Scout", now - 100, null)] })]);
   try {
-    await mounted([run("live", "running", now - 120), helper("j_run", "running", "Explorer"), helper("j_ask", "paused", "PR_Verifier"), helper("j_done", "completed", "Research")], async host => {
-      const main = () => [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
-      // No fold: the helpers going and waiting are listed, and nothing folds them away.
-      assert.equal(host.querySelector("[data-disclosure]"), null);
-      assert.ok(rosterButton(host, "Explorer"));
-      assert.ok(rosterButton(host, "PR Verifier"));
-      assert.match(main().textContent, /^1Main agent/);
-      // Left on a helper hands the focus to the agent's row and leaves the helpers listed.
-      rosterButton(host, "Explorer").focus();
-      await key(rosterButton(host, "Explorer"), "ArrowLeft");
-      assert.equal(document.activeElement, main());
-      assert.ok(rosterButton(host, "Explorer"));
+    await mounted([run("live", "completed", now - 120, { terminal_at: now - 80 }), helper("j_wait", "running", "Explorer"), helper("j_slow", "running", "Scout")], async host => {
+      await settle();
+      assert.equal(glyph(host, "Explorer").getAttribute("aria-label"), "Explorer · Needs approval · $0.02 · 1.0k tokens · 1 tool call");
+      assert.equal(glyph(host, "Main agent").getAttribute("aria-label"), "Main agent · 1 waiting for you · sub-agents $0.02");
+      // No progress is said, and is not a thing to answer.
+      assert.equal(glyph(host, "Scout").getAttribute("aria-label"), "Scout · Stalled");
+      assert.deepEqual(["Main agent", "Explorer", "Scout"].map(name => glyph(host, name).textContent), ["1", "1", ""]);
     });
-  } finally { useSessionStore.setState({ pendingDecisions: [] }); }
+  } finally { globalThis.activityRoster = undefined; }
 });
 
 test("a helper's tip says what it used, with whatever is known", async () => {
@@ -236,64 +234,15 @@ test("a helper's tip says what it used, with whatever is known", async () => {
   assert.equal(usageTip(null, english), "");
 });
 
-test("an agent with no helpers is the row it always was", async () => {
+test("before its first run the main agent is one row where the chart will be", async () => {
   await mounted([run("live", "running", now - 120)], async host => {
     await settle();
-    assert.equal(host.textContent, "AgentsMain agentRunning · 2 min");
-    assert.equal(host.querySelector("[data-disclosure]"), null);
-    assert.equal(host.querySelector("[role=group]"), null);
-    const main = [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
-    assert.equal(main.hasAttribute("aria-expanded"), false);
+    assert.equal(host.textContent, "Main agentRunning · 2 min");
+    assert.equal(host.querySelector("[data-chart-column]"), null);
   });
 });
 
-test("forty helpers stay one bounded list: the live ones, then one fold that pages what finished", async () => {
-  const agents = {};
-  const helpers = Array.from({ length: 65 }, (_, i) => {
-    agents[`h${i}`] = { agent_status: i < 5 ? "running" : "idle", queued: false, usage: usage("0.004000") };
-    return helper(`h${i}`, i < 5 ? "running" : "completed", i === 0 ? "一个名字特别长的子代理用来检查它不会把徽章和花费挤出这一行" : `Helper_${i}`);
-  });
-  globalThis.activityRoster = { agents, outgoing: [{ kind: "outgoing", job_id: "d1", sender: "session", to_session: "butler", to: "Butler", status: "waiting", sent_at: now - 30 }] };
-  try {
-    await mounted([run("live", "running", now - 120), ...helpers], async (host, click) => {
-      await settle();
-      const list = host.querySelector("[role=group]");
-      assert.equal(list.getAttribute("aria-label"), "Sub-agents of Main agent");
-      // Five live, the message still out, and the fold: every row is inside the one scroller.
-      assert.equal(list.querySelectorAll("[data-roster-row]").length, 7);
-      assert.equal(host.querySelectorAll("[data-roster-row]").length, 7);
-      assert.match(list.textContent, /60 finished$/);
-      // A long name shares one group with its badge, and the cost follows that
-      // group: a row short of room gives up the cost, never the name.
-      const long = rosterButton(host, "一个名字特别长");
-      const [lead, cost] = long.children[1].children;
-      assert.equal(long.children.length, 2);
-      assert.deepEqual([...lead.children].map(child => child.textContent), ["一个名字特别长的子代理用来检查它不会把徽章和花费挤出这一行", "Running"]);
-      assert.equal(cost.textContent, "<$0.01");
-      // A message to another agent says so to a screen reader; the arrow is decoration.
-      assert.equal(rosterButton(host, "Butler").getAttribute("aria-label"), "Message sent to Butler, Waiting");
-      await click("60 finished");
-      assert.equal(list.querySelectorAll("[data-roster-row]").length, 57);
-      await click("Show 10 earlier");
-      assert.equal(list.querySelectorAll("[data-roster-row]").length, 67);
-      assert.doesNotMatch(host.textContent, /Show \d+ earlier/);
-    });
-  } finally { globalThis.activityRoster = undefined; }
-});
-
-test("a helper that waits for approval under one that finished is listed with it, never folded", async () => {
-  useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_deep", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
-  globalThis.activityRoster = { agents: { j_top: { agent_status: "idle", queued: false, usage: usage("0.01") }, j_other: { agent_status: "idle", queued: false, usage: usage("0.01") } }, outgoing: [] };
-  try {
-    await mounted([run("live", "running", now - 120), helper("j_top", "completed", "Planner"), helper("j_deep", "paused", "PR_Verifier", { parent_execution_id: "j_top" }), helper("j_other", "completed", "Research")], async host => {
-      await settle();
-      assert.deepEqual([...host.querySelectorAll("[data-roster-row]")].map(item => item.textContent.replace(/\$.*$/, "")), ["PlannerNeeds approval", "PR VerifierNeeds approval", "1 finished"]);
-      assert.equal(rosterButton(host, "PR Verifier").style.getPropertyValue("--indent"), "32px");
-    });
-  } finally { useSessionStore.setState({ pendingDecisions: [] }); globalThis.activityRoster = undefined; }
-});
-
-test("a scheduled task is one row in Agents, its runs and their helpers are none, and Scheduled tasks keeps only reminders", async () => {
+test("a scheduled task that runs a prompt is one row under Scheduled tasks, and its runs and their helpers are none", async () => {
   const { rememberActivityRead } = await import("../../../lib/execution/activity-reads.ts");
   const summary = { runs: 178, cost: 20.89, unfinished: 9, notified: 1, last_at: now - 600, recent: ["quiet", "failed", "stopped", "notified"] };
   rememberActivityRead("work", "session", { session_id: "session", always_on: { enabled: false, reports: [] }, open_work: [], routines: [
@@ -310,31 +259,42 @@ test("a scheduled task is one row in Agents, its runs and their helpers are none
       run("j_wait", "paused", now - 1700, { parent_execution_id: "report_7", display: { kind: "job_agent", label: "Browser" } }),
     ], async (host, click) => {
       await settle();
-      const agents = host.textContent.slice(0, host.textContent.indexOf("Scheduled tasks"));
-      // The header adds up what the task's runs cost; a helper of theirs is in it already.
-      assert.match(agents, /^Agents · \$20\.89Stop all1Main agent/);
-      // A scheduled run's helper that waits on the reader is listed under the main agent.
-      assert.match(rosterButton(host, "Browser").textContent, /^BrowserNeeds input/);
-      assert.match(agents, /Check stock hourly178 runs · 9 didn't finish · last/);
-      // No bare-id rows, and the scheduled run's failed helper is the task's, not the main agent's.
-      assert.doesNotMatch(host.textContent, /538f9a29|report_7|Stock checker/);
-      assert.deepEqual([...[...host.querySelectorAll("button")].find(item => item.textContent.startsWith("Check stock hourly")).querySelectorAll("i[data-tone]")].map(cell => cell.getAttribute("data-tone")), ["ok", "err", "warn", "ok"]);
-      // Scheduled tasks lists what runs without an agent, and never the task again.
-      assert.match(host.textContent, /Scheduled tasksCall mom/);
+      // A scheduled run's helper that waits on the reader is the red count on the main agent.
+      assert.match(host.textContent, /^1Main agent/);
+      // The task is one row with its runs in short, beside the reminders, and never twice.
+      assert.match(host.textContent, /Scheduled tasksCheck stock hourly178 runs · 9 didn't finish · last.*Call mom/);
       assert.equal(host.textContent.split("Check stock hourly").length, 2);
+      // No bare-id rows, and the scheduled run's helpers are the task's.
+      assert.doesNotMatch(host.textContent, /538f9a29|report_7|Stock checker|Browser/);
+      assert.deepEqual([...[...host.querySelectorAll("button")].find(item => item.textContent.startsWith("Check stock hourly")).querySelectorAll("i[data-tone]")].map(cell => cell.getAttribute("data-tone")), ["ok", "err", "warn", "ok"]);
       await click("Check stock hourly");
       assert.match(host.textContent, /TASK RUNS PAGE/);
     });
   } finally { globalThis.activityRoster = undefined; rememberActivityRead("work", "session", null, { at: 0, moves: 0 }); }
 });
 
+test("an always-on conversation's next wake is the chart's first row, and opens the main agent's page", async () => {
+  const { rememberActivityRead } = await import("../../../lib/execution/activity-reads.ts");
+  rememberActivityRead("work", "session", { session_id: "session", always_on: { enabled: true, next_wake_at: now + 600, config: { wake_minutes: 60 }, reports: [] }, open_work: [], routines: [] }, { at: Date.now(), moves: 0 });
+  listRuns([activityRun("a", now - 300)]);
+  try {
+    await mounted([], async (host, click) => {
+      await settle();
+      assert.match(host.querySelector('[data-chart-column="0"]').textContent, /Next wakeAlways-on · hourly/);
+      await click("Next wake");
+      assert.ok(host.querySelector("[data-timeline]"));
+    });
+  } finally { rememberActivityRead("work", "session", null, { at: 0, moves: 0 }); }
+});
+
 test("a conversation whose turns left no execution record still lists its main agent, and empty groups are not shown", async () => {
   useSessionStore.setState({ conversations: { session: { id: "session", title: "NeurIPS trip", updated_at: now - 60 } } });
   try {
     await mounted([], async (host, click) => {
-      assert.match(host.textContent, /AgentsMain agent\d{1,2}:\d{2}/);
+      await settle();
+      assert.match(host.textContent, /^Main agent\d{1,2}:\d{2}/);
       assert.doesNotMatch(host.textContent, /Programs and commands|Scheduled tasks/);
-      await click("Main agent");
+      await openMain(host, click);
       assert.match(host.textContent, /NeurIPS trip/);
     });
   } finally {
@@ -342,33 +302,35 @@ test("a conversation whose turns left no execution record still lists its main a
   }
 });
 
-test("ongoing shell calls and programs keep their level-1 rows, and open their own pages", async () => {
+test("a running program has a level-1 row that opens its page; a command the agent waits on reads on the agent", async () => {
   await mounted([], async (host, click) => {
-    assert.match(host.textContent, /AgentsMain agentRunning bash · \d+ s/);
-    assert.match(host.textContent, /Programs and commandspythonpython worker\.pyRunning · \d+ sbashCommand · Running · \d+ s/);
-    await click("Command · Running");
-    assert.match(host.textContent, /COMMAND PAGE/);
+    await settle();
+    assert.match(host.textContent, /^Main agentRunning bash · \d+ s/);
+    assert.match(host.textContent, /Programs and commandspythonpython worker\.pyRunning · \d+ s$/);
+    assert.doesNotMatch(host.textContent, /Command · Running/);
+    await click("python worker.py");
+    assert.match(host.textContent, /PROGRAM PAGE/);
   }, [{ id: "proc", command: "python worker.py", status: "running", started_at: now, backend_id: "local" }], {},
   { calls: [{ id: "call", name: "bash", command: "sleep 30", started_at: now - 5, status: "running" }] });
 });
 
-test("a program or command that finished leaves Programs and commands; a failed one stays", async () => {
+test("a program or command that ended leaves Programs and commands, failed or not", async () => {
   const program = (id, status, extra = {}) => ({ id, command: `python ${id}.py`, status, started_at: now - 60, ended_at: now - 57, backend_id: "local", ...extra });
   const ended = [program("done", "exited", { exit_code: 0 }), program("finished", "completed"), program("halted", "stopped", { exit_code: -15 }),
     program("cut", "interrupted"), program("lost", "unknown", { ended_at: null })];
   const cutCall = { id: "cut-call", execution_id: "gone", name: "bash", description: "Build the site", command: "make", started_at: now - 3 * DAY, status: "unknown" };
-  // Nothing going and nothing failed: the group, header included, is gone.
+  // Nothing going: the group, header included, is gone, even with failures.
   await mounted([], async host => {
     assert.doesNotMatch(host.textContent, /Programs and commands|python|Build the site/);
-  }, ended, {}, { calls: [cutCall] });
+  }, [...ended, program("crashed", "failed"), program("broke", "exited", { exit_code: 1 })], {}, { calls: [cutCall] });
   // A program that lost its supervisor does not keep its agent reading Running.
   await mounted(finishedTurn, async host => {
     assert.doesNotMatch(host.textContent, /Running|Programs and commands|lost\.py/);
   }, [program("lost", "unknown", { ended_at: null, execution_id: "turn" })]);
   await mounted([], async (host, click) => {
-    assert.match(host.textContent, /Programs and commandspythonpython live\.pyRunning · 5 minpythonpython broke\.pyExited · exit 1pythonpython crashed\.pyFailed/);
-    assert.doesNotMatch(host.textContent, /done\.py|finished\.py|halted\.py|cut\.py|lost\.py|Completed|finished/);
-    await click("python broke.py");
+    assert.match(host.textContent, /Programs and commandspythonpython live\.pyRunning · 5 min/);
+    assert.doesNotMatch(host.textContent, /done\.py|finished\.py|halted\.py|cut\.py|lost\.py|broke\.py|crashed\.py|Completed|finished|Exited|Failed/);
+    await click("python live.py");
     assert.match(host.textContent, /PROGRAM PAGE/);
   }, [...ended, program("crashed", "failed", { started_at: now - 90 }), program("broke", "exited", { exit_code: 1 }), program("live", "running", { started_at: now - 300, ended_at: null })]);
 });
@@ -396,29 +358,28 @@ test("a failed refresh keeps the rows it read and says nothing", async (t) => {
   }, [], {connection: processFailed ? {state:"connected"} : {state:"stale",message:"request failed",errorSessionId:"session"}}, {stale:processFailed});
 });
 
-test("before the first read the main agent is listed, resting, and Agents is open", async () => {
+test("before the executions are read the main agent is listed, resting", async () => {
   await mounted([], async host => {
+    await settle();
     assert.match(host.textContent, /Main agent/);
     assert.doesNotMatch(host.textContent, /Loading|Updating|Could not read/);
   }, [], { fetchedAt: null, connection: { state: "reconnecting" } }, { loaded: false });
 });
 
-test("runs that could never be read say so under Agents, with a retry", async (t) => {
+test("runs that could never be read say nothing and offer no Retry: the reads go on behind the main agent", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  let retried = 0;
-  await mounted([], async (host, click) => {
-    assert.doesNotMatch(host.textContent, /Could not read/);
-    await act(async () => { t.mock.timers.tick(5000); });
-    assert.match(host.textContent, /Could not read this conversation's runs\./);
-    await click("Retry");
-    assert.equal(retried, 1);
-  }, [], { fetchedAt: null, connection: { state: "stale", message: "request failed", errorSessionId: "session" }, refresh: async () => { retried++; return false; } });
+  await mounted([], async host => {
+    await act(async () => { t.mock.timers.tick(60000); });
+    assert.match(host.textContent, /Main agent/);
+    assert.doesNotMatch(host.textContent, /Could not read|Retry|Loading|unavailable/);
+    assert.equal([...host.querySelectorAll("[role=alert]")].length, 0);
+  }, [], { fetchedAt: null, connection: { state: "stale", message: "request failed", errorSessionId: "session" }, refresh: async () => false });
 });
 
 test("the agent page is the head, then the runs under day labels on one axis", async () => {
   listRuns([activityRun("newest", now - 300, { ended_at: now - 196 }), activityRun("older", now - 2 * DAY)]);
   await mounted([run("turn", "completed", now - 300, { terminal_at: now - 196 })], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     const text = host.textContent;
     assert.match(text, /Activity/);
     assert.match(text, /Main agent|NeurIPS trip/);
@@ -433,7 +394,7 @@ test("only an opened row reads its events, and rows stay open however many are o
   listRuns([activityRun("a", now - 300), activityRun("b", now - 200 - DAY), activityRun("c", now - 100 - DAY)]);
   globalThis.runEvents = { a: [asked(now - 300), replied(now - 280)], b: [asked(now - 200 - DAY)], c: [] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     assert.deepEqual(globalThis.activityEventReads, []);
     assert.deepEqual(expanded(host), []);
     await click("Reply a");
@@ -450,13 +411,13 @@ test("only an opened row reads its events, and rows stay open however many are o
 test("the newest run opens by itself only when it failed, waits or runs, and a close sticks", async () => {
   listRuns([activityRun("fine", now - 300)]);
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     assert.deepEqual(expanded(host), []);
   });
   listRuns([activityRun("bad", now - 300, { reply: "[error] boom" }), activityRun("older", now - 900)]);
   globalThis.runEvents = { bad: [asked(now - 300)] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     assert.deepEqual(expanded(host), ["bad"]);
     await click("boom");
     assert.deepEqual(expanded(host), []);
@@ -471,7 +432,7 @@ test("a poll replaces rows without closing them, and keeps what was shown", asyn
   listRuns(runs);
   globalThis.runEvents = { r1: [asked(now - 360)] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     assert.match(host.textContent, /Show 5 earlier/);
     await click("Show 5 earlier");
     await settle();
@@ -493,7 +454,7 @@ test("a new run does not take the oldest row, or its open content, off the page"
   listRuns(runs);
   globalThis.runEvents = { r19: [asked(now - 1440, "the oldest question")] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply r19");
     assert.deepEqual(expanded(host), ["r19"]);
     listRuns([activityRun("fresh", now - 10), ...runs]);
@@ -510,7 +471,7 @@ test("past the server's page size a new run removes nothing, and Show more conti
   const runs = Array.from({ length: 300 }, (_, index) => activityRun(`r${index}`, now - 300 - index * 60));
   listRuns(runs);
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Show 50 earlier");
     await settle();
     await click("Show 50 earlier");
@@ -533,7 +494,7 @@ test("an open finished run reads again until its background sub-agent has ended"
     brief: "go", brief_truncated: false, result: null, result_truncated: false, error: null, created_at: now - 290, closed_as: null, conversation: { session_id: "session", head_id: null }, children: [], ...extra });
   globalThis.runEvents = { a: [agent({})] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.deepEqual(globalThis.activityEventReads, ["a"]);
     globalThis.runEvents = { a: [agent({ ended_at: now - 100, status: "errored", failed: true, error: "boom", closed_as: "errored" })] };
@@ -551,7 +512,7 @@ test("a run keeps its row when its reply arrives and its id changes", async () =
   listRuns([activityRun("exec_1", now - 30, { message_id: null, execution_id: "exec_1", reply: "", ended_at: null, execution_status: "running" })]);
   globalThis.runEvents = { exec_1: [asked(now - 30)], reply_1: [asked(now - 30), replied(now - 1)] };
   await mounted([run("exec_1", "running", now - 30)], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     assert.deepEqual(expanded(host), ["exec_1"]);
     listRuns([activityRun("reply_1", now - 30, { execution_id: "exec_1", ended_at: now, execution_status: "completed" })]);
     await act(async () => { window.dispatchEvent(new Event("op:execution-update")); });
@@ -561,11 +522,27 @@ test("a run keeps its row when its reply arrives and its id changes", async () =
   });
 });
 
+test("on the overview's chart a step, a message and a sub-agent open to their details in place", async () => {
+  listRuns([activityRun("a", now - 300, { steps: [step(now - 290, "npm test"), started("j_done", "Research", now - 280, now - 270, { result: "Found it" })] })]);
+  await mounted([run("a", "completed", now - 300, { terminal_at: now - 260 }), helper("j_done", "completed", "Research")], async host => {
+    await settle();
+    // No page is open: the chart is the overview's own.
+    assert.ok(!host.querySelector("[data-timeline]"));
+    await act(async () => row(host, "Ran npm test").click());
+    await settle();
+    assert.match(host.textContent, /Input.*npm test.*Result.*output/s);
+    await act(async () => row(host, "Research").click());
+    await settle();
+    assert.match(host.textContent, /Asked.*Brief of Research.*Reply.*Found it/s);
+    assert.ok(!host.querySelector("[data-timeline]"));
+  });
+});
+
 test("steps read in the chat's words, open to input and result, and failed ones say so first", async () => {
   listRuns([activityRun("a", now - 300)]);
   globalThis.runEvents = { a: [step(now - 290, "npm test"), step(now - 280, "ls", { failed: true })] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.match(host.textContent, /Ran npm test.*Failed · Ran ls/s);
     await click("Ran npm test");
@@ -578,7 +555,7 @@ test("attempts show the stored failure text, or the reason code when none was st
   const attempt = (number, extra) => ({ kind: "attempt", at: now - 290 + number, number, ended_at: now - 280, status: "ended", outcome: "failed", reason_code: "agent_runner_error", failure_text: null, checkpoint_id: null, ...extra });
   globalThis.runEvents = { a: [attempt(1, { outcome: "restart_recoverable", reason_code: null, checkpoint_id: "ckpt" }), attempt(2, { failure_text: "RuntimeError: boom" }), attempt(3, {})] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.match(host.textContent, /Paused · Attempt 1.*Failed · Attempt 2.*Failed · Attempt 3/s);
     await click("Attempt 1");
@@ -595,7 +572,7 @@ test("a failed attempt opens to its error or code alone, a paused one to where i
   const attempt = (number, extra) => ({ kind: "attempt", at: now - 290 + number, number, ended_at: now - 280, status: "ended", outcome: "failed", reason_code: "agent_runner_error", failure_text: null, checkpoint_id: "ckpt", ...extra });
   globalThis.runEvents = { a: [attempt(1, { outcome: "waiting_at_safe_point" }), attempt(2, { failure_text: "RuntimeError: boom" })] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.doesNotMatch(host.textContent, /Failed · Attempt 1/);
     await click("Attempt 1");
@@ -613,7 +590,7 @@ test("one attempt that went fine adds no row; with more than one each is listed"
   listRuns([activityRun("a", now - 300), activityRun("b", now - 600)]);
   globalThis.runEvents = { a: [asked(now - 300), attempt(1, "completed"), replied(now - 280)], b: [attempt(1, "restart_recoverable"), attempt(2, "completed")] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.match(host.textContent, /Asked: the question/);
     assert.doesNotMatch(host.textContent, /Attempt/);
@@ -629,7 +606,7 @@ test("sub-agents nest in their run with their conversation and details; one that
   globalThis.agentTip = "agent_tip";
   globalThis.runEvents = { a: [agent({}), agent({ job_id: null, name: "Broken", never_started: true, failed: true, ended_at: null, error: "admission is missing", conversation: null, agent_id: null, context: null, closed_as: null, result: null })] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     assert.match(host.textContent, /Research notes1m 2s/);
     assert.match(host.textContent, /BrokenFailed · never started/);
@@ -649,7 +626,7 @@ test("a sub-agent still running can already be opened in its conversation", asyn
   globalThis.runEvents = { a: [{ kind: "subagent", at: now - 290, ended_at: null, job_id: "j_live", name: "Live", agent_id: null, context: null, status: "running", never_started: false, failed: false,
     brief: "go", brief_truncated: false, result: null, result_truncated: false, error: null, created_at: now - 290, closed_as: null, conversation: { session_id: "session", head_id: null }, children: [] }] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await click("Reply a");
     await click("Live");
     await click("Open its conversation");
@@ -662,7 +639,7 @@ test("action rows draw line icons, not filled ones", async () => {
   listRuns([activityRun("a", now - 300, { execution_id: "turn", execution_status: "running", ended_at: null })]);
   const live = run("turn", "running", now - 300, { capabilities: { pause: true, steer: false, cancel: false }, run_id: "run_1", revision_id: "rev_1" });
   await mounted([live], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await settle();
     const pause = row(host, "Pause");
     assert.ok(pause, "Pause row");
@@ -679,7 +656,7 @@ test("a waiting run opens itself, shows the question last and goes to the chat's
   useSessionStore.setState({ pendingDecisions: [{ id: "d1", sessionId: "session", executionId: "turn", kind: "question", prompt: "Which one?", options: ["left", "right"] }] });
   try {
     await mounted([run("turn", "paused", now - 60)], async (host, click) => {
-      await click("Main agent");
+      await openMain(host, click);
       await settle();
       assert.match(host.textContent, /Which one\?Waiting for your answer/);
       assert.match(host.textContent, /Answer in chat/);
@@ -689,11 +666,11 @@ test("a waiting run opens itself, shows the question last and goes to the chat's
   } finally { useSessionStore.setState({ pendingDecisions: [] }); }
 });
 
-test("controls come from what the run allows, and are off with words when not connected", async () => {
+test("controls come from what the run allows, and are off, without a word, until the runs are read", async () => {
   const live = run("turn", "running", now - 60, { capabilities: { pause: true, steer: true, cancel: true, step: false, retry: false, fork: false }, run_id: "run_1", revision_id: "rev_1" });
   listRuns([activityRun("a", now - 60, { execution_id: "turn", reply: "", ended_at: null, execution_status: "running" })]);
   await mounted([live], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await settle();
     assert.match(host.textContent, /PauseHolds at the next safe point/);
     assert.match(host.textContent, /Add instruction/);
@@ -703,9 +680,11 @@ test("controls come from what the run allows, and are off with words when not co
     assert.match(host.textContent, /Execution ID.*turn/s);
   });
   await mounted([live], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await settle();
-    assert.match(host.textContent, /PauseNot connected/);
+    assert.match(host.textContent, /PauseHolds at the next safe point/);
+    assert.doesNotMatch(host.textContent, /Not connected/);
+    assert.equal([...host.querySelectorAll("button")].find(button => button.textContent.startsWith("Pause")).disabled, true);
     assert.equal(host.querySelectorAll("[title]").length, 0);
   }, [], { connection: { state: "reconnecting" } });
 });
@@ -717,7 +696,7 @@ test("a failed run has stopped: no Retry, and Create branch in the details", asy
   const stamp = new Date(at * 1000).toTimeString().slice(0, 8);
   globalThis.runEvents = { a: [{ kind: "attempt", at, number: 1, ended_at: at, status: "ended", outcome: "restart_recoverable", reason_code: null, failure_text: null, checkpoint_id: "ckpt_1" }] };
   await mounted([failed], async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await settle();
     assert.doesNotMatch(host.textContent, /Retry/);
     await click("Technical details");
@@ -728,29 +707,88 @@ test("a failed run has stopped: no Retry, and Create branch in the details", asy
 test("Esc goes back only from inside the panel, Activity in the rail goes back, and level 1 returns", async () => {
   listRuns([activityRun("a", now - 300)]);
   await mounted([], async (host, click, selected, render) => {
-    await click("Main agent");
-    assert.match(host.textContent, /Reply a/);
+    // The overview's chart names the run too, so the page is told by its Back.
+    const onPage = () => host.querySelector("[data-timeline]") !== null;
+    await openMain(host, click);
+    assert.ok(onPage());
     await key(document.body, "Escape");
-    assert.match(host.textContent, /Reply a/);
+    assert.ok(onPage());
     const input = document.createElement("input");
-    host.querySelector("[data-row-id]").closest("div").append(input);
+    host.querySelector("[data-timeline] [data-row-id]").closest("div").append(input);
     await key(input, "Escape");
-    assert.match(host.textContent, /Reply a/);
-    await key(row(host, "Reply a"), "Escape");
-    assert.doesNotMatch(host.textContent, /Reply a/);
-    assert.match(host.textContent, /AgentsMain agent/);
-    await click("Main agent");
-    assert.match(host.textContent, /Reply a/);
+    assert.ok(onPage());
+    await key([...host.querySelectorAll("[data-timeline] [data-row-id]")].find(item => item.textContent.includes("Reply a")), "Escape");
+    assert.ok(!onPage());
+    assert.ok(glyph(host, "Main agent"));
+    await openMain(host, click);
+    assert.ok(onPage());
     await render({ resetSignal: 1 });
-    assert.doesNotMatch(host.textContent, /Reply a/);
+    assert.ok(!onPage());
   }, [], {}, { calls: [{ id: "call", name: "bash", command: "sleep 30", started_at: now - 5, status: "running" }] });
+});
+
+test("the overview charts the runs: the groups have the panel until there is one, the chart has one Tab stop, and it is still there after a page", async () => {
+  const groups = host => host.querySelector("section > div");
+  listRuns([]);
+  await mounted([], async host => {
+    await settle();
+    assert.equal(host.querySelector("[data-chart-column]"), null);
+    assert.match(groups(host).className, /flex-1/);
+    assert.doesNotMatch(groups(host).className, /max-h/);
+  });
+  let reads = 0;
+  const topic = { topic_id: "t1", topic_title: "Release", topic_order: 0 };
+  const runs = [activityRun("a", now - 300, { ...topic, steps: [step(now - 290, "ls", { task: "T1" })] }), activityRun("b", now - 600, topic)];
+  globalThis.activityRuns = async (session, query) => { if (query.chart) reads += 1; return { runs, offset: 0, total: runs.length }; };
+  await mounted([], async (host, click) => {
+    await settle();
+    assert.match(groups(host).className, /max-h-\[50%\]/);
+    const chart = host.querySelector("[data-chart-column]").parentElement;
+    assert.equal(chart.querySelectorAll('[data-row-id][tabindex="0"]').length, 1);
+    // A call made for a task puts the task in the first column.
+    assert.match(host.querySelector('[data-chart-column="0"]').textContent, /2 messages · 1 task/);
+    // A block far from the view leaves the layout; the Tab stop does not stay on it.
+    const [held, next] = chart.querySelectorAll("[data-row-id]");
+    assert.equal(held.getAttribute("tabindex"), "0");
+    await act(async () => { held.setAttribute("style", "display: none"); await new Promise(resolve => setTimeout(resolve, 0)); });
+    assert.deepEqual([held.getAttribute("tabindex"), next.getAttribute("tabindex")], ["-1", "0"]);
+    await act(async () => { held.removeAttribute("style"); await new Promise(resolve => setTimeout(resolve, 0)); });
+    // Esc on the first column has nowhere to go and is left alone.
+    const escape = new Event("keydown", { bubbles: true, cancelable: true });
+    Object.assign(escape, { key: "Escape" });
+    await act(async () => { chart.querySelector("[data-row-id]").dispatchEvent(escape); });
+    assert.equal(escape.defaultPrevented, false);
+    // A page over the overview and back: the chart is drawn from what was read, before any new read lands.
+    await openMain(host, click);
+    const before = reads;
+    await key(host.querySelector("[data-timeline] [data-row-id]"), "Escape");
+    assert.ok(host.querySelector('[data-chart-column="0"]'));
+    assert.match(host.querySelector('[data-chart-column="0"]').textContent, /2 messages · 1 task/);
+    assert.ok(reads - before <= 1);
+  });
+});
+
+test("the arrows pass over a row that is out of the layout", async () => {
+  listRuns([activityRun("a", now - 300), activityRun("b", now - 600), activityRun("c", now - 900)]);
+  await mounted(finishedTurn, async (host, click) => {
+    await openMain(host, click);
+    await settle();
+    const [first, second, third] = ["Reply a", "Reply b", "Reply c"].map(name => row(host, name));
+    second.style.display = "none";
+    await key(first, "ArrowDown");
+    assert.equal(document.activeElement, third);
+    await key(third, "ArrowUp");
+    assert.equal(document.activeElement, first);
+    await key(first, "End");
+    assert.equal(document.activeElement, third);
+  });
 });
 
 test("the keyboard moves among rows with one Tab stop and opens with right, closes with left", async () => {
   listRuns([activityRun("a", now - 300), activityRun("b", now - 600)]);
   globalThis.runEvents = { a: [asked(now - 300)], b: [] };
   await mounted(finishedTurn, async (host, click) => {
-    await click("Main agent");
+    await openMain(host, click);
     await settle();
     const first = row(host, "Reply a");
     assert.equal(host.querySelectorAll('[data-row-id][tabindex="0"]').length, 1);
@@ -767,26 +805,29 @@ test("the keyboard moves among rows with one Tab stop and opens with right, clos
   });
 });
 
-test("Agents lists the reader's branches: runtime-opened ones get no row and resting ones share a fold", async () => {
+test("the chart draws the reader's branches, each main agent with its glyph; runtime-opened ones are none", async () => {
   const state = globalThis.runtimeStateStub ||= { _branchesByConv: {}, _branchLaneColorMap: {} };
   const runtime = Array.from({ length: 12 }, (_, index) => ({ head_msg_id: `goal_${index}`, branch_id: `auto_${index}`, name: "Survey check", updated_at: now - 600 * index, runtime_started: true }));
+  const byHead = { tip: [activityRun("mine", now - 100), activityRun("shared", now - 900)], old: [activityRun("theirs", now - 500), activityRun("shared", now - 900)], older: [activityRun("shared", now - 900)] };
   try {
     // A Goal conversation saved while each runtime turn was recorded as a branch: one agent, no fork.
     state._branchesByConv.session = [{ head_msg_id: "tip", branch_id: "current", name: "Survey check", active: true, updated_at: now, runtime_started: true }, ...runtime];
     await mounted([], async host => {
-      assert.match(host.textContent, /AgentsMain agent/);
+      await settle();
+      assert.match(host.textContent, /^Main agent/);
       assert.doesNotMatch(host.textContent, /Survey check|other branch/);
     });
-    // Branches the reader made: the checked-out one is a row, the ones at rest open on demand.
+    // Branches the reader made: each that has a message of its own wears its glyph on the newest one.
     state._branchesByConv.session = [{ head_msg_id: "tip", branch_id: "current", name: "Rewrite", active: true, updated_at: now },
       { head_msg_id: "old", branch_id: "first", name: "First try", updated_at: now - 900 }, { head_msg_id: "older", branch_id: "second", name: "Second try", updated_at: now - 1800 }, ...runtime];
-    await mounted([], async (host, click) => {
-      assert.match(host.textContent, /RewriteCurrent/);
-      assert.match(host.textContent, /2 other branches/);
-      assert.doesNotMatch(host.textContent, /First try|Second try|Survey check/);
-      await click("2 other branches");
-      assert.match(host.textContent, /First try.*Second try/s);
-      assert.doesNotMatch(host.textContent, /Survey check/);
+    globalThis.activityRuns = async (session, query) => ({ runs: byHead[query.head ?? "tip"] ?? [], offset: 0, total: 2 });
+    await mounted([], async host => {
+      await settle();
+      const marks = [...host.querySelectorAll("button[aria-label]")].filter(button => !button.hasAttribute("data-chart-back")).map(button => button.getAttribute("aria-label"));
+      // The run every branch shares is the checked-out branch's, so a branch with nothing of its own has no glyph.
+      assert.deepEqual(marks, ["Rewrite · Current", "First try"]);
+      assert.doesNotMatch(host.textContent, /Survey check|other branch/);
+      assert.equal(host.querySelector('[data-chart-column="1"]').querySelectorAll("[data-chart-id]").length, 3);
     });
   } finally { delete state._branchesByConv.session; }
 });

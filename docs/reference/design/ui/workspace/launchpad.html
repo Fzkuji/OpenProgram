@@ -1,0 +1,46 @@
+<title>New-tab Launchpad</title>
+<meta name="description" content="How the new-tab launcher pages, edits and files its icons, following macOS Launchpad.">
+<h1>New-tab Launchpad</h1>
+
+<p>The new tab is a launcher laid out and handled like macOS Launchpad: a 7 × 5 grid of icons on pages, a search field, folders and an edit mode. Where Launchpad has an answer, the launcher takes it rather than inventing one.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Two fingers on a trackpad</th><td>The pages follow the fingers, at most a page, with a rubber band past the ends. Let go, they settle on the next page if they went far enough or were flicked, else back.</td></tr>
+<tr><th scope="row">Mouse dragged across empty space</th><td>The same as two fingers: the pages follow the pointer and settle on release. A press that moves under 6 px stays a click.</td></tr>
+<tr><th scope="row">Mouse wheel</th><td>One notch turns a whole page at once; a held spin turns one page every 280 ms</td></tr>
+<tr><th scope="row">⌘ arrow, dot</th><td>A whole page at once</td></tr>
+<tr><th scope="row">Arrow keys, Return</th><td>Move the selection, crossing to the next page at the row's end, and open it</td></tr>
+<tr><th scope="row">Typing</th><td>Goes to the search field; results replace the pages</td></tr>
+<tr><th scope="row">Option held</th><td>The icons wobble while it is held and stop when it is let go</td></tr>
+<tr><th scope="row">Long press, or dragging an icon</th><td>Edit mode, kept until Done, Escape or a click on empty space</td></tr>
+<tr><th scope="row">Icon dragged</th><td>Moves at once, no hold first. On another icon's left half it goes before that icon, on its right half after it, and others make room; held on its centre it makes or joins a folder; held at a side or over a dot it turns to that page; past the last page it starts a new one. Let go off the grid after the pages turned, it lands at the end of the page on screen.</td></tr>
+<tr><th scope="row">Folder</th><td>Opens over the blurred pages, with its name editable. Dragging an icon out of the panel takes it out of the folder.</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">Decisions</h2>
+<ul>
+<li>Pages follow the pointer and the fingers, while a wheel notch or key turns a whole page: Launchpad and paging scroll views on macOS do the same, and a desktop pointer drag that does nothing reads as broken.</li>
+<li>Wheel events do not name their device. A notch is a line or page delta, a fractional pixel delta (macOS mouse acceleration), or an event with nothing after it for 34 ms; a trackpad sends one every frame. A stream that never moved sideways and stops without momentum is a fast-spun wheel and turns a page.</li>
+<li>Before or after an icon is decided by its middle, so the icon beside the gap stays put until the pointer crosses it; over an icon's body the icons wait 450 ms before making room, so a pointer heading for the centre can make a folder.</li>
+<li>Dragging an icon starts edit mode without a long press first, as on Launchpad with a mouse.</li>
+<li>Option shows edit mode only while held, so a quick look at which icons can go needs no Done.</li>
+</ul>
+
+<details>
+<summary>Code and verification</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Launcher</th><td><code translate="no">apps/web/components/center-tabs/pages/launchpad/launchpad.tsx</code>: dnd-kit for icon drags, <code translate="no">wheel-gestures</code> for trackpad phases, pointer events for mouse paging</td></tr>
+<tr><th scope="row">Layout</th><td><code translate="no">apps/web/lib/tabs/launchpad/launchpad-layout.ts</code>, tested in <code translate="no">apps/web/tests/tabs/launchpad-layout.test.mjs</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented.</p>
+
+<p class="next"><a href="center-tabs-and-split-layout.html">Center tabs and split layout</a></p>

@@ -10,8 +10,8 @@ installLoader({
   stubs: {
     "@tanstack/react-query": "export const useQueryClient=()=>({invalidateQueries(){}});",
     "@/lib/i18n": STUBS.i18n,
-    "@/lib/prefs/settings-cache": "export const readCachedSettings=(url)=>globalThis.cached?.[url];export const cachedFetch=(url)=>globalThis.load(url);export const invalidate=()=>{};",
     "@/lib/nav/shallow-nav": "export const pushPath=()=>{};",
+    "../sections/schema-settings": "export const SchemaSettings=()=>null;",
     "./detail": "export const Detail=({provider})=>globalThis.providerElement('output',{},provider.id);",
     "./routing-overview": "export const RoutingOverview=()=>null;",
     "./add/add-provider-dialog": "export const AddProviderDialog=()=>null;",
@@ -24,6 +24,10 @@ installDom();
 const { act, createElement } = await import("react");
 globalThis.providerElement = createElement;
 const { ProvidersSection } = await import("../../components/settings/providers/index.tsx");
+const { invalidateAllSettings, setCachedSettings } = await import("../../lib/prefs/settings-cache.ts");
+globalThis.fetch = async (url) => ({ ok: true, json: () => globalThis.load(url) });
+globalThis.load = () => new Promise(() => {});
+test.afterEach(() => invalidateAllSettings());
 
 test("the provider in the URL opens once the catalogue arrives, read once", async () => {
   let resolveList;
@@ -44,7 +48,6 @@ test("the provider in the URL opens once the catalogue arrives, read once", asyn
 
 test("a fresh cached catalogue shows the provider on the first render", async () => {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  globalThis.cached = { "/api/providers/list": { providers: [{ id: "ollama", label: "Ollama", enabled: true }] } };
+  setCachedSettings("/api/providers/list", { providers: [{ id: "ollama", label: "Ollama", enabled: true }] });
   assert.match(renderToStaticMarkup(createElement(ProvidersSection, { initialProviderId: "ollama" })), /<output>ollama<\/output>/);
-  globalThis.cached = undefined;
 });

@@ -172,3 +172,29 @@ test("both notices are the warning toast at one width, and only those are", () =
   assert.match(notices, /uniformWidth: true/);
   assert.match(source("components/ui/toast-host.tsx"), /it\.uniformWidth \? " w-\[520px\]/);
 });
+
+test("the notices are read as the page opens and again only after the connection dropped", async () => {
+  const { VersionNotices } = await import("../../components/settings/version-notices.tsx");
+  let reads = 0;
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/api/versions/notices")) reads += 1;
+    return new Response(JSON.stringify({ notices: [] }), { headers: { "content-type": "application/json" } });
+  };
+  const connection = (connected) =>
+    window.dispatchEvent(new window.CustomEvent("op:browser-connection", { detail: { connected } }));
+  const view = await render(h(VersionNotices));
+  try {
+    await view.act(async () => { await settle(); await settle(); });
+    assert.equal(reads, 1);
+    // The page connects a moment after it opened: nothing new to read.
+    await view.act(async () => { connection(true); await settle(); await settle(); });
+    assert.equal(reads, 1);
+    // A restart is where a notice comes from: the next connection reads.
+    await view.act(async () => { connection(false); connection(true); await settle(); await settle(); });
+    assert.equal(reads, 2);
+  } finally {
+    globalThis.fetch = previous;
+    await view.unmount?.();
+  }
+});

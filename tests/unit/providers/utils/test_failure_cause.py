@@ -51,6 +51,12 @@ def test_402_and_insufficient_quota_are_a_spent_quota():
     assert retry["resets_at"] == NOW + 60
 
 
+def test_a_spent_minimax_token_plan_is_a_spent_quota():
+    body = json.dumps({"type": "error", "error": {"type": "rate_limit_error",
+                       "message": "已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)"}}, ensure_ascii=False)
+    assert failure_cause(_http(429, body))["cause"] == CAUSE_QUOTA
+
+
 def test_an_ordinary_429_is_not_a_cause():
     assert failure_cause(_http(429, "Too many requests")) is None
 

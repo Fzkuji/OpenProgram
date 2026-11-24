@@ -1407,25 +1407,33 @@ def split_tools_for_dispatch(
       - ``provider_tools`` is the subset to ship with full JSON Schema
         in the provider's tools array. Every non-deferred tool plus
         every deferred tool named in ``loaded`` — the request's
-        ``loaded_tools(messages)``; by default the last request's. With
+        ``loaded_tools(messages)``; by default the last request's — after
+        them, in ``loaded``'s order. With
         ``records`` (``tool_loads.loaded_records``), a loaded tool that
         is no longer offered stays, as ``unavailable_tool``.
       - ``deferred_catalog`` is ``[(name, description), ...]`` for
         every deferred tool offered now, loaded or not.
     """
-    loaded = _request_loaded.get() if loaded is None else frozenset(loaded)
+    order = list(_request_loaded.get() if loaded is None else loaded)
+    loaded = frozenset(order)
     provider_tools: list[AgentTool] = []
     catalog: list[tuple[str, str]] = []
-    offered: set[str] = set()
+    offered: dict[str, AgentTool] = {}
     for t in tools:
-        offered.add(t.name)
-        if resident_now(t, loaded):
+        offered[t.name] = t
+        if tool_tier(t) is Tier.RESIDENT:
             provider_tools.append(t)
         if tool_tier(t) is Tier.DEFERRED:
             catalog.append((t.name, t.description))
-    for name, definition in (records or {}).items():
-        if name in loaded and name not in offered and definition:
-            provider_tools.append(unavailable_tool(name, definition))
+    # A loaded tool joins the array at its end, in the order it was first
+    # loaded: the array only grows at its end, so what was sent before it
+    # stays as it was (deferred-tools.html).
+    for name in order:
+        t = offered.get(name)
+        if t is not None and resident_now(t, loaded) and tool_tier(t) is not Tier.RESIDENT:
+            provider_tools.append(t)
+        elif t is None and (records or {}).get(name):
+            provider_tools.append(unavailable_tool(name, records[name]))
     return provider_tools, catalog
 
 

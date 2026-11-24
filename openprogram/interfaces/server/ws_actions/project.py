@@ -16,8 +16,12 @@ mirror Claude's composer chips:
 Actions:
     list_projects          → all registered projects + current session's
                              project_id
-    create_project         → bind a filesystem path as a project (git-
-                             init if needed); returns the project
+    create_project         → bind a folder on a machine (``machine_id``,
+                             this computer by default) as a project;
+                             returns the project
+    list_machine_folder    → one folder's subfolders on a machine whose
+                             shell keeps its own files, to choose a
+                             project folder there
     set_session_project    → set the session's MAIN project (label +
                              reverse index). Rejected once the session
                              has turns and the bind names a different
@@ -67,6 +71,8 @@ def _project_dict(p, alive: set[str] | None = None, unarchived: set[str] | None 
         "name": p.name,
         "path": p.path,
         "is_default": p.is_default,
+        # The machine the folder is on and the project's conversations run on.
+        "machine_id": "local" if p.is_default else (getattr(p, "machine_id", "") or "local"),
         # The composer chip warns on a project whose folder is gone and
         # offers the relocate repair. Sent from here so the frontend never
         # guesses from the path string.
@@ -106,7 +112,7 @@ def _session_meta(session_id: str) -> dict:
 # Projects
 
 
-def _projects_snapshot(session_id: str | None) -> dict:
+def _projects_snapshot(session_id: str | None, *, local_only: bool = False) -> dict:
     """The registry as it stands, read only and from memory: the parsed
     registry file and the conversation index. Nothing per project touches
     the disk (no folder check, no marker read), no scans, no writes, no
@@ -131,6 +137,12 @@ def _projects_snapshot(session_id: str | None) -> dict:
         if session_id:
             cur = _projects.project_for_session(session_id)
             current_project_id = cur.id if cur else None
+        if not local_only:
+            # Each connected remote OpenProgram machine's projects, under ids of their own.
+            from openprogram.interfaces.server.remote_machines import links
+            projects += links.remote_projects(alive)
+            if session_id and session_id not in alive:
+                current_project_id = links.remote_project_for(session_id) or current_project_id
         return {"projects": projects, "current_project_id": current_project_id,
                 "status": "ready", "error_code": None, "error": None}
     except Exception:
@@ -213,7 +225,8 @@ def _reconcile_projects() -> None:
 
 async def handle_list_projects(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip() or None
-    snapshot = await asyncio.to_thread(_projects_snapshot, session_id)
+    snapshot = await asyncio.to_thread(_projects_snapshot, session_id,
+                                       local_only=cmd.get("local_only") is True)
     await ws.send_text(json.dumps({
         "type": "projects_list",
         "data": {**snapshot, "session_id": session_id},
@@ -230,20 +243,33 @@ async def handle_list_projects(ws, cmd: dict):
         loop.run_in_executor(None, _reconcile_projects)
 
 
+def _folder_on_this_disk(machine_id: str) -> bool:
+    """A folder for ``machine_id`` is one on this computer's disk (this computer, or a machine that mounts it)."""
+    if machine_id in ("", "local"):
+        return True
+    from openprogram.host.machines import get_machine
+    machine = get_machine(machine_id)
+    return machine is not None and not machine.remote_files
+
+
 async def handle_create_project(ws, cmd: dict):
+    from openprogram.state.store.project import project_store as _projects
     path = (cmd.get("path") or "").strip()
     name = (cmd.get("name") or "").strip() or None
+    machine_id = (cmd.get("machine_id") or "").strip() or "local"
     ok, error, proj_dict = False, None, None
     if not path:
         error = "path is required"
-    elif not os.path.isdir(os.path.expanduser(path)):
+    elif _folder_on_this_disk(machine_id) and not os.path.isdir(os.path.expanduser(path)):
         error = f"not a directory: {path}"
     else:
         try:
-            from openprogram.state.store.project import project_store as _projects
-            proj = _projects.resolve_project(path, name=name)
+            # A folder on another machine is checked there, over its shell: off the loop.
+            proj = await asyncio.to_thread(_projects.resolve_project, path, name=name, machine_id=machine_id)
             proj_dict = _project_dict(proj)
             ok = True
+        except _projects.ProjectStoreError as e:
+            error = str(e)
         except Exception as e:  # noqa: BLE001
             error = f"{type(e).__name__}: {e}"
     if ok:
@@ -254,6 +280,33 @@ async def handle_create_project(ws, cmd: dict):
     }, default=str))
     if ok:
         await handle_list_projects(ws, {"session_id": cmd.get("session_id")})
+
+
+def _list_machine_folder(machine_id: str, path: str) -> dict:
+    from openprogram.host.machines import get_environment
+    from openprogram.host.machines.remote import list_folders
+    machine = get_environment(machine_id)
+    if machine is None or not machine.remote_files:
+        return {"ok": False, "error": f"no folders to list on {machine_id!r}"}
+    try:
+        folder, names = list_folders(machine, path)
+    except ConnectionError as exc:
+        return {"ok": False, "error": str(exc)}
+    if folder is None:
+        return {"ok": False, "error": f"not a folder on {machine.name}: {path}"}
+    parent = None if folder == "/" else (folder.rstrip("/").rsplit("/", 1)[0] or "/")
+    return {"ok": True, "path": folder, "parent": parent, "folders": names}
+
+
+async def handle_list_machine_folder(ws, cmd: dict):
+    """One folder's subfolders on a machine that keeps its own files, read through its shell."""
+    machine_id = (cmd.get("machine_id") or "").strip()
+    path = (cmd.get("path") or "").strip()
+    data = await asyncio.to_thread(_list_machine_folder, machine_id, path)
+    await ws.send_text(json.dumps({
+        "type": "machine_folder",
+        "data": {**data, "machine_id": machine_id, "request_id": cmd.get("request_id")},
+    }, default=str))
 
 
 def _projects_changed(project_id: str | None = None) -> None:
@@ -425,13 +478,15 @@ async def handle_relocate_project(ws, cmd: dict):
     replace_identity = bool(cmd.get("replace_identity"))
     ok, error, old_path, node_id = False, None, None, None
     resolved_id = project_id
+    from openprogram.state.store.project import project_store as _projects
     if not project_id or not path:
         error = "project_id and path are required"
+    elif not _projects.folder_is_here(_projects.get_project(project_id)):
+        error = "a project on another machine keeps its folder; open the new folder as a project"
     elif not os.path.isdir(os.path.expanduser(path)):
         error = f"not a directory: {path}"
     else:
         try:
-            from openprogram.state.store.project import project_store as _projects
             before = _projects.get_project(project_id)
             old_path = before.path if before else None
             if expected_path is None and before is not None:
@@ -500,14 +555,41 @@ async def handle_list_session_workdirs(ws, cmd: dict):
     }, default=str))
 
 
+def _session_remote_machine(session_id: str):
+    """The machine a session's project folder is on when it keeps its own files, else None."""
+    from openprogram.state.store.project import project_store as _projects
+    project = _projects.project_for_session(session_id)
+    if project is None or _projects.folder_is_here(project):
+        return None
+    return _projects.project_machine(project)
+
+
+def _workdir_problem(session_id: str, path: str) -> tuple[str | None, str]:
+    """``(error, folder)`` for an extra working folder, checked where the session's project is."""
+    try:
+        machine = _session_remote_machine(session_id)
+    except Exception as e:  # noqa: BLE001 - the project's machine is gone or off
+        return str(e), path
+    if machine is None:
+        return (None if os.path.isdir(os.path.expanduser(path)) else f"not a directory: {path}"), path
+    from openprogram.host.machines.remote import resolve_folder
+    try:
+        found = resolve_folder(machine, path)
+    except ConnectionError as exc:
+        return str(exc), path
+    return (None, found) if found else (f"not a folder on {machine.name}: {path}", path)
+
+
 def _edit_workdirs(session_id: str, path: str, add: bool) -> tuple[bool, str | None]:
     """Add or remove one extra working directory; runs off the loop (the
-    conversation's record is read and written under its lock)."""
+    conversation's record is read and written under its lock). A folder on
+    the project's remote machine is kept as that machine names it."""
     try:
         from openprogram.runtime.context.session_db import default_db
         db = default_db()
         meta = db.get_session(session_id) or {}
-        ap = os.path.abspath(os.path.expanduser(path))
+        remote = path.startswith("/") and _session_remote_machine(session_id) is not None
+        ap = path if remote else os.path.abspath(os.path.expanduser(path))
         if add:
             dirs = list(meta.get("workdirs") or [])
             if ap not in dirs:
@@ -526,9 +608,9 @@ async def handle_add_session_workdir(ws, cmd: dict):
     ok, error = False, None
     if not session_id or not path:
         error = "session_id and path are required"
-    elif not os.path.isdir(os.path.expanduser(path)):
-        error = f"not a directory: {path}"
     else:
+        error, path = await asyncio.to_thread(_workdir_problem, session_id, path)
+    if error is None:
         ok, error = await run_for_conversation(session_id, _edit_workdirs, session_id, path, True)
     await ws.send_text(json.dumps({
         "type": "session_workdir_added",
@@ -646,6 +728,7 @@ ACTIONS = {
     "get_project_config": handle_get_project_config,
     "set_project_config": handle_set_project_config,
     "create_project": handle_create_project,
+    "list_machine_folder": handle_list_machine_folder,
     "set_session_project": handle_set_session_project,
     "move_session_to_project": handle_move_session_to_project,
     "relocate_project": handle_relocate_project,

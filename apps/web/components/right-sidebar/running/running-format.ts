@@ -5,11 +5,16 @@ import { type ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { executionPending } from "@/lib/execution/activity-model";
 import { presentTool } from "@/components/chat/messages/execution/tool-presentation";
 import { shortTime } from "../debugger/debugger-presentation";
-import { type Routine, type RoutineRun, type TaskRunOutcome, type TaskRunSummary } from "@/lib/chat/conversation-work";
+import { type ConversationWork, type Routine, type RoutineRun, type TaskRunOutcome, type TaskRunSummary } from "@/lib/chat/conversation-work";
+import { outcomeLabel } from "@/components/agents/always-on-labels";
 import { seconds, type ProgressLook } from "./program-progress";
+import { whenChanges } from "@/lib/clock/use-now";
 import type { Text, Tone } from "./running-rows";
 
 export const LIVE = ["queued", "running", "pausing", "cancelling"];
+
+/** When `duration` of a running time next reads differently. */
+export const DURATION_CADENCE = whenChanges(elapsed => duration(elapsed / 1000, en => en));
 
 export function duration(seconds: number, text: Text): string {
   const s = Math.max(0, Math.round(seconds));
@@ -82,14 +87,6 @@ export function programTone(item: ManagedProcess): Tone {
   return "muted";
 }
 
-/** Ended in an error: it failed, or exited with a code other than 0. */
-export const programFailed = (item: ManagedProcess): boolean =>
-  item.status === "failed" || (item.status === "exited" && item.exit_code != null && item.exit_code !== 0);
-
-/** Listed in the overview: a program that is going, and one that failed.
- *  What ended normally, was stopped or lost its supervisor is not listed. */
-export const programListed = (item: ManagedProcess): boolean =>
-  programLive(item) || programFailed(item);
 
 export function programName(item: ManagedProcess, text: Text): string {
   const display = item.display;
@@ -133,7 +130,7 @@ export function programBarTone(item: ManagedProcess, look: ProgressLook | null):
   return ["completed", "exited"].includes(item.status) ? "ok" : "muted";
 }
 
-/** A routine's kind and when it runs, as the Scheduler page names them. */
+/** A routine's kind and when it runs, as the Tasks page names them. */
 export function routineRunLabel(run: RoutineRun, text: Text): string {
   const at = new Date(run.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return `${at} ${text(...({
@@ -141,6 +138,22 @@ export function routineRunLabel(run: RoutineRun, text: Text): string {
     skipped: ["Skipped: the previous run was still going", "已跳过：上一次运行还没结束"],
     missed: ["Missed: OpenProgram was not running", "错过：当时 OpenProgram 没有运行"],
   }[run.status] as [string, string]))}`;
+}
+
+/** When an always-on conversation wakes next, for the first row of a
+ *  chart: only the branch the reader is on has check-ins. */
+export function nextWakeOf(work: ConversationWork | null | undefined, active: boolean, text: Text): { at: number; line: string; strong: boolean } | null {
+  const alwaysOn = work?.always_on;
+  if (!alwaysOn?.enabled || !active || !alwaysOn.next_wake_at) return null;
+  const minutes = alwaysOn.config?.wake_minutes ?? null;
+  const every = minutes === null ? "" : minutes % 60 === 0
+    ? (minutes === 60 ? text("hourly", "每小时") : text(`every ${minutes / 60}h`, `每 ${minutes / 60} 小时`))
+    : text(`every ${minutes}m`, `每 ${minutes} 分钟`);
+  // A paused budget or an interrupted check-in is what the reader needs to see first.
+  const outcome = alwaysOn.last_wake?.outcome;
+  const held = outcome === "budget" || outcome === "interrupted" ? outcomeLabel(outcome, text) : "";
+  const quiet = alwaysOn.quiet_now ? text("Quiet hours", "安静时段") : "";
+  return { at: alwaysOn.next_wake_at, line: [held || text("Always-on", "常驻"), quiet, every].filter(Boolean).join(" · "), strong: outcome === "interrupted" };
 }
 
 export function routineSchedule(task: Routine, text: Text): string {

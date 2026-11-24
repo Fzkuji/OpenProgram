@@ -1736,13 +1736,15 @@ def run_agent_method_in_subprocess(
         if isinstance(env, dict) and env.get("__op_native_window__"):
             try:
                 from openprogram.host.resources.native_window import (
-                    record_action_point, record_control, record_operated_window,
+                    record_action_point, record_control, record_operated_window, record_used_application,
                 )
                 data = env.get("data")
                 if isinstance(data, dict) and data.get("kind") == "action":
                     record_action_point(data, session_id=session_id)
                 elif isinstance(data, dict) and data.get("kind") == "control":
                     record_control(data, session_id=session_id)
+                elif isinstance(data, dict) and data.get("kind") == "application":
+                    record_used_application(data, session_id=session_id, execution_id=eid)
                 elif isinstance(data, dict):
                     record_operated_window(data, session_id=session_id, execution_id=eid)
             except Exception:

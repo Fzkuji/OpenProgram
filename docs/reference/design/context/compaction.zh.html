@@ -107,13 +107,31 @@
 <thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">1. 冻结这条链的渲染输入</th><td><code translate="no">compaction.view.load_compaction_view</code> 使用 <code translate="no">render_context</code> 和 <code translate="no">render_dag_messages</code>，包含工具结果、expose 和 spill 引用。顶层轮次决定覆盖范围；可见的子调用计入输入和预算</td></tr>
-<tr><th scope="row">2. 选整轮</th><td>保留窗口的 10%，限定在 8,000–40,000 token（显式覆盖优先）。优先在用户边界处保留至少四条对话消息；已发布的报告也算边界。低于目标：不操作。若最后两轮超过目标，切点可前移到最近的用户边界。除非其后只有报告，最近一轮保持完整</td></tr>
+<tr><th scope="row">2. 选整轮</th><td>保留窗口的 10%，限定在 8,000–40,000 token（显式覆盖优先）。优先在用户边界处保留至少四条对话消息；已发布的报告也算边界。低于目标：不操作。若最后两轮超过目标，或没有哪个边界之后还剩四条消息（一个超大轮次后面跟一个短轮次），切点可前移到最近的用户边界。除非其后只有报告，最近一轮保持完整</td></tr>
 <tr><th scope="row">3. 总结整个被覆盖前缀</th><td>用摘要提示词（<a href="#summary-prompt">摘要提示词与角色</a>）：每个被替换的轮次、最初的请求、这条链之前的摘要、渲染出的子调用。非文本媒体变为引用说明</td></tr>
 <tr><th scope="row">4. 写入前校验</th><td>拒绝空的、失败的、被取消的、缺段的、碰到上限的或没有缩小的摘要；按同样方式在内存中渲染的候选必须严格更小。模型调用后重新检查这条链的渲染节点；有变化就作为可重试的空操作，其他分支和移到别处的 head 不算。provider 失败时保留历史，没有有损的结构化兜底</td></tr>
 <tr><th scope="row">5. 持久化并报告</th><td>连同恢复的状态一次写入；<code translate="no">covers_ids</code> 把之前的摘要展开成真实轮次 id。之前：上下文面板对这条链的读数；之后：该读数减去候选节省的部分。空操作不写入、不计数</td></tr>
 </tbody>
 </table>
-<p class="note">上下文显示使用 provider 的输入用量。每个请求还记录同样消息的本地估算，所以之后编辑图时按实测比例缩放估算，在下次报告前标为估算。没有匹配估算的旧用量不参与校准。</p>
+<h3 id="measuring">请求有多大</h3>
+<p>轮前压缩、轮中压缩、每次请求前的关口和上下文圆环都用同一条规则（<code translate="no">runtime/context/token_accounting/measure.py</code>），所以它们对“放不放得下”从不矛盾。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">大小</th><td>同一模型上这个对话上一次请求的 provider 计数（输入、缓存读取和缓存写入），加上之后变化部分的本地估算。没有计数时只用估算</td></tr>
+<tr><th scope="row">什么算计数</th><td>只有量了一次请求的回复。运行过 provider 端工具（网页搜索）的回复报的是多轮之和；失败或被停止的回复；超过窗口，或超过该请求自身估算两倍再加 8,000 的计数：都不用，保留上一次的计数</td></tr>
+<tr><th scope="row">相加，不相乘</th><td>计数与它自身估算的差值加到之后的估算上。最多只能减掉估算的一半</td></tr>
+<tr><th scope="row">估算</th><td>渲染后的请求，包括发回给写它的模型的推理：推理摘要和载荷</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>上次计数加变化</dt><dd>沿用 Claude Code（<code translate="no">tokenCountWithEstimation</code>）和 Codex（<code translate="no">get_total_token_usage</code>）。对比：用计数与估算的比例去乘之后所有估算。一条搜了两次网页的 Grok 回复对 109k 的提示报了 339k，3.95 的比例让这一轮之后的请求全部被拒，其实都放得下。</dd>
+<dt>排除 provider 工具</dt><dd>Claude Code 出于同样原因读取 Anthropic <code translate="no">usage.iterations</code> 的最后一项；xAI 和 OpenAI Responses 不报每轮数字，所以这种回复直接跳过。Pi 丢弃中止或失败回复的计数。</dd>
+<dt>计入推理</dt><dd>一个 Grok 对话每次请求都带回 20 条推理，估算一条也没算：历史少读了 22%，压缩来得太晚。</dd>
+</dl>
+</details>
 <p><code translate="no">/compact</code> 是这个分支的前台操作（<code translate="no">op_kind: compact</code>，<code translate="no">compaction_started</code> 上带 <code translate="no">op_id</code>）。页面的停止按钮和终端的 Ctrl-C 都用这个 id 发送 <code translate="no">operation.cancel</code>；摘要请求结束，不写任何东西，那一行显示"已停止"。自动压缩失败时不提示，下一个请求会再试。</p>
 <p class="note">原因：Claude Code、Codex 和 Kimi Code 都用停止一轮的那个键取消手动压缩；照 Claude Code 做，它的终端同样基于 Ink。</p>
 
@@ -227,22 +245,28 @@
 </ul>
 
 <details id="inside-one-message">
-<summary>请求检查点</summary>
-<p>每个 AgentLoop provider 请求，包括工具续写和函数内的 <code translate="no">llm()</code>、<code translate="no">agent()</code>，都会做预算（<code translate="no">compaction/request.py</code>）。超过限额时请求得到一个检查点；消息和 DAG 保持不变。</p>
+<summary>让请求放得下</summary>
+<p>每个 AgentLoop provider 请求，包括工具续写和函数内的 <code translate="no">llm()</code>、<code translate="no">agent()</code>，都按上面的规则量大小（<code translate="no">compaction/request.py</code>）。超过限额时只为这一次发送把它变小：消息和 DAG 保持不变。前面的步骤腾出的不够，才做下一步。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">输出上限</th><td>未指定时：取模型能力、16,384 和窗口四分之一中的最小值，预算和发送都用它。显式上限从不降低</td></tr>
-<tr><th scope="row">检查点</th><td>较早的完整纯文本历史变成一份任务摘要。所有用户消息和最近的 assistant 段保持原样。不完整的工具组、多模态输入和当前轮的签名推理不参与；已完成轮次的推理按其摘要文本总结，不含加密载荷和 id</td></tr>
-<tr><th scope="row">复用</th><td>在同一次调用内，模型相同且源前缀未变</td></tr>
-<tr><th scope="row">摘要调用</th><td>分块且有上限，超长时缩小重试；最多 32 个请求；绕过 AgentLoop。每个请求在流持续产出时运行，60 秒无事件则失败；停止会立即关闭它。失败时历史不变</td></tr>
-<tr><th scope="row">超预算</th><td>只用本地估算。放不下的受保护内容明确失败；估算超预算的请求不发送</td></tr>
+<tr><th scope="row">1. 更早的媒体</th><td>本轮消息之前的图片和其他媒体换成一行说明</td></tr>
+<tr><th scope="row">2. 检查点</th><td>较早的完整前缀变成一份任务摘要，同一次调用内模型相同且源前缀未变时复用。最新的用户消息在 20,000 tokens 内保持原样，更早的进摘要。媒体以说明的形式交给摘要，已完成轮次的推理以其摘要文本交给摘要。本轮自己的签名推理和没有回应的调用会让它所在的前缀不参与。摘要失败就跳过；停止仍然停止</td></tr>
+<tr><th scope="row">3. 更早的工具结果</th><td>本轮消息之前的结果保留开头 1,200 个字符和结尾 400 个字符</td></tr>
+<tr><th scope="row">4. 最早的步骤</th><td>从最前面开始，一次去掉一个完整步骤，前面放一条说明去掉了多少</td></tr>
+<tr><th scope="row">5. 本轮自己的步骤</th><td>先缩短最新步骤之前的结果，再去掉它们的媒体，再把这些步骤换成一条说明，最后缩短所有结果</td></tr>
+<tr><th scope="row">失败</th><td>只有最新消息、系统提示词和工具本身就放不下窗口时，并明确说明</td></tr>
+<tr><th scope="row">摘要调用</th><td>分块且有上限，超长时缩小重试；最多 32 个请求；绕过 AgentLoop。每个请求在流持续产出时运行，60 秒无事件则失败；停止会立即关闭它</td></tr>
+<tr><th scope="row">量的是什么</th><td>渲染后的请求：每条回复连同它的工具调用和结果。存储行里只有回复的文字；按它量，一个大部分是工具工作的对话只读出五分之一的大小，从不压缩，请求被拒</td></tr>
 </tbody>
 </table>
 <details>
 <summary>为什么这样设计</summary>
 <dl>
-<dt>不逐个总结结果</dt><dd>Codex、OpenCode、Pi 和 Kimi Code 都没有，Hermes 也把自己的关掉了：逐个替换工具结果会改写请求中段，之后每个请求都错过提示缓存，而且下一轮什么也没留下。改由步骤之间的持久压缩承担。</dd>
+<dt>先放下，再发送</dt><dd>没有一家同类框架会因为自己的估算拒发请求：Claude Code 和 Codex 都是压缩后发送，只有 provider 报了超长、恢复手段也用完时才失败。对比：所有用户消息、图片和签名推理都原样保留，放不下就失败，这让 256k 窗口里一个 109k 的对话中途停了。</dd>
+<dt>先做便宜的步骤</dt><dd>先处理媒体再做摘要，沿用 Hermes（只保留最新图片）和 OpenCode（恢复时剥掉媒体）。先缩短结果再去掉步骤沿用 OpenClaw；从最早处去掉沿用 Codex，它的压缩放不下时从头部删历史。用户消息在 20,000 tokens 内保留沿用 Codex。</dd>
+<dt>放得下时不逐个总结结果</dt><dd>Codex、OpenCode、Pi 和 Kimi Code 都没有，Hermes 也把自己的关掉了：逐个替换工具结果会改写请求中段，之后每个请求都错过提示缓存。上面的步骤只在请求放不下时才运行。</dd>
 <dt>不用缓存编辑清除</dt><dd>Anthropic 的 <code translate="no">clear_tool_uses</code> 上下文编辑在 provider 端清除旧结果，对缓存的影响相同，且只适用于一家 provider；不再发送。</dd>
 </dl>
 </details>
@@ -250,7 +274,7 @@
 
 <details id="tuning">
 <summary>按用户自己的调用选择比例</summary>
-<p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 系统 → 模型 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/token_accounting/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
+<p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 模型服务 → 行为 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/token_accounting/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
 <tbody>
@@ -289,6 +313,8 @@
 <tr><th scope="row">摘要请求复用上一个请求的前缀；超长恢复从不分叉</th><td><code translate="no">tests/unit/context/compaction/test_compaction_fork.py</code></td></tr>
 <tr><th scope="row">降级由更大的模型总结，再由该轮的模型</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
 <tr><th scope="row">窗口内一轮的请求只在末尾增长；超过时只有一个检查点，不逐个总结结果</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
+<tr><th scope="row">请求大小按最近一次单轮计数加变化；多轮之和、失败回复的计数和不合理的计数不用</th><td><code translate="no">tests/unit/context/token_accounting/test_request_measure.py</code></td></tr>
+<tr><th scope="row">超限的请求被变小后发送，历史不变；只有最新消息本身超过窗口才失败</th><td><code translate="no">tests/component/context/test_request_checkpoints.py</code></td></tr>
 <tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；在 openai-codex 上，S 前的一对让 tools 数组在压缩前后不变；其他 provider 先读 S</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">压缩从不移动 HEAD</th><td>场景套件</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> 绝不指向被总结链之外的节点</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>

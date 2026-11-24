@@ -101,8 +101,13 @@ class SessionNodeWriter:
         self.store._update_index_entry(self.session_id, **fields)
         self.store._schedule_index_flush()
 
-    def load(self):
+    def load(self, *, frozen: bool = True):
         """Return a ``Graph`` populated with all nodes for this session.
+
+        ``frozen=False`` puts the store's own nodes in the graph instead of
+        a copy of each: for a caller that only reads them, once, and does
+        not need them to stay as they were (copying a long conversation's
+        takes 30 ms).
 
         Legacy ``GraphStore.load()`` semantics: ``Graph.nodes`` is a
         dict ``id → Call`` and ``Graph._next_seq`` is one past the
@@ -119,10 +124,10 @@ class SessionNodeWriter:
         # Deep-copy so callers see a point-in-time copy; the live
         # index keeps mutating as Agent method fills placeholders.
         for node in idx.nodes_by_seq:
-            frozen = copy.deepcopy(node)
-            g.nodes[frozen.id] = frozen
-            if frozen.seq >= g._next_seq:
-                g._next_seq = frozen.seq + 1
+            held = copy.deepcopy(node) if frozen else node
+            g.nodes[held.id] = held
+            if held.seq >= g._next_seq:
+                g._next_seq = held.seq + 1
         g.retracted = frozenset(idx.meta.get("rewind_hidden_nodes") or ())
         return g
 

@@ -1120,7 +1120,12 @@ def note_user_turn(session_id: str, now: float | None = None) -> None:
     ladder's first step. A wake the agent set for a known moment stays."""
     _session, spec = _session_and_agent(session_id)
     config = dict(spec.always_on or {}) if spec is not None else {}
-    if not config.get("enabled") or config.get("wake_minutes"):
+    if not config.get("enabled"):
+        return
+    # A conversation used since always-on was turned on joins at the
+    # ticker's next look; tell it now instead of at its next wake.
+    store._wakes_changed(session_id)  # noqa: SLF001
+    if config.get("wake_minutes"):
         return
     now = time.time() if now is None else now
     with store.lock(session_id):

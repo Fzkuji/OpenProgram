@@ -60,7 +60,7 @@
 <thead class="sr"><tr><th scope="col">阶段</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">之前</th><td>检查表单、身份和周次；撰写；只改观察到的可编辑输入项</td></tr>
-<tr><th scope="row"><code translate="no">computer_use_agent</code> 允许</th><td>只限内置浏览器里的浏览器目标：读取、精确目的地导航、滚动、填写观察到的输入项。每个操作之前都要重新读取同一个标签页。</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code> 允许</th><td>只限内置浏览器（<code translate="no">type="browser"</code>）：读取、精确目的地导航、滚动、填写观察到的输入项。每个操作之前都要重新读取同一个标签页。</td></tr>
 <tr><th scope="row">执行前拦截</th><td>提交或保存点击、未核实按钮、坐标点击、回车等可能提交的按键、任意页面脚本</td></tr>
 <tr><th scope="row">之后</th><td>同页重新观察；逐字段精确比较实际值，含空白。全部相符才返回 <code translate="no">FILLED</code>，并明确未提交。</td></tr>
 <tr><th scope="row">不能证明成功</th><td>模型声明、旧观察、别的字段里的相同文字、ARIA 文本，缺失、截断或脱敏的值</td></tr>

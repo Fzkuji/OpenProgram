@@ -5,11 +5,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Provider</th><th scope="col">Credential source</th></tr></thead>
 <tbody>
-<tr><th scope="row">LLM provider with a key or sign-in</th><td>The provider's list in the AuthStore under <code translate="no">~/.openprogram</code>, written by Settings or <code translate="no">openprogram providers keys &lt;provider&gt; add</code></td></tr>
+<tr><th scope="row">LLM provider with a key or sign-in</th><td>The provider's list in the AuthStore under <code translate="no">~/.openprogram</code>: its sign-ins and its company's keys, written by Settings or <code translate="no">openprogram providers keys &lt;provider&gt; add</code></td></tr>
 <tr><th scope="row">A key variable in the Worker's environment</th><td>A read-only row of that same list (<code translate="no">env:&lt;VAR&gt;</code>), read from the environment at each use; removed by unsetting it</td></tr>
 <tr><th scope="row">Amazon Bedrock</th><td>AWS credential chain; sentinel <code translate="no">"&lt;authenticated&gt;"</code>, no bearer key</td></tr>
 <tr><th scope="row">Google Vertex</th><td>GCP ADC plus project and location; same sentinel</td></tr>
-<tr><th scope="row"><code translate="no">config.json</code></th><td>Never read for LLM keys. <code translate="no">api_keys</code> serves only web search and TTS.</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>Never read for a key. What <code translate="no">api_keys</code> held moves into the store once, at start (<a href="credential-model.html">Companies, ways and credentials</a>).</td></tr>
 </tbody>
 </table>
 <p class="note">One list means the runtime, catalog and status surfaces cannot disagree, and a request chooses among stored keys and environment keys the same way.</p>

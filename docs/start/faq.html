@@ -13,7 +13,8 @@ lsof -ti:18100 | xargs kill       # free it from a leftover process, then restar
 </details>
 <details id="empty-lists">
 <summary>The page opens, but providers, models and agents are empty</summary>
-<p>The page is not signed in: reached by typing the address, every list is empty, the <strong>Local</strong> chip is red and a notice says so. Nothing is missing. Run <code translate="no">openprogram web</code>. For another browser, <code translate="no">openprogram web auth-url</code> prints a sign-in link. Each service start makes a new sign-in, so open it through <code translate="no">openprogram web</code> again after a stop or restart.</p>
+<p>The page is not signed in: reached by typing the address, every list is empty, the <strong>Local</strong> chip is red and a notice says so. Nothing is missing. Run <code translate="no">openprogram web</code>. Each service start makes a new sign-in, so open it through <code translate="no">openprogram web</code> again after a stop or restart.</p>
+<p>A phone or another computer pairs once instead, from <strong>Settings → Devices → Add device</strong> or <code translate="no">openprogram web pair</code>, and stays signed in across restarts until you revoke it (<a href="../interfaces/other-devices.html">Use OpenProgram from other devices</a>).</p>
 </details>
 <details>
 <summary>The page from <code translate="no">openprogram web</code> will not load</summary>

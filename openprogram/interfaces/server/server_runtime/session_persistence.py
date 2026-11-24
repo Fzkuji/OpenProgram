@@ -5,6 +5,8 @@ import logging
 import queue
 from contextlib import contextmanager
 
+from openprogram.runtime.execution.run_control.tokens import turn_ended
+
 from .. import server as state
 
 _log = logging.getLogger(__name__)
@@ -229,6 +231,12 @@ def _emit_running_task_event(
                 "data": data,
             }
         state._broadcast(state.json.dumps(payload, default=str))
+        if payload["type"] == "running_task_clear" or cleared_msg_id or cleared_execution_id:
+            # The slot was given back: a notice held for this conversation
+            # goes now, and an admitted turn waiting for the slot takes it
+            # (runtime/conversation/run_control/idle.py). That turn's own
+            # queued record can make the frame above say "running".
+            turn_ended(session_id)
     except Exception:
         # Broadcast is best-effort; never let it kill the turn.
         _log.warning(
@@ -320,6 +328,8 @@ def _emit_branch_running_task_event(
                 data["msg_id"] = cleared_msg_id
             payload = {"type": "branch_running_task_clear", "data": data}
         state._broadcast(state.json.dumps(payload, default=str))
+        if payload["type"] == "branch_running_task_clear" or cleared_msg_id or cleared_execution_id:
+            turn_ended(session_id)
     except Exception:
         _log.warning("branch run state not broadcast for session %s", session_id, exc_info=True)
 

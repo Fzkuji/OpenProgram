@@ -13,13 +13,14 @@ installLoader({
   stubs: { "@/lib/i18n": STUBS.i18n },
   replace: {
     "/components/ui/tooltip.tsx": UI_STUBS["/components/ui/tooltip.tsx"],
-    "/lib/prefs/settings-cache.ts": "export const readCachedSettings = () => undefined; export const invalidate = () => {}; export const cachedFetch = async (url) => globalThis.answer(url);",
   },
 });
 installDom();
 
 const { createElement: h } = await import("react");
 const { TokenUsageSection } = await import("../../components/settings/token-usage/index.tsx");
+const { invalidateAllSettings } = await import("../../lib/prefs/settings-cache.ts");
+globalThis.fetch = async (url) => ({ ok: true, json: async () => globalThis.answer(url) });
 
 const row = (over) => ({ input_tokens: 1000, output_tokens: 200, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 1200, cost: 0, events: 4, ...over });
 const totals = (over) => ({ input_tokens: 4000, output_tokens: 800, cache_read_tokens: 500, cache_write_tokens: 0, total_tokens: 5300, cost: 47.5, cost_known: false, events: 31, ...over });
@@ -37,7 +38,25 @@ async function open() {
 }
 const card = (view, label) => [...view.container.querySelectorAll(".card")].find((c) => c.querySelector(".cardLabel").textContent.startsWith(label));
 
-afterEach(() => { document.body.innerHTML = ""; });
+afterEach(() => { document.body.innerHTML = ""; invalidateAllSettings(); });
+
+test("nothing is said while the figures are on their way, and a revisit draws them at once", async () => {
+  let answer;
+  globalThis.answer = (url) => (url.startsWith("/api/usage/summary")
+    ? new Promise((resolve) => { answer = () => resolve({ totals: totals({ billed_cost: 1 }), by_model: [], by_kind: [], by_label: [] }); })
+    : { series: {} });
+  let view = await open();
+  assert.equal(view.container.querySelector(".card"), null);
+  assert.doesNotMatch(view.container.textContent, /usage\.loading|usage\.error|Loading/);
+  await view.act(async () => { answer(); await settle(view); });
+  assert.ok(card(view, "usage.card.cost"));
+  await view.unmount();
+
+  globalThis.answer = () => new Promise(() => {});
+  view = await render(h(TokenUsageSection));
+  assert.ok(card(view, "usage.card.cost"), "kept figures in the first render");
+  await view.unmount();
+});
 
 test("the cost card is the billed sum, with unpriced calls and subscriptions' list price", async () => {
   serve(totals({ billed_cost: 6.3, included_cost: 41.2, unpriced_events: 25 }), [

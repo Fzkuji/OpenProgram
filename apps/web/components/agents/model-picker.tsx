@@ -4,49 +4,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BrainIcon, CheckIcon, ChevronDownIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { jsonFetch } from "@/lib/net/fetch-client";
 import { AgentButton } from "./agent-controls";
-import { Button } from "@/components/ui/button";
+import { lastKept } from "@/lib/abilities/kept-read";
+import { MODELS_KEY, watchAgentModels, type CatalogModel, type ModelList } from "@/lib/agents/agent-models";
 import type { Agent, Text } from "./agent-types";
 import styles from "./agents-page.module.css";
 import { SimpleSelect } from "@/components/ui/select";
 import { SettingsRow } from "@/components/settings/settings-ui";
 
-export type CatalogModel = {
-  provider: string; id: string; name: string; enabled?: boolean;
-  thinking_levels?: string[]; default_thinking_level?: string;
-};
-type Provider = { id: string; label?: string; enabled?: boolean; configured?: boolean };
+export type { CatalogModel };
+
+/** The model catalog: the kept one at once, read again behind it; a failed
+ *  read keeps what is shown and is tried again quietly. The list holds the
+ *  providers that answered; one that did not is asked again quietly.
+ *  `loading` is true only until the first list arrives. */
 export function useAgentModels() {
-  const [models, setModels] = useState<CatalogModel[]>([]);
-  const [inherited, setInherited] = useState<{ provider: string; id: string } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
+  const [list, setList] = useState<ModelList | null>(() => lastKept<ModelList>(MODELS_KEY) ?? null);
   useEffect(() => {
-    let active = true;
     const controller = new AbortController();
-    const options = { signal: controller.signal };
-    setLoading(true); setError("");
-    void (async () => {
-      const [catalog, settings] = await Promise.all([
-        jsonFetch<{ providers: Provider[] }>("/api/providers/list", options),
-        jsonFetch<{ chat?: { provider?: string; model?: string } }>("/api/agent_settings", options),
-      ]);
-      const providers = catalog.providers.filter((provider) => provider.enabled !== false && provider.configured !== false);
-      const results = await Promise.all(providers.map(async (provider) => {
-        const data = await jsonFetch<{ models: Omit<CatalogModel, "provider">[] }>(`/api/providers/${encodeURIComponent(provider.id)}/models`, options);
-        return data.models.filter((model) => model.enabled !== false).map((model) => ({ ...model, provider: provider.id }));
-      }));
-      if (!active) return;
-      setModels(results.flat());
-      setInherited(settings.chat?.provider && settings.chat.model ? { provider: settings.chat.provider, id: settings.chat.model } : null);
-    })().catch((cause) => {
-      if (active && cause.name !== "AbortError") setError(String(cause.message || cause));
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; controller.abort(); };
-  }, [attempt]);
-  return { models, inherited, loading, error, retry: () => setAttempt((value) => value + 1) };
+    watchAgentModels(setList, controller.signal);
+    return () => controller.abort();
+  }, []);
+  return { models: list?.models ?? [], inherited: list?.inherited ?? null, loading: list === null };
 }
 export type ModelCatalog = ReturnType<typeof useAgentModels>;
 export type ModelSelection = Pick<Agent, "model" | "thinking_effort">;
@@ -86,15 +65,14 @@ export function ModelPicker({ draft, update, catalog, text, idPrefix = "agent", 
       <span><strong>{modelName}</strong><small>{modelDetail}</small></span><ChevronDownIcon size={16} aria-hidden />
     </AgentButton></div>
     <label className={styles.dialogField} htmlFor={`${idPrefix}-effort`}>{text("Thinking effort", "思考强度")}{effort}</label></div>}
-    {catalog.error ? <p className={styles.inlineError} role="alert">{catalog.error} <Button type="button" variant="link" size="xs" onClick={catalog.retry}>{text("Retry loading models", "重新加载模型")}</Button></p> : null}
-    {!catalog.loading && !catalog.error && !current ? <p className={styles.inlineError}>{text("This model is unavailable. Keep the reference or choose an enabled model before starting a conversation.", "此模型不可用。可保留引用，或在发起对话前选择已启用模型。")}</p> : null}
+    {!catalog.loading && !current ?<p className={styles.inlineError}>{text("This model is unavailable. Keep the reference or choose an enabled model before starting a conversation.", "此模型不可用。可保留引用，或在发起对话前选择已启用模型。")}</p> : null}
     {!effortSupported && !catalog.loading ? <p id={`${idPrefix}-effort-warning`} className={announceEffortError ? styles.inlineError : styles.note} role={announceEffortError ? "alert" : undefined}>{text("Choose a supported effort or inherit the model default. Your previous choice has been kept.", "请选择支持的思考强度或继承模型默认值；此前选择已保留。")}</p> : null}
     <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setSearch(""); }}>
       <DialogContent className={styles.modelDialog} onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }}><DialogHeader><DialogTitle>{text("Choose model", "选择模型")}</DialogTitle><DialogDescription>{text("This changes only this Agent's draft.", "仅修改此 Agent 的草稿。")}</DialogDescription></DialogHeader>
         <SearchInput autoFocus aria-label={text("Search models", "搜索模型")} value={search} onChange={setSearch} placeholder={text("Search models…", "搜索模型…")} />
         <div className={`${styles.modelList} max-h-[min(460px,60vh)] overflow-auto`}>
           <AgentButton type="button" variant="ghost" icon={BrainIcon} className={styles.modelOption} onClick={() => select({ provider: "", id: "" })}><span><strong>{text("Last used model", "上次使用的模型")}</strong><small>{catalog.inherited ? `${catalog.inherited.provider} / ${catalog.inherited.id}` : text("No model used yet", "还没有使用过模型")}</small></span>{inherited ? <CheckIcon size={16} aria-hidden /> : null}</AgentButton>
-          {catalog.loading ? <p role="status">{text("Loading models…", "正在加载模型…")}</p> : catalog.error ? <p role="alert">{catalog.error}</p> : filtered.length === 0 ? <p>{text("No matching enabled models", "没有匹配的已启用模型")}</p> : filtered.map((model) => <AgentButton type="button" variant="ghost" icon={BrainIcon} key={`${model.provider}:${model.id}`} className={styles.modelOption} onClick={() => select({ provider: model.provider, id: model.id })}><span><strong>{model.name || model.id}</strong><small>{model.provider} / {model.id}</small></span>{draft.model.provider === model.provider && draft.model.id === model.id ? <CheckIcon size={16} aria-hidden /> : null}</AgentButton>)}
+          {catalog.loading ? null : filtered.length === 0 ? <p>{text("No matching enabled models", "没有匹配的已启用模型")}</p> : filtered.map((model) => <AgentButton type="button" variant="ghost" icon={BrainIcon} key={`${model.provider}:${model.id}`} className={styles.modelOption} onClick={() => select({ provider: model.provider, id: model.id })}><span><strong>{model.name || model.id}</strong><small>{model.provider} / {model.id}</small></span>{draft.model.provider === model.provider && draft.model.id === model.id ? <CheckIcon size={16} aria-hidden /> : null}</AgentButton>)}
           {!inherited && !current ? <p>{text("Current unavailable reference", "当前不可用引用")}: {draft.model.provider} / {draft.model.id}</p> : null}
         </div>
       </DialogContent>

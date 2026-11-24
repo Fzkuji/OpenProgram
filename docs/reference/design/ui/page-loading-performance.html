@@ -1,6 +1,6 @@
 <title>Page loading performance</title>
 <meta name="description" content="What the shared shell loads, the measured gains in startup code and catalog work, and the behaviour those optimizations must keep.">
-<meta name="covers" content="apps/web/lib/prefs/settings-cache.ts apps/web/components/page-shell.tsx">
+<meta name="covers" content="apps/web/lib/prefs/settings-cache.ts apps/web/components/page-shell.tsx apps/web/lib/query-client.ts apps/web/lib/net/json-unknown.d.ts apps/web/lib/net/error-text.ts">
 <h1>Page loading performance</h1>
 
 <p>The shared shell loads on every application page. Startup code, repeated catalog work and provider selection rendering are optimized without changing authentication, route history or model capabilities.</p>
@@ -27,6 +27,23 @@
 <tr><th scope="row">Settings reads</th><td>A successful read seeds the first Provider catalog view only while fresh. Mutations invalidate it.</td></tr>
 </tbody>
 </table>
+
+<h2 id="no-waiting-text">Waiting without words</h2>
+<p>No page, panel or card says that it is loading, retrying or could not read something, and there is no error page or Retry button for a read the app makes by itself. A wait is made short instead of being narrated.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Not there yet</th><td>The spot stays empty in its final size; nothing jumps when the data lands. An empty state ("No runs yet") appears only once an answer has arrived and is empty.</td></tr>
+<tr><th scope="row">Seen before</th><td>The last answer is drawn on the first frame and refreshed in the background: query data is kept 30 minutes, and reads outside TanStack Query keep their last answer for the page's life.</td></tr>
+<tr><th scope="row">First visit</th><td>Every shell route and the eleven lazily loaded tab panes are fetched within a second of the first paint; each nav page's first read starts at idle and on hover of its nav item.</td></tr>
+<tr><th scope="row">A read fails</th><td>The last data stays; the read is retried with backoff (1 s doubling to 30 s) and logged with <code translate="no">console.warn</code>. Failures of reads the page sent by itself raise no toast.</td></tr>
+<tr><th scope="row">A permanent answer</th><td>A 4xx, "not found" or "deleted" reply ends the retries and the page acts on it: a detail page whose item is gone returns to its list, a conversation that no longer exists closes, a section the server refuses is not drawn. One failing source does not hold back the others.</td></tr>
+<tr><th scope="row">Stays on screen</th><td>The outcome of what the user just did (a save or a key refused, an optimistic change rejected, a folder they opened that could not be read), the state of the content itself (an archive that is corrupt, an image that cannot be decoded), and a sign-in that has expired.</td></tr>
+<tr><th scope="row">Server data</th><td>A reply body is <code translate="no">unknown</code> until checked (<code translate="no">apps/web/lib/net/json-unknown.d.ts</code>); an error field that may be a sentence, a list or an object becomes text through <code translate="no">errorDetailText</code>. Rendering an unchecked object took whole windows down.</td></tr>
+</tbody>
+</table>
+<p class="note">Measured on the installed default App before the change, a fast machine: Loading text flashed on first visits to Agents, MCP, Plugins, Applications, History, Scheduler, Programs, Projects, Memory and five Settings tabs (10 to 500 ms), at cold start (about 850 ms in) and on opening a conversation (about 130 ms).</p>
+<p class="note">After the change, the same walk (cold start, 25 pages, three conversations and each of their panel tabs) shows no loading or failure text and no page error.</p>
 
 <h2 id="data-and-compatibility">Must stay true</h2>
 <ul>

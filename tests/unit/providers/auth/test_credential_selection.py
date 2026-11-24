@@ -485,7 +485,8 @@ def test_a_stored_error_never_holds_the_key(store, monkeypatch):
     selection.block_model(P, a.id, "m1", message=f"no access with {secret}")
     row = credential_row(store.find(P, a.id))
     listing = repr(provider_credentials(P))
-    on_disk = store.pool_file(P).read_text()
+    from openprogram.models.auth.company_keys import company_for
+    on_disk = store.pool_file(P).read_text() + store.keys_file(company_for(P)).read_text()
     text = row["last_error"]["message"]
     assert secret not in text and secret not in listing
     assert "AIzaFAKE" not in text and "····6789" in text

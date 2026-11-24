@@ -31,7 +31,7 @@ installLoader({
       "export const DropdownMenuItem = ({ children, onSelect, className }) => h('button', { 'data-item': '', className, onClick: onSelect }, children);",
     ].join("\n"),
     "/components/chat/top-bar/chips/model-mark.tsx": `${passthrough} export const ModelMark = ({ provider }) => h('i', { 'data-mark': provider });`,
-    "/components/chat/top-bar/menus/agent-selector.tsx": `${passthrough} export const AgentSelector = ({ onPick }) => h('button', { 'data-full-picker': '', onClick: () => onPick('openrouter', 'or-9') }, 'all models');`,
+    "/components/chat/top-bar/menus/agent-selector.tsx": `${passthrough} export const PICKER_PANEL = ''; export const AgentSelector = ({ onPick }) => h('button', { 'data-full-picker': '', onClick: () => onPick('openrouter', 'or-9') }, 'all models');`,
     "/lib/session-store/index.ts": [
       "const state = { agentSettingsBySession: { s1: { chat: { provider: 'openai-codex', model: 'openai-codex:gpt-6.1-sol' } } }, tokens: { s1: { total_used: 90000 } } };",
       "export const useSessionStore = (select) => select(state);",

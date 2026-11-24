@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   availableExecutionActions,
   type CommandResult,
-  type CursorHealth,
   type DurableWait,
   type EventCursor,
   type ExecutionCommand,
@@ -83,14 +82,6 @@ function statusClass(status: string): string {
   if (status === "failed" || status === "reconciliation_required") return styles.danger;
   if (["completed", "cancelled", "interrupted"].includes(status)) return styles.terminal;
   return styles.queued;
-}
-
-function connectionCopy(connection: DebuggerConnection): { label: string; detail: string } {
-  if (connection.state === "connected") return { label: "Synced", detail: "Last fetched snapshot" };
-  if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay" };
-  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Automatically reloading before applying more events" };
-  if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot" };
-  return { label: "Conflict", detail: connection.message || "The server rejected an optimistic version" };
 }
 
 function ExecutionTree({
@@ -176,7 +167,6 @@ export function DebuggerPanel({
   // Both the server list and locally created drafts are oldest-first.
   // Reopening the inspector must keep the newest revision editable.
   const selectedDraft = snapshot ? drafts.slice().reverse().find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
-  const connectionInfo = connectionCopy(connection);
 
   useEffect(() => {
     setCommandResults((current) => {
@@ -226,14 +216,14 @@ export function DebuggerPanel({
     }
   }
 
+  // Until the executions have been read there is nothing to say; a read that
+  // fails is tried again behind the empty panel. Once read, an empty list
+  // really is empty.
   if (!snapshot) {
     return (
       <section className={styles.panel} aria-label="Execution details">
-        <SidebarNotice>
-          <div>{connection.state === "stale" ? "Could not load executions. Retrying automatically." : connection.state === "reconnecting" && sessionId ? "Loading executions…" : "No executions in this conversation."}</div>
-          {connection.message && <div>{connection.message}</div>}
-          {!sessionId && <div>Run a message to see its execution here.</div>}
-        </SidebarNotice>
+        {!sessionId ? <SidebarNotice>Run a message to see its execution here.</SidebarNotice>
+          : fetchedAt ? <SidebarNotice>No executions in this conversation.</SidebarNotice> : null}
       </section>
     );
   }
@@ -248,10 +238,6 @@ export function DebuggerPanel({
       }
       : undefined,
   };
-
-  const health: CursorHealth = connection.state === "connected"
-    ? "healthy"
-    : connection.state === "conflict" ? "stale" : connection.state;
 
   // The pieces both layouts share: the standing's reason and controls, the
   // open waits, the progress rows, the raw details fold and the editors.
@@ -278,8 +264,10 @@ export function DebuggerPanel({
 
   return (
     <section className={styles.panel} aria-label="Execution details">
-      {connection.state !== "connected" && <div className={styles.connectionLine} data-health={health}>
-        <span data-tip={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
+      {/* The outcome of the user's own optimistic action stays; loading and
+          reconnecting are never narrated. */}
+      {connection.state === "conflict" && <div className={styles.connectionLine} data-health="stale">
+        <span data-tip={connection.message || "The server rejected an optimistic version"}>Conflict{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
       </div>}
 
       <div className={`${styles.layout} ${(detailOnly || executions.length === 1) ? styles.singleExecution : ""}`}>

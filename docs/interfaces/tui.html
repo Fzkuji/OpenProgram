@@ -95,7 +95,7 @@
 <li><code translate="no">/compact</code> summarizes older complete turns with their visible tool results and keeps recent turns. It changes the next model context; original messages stay in the session. Token counts before and after are local estimates. A short history, failed summary or summary that saves nothing leaves the context unchanged.</li>
 <li>Tool continuations can compact completed text results within one user message, with no command. Execution records are retained.</li>
 <li>If that is not enough, older complete text-only execution history can be replaced in the next request by a task summary. All user messages and the latest assistant segment stay verbatim. Not eligible: incomplete tool groups, multimodal input, signed reasoning. Reused only within the current invocation, same model and unchanged prefix; the DAG stays the durable record.</li>
-<li>Summary requests handle long text in bounded chunks, retry overflow with smaller chunks, and share a finite call and time budget. Failure leaves the history intact. If protected content alone exceeds the window, the request fails explicitly.</li>
+<li>Summary requests handle long text in bounded chunks, retry overflow with smaller chunks, and share a finite call and time budget. Failure leaves the history intact. A summary that fails is skipped and the request is fitted by shortening or leaving out older material; only a latest message that alone exceeds the window fails, and says so.</li>
 </ul>
 </details>
 <p class="note">Channel messages whose user or assistant text is not a string are ignored for that field; existing background-session text is kept.</p>

@@ -101,7 +101,7 @@ export const RightSidebar = memo(function RightSidebar() {
     snapWidths: PANEL_SNAP_WIDTHS,
     direction: -1,
     storageKey: "openprogram.right-sidebar-width",
-    maxWindowShare: 0.5,
+    maxWindowShare: 0.55,
   });
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.

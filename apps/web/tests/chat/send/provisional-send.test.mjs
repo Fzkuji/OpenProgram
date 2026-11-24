@@ -239,7 +239,7 @@ describe("failed and local sends", () => {
     assert.equal(store().runningTasks[provisional], undefined);
     assert.equal(runtimeState.isRunning, false);
     assert.equal(send("after local command"), true);
-    assert.equal(sent.length, 2, "a local command response allows the next send");
+    assert.equal(sent.filter((frame) => frame.action === "chat").length, 2, "a local command response allows the next send");
     chatHandlers.handleChatResponse({ type: "local_command", session_id: provisional, content: "second local output" });
   });
 

@@ -21,6 +21,7 @@ import { SimpleSelect } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailCode, errorDetailText } from "@/lib/net/error-text";
 
 
 export interface EditTarget {
@@ -63,6 +64,15 @@ export interface EditTarget {
  * spelled out. Values are deliberately absent — this dialog never
  * receives them, and re-typing a name is how you replace one.
  */
+/** What `/api/mcp/test` answers; a failure names why in `error` or `detail`. */
+interface McpTestReply {
+  ok?: boolean;
+  tool_count?: unknown;
+  tools?: unknown;
+  error?: unknown;
+  detail?: unknown;
+}
+
 function StoredNames({ names }: { names: string[] }) {
   const { text } = useTranslation();
   if (names.length === 0) return null;
@@ -182,8 +192,8 @@ export function EditDialog({
             body: JSON.stringify(body),
           });
       if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        setErr(d.detail || `HTTP ${r.status}`);
+        const d = await r.json().catch(() => ({})) as { detail?: unknown };
+        setErr(saveFailure(d.detail, r.status));
         return;
       }
       onSaved(state.name.trim());
@@ -192,6 +202,14 @@ export function EditDialog({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Why a save failed. A restart that failed answers with a code, not a sentence. */
+  function saveFailure(detail: unknown, status: number): string {
+    if (errorDetailCode(detail) === "mcp_runtime_restart_failed") {
+      return text("The server could not be restarted with these settings. The saved settings are unchanged.", "用这些设置无法重启这个服务，已保存的设置没有变。");
+    }
+    return errorDetailText(detail, `HTTP ${status}`);
   }
 
   async function testRun() {
@@ -205,14 +223,17 @@ export function EditDialog({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await r.json();
+      const data = await r.json() as McpTestReply;
       if (!r.ok || !data.ok) {
-        setErr(text(`test failed: ${data.error || data.detail || `HTTP ${r.status}`}`, `测试失败：${data.error || data.detail || `HTTP ${r.status}`}`));
+        const why = errorDetailText(data.error || data.detail, `HTTP ${r.status}`);
+        setErr(text(`test failed: ${why}`, `测试失败：${why}`));
         return;
       }
+      const tools = Array.isArray(data.tools) ? data.tools.filter((tool): tool is string => typeof tool === "string") : [];
+      const count = typeof data.tool_count === "number" ? data.tool_count : tools.length;
       setNote(text(
-        `✓ test ok - ${data.tool_count} tool(s): ${data.tools.join(", ")}`,
-        `✓ 测试通过 - ${data.tool_count} 个工具：${data.tools.join(", ")}`,
+        `✓ test ok - ${count} tool(s): ${tools.join(", ")}`,
+        `✓ 测试通过 - ${count} 个工具：${tools.join(", ")}`,
       ));
     } catch (e) {
       setErr(String(e));

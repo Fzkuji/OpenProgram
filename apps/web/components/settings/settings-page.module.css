@@ -71,34 +71,6 @@
   gap: 28px;
   padding: 24px 28px 32px;
 }
-.skelMeta {
-  width: 420px;
-  max-width: 100%;
-  height: 14px;
-  border-radius: var(--radius-xs);
-  background: var(--bg-tertiary);
-  animation: settingsSkelPulse 1.2s ease-in-out infinite;
-}
-.skelBlock {
-  width: 100%;
-  max-width: 720px;
-  height: 92px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-tertiary);
-  animation: settingsSkelPulse 1.2s ease-in-out infinite;
-}
-.skelBlockShort {
-  width: 60%;
-  max-width: 480px;
-  height: 92px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-tertiary);
-  animation: settingsSkelPulse 1.2s ease-in-out infinite;
-}
-@keyframes settingsSkelPulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.55; }
-}
 .sectionTitle {
   font-size: var(--fs-md);
   font-weight: 600;

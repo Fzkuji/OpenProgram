@@ -12,8 +12,8 @@ def test_a_selected_list_limits_the_turn_and_a_request_list_wins():
 
 
 def test_the_screen_tool_is_not_added_to_an_agent_that_did_not_name_it():
-    tools = [SimpleNamespace(name="read"), SimpleNamespace(name="computer_use_agent")]
-    kept, enabled = loop_runner._configure_browser_tool(
+    tools = [SimpleNamespace(name="read"), SimpleNamespace(name="computer_use")]
+    kept, enabled = loop_runner._configure_screen_tool(
         tools, None, enabled=True, tools_override=loop_runner._named_tools(
             {"tools": {"mode": "selected", "allowed": ["read"]}}, {"inherit": True}))
     assert [tool.name for tool in kept] == ["read"]

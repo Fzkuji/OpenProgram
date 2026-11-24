@@ -299,7 +299,7 @@ test("real connection updates enable Goal resume only after a fresh stop observa
     const connectedReads = reads;
     await act(async () => { socket.readyState = WebSocket.CLOSED; updateStatus("disconnected"); });
     assert.equal(resume().disabled, true);
-    assert.match(view.host.textContent, /Execution status unknown/);
+    assert.doesNotMatch(view.host.textContent, /Execution status unknown/);
     // A source/badge refresh must not report a disconnected socket as open.
     await act(async () => updateStatus("connected", "Local"));
     assert.equal(useSessionStore.getState().wsStatus, "closed");
@@ -365,7 +365,7 @@ test("late stop observations cannot enable a newer run and offline state stays u
     assert.equal(resume.disabled, true);
     assert.match(view.host.textContent, /Stop not confirmed/);
     await act(async () => useSessionStore.setState({ wsStatus: "closed" }));
-    assert.match(view.host.textContent, /Execution status unknown/);
+    assert.doesNotMatch(view.host.textContent, /Execution status unknown/);
     assert.ok(view.host.querySelector('[aria-label="Open Goal details"]'));
   } finally { await view.close(); api.getGoal = original; useSessionStore.setState({ wsStatus: "connecting" }); }
 });

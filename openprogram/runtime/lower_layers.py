@@ -13,7 +13,9 @@ through ports they own, filled in here:
   tool policy, a conversation's working directories and App surface, the
   client broadcast, and loading the built-in Programs;
 * ``models.providers.recording.capture`` — the named sections of a
-  system prompt the runtime composed, for the prompt-cache check.
+  system prompt the runtime composed, for the prompt-cache check;
+* ``host.system_access`` — the operating-system access a tool call needs,
+  which the provider of a ``computer_use`` target answers.
 
 Each provider imports its runtime module when it is called, never here,
 so loading the runtime package stays cheap and a test that replaces a
@@ -31,6 +33,15 @@ def _current_store():
     from openprogram.runtime.context import session_db
 
     return session_db.default_db()
+
+
+def _sessions_above_execution(execution_id: str) -> list[str]:
+    from openprogram.runtime.execution import default_store
+    from openprogram.runtime.execution.conversation_scope import sessions_above_execution
+
+    store = default_store()
+    execution = store.get_execution(execution_id) if store is not None else None
+    return sessions_above_execution(store, execution) if execution is not None else []
 
 
 def _current_session_id():
@@ -237,10 +248,20 @@ def _system_prompt_parts(text: str):
     return prompt_parts(text)
 
 
+def _system_access_operation(tool_name: str, args: dict):
+    if tool_name != "computer_use":
+        return None
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
+
+    return screen.system_access(args)
+
+
 def register() -> None:
+    from openprogram.host import system_access
     from openprogram.models.providers.recording.capture import register_system_sections
 
     register_system_sections(_system_prompt_parts)
+    system_access.register_operation_source(_system_access_operation)
     register_current_store_resolver(_current_store)
     execution_facts.register(
         current_session_id=_current_session_id,
@@ -260,6 +281,7 @@ def register() -> None:
     host_runtime_facts.register(
         execution=_execution,
         conversation_execution_ids=_conversation_execution_ids,
+        sessions_above_execution=_sessions_above_execution,
         worker_stopping=_worker_stopping,
         foreground_turn=_foreground_turn,
         current_call_id=_current_call_id,

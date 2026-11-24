@@ -129,11 +129,12 @@ export function CanvasControls({ layout, targetId }: { layout: CanvasLayout; tar
   const remember = () => rememberCanvas(historyKeys, layout);
   const focus = (paneId: string) => update({ ...layout, focusedPaneId: paneId });
   const zoom = (paneId: string) => { captureCanvasTransition(); update({ ...layout, focusedPaneId: paneId, zoomedPaneId: layout.zoomedPaneId === paneId ? undefined : paneId }); };
-  /** Take a pane off the canvas; its tab goes back to the strip. Like a
-   *  window closing, it is gone in the click's frame and the panes beside
-   *  it take the room at once: no animation holds the change. */
+  /** Take a pane off the canvas; its tab goes back to the strip. The
+   *  layout changes in the click's frame; the pane folds away while the
+   *  panes beside it grow into its room. */
   const close = (paneId: string) => {
-    remember(); update({ ...layout, zoomedPaneId: undefined, root: removePane(layout.root, paneId) });
+    const content = all.find(pane => pane.id === paneId)?.content;
+    captureCanvasTransition({}, { closing: content ? [content] : [] }); remember(); update({ ...layout, zoomedPaneId: undefined, root: removePane(layout.root, paneId) });
   };
   const split = (side: "right" | "bottom") => { remember(); const next = insertPane(layout.root, layout.focusedPaneId, side, null); update({ root: next.root, focusedPaneId: next.paneId }); };
   const tile = (paneId: string, to: CanvasTile | "fill") => {

@@ -35,6 +35,15 @@ REPORT_KINDS = ("finding", "approval", "done")
 PREFERENCES_MAX = 50
 PREFERENCE_MAX = 500
 
+#: The pending inbox may have changed (``pending.py``): every window reads it
+#: again (``host/_platform/changes.py``). Keyed by the conversation.
+INBOX_TOPIC = "inbox"
+#: A conversation's wake state or an Agent's always-on state changed: the
+#: always-on ticker (``ticker.py``) looks again and sleeps until the next
+#: wake. Signalled only when what is saved differs, so the ticker's own
+#: rewrites of the same state do not wake it again.
+WAKES_TOPIC = "always_on"
+
 _locks: dict[str, threading.RLock] = {}
 _locks_master = threading.Lock()
 
@@ -110,9 +119,17 @@ def update_state(session_id: str, **changes: Any) -> dict[str, Any]:
         if path is None:
             raise ValueError(f"conversation {session_id!r} not found")
         state = load_state(session_id)
+        before = dict(state)
         state.update(changes)
         path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        return state
+    if state != before:
+        _wakes_changed(session_id)
+    return state
+
+
+def _wakes_changed(key: str) -> None:
+    from openprogram.host._platform import changes as _changes
+    _changes.signal(WAKES_TOPIC, key)
 
 
 def _handoffs_path() -> Path:
@@ -137,9 +154,12 @@ def load_agent_state(agent_id: str) -> dict[str, Any]:
 def update_agent_state(agent_id: str, **changes: Any) -> dict[str, Any]:
     with lock("agent:" + agent_id):
         state = load_agent_state(agent_id)
+        before = dict(state)
         state.update(changes)
         _write_json(_agent_state_path(agent_id), state)
-        return state
+    if state != before:
+        _wakes_changed("agent:" + agent_id)
+    return state
 
 
 def spent_today(agent_id: str, today: str) -> float:
@@ -331,3 +351,5 @@ def _write_reports(session_id: str, rows: list[dict[str, Any]]) -> None:
     if path is None:
         raise ValueError(f"conversation {session_id!r} not found")
     path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+    from openprogram.host._platform import changes
+    changes.signal(INBOX_TOPIC, session_id)

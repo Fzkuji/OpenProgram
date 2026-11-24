@@ -9,7 +9,8 @@ Docs: https://docs.exa.ai/reference/search
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import post_json
@@ -27,10 +28,10 @@ class ExaProvider:
     requires_env: tuple = ("EXA_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("EXA_API_KEY"))
+        return bool(service_key("exa"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("EXA_API_KEY", "")
+        key = service_key("exa")
         if not key:
             raise RuntimeError("EXA_API_KEY not set")
         payload = {

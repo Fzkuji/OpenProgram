@@ -16,7 +16,7 @@ installLoader({
 });
 installDom();
 
-const { listSessionProjects, forgetProjectLists, ANSWER_TTL_MS } = await import("../../lib/projects/list-projects.ts");
+const { listSessionProjects, forgetProjectLists } = await import("../../lib/projects/list-projects.ts");
 
 beforeEach(() => {
   forgetProjectLists();
@@ -32,21 +32,17 @@ test("readers mounting after the answer arrived reuse it: a new conversation cos
   assert.deepEqual(globalThis.listRequests.map(([, p]) => p.session_id), ["s1", ""]);
 });
 
-test("a project change, a reconnect or the time limit drops the kept answer", async () => {
+test("a project change or a reconnect drops the kept answer; its age does not", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
   await listSessionProjects("s1");
+  t.mock.timers.tick(24 * 3_600_000);
+  await listSessionProjects("s1");
+  assert.equal(globalThis.listRequests.length, 1, "an old answer is still the answer");
   window.dispatchEvent(new Event("project-changed"));
   await listSessionProjects("s1");
   window.dispatchEvent(new Event("op:browser-connection"));
   await listSessionProjects("s1");
   assert.equal(globalThis.listRequests.length, 3);
-  let clock = 1000;
-  await listSessionProjects("s2", () => clock);
-  clock += ANSWER_TTL_MS - 1;
-  await listSessionProjects("s2", () => clock);
-  assert.equal(globalThis.listRequests.length, 4);
-  clock += 2;
-  await listSessionProjects("s2", () => clock);
-  assert.equal(globalThis.listRequests.length, 5);
 });
 
 test("no answer is not kept", async () => {

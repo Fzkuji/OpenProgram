@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col">领域</th><th scope="col">现状</th><th scope="col">决定</th></tr></thead>
 <tbody>
-<tr><th scope="row">Next.js</th><td>16.4.4、<code translate="no">eslint</code> 9、直接的 lint 脚本</td><td>保持静态导出：<code translate="no">output: "export"</code>，manifest 路由 <code translate="no">dynamic = "force-static"</code>，<code translate="no">next build --webpack</code>。打包路径里没有 Next 服务器。</td></tr>
+<tr><th scope="row">Next.js</th><td>16.4.6、<code translate="no">eslint</code> 9、直接的 lint 脚本</td><td>保持静态导出：<code translate="no">output: "export"</code>，manifest 路由 <code translate="no">dynamic = "force-static"</code>，<code translate="no">next build --webpack</code>。打包路径里没有 Next 服务器。</td></tr>
 <tr><th scope="row">Electron</th><td>45.2.1，最低 macOS 13</td><td>本地 App 验收前，打包必须替换已安装的 Electron</td></tr>
 <tr><th scope="row">图片标注</th><td>直接使用 Fabric 7.4.0，作为原生画布上的透明层</td><td>取代 <code translate="no">tui-image-editor</code> 及其有漏洞的 Fabric 4 链。裁剪和旋转会压平标注；导出前仍可选择、移动、缩放和编辑文字。</td></tr>
 <tr><th scope="row">React</th><td>根和 Web 用 18，CLI 用 19</td><td>安全升级不改变</td></tr>

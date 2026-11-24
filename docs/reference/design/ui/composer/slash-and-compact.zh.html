@@ -3,7 +3,8 @@
 <h1>斜杠命令与上下文压缩</h1>
 
 <h2>斜杠命令</h2>
-<p>输入以 <code translate="no">/</code> 开头且没有空格时，菜单向上展开；出现空格后 380ms 收起。Enter 执行已注册的首词，否则发送聊天。正在关闭的菜单不拦截 Enter。技能、插件和用户命令来自 <code translate="no">/api/commands</code>；内置命令派发优先。</p>
+<p>输入以 <code translate="no">/</code> 开头且没有空格时，菜单从 <code translate="no">/</code> 处向上弹出，和 <code translate="no">@</code> 菜单是同一种玻璃浮层，每条命令一行，带图标、参数和说明；内置命令各有图标，技能、插件和用户命令用各自来源的默认图标；出现空格立即收起。</p>
+<p>Enter 执行已注册的首词，否则发送聊天。正在关闭的菜单不拦截 Enter。技能、插件和用户命令来自 <code translate="no">/api/commands</code>；内置命令派发优先。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">命令</th><th scope="col">选择或 Enter</th></tr></thead>
 <tbody>

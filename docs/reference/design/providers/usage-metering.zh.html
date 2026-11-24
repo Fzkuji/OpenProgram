@@ -8,7 +8,7 @@
 <thead><tr><th scope="col">记录</th><th scope="col">位置</th><th scope="col">回答</th><th scope="col">写入者</th></tr></thead>
 <tbody>
 <tr><th scope="row">消息列</th><td>助手消息历史</td><td>这条消息花了多少（每条消息的小标签）</td><td><code translate="no">runtime/conversation/turn_runtime/persistence.py</code> 的 <code translate="no">persist_assistant_message</code></td></tr>
-<tr><th scope="row">压缩预算</th><td>会话 meta 的 <code translate="no">_usage</code></td><td>上一轮真实输入 token、缓存命中率、是否压缩；亚微秒读取</td><td><code translate="no">runtime/context/token_accounting/usage.py</code> 的 <code translate="no">UsageTracker.record_turn</code></td></tr>
+<tr><th scope="row">上一次请求</th><td>会话 meta 的 <code translate="no">_usage</code></td><td>每个分支上一轮的真实输入 token 和缓存命中率。是否压缩改读 <code translate="no">token_accounting/measure.py</code> 给出的请求大小（<a href="../context/compaction.zh.html#measuring">请求有多大</a>）</td><td><code translate="no">runtime/context/token_accounting/usage.py</code> 的 <code translate="no">UsageTracker.record_turn</code></td></tr>
 <tr><th scope="row">账本</th><td><code translate="no">~/.openprogram/usage.db</code>，随 profile</td><td>跨会话、模型、来源和时间的总花费</td><td><code translate="no">models/usage/recorder.py</code> 的 <code translate="no">record_message</code></td></tr>
 </tbody>
 </table>

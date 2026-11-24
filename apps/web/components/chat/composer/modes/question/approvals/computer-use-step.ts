@@ -1,4 +1,7 @@
-/** What a computer_use approval says about its one step, from the call's arguments. */
+/** What a computer_use approval says about its one step, from the call's arguments in the present
+ *  names of the tool's vocabulary (see lib/computer-use/computer-use-call.ts). */
+import type { CallTarget } from "../../../../../../lib/computer-use/computer-use-call.ts";
+
 export type Args = Record<string, unknown>;
 export type Text = (en: string, zh: string) => string;
 
@@ -9,20 +12,29 @@ export function str(value: unknown): string {
 }
 
 function where(args: Args, text: Text): string {
-  const index = args.element_index;
-  if (typeof index === "number" || (typeof index === "string" && index)) return text(`element #${index}`, `元素 #${index}`);
+  const element = args.element;
+  if (typeof element === "number" || (typeof element === "string" && element)) return text(`element #${element}`, `元素 #${element}`);
   const x = str(args.x), y = str(args.y);
   return x && y ? `(${x}, ${y})` : "";
 }
 
+/** What a read reads: an application's window, the whole screen, or a page of the user's browser. */
+export type Reads = "window" | "screen" | "page";
+
 /** What this one step does, as a verb and its object: "Click element #7", "Type 12 characters". */
-export function computerUseStep(args: Args, text: Text): { verb: string; target: string } {
+export function computerUseStep(args: Args, text: Text, reads: Reads = "window"): { verb: string; target: string } {
   const action = str(args.action);
   const content = str(args.text);
   const chars = Array.from(content).length;
   switch (action) {
-    case "get_app_state": return { verb: text("Read the window", "读取窗口内容"), target: "" };
+    case "get_state": return {
+      verb: reads === "screen" ? text("Read the screen", "读取屏幕内容")
+        : reads === "page" ? text("Read the page", "读取页面内容") : text("Read the window", "读取窗口内容"),
+      target: "",
+    };
     case "list_windows": return { verb: text("List windows", "列出窗口"), target: "" };
+    case "list_displays": return { verb: text("List displays", "列出显示器"), target: "" };
+    case "open_file": return { verb: text("Open the file", "打开文件"), target: str(args.path) };
     case "zoom": return { verb: text("Zoom into a region", "放大查看局部"), target: "" };
     case "find": return { verb: text("Find", "查找"), target: content };
     case "click": return {
@@ -52,8 +64,7 @@ export function computerUseStep(args: Args, text: Text): { verb: string; target:
     }
     case "code": return { verb: text("Run code that operates it", "运行操作它的代码"),
       target: text(`${Array.from(str(args.code)).length} characters`, `${Array.from(str(args.code)).length} 个字符`) };
-    case "fresh": return { verb: text("Hand the task to a new agent", "把任务交给新代理"), target: "" };
-    case "wait": return { verb: text("Wait", "等待"), target: text(`${str(args.duration) || "1"} s`, `${str(args.duration) || "1"} 秒`) };
+    case "wait": return { verb: text("Wait", "等待"), target: text(`${str(args.seconds) || "1"} s`, `${str(args.seconds) || "1"} 秒`) };
     case "start_audio_recording": return { verb: text("Record its sound", "录下它的声音"), target: "" };
     case "stop_audio_recording": return { verb: text("Stop recording", "停止录音"), target: "" };
     default: return { verb: action || text("Operate", "操作"), target: "" };
@@ -78,8 +89,8 @@ export function needsForeground(args: Args, platform = "linux"): boolean {
   }
   if (platform !== "linux") return false;
   if (POINTER_ACTIONS.has(action)) {
-    const index = args.element_index;
-    const byElement = typeof index === "number" || (typeof index === "string" && index !== "");
+    const element = args.element;
+    const byElement = typeof element === "number" || (typeof element === "string" && element !== "");
     // An element click or scroll runs through AT-SPI; a hover always moves the pointer.
     return action === "hover" || action === "drag" || !byElement;
   }
@@ -89,7 +100,7 @@ export function needsForeground(args: Args, platform = "linux"): boolean {
 
 /** What a read returns, shown beside the step. */
 export function readsWhat(args: Args, text: Text): string {
-  if (str(args.action) !== "get_app_state") return "";
+  if (str(args.action) !== "get_state") return "";
   const include = str(args.include) || "all";
   return include === "tree" ? text("Interface elements", "界面元素")
     : include === "screenshot" ? text("Screenshot", "截图") : text("Screenshot + interface elements", "截图 + 界面元素");
@@ -99,4 +110,12 @@ export function readsWhat(args: Args, text: Text): string {
 export function setArgs(args: Args): Args {
   return Object.fromEntries(Object.entries(args).filter(([, value]) =>
     value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0)));
+}
+
+/** Whether a call's approval is the computer-use card's: an application, the
+ *  whole screen or the user's own browser on this computer. */
+export function asksAboutComputerUse(call: CallTarget, step: Args): boolean {
+  if (call.machine) return false;
+  return call.family === "window" ? typeof step.app === "string" && !!step.app
+    : call.family === "screen" || !!call.browser;
 }

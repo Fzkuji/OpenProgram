@@ -147,6 +147,10 @@ class StreamOptions(BaseModel):
     # credential layer every adapter is wrapped in; ``api_key`` holds the
     # same auth value. ``None`` for a request that carries a caller's own key.
     credential: Any | None = Field(default=None, exclude=True)
+    # The credential ids this request may use, when it was moved to another
+    # way of the company along its keys (``streaming/routing.py``); ``None``
+    # for any of the provider's.
+    only_credentials: Any | None = Field(default=None, exclude=True)
 
     model_config = {"arbitrary_types_allowed": True}
 

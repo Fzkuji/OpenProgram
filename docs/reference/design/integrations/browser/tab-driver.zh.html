@@ -1,20 +1,20 @@
 <title>浏览器标签页驱动</title>
-<meta name="description" content="browser 目标如何驱动内置标签页：身份、连接、多个 agent、只发一次的写、坐标和预览。">
+<meta name="description" content="type 为 browser 的 computer_use 如何驱动内置标签页：身份、连接、多个 agent、只发一次的写、坐标和预览。">
 <meta name="covers" content="openprogram/programs/applications/browser/tabs.py">
 <h1>浏览器标签页驱动</h1>
 
 
 <ul>
-<li>浏览器应用的 <code translate="no">tabs.py</code> 为 <code translate="no">browser</code> 目标驱动 App 的内置标签页。</li>
+<li>浏览器应用的 <code translate="no">tabs.py</code> 为 <code translate="no">computer_use(type="browser")</code> 驱动 App 的内置标签页。</li>
 <li>内置标签页只有这一种操作方式：模型、程序的网页标签命令和页面资源都经过它。</li>
 <li>一次调用指明标签页和元素；page context token、会话、frame、租约和修订号校验都不存在。</li>
 </ul>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="open(url) 先看有没有连着的 App 窗口。有：页面在 App 里开成一个标签页，用户看得见，带 App 的登录状态。没有：页面开在驱动自己的浏览器里，没有窗口，也没有 App 的登录状态。">
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="create_tab(url) 先看有没有连着的 App 窗口。有：页面在 App 里开成一个标签页，用户看得见，带 App 的登录状态。没有：页面开在驱动自己的浏览器里，没有窗口，也没有 App 的登录状态。">
   <defs><marker id="td-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
-  <text class="t-big" x="0" y="34" translate="no">open(url)</text>
-  <line class="ln" x1="112" y1="28" x2="196" y2="28" marker-end="url(#td-a)"/>
+  <text class="t-big" x="0" y="34" translate="no">create_tab(url)</text>
+  <line class="ln" x1="156" y1="28" x2="196" y2="28" marker-end="url(#td-a)"/>
   <text class="t-big" x="208" y="34">连着 App 窗口？</text>
   <path class="ln" d="M280 48V74H166V98" marker-end="url(#td-a)"/>
   <path class="ln" d="M280 74H514V98" marker-end="url(#td-a)"/>
@@ -30,7 +30,7 @@
   <text class="t-soft" x="364" y="188">没有 App 的登录状态</text>
 </svg>
 <ol class="flow fig-narrow">
-  <li><strong><code translate="no">open(url)</code></strong><small>连着 App 窗口？</small></li>
+  <li><strong><code translate="no">create_tab(url)</code></strong><small>连着 App 窗口？</small></li>
   <li><strong>是：App 里的一个标签页</strong><small>用户看得见；带 App 的登录状态</small></li>
   <li class="flow-end"><strong>否：驱动自己的浏览器</strong><small>没有窗口；没有 App 的登录状态</small></li>
 </ol>
@@ -87,8 +87,9 @@
 <tr><th scope="row">变化的目标</th><td><code translate="no">target_id</code> 变了的标签页（App 重启过）会忘掉它的 ref、文档基线和截图。</td></tr>
 <tr><th scope="row">绑定</th><td>每次列出都会重新绑定每个页面，所以新绑定替换旧绑定时旧绑定会被释放。</td></tr>
 <tr><th scope="row">默认标签页</th><td>不带 <code translate="no">tab</code> 的动作发往其 agent 最近用过的标签页（见下），否则发往获得焦点的标签页，再否则发往唯一可见的标签页。</td></tr>
-<tr><th scope="row">open、close、screenshot</th><td><code translate="no">open</code> 请渲染进程新开一个后台标签页（<code translate="no">surface_context.open_page</code>）并把它设为当前标签页；<code translate="no">close</code> 和 <code translate="no">screenshot</code> 经过标签页的绑定（<code translate="no">request_close_tab</code>、<code translate="no">request_bound_screenshot</code>），绑定过期时重新列出一次即可续上。</td></tr>
-<tr><th scope="row">归属</th><td>agent 打开的标签页记在 <code translate="no">browser_tabs_opened</code> 里（重启后仍保留），带着它的对话，以及 <code translate="no">opened_in</code> 里打开它的那次执行。<code translate="no">tabs</code> 列出本对话的标签页和当前页，<code translate="no">tabs(all=true)</code> 列出其余的。工具说明要求模型复用已开的页面、用完关闭。归档或删除对话时，关闭它打开的所有标签页（<code translate="no">close_conversation_tabs</code>）。用户自己的标签页从不关闭。</td></tr>
+<tr><th scope="row">create_tab、close_tab、screenshot</th><td><code translate="no">create_tab</code> 请渲染进程新开一个后台标签页（<code translate="no">surface_context.open_page</code>）并把它设为当前标签页；<code translate="no">close_tab</code> 和带 <code translate="no">include="screenshot"</code> 的 <code translate="no">get_state</code> 经过标签页的绑定（<code translate="no">request_close_tab</code>、<code translate="no">request_bound_screenshot</code>），绑定过期时重新列出一次即可续上。</td></tr>
+<tr><th scope="row">归属</th><td>agent 打开的标签页记在 <code translate="no">browser_tabs_opened</code> 里（重启后仍保留），带着它的对话，以及 <code translate="no">opened_in</code> 里打开它的那次执行。<code translate="no">list_tabs</code> 列出本对话的标签页和当前页，<code translate="no">list_tabs(all=true)</code> 列出其余的。工具说明要求模型复用已开的页面、用完关闭。归档或删除对话时，关闭它打开的所有标签页（<code translate="no">close_conversation_tabs</code>）。用户自己的标签页从不关闭。</td></tr>
+<tr><th scope="row">用户的浏览器</th><td>用户自己的浏览器（<code translate="no">app="chrome"</code>、<code translate="no">app="safari"</code>、<code translate="no">app="firefox"</code> 等；见<a href="../computer-use/user-browsers.zh.html">用户的浏览器</a>）不用这个驱动，但它们的标签页也有同样形式的 id（<code translate="no">openprogram/programs/tools/computer_use/computer_use/providers/user_browser.py</code>）：在 Chromium 系浏览器里，连接给每个页面打上一个键，键对应 id；扩展重新连接后，新键接管同一地址上已消失页面的 id。</td></tr>
 <tr><th scope="row">运行的标签页</th><td>定时运行或检查轮次结束时，关闭这次运行打开的标签页，不论它怎么结束：完成、失败、被停止或被打断（<code translate="no">close_run_tabs</code>，在执行结算时以及后台服务得知定时运行结束时调用）。这类运行从干净状态开始、以答案结束，它打开的东西对下一次没有用。只有它们会被记在标签页的记录上（<code translate="no">opened_in</code>）。</td></tr>
 <tr><th scope="row">谁等关闭完成</th><td>在后台服务里，运行的结束不等它关完。定时运行自己的进程在退出前关闭并等它完成，因为线程会被进程退出打断。进程被杀的运行，后台服务一看到进程没了就把它结束，标签页随之关闭。</td></tr>
 <tr><th scope="row">上限</th><td>一个对话最多留着它的 agent 打开的 <code translate="no">TABS_PER_CONVERSATION</code>（8）个标签页：多开出一个之后，关掉最久没用的那个（<code translate="no">_keep_within_limit</code>），并在结果的 <code translate="no">note</code> 里说明。新开的和用户面前的标签页不动；只算这一轮列得出的标签页；整理失败不会让打开失败。反复开页面的东西因此有了上限，比如监控或跑上几天的 Goal。</td></tr>
@@ -105,8 +106,8 @@
 <tr><th scope="row">查找页面</th><td>页面通过 <code translate="no">Target.getTargetInfo</code> 与标签页的 <code translate="no">target_id</code> 匹配来找到。</td></tr>
 <tr><th scope="row">重连</th><td>一个连接不一定能得知 App 在它之后打开的标签页，所以找不到目标时驱动会重新连接再找一次；断开的连接在下一次调用时重连。</td></tr>
 <tr><th scope="row">记录</th><td>第一次接上页面监听时，驱动开始记录它的控制台、页面错误和请求（各保留最近 300 条），并统计文档导航次数和进行中的 fetch/XHR 请求。</td></tr>
-<tr><th scope="row">没有 App 窗口</th><td>没有可以开标签页的 App 窗口时（<code translate="no">open_page</code> 返回 <code translate="no">desktop_unavailable</code>：App 已关闭，或这个进程连不到它），<code translate="no">open</code> 启动驱动自己的无窗口浏览器（<code translate="no">host/resources/background_browser.py</code>：运行时自带的 Chromium，否则把已安装的 Chrome 或 Edge 当程序启动，用全新的配置）。</td></tr>
-<tr><th scope="row">自有浏览器的标签页</th><td>窗口 id 是 <code translate="no">background</code>；id、动作、锁和归属记录都相同；没有预览，也没有 App 的登录状态，<code translate="no">open</code> 的结果会说明。它们只活在打开它们的进程里，和 App 连接共用一个 Playwright：最后一个标签页关闭、闲置超过 <code translate="no">OWN_IDLE_SECONDS</code>（30 分钟）或进程结束时浏览器随之关闭。App 没在运行时列表不等待；App 在运行却不应答时照常报错。</td></tr>
+<tr><th scope="row">没有 App 窗口</th><td>没有可以开标签页的 App 窗口时（<code translate="no">open_page</code> 返回 <code translate="no">desktop_unavailable</code>：App 已关闭，或这个进程连不到它），<code translate="no">create_tab</code> 启动驱动自己的无窗口浏览器（<code translate="no">host/resources/background_browser.py</code>：运行时自带的 Chromium，否则把已安装的 Chrome 或 Edge 当程序启动，用全新的配置）。</td></tr>
+<tr><th scope="row">自有浏览器的标签页</th><td>窗口 id 是 <code translate="no">background</code>；id、动作、锁和归属记录都相同；没有预览，也没有 App 的登录状态，<code translate="no">create_tab</code> 的结果会说明。它们只活在打开它们的进程里，和 App 连接共用一个 Playwright：最后一个标签页关闭、闲置超过 <code translate="no">OWN_IDLE_SECONDS</code>（30 分钟）或进程结束时浏览器随之关闭。App 没在运行时列表不等待；App 在运行却不应答时照常报错。</td></tr>
 </tbody>
 </table>
 
@@ -115,12 +116,12 @@
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">不做租约</th><td>同一对话的 agent 共用会话 id，子 agent 可以并行运行，所以标签页被一个 agent 占用的时间不超过一个动作或一组动作：跨轮次持有租约会让对话拒绝自己的轮次，正是跨轮次持有的租约和它的交接造成的。</td></tr>
-<tr><th scope="row">锁</th><td>每个 <code translate="no">Tab</code> 有一把锁。</td></tr>
+<tr><th scope="row">锁</th><td>每个 <code translate="no">Tab</code> 有一把锁。写明标签页的调用还持有该标签页的锁文件（<code translate="no">openprogram/programs/tools/computer_use/computer_use/locks.py</code>），跨 worker 的各个进程有效。它不占住机器：页面在后台驱动，所以 <code translate="no">app</code> 和 <code translate="no">screen</code> 的调用与浏览器调用互不等待。</td></tr>
 <tr><th scope="row">持锁范围</th><td>动作在第一次页面调用前拿到它，并一直持有到等待结束、结果读出，所以别的 agent 的输入不会落在一个动作和它报告的状态之间。</td></tr>
-<tr><th scope="row">动作列表</th><td>一组动作（<code translate="no">targets/browser.run</code> 带多个步骤，在 <code translate="no">tabs.batch()</code> 里）持有它拿到的所有锁直到结束，所以一组动作里填写的表单不会被插入。</td></tr>
-<tr><th scope="row">等待</th><td>等锁时轮询并检查取消，超过 <code translate="no">TAB_WAIT_SECONDS</code>（60 秒）以 <code translate="no">tab_busy</code> 失败；两组动作互相等对方的标签页时也这样结束，而不会死锁。</td></tr>
+<tr><th scope="row">动作列表</th><td>一组动作（对浏览器 provider <code translate="no">openprogram/programs/tools/computer_use/computer_use/providers/built_in_browser.py</code> 的一次调用中的多个步骤，在 <code translate="no">tabs.batch()</code> 里）持有它拿到的所有锁直到结束，所以一组动作里填写的表单不会被插入。</td></tr>
+<tr><th scope="row">等待</th><td>等锁时轮询并检查取消，超过 <code translate="no">TAB_WAIT_SECONDS</code>（60 秒）以 <code translate="no">tab_busy</code> 失败（模型读到的是 <code translate="no">SCREEN_BUSY</code>）；两组动作互相等对方的标签页时也这样结束，而不会死锁。</td></tr>
 <tr><th scope="row">Agent</th><td>一次调用代表的 agent 是 <code translate="no">&lt;session&gt;/&lt;execution&gt;</code>（<code translate="no">_VIEWER</code> 上下文变量，随调用带进所有者线程）。</td></tr>
-<tr><th scope="row">当前标签页</th><td>每个 agent 记住自己的当前标签页；还没有的 agent 从它所在对话最近用过的标签页开始。</td></tr>
+<tr><th scope="row">当前标签页</th><td>每个 agent 记住自己的当前标签页；还没有的 agent 从它所在对话最近用过的标签页开始。agent 结束时，<code translate="no">tabs.forget</code> 在所有标签页上丢掉它的当前标签页和截图，不为此启动驱动。</td></tr>
 <tr><th scope="row">快照</th><td>快照按 agent 跟踪（<code translate="no">track</code> = <code translate="no">openprogram:&lt;agent&gt;</code>，以及每个 agent 自己的文档基线），所以一个 agent 看到的变化涵盖它上次查看之后的一切，包括其他 agent 做的。</td></tr>
 <tr><th scope="row">写入记录</th><td>每个标签页记录写操作及其执行者；自本 agent 上次结果以来有别的 agent 操作过该标签页时，结果会附上 <code translate="no">note</code>。</td></tr>
 <tr><th scope="row">所有者线程</th><td>只有单个页面调用在所有者线程上执行。</td></tr>
@@ -135,7 +136,7 @@
 <tr><th scope="row">重试</th><td>只有 <code translate="no">_page</code> 在任何输入之前抛出的 <code translate="no">tab_gone</code> 会让驱动重新列出标签页并再试一次。</td></tr>
 <tr><th scope="row">失败的动作</th><td>在 Playwright 可能已经发出输入之后失败的动作算作一次写操作；超时时错误会说明它可能已经生效，并附上页面当前状态；动作期间标签页关闭为 <code translate="no">tab_closed</code>。</td></tr>
 <tr><th scope="row">成功之后</th><td>动作成功之后，等待或读取页面时的任何失败都作为带 <code translate="no">note</code> 的成功结果返回，绝不成为调用方会重试的错误。</td></tr>
-<tr><th scope="row">close</th><td><code translate="no">close</code> 把渲染进程的响应超时视为 <code translate="no">close_uncertain</code>，把过期绑定视为 <code translate="no">tab_gone</code>（什么都没发出），其他失败视为 <code translate="no">close_failed</code>。</td></tr>
+<tr><th scope="row">close_tab</th><td><code translate="no">close_tab</code> 把渲染进程的响应超时视为 <code translate="no">close_uncertain</code>，把过期绑定视为 <code translate="no">tab_gone</code>（什么都没发出），其他失败视为 <code translate="no">close_failed</code>。</td></tr>
 <tr><th scope="row">evaluate</th><td><code translate="no">evaluate</code> 算作写操作。</td></tr>
 </tbody>
 </table>
@@ -160,11 +161,11 @@
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">跟随规则</th><td>对话的页面预览跟随驱动报告的操作：前端只跟随实时的 <code translate="no">browser.resource</code> 事件，且其中的 <code translate="no">last_operation</code> 是新的、阶段为 <code translate="no">dispatched</code> 或 <code translate="no">acknowledged</code>，快照从不触发跟随。</td></tr>
-<tr><th scope="row">写动作</th><td>每个写动作（<code translate="no">read</code>、<code translate="no">console</code>、<code translate="no">network</code>、<code translate="no">wait</code>、<code translate="no">screenshot</code>、<code translate="no">tabs</code> 和 <code translate="no">close</code> 以外的动作）先为当前 execution 保留标签页的资源行（<code translate="no">publish_bound_page</code>），再带 <code translate="no">follow</code> 报告 <code translate="no">dispatched</code>（<code translate="no">pages.report_browser_operation</code>），在输入发出之前记下操作，并把资源的控制状态设为 <code translate="no">active</code>。</td></tr>
+<tr><th scope="row">写动作</th><td>每个写动作（<code translate="no">get_state</code>、<code translate="no">find</code>、<code translate="no">read_console_messages</code>、<code translate="no">read_network_requests</code>、<code translate="no">wait</code>、<code translate="no">list_tabs</code>、<code translate="no">create_tab</code> 和 <code translate="no">close_tab</code> 以外的动作）先为当前 execution 保留标签页的资源行（<code translate="no">publish_bound_page</code>），再带 <code translate="no">follow</code> 报告 <code translate="no">dispatched</code>（<code translate="no">pages.report_browser_operation</code>），在输入发出之前记下操作，并把资源的控制状态设为 <code translate="no">active</code>。</td></tr>
 <tr><th scope="row">动作之后</th><td>动作之后以同一个操作 id 报告 <code translate="no">acknowledged</code>，或带原因码报告 <code translate="no">failed</code>；失败的报告不会再设置控制状态。</td></tr>
 <tr><th scope="row">操作中状态</th><td>页面只在设置它的 execution 运行期间显示为操作中：那个 execution 结束后，资源投影会把 <code translate="no">active</code> 投成 <code translate="no">idle</code>。</td></tr>
 <tr><th scope="row">标记点</th><td>点击的结果带标记点：点击前，<code translate="no">_aim</code> 把元素滚动到视口内并记下其包围盒的中心，按 <code translate="no">x</code>,<code translate="no">y</code> 点击时记下换算出的 CSS 坐标，同时记下视口的 <code translate="no">innerWidth</code> 和 <code translate="no">innerHeight</code>；<code translate="no">sanitize_operation</code> 把它们变成 <code translate="no">point</code>，以视口尺寸作 <code translate="no">width</code> 和 <code translate="no">height</code>，由 <code translate="no">browser-marker-geometry</code> 映射到截图上。</td></tr>
-<tr><th scope="row">读动作</th><td>读取（<code translate="no">read</code>、<code translate="no">console</code>、<code translate="no">network</code>、<code translate="no">wait</code>、<code translate="no">screenshot</code>）报告一个不带 <code translate="no">follow</code> 的 <code translate="no">acknowledged</code> 操作，所以预览会跟随，页面却不会被标为操作中；<code translate="no">open</code> 在发布新标签页之后为它报告同样的操作，使它成为被跟随的标签页。</td></tr>
+<tr><th scope="row">读动作</th><td>读取（<code translate="no">get_state</code>、<code translate="no">find</code>、<code translate="no">read_console_messages</code>、<code translate="no">read_network_requests</code>、<code translate="no">wait</code>）报告一个不带 <code translate="no">follow</code> 的 <code translate="no">acknowledged</code> 操作，所以预览会跟随，页面却不会被标为操作中；<code translate="no">create_tab</code> 在发布新标签页之后为它报告同样的操作，使它成为被跟随的标签页。</td></tr>
 <tr><th scope="row">列表步骤</th><td>一组动作的每一步各自报告。</td></tr>
 <tr><th scope="row">上报</th><td>报告从不让动作失败：出错只在 debug 级别记日志。</td></tr>
 </tbody>
@@ -177,7 +178,7 @@
 <tr><th scope="row">驱动</th><td>fork 出的子进程丢弃父进程的驱动（<code translate="no">os.register_at_fork</code>），因为它的所有者线程和连接属于父进程，然后启动自己的驱动。</td></tr>
 <tr><th scope="row">渲染进程调用</th><td>它的渲染进程调用（<code translate="no">capture_pages_for_listing</code>、<code translate="no">open_page</code>、<code translate="no">request_close_tab</code>、<code translate="no">request_bound_screenshot</code>）经过父进程的 webtab 桥，桥把它们限制在发起的窗口内、只认可它发出的绑定，并在子进程结束时关闭子进程打开的标签页。</td></tr>
 <tr><th scope="row">操作上报</th><td>子进程不持有 App 连接，所以它的操作报告也交给 worker：<code translate="no">pages.forward_operations_to_parent</code> 把每个报告作为 <code translate="no">__op_browser_operation__</code> 放进子进程的事件队列，worker 用 <code translate="no">report_forwarded_operation</code> 报告它，只保留操作本身的字段，没有指明 execution 时用它启动的那个。</td></tr>
-<tr><th scope="row">锁</th><td>标签页锁和写记录是按进程的，所以子进程和 worker 在同一个标签页上会在单次页面调用的粒度上交错。</td></tr>
+<tr><th scope="row">锁</th><td><code translate="no">Tab</code> 的锁和写记录是按进程的，所以子进程和 worker 在同一个标签页上会在单次页面调用的粒度上交错。</td></tr>
 </tbody>
 </table>
 
@@ -188,7 +189,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td><code translate="no">browser</code> 目标的标签页驱动，选择标签页、ref 恢复、两种快照协议和结果形状有单元测试；并在 App 里做了两次端到端运行：agent 通过后台标签页填写并提交了一份本地两页表单（文本、邮箱、单选、复选、下拉、多行文本、确认框）。</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">type="browser"</code> 的标签页驱动，选择标签页、ref 恢复、两种快照协议和结果形状有单元测试；并在 App 里做了两次端到端运行：agent 通过后台标签页填写并提交了一份本地两页表单（文本、邮箱、单选、复选、下拉、多行文本、确认框）。</td></tr>
 <tr><th scope="row">未实现</th><td>每次运行单独留一张截图：一次运行看到了什么，就是它在对话里自己那条分支上的工具结果。</td></tr>
 <tr><th scope="row">未实现</th><td>驱动自己的浏览器在两次启动之间保留配置：需要登录的页面要等 App 开着。</td></tr>
 </tbody>

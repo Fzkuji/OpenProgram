@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import httpx
 
 from openprogram.programs.tools.web.web_search._http import post_json
-from openprogram.host.security.safe_http import safe_client
 from openprogram.host.security.url_policy import normalize_origin
 from openprogram.programs.tools.web._owner_fetch import owner_open
 
@@ -83,6 +81,12 @@ class GeminiVisionProvider:
 
 def _url_to_b64(url: str) -> tuple[str, str]:
     import base64
+
+    # Imported at the first request: the HTTP client takes 0.06 s to import,
+    # and this module is loaded with the Programs by every command.
+    import httpx
+
+    from openprogram.host.security.safe_http import safe_client
 
     safe_error: RuntimeError | None = None
     try:

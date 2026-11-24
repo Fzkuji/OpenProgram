@@ -10,7 +10,7 @@
 <tbody>
 <tr><th scope="row">Agent panel</th><td>Policy, Functions, Workflows and Applications counts, collapsible effective entries</td><td>Expanding reads structure and changes nothing. A collapsed list is cheap.</td></tr>
 <tr><th scope="row">Selector left</th><td>Type and category navigation</td><td>Search, Selected only, Issues only</td></tr>
-<tr><th scope="row">Selector centre</th><td>Names, descriptions, selected and availability states</td><td>Checkboxes edit the Agent draft, not global enablement. The detailed catalog loads when <strong>Browse Programs</strong> opens.</td></tr>
+<tr><th scope="row">Selector centre</th><td>Names, descriptions, selected and availability states</td><td>Checkboxes edit the Agent draft, not global enablement. The detailed catalog is read when the section shows, so <strong>Browse Programs</strong> usually opens on a list already there; the last list read draws at once.</td></tr>
 <tr><th scope="row">Inspector</th><td>Entry signature, input and output, direct dependencies, validation evidence</td><td>Opens Programs for source and full graph. Expands at most two levels.</td></tr>
 <tr><th scope="row">Workflow tree</th><td>Stable circular expand controls, continuous hierarchy lines</td><td>Keyboard-expandable, honours reduced motion. Preview and access editing are separate actions.</td></tr>
 <tr><th scope="row">MCP entries</th><td>Not repeated in Program choices</td><td>Managed in the MCP section. Runtime tools still use shared invocation.</td></tr>
@@ -25,7 +25,7 @@
 <tr><th scope="row">Preset</th><td>A reference. Preview shows expanded names and version. Switching to explicit selection copies names only, not Program definitions.</td></tr>
 <tr><th scope="row"><code translate="no">Selected=[]</code></th><td>Same effect as None</td></tr>
 <tr><th scope="row">Missing entry</th><td>Listed under Issues by stored name, removable, not invocable</td></tr>
-<tr><th scope="row">Catalog failure</th><td>Shown apart from an empty search result</td></tr>
+<tr><th scope="row">Catalog failure</th><td>Nothing is said; the last list stays, or the list stays empty, while the read is tried again. "No matching entries" appears only for a search over a list that arrived</td></tr>
 <tr><th scope="row">Done, Cancel</th><td>Done keeps local draft changes. Cancel restores the draft from when the selector opened. Neither saves.</td></tr>
 <tr><th scope="row">Save</th><td>The global Save commits every section under one <code translate="no">expected_revision</code></td></tr>
 <tr><th scope="row">Validated mark</th><td>Never from a title, source status or stale test count. Evidence shows apart from capability readiness. Catalog APIs supply the metadata before the inspector counts as complete.</td></tr>

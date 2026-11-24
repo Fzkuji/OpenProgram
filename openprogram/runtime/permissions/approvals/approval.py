@@ -54,7 +54,7 @@ def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> b
 
 # Tools whose approval card offers "allow for this conversation": the grant
 # is written as a session-layer rule, so it ends with the conversation.
-_SESSION_SCOPE_TOOLS = {"computer_use_agent"}
+_SESSION_SCOPE_TOOLS = {"computer_use"}
 
 
 def _persist_session_allow_rule(session_id: str, tool_name: str, args: dict) -> bool:
@@ -409,7 +409,7 @@ def wrap_with_approval(
             missing = missing_access_error(name, args, _access_found)
             if missing:
                 # Waiting would park this run forever: the wait has no timeout.
-                return _malformed(CallProblem("SYSTEM_ACCESS_MISSING", missing))
+                return _malformed(CallProblem("PERMISSION_MISSING", missing))
         if _escalation_needed(name, args):
             # The escalation card is the one approval: it also covers what
             # an ordinary "ask" would have asked.

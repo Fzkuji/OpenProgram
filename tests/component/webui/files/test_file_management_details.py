@@ -10,6 +10,15 @@ import pytest
 project_root = _test_project_files.project_root
 
 
+def _measured(cmd):
+    """A whole folder-size sample: a busy machine can outlast one measuring
+    budget, and the sample then goes on from its token."""
+    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    while sample['state'] == 'partial':
+        sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'continue', 'token': sample['token']})['data']
+    return sample
+
+
 def test_sort_before_pagination(project_root):
     for n in range(12):
         (project_root / f'file{n}.txt').write_bytes(b'x' * (n + 1))
@@ -110,7 +119,7 @@ def test_size_skips_links_and_counts_dependency_directories(project_root):
     (project_root / 'src' / 'outside').symlink_to(project_root.parent)
     (project_root / 'src' / 'node_modules').mkdir()
     (project_root / 'src' / 'node_modules' / 'large').write_bytes(b'x' * 10000)
-    result = _run(ws_files.handle_project_folder_size, {'project_id': 'p1', 'path': 'src', 'operation': 'start'})['data']
+    result = _measured({'project_id': 'p1', 'path': 'src'})
     assert result['state'] == 'incomplete'
     assert result['skipped'] == 1
     assert result['bytes'] == 10000 + len(b"print('hi')\n")
@@ -175,7 +184,7 @@ def test_size_counts_search_ignored_cache_directories(project_root):
 def test_size_sample_survives_worker_cache_reload(project_root, monkeypatch):
     from openprogram.interfaces.server.ws_actions.files import metadata
     cmd = {'project_id': 'p1', 'path': 'src'}
-    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    sample = _measured(cmd)
     assert sample['state'] == 'complete'
     metadata._CACHE.clear()
     monkeypatch.setattr(metadata, '_CACHE_FILE', None, raising=False)
@@ -194,7 +203,7 @@ def test_size_sample_survives_a_fresh_worker_process(project_root):
     import sys
     from pathlib import Path
     cmd = {'project_id': 'p1', 'path': 'src'}
-    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    sample = _measured(cmd)
     code = """
 import asyncio, json, sys, types
 from openprogram.state.store.project import project_store
@@ -223,7 +232,7 @@ def test_persistent_incomplete_sample_preserves_skipped_entries(project_root, mo
     from openprogram.interfaces.server.ws_actions.files import metadata
     (project_root / 'src' / 'link').symlink_to(project_root.parent)
     cmd = {'project_id': 'p1', 'path': 'src'}
-    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    sample = _measured(cmd)
     assert sample['state'] == 'incomplete'
     metadata._CACHE.clear()
     monkeypatch.setattr(metadata, '_CACHE_FILE', None)
@@ -248,7 +257,7 @@ def test_size_cache_unavailable_or_corrupt_still_allows_queries(project_root, mo
     def unavailable(*args):
         raise OSError('read-only storage')
     monkeypatch.setattr(atomic_file, 'atomic_write_text', unavailable)
-    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    sample = _measured(cmd)
     assert sample['state'] == 'complete'
     assert _run(ws_files.handle_project_folder_size, cmd)['data']['bytes'] == sample['bytes']
 
@@ -275,7 +284,7 @@ def test_file_mutation_invalidates_persisted_ancestor_size(project_root, monkeyp
     (project_root / 'src' / 'nested').mkdir()
     (project_root / 'src' / 'nested' / 'one').write_bytes(b'12345')
     cmd = {'project_id': 'p1', 'path': 'src'}
-    sample = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    sample = _measured(cmd)
     assert sample['state'] == 'complete'
     metadata._CACHE.clear()
     monkeypatch.setattr(metadata, '_CACHE_FILE', None)

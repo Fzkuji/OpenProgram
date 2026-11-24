@@ -55,7 +55,7 @@
 <tr><th scope="row">回走</th><td><code translate="no">online.unwritten_turns</code>：尾部无标记的连续段，旧的在前</td></tr>
 <tr><th scope="row">分批</th><td><code translate="no">_first_batch</code>：取开头够阈值的轮次，一天的积压分多次写</td></tr>
 <tr><th scope="row">每轮</th><td><code translate="no">conversation/turn_runtime</code> 的 <code translate="no">_memory_write</code>：以 head 结尾的分支</td></tr>
-<tr><th scope="row">会话边界</th><td><code translate="no">session_watcher</code>（每 5 分钟轮询，空闲 30 分钟）强制 <code translate="no">write</code>：head 分支优先，再短也写；其余来自 <code translate="no">list_branches</code> 的存活、未归档尖端，未写文本够阈值才写</td></tr>
+<tr><th scope="row">会话边界</th><td><code translate="no">session_watcher</code>（空闲 30 分钟，到期时查看，两次最多隔 5 分钟）强制 <code translate="no">write</code>：head 分支优先，再短也写；其余来自 <code translate="no">list_branches</code> 的存活、未归档尖端，未写文本够阈值才写</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">should_incremental_write</code> 的空闲放行不适用于被放弃的尖端：它们的最后一条消息必然旧，否则每次重试都会被放行。被回退的轮次到不了这里，<code translate="no">get_branch</code> 已滤掉。</p>

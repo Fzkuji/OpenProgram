@@ -7,6 +7,7 @@ import vm from "node:vm";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const source = fs.readFileSync(new URL("../../../components/settings/providers/auth/connectivity.tsx", import.meta.url), "utf8");
+const errorText = await import("../../../lib/net/error-text.ts");
 const javascript = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -25,6 +26,7 @@ async function check(local, response) {
       };
       if (id === "react/jsx-runtime") return { jsx: () => null, jsxs: () => null };
       if (id === "@/lib/i18n") return { useTranslation: () => ({ text: (english) => english }) };
+      if (id === "@/lib/net/error-text") return errorText;
       if (id.endsWith("module.css")) return { default: {} };
       return { Button: () => null };
     },
@@ -50,6 +52,11 @@ for (const detail of ["Endpoint returned an invalid model listing.", "Network/ti
     assert.equal(result.title, detail);
   });
 }
+
+test("a detail that is not a sentence is still shown as text", async () => {
+  const { result } = await check(true, { status: "unknown", ok: false, detail: [{ loc: ["body", "model"], msg: "Field required" }] });
+  assert.equal(result.title, "model: Field required");
+});
 
 test("local connectivity reports successful inference", async () => {
   const { ok, result } = await check(true, { status: "valid", ok: true, via: "POST /chat/completions", latency_ms: 5 });

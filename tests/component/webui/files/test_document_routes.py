@@ -395,7 +395,7 @@ def test_document_stat_tracks_changes_without_returning_content(documents):
     params = {'project_id': 'p1', 'path': 'preview.txt'}
     before = client.get('/api/documents/stat', params=params)
     assert before.status_code == 200, before.text
-    assert set(before.json()) == {'version'}
+    assert set(before.json()) == {'version', 'watch'}
     content = client.get('/api/documents/content', params=params)
     assert content.headers['x-document-version'] == before.json()['version']
     assert before.headers['cache-control'] == 'no-store'

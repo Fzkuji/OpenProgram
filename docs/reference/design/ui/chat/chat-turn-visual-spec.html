@@ -225,7 +225,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Marks</th><td>One per user message, 9px at rest, 10px apart, the visible one brighter. The rail scrolls internally when long.</td></tr>
+<tr><th scope="row">Marks</th><td>One per user message, 9px at rest, 10px apart, the visible one brighter. Only a chapter's mark is longer: a second length for turns with tasks read as an unexplained difference. The rail scrolls internally when long and shows no scrollbar, the app's floating thumb included: the marks are the position, and the end with hidden marks fades.</td></tr>
+<tr><th scope="row">Colour</th><td>A mark's colour is its place in the conversation: the wordmark's gradient runs down the whole rail, blue at the first turn and purple at the last, so the two ends are told apart. The visible and the pointed-at mark are the bright text colour; a chapter is solid purple and thicker</td></tr>
 <tr><th scope="row">Position</th><td>Left edge of the chat area beside the sidebar divider, using <code translate="no">100cqw</code> of the inline-size container</td></tr>
 <tr><th scope="row">Pointer</th><td>Y maps to the nearest mark, which grows up to 36px; a preview card (truncated text, attachment chips) opens beside it. Never a full list.</td></tr>
 <tr><th scope="row">Click, Enter</th><td>Smooth scroll to the message and a brief highlight</td></tr>
@@ -266,7 +267,7 @@
 <tr><th scope="row">Persisted file records, or a direct file-writing tool</th><td>Card mounts</td></tr>
 <tr><th scope="row">No records</th><td>No card, no Review</td></tr>
 <tr><th scope="row">Older turn, loading on entering the viewport</th><td>Invisible probe; empty results stay hidden</td></tr>
-<tr><th scope="row">Load failed</th><td>“Could not load file changes.” and Retry</td></tr>
+<tr><th scope="row">Read failed</th><td>Nothing changes; the read is asked again with backoff</td></tr>
 <tr><th scope="row">All writes failed</th><td>“File changes in this turn did not go through.”</td></tr>
 </tbody>
 </table>
@@ -276,8 +277,9 @@
 <thead><tr><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contains</th><th scope="col">Undo</th></tr></thead>
 <tbody>
 <tr><th scope="row">This turn</th><td>Mutation journal of the turn</td><td>Primary change set; linked child sets grouped by actual producer</td><td>When every record is recoverable and unchanged since</td></tr>
-<tr><th scope="row">Current branch</th><td>Mutation projection of the active lineage</td><td>Completed turns and explicit reverts, restores and reapplies; no sibling branches, ordinary Bash or external writes</td><td>From a specific turn or checkpoint only</td></tr>
-<tr><th scope="row">Workspace</th><td>Git tracked diff and <code translate="no">ls-files --others --exclude-standard</code></td><td>Uncommitted files, respecting <code translate="no">.gitignore</code>; non-Git shows unavailable</td><td>None</td></tr>
+<tr><th scope="row">Unstaged</th><td>Git working tree against the index, and <code translate="no">ls-files --others --exclude-standard</code></td><td>Changes not yet staged, untracked files included, respecting <code translate="no">.gitignore</code>; non-Git shows unavailable</td><td>None; Stage</td></tr>
+<tr><th scope="row">Staged</th><td>Git index against HEAD</td><td>Changes staged for the next commit</td><td>None; Unstage</td></tr>
+<tr><th scope="row">Branch</th><td>Mutation projection of the active lineage</td><td>Completed turns and explicit reverts, restores and reapplies; no sibling branches, ordinary Bash or external writes</td><td>From a specific turn or checkpoint only</td></tr>
 </tbody>
 </table>
 <table class="stack">
@@ -285,11 +287,11 @@
 <tbody>
 <tr><th scope="row">Review, file row</th><td>Opens one deterministic <code translate="no">r:&lt;sessionId&gt;:&lt;assistantMsgId&gt;</code> center tab; a row also selects its path</td><td>No inline chat diff; repeated clicks only focus or update selection</td></tr>
 <tr><th scope="row">Placement</th><td>Without a split, to the chat's right in the existing group; with a full split, a normal active tab</td><td>No replaced peers, third pane or second tab store</td></tr>
-<tr><th scope="row">Header</th><td>Title, source and totals; then scope switch and type menu (All types, Code, Tests, Docs, Large)</td><td>Page colour, hairline separators</td></tr>
+<tr><th scope="row">Header</th><td>One row: the scope menu with its totals; a … menu with Review with agent and File type (All, Code, Tests, Docs, Large). See <a href="../workspace/review-pane.html#header">Review pane</a></td><td>Page colour, hairline separators</td></tr>
 <tr><th scope="row">Below 900px pane width</th><td>File list folds into the selected file's header: full name, folder, actor, producing turn, line counts, <em>n / N</em> menu</td><td>From 900px: a 260px list, name over folder</td></tr>
 <tr><th scope="row">Diff</th><td>No file headers; hunks labelled by line range; long lines wrap; added or deleted files show one number column; paging below</td><td>One bounded diff mounted at a time</td></tr>
 <tr><th scope="row">Preview</th><td>Rendered current Markdown, image or PDF</td><td>Reads the file as it is now; none for deleted files</td></tr>
-<tr><th scope="row">Line comments</th><td>Click lines; several go with structured locations in the next prompt</td><td>Never edit files or claim a review</td></tr>
+<tr><th scope="row">Line comments, staging, Review with agent</th><td>See <a href="../workspace/review-pane.html">Review pane</a></td><td>Comments never edit files; findings never claim a fix</td></tr>
 <tr><th scope="row">Large, binary</th><td>Statistics, reason, Open file</td><td>No full rendering</td></tr>
 <tr><th scope="row">Undo conflict</th><td>Review locates conflicting files</td><td>No force shortcut</td></tr>
 </tbody>
@@ -309,7 +311,7 @@
 <tbody>
 <tr><th scope="row">Exact attribution</th><td>As Codex: turn statistics come only from committed mutations</td></tr>
 <tr><th scope="row">Separate review surface</th><td>As both: chat holds summaries, Review holds navigation, content and comments</td></tr>
-<tr><th scope="row">Session and repository diffs</th><td>Three scopes in one tab</td></tr>
+<tr><th scope="row">Session and repository diffs</th><td>Four scopes in one tab</td></tr>
 <tr><th scope="row">Checkpoint recovery</th><td>Turn-level Undo with full preflight, recorded as a new journal transaction</td></tr>
 <tr><th scope="row">Not done</th><td>No directory-scan attribution around Bash, no approximate turn diffs, no silent partial recovery</td></tr>
 </tbody>
@@ -356,6 +358,7 @@
 <h2 id="chat-failures">Failed replies</h2>
 <ul>
 <li>The partial answer and ordered trace stay. One terminal notice follows them, before message actions: a localized headline, technical details on request as plain text. No automatic retry is added.</li>
+<li>The notice is drawn until the reader sends a newer message. After that it is left out, and a reply that is nothing but its error leaves no row: an error already answered asks nothing of the reader, and three failed tries read as three alarms above the message that went through.</li>
 <li>Partial blocks and failure detail are separate fields. Node output keeps the error text for model context and non-Web consumers; the Web mapper restores the answer from ordered text blocks.</li>
 <li>The node persists detail, reason, retryability and retry delay before the final failure event, so history restores the same notice. Older error output is recognized without rewriting history and does not repeat the answer.</li>
 <li>Cancellation, approval, nested details, retry and branch semantics and Goal reports are unchanged. Provider taxonomy stays authoritative; no second error store.</li>
@@ -364,7 +367,7 @@
 <summary>Acceptance</summary>
 <ul>
 <li>A public turn emits text and tools, then fails: live and cold history show answer, trace and one notice.</li>
-<li>Empty and older failed replies stay visible. Successful and cancelled replies gain no notice. Details work narrow and dark.</li>
+<li>Empty and older failed replies stay visible until a newer message follows them. Successful and cancelled replies gain no notice. Details work narrow and dark.</li>
 <li>Regression also covers browser permission inheritance and high-level delegation. Bound-page tests supply an explicit binding and expect the stop after three failed attempts on one observation, with the concrete reason.</li>
 </ul>
 </details>
@@ -393,7 +396,7 @@
 <tr><th scope="row">Release</th><td>After transport handoff or failure. Completion clears only an unchanged captured draft.</td></tr>
 <tr><th scope="row">Queued</th><td>Dispatched in order after the current turn. Session queues and editing order are independent; attachments use ordinary queue delivery.</td></tr>
 <tr><th scope="row">Consumed steering</th><td>Shown between the reply content around it. Its user node stays independent; the reply stores an ordered boundary shared by streaming, cancellation and history. Older records use predecessor edges, never a guessed offset.</td></tr>
-<tr><th scope="row">Delivery</th><td>Receipt polling confirms the same command without changing the waiting label, bounded, and works while the provider is silent. Pending or uncertain items cannot be resent, edited or removed. Definitive rejection keeps the queued draft; transport failure stays uncertain and is never resent.</td></tr>
+<tr><th scope="row">Delivery</th><td>The same command is asked about again when its execution or the session's run changes, or the socket reopens, without changing the waiting label, and works while the provider is silent. Pending or uncertain items cannot be resent, edited or removed. Definitive rejection keeps the queued draft; transport failure stays uncertain and is never resent.</td></tr>
 <tr><th scope="row">Streaming steer</th><td>Accepted text interrupts active text or reasoning, keeps emitted content, closes the request and applies the durable command before the next model request. Tool-call arguments, running tools and structured output wait for their safe point; no tool is replayed or cancelled.</td></tr>
 <tr><th scope="row">Stop during pending steer</th><td>Keeps the partial reply and its history position. A command rejected by cancellation stays an unsent draft with Send, never a new turn automatically. Projection may advance only the exact top-level turn from its user node to its assistant node by compare-and-set.</td></tr>
 </tbody>

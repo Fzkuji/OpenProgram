@@ -235,8 +235,11 @@ def _complete_browser_probe(
         raise RuntimeError("candidate browser probe deadline expired")
     with tempfile.TemporaryDirectory(prefix="browser-probe-", dir=update_dir) as home:
         code = (
-            "from playwright.sync_api import sync_playwright; "
-            "p=sync_playwright().start(); b=p.chromium.launch(headless=True); "
+            "from playwright.sync_api import sync_playwright\n"
+            "p=sync_playwright().start()\n"
+            # The full browser; a runtime may ship without the headless shell.
+            "try: b=p.chromium.launch(headless=True, channel='chromium')\n"
+            "except Exception: b=p.chromium.launch(headless=True)\n"
             "page=b.new_page(); page.set_content('<title>OpenProgram runtime probe</title>'); "
             "assert page.title() == 'OpenProgram runtime probe'; b.close(); p.stop(); "
             "print('TRUSTED_BROWSER_PROBE_OK')"
@@ -322,7 +325,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     incremental = plan.scope == "incremental"
     sandbox = _sandbox_executable()
     script = candidate / ("apps/desktop/scripts/package-incremental-app.sh" if incremental
-                          else "apps/desktop/scripts/package-and-install-app.sh")
+                          else "apps/desktop/scripts/package-app.sh")
     if not script.is_file() or script.is_symlink():
         raise RuntimeError("candidate packaging entry is unavailable")
     artifact_root = update_dir / "artifact"

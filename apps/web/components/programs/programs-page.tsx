@@ -30,8 +30,11 @@ import {
   type PierreTreeHandle,
 } from "@/components/files/explorer/pierre-file-tree";
 import { useTranslation } from "@/lib/i18n";
-import { createProgramsCache } from "./programs-cache";
+import { catalogCache, keptProgramsView, parentPaths, type ExplorerResponse } from "./programs-reads";
+import { retryDelay } from "@/lib/abilities/kept-read";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { sharedRead } from "@/lib/net/shared-get";
+import { useChanged } from "@/lib/net/ws/changes";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useFunctions } from "@/lib/abilities/functions-store";
 import type { FunctionsMeta } from "@/lib/types";
@@ -75,14 +78,9 @@ import fileStyles from "@/components/files/files-panel.module.css";
 
 type ExplorerEntry = ProgramExplorerEntry;
 
-type ExplorerResponse = {
-  path: string;
-  entries: ExplorerEntry[];
-  default_selection?: string | null;
-};
 
 const ROOT_LABEL = "openprogram/programs";
-const catalogCache = createProgramsCache(jsonFetch);
+const PROGRAM_TOPICS = ["programs", "applications"] as const;
 // Preserve the file-explorer view while navigating away and back.
 let savedView: {
   directories: Record<string, ExplorerEntry[]>;
@@ -99,11 +97,6 @@ function catalogLabel(
   if (entry.path === "tools") return text("Tools", "工具");
   if (entry.path === "applications") return text("Applications", "应用");
   return entry.name;
-}
-
-function parentPaths(path: string) {
-  const parts = path.split("/");
-  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
 }
 
 function kindLabel(
@@ -164,18 +157,23 @@ export function ProgramsPage({
 } = {}) {
   const { t, text } = useTranslation();
   const router = useRouter();
-  const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>(() => savedView.directories);
-  const [selected, setSelected] = useState<string | null>(() => savedView.selected);
-  const [logic, setLogic] = useState<LogicResponse | null>(() => catalogCache.peek<LogicResponse>("logic", savedView.selected || "") || null);
-  const [loadingTree, setLoadingTree] = useState(() => !savedView.directories[""]);
+  // A first visit opens on what a prefetch already read (the sidebar starts
+  // it on hover and at idle); later visits on the view left last time.
+  const [initialView] = useState(() => savedView.directories[""] ? savedView : { ...savedView, ...keptProgramsView() });
+  const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>(() => initialView.directories);
+  const [selected, setSelected] = useState<string | null>(() => initialView.selected);
+  const [logic, setLogic] = useState<LogicResponse | null>(() => catalogCache.peek<LogicResponse>("logic", initialView.selected || "") || null);
+  // Until the first tree and call logic arrive their places stay empty.
+  const [loadingTree, setLoadingTree] = useState(() => !initialView.directories[""]);
   const [loadingLogic, setLoadingLogic] = useState(false);
+  // Only the outcome of the person's own change; reads fail quietly.
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
   const [fuzzySearch, setFuzzySearch] = useState(true);
   const [searchMatchIndex, setSearchMatchIndex] = useState(0);
-  const [expanded, setExpanded] = useState<Set<string>>(() => savedView.expanded);
+  const [expanded, setExpanded] = useState<Set<string>>(() => initialView.expanded);
   const [view, setView] = useState<"tree" | "graph">(() => savedView.view);
   const [callExpansion, setCallExpansion] = useState<Map<string, boolean>>(new Map());
   useEffect(() => setCallExpansion(new Map()), [selected]);
@@ -209,12 +207,22 @@ export function ProgramsPage({
     return response;
   }, []);
 
+  // The tree and the call logic are read again when the Worker says the
+  // registered Programs or the applications changed (a package loaded or
+  // edited, an application installed or switched), not on a timer.
+  const treeRefresh = useRef<(() => unknown) | null>(null);
+  const logicRefresh = useRef<(() => unknown) | null>(null);
+  useChanged(PROGRAM_TOPICS, () => Promise.all([treeRefresh.current?.(), logicRefresh.current?.()]));
+
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
     let inFlight = false;
+    let failures = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     async function revalidate() {
       if (inFlight || document.visibilityState === "hidden") return;
+      clearTimeout(retry);
       inFlight = true;
       if (!currentView.current.directories[""]) setLoadingTree(true);
       try {
@@ -244,31 +252,37 @@ export function ProgramsPage({
           setSelected(initial);
           if (requested) pendingReveal.current = requested;
         }
-        setError("");
+        failures = 0;
+        if (!cancelled) setLoadingTree(false);
       } catch (cause) {
-        if (!cancelled && (cause as Error).name !== "AbortError") setError(text("Programs could not be refreshed. Showing the last loaded content.", "Programs 刷新失败，保留上次加载的内容。"));
+        // The last tree stays on screen; the read is tried again quietly.
+        if (!cancelled && (cause as Error).name !== "AbortError") {
+          console.warn("[programs] tree read failed; trying again", cause);
+          retry = setTimeout(() => { void revalidate(); }, retryDelay(failures++));
+        }
       } finally {
         inFlight = false;
-        if (!cancelled) setLoadingTree(false);
       }
     }
     void revalidate();
-    const timer = window.setInterval(revalidate, 5000);
+    treeRefresh.current = revalidate;
     window.addEventListener("focus", revalidate);
     document.addEventListener("visibilitychange", revalidate);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      clearTimeout(retry);
+      if (treeRefresh.current === revalidate) treeRefresh.current = null;
       window.removeEventListener("focus", revalidate);
       document.removeEventListener("visibilitychange", revalidate);
       controller.abort();
     };
-  }, [loadDirectory, reloadToken, text]);
+  }, [loadDirectory, reloadToken]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void jsonFetch<FunctionsMeta>("/api/programs/meta", { signal: controller.signal })
+    let stopped = false;
+    void sharedRead("/api/programs/meta", () => jsonFetch<FunctionsMeta>("/api/programs/meta"))
       .then((next) => {
+        if (stopped) return;
         setMeta(next);
         runtimeState.programsMeta = {
           favorites: [...next.favorites],
@@ -277,13 +291,9 @@ export function ProgramsPage({
         };
         useFunctions.getState().setMeta(next);
       })
-      .catch((cause) => {
-        if ((cause as Error).name !== "AbortError") {
-          setError(text("Favorites could not be loaded.", "无法加载收藏。"));
-        }
-      });
-    return () => controller.abort();
-  }, [text]);
+      .catch((cause) => { console.warn("[programs] favorites read failed", cause); });
+    return () => { stopped = true; };
+  }, []);
 
   const treeEntriesByPath = useMemo(() => {
     const entries = new Map<string, ExplorerEntry>();
@@ -312,15 +322,19 @@ export function ProgramsPage({
     setLogic(cached || null);
     setLoadingLogic(!cached);
     let inFlight = false;
+    let failures = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     let appliedResult: LogicResponse | undefined;
     const refreshLogic = () => {
       if (inFlight || document.visibilityState === "hidden") return;
+      clearTimeout(retry);
       inFlight = true;
       void catalogCache.read<LogicResponse>("logic", logicPath, controller.signal)
       .then((result) => {
+        failures = 0;
+        if (!cancelled) setLoadingLogic(false);
         if (!cancelled && appliedResult !== result) {
           appliedResult = result;
-          setError("");
           setLogic(selectedEntry ? {
             ...result,
             nodes: result.nodes.map((node) => node.id === result.root
@@ -334,27 +348,31 @@ export function ProgramsPage({
           if ((cause as { status?: number }).status === 404) {
             setLogic(null);
             setSelected(null);
+            setLoadingLogic(false);
+            return;
           }
-          setError(text("Call logic could not be refreshed.", "调用逻辑刷新失败。"));
+          // What is shown stays; the read is tried again quietly.
+          console.warn("[programs] call logic read failed; trying again", cause);
+          retry = setTimeout(refreshLogic, retryDelay(failures++));
         }
       })
       .finally(() => {
         inFlight = false;
-        if (!cancelled) setLoadingLogic(false);
       });
     };
     refreshLogic();
-    const timer = window.setInterval(refreshLogic, 5000);
+    logicRefresh.current = refreshLogic;
     window.addEventListener("focus", refreshLogic);
     document.addEventListener("visibilitychange", refreshLogic);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      clearTimeout(retry);
+      if (logicRefresh.current === refreshLogic) logicRefresh.current = null;
       window.removeEventListener("focus", refreshLogic);
       document.removeEventListener("visibilitychange", refreshLogic);
       controller.abort();
     };
-  }, [selected, selectedEntry, text, reloadToken]);
+  }, [selected, selectedEntry, reloadToken]);
 
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
   const invocationName = selectedEntry?.callable_name || "";
@@ -441,9 +459,11 @@ export function ProgramsPage({
   async function loadOpenedDirectory(path: string) {
     const entry = treeEntriesByPath.get(path);
     if (!entry || entry.kind !== "folder" || !entry.has_children) return;
+    // The person opened this folder: a folder that cannot be read says so.
     try {
       await loadDirectory(path);
-    } catch {
+    } catch (cause) {
+      console.warn(`[programs] folder read failed: ${path}`, cause);
       setError(text("Folder could not be loaded.", "无法加载文件夹。"));
     }
   }
@@ -467,7 +487,7 @@ export function ProgramsPage({
   }
 
   function renderTree() {
-    if (loadingTree) return <div className={fileStyles.treeHint}>{text("Loading…", "加载中…")}</div>;
+    if (loadingTree) return null;
     // Filtering shows the matches under their folders, as Files does.
     if (search.trim() && searchMode === "filter") {
       if (!searchMatches.length) return <div className={fileStyles.treeHint}>{text("No matches", "无匹配")}</div>;
@@ -507,6 +527,7 @@ export function ProgramsPage({
   async function setEnabled(entry: ExplorerEntry, enabled: boolean) {
     const id = entry.application_id || entry.name;
     setChanging(true);
+    setError("");
     try {
       await applicationRequest(`/api/applications/${encodeURIComponent(id)}`, "PATCH", { enabled });
       await refreshApplications({ fresh: true }).catch(() => undefined);
@@ -599,28 +620,15 @@ export function ProgramsPage({
             <div className={styles.tree}>{renderTree()}</div>
           </SecondaryRail>
           <section className="min-w-0 min-h-0 relative overflow-auto">
-            {error ? (
-              <div role="alert">
-                <ManageEmptyState
-                  compact
-                  icon={<Network />}
-                  title={text("Programs are unavailable", "暂时无法加载 Program")}
-                  description={error}
-                  action={<Button variant="elevated" onClick={() => void refreshPrograms()}>{text("Retry", "重试")}</Button>}
-                />
-              </div>
-            ) : !selected ? (
+            {error ? <div className={styles.loadState} role="alert">{error}</div> : null}
+            {loadingTree && !selected ? null : !selected ? (
               <ManageEmptyState
                 compact
                 icon={<Network />}
                 title={text("No Programs found", "没有找到 Program")}
                 description={text("Install an application or add a Tool.", "安装一个应用，或添加 Tool。")}
               />
-            ) : loadingLogic ? (
-              <div className={styles.empty}><RefreshCw className={styles.spin} size={24} /><span>{text("Loading call logic…", "正在加载调用逻辑…")}</span></div>
-            ) : !logic || !selectedNode ? (
-              <ManageEmptyState compact icon={<Network />} title={text("Call logic is unavailable", "调用逻辑不可用")} />
-            ) : (
+            ) : loadingLogic || !logic || !selectedNode ? null : (
               <div className={`${styles.logicContent} w-[min(100%,_1040px)] m-[0_auto] p-[24px_30px_60px]`}>
                 <div className={styles.breadcrumb}>{selectedNode.path}</div>
                 {selectedNode.entity_kind === "harness" && <div className={styles.harnessNote}>

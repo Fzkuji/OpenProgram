@@ -225,6 +225,8 @@ export interface BrowserPageInventorySnapshot {
   focused_tab_id: string;
   tab_entries: BrowserPageInventoryTabEntry[];
   pages: BrowserPageInventoryItem[];
+  /** Restore scope only: web tabs that are there with no native view yet. */
+  dormant_tabs?: string[];
 }
 
 export const browserInventoryRevisions = new Map<
@@ -340,6 +342,13 @@ export async function browserPageInventory(
       && listed(page.tab_id, useCenterTabs.getState()),
   );
   const validTabIds = new Set(validPages.map((page) => page.tab_id));
+  // Tabs that are there with no native view yet: their pages are not lost,
+  // so the worker's restore must not call them failed.
+  const dormantTabs = opts.restore
+    ? useCenterTabs.getState().tabs
+      .filter((tab) => tab.kind === "web" && !validTabIds.has(tab.id))
+      .map((tab) => tab.id)
+    : undefined;
   const tabEntries = centerTabStripEntries({
     tabIds: tabs.map((tab) => tab.id),
     groups,
@@ -390,6 +399,7 @@ export async function browserPageInventory(
     focused_tab_id: validTabIds.has(focusedTabId) ? focusedTabId : "",
     tab_entries: tabEntries,
     pages: validPages,
+    ...(dormantTabs ? { dormant_tabs: dormantTabs } : {}),
   };
 }
 

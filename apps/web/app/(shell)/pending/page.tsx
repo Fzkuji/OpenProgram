@@ -1,12 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import dynamic from "next/dynamic";
-
-const PendingPage = dynamic(
-  () => import("@/components/pending/pending-page").then((m) => m.PendingPage),
-  { ssr: false },
-);
-
+// Pending is the Tasks page's Inbox tab now.
 export default function Page() {
-  return <PendingPage />;
+  redirect("/tasks?tab=inbox");
 }

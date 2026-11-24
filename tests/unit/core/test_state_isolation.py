@@ -12,6 +12,7 @@ actually reaches the path layer, so the guard can't rot into a no-op.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -96,3 +97,21 @@ def test_the_account_home_is_read_from_the_account_not_from_home():
     account = paths._account_home()
     assert account is not None
     assert "openprogram-test-home" not in account
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the account is read from the shell there")
+def test_a_failed_account_lookup_is_not_remembered(monkeypatch):
+    import pwd
+
+    from openprogram.state import paths
+
+    monkeypatch.setattr(paths, "_account_home_cache", [])
+    lookup = pwd.getpwuid
+
+    def unreadable(_uid):
+        raise KeyError("no such account")
+
+    monkeypatch.setattr(pwd, "getpwuid", unreadable)
+    assert paths._account_home() is None
+    monkeypatch.setattr(pwd, "getpwuid", lookup)
+    assert paths._account_home() is not None, "the next call asks the account again"

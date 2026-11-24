@@ -1,0 +1,29 @@
+{
+  "_doc": "Rules of this paper alone, read by paper_revision_check. Fill every key from the call for papers and the author's requirements; keys are described in auto_research/tasks/revision/rules/paper.py. code.repo is the public code repository the final version links (empty: none); deliverables lists files such as {\"name\": \"poster\", \"path\": \"poster/poster.pdf\"}. Remove a key to keep the workflow default.",
+  "version": "submission",
+  "main_tex": "0main.tex",
+  "extra_tex": [],
+  "bib_files": [
+    "references.bib"
+  ],
+  "body_page_limit": 0,
+  "required_source": [],
+  "forbidden_source": [
+    "Anonymous Author",
+    "\\linenumbers"
+  ],
+  "required_sections": [],
+  "required_authors": [],
+  "banned_terms": {},
+  "preferred_terms": {},
+  "writing_rules": "",
+  "code": {
+    "repo": "",
+    "allowed_contributors": []
+  },
+  "deliverables": [],
+  "notes": {
+    "submission_system": "",
+    "upload_deadline": ""
+  }
+}

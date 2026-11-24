@@ -40,14 +40,14 @@
 <p>标记还在上一次请求文本里，或此后已送达，指南就算<strong>已知</strong>。没有台账：压缩、微压缩、worker 重启或新 agent 都会让标记消失，下一个需要它的调用会重新收到。提示词里已带标记指南的 agent 不再重复收到。</p>
 
 <h2><code translate="no">help</code></h2>
-<p><code translate="no">help(name)</code> 是常驻工具，按名返回指南；传工具名时返回其开场指南，标记方式与送达的指南相同。无需审批，属 <code translate="no">runtime.control</code> 权限。未知名称会列出现有指南。在 <code translate="no">computer_use_agent</code> 代码里，Python 的 <code translate="no">help</code>、<code translate="no">dir</code> 可用于 <code translate="no">cu</code> 对象：每个 docstring 就是目标指南里该动作的那一行。</p>
+<p><code translate="no">help(name)</code> 是常驻工具，按名返回指南；传工具名时返回其开场指南，标记方式与送达的指南相同。无需审批，属 <code translate="no">runtime.control</code> 权限。未知名称会列出现有指南。在 <code translate="no">computer_use</code> 代码里，Python 的 <code translate="no">help</code>、<code translate="no">dir</code> 可用于 <code translate="no">cu</code> 对象，即本次调用的目标：每个 docstring 就是家族指南里该动作的那一行。</p>
 
 <h2>单入口工具</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">工具</th><th scope="col">指南</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">self_update</code></th><td><code translate="no">self_update</code>：open，激活 <code translate="no">worktree_create</code>。<code translate="no">.prepare</code>、<code translate="no">.retry</code>、<code translate="no">.undo</code>：lookup，该动作必需</td></tr>
-<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td><code translate="no">.app</code>、<code translate="no">.browser</code>、<code translate="no">.vm</code>：操作该目标时 included。<code translate="no">.code</code>：随第一个操作任意目标的调用 included；没有调用等待它</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td><code translate="no">.app</code>、<code translate="no">.screen</code>、<code translate="no">.browser</code>：家族指南，调用操作该家族的目标时 included。<code translate="no">.note.&lt;target&gt;</code>：目标说明（所在机器、操作系统、缺少什么、快捷键），调用操作该目标时 included。<code translate="no">.code</code>：随第一个操作任意目标的调用 included；没有调用等待它</td></tr>
 </tbody>
 </table>
 <p>两层：工具，然后 <code translate="no">action</code> 或 <code translate="no">target</code>。权限、authority 和审批按动作决定。</p>
@@ -69,7 +69,7 @@
 <li><code translate="no">openprogram/runtime/agent/loop/</code>：<code translate="no">_run_loop</code>、<code translate="no">_stream_assistant_response</code>、<code translate="no">_rewrite_tool_result</code></li>
 <li><code translate="no">openprogram/runtime/permissions/policy.py</code>：<code translate="no">permission_decision</code></li>
 <li><code translate="no">openprogram/programs/tools/system/self_update/__init__.py</code></li>
-<li><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/tool.py</code>、<code translate="no">code.py</code></li>
+<li><code translate="no">openprogram/programs/tools/computer_use/computer_use/tool.py</code>、<code translate="no">code.py</code></li>
 <li><code translate="no">tests/unit/programs/test_guides.py</code>、<code translate="no">test_prechecks.py</code></li>
 </ul>
 </details>

@@ -1,0 +1,216 @@
+<title>变化通知</title>
+<meta name="description" content="Worker 和窗口怎样得知有变化，而不是定时再看一遍；以及每个循环等什么来代替原来的间隔。">
+<meta name="covers" content="openprogram/host/_platform/changes.py apps/web/lib/net/ws/changes.ts openprogram/runtime/execution/store/run_tables.py openprogram/runtime/jobs/runner/dispatch.py openprogram/runtime/jobs/runner/recovery.py openprogram/runtime/jobs/runner/progress.py openprogram/runtime/jobs/runner/service.py openprogram/runtime/jobs/notices.py openprogram/runtime/conversation/process_notices.py openprogram/runtime/conversation/run_control/idle.py openprogram/runtime/conversation/run_control/run_slot.py openprogram/runtime/execution/run_control/tokens.py openprogram/runtime/execution/waits.py openprogram/runtime/execution/projections/dag.py openprogram/runtime/execution/event_effects.py openprogram/operations/self_update/control/watchdog.py openprogram/operations/self_update/control/switch.py openprogram/operations/self_update/versions/store.py openprogram/host/_platform/process_exits.py openprogram/runtime/conversation/process_notices.py openprogram/interfaces/server/server_runtime/loop_stall.py openprogram/host/resources/conversation_changes.py openprogram/host/processes/record_changes.py openprogram/host/processes/store.py openprogram/host/processes/channel.py openprogram/host/processes/supervisor.py openprogram/host/processes/group_guard.py openprogram/programs/tools/files/bash/session.py openprogram/host/cancellation.py openprogram/interfaces/server/routes/files/document_changes.py openprogram/interfaces/server/routes/settings/routing.py openprogram/interfaces/server/routes/execution/recordings.py openprogram/interfaces/server/routes/identity/provider_login.py openprogram/interfaces/channels/_heartbeats.py openprogram/state/memory/session_watcher.py openprogram/state/memory/checkpoints.py openprogram/state/store/session/files/session_log.py openprogram/programs/_host/watcher.py openprogram/extensions/skills/watcher.py openprogram/operations/worker/runner.py openprogram/operations/worker/web.py openprogram/runtime/conversation/always_on/ticker.py openprogram/programs/tools/jobs/cron/worker.py apps/web/lib/browser/browser-resource-projection.ts apps/web/lib/desktop/terminal-output.ts openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_macos.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_windows.py openprogram/programs/tools/computer_use/computer_use/desktop/embedding/follow_linux.py openprogram/interfaces/server/ws_actions/embedded_window.py openprogram/programs/tools/computer_use/computer_use/desktop/window_watch.py openprogram/programs/tools/computer_use/computer_use/desktop/ax_events.py openprogram/state/store/operation_receipts.py openprogram/interfaces/server/routes/settings/config.py openprogram/interfaces/server/routes/catalog/agents.py openprogram/interfaces/server/routes/identity/providers.py apps/web/components/center-tabs/window/live-window-view.tsx apps/web/lib/desktop/embedded-window/embedded-window.ts apps/desktop/main/windows/embedded-windows.js apps/web/lib/clock/use-now.ts apps/web/lib/runtime-bridge/optimistic-action.ts apps/web/lib/net/ws/ws-request.ts apps/web/lib/net/ws/change-bus.ts apps/web/lib/desktop/recording/pane-recorder.ts apps/web/lib/chat/send/send-queue.ts apps/web/lib/chat/send/steer-message.ts apps/web/lib/chat/rewind/rewind-actions.ts apps/web/lib/query-client.ts apps/web/lib/prefs/settings-cache.ts apps/web/lib/execution/activity-reads.ts apps/web/lib/projects/list-projects.ts">
+<h1>变化通知</h1>
+
+<p>Worker 和窗口里没有任何地方靠短间隔定时再看一遍来发现变化。做出改动的代码说一次，等着它的就醒来。有期限的循环睡到期限。空闲的 Worker 几乎什么都不做。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="三个来源把变化报给同一个中心：做出改动的代码、别的进程写的文件的文件事件、每次运行表提交。中心唤醒 Worker 里的循环，并给窗口发 changed 帧。">
+  <defs><marker id="cn-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">signal(topic, key)</text>
+  <text class="t-soft" x="0" y="54">做出改动的代码</text>
+  <text class="t-big" x="0" y="114">watch(directory, topic)</text>
+  <text class="t-soft" x="0" y="134">别的进程写的文件</text>
+  <text class="t-big" x="0" y="194">运行表提交</text>
+  <text class="t-soft" x="0" y="214">每次 Job 和执行的改动</text>
+  <line class="ln" x1="214" y1="40" x2="282" y2="96" marker-end="url(#cn-a)"/>
+  <line class="ln" x1="214" y1="120" x2="282" y2="120" marker-end="url(#cn-a)"/>
+  <line class="ln" x1="214" y1="200" x2="282" y2="144" marker-end="url(#cn-a)"/>
+  <rect class="tile" x="294" y="88" width="136" height="64" rx="8"/>
+  <text class="t-big mid" x="362" y="116">changes</text>
+  <text class="t-soft mid" x="362" y="136">每个 Worker 一个</text>
+  <line class="ln-acc" x1="432" y1="104" x2="498" y2="64" marker-end="url(#cn-a)"/>
+  <line class="ln-acc" x1="432" y1="136" x2="498" y2="176" marker-end="url(#cn-a)"/>
+  <text class="t-big" x="510" y="60">Worker 里的循环</text>
+  <text class="t-soft" x="510" y="80">醒来，或睡到到期时间</text>
+  <text class="t-big" x="510" y="180">窗口</text>
+  <text class="t-soft" x="510" y="200">"changed" 帧：重新读</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>signal、watch、运行表提交</strong><small>变化只报一次</small></li>
+  <li><strong>changes</strong><small>每个 Worker 一个中心</small></li>
+  <li class="flow-end"><strong>循环醒来；窗口重新读</strong><small>没有短间隔定时查看</small></li>
+</ol>
+</figure>
+
+<h2 id="hub">中心</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">signal(topic, *keys)</code></th><td>改动写完后立刻调用。键说明改了什么：一个对话、一个 Job、一张表。没人听时没有开销</td></tr>
+<tr><th scope="row"><code translate="no">listen</code>、<code translate="no">wait_for</code></th><td>循环等它的主题、下一个必须行动的时间（<code translate="no">due</code>），或一个很长的 <code translate="no">resync</code>。它忙的时候收到的通知会留着</td></tr>
+<tr><th scope="row"><code translate="no">subscribe</code></th><td>给已经在等自己事件的循环用：在发通知的线程上调一个回调把事件置位</td></tr>
+<tr><th scope="row"><code translate="no">watch</code></th><td>别的进程写的文件（CLI、命令的监管进程、更新控制器、用户改技能）。一个线程通过 <code translate="no">watchfiles</code> 接操作系统的文件事件，它随 <code translate="no">uvicorn[standard]</code> 已经装好：空闲时每 30 秒占 8 毫秒处理器，改动约 0.7 秒内送到</td></tr>
+<tr><th scope="row"><code translate="no">process_exits.watch_process(pid, identity, topic, key)</code></th><td>命令的监管进程或更新控制器：它结束时发这个主题的通知。macOS 用 <code translate="no">kqueue</code> 的 <code translate="no">NOTE_EXIT</code>，Linux 用放进 <code translate="no">epoll</code> 的 <code translate="no">pidfd</code>，Windows 用放进 <code translate="no">WaitForMultipleObjects</code> 的进程句柄。一个线程服务所有进程；macOS 上进程被杀后约 1 毫秒就被看到。先拿住进程再比对出生标识，所以被复用的 PID 立即算作已结束。拿不到这些时每 10 秒看一次</td></tr>
+<tr><th scope="row"><code translate="no">publish</code></th><td>把主题以 <code translate="no">{"type": "changed", "topic", "keys"}</code> 帧转给窗口，0.2 秒内的改动合成一帧</td></tr>
+</tbody>
+</table>
+
+<p>线程和帧只在 Worker 里启动（文件事件和进程退出用 <code translate="no">start_watching</code>，帧用 <code translate="no">set_publisher</code>）。在 CLI 和测试里，通知只唤醒监听者，依赖文件事件的循环按后备间隔查看（<code translate="no">poll</code>）。</p>
+
+<p>有些主题只在 Worker 内部用：唤醒循环，不发给窗口。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">主题</th><th scope="col">什么时候通知</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">turn_ended</code></th><td>键是会话：一个回合的取消令牌第一次退役、服务端交还运行槽，或 Worker 开始关闭（不带键）</td></tr>
+<tr><th scope="row"><code translate="no">session.records</code></th><td>对话日志做了一次持久写入；有实时运行在被关注时，会话的 <code translate="no">main.jsonl</code> 或 <code translate="no">agents/</code> 上的文件事件也算。键是会话</td></tr>
+<tr><th scope="row"><code translate="no">memory.checkpoint</code></th><td>手动编辑记忆，让一个历史检查点进入待办</td></tr>
+<tr><th scope="row"><code translate="no">recordings</code></th><td>键是录制 id：加了一步、开始在新元素里打字，或录制停止。它驱动服务端推送流 <code translate="no">/api/recordings/{id}/events</code></td></tr>
+</tbody>
+</table>
+
+<p><code translate="no">subscribe_idle</code>（<code translate="no">run_control/idle.py</code>）汇集能结束对话忙碌状态的来源：<code translate="no">turn_ended</code>、<code translate="no">runs</code>，以及对 <code translate="no">executions</code> 或 <code translate="no">job_finalizations</code> 的运行表提交。替忙着的对话留着东西的，都等它。</p>
+
+<h2 id="windows">窗口</h2>
+
+<p><code translate="no">useChanged(topics, refresh, keys)</code>（<code translate="no">apps/web/lib/net/ws/changes.ts</code>）在收到它的主题和键的帧时运行 <code translate="no">refresh</code>。</p>
+<ul>
+<li>隐藏的窗口先记下改动，显示出来时读一次。</li>
+<li>重连后所有主题都算有变化：断开期间发的帧丢了。</li>
+<li>缓存的答案一直算新，直到某个主题说它变了：React Query 的答案不会过期（<code translate="no">staleTime: Infinity</code>），由 <code translate="no">QUERY_TOPICS</code> 按主题作废。</li>
+<li>已过时间、倒计时和“5 分钟前”共用一个时钟（见下）。</li>
+</ul>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">缓存</th><th scope="col">什么时候算旧</th></tr></thead>
+<tbody>
+<tr><th scope="row">React Query（<code translate="no">query-client.ts</code>）</th><td>读自它的键遇到 <code translate="no">settings</code>、<code translate="no">routing</code>、<code translate="no">agents</code> 或 <code translate="no">applications</code>；重连作废全部</td></tr>
+<tr><th scope="row">设置读取（<code translate="no">settings-cache.ts</code>）</th><td><code translate="no">settings</code>、<code translate="no">routing</code> 或 <code translate="no">channels</code>，或重连；答案没变就不重画</td></tr>
+<tr><th scope="row">活动读取（<code translate="no">activity-reads.ts</code>）</th><td><code translate="no">op:execution-update</code>、<code translate="no">op:job-status</code>、<code translate="no">processes</code>，或连接重新打开</td></tr>
+<tr><th scope="row">项目列表（<code translate="no">list-projects.ts</code>）</th><td><code translate="no">project-changed</code> 或 <code translate="no">op:browser-connection</code></td></tr>
+<tr><th scope="row">@ 提及里的运行中应用</th><td>每输入一个新的 @ 读一次</td></tr>
+<tr><th scope="row">文件和项目菜单</th><td>读一次，之后在 <code translate="no">onReconnected</code> 时再读</td></tr>
+<tr><th scope="row">本地模型服务（Ollama 等）</th><td>打开模型选择器时问 <code translate="no">/api/models/enabled?probe=local</code>，立即探测，跳过 30 秒的探测缓存；打开模型服务页或添加模型服务时也重读。先显示缓存，结果没变就不重画，后台什么也不探测</td></tr>
+</tbody>
+</table>
+
+<p><code translate="no">useNow(cadence, from)</code>（<code translate="no">apps/web/lib/clock/use-now.ts</code>）就是这个时钟。整个 App 只留一个 <code translate="no">setTimeout</code>，定在任何显示的文字会变的最早时刻。没有订阅者时停下，文档隐藏时暂停，显示时立刻补上。</p>
+
+<p>有些视图跟的不是主题：</p>
+<ul>
+<li>终端视图在桌面应用推来输出（<code translate="no">terminal:data</code>）或资源变化时，从自己的游标往后读。</li>
+<li>网页资源的缩略图在智能体每次操作它的标签页后截取，不按计时器重截。</li>
+<li>系统权限恢复在窗口显示或重新获得焦点时检查；在别处授予的权限由服务端关闭等待（<code translate="no">system_access.waits</code>）。</li>
+<li>录制条读服务端推送流；模型服务登录发一个最多挂起 25 秒、登录状态一变就返回的请求。</li>
+<li>命令页在它自己的 <code translate="no">op:execution-update</code> 上读；侧边栏项目列表和工作文件夹标签在连接建立时再问一次。</li>
+</ul>
+
+<h2 id="decisions">决定</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">决定</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">报告变化，不去找变化</th><td>OpenCode 就是这样：服务端一条总线，操作系统的文件事件，客户端读事件流而不是轮询。每隔几秒看一遍让空闲的 Worker 每 30 秒花 2.5 秒处理器，却什么也没找到</td></tr>
+<tr><th scope="row">保留很长的兜底重读</th><td>丢了一个通知不能让工作没人做。Kubernetes 控制器靠事件工作，仍然隔很久全量列一次；这里占着回合或 Job 的循环 30 到 60 秒，其余 300 秒</td></tr>
+<tr><th scope="row">睡到到期时间</th><td>期限（Job 的预算、持久等待到期、定时的智能体、待办的检查点、凭据到期、渠道和路由返回的 <code translate="no">recheck_in</code>）事先知道；循环或窗口睡到最早的那个，而不是反复看它到了没有</td></tr>
+<tr><th scope="row">通过 <code translate="no">watchfiles</code> 用操作系统的文件事件</th><td>它已随服务端装好，macOS、Linux、Windows 都有预编译包，拿不到事件的地方（WSL、部分网络盘）自己退回轮询</td></tr>
+<tr><th scope="row">循环不被自己的写入唤醒</th><td>否则一遍写了东西就会永远唤醒自己</td></tr>
+<tr><th scope="row">文件夹元数据不算改动</th><td>自更新存储每次加写锁都会 chmod 它的文件夹；算作改动会让看门狗和协调循环白白醒来。被监视文件夹里新建或改动的文件照样算</td></tr>
+<tr><th scope="row">存活由操作系统告知，不靠心跳</th><td>心跳要在进程整个生命里一直写，而进程死了还要等失效期限过去才被发现（监管进程 15 秒，控制器 30 秒）。进程结束的那一刻操作系统就知道，父进程靠 <code translate="no">waitpid</code> 得知；kqueue、pidfd 和进程句柄让任何进程都能得知。进程只说一次自己是谁（pid 和出生标识，写在记录、<code translate="no">controller.json</code> 或 <code translate="no">.migrating</code> 标记里），之后什么也不写</td></tr>
+<tr><th scope="row">退出，不是卡住</th><td>被替换的心跳没有一个能发现卡住：每个都由自己的定时线程写，工作卡住时它照样跳。卡住的控制器或迁移由各阶段的上限兜住（<code translate="no">MIGRATION_LIMIT_SECONDS</code>、<code translate="no">VERIFY_LIMIT_SECONDS</code>），卡住的命令由它自己的停止兜住</td></tr>
+<tr><th scope="row">忙时的等待等的是结束它的事</th><td>替忙着的对话留着的通知、排队消息或 Goal 的下一回合，靠 <code translate="no">subscribe_idle</code> 醒来，不按间隔看</td></tr>
+<tr><th scope="row">运行中的命令和等它的一方互相按铃</th><td>supervisor 和等它的工具调用是两个进程，很快的命令要在几毫秒内返回，所以文件事件（约 0.7 秒，而且只在 Worker 里）太慢。每个 supervisor 监听一个回环 TCP 端口，令牌记在它的记录里：这是 Python 在 macOS、Linux 和 Windows 上都一样有的本地通道。<code translate="no">processes.db</code> 仍是记录；铃声只说“现在去看”，连接关闭说明 supervisor 已结束（<a href="../execution/command-sessions.zh.html#wakeups">命令会话</a>）</td></tr>
+<tr><th scope="row">成串的变化合并</th><td>流进命令记录的输出、实时运行写的节点，会让循环一秒醒很多次；退出通知循环最多每 2 秒看一次，运行树最多每秒推一次。窗口里的间隔只用来把一串变化帧合成一次读取：<code translate="no">READ_GAP_MS</code>（执行调试器）、<code translate="no">GAP_MS</code>（智能体名册）、<code translate="no">CHANGE_SETTLE_MS</code>（模型服务状态）</td></tr>
+<tr><th scope="row">打开就是事件</th><td>本地模型服务什么也不通知；选择器或模型服务页打开时它们的状态才要紧，所以那时才探测，从不在后台探测</td></tr>
+<tr><th scope="row">没人通知的东西，只在要紧时探测</th><td>操作系统不通知权限授予，所以协调循环只在有系统权限等待开着时每 5 秒查一次</td></tr>
+</tbody>
+</table>
+
+<h2 id="loops">每个循环在等什么</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">循环</th><th scope="col">以前</th><th scope="col">现在</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job 调度</th><td>每 0.5 秒领一次，每次拿自更新锁并开一个账本事务</td><td>别的线程对准入、收尾或资源意图的运行表提交，或自更新文件；60 秒兜底</td></tr>
+<tr><th scope="row">Job 对账</th><td>每 5 秒：每个会话目录、每条自更新记录</td><td>别的线程的运行表提交、自更新文件，或下一个持久等待的期限；有系统权限等待开着时每 5 秒到期（<code translate="no">SYSTEM_ACCESS_PROBE_SECONDS</code>、<code translate="no">waits.next_due</code>）；两遍至少相隔 5 秒；60 秒兜底</td></tr>
+<tr><th scope="row">Job 预算</th><td>每秒四次</td><td>睡到最早的运行时长、空闲、停滞或强制停止期限；别的线程往 <code translate="no">commands</code> 写停止、写入助手用量（<code translate="no">roster</code>，花费检查至少相隔 5 秒）或有 Job 开始时也醒；60 秒兜底。没有 Job 时等一个开始</td></tr>
+<tr><th scope="row">事件效果</th><td>每次提交唤醒，另外每秒一次</td><td>每次提交唤醒，或到失败效果的下一次重试；300 秒兜底</td></tr>
+<tr><th scope="row">智能体通知和排队的消息</th><td>每 2 秒</td><td>有通知排进来（<code translate="no">agent_notices</code>）；有一条在等忙着的对话时，那个对话可能空闲了（<code translate="no">subscribe_idle</code>）；投递失败 2 秒后重试一次；300 秒兜底</td></tr>
+<tr><th scope="row">后台命令退出通知</th><td>每 2 秒</td><td><code translate="no">processes.db</code> 有改动；输出不断进来时最多每 2 秒看一次，对话空闲或监管进程结束时提前；300 秒兜底。每次查看都跟住每条活记录的监管进程（<code translate="no">record_changes.follow_supervisors</code>）；没写下命令结局就结束的，记录立即变成 <code translate="no">unknown</code>。安静运行的命令什么也不写</td></tr>
+<tr><th scope="row">命令的 supervisor</th><td>每 50 毫秒读一次停止和 stdin 行，并查看命令是否还活着</td><td>命令结束（<code translate="no">SIGCHLD</code> 经 <code translate="no">set_wakeup_fd</code>；Windows 作业对象的完成端口）、写入方插入行后连上它的门铃、阻塞的 stdin 管道重新有空间，或停止的 5 秒宽限到期</td></tr>
+<tr><th scope="row">命令工具调用（<code translate="no">collect</code>）、等待生效的停止或输入、启动</th><td>每 50 毫秒读一次记录</td><td>supervisor 每写一段输出、一次状态或一次确认后的响铃；它的连接关闭；这一轮被停止（<code translate="no">cancellation.on_cancel</code>）；启动时的 <code translate="no">ready</code> 行；等待时间或时限；10 秒兜底。在 Worker、<code translate="no">--print</code> 和脚本里都一样</td></tr>
+<tr><th scope="row">命令的进程组组长（<code translate="no">group_guard</code>）</th><td>每 0.1 秒列一次进程组，直到后台子进程结束</td><td>其余每个成员的退出（kqueue <code translate="no">NOTE_EXIT</code>、pidfd），然后再列一次进程组</td></tr>
+<tr><th scope="row">Goal 下一回合的运行槽（<code translate="no">run_slot.hold_admitted</code>）</th><td>每 0.5 秒</td><td><code translate="no">subscribe_idle</code>；30 秒兜底；只在会话文件锁超时时 0.5 秒后重试</td></tr>
+<tr><th scope="row">实时运行树（<code translate="no">dag.live_progress</code>）</th><td>每 0.15 秒，逐渐放慢到 1.2 秒</td><td>运行写入节点（<code translate="no">session.records</code>），合并推送：第一棵树至少隔 0.1 秒，之后至少相隔 1 秒；60 秒兜底；结束时最后推一次</td></tr>
+<tr><th scope="row">自更新看门狗</th><td>每 10 秒</td><td>自更新文件，或更新的 <code translate="no">controller.json</code> 里写的那个进程退出，随即重新启动控制器；启动后给新控制器 30 秒说出自己是谁；300 秒兜底；只在拿不到文件事件的地方每 10 秒看</td></tr>
+<tr><th scope="row">程序目录监视</th><td>每 5 秒给每个程序包和应用源码算一次指纹</td><td>程序目录、源码和目录文件、每个已启用应用的目录树上的文件事件（<code translate="no">programs.sources</code>）；仍然比较指纹，所以没改到东西的事件不会重扫</td></tr>
+<tr><th scope="row">技能目录监视</th><td>每 5 秒遍历技能文件夹</td><td>每个技能根目录上的文件事件（<code translate="no">skills.files</code>）；插件注册新根目录时一并监视</td></tr>
+<tr><th scope="row">停止请求</th><td>主线程每秒看四次文件</td><td><code translate="no">worker.stop</code> 的文件事件；信号仍然立刻打断等待。Windows 上 Ctrl-C 打断不了等待，主线程每秒醒一次</td></tr>
+<tr><th scope="row">网页构建、线程和内存采样请求</th><td>各每 2 秒读一次文件</td><td><code translate="no">BUILD_ID</code> 或请求文件的文件事件</td></tr>
+<tr><th scope="row">渠道监管</th><td>每 5 秒看账号和心跳</td><td>账号或凭据文件，或启动重试到期；300 秒兜底。没有心跳循环：适配器线程启动时标记自己在运行，结束时发 <code translate="no">channels</code> 通知</td></tr>
+<tr><th scope="row">常驻智能体定时器</th><td>每 30 秒读所有常驻智能体</td><td>睡到最早的预定唤醒；智能体设置或状态改了就醒（<code translate="no">always_on</code>）。只在有签到在跑或有运行带时限时每 30 秒看</td></tr>
+<tr><th scope="row">定时任务</th><td>每分钟</td><td>睡到下一次 cron 匹配、一次性运行或命令时限；保存任务会唤醒它（<code translate="no">schedule.entries</code>）。每次等待最多一分钟墙钟时间，所以电脑睡眠时错过的触发会被看到</td></tr>
+<tr><th scope="row">空闲会话的记忆监视</th><td>每 5 分钟</td><td>睡到下一个已知的空闲期限或重试，最多 300 秒</td></tr>
+<tr><th scope="row">记忆的手动检查点</th><td>每 15 秒</td><td>睡到待办检查点到期；<code translate="no">memory.checkpoint</code> 唤醒它；300 秒兜底</td></tr>
+<tr><th scope="row">跟随其他应用的窗口（<code translate="no">embedding/follow.py</code>）</th><td>视图每 1.5 秒读一次窗口状态</td><td>从这个窗口的第一个视图到最后一个，跟随操作系统事件：macOS 上是辅助功能观察器和 kqueue，Windows 上是 <code translate="no">SetWinEventHook</code>，X11 上是 <code translate="no">StructureNotify</code> 和 <code translate="no">PropertyChange</code>；每次都发 <code translate="no">embedded_windows</code></td></tr>
+<tr><th scope="row">控制浮层的位置报告（<code translate="no">window_watch.py</code>、<code translate="no">ax_events.py</code>）</th><td>步骤运行时每 0.12 秒</td><td>屏幕上每个有窗口的应用，在其应用元素上挂辅助功能观察器（窗口创建、移动、缩放、销毁、最小化、还原；焦点窗口变化；应用激活、失活、隐藏、显示），每个进程一个 kqueue 退出事件；一串通知只读一次窗口列表；步骤运行时 5 秒兜底；只在有窗口被监视时挂观察器</td></tr>
+</tbody>
+</table>
+
+<p class="note">要观察哪些应用取自窗口列表：Worker 没有主运行循环，NSWorkspace 通知永远到不了它。</p>
+
+<h3 id="window-waits">窗口里</h3>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">等待</th><th scope="col">以前</th><th scope="col">现在</th></tr></thead>
+<tbody>
+<tr><th scope="row">窗口视图的状态（<code translate="no">live-window-view.tsx</code>）</th><td>每 1.5 秒读一次；丢了的画面 1 秒后重取</td><td>收到 <code translate="no">embedded_windows</code> 帧后，在下一个动画帧里读一次，丢了的画面也在那时重取</td></tr>
+<tr><th scope="row">窗口标签页自身的布局</th><td>每 120 毫秒</td><td><code translate="no">ResizeObserver</code>、捕捉不改尺寸的位移的 <code translate="no">IntersectionObserver</code>、页面缩放和尺寸变化、滚动和可见性，按动画帧合并</td></tr>
+<tr><th scope="row">App 窗口移动（macOS 的窗口标签页）</th><td>每 400 毫秒</td><td>App 窗口上 Electron 的 <code translate="no">move</code> 和 <code translate="no">resize</code>，经 <code translate="no">embedded-window:host-changed</code> IPC 发来</td></tr>
+<tr><th scope="row">已过时间和“之前”文字</th><td>每个组件一个计时器（运行块、任务块、附件卡片、重试状态、会议窗口、录制条、对话页、路由概览）</td><td>共用的那一个时钟，<code translate="no">useNow</code></td></tr>
+<tr><th scope="row">乐观操作（<code translate="no">optimistic-action.ts</code>）</th><td>每 250 毫秒</td><td>订阅它读的 store，一个 10 秒期限</td></tr>
+<tr><th scope="row">未确认的写入（<code translate="no">ws-request.ts</code>）</th><td>每 250 毫秒对账</td><td>等它的幂等键对应的 <code translate="no">operation.receipts</code> 帧；重连时问一次；一个期限</td></tr>
+<tr><th scope="row">被录制窗格的位置（<code translate="no">pane-recorder.ts</code>）</th><td>每 200 毫秒</td><td><code translate="no">ResizeObserver</code>、祖先 <code translate="no">style</code> 和 <code translate="no">class</code> 上的 <code translate="no">MutationObserver</code>、尺寸变化和滚动；只在过渡或动画进行时每个动画帧看</td></tr>
+<tr><th scope="row">被录制窗格关闭</th><td>每 500 毫秒</td><td><code translate="no">ResizeObserver</code> 加 body 上的 <code translate="no">MutationObserver</code></td></tr>
+<tr><th scope="row">发送队列的运行状态（<code translate="no">send-queue.ts</code>）</th><td>每 1.5 秒</td><td>没有 id 的运行槽位，在当前微任务之后问一次；之后只在 <code translate="no">running_task_clear</code> 对不上或重连时再问</td></tr>
+<tr><th scope="row">插话的确认（<code translate="no">steer-message.ts</code>）</th><td>一个计时器</td><td>在那次执行的 <code translate="no">op:execution-update</code>、运行槽位变化或重连时再问；只有传输失败才用退避计时器</td></tr>
+<tr><th scope="row">先停再回退（<code translate="no">rewind-actions.ts</code>）</th><td>每 400 毫秒，逐渐放慢到 5 秒</td><td>会话的运行槽位变化、<code translate="no">op:execution-update</code>、<code translate="no">op:job-status</code> 或重连；一个 15 秒期限</td></tr>
+</tbody>
+</table>
+
+<h2 id="topics">窗口听什么</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">主题</th><th scope="col">什么时候通知</th><th scope="col">重新读什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation.resources</code></th><td>挂上或放开机器、桌面，浏览器页面变化，UI 绑定建立或释放，运行状态变化。键是这个会话以及它上面的每个会话，所以助手的改动能到达屏幕上的对话</td><td>对话的资源列表，代替屏幕上每个对话每 3 秒读一次</td></tr>
+<tr><th scope="row"><code translate="no">system_access.waits</code></th><td>运行因权限暂停或继续</td><td>等待权限的列表，代替有等待时每 2 秒读一次</td></tr>
+<tr><th scope="row"><code translate="no">runs</code>、<code translate="no">roster</code></th><td>写入 Job，整理话题，记录助手的用量或停滞</td><td>活动列表和助手名单，代替每 30 秒、整理时每 4 秒读一次</td></tr>
+<tr><th scope="row"><code translate="no">inbox</code>、<code translate="no">work</code></th><td>常驻报告写入或被看过，有人发消息，定时任务或它的运行记录变化</td><td>待处理收件箱和对话的未完成工作，代替每 30 秒读一次</td></tr>
+<tr><th scope="row"><code translate="no">programs</code>、<code translate="no">applications</code></th><td>程序重扫或卸载；应用加载、卸载或目录变化</td><td>程序页、新标签页和侧边栏，代替每 5、10、30 秒</td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>MCP 服务启动、连上、出错、停止或被移除</td><td>MCP 页，代替每 4 秒</td></tr>
+<tr><th scope="row"><code translate="no">channels</code></th><td>账号变化，适配器启动、停止或重试，或运行标记出现、清除</td><td>渠道设置和渠道状态点，代替每 5 秒和 30 秒</td></tr>
+<tr><th scope="row"><code translate="no">meetings</code></th><td>会议记录写入、丢弃或删除</td><td>会议窗口，代替录音时每 4 秒</td></tr>
+<tr><th scope="row"><code translate="no">documents</code></th><td>窗口打开着的文件在磁盘上变了。键是文件路径的哈希；窗口用 <code translate="no">/api/documents/stat</code> 开始跟这个文件，Worker 监视它</td><td>文档窗口的文件元数据</td></tr>
+<tr><th scope="row"><code translate="no">processes</code></th><td>命令的监管进程写 <code translate="no">processes.db</code> 或它的 <code translate="no">-wal</code></td><td>对话的程序面板</td></tr>
+<tr><th scope="row"><code translate="no">routing</code></th><td>用量账本记下一次模型调用或路由事件、一个冷会话打开完毕，或凭据变化</td><td>模型服务设置里的路由概览</td></tr>
+<tr><th scope="row"><code translate="no">embedded_windows</code></th><td>在标签页或预览里显示的、其他应用的窗口移动、缩放、最小化或还原、改名、获得焦点或关闭，或它的进程退出。按窗口 id 分键</td><td>这个窗口视图的状态，代替每 1.5 秒一次</td></tr>
+<tr><th scope="row"><code translate="no">operation.receipts</code></th><td>一次文件操作离开 <code translate="no">in_flight</code>，或一个回合的回退或 <code translate="no">reapply_turn</code> 结束。按幂等键分键（<code translate="no">operation_receipts.py</code>）</td><td>答复丢了的那次写入的回执，代替每 250 毫秒一次</td></tr>
+<tr><th scope="row"><code translate="no">settings</code></th><td><code translate="no">config.json</code> 上的文件事件，由 Worker 或别的进程写入</td><td>已启用的模型、模型服务、回退和智能体的默认值</td></tr>
+<tr><th scope="row"><code translate="no">agents</code></th><td>任何已保存智能体的 <code translate="no">agent.json</code> 上的文件事件（递归监视）</td><td>智能体列表</td></tr>
+</tbody>
+</table>
+
+<p class="note">程序自己的进程在数据库旁边写 <code translate="no">session-resources.changed</code>，Worker 监视这个文件而不是数据库，因为 Worker 自己一直在写数据库。Worker 只在发通知或监管进程结束时写 <code translate="no">processes.db</code>，所以直接监视它。</p>
+
+<h2 id="kept">保留的计时器</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">计时器</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">刚启动的控制器的启动窗口</th><td>看门狗启动控制器后，最多等 30 秒看到 <code translate="no">controller.json</code> 再启动下一次；启动了却没产生进程这件事没人通知</td></tr>
+<tr><th scope="row">后备的进程查看</th><td>每 10 秒，只针对这里操作系统跟不住的进程</td></tr>
+<tr><th scope="row">停止的宽限</th><td>被停止的命令的进程组在 SIGTERM 之后有 5 秒，然后才 SIGKILL；进程忽略 SIGTERM 这件事没人通知</td></tr>
+<tr><th scope="row">没有退出事件的命令进程组</th><td>kqueue 和 pidfd 都没有的地方（5.3 之前的 Linux 内核），后台子进程运行期间 <code translate="no">group_guard</code> 每 0.1 秒列一次进程组</td></tr>
+<tr><th scope="row">事件循环卡顿探测</th><td>每秒让事件循环应答四次，用来发现不再应答的循环：这是卡住，没有退出可以通知。空闲时每 20 秒花 8.8 毫秒处理器时间。只给循环的工作计时（包一层它的 selector）空闲时零开销，但看不到已被唤醒、却在等别的线程占着的解释器的循环，也就是 <code translate="no">busy_threads</code> 要指出的情形；应答探测看得到</td></tr>
+<tr><th scope="row">共用的时钟</th><td>已过时间和“2 分钟前”由整个 App 唯一的计时器重画，它定在下一个会有文字变化的时刻；它们不读任何东西</td></tr>
+<tr><th scope="row">系统权限探测</th><td>操作系统不通知权限授予；只在有系统权限等待开着时，Worker 每 5 秒查一次</td></tr>
+<tr><th scope="row">没有辅助功能权限</th><td>Worker 起不了辅助功能观察器的地方，窗口视图开着时每 1.5 秒读一次状态、重试丢了的画面，浮层在步骤运行时每 0.12 秒读一次窗口列表。接管窗口或执行步骤本来就要这个权限；ScreenCaptureKit 替代不了它，因为窗口截取永远看不到盖在上面的窗口</td></tr>
+<tr><th scope="row">网络检查和渠道长轮询</th><td>版本、插件更新和订阅目录每隔几小时取一次；渠道适配器的长轮询就是它的服务投递消息的方式</td></tr>
+<tr><th scope="row">每天和每十分钟的计划</th><td>记忆整理、工具输出回收，以及版本服务满十分钟后清掉它的启动记录，都睡到各自的时间</td></tr>
+<tr><th scope="row">请求超时和退避</th><td>没有应答的请求到时放弃，读取失败后隔得越来越久再问</td></tr>
+</tbody>
+</table>

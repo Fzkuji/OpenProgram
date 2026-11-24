@@ -549,7 +549,6 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
     _file(repository / ".github/release-notes/v1.2.3.md", "# OpenProgram 1.2.3 Release Notes\n\nText.\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "First", check=True)
-    _git(repository, "branch", "stable", check=True)
     _git(repository, "remote", "add", "origin", str(origin), check=True)
     return repository, origin
 
@@ -618,7 +617,6 @@ def test_tag_refuses_a_half_bumped_version_naming_each_place(publishing) -> None
     _file(repository / ".github/release-notes/v1.3.0.md", "# OpenProgram 1.3.0 Release Notes\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "Half bump", check=True)
-    _git(repository, "branch", "-f", "stable", "dev", check=True)
     for arguments in (("--dry-run",), ()):
         result = _publish(repository, "-m", "V", "--tag", "v1.3.0", *arguments)
         assert result.returncode != 0
@@ -674,11 +672,9 @@ def test_tag_refuses_missing_notes_a_bad_heading_and_no_push(publishing) -> None
     notes = repository / ".github/release-notes/v1.2.3.md"
     notes.write_text("# Wrong\n")
     _git(repository, "commit", "--quiet", "-am", "Bad notes", check=True)
-    _git(repository, "branch", "-f", "stable", "dev", check=True)
     assert "must start with" in _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run").stderr
     _git(repository, "rm", "--quiet", str(notes), check=True)
     _git(repository, "commit", "--quiet", "-m", "No notes", check=True)
-    _git(repository, "branch", "-f", "stable", "dev", check=True)
     assert "no release notes" in _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run").stderr
 
 
@@ -694,6 +690,20 @@ def test_tag_pushes_main_then_the_tag_on_that_commit(publishing) -> None:
     ]
     again = _publish(repository, "--tag", "v1.2.3")
     assert again.returncode != 0 and "never moves" in again.stderr
+
+
+def test_a_daily_sync_pushes_dev_to_main_without_a_tag(publishing) -> None:
+    """Pushing main starts no workflow; only a v* tag starts the Release."""
+    repository, origin = publishing
+    _file(repository / "notes.txt", "A day's work.\n")
+    _git(repository, "add", ".", check=True)
+    _git(repository, "commit", "--quiet", "-m", "Day", check=True)
+    result = _publish(repository, "-m", "Today's work")
+    assert result.returncode == 0, result.stderr
+    main = _git(repository, "rev-parse", "refs/heads/main").stdout.strip()
+    assert _git(repository, "rev-parse", "main^{tree}").stdout == _git(repository, "rev-parse", "dev^{tree}").stdout
+    assert _git(origin, "for-each-ref", "--format=%(refname) %(objectname)").stdout.split() == ["refs/heads/main", main]
+    assert "nothing to sync" in _publish(repository, "-m", "Again").stdout
 
 
 def test_hook_lets_only_the_scripts_tag_through(publishing) -> None:
@@ -720,7 +730,6 @@ def test_a_source_naming_a_retired_account_is_refused_before_anything_moves(publ
     _file(repository / "docs/credits.md", f"Thanks to https://github.com/{RETIRED_STAND_IN}/Repo.\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "Credits", check=True)
-    _git(repository, "branch", "-f", "stable", "dev", check=True)
     # Only the commit counts: the checkout no longer holds the line, and the refusal stands.
     (repository / "docs/credits.md").write_text("Thanks.\n", encoding="utf-8")
     for arguments in (("--dry-run",), ()):

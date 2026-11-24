@@ -12,11 +12,12 @@ import { ActivityDetail, ActivityKeyValue, ActivityNote, ActivityRow } from "./a
 import { Glyph } from "../running-rows";
 import { callKind, duration, when } from "../running-format";
 
-const RETRY_MS = 3000;
+/** How many times a missing step is read again, each when its run moves. */
 const RETRIES = 10;
 
 /** The call's own step, read once it has returned. The transcript can land a
- *  moment after the call leaves the list, so a miss is tried again. */
+ *  moment after the call leaves the list: a miss is read again when the
+ *  run's events move (an `execution.updated` frame for it), not on a timer. */
 function useReturnedStep(sessionId: string, call: ActiveToolCall | null, returned: boolean): ActivityStepEvent | null {
   const [step, setStep] = useState<ActivityStepEvent | null>(null);
   const executionId = call?.execution_id ?? null;
@@ -24,21 +25,30 @@ function useReturnedStep(sessionId: string, call: ActiveToolCall | null, returne
   useEffect(() => {
     if (!returned || !executionId || !toolCallId) return;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    let tries = 0;
+    let tries = 0, reading = false, again = false, found = false;
     const read = () => {
+      if (found || controller.signal.aborted) return;
+      if (reading) { again = true; return; }
+      if (tries >= RETRIES) return;
       tries += 1;
+      reading = true;
       getActivityRunEvents(sessionId, executionId, controller.signal)
         .then(result => result.events.find((event): event is ActivityStepEvent => event.kind === "step" && event.tool_call_id === toolCallId) ?? null)
         .catch(() => null)
-        .then(found => {
+        .then(step => {
+          reading = false;
           if (controller.signal.aborted) return;
-          if (found) setStep(found);
-          else if (tries < RETRIES) timer = setTimeout(read, RETRY_MS);
+          if (step) { found = true; setStep(step); return; }
+          if (again) { again = false; read(); }
         });
     };
+    const moved = (event: Event) => {
+      const execution = (event as CustomEvent<{ execution?: { execution_id?: string } }>).detail?.execution;
+      if (execution?.execution_id === executionId) read();
+    };
+    window.addEventListener("op:execution-update", moved);
     read();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return () => { controller.abort(); window.removeEventListener("op:execution-update", moved); };
   }, [sessionId, executionId, toolCallId, returned]);
   return step;
 }

@@ -166,6 +166,9 @@ try {
 }
 Invoke-Native $Uv pip install --python $PythonBin --strict --break-system-packages `
     --no-deps $Wheel.FullName
+# Installed above; nothing reads the archive again, and it was 35 MB of every
+# runtime and App download.
+Remove-Item -LiteralPath (Join-Path $RuntimeRoot "wheel") -Recurse -Force
 
 Copy-Item -LiteralPath $Uv -Destination (Join-Path $RuntimeRoot "bin\uv.exe") -Force
 $Node = (Get-Command node.exe -ErrorAction SilentlyContinue).Source

@@ -531,15 +531,18 @@ def test_snapshot_write_failure_does_not_publish_partial_update(tmp_path, monkey
     assert not list(store.root.glob("su_*"))
 
 
-def _with_stable_branch(worktree, base_sha):
-    source = Path(worktree.source_repo)
-    _git(source, "branch", "stable", base_sha)
-    _git(source, "branch", "-f", "dev", base_sha)
+def _in_development_instance(monkeypatch, worktree, base_sha=None):
+    """This worker is the development instance, and the source has a dev line."""
+    from openprogram.operations.self_update.control import backend
+
+    monkeypatch.setattr(backend, "_development_instance", lambda: True)
+    if base_sha is not None:
+        _git(Path(worktree.source_repo), "branch", "-f", "dev", base_sha)
 
 
-def test_with_a_stable_branch_prepare_saves_a_request_for_the_detached_controller(tmp_path, monkeypatch):
+def test_in_the_development_instance_prepare_saves_a_request_for_the_detached_controller(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
-    _with_stable_branch(worktree, base_sha)
+    _in_development_instance(monkeypatch, worktree, base_sha)
     launched = []
     monkeypatch.setattr(self_update_module, "_launch_supervisor",
                         lambda name, store, update_id, candidate: launched.append((name, update_id, candidate)))
@@ -547,19 +550,31 @@ def test_with_a_stable_branch_prepare_saves_a_request_for_the_detached_controlle
 
     result = _prepare(worktree, candidate_sha, store)
 
-    assert result["backend"] == "dev_stable" and result["phase"] == "preparing"
+    assert result["backend"] == "dev_deploy" and result["phase"] == "preparing"
+    assert "development instance" in result["next"] and "promot" not in result["next"]
     [(name, update_id, candidate)] = launched
-    assert name == "dev_stable" and update_id == result["update_id"]
+    assert name == "dev_deploy" and update_id == result["update_id"]
     assert candidate == Path(worktree.worktree_path).resolve()
     record = store.load(update_id)
-    assert "backend:dev_stable" in record.request.pre_update_evidence
-    assert record.request.timeout_seconds == 2 * 3600
+    assert "backend:dev_deploy" in record.request.pre_update_evidence
+    assert record.request.timeout_seconds == 3600
 
 
-def test_with_a_stable_branch_a_candidate_from_an_older_commit_is_accepted(tmp_path):
+def test_outside_the_development_instance_a_dev_branch_lands_nothing(tmp_path, monkeypatch):
+    from openprogram.operations.self_update.control import backend
+
+    worktree, base_sha, _ = _candidate(tmp_path)
+    _git(Path(worktree.source_repo), "branch", "-f", "dev", base_sha)
+    monkeypatch.delenv("OPENPROGRAM_PROFILE", raising=False)
+    monkeypatch.setattr(backend, "packaged_runtime", lambda: True)
+    monkeypatch.setattr(backend, "runtime_root", lambda: tmp_path / "no-runtime")
+    assert backend.select(Path(worktree.source_repo)) == backend.LEGACY_APP
+
+
+def test_in_the_development_instance_a_candidate_from_an_older_commit_is_accepted(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
     source = Path(worktree.source_repo)
-    _git(source, "branch", "stable", base_sha)
+    _in_development_instance(monkeypatch, worktree)
     (source / "elsewhere.txt").write_text("moved on\n")
     _git(source, "add", "elsewhere.txt")
     _git(source, "commit", "-q", "-m", "dev moved")
@@ -568,7 +583,7 @@ def test_with_a_stable_branch_a_candidate_from_an_older_commit_is_accepted(tmp_p
 
     result = _prepare(worktree, candidate_sha, store)
 
-    assert result["backend"] == "dev_stable"
+    assert result["backend"] == "dev_deploy"
     # Only the candidate's own paths, not what dev gained since it forked.
     assert "elsewhere.txt" not in result["changed_paths"]
     assert store.load(result["update_id"]).request.base_sha == _git(source, "rev-parse", "dev")
@@ -580,9 +595,9 @@ def _undo(store: SelfUpdateStore, target: str, manager: object) -> dict:
     )
 
 
-def test_with_a_stable_branch_undo_reverts_on_a_worktree_of_dev_and_lands_it(tmp_path, monkeypatch):
+def test_in_the_development_instance_undo_reverts_on_a_worktree_of_dev_and_lands_it(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
-    _with_stable_branch(worktree, base_sha)
+    _in_development_instance(monkeypatch, worktree, base_sha)
     source = Path(worktree.source_repo)
     _git(source, "merge", "-q", "--ff-only", candidate_sha)
     _git(source, "branch", "-f", "dev", "HEAD")
@@ -603,7 +618,7 @@ def test_with_a_stable_branch_undo_reverts_on_a_worktree_of_dev_and_lands_it(tmp
     store = SelfUpdateStore(tmp_path / "state")
     result = _undo(store, candidate_sha[:12], Manager(None))
 
-    assert result["backend"] == "dev_stable" and result["changed_paths"] == ["feature.txt"]
+    assert result["backend"] == "dev_deploy" and result["changed_paths"] == ["feature.txt"]
     record = store.load(result["update_id"])
     assert record.request.goal == f"Undo commit {candidate_sha[:12]}: candidate"
     reverted = Path(created[0].worktree_path)
@@ -613,7 +628,7 @@ def test_with_a_stable_branch_undo_reverts_on_a_worktree_of_dev_and_lands_it(tmp
 
 def test_undo_of_a_commit_dev_does_not_have_changes_nothing(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
-    _with_stable_branch(worktree, base_sha)
+    _in_development_instance(monkeypatch, worktree, base_sha)
     monkeypatch.setenv("OPENPROGRAM_SOURCE_REPO", worktree.source_repo)
     with pytest.raises(self_update_module.SelfUpdateToolError, match="not part of the code"):
         _undo(SelfUpdateStore(tmp_path / "state"), candidate_sha, _Manager(None))
@@ -621,7 +636,7 @@ def test_undo_of_a_commit_dev_does_not_have_changes_nothing(tmp_path, monkeypatc
 
 def test_a_conflicting_undo_on_dev_stops_and_discards_its_worktree(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
-    _with_stable_branch(worktree, base_sha)
+    _in_development_instance(monkeypatch, worktree, base_sha)
     source = Path(worktree.source_repo)
     _git(source, "merge", "-q", "--ff-only", candidate_sha)
     (source / "feature.txt").write_text("later edit\n", encoding="utf-8")
@@ -682,7 +697,7 @@ def test_undo_under_the_version_store_resolves_the_target_before_handing_off(tmp
 
 def test_a_controller_that_cannot_start_aborts_the_saved_request(tmp_path, monkeypatch):
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
-    _with_stable_branch(worktree, base_sha)
+    _in_development_instance(monkeypatch, worktree, base_sha)
 
     def fail(*_):
         raise RuntimeError("no runtime to copy")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import time
 
@@ -421,7 +422,8 @@ def test_controller_dies_after_the_pointer_moved_with_a_healthy_candidate(machin
         machine.drive()
     assert machine.phase is UpdatePhase.VERIFYING and machine.pointer.version == NEW
 
-    watchdog.tick(machine.store)  # No heartbeat was ever written, so it is stale.
+    watchdog._launched.clear()
+    watchdog.tick(machine.store)  # The controller that said it held the update has ended.
     assert launched == [UPDATE]
 
     machine.resumed_host()
@@ -430,15 +432,23 @@ def test_controller_dies_after_the_pointer_moved_with_a_healthy_candidate(machin
     assert machine.phase is UpdatePhase.SUCCEEDED and machine.pointer.probation == ""
 
 
-def test_a_fresh_heartbeat_starts_no_second_controller(machine: Machine, monkeypatch) -> None:
+def test_a_running_controller_is_followed_not_launched_again(machine: Machine, monkeypatch) -> None:
     launched: list[str] = []
+    followed: list[tuple] = []
     monkeypatch.setattr(switch, "launch", lambda update_id, store=None: launched.append(update_id))
     monkeypatch.setattr("openprogram.operations.self_update.repair.diagnosis.dispatch_pending", lambda: None)
-    (machine.store.root / UPDATE / switch.HEARTBEAT).write_text("1\n")
+    monkeypatch.setattr("openprogram.host._platform.process_exits.watch_process",
+                        lambda *args, **_kw: followed.append(args))
+    watchdog._launched.clear()
 
-    watchdog.tick(machine.store)
+    with switch.controlling(machine.store.root / UPDATE) as acquired:
+        assert acquired
+        watchdog.tick(machine.store)
+        pid, started = followed[0][:2]
+        assert pid == os.getpid() and followed[0][2:] == (watchdog.SELF_UPDATE_TOPIC, UPDATE)
 
     assert launched == []
+    assert not (machine.store.root / UPDATE / switch.CONTROLLER).exists(), "letting go removes the claim"
 
 
 def test_controller_dies_after_the_pointer_moved_with_an_unhealthy_candidate(machine: Machine, monkeypatch) -> None:

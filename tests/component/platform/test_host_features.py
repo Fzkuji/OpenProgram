@@ -64,6 +64,7 @@ def test_a_bare_windows_refuses_each_missing_feature_by_name(host):
     assert rows["workflow_recording"]["reason"] == "Recording is available on macOS only."
     assert rows["meeting_system_audio"]["reason"] == "The computer's sound is recorded on macOS only."
     assert "UI Automation is not available" in rows["computer_use_app"]["reason"]
+    assert rows["computer_use_screen"]["reason"] == rows["computer_use_app"]["reason"]
     assert "powershell.exe" in rows["system_notifications"]["reason"]
     assert "clip.exe" in rows["clipboard"]["reason"]
     assert "openprogram upgrade" in rows["conversational_update"]["reason"]
@@ -83,6 +84,7 @@ def test_a_headless_linux_refuses_each_desktop_feature_by_name(host):
         assert "could not be checked" not in row["reason"] and "Traceback" not in row["reason"], row
         assert row["available"] is (row["reason"] == ""), row
     assert "DISPLAY is not set" in rows["computer_use_app"]["reason"]
+    assert "DISPLAY is not set" in rows["computer_use_screen"]["reason"]
     assert "systemd-inhibit" in rows["keep_awake"]["reason"]
     assert "notify-send" in rows["system_notifications"]["reason"]
     assert "no graphical session" in rows["reveal_in_file_manager"]["reason"]

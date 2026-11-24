@@ -41,11 +41,11 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
     void (async () => {
       try {
         const r = await fetch("/api/agents");
-        const d = await r.json();
+        const d = await r.json() as Agent[] | { agents?: Agent[] };
         const list: Agent[] = Array.isArray(d) ? d : d.agents || [];
         setAgents(list);
-      } catch {
-        // ignore
+      } catch (error) {
+        console.warn("Channels: the agent list could not be read", error);
       }
     })();
   }, []);

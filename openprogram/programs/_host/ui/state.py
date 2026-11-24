@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import closing, contextmanager
 import hashlib
 import json
+import re
 import sqlite3
 
 from .catalog import home
@@ -28,6 +29,9 @@ def connect():
         CREATE TABLE IF NOT EXISTS events (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
           payload TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS conversations (
+          instance_id TEXT NOT NULL, key TEXT NOT NULL, session_id TEXT NOT NULL UNIQUE,
+          PRIMARY KEY(instance_id, key));
         """)
         with db:
             yield db
@@ -72,6 +76,9 @@ def current_project_path(project_id: str) -> str:
     project = get_project(project_id)
     if project is None:
         raise ValueError("bound project no longer exists")
+    from openprogram.state.store.project.project_store import folder_is_here
+    if not folder_is_here(project):
+        raise ValueError("the project's folder is on another machine; applications run on this computer")
     reason = bound_execution_state(project)
     if reason or not Path(project.path).is_dir():
         raise ValueError(f"project location is unavailable ({reason or 'missing'}); locate the project before running")
@@ -85,6 +92,41 @@ def refresh_instance_location(key: str) -> dict:
         with connect() as db:
             db.execute("UPDATE instances SET project_path=? WHERE id=?", (value["project_path"], key))
     return value
+
+
+#: What a window may call one of its conversations: a task's name, say.
+CONVERSATION_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}\Z")
+
+
+def conversation(instance_id: str, key: str, folder: str) -> dict:
+    """The conversation an application window keeps under ``key``.
+
+    A window that declares ``chat`` shows the owner's composer for a
+    conversation of its own: one per key (Auto Research keeps one per project
+    and task). The first ask mints the conversation's id, a draft key the
+    chat server adopts as the conversation's id on its first message, and
+    the folder becomes an OpenProgram project the conversation works in.
+    A window reaches only the conversations it was given here.
+    """
+    from pathlib import Path
+    from .catalog import get
+    instance = get_instance(instance_id)
+    if "chat" not in get(instance["app_id"])["capabilities"]:
+        raise ValueError("application does not declare chat")
+    if not isinstance(key, str) or not CONVERSATION_KEY.match(key):
+        raise ValueError("invalid conversation key")
+    path = Path(str(folder or instance["project_path"] or "")).expanduser()
+    if not path.is_absolute() or not path.is_dir():
+        raise ValueError("the conversation's folder is not a folder on this computer")
+    from openprogram.state.store.project import project_store
+    project = project_store.resolve_project(str(path))
+    import secrets
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO conversations VALUES(?,?,?)",
+                   (instance_id, key, "local_" + secrets.token_hex(16)))
+        session_id = db.execute("SELECT session_id FROM conversations WHERE instance_id=? AND key=?",
+                                (instance_id, key)).fetchone()[0]
+    return {"session_id": session_id, "project_id": project.id, "folder": project.path}
 
 
 def emit(run_id: str, payload: dict):

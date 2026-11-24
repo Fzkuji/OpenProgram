@@ -22,7 +22,7 @@ Most register with `@function` on import; a tool package with
 ## `applications/`
 
 The built-in applications are `browser` (the web browser the Agent operates
-through `computer_use_agent`),
+through `computer_use`),
 `workflow_recording` (the demonstration recorder behind the composer's
 **Record a workflow**), `office_editor` (the ONLYOFFICE editor behind Word,
 Excel and PowerPoint documents in the document window) and `meeting` (call

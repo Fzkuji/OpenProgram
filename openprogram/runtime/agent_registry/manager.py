@@ -683,6 +683,15 @@ def _write_agent(spec: AgentSpec) -> None:
     if not spec.created_at:
         spec.created_at = spec.updated_at
     _write_json(path, spec.to_dict())
+    if previous is None or previous.always_on != spec.always_on:
+        _always_on_changed(spec.id)
+
+
+def _always_on_changed(agent_id: str) -> None:
+    """The always-on ticker looks again (``always_on/ticker.py``)."""
+    from openprogram.host._platform import changes
+    from openprogram.runtime.conversation.always_on.store import WAKES_TOPIC
+    changes.signal(WAKES_TOPIC, "agent:" + agent_id)
 
 
 # ---------------------------------------------------------------------------
@@ -972,6 +981,8 @@ def delete(agent_id: str) -> None:
         if folder.exists():
             shutil.rmtree(folder, ignore_errors=True)
         _roster_changed(spec, None)
+        if (spec.always_on or {}).get("enabled"):
+            _always_on_changed(agent_id)
         idx = _read_index()
         order = [a for a in (idx.get("order") or []) if a != agent_id]
         idx["order"] = order

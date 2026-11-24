@@ -12,7 +12,7 @@ import { SettingsRow, SettingsSection } from "@/components/settings/settings-ui"
 import { AvatarPicker, type AvatarConfig, type AvatarSource } from "@/components/avatar";
 import { AGENT_AVATAR_UPLOAD_MAX_BYTES, agentAvatarConfig } from "@/lib/agents/agent-avatar";
 import { AgentButton } from "./agent-controls";
-import { Button } from "@/components/ui/button";
+import { isAbort, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
 import { ModelPicker, type ModelCatalog } from "./model-picker";
 import { delegationOn, type Agent, type MemorySpace, type Text } from "./agent-types";
 import styles from "./agents-page.module.css";
@@ -20,6 +20,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 type Props = { draft: Agent; update: (patch: Partial<Agent>) => void; text: Text };
+type AgentsMdReply = { global: { path: string; exists: boolean }; working_dir: string; loaded: string[] };
+const AGENTS_MD_KEY = "/api/agents-md";
 const AGENT_AVATAR_SOURCES: readonly AvatarSource[] = ["bot", "dicebear", "upload"];
 function Intro({ title, children }: { title: string; children: React.ReactNode }) {
   return <div className={`${styles.panelIntro} mb-[18px]`}><h3>{title}</h3><p>{children}</p></div>;
@@ -78,15 +80,18 @@ export function ContextPanel({ draft, update, text }: Props) {
   </>;
 }
 export function AdvancedPanel({ draft, update, text }: Props) {
-  const [agentsMd, setAgentsMd] = useState<{ global: { path: string; exists: boolean }; working_dir: string; loaded: string[] } | null>(null);
+  // The kept answer at once, read again behind it; a failed read is tried
+  // again quietly. Copy's own failure is the only message here.
+  const [agentsMd, setAgentsMd] = useState<AgentsMdReply | null>(() => lastKept<AgentsMdReply>(AGENTS_MD_KEY) ?? null);
   const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
   const [copied, setCopied] = useState("");
   useEffect(() => {
-    let active = true; const controller = new AbortController(); setAgentsMd(null); setError("");
-    void jsonFetch<NonNullable<typeof agentsMd>>("/api/agents-md", { signal: controller.signal }).then((data) => { if (active) setAgentsMd(data); }).catch((cause) => { if (active && cause.name !== "AbortError") setError(String(cause.message || cause)); });
-    return () => { active = false; controller.abort(); };
-  }, [attempt]);
+    const controller = new AbortController();
+    readUntilAnswered(AGENTS_MD_KEY, () => jsonFetch<AgentsMdReply>(AGENTS_MD_KEY), controller.signal)
+      .then(setAgentsMd)
+      .catch((cause) => { if (!isAbort(cause)) console.warn("[agents] AGENTS.md read failed", cause); });
+    return () => controller.abort();
+  }, []);
   const agentsMdFiles = agentsMd ? [
     { path: agentsMd.global.path, exists: agentsMd.global.exists, scope: text("Every project", "所有项目") },
     ...agentsMd.loaded.filter((path) => path !== agentsMd.global.path).map((path) => ({ path, exists: true, scope: path.slice(0, path.lastIndexOf("/") + 1) })),
@@ -103,6 +108,6 @@ export function AdvancedPanel({ draft, update, text }: Props) {
         { value: "worktree", label: text("Own worktree", "独立工作树") },
       ]} /></span></HoverTip></label></div>
     <label className={styles.dialogField}>{text("System prompt", "系统指令")}<Textarea className={styles.instructionsField} rows={6} maxLength={100000} value={draft.system_prompt} onChange={(event) => update({ system_prompt: event.target.value })} /><small>{text("Optional. Leave empty to use instructions from the call and Context.", "可选。留空时使用调用处与 Context 提供的指令。")}</small></label>
-    <section className={styles.workspaceSection}><h4>AGENTS.md</h4><p className={styles.note}>{text("Every Agent reads AGENTS.md: the global file, then each one from the project root down to the working directory. One in a subdirectory is read when the Agent opens a file there. Closer files win on a conflict.", "所有 Agent 都读 AGENTS.md：先全局文件，再从项目根到工作目录逐级读取；子目录里的在 Agent 打开那里的文件时读取。离得越近越优先。")}</p>{error ? <p role="alert" className={styles.inlineError}>{error} <Button type="button" variant="link" size="xs" onClick={() => setAttempt((value) => value + 1)}>{text("Retry", "重试")}</Button></p> : agentsMd ? <><p className={styles.workspacePath}>{text("Working directory: ", "工作目录：")}{agentsMd.working_dir}</p>{agentsMdFiles.map((file) => <div className={styles.workspaceFile} key={file.path}><span><FileTextIcon size={16} aria-hidden /></span><div><strong>{file.scope}</strong><small>{file.exists ? file.path : text(`Not created yet: ${file.path}`, `尚未创建：${file.path}`)}</small></div><AgentButton variant="ghost" size="sm" icon={CopyIcon} aria-label={text(`Copy ${file.path}`, `复制 ${file.path}`)} onClick={() => void copy(file.path)}>{copied === file.path ? text("Copied", "已复制") : text("Copy path", "复制路径")}</AgentButton></div>)}</> : <p role="status">{text("Loading AGENTS.md…", "正在加载 AGENTS.md…")}</p>}</section>
+    <section className={styles.workspaceSection}><h4>AGENTS.md</h4><p className={styles.note}>{text("Every Agent reads AGENTS.md: the global file, then each one from the project root down to the working directory. One in a subdirectory is read when the Agent opens a file there. Closer files win on a conflict.", "所有 Agent 都读 AGENTS.md：先全局文件，再从项目根到工作目录逐级读取；子目录里的在 Agent 打开那里的文件时读取。离得越近越优先。")}</p>{error ? <p role="alert" className={styles.inlineError}>{error}</p> : null}{agentsMd ? <><p className={styles.workspacePath}>{text("Working directory: ", "工作目录：")}{agentsMd.working_dir}</p>{agentsMdFiles.map((file) => <div className={styles.workspaceFile} key={file.path}><span><FileTextIcon size={16} aria-hidden /></span><div><strong>{file.scope}</strong><small>{file.exists ? file.path : text(`Not created yet: ${file.path}`, `尚未创建：${file.path}`)}</small></div><AgentButton variant="ghost" size="sm" icon={CopyIcon} aria-label={text(`Copy ${file.path}`, `复制 ${file.path}`)} onClick={() => void copy(file.path)}>{copied === file.path ? text("Copied", "已复制") : text("Copy path", "复制路径")}</AgentButton></div>)}</> : null}</section>
   </>;
 }

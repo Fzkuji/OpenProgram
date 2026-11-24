@@ -29,7 +29,7 @@ if os.environ.get("PAGE_PROBE_RECEIPT"):
 
 
 # The call that lists the built-in browser's tabs.
-LIST_TABS = {"target": "browser", "action": "tabs", "args": {"all": True}}
+LIST_TABS = {"type": "browser", "action": "list_tabs", "args": {"all": True}}
 
 
 def _decided(decision):
@@ -69,7 +69,7 @@ class PageScopeProbeAgent(Agent):
         from openprogram.programs import get_agent_tool
         req = get_turn_request()
         inner = inner_turn_request("program")
-        native = get_agent_tool("computer_use_agent")
+        native = get_agent_tool("computer_use")
         gated = runtime._gate_inner_tools([native])[0]
 
         async def calls():
@@ -211,8 +211,8 @@ def main():
 
         req.permission_rules = SimpleNamespace(
             allow=[],
-            deny=["computer_use_agent"] if scenario == "deny" else [],
-            ask=["computer_use_agent"] if scenario == "ask" else [],
+            deny=["computer_use"] if scenario == "deny" else [],
+            ask=["computer_use"] if scenario == "ask" else [],
         )
     if scenario == "active_plan":
         req.permission_mode = "plan"
@@ -234,7 +234,7 @@ def main():
             save_session_run_config(
                 req.session_id,
                 agent_id="main",
-                permission_rules={behavior: ["computer_use_agent"]},
+                permission_rules={behavior: ["computer_use"]},
             )
     from openprogram.runtime.permissions.approvals.lifecycle import current_permission_request
     from openprogram.runtime.permissions.policy import permission_decision
@@ -242,7 +242,7 @@ def main():
 
     parent_effective = current_permission_request(req)
     parent_decision = permission_decision(
-        get_agent_tool("computer_use_agent"), parent_effective, dict(LIST_TABS)
+        get_agent_tool("computer_use"), parent_effective, dict(LIST_TABS)
     )
     tool = get_agent_tool("page_scope_probe")
     assert tool is page_scope_probe._agent_tool

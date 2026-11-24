@@ -54,14 +54,24 @@ def _error(exc):
 
 
 def register(app):
+    # Windows read a conversation's resources when told they changed
+    # (host/resources/conversation_changes.py), also by another process.
+    from openprogram.host.resources import conversation_changes
+    conversation_changes.watch_other_processes()
+    # And their programs when a supervisor writes the process records.
+    from openprogram.host.processes import record_changes
+    record_changes.watch_records()
+
     @app.get("/api/session/{session_id}/resources")
     def session_resources(session_id: str, request: Request):
         try:
             _authorize(request, session_id)
             from openprogram.runtime.execution import default_store
-            from openprogram.runtime.execution.conversation_scope import conversation_executions
+            from openprogram.runtime.execution.conversation_scope import conversation_execution_scope
             from openprogram.host.resources.session import ResourceUseStore
-            scope = {item.execution_id: item for item in conversation_executions(default_store(), session_id)}
+            # Worked out once: the uses and the pages both need it.
+            whole_scope = conversation_execution_scope(default_store(), session_id)
+            scope = {item.execution_id: item for item in whole_scope[0]}
             from openprogram.runtime.execution.authorization import ExecutionAuthorizationError
             def check_owner(record):
                 execution_id = record.get("execution_id")
@@ -74,10 +84,13 @@ def register(app):
             items = []
             for record in ResourceUseStore().list(session_id, scope):
                 check_owner(record)
-                items.append({**record, "source": "usage", "status": "attached" if record["kind"] in {"vm", "desktop"} else "in_use"})
+                # What a call operates without owning it, on this computer or another machine, reads as attached.
+                status = "attached" if record["kind"] in {"desktop", "machine"} else "in_use"
+                items.append({**record, "source": "usage", "status": status})
             pages = _browser_pages()
             browser_items, current_branch_id, current_branch_name = (
-                pages.project_conversation_resources(session_id) if pages is not None else ([], None, None)
+                pages.project_conversation_resources(session_id, scope=whole_scope)
+                if pages is not None else ([], None, None)
             )
             items.extend(browser_items)
             from openprogram.programs._host.ui.bindings import list_bindings

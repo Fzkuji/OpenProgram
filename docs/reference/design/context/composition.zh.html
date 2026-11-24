@@ -141,7 +141,8 @@ class ContextComponent:
 OS: {os} · Shell: {name} ({path})            # 命令实际运行的 shell（沙箱开着时是沙箱里的），不是登录 shell
 Working directory: {cwd}
 Git repository: {root}                       # cwd 在仓库内时
-Runs on SSH host … / in a Docker container … # 远程环境
+Environment: machine {id} ({name}; {shell}) …  # 环境在另一台机器上
+The chat itself and OpenProgram run on this computer …
 Also writable: {dirs}
 {channel rule}                               # telegram / discord / slack / wechat / web
 &lt;/environment&gt;</code></pre>

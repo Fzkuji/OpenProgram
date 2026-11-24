@@ -41,7 +41,7 @@ export function useRecordSetup(composer: string, onStarted: () => void) {
 
   useEffect(() => {
     let live = true;
-    fetch("/api/voice/status").then((r) => r.json())
+    fetch("/api/voice/status").then(async (r) => await r.json() as { resolved_engine?: unknown } | null)
       .then((status) => { if (live) setEngine(!!status?.resolved_engine); })
       .catch(() => { if (live) setEngine(null); });
     navigator.mediaDevices?.enumerateDevices?.().then((list) => {

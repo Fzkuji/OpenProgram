@@ -2,7 +2,7 @@
 <meta name="description" content="How OpenProgram lists connected providers, adds one in three steps, checks a key in one line, shows provider state inside the model picker and offers another model when a quota is spent.">
 <h1>Provider management</h1>
 
-<p>Settings → LLM Providers lists the providers that are connected, adds one in three steps (pick, key or sign-in, default model) and shows each provider's health, quota and spend. The chat shows provider state only inside the model picker and on the reply card of a spent quota. Quota and health come from <a href="provider-quota.html">Provider quota</a>.</p>
+<p>Settings → Model services lists the providers that are connected, adds one in three steps (pick, key or sign-in, default model) and shows each provider's health, quota and spend. The chat shows provider state only inside the model picker and on the reply card of a spent quota. Quota and health come from <a href="provider-quota.html">Provider quota</a>.</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
@@ -22,13 +22,20 @@
 <ul>
 <li>The list holds connected providers only: a stored key or sign-in, or an enabled local server. The catalogue (about 236 providers) lives in Add provider.</li>
 <li>Cards and compact rows are two views of the same list. A segmented control in the page header switches them; the choice is remembered per user and cards are the default.</li>
-<li>A card has a top line (logo, name, billing tag, health chip), one quota block (windows, balance or rate limits; none while nothing is reported) and a footer (30-day sparkline, spend or Included, cache share, default model).</li>
+<li>A card is a header (logo, name, default model, one +) over one row per credential: every key and every signed-in account of each of the company's ways. A way with no credential yet, or a local server, is one row of its own.</li>
+<li>A row is three fixed parts, the same on every card. Who: the account's email, the key's name, its last four or its variable, over its way and plan ("Go", "Plus", "API key"); a green dot marks the one in use when there are several.</li>
+<li>Its limits: up to three rings (5h, Week, Month, Req/m, Tok/m, Limit), each over when it resets or its cap, shortest window first; with more, the tightest three. A failed read is a dashed Unread ring with the reason on hover.</li>
+<li>The last column holds an amount while the credential works: Credits, Balance, or 30 days of spend for a key; nothing for an included plan.</li>
+<li>Otherwise it says why not: Limited or Cooling in amber with when it comes back; Invalid, Signed out, Not running in red with when it was found; a spent balance in red; Off in grey for a key set aside.</li>
+<li>No action words: a red cell fixes what it names on a click (sign in, replace the key, open billing, how to start the server); the rest of the row opens the provider's page.</li>
+<li>A row whose numbers are older than 15 minutes is dimmed, with when they were read on hover. A card shows four rows at most; past that, the one in use and the ones in trouble stay and the rest fold into "N more" with what is wrong among them ("1 invalid").</li>
+<li>A card is the raised surface the chat's buttons use: a hairline frame with a soft shadow that deepens under the pointer. Each row inside is a rounded tile of the file-change card's material, 8 px from the next and 12 px from the card's sides and bottom, with no divider; under the pointer its shadow deepens and its fill stays.</li>
 <li>A company connected in more than one way is one card; the cards form a masonry (table below).</li>
 <li>A compact row puts the same facts on one line: the bar of the limit that runs out first, then "62% 5h · 14:30 · 15% Week", "$18.42 balance · ≈ 26 wk" or "46/50 rpm · no balance data"; 30-day cost or Included, the trend, tokens, cache share and the default model.</li>
 <li>Rows have fixed columns: every cell ends in an ellipsis inside its column with the whole text on hover, so a long status, quota line or model id never makes the table scroll sideways in a pane 640 px or wider; below 1040 px Tokens and Cache give way.</li>
 <li>A balance in dollars shows its pace ("≈ 26 weeks at this pace") once three days have spend.</li>
 <li>The billing tag says API key, Local or Subscription. A subscription whose plan is known says the plan ("Plus", "Pro") in that tag; a compact row shows the same tag where it would say Included, with "Included in the Plus plan" and the API price on hover. An unknown plan changes nothing.</li>
-<li>A signed-out or stopped provider's numbers are dimmed; a snapshot older than 15 minutes is dimmed in both views and the card says "Updated 3 h ago".</li>
+<li>A signed-out or stopped provider's numbers are dimmed; a snapshot older than 15 minutes is dimmed in both views and says "Updated 3 h ago" on hover, with no line of its own.</li>
 <li>A limit reported without a number (Codex's unlimited credits, Copilot's unlimited premium requests) reads "Unlimited". A quota endpoint that failed says "Couldn't read the quota" with the reason on hover.</li>
 <li>The header holds Providers | Routing, the time of the last update, Refresh, the Cards | Rows switch and Add provider. No paragraph of help.</li>
 <li>Refresh reads each provider again in order: its sign-in where it lives, then its quota endpoint; health follows from both. The icon spins on the button until the answer replaces the cards, and the update time counts that read.</li>
@@ -36,13 +43,12 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Company</th><th scope="col">Shows</th></tr></thead>
 <tbody>
-<tr><th scope="row">Card top line</th><td>The company's logo and name over "2 ways to connect"; the best health of its ways</td></tr>
-<tr><th scope="row">Section</th><td>One per connected way, titled by it ("ChatGPT subscription", "Go · monthly subscription"), with its own health, quota, sparkline, credentials and Add key or Add account. It opens that provider's page, which stays per catalogue id</td></tr>
-<tr><th scope="row">Section's second line</th><td>Plan, then "sign-in", "API key", or "Same key" when an earlier way holds that key, then the model</td></tr>
+<tr><th scope="row">Card header</th><td>The company's logo and name and one +, which for a company is a menu of its ways</td></tr>
+<tr><th scope="row">Way</th><td>Each credential of a way is a row of the card, its second line naming the way ("Zen · API key", "Go"). A row opens that provider's page, which stays per catalogue id</td></tr>
 <tr><th scope="row">One way connected</th><td>The ordinary card; ways not connected never appear</td></tr>
 <tr><th scope="row">Grouping</th><td>One table, <code translate="no">COMPANIES</code>, with each way's names in English and Chinese. The payload lists a company's ways together, where its first one was, in the table's order</td></tr>
 <tr><th scope="row">Layout</th><td>Two columns (one below 720 px); each card keeps its height and the next, in list order, goes into the shortest column 12 px below. Heights are measured, estimated before that, so nothing jumps; Tab follows list order</td></tr>
-<tr><th scope="row">Rows</th><td>A company row with its best health; its ways indented under it by short name ("ChatGPT", "API", "Go"), the title on hover</td></tr>
+<tr><th scope="row">Rows</th><td>A company row, with a chip when none of its ways works; its ways indented under it by short name ("ChatGPT", "API", "Go"), the title on hover</td></tr>
 <tr><th scope="row"><code translate="no">openprogram providers status</code></th><td>The company with its best state, each way indented under it by title; <code translate="no">--json</code> carries <code translate="no">family</code>, <code translate="no">family_label</code>, <code translate="no">way_label</code>; <code translate="no">login</code>, <code translate="no">keys</code>, <code translate="no">logout</code> take catalogue ids</td></tr>
 </tbody>
 </table>
@@ -65,9 +71,9 @@
 <ol>
 <li><strong>Keys in the environment</strong> first, each with Use. A variable is matched to the catalogue by the provider's key names (the static table, then models.dev's <code translate="no">env</code>). Only its name and a masked tail reach the page; Use makes the Worker read and store it, so the key never crosses the wire. OAuth token variables are never offered.</li>
 <li><strong>Popular</strong>: a grid of eight, each one click into step 2: OpenAI (ChatGPT sign-in, with the API key beside it), Anthropic (API key only), Google Gemini, xAI, DeepSeek, OpenRouter, Kimi / Moonshot (with Kimi Coding and the China endpoint), Z.ai (with its coding plan and Zhipu).</li>
-<li><strong>On this machine</strong>: Ollama, LM Studio, vLLM and llama.cpp when one answers <code translate="no">GET /models</code> on its loopback address within half a second, without a key. The model picker reuses that answer for 30 seconds, so opening it does not probe again.</li>
+<li><strong>On this machine</strong>: Ollama, LM Studio, vLLM and llama.cpp when one answers <code translate="no">GET /models</code> on its loopback address within half a second, without a key. Opening the model picker, Providers or Add provider probes again, showing the kept answer meanwhile; other reads reuse a probe up to 30 seconds old.</li>
 <li><strong>All providers</strong>: a search across the whole catalogue.</li>
-<li>While the popular providers are read the grid shows a spinner; a failed read says so in one line with Retry.</li>
+<li>The popular providers are read as Settings opens; until they arrive the grid's place stays empty, and a failed read is retried quietly (<a href="../ui/page-loading-performance.html#no-waiting-text">waiting without words</a>).</li>
 </ol>
 <p>Step 2 is one masked key field with a "Get a key" link, or Sign in. When a key for that provider is already in the Worker's environment (from a tile, a search result or <code translate="no">?add=&lt;id&gt;</code>), step 2 offers it first, the same row as the pick list (variable name, masked tail, Use), with "Or paste a key" below it.</p>
 <p>The key is checked when pasted: a free read of the provider's model list or key endpoint, then a one-token ping only when that read cannot prove the key usable. The answer is one line:</p>
@@ -133,13 +139,24 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">On a card</th><th scope="col">Shows</th></tr></thead>
 <tbody>
-<tr><th scope="row">Subtitle</th><td>The model last used, else the first one on; no line when there is none</td></tr>
-<tr><th scope="row">Footer</th><td>At the card's bottom: the count ("3 keys · 1 cooling · 1 invalid", "1 key · ····a1b2", "2 accounts"), wrapping rather than cutting a part</td></tr>
-<tr><th scope="row">Add</th><td>Add key, or Add account for a provider signed in to; filled while there is none, and then no second Connect</td></tr>
+<tr><th scope="row">Header</th><td>The model last used, else the first one on, beside the name; nothing when there is none</td></tr>
+<tr><th scope="row">Rows</th><td>One per credential with its own health, quota, plan and 30-day spend, which the status route reads per key</td></tr>
+<tr><th scope="row">Add</th><td>A + button named Add key, or Add account for a provider signed in to; filled while there is none</td></tr>
 <tr><th scope="row">Top up, Sign in again</th><td>The page, with the dialog on the failing row</td></tr>
 </tbody>
 </table>
 <p><code translate="no">provider.credentials.changed</code> refreshes the rows and the cards.</p>
+<h3 id="shared-environment-keys">One key, several ways</h3>
+<p>A key is its company's, not one way's: MiniMax's API and Token Plan, international and China, all list a MiniMax key, whether it was pasted on one of them or sits in <code translate="no">MINIMAX_API_KEY</code>. Nothing is guessed from the key or tried against every way (<a href="auth/credential-model.html">Companies, ways and credentials</a>).</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Where</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Card</th><td>One row for the key that shows everything its ways report: under its name every way it answered on (used there, or its quota read there), wrapping rather than cut; the rings of those ways, each hint naming its way; the last column of a way in trouble, else of one with an amount. The dot marks the key in use on the way of the card's model.</td></tr>
+<tr><th scope="row">Calls</th><td>Go to the address of the way the model was picked on</td></tr>
+<tr><th scope="row">Refused on a way</th><td>Not shown: the key is not that way's by nature, and that is no trouble. The request is sent again through a way that has not refused the key. Refused on every way, the row reads Invalid.</td></tr>
+<tr><th scope="row">Remove</th><td>A stored key leaves every way. A variable's row cannot be removed: unset the variable.</td></tr>
+</tbody>
+</table>
 
 <h2 id="chat">In the chat</h2>
 <p>Everything the chat says about providers lives inside the model picker (trigger and menu). There is no chip or button beside the project folder in the composer, and no toast.</p>
@@ -158,6 +175,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
+<tr><th scope="row">Row width</th><td>A state word is always whole. The trailing column is as wide as its widest entry, a model name there truncates at 164 px, and when the panel reaches its 360 px the provider name is what shortens. The smaller trailing text is centred on the row's height, like the icon and the chevron</td></tr>
 <tr><th scope="row">Tones</th><td>The ring and the bars use the context meter's tokens: warning from 80 % used, danger from 95 % or when spent; a ring older than 15 minutes is drawn at half opacity; in the submenu a stale value is muted and its bar fill drawn at half opacity</td></tr>
 <tr><th scope="row">Quota rows</th><td>A submenu starts with the provider's quota rows, worst first: a window or key limit is a line <code translate="no">label reset ···· NN%</code> over a full-width bar, a balance or credits is the line <code translate="no">label ···· amount</code> alone. A provider that reports nothing has no header</td></tr>
 <tr><th scope="row">Line type</th><td>Each line is at <code translate="no">text-fs-sm</code>: the label in the primary text colour, the reset muted at <code translate="no">text-fs-xs</code> beside it, the value on the right edge of the model rows' check column (Settings decides whether digits are equal width). The text starts where the model names start</td></tr>
@@ -168,7 +186,7 @@
 <tr><th scope="row">Gone or off pin</th><td>A pin to a key that is gone says to go back to Auto; a pinned key turned off ends the request as a setting to change, not a failed sign-in</td></tr>
 <tr><th scope="row">Bars</th><td>Every usage bar is the kit's Progress</td></tr>
 <tr><th scope="row">Switch line</th><td>When a reply moves to another credential, a muted line sits above it: "Switched to Work: Personal hit a rate limit". The line is stored with the reply and is still there after a reload; <code translate="no">--print</code> says it as a <code translate="no">credential_switch</code> event. While every credential waits, the retry line names the one it waits for and when it is back</td></tr>
-<tr><th scope="row">Menu end</th><td>The menu ends with Manage providers, which opens Settings → LLM Providers. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state</td></tr>
+<tr><th scope="row">Menu end</th><td>The menu ends with Manage providers, which opens Settings → Model services. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state</td></tr>
 <tr><th scope="row">Trigger</th><td>The trigger is plain while the selected model's provider can answer, whatever its usage. A quota that only warns shows in the ring and the bars, not on the trigger</td></tr>
 <tr><th scope="row">Red dot</th><td>A red dot on the provider logo appears only when the provider needs action (signed out, no credit, invalid key, not set up, not running) or its quota is 95 % used or spent: the Worker's <code translate="no">attention</code>. Its tooltip names the provider and the state or the window left</td></tr>
 </tbody>
@@ -228,13 +246,13 @@
 <tr><th scope="row">Ends on choosing a model</th><td>OpenCode</td><td>Connecting finishes where chatting starts</td></tr>
 <tr><th scope="row">Billing kind and fix per provider</th><td>ZCode</td><td>Each state carries the one action that clears it</td></tr>
 <tr><th scope="row">Cards and rows as two views</th><td>Owner's change</td><td>The same data at two densities; the person picks</td></tr>
-<tr><th scope="row">One card per company, a section per way</th><td>Owner's change</td><td>Two cards with near-identical names read as duplicates and counted a shared key twice; grouped, the company is found once and each way keeps its own state, quota and credentials</td></tr>
+<tr><th scope="row">One card per company, a row per credential</th><td>Owner's change</td><td>Two cards with near-identical names read as duplicates; grouped, the company is found once. A provider-level quota hid which account or key a limit belonged to, so each credential is its own row with its own rings and state</td></tr>
 <tr><th scope="row">Masonry instead of equal-height rows</th><td>Owner's change</td><td>Company cards differ a lot in height; stretching a row to its tallest left large empty areas in the shorter card. Explicit columns filled shortest-first keep list order as reading and Tab order, which CSS columns do not</td></tr>
 <tr><th scope="row">Provider state only in the model picker</th><td>Owner's change</td><td>The composer keeps its three sections; the picker is where a model is chosen</td></tr>
 <tr><th scope="row">Common providers as the empty state</th><td>Owner's change</td><td>One provider alone read as the only choice</td></tr>
 <tr><th scope="row">Suggest, never switch, on a spent quota</th><td>OpenCode, Codex</td><td>The person decides; the card names the model and the reset</td></tr>
 <tr><th scope="row">Compact row: the limit that runs out first, counting what is left</th><td>Codex</td><td>Read at a glance which window binds and when it resets</td></tr>
-<tr><th scope="row">Card: one quota block, worst window drawn hottest</th><td>Oh My Pi</td><td>A spent window stands out without reading every number</td></tr>
+<tr><th scope="row">Rings, at most three, and one last column</th><td>Owner's change</td><td>Bars with text beside them read differently on every card and doubled with each account; three rings over their reset times and one column for an amount or a state are the same on every row</td></tr>
 <tr><th scope="row">Built from the app's own parts</th><td>Project rule</td><td>Tabs for both segmented controls, Dialog, RadioGroup, SearchInput, HoverTip, the menu styles, ProviderIcon, ProviderLogin, BaseUrl, SetupHint, the custom provider form and Routing are reused; Token Usage's stacked chart is shared with the usage panel. Badge tones with a dot, Collapsible, Progress, CopyButton and SecretInput joined the kit for the credential pages. Peer UI code is bound to its own kit and types, so its structure is followed, not its code</td></tr>
 <tr><th scope="row">One ordered list of keys and sign-ins, with a strategy</th><td>Hermes Agent's credential pool</td><td>A spare key and a second account are the same to a request</td></tr>
 <tr><th scope="row">A conversation keeps its credential until it fails</th><td>Oh My Pi</td><td>Cache and limits stay on one account; a muted line marks a switch</td></tr>
@@ -257,7 +275,6 @@
 <tbody>
 <tr><th scope="row">Model picker</th><td>Add provider and a row not set up open the Providers page and the provider's page, not yet the Add provider dialog itself</td></tr>
 <tr><th scope="row">Plan name</th><td>Read for OpenAI Codex only; other subscriptions say Subscription</td></tr>
-<tr><th scope="row">Codex quota on Refresh</th><td>Its usage reader is off until verified, so Refresh re-reads the sign-in and health and keeps the windows the last reply carried</td></tr>
 <tr><th scope="row">Environment keys</th><td>Only the Worker's own environment; a key set only in a shell the Worker was not started from is not seen</td></tr>
 <tr><th scope="row">Region or plan refusal</th><td>Recognised only from a 403 whose body says so</td></tr>
 <tr><th scope="row">Key and billing pages</th><td>Listed for 15 providers; the others get no link</td></tr>

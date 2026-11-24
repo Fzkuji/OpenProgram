@@ -16,10 +16,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { PlugZapIcon, PlusIcon, SearchIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManageEmptyState, ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { jsonFetch } from "@/lib/net/fetch-client";
+import { jsonFetch, type HttpError } from "@/lib/net/fetch-client";
+import { useChanged } from "@/lib/net/ws/changes";
+import { isAbort, keep, lastKept, readKept, readUntilAnswered } from "@/lib/abilities/kept-read";
 
 import { CatalogPanel } from "./mcp-catalog-panel";
 import {
@@ -31,6 +33,7 @@ import {
 } from "./mcp-detail-view";
 import { EditDialog, type EditTarget } from "./mcp-edit-dialog";
 import { confirmAction } from "@/components/ui/confirm-dialog";
+import { MCP_SERVERS_KEY, mcpDetailKey, readMcpDetail, readMcpServers } from "./mcp-reads";
 
 export function McpPage({
   embedded,
@@ -42,13 +45,12 @@ export function McpPage({
   reloadNonce?: number;
 } = {}) {
   const { t, text } = useTranslation();
-  const [servers, setServers] = useState<ServerStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
+  // The kept list draws at once; the page reads it again behind it.
+  const [servers, setServers] = useState<ServerStatus[]>(() => lastKept<ServerStatus[]>(MCP_SERVERS_KEY) ?? []);
+  const [ready, setReady] = useState(() => lastKept(MCP_SERVERS_KEY) !== undefined);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
-  const [detailErr, setDetailErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
   type McpTab = "installed" | "discover";
@@ -60,28 +62,28 @@ export function McpPage({
   // ``selected``. Selection bookkeeping lives in a separate effect
   // below so a transient empty list (e.g. ``restart_server`` briefly
   // empties ``_clients`` between stop and respawn) can't reset the
-  // user's selection — the right pane just shows "Loading…" for a
-  // beat and then snaps back when the server reappears.
+  // user's selection — the dialog just waits a beat and then snaps back
+  // when the server reappears. A failed read keeps the list on screen and
+  // is tried again quietly.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await jsonFetch<{ servers: ServerStatus[] }>("/api/mcp/servers", { signal });
+      const list = await readUntilAnswered(MCP_SERVERS_KEY, readMcpServers, signal);
       if (signal?.aborted) return;
-      setServers((data.servers as ServerStatus[]) || []);
-      setLoadErr(null);
+      setServers(list);
+      setReady(true);
     } catch (e) {
-      if ((e as Error).name === "AbortError") return;
-      setLoadErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!isAbort(e)) console.warn("[mcp] server list read failed", e);
     }
   }, []);
+  // A local change (an action's reply) is kept too, for the next visit.
+  useEffect(() => { if (ready) keep(MCP_SERVERS_KEY, servers); }, [ready, servers]);
 
   useEffect(() => {
     if (!reloadNonce) return;
-    void reload();
+    void reload(lifetime.current?.signal);
   }, [reloadNonce, reload]);
 
-  // ``busy`` shadowed in a ref so the polling effect doesn't re-mount
+  // ``busy`` shadowed in a ref so the reload effect doesn't re-mount
   // when an action starts. The previous version listed ``busy`` in
   // useEffect's deps — every busy-state flip restarted the effect,
   // which fired an immediate ``void reload()`` and slammed straight
@@ -89,47 +91,68 @@ export function McpPage({
   const busyRef = useRef(busy);
   busyRef.current = busy;
 
+  // One AbortController for the page's lifetime; aborting it on cleanup
+  // cancels the initial reload and any change-driven one, so we don't
+  // ``setServers`` on an unmounted component.
+  const lifetime = useRef<AbortController | null>(null);
   useEffect(() => {
-    // One AbortController for the lifetime of this effect; aborting
-    // it on cleanup cancels both the initial reload and any pending
-    // interval-driven reload, so we don't ``setServers`` on an
-    // unmounted component.
     const ac = new AbortController();
+    lifetime.current = ac;
     void reload(ac.signal);
-    const t = setInterval(() => {
-      if (busyRef.current === null) void reload(ac.signal);
-    }, 4000);
     return () => {
       ac.abort();
-      clearInterval(t);
+      lifetime.current = null;
     };
   }, [reload]);
 
+  // The Worker says when a server connects, drops, fails or is added or
+  // removed. A change during an action waits for it to end: the action
+  // upserts its own result, and a list read inside a restart's stop→spawn
+  // window would come back empty.
+  const changedWhileBusy = useRef(false);
+  useChanged("mcp", () => {
+    const signal = lifetime.current?.signal;
+    if (!signal) return;
+    if (busyRef.current !== null) { changedWhileBusy.current = true; return; }
+    return reload(signal);
+  });
+  useEffect(() => {
+    if (busy !== null || !changedWhileBusy.current) return;
+    changedWhileBusy.current = false;
+    const signal = lifetime.current?.signal;
+    if (signal) void reload(signal);
+  }, [busy, reload]);
+
+  // A server's detail: the kept one at once, then read again; a failed
+  // read keeps what is shown and is tried again quietly.
   const fetchDetail = useCallback(
     async (name: string, signal?: AbortSignal) => {
       try {
-        const json = await jsonFetch<ServerDetail>(
-          `/api/mcp/servers/${encodeURIComponent(name)}`,
-          { signal },
-        );
+        const json = await readUntilAnswered(mcpDetailKey(name), () => readMcpDetail(name), signal);
         if (signal?.aborted) return;
         setDetail(json);
-        setDetailErr(null);
         setActionErr(null);
       } catch (e) {
-        if ((e as Error).name === "AbortError") return;
-        setDetail(null);
-        setDetailErr(e instanceof Error ? e.message : String(e));
+        if (!isAbort(e)) console.warn(`[mcp] server detail read failed: ${name}`, e);
       }
     },
     [],
   );
 
+  // After an action: one read, its failure only warns (the action's own
+  // reply is already on screen).
+  async function refreshDetail(name: string) {
+    try {
+      setDetail(await readKept(mcpDetailKey(name), () => readMcpDetail(name)));
+    } catch (e) {
+      console.warn(`[mcp] server detail read failed: ${name}`, e);
+    }
+  }
+
   useEffect(() => {
     if (!selected) return;
     const ac = new AbortController();
-    setDetail(null);
-    setDetailErr(null);
+    setDetail(lastKept<ServerDetail>(mcpDetailKey(selected)) ?? null);
     void fetchDetail(selected, ac.signal);
     return () => ac.abort();
   }, [selected, fetchDetail]);
@@ -140,7 +163,10 @@ export function McpPage({
     try {
       await fn();
     } catch (e) {
-      setActionErr(e instanceof Error ? e.message : String(e));
+      // A restart that failed answers with a code, not a sentence.
+      setActionErr((e as Partial<HttpError> | null)?.code === "mcp_runtime_restart_failed"
+        ? text("The server could not be restarted.", "这个服务无法重启。")
+        : e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -166,7 +192,7 @@ export function McpPage({
       const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
         { method: "POST" });
       upsertServer(server);
-      await fetchDetail(name);
+      await refreshDetail(name);
     });
   }
   async function doEnable(name: string) {
@@ -174,7 +200,7 @@ export function McpPage({
       const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
         { method: "POST" });
       upsertServer(server);
-      await fetchDetail(name);
+      await refreshDetail(name);
     });
   }
   async function doDisable(name: string) {
@@ -182,7 +208,7 @@ export function McpPage({
       const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
         { method: "POST" });
       upsertServer(server);
-      await fetchDetail(name);
+      await refreshDetail(name);
     });
   }
   async function doDelete(name: string) {
@@ -278,15 +304,15 @@ export function McpPage({
     <>
         <ManageSubnav
           tabs={[
-            { id: "installed", label: text("Installed", "已安装"), count: servers.length },
+            { id: "installed", label: text("Installed", "已安装"), count: ready ? servers.length : undefined },
             { id: "discover", label: text("Discover", "发现") },
           ]}
           activeTab={tab}
           onTabChange={(id) => setTab(id as McpTab)}
-          summary={text(
+          summary={ready ? text(
             `${readyCount} available · ${issueCount} ${issueCount === 1 ? "issue" : "issues"}`,
             `可用 ${readyCount} 个 · ${issueCount} 个问题`,
-          )}
+          ) : undefined}
           action={{
             label: text("Add MCP server", "添加 MCP 服务器"),
             onClick: openAdd,
@@ -309,7 +335,7 @@ export function McpPage({
               existingNames={new Set(servers.map((server) => server.name))}
               query={filterValue}
               onInstalled={async (name) => {
-                await reload();
+                await reload(lifetime.current?.signal);
                 setSelected(name);
               }}
             />
@@ -326,11 +352,9 @@ export function McpPage({
               />
             </div>
             )}
-            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
             <div className="space-y-1">
-            {loading && servers.length === 0 ? (
-              <ManageLoadingState>{text("Loading…", "加载中…")}</ManageLoadingState>
-            ) : shownServers.length === 0 ? (
+            {/* Nothing until the first list arrives: an empty state then would be untrue. */}
+            {!ready ? null : shownServers.length === 0 ? (
               filterValue.trim()
                 ? <ManageEmptyState compact icon={<SearchIcon size={20} />} title={text("No matching MCP servers", "没有匹配的 MCP 服务器")} description={text("Try a different search.", "换个关键词试试。")} />
                 : <ManageEmptyState
@@ -379,7 +403,6 @@ export function McpPage({
       <Dialog open={selectedServer !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
         <DialogContent className="max-h-[86vh] overflow-y-auto sm:max-w-[920px]">
           <DialogHeader><DialogTitle className="sr-only">{selectedServer?.name || text("MCP server details", "MCP 服务器详情")}</DialogTitle></DialogHeader>
-          {detailErr && <div className={shared.errorBar} role="alert">{detailErr}</div>}
           {selectedServer && <DetailView
             server={selectedServer}
             detail={detail}
@@ -399,7 +422,7 @@ export function McpPage({
           onClose={() => setEditing(null)}
           onSaved={async (newName) => {
             setEditing(null);
-            await reload();
+            await reload(lifetime.current?.signal);
             if (newName) setSelected(newName);
           }}
         />
@@ -416,7 +439,7 @@ export function McpPage({
         <ManagePageHeader
           title={t("nav.mcp")}
           actions={[
-            { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
+            { label: t("sidebar.refresh"), onClick: () => { void reload(lifetime.current?.signal); } },
           ]}
         />
         {bodyAndDialogs}

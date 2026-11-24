@@ -5,7 +5,11 @@ both start from the nearest user message at or above a node: a retry
 resends it, an edit sends new text, each as a sibling under the same
 parent, so the old turn stays reachable as a branch of its own. A retry of
 a turn that never got a reply reruns that same message instead, since
-there is no branch to keep. The caller holds the branch's slot, admits the
+there is no branch to keep. A retry of a turn whose reply is only an error
+(the model was refused, the request timed out, nothing was written or run)
+takes that turn's place: the caller removes the failed turn once the new
+one is written, so trying again after an error does not leave a branch per
+attempt. The caller holds the branch's slot, admits the
 turn and writes the message; this module only decides what to write.
 """
 from __future__ import annotations
@@ -32,10 +36,28 @@ class ForkPlan:
     source: dict[str, Any]
     #: A new branch is made (an edit, or a retry of a turn that has a reply).
     new_branch: bool
+    #: The new turn takes the place of ``source``, whose reply is only an
+    #: error: the caller removes that turn once the new one is written.
+    replaces: bool = False
 
     @property
     def msg_id(self) -> str:
         return str(self.message.get("id"))
+
+
+def _only_an_error(messages: list[dict[str, Any]], source: dict[str, Any]) -> bool:
+    """``source``'s turn ended in an error and left nothing: one reply, its
+    text the error itself, with no step, tool call or message under it."""
+    under = [m for m in messages if m.get("predecessor") == source.get("id")]
+    if len(under) != 1:
+        return False
+    reply = under[0]
+    if reply.get("role") != "assistant" or reply.get("status") != "error":
+        return False
+    if not str(reply.get("content") or "").lstrip().startswith("[error]"):
+        return False
+    return not any(m.get("predecessor") == reply.get("id") or m.get("caller") == reply.get("id")
+                   for m in messages)
 
 
 def plan_fork(messages: list[dict[str, Any]], pivot_id: str, new_content: Optional[str],
@@ -80,4 +102,5 @@ def plan_fork(messages: list[dict[str, Any]], pivot_id: str, new_content: Option
         message["media"] = source["media"]
     if new_content is not None:
         message["edit_of"] = source.get("id")
-    return ForkPlan(message=message, source=source, new_branch=True)
+    return ForkPlan(message=message, source=source, new_branch=True,
+                    replaces=new_content is None and _only_an_error(messages, source))

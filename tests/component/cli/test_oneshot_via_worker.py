@@ -1345,7 +1345,8 @@ def test_the_server_identity_names_every_capability_a_client_may_rely_on():
     identity = handshake.server_identity()
     assert identity["name"] == handshake.SERVER_NAME
     assert identity["protocol"] == handshake.HISTORY_PROTOCOL
-    assert set(identity["capabilities"]) == {*CONTROL_CAPABILITIES, *handshake.CHAT_CAPABILITIES}
+    assert set(identity["capabilities"]) == {*CONTROL_CAPABILITIES, *handshake.CHAT_CAPABILITIES,
+                                            handshake.REMOTE_CAPABILITY}
     assert handshake.client_identity({"client": {"name": "x" * 65}}) is None
     assert handshake.client_identity({"client": {"name": "tui", "version": 3}}) == {"name": "tui"}
     assert handshake.client_identity({}) is None

@@ -49,8 +49,9 @@ export function RewindDialog() {
     { value: "code", label: text("Code only", "仅代码"), disabled: noCode },
   ];
   const prompt = parseAttachments(flow.text);
+  // While the plan is read the line stays empty; it keeps its height.
   const stats = checking
-    ? text("Checking for file changes…", "正在检查文件改动…")
+    ? ""
     : preview.kind === "files"
       ? statsLine(preview, text)
       : noCode

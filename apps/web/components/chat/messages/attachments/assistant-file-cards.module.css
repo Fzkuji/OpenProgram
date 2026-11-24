@@ -3,10 +3,13 @@
    colour above, and the name row with its two actions below. */
 .card { container-type:inline-size; position:relative; display:grid; width:100%; min-width:0; margin:0; overflow:hidden; border-radius:var(--radius-2xl); background:var(--bg-input); box-shadow:var(--composer-shadow); transition:box-shadow var(--motion-medium); }
 .card:hover { box-shadow:var(--composer-shadow-focus); }
-/* Sent media takes about half the text column (320–560px, never wider
-   than the column); the player's own full-screen button gives the large
-   view. Documents, pages and archives use the whole column. */
-.card[data-media], .shown[data-media] { width:clamp(320px, 50%, 560px); max-width:100%; }
+/* Every preview — media, documents, pages, archives, text — takes a third
+   of the text column, less the two gaps, so three sit in a row (240–440px,
+   never wider than the column): enough to tell the files apart, and the
+   large view is one click away (the opened file, or the player's own
+   full-screen button). A card with nothing to show is only its name row
+   and takes a row of its own. */
+.card[data-media], .shown { width:clamp(240px, calc((100% - 16px) / 3), 440px); max-width:100%; }
 
 .preview { display:block; width:100%; min-width:0; padding:0; border:0; border-bottom:1px solid var(--border); background:var(--bg-input); color:inherit; font:inherit; text-align:left; }
 button.preview { cursor:pointer; }
@@ -27,6 +30,9 @@ button.preview:focus-visible { outline:2px solid var(--ring); outline-offset:-2p
    first page spans the card's width and is cut at the frame's foot. */
 .pdfPage { display:flex; justify-content:center; align-items:flex-start; aspect-ratio:16 / 9; overflow:hidden; }
 .pdfPage canvas { display:block; background:var(--document-paper); }
+/* An Office file's first page, as the worker drew it, in the same frame. */
+.officePage { aspect-ratio:16 / 9; overflow:hidden; background:var(--document-paper); }
+.preview .officePage img { width:100%; max-height:none; }
 /* A page drawn at desktop width, scaled to the card from its top left. */
 .pageThumb { position:relative; aspect-ratio:16 / 9; overflow:hidden; }
 .pageThumb iframe { position:absolute; top:0; left:0; border:0; transform-origin:0 0; pointer-events:none; background:var(--document-paper); }

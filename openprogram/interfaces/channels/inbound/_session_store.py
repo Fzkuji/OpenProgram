@@ -76,10 +76,6 @@ def load_or_init_session(
             "peer_id": peer.get("id"),
             "peer_display": user_display,
         }
-        # A channel conversation runs where the configured default
-        # environment points at the moment it starts, and stays there.
-        from openprogram.host.environments import default_environment_id
-        meta["environment_id"] = default_environment_id()
         db.create_session(
             session_key, agent_id,
             title=meta["title"],
@@ -91,7 +87,6 @@ def load_or_init_session(
             peer_id=peer.get("id"),
             peer_display=user_display,
             peer=dict(peer),  # full peer dict goes to extra_meta
-            environment_id=meta["environment_id"],
         )
         return meta, []
 

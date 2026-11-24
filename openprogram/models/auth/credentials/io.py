@@ -85,7 +85,7 @@ def _private_file_lock(
     root: Path,
     timeout: float = 10.0,
 ) -> Iterator[None]:
-    del root, timeout
+    del root
     target = Path(path)
     _make_private_dirs(target.parent)
     key = os.fspath(target.absolute())
@@ -106,7 +106,7 @@ def _private_file_lock(
             # The folder went (an empty one is tidied away): make it again.
             _make_private_dirs(target.parent)
             continue
-        locking.flock(descriptor, locking.LOCK_EX)
+        _wait_for_lock(descriptor, lock_path, timeout)
         if _is_current_lock(descriptor, lock_path):
             _owner_only(descriptor)
             break
@@ -124,6 +124,31 @@ def _private_file_lock(
         held.remove(key)
         locking.flock(descriptor, locking.LOCK_UN)
         os.close(descriptor)
+
+
+def _wait_for_lock(descriptor: int, lock_path: Path, timeout: float) -> None:
+    """Take the lock on ``descriptor``, waiting at most ``timeout`` seconds:
+    a holder that never lets go is an error, not a hang."""
+    import time
+
+    from openprogram.host._platform import locking
+
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        try:
+            locking.flock(descriptor, locking.LOCK_EX | locking.LOCK_NB)
+            return
+        except (BlockingIOError, PermissionError):
+            pass
+        except OSError as exc:
+            import errno
+            if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK):
+                os.close(descriptor)
+                raise
+        if time.monotonic() >= deadline:
+            os.close(descriptor)
+            raise TimeoutError(f"{lock_path} is held by another process")
+        time.sleep(0.05)
 
 
 def _owner_only(descriptor: int) -> None:

@@ -34,7 +34,6 @@ export function ApplicationTabGlyph({ appId, size }: { appId?: string; size: num
   const { data } = useQuery({
     queryKey: ["applications"],
     queryFn: () => applicationRequest<{ applications: ApplicationDefinition[] }>("/api/applications"),
-    staleTime: 60_000,
   });
   return <ApplicationGlyph icon={data?.applications.find(app => app.id === appId)?.icon} size={size} />;
 }

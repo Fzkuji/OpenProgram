@@ -1,0 +1,57 @@
+<title>Markdown in Chinese</title>
+<meta name="description" content="How replies, messages and previews read markdown written in Chinese: emphasis next to Chinese punctuation, addresses that end at it, markers without a space, paths with spaces, and dollars that are prices.">
+<h1>Markdown in Chinese</h1>
+
+<p>CommonMark was written for languages that put a space between words. Chinese does not, and models writing Chinese break its rules in a few fixed ways, so the marks show as text. Every renderer adds the same extensions to marked (<code translate="no">lib/markdown/prose.ts</code>); each takes only what the stock rules leave as text.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Written</th><th scope="col">Stock CommonMark</th><th scope="col">Shown</th></tr></thead>
+<tbody>
+<tr><td><code translate="no">这是**重点。**下一句</code></td><td>Asterisks as text</td><td>Bold, closed after the full stop</td></tr>
+<tr><td><code translate="no">这是*斜体。*后面</code>, <code translate="no">~~原价，~~</code>, <code translate="no">__粗体__</code></td><td>Marks as text</td><td>Italic, struck, bold</td></tr>
+<tr><td><code translate="no">访问 https://a.com/x。下一句</code></td><td>The link takes <code translate="no">。下一句</code></td><td>The link ends before <code translate="no">。</code></td></tr>
+<tr><td><code translate="no">[文档]（https://a.com）</code></td><td>Brackets as text</td><td>A link</td></tr>
+<tr><td><code translate="no">[deck](/Users/me/ICDM 2026/deck.pptx)</code></td><td>Text: a space ends the target</td><td>A file link</td></tr>
+<tr><td><code translate="no">##标题</code>, <code translate="no">1.第一项</code>, <code translate="no">-第一项</code></td><td>Markers as text</td><td>A heading, a list</td></tr>
+<tr><td><code translate="no">价格 $5，折后 $3</code></td><td>One formula from <code translate="no">$5</code> to <code translate="no">$</code></td><td>Text</td></tr>
+</tbody>
+</table>
+
+<h2>Rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Emphasis</th><td><code translate="no">*</code>, <code translate="no">**</code>, <code translate="no">***</code>, <code translate="no">~~</code>: taken when punctuation touches the inside of a mark, a non-space its outside, and CJK is on one side. <code translate="no">_</code>, <code translate="no">__</code>: taken when CJK touches the outside and the text inside has CJK, so <code translate="no">snake_case</code> stays (<code translate="no">cjk-emphasis.ts</code>)</td></tr>
+<tr><th scope="row">Bare addresses</th><td>End at the first full-width punctuation mark, and at CJK still in the host name. CJK in a path stays: <code translate="no">zh.wikipedia.org/wiki/中文</code> (<code translate="no">cjk-links.ts</code>)</td></tr>
+<tr><th scope="row">Link targets</th><td>Full-width parentheses count when the target is an address or a local path. A root, home, <code translate="no">file://</code> or drive path may have spaces (<code translate="no">spaced-path-links.ts</code>)</td></tr>
+<tr><th scope="row">Markers</th><td>A line starting with <code translate="no">#</code>–<code translate="no">######</code>, <code translate="no">1.</code>, <code translate="no">1)</code>, <code translate="no">-</code> or <code translate="no">+</code> directly followed by CJK is read with the space put back. Block tokens, so code is never touched (<code translate="no">cjk-blocks.ts</code>)</td></tr>
+<tr><th scope="row">Formulas</th><td>Lexer tokens that render as <code translate="no">.md-math</code> holding their source; KaTeX draws only those and never scans text. <code translate="no">$</code> opens before a non-space; the closing <code translate="no">$</code> follows a non-space and is not followed by a digit, as in Pandoc. <code translate="no">\(…\)</code>, <code translate="no">\[…\]</code>, <code translate="no">$$…$$</code> always count (<code translate="no">math.ts</code>)</td></tr>
+</tbody>
+</table>
+
+<h2>Left as written</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Written</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">#话题#今天</code></th><td>A hashtag: one <code translate="no">#</code> closed by another</td></tr>
+<tr><th scope="row"><code translate="no">1.5倍</code></th><td>A digit follows the dot</td></tr>
+<tr><th scope="row"><code translate="no">1、</code>, <code translate="no">（1）</code>, <code translate="no">•</code></th><td>Plain text that already reads as numbering</td></tr>
+<tr><th scope="row"><code translate="no">*强调*</code> at a line start</th><td>Emphasis, not a bullet</td></tr>
+<tr><th scope="row">Tables with <code translate="no">｜</code></th><td>Rare, and a full-width bar is also ordinary text</td></tr>
+<tr><th scope="row">Web addresses with spaces</th><td>A space ends them, as everywhere</td></tr>
+</tbody>
+</table>
+
+<p class="note">The user's own messages and A2UI text get the same extensions without formulas: what a person types stays literal.</p>
+
+<details>
+<summary>Code</summary>
+<ul>
+<li><code translate="no">apps/web/lib/markdown/prose.ts</code>, <code translate="no">cjk-emphasis.ts</code>, <code translate="no">cjk-links.ts</code>, <code translate="no">cjk-blocks.ts</code>, <code translate="no">spaced-path-links.ts</code>, <code translate="no">math.ts</code></li>
+<li><code translate="no">apps/web/lib/runtime-bridge/dom/markdown-render.ts</code> (<code translate="no">renderMd</code>, <code translate="no">typesetMath</code>)</li>
+<li><code translate="no">apps/web/components/chat/messages/bubbles/markdown.ts</code>, <code translate="no">apps/web/lib/format-utils/markdown.tsx</code>, <code translate="no">document-markdown.ts</code></li>
+<li><code translate="no">apps/web/tests/chat/markdown/chinese-prose.test.mjs</code></li>
+</ul>
+</details>
+
+<p class="next"><a href="chat-attachments.html">Chat attachments</a></p>

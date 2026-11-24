@@ -131,6 +131,7 @@ const stubs = {
   '@/lib/runtime-bridge/state': 'export const runtimeState={};',
   '@/lib/tabs/navigation/open-session': 'export const openNewChat=()=>"draft";',
   './use-stable-scroll-end': 'export const useStableScrollEnd=()=>{};',
+  './update-badge': 'export const UpdateBadge=()=>null;',
 };
 
 test('the footer is the card\'s last child, beside the held content, and the shell carries the rail\'s timing', async () => {

@@ -94,13 +94,60 @@ def _tiktoken_count(text: str, model_family: str | None = None) -> int | None:
         return None
 
 
+#: Counts already made, by a text's length and hash. A conversation's
+#: messages are counted again on every open, every turn and every compaction
+#: check, and encoding them is nearly all of that work (0.3 s of 0.5 s to
+#: open a long conversation). The texts themselves are not kept.
+_counted: dict[tuple[int, int], int] = {}
+_COUNTED_LIMIT = 50_000
+#: Shorter texts are cheaper to count than to remember.
+_COUNTED_FROM_CHARS = 64
+
+
+def load_encoding() -> None:
+    """Read the tokenizer's vocabulary in, so the first count does not.
+
+    Building it takes 0.3 s; a Worker does that beside its start instead of
+    inside the first conversation someone opens.
+    """
+    _tiktoken_count("warm")
+
+
 def _text_tokens(text: str) -> int:
     if not text:
         return 0
+    if len(text) < _COUNTED_FROM_CHARS:
+        n = _tiktoken_count(text)
+        return n if n is not None else _char_estimate(text)
+    key = (len(text), hash(text))
+    known = _counted.get(key)
+    if known is not None:
+        return known
     n = _tiktoken_count(text)
-    if n is not None:
-        return n
-    return _char_estimate(text)
+    if n is None:
+        n = _char_estimate(text)
+    if len(_counted) >= _COUNTED_LIMIT:
+        _counted.clear()
+    _counted[key] = n
+    return n
+
+
+def _reasoning_payload_tokens(signature: str) -> int:
+    """What a reasoning block's payload adds to a request. A Responses
+    reasoning item is stored as its JSON, whose summary is the block's text
+    (already counted): only its ``encrypted_content`` is added. Any other
+    signature is an opaque string."""
+    if not signature:
+        return 0
+    if signature.startswith("{"):
+        try:
+            import json
+            item = json.loads(signature)
+            if isinstance(item, dict):
+                return len(item.get("encrypted_content") or "") // 4
+        except ValueError:
+            pass
+    return len(signature) // 4
 
 
 def estimate_message_tokens(msg: dict[str, Any] | Any) -> int:
@@ -115,6 +162,14 @@ def estimate_message_tokens(msg: dict[str, Any] | Any) -> int:
                 txt = getattr(blk, "text", None)
                 if txt:
                     total += _text_tokens(txt)
+                # ThinkingContent: the reasoning goes back to the model that
+                # wrote it, the summary as text and the payload (encrypted
+                # reasoning, a signature) as the opaque string the provider
+                # counts. Leaving it out read a reasoning model's history a
+                # fifth short.
+                if getattr(blk, "type", None) == "thinking":
+                    total += _text_tokens(getattr(blk, "thinking", "") or "")
+                    total += _reasoning_payload_tokens(getattr(blk, "thinking_signature", "") or "")
                 # ImageContent
                 if getattr(blk, "type", None) == "image":
                     total += _PER_IMAGE_TOKENS

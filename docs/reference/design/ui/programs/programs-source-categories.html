@@ -23,7 +23,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">agents</code></th><td>mixture_of_agents</td><td>agent, send_message</td></tr>
 <tr><th scope="row"><code translate="no">code</code></th><td>execute_code</td><td>lsp, semble</td></tr>
-<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use_agent</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use</td></tr>
 <tr><th scope="row"><code translate="no">files</code></th><td>apply_patch, edit, glob, grep, list, read, terminal_use, write, write_stdin</td><td>bash, worktree</td></tr>
 <tr><th scope="row"><code translate="no">interaction</code></th><td>always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, handoff, send_file</td><td></td></tr>
 <tr><th scope="row"><code translate="no">jobs</code></th><td>routine</td><td>cron</td></tr>
@@ -42,7 +42,7 @@
 <tbody>
 <tr><th scope="row">Expansion</th><td>Lazy, one level per <code translate="no">GET /api/programs/explorer</code> request, with <code translate="no">tools/…</code> and <code translate="no">applications/&lt;name&gt;/…</code> as callable-first rows</td></tr>
 <tr><th scope="row">First selection</th><td>Root response <code translate="no">default_selection</code>: the first application, or the first tool</td></tr>
-<tr><th scope="row">Singleton</th><td><code translate="no">computer_use/computer_use_agent/</code> has many files and one callable, so it is one row, not a wrapper plus that callable</td></tr>
+<tr><th scope="row">Singleton</th><td><code translate="no">computer_use/computer_use/</code> has many files and one callable, so it is one row, not a wrapper plus that callable</td></tr>
 <tr><th scope="row">Refresh</th><td>Rescans Programs and reloads the same endpoint</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/tools</code></th><td>Runtime callables with MCP tools and display groups; defines no Programs folders</td></tr>
 <tr><th scope="row">MCP</th><td>Rows with source <code translate="no">mcp</code> never appear; MCP Servers is their only page</td></tr>
@@ -94,7 +94,7 @@
 <summary>Acceptance</summary>
 <ul>
 <li>Every shipped tool source lives under exactly one purpose directory, with no old top-level source.</li>
-<li><code translate="no">computer_use_agent</code> is directly visible, with logic path <code translate="no">tools/computer_use/computer_use_agent</code>.</li>
+<li><code translate="no">computer_use</code> is directly visible, with logic path <code translate="no">tools/computer_use/computer_use</code>.</li>
 <li>The built-in browser is an application. Every application is listed under <code translate="no">applications/</code>.</li>
 <li>All registered callable names remain available.</li>
 <li>The packaged <code translate="no">gui_agent</code> entry begins a desktop run without an import error; application packages import no removed namespace.</li>

@@ -16,7 +16,7 @@
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import "@/lib/net/ws/ws-events";
 import { getSocket } from "@/lib/runtime-bridge/state";
-import { isPlaceholderPageTitle, listedBrowserResources, recoverSessionResources } from "@/lib/chat/resources/session-resources";
+import { isPlaceholderPageTitle, listedBrowserResources, recoverSessionResources, resourcesShownFor } from "@/lib/chat/resources/session-resources";
 import { type DesktopBridge } from "./bridge-api";
 import { destroyInFlight, ensureWebView, liveViewIds, nativeCueOperations, removeVisibleWebTabBounds, transferLockedIds, unreportedClosedWebTabs, webTabGeometryRevisions } from "./bridge-state";
 
@@ -77,9 +77,49 @@ export function webTabStillPresent(tabId: string) {
   return useCenterTabs.getState().tabs.some((tab) => tab.id === tabId && tab.kind === "web");
 }
 
+/** The conversations a page belongs to: the one its tab was opened for and
+ *  every one whose resources list it. */
+function webTabShown(tab: { id: string; agentSessionId?: string | null }): boolean {
+  if (tab.agentSessionId && resourcesShownFor(tab.agentSessionId)) return true;
+  return listedRowsForTab(tab.id).some((row) => row.status !== "closed" && (
+    resourcesShownFor(row.conversationSessionId || "") || resourcesShownFor(row.sessionId || "")
+  ));
+}
+
+/**
+ * A native view is a whole browser process, about 100 MB. A window retains
+ * the pages of every conversation that ever opened one, so a view is made
+ * for a page when it is wanted, not for all of them at each start: the
+ * user's own tabs, the pages of the conversations on screen, and any page
+ * that already has its view. The others stay tabs with an address until
+ * their conversation comes on screen, a pane shows them or an Agent uses
+ * them; each of those makes the view itself.
+ */
+export function webViewWanted(tab: { id: string; agentSessionId?: string | null }): boolean {
+  return !tab.agentSessionId || liveViewIds.has(tab.id) || webTabShown(tab);
+}
+
+/** Makes the views of the pages whose conversation has come on screen, so
+ *  each is loaded by the time it is opened. */
+export function wakeShownWebViews(bridge: DesktopBridge): void {
+  const waiting = useCenterTabs.getState().tabs
+    .filter((tab) => tab.kind === "web" && !liveViewIds.has(tab.id) && tab.agentSessionId && webTabShown(tab))
+    .map((tab) => tab.id);
+  if (waiting.length === 0) return;
+  void restoreRetainedWebViews(bridge, { tabIds: waiting })
+    .then(() => reregisterDesktopWindow(bridge))
+    .catch(() => undefined);
+}
+
 export async function restoreRetainedWebViews(
   bridge: DesktopBridge,
-  opts: { tabIds?: readonly string[]; retryFailed?: boolean; canAccess?: (tabId: string) => boolean } = {},
+  opts: {
+    tabIds?: readonly string[];
+    retryFailed?: boolean;
+    canAccess?: (tabId: string) => boolean;
+    /** Skip the pages nothing wants yet (see webViewWanted). */
+    wantedOnly?: boolean;
+  } = {},
 ): Promise<void> {
   const current = useCenterTabs.getState().tabs.filter((tab) => tab.kind === "web");
   const candidateIds = (opts.tabIds ?? current.map((tab) => tab.id)).filter((id, index, all) => (
@@ -88,11 +128,20 @@ export async function restoreRetainedWebViews(
   const sessionIds = [...new Set(current.flatMap((tab) => (
     candidateIds.includes(tab.id) && tab.agentSessionId ? [tab.agentSessionId] : []
   )))];
-  // One read at a time: each is costly on the server, and a burst of them
-  // fills the browser's connections so the page's own requests (a video's
-  // first frame) wait behind them.
+  // Only the conversations on screen are read ahead. Each read opens a
+  // whole conversation on the server, and after a restart the retained tabs
+  // belong to dozens of them: reading all held up the first screen for
+  // seconds. A tab whose address the native page itself reported comes back
+  // at that address whatever the resources say, so its conversation is read
+  // when it is opened; a tab without one still asks where its page was.
   if (listedBrowserResources().length === 0) {
+    const unconfirmed = new Set(current.flatMap((tab) => (
+      candidateIds.includes(tab.id) && tab.agentSessionId
+        && !((tab.url || "").trim() && Number(tab.urlNativeAt) > 0)
+        ? [tab.agentSessionId] : []
+    )));
     for (const sessionId of sessionIds) {
+      if (!resourcesShownFor(sessionId) && !unconfirmed.has(sessionId)) continue;
       await recoverSessionResources(sessionId).catch(() => undefined);
     }
   }
@@ -100,6 +149,10 @@ export async function restoreRetainedWebViews(
     if (opts.canAccess && !opts.canAccess(tabId)) continue;
     if (!webTabStillPresent(tabId)) continue;
     if (tabIsExplicitlyClosed(tabId)) continue;
+    if (opts.wantedOnly) {
+      const waiting = current.find((tab) => tab.id === tabId);
+      if (waiting && !webViewWanted(waiting)) continue;
+    }
     let nativeUrl = "";
     let nativeTitle = "";
     try {

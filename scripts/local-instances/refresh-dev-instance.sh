@@ -4,7 +4,8 @@ set -euo pipefail
 # Build this checkout into the development instance: a runtime under
 # ~/.openprogram-dev/runtime, served by the `dev` profile's worker on port
 # 18200, and on macOS the "OpenProgram Dev" App over it
-# (scripts/local-instances/install-dev-app.sh). The stable App, its runtime and its worker are never
+# (scripts/local-instances/install-dev-app.sh). The stable App is the official
+# release with its own updater; its App, runtime, worker and data are never
 # touched, so this is safe to run from a conversation in the stable App.
 # See openprogram/operations/worker/dev_instance.py for how the two instances relate.
 
@@ -46,8 +47,7 @@ trap 'rm -rf "$work_dir" "$lock_dir"' EXIT
 
 # Remember the source checkout (not this worktree) for `openprogram dev`.
 common_dir="$(cd "$repo_root" && cd "$(git rev-parse --git-common-dir)" && pwd)"
-mkdir -p "$HOME/.openprogram"
-printf '%s\n' "$(dirname "$common_dir")" > "$HOME/.openprogram/source-repo"
+printf '%s\n' "$(dirname "$common_dir")" > "$state_dir/source-repo"
 
 # The commits in a deploy come from every session, so docs problems are
 # reported and never stop it; a page that fails the format builds as a visible
@@ -66,7 +66,9 @@ export OPENPROGRAM_DOCS_FORMAT=quarantine
 
 stamp "building Web assets and wheel from ${revision:0:10}"
 rm -rf "$repo_root/build"
-"$repo_root/scripts/release/stage-release-assets.sh"
+# This checkout is built on every deploy: keep the bundler cache and the
+# installed packages between them.
+OPENPROGRAM_INCREMENTAL_ASSETS=1 "$repo_root/scripts/release/stage-release-assets.sh"
 "$uv_bin" build --wheel --out-dir "$work_dir" "$repo_root"
 wheel="$(find "$work_dir" -maxdepth 1 -type f -name 'openprogram-*.whl' -print -quit)"
 test -n "$wheel" || { printf 'OpenProgram wheel was not built\n' >&2; exit 1; }
@@ -95,9 +97,9 @@ requirements="$work_dir/requirements.txt"
   --requirements "$requirements"
 "$uv_bin" pip install --python "$py" --break-system-packages --no-deps --reinstall \
   "$wheel"
-# Programs this runtime no longer ships; an earlier refresh may have installed them.
+# Packages this runtime no longer ships; an earlier refresh may have installed them.
 "$uv_bin" pip uninstall --python "$py" --break-system-packages \
-  gui-agent-harness research-agent-harness >/dev/null 2>&1 || true
+  gui-agent-harness research-agent-harness claude-agent-sdk >/dev/null 2>&1 || true
 stamp "runtime installed"
 
 # The worker runs as its own named macOS application ("OpenProgram Dev"), so
@@ -148,15 +150,6 @@ done
 
 printf '%s\n' "$revision" > "$runtime/source-revision"
 
-# Keep this build for `openprogram dev promote`: the stable App installs the
-# same commit and reuses the wheel and TUI bundle instead of rebuilding them.
-artifacts="$state_dir/artifacts"
-rm -rf "$artifacts.incoming"
-mkdir -p "$artifacts.incoming"
-cp "$wheel" "$repo_root/apps/cli/dist/index-standalone.cjs" "$artifacts.incoming/"
-printf '%s\n' "$revision" > "$artifacts.incoming/revision"
-rm -rf "$artifacts"
-mv "$artifacts.incoming" "$artifacts"
 # The development App ("OpenProgram Dev") is this commit's Desktop shell over
 # the runtime above.
 if test "$(uname -s)" = Darwin; then

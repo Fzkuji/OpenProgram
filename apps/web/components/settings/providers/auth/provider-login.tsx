@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { SettingsHeading } from "@/components/settings/settings-ui";
 import { useTranslation } from "@/lib/i18n";
+import { errorDetailText } from "@/lib/net/error-text";
 
 import type { LoginMethod, Provider } from "../types";
 
@@ -56,22 +57,58 @@ export function MethodChoices({
 /** Generic native-login panel for any provider with a non-key login method
  *  (OAuth / device-code / import-from-CLI / a pasted token). Drives the
  *  worker endpoints /api/providers/{id}/login/{start,poll,submit,cancel}:
- *  start kicks off the flow, then we poll for events (open a URL, show a
- *  device code, progress, or a prompt we must answer) until done. Signing
- *  in again with an account already in the list renews its row.
+ *  start kicks off the flow, then we read its events (open a URL, show a
+ *  device code, progress, or a prompt we must answer) until done. Each read
+ *  names the session version last seen and is held by the worker until the
+ *  session moves (a callback arrived, the worker's own device-flow poll
+ *  finished, a prompt was answered), so the outcome shows as it happens and
+ *  the window never asks on a timer. Signing in again with an account
+ *  already in the list renews its row.
  *
  *  With `method` the flow starts at once (the add dialog chose it); without
  *  it the panel offers the provider's ways as MethodChoices with Continue.
  *
- *  Polling is a SELF-RESCHEDULING setTimeout (never setInterval) so only one
- *  poll is ever in flight — no overlapping reads, no cursor rewind, no late
- *  404 clobbering a just-succeeded login (finishedRef guards that too). */
+ *  The next read starts only when the last one answered, so only one is
+ *  ever in flight — no overlapping reads, no cursor rewind, no late 404
+ *  clobbering a just-succeeded login (finishedRef guards that too). */
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+/** How long the worker holds a read for a change; the request gives up a
+ *  while after that. */
+const HOLD_SECONDS = 25;
+const READ_TIMEOUT_MS = (HOLD_SECONDS + 15) * 1000;
 
 interface Prompt {
   message: string;
   secret: boolean;
+}
+
+/** What starting a sign-in answers. */
+interface LoginStartReply {
+  session?: string;
+  error?: unknown;
+}
+
+/** One step a sign-in reports while it runs. */
+interface LoginEvent {
+  type?: string;
+  url?: string;
+  message?: unknown;
+  user_code?: string;
+  verification_uri?: string;
+}
+
+/** What polling a sign-in answers. */
+interface LoginPollReply {
+  cursor?: number;
+  version?: number;
+  events?: LoginEvent[];
+  waiting?: boolean;
+  prompt?: Prompt | null;
+  done?: boolean;
+  ok?: boolean;
+  error_code?: string;
+  error?: unknown;
 }
 
 export function ProviderLogin({
@@ -164,14 +201,14 @@ export function ProviderLogin({
         headers: JSON_HEADERS,
         body: JSON.stringify(accountLabel ? { method, label: accountLabel } : { method }),
       });
-      const d = await r.json();
+      const d = await r.json() as LoginStartReply;
       if (attempt !== attemptRef.current) {
         if (d.session) void fetch(`/api/providers/${provider.id}/login/cancel`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ session: d.session }) });
         return;
       }
       if (!r.ok || d.error || !d.session) {
         setFailed(true);
-        setMsg(d.error || text("Could not start the login.", "启动登录失败。"));
+        setMsg(errorDetailText(d.error, text("Could not start the login.", "启动登录失败。")));
         setBusy(false);
         setStarting("");
         return;
@@ -189,15 +226,17 @@ export function ProviderLogin({
       return;
     }
 
-    // Self-rescheduling poll: schedule the next tick only after this one
-    // resolves, so exactly one request is ever in flight.
+    // The next read starts when this one answers, so exactly one request is
+    // ever in flight; the worker holds each until the session changes.
     let failures = 0;
+    let version: number | null = null;
     const tick = async () => {
       if (attempt !== attemptRef.current || finishedRef.current) return;
       try {
+        const held = version === null ? "" : `&version=${version}&wait=${HOLD_SECONDS}`;
         const r = await fetch(
-          `/api/providers/${provider.id}/login/poll?session=${sid}&cursor=${cursorRef.current}`,
-          { signal: AbortSignal.timeout(15000) },
+          `/api/providers/${provider.id}/login/poll?session=${sid}&cursor=${cursorRef.current}${held}`,
+          { signal: AbortSignal.timeout(READ_TIMEOUT_MS) },
         );
         if (attempt !== attemptRef.current || finishedRef.current) return;
         if (r.status === 404) {
@@ -208,13 +247,14 @@ export function ProviderLogin({
           return;
         }
         if (!r.ok) throw new Error("Login status unavailable");
-        const d = await r.json();
+        const d = await r.json() as LoginPollReply;
         if (attempt !== attemptRef.current || finishedRef.current) return;
         failures = 0;
         setMsg("");
         cursorRef.current = Math.max(cursorRef.current, d.cursor ?? 0);
+        if (typeof d.version === "number") version = d.version;
         for (const ev of d.events ?? []) {
-          if (ev.type === "open_url") {
+          if (ev.type === "open_url" && ev.url) {
             window.open(ev.url, "_blank", "noopener");
             setAuthUrl(ev.url);
             setLines([text("Continue in your browser, then return here.", "请在浏览器完成授权，然后返回这里。")]);
@@ -252,15 +292,16 @@ export function ProviderLogin({
             rate_limited: text("Too many attempts. Wait before retrying.", "登录请求过多，请稍后重试。"),
             unavailable: text("OpenAI authentication is temporarily unavailable.", "OpenAI 登录服务暂时不可用，请稍后重试。"),
           };
-          setMsg(d.ok ? text("Signed in.", "登录成功。") : (errors[d.error_code] || d.error || text("Login failed.", "登录失败。")));
+          setMsg(d.ok ? text("Signed in.", "登录成功。") : ((d.error_code && errors[d.error_code]) || errorDetailText(d.error, text("Login failed.", "登录失败。"))));
           if (d.ok) onChanged?.();
           return;
         }
-        timerRef.current = setTimeout(tick, 1000);
+        void tick();
       } catch {
         if (attempt !== attemptRef.current || finishedRef.current) return;
+        // A dropped poll is tried again quietly; only giving up is said.
         failures += 1;
-        setMsg(text(`Connection interrupted. Retrying (${failures})…`, `连接中断，正在重试（${failures}）…`));
+        console.warn(`Sign-in status could not be read (${failures}); trying again`);
         if (failures >= 10) {
           cancel();
           setFailed(true);
@@ -270,7 +311,7 @@ export function ProviderLogin({
         timerRef.current = setTimeout(tick, Math.min(5000, failures * 1000));
       }
     };
-    timerRef.current = setTimeout(tick, 600);
+    void tick();
   }
 
   async function submit() {

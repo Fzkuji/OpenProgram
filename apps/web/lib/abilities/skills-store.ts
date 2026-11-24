@@ -1,6 +1,13 @@
 import { create } from "zustand";
 
 import { jsonFetch as jsonReq } from "@/lib/net/fetch-client";
+import { answered, readKept, retrySoon } from "./kept-read";
+
+const SKILLS_KEY = "/api/skills";
+const readSkills = async () => {
+  const skills = await jsonReq<Skill[]>(SKILLS_KEY);
+  return Array.isArray(skills) ? skills : [];
+};
 
 export interface Skill {
   name: string;
@@ -71,8 +78,8 @@ interface SkillsState {
   detail: SkillDetail | null;
   discoverySources: string[];
   discoverySuggested: DiscoverySuggestion[];
-  loading: boolean;
-  error: string | null;
+  /** The list has come from the server at least once. */
+  ready: boolean;
   setSelected: (n: string | null) => void;
   fetchSkills: () => Promise<void>;
   fetchDetail: (name: string) => Promise<void>;
@@ -102,18 +109,19 @@ export const useSkills = create<SkillsState>((set, get) => ({
   detail: null,
   discoverySources: [],
   discoverySuggested: [],
-  loading: false,
-  error: null,
+  ready: false,
 
   setSelected: (n) => set({ selected: n }),
 
+  // The page and the composer's slash menu both ask as they mount and share
+  // one request. A failed read keeps the last list and asks again shortly.
   fetchSkills: async () => {
-    set({ loading: true, error: null });
     try {
-      const skills = await jsonReq<Skill[]>("/api/skills");
-      set({ skills, loading: false });
+      const skills = await readKept(SKILLS_KEY, readSkills);
+      answered(SKILLS_KEY);
+      set({ skills, ready: true });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      retrySoon(SKILLS_KEY, () => { void get().fetchSkills(); }, e);
     }
   },
 
@@ -122,7 +130,7 @@ export const useSkills = create<SkillsState>((set, get) => ({
       const detail = await jsonReq<SkillDetail>(`/api/skills/${encodePath(name)}`);
       set({ detail });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e), detail: null });
+      console.warn(`[skills] detail read failed: ${name}`, e);
     }
   },
 
@@ -206,3 +214,14 @@ export const useSkills = create<SkillsState>((set, get) => ({
     });
   },
 }));
+
+/** The Skills page's first read, started before the page opens. It is
+ *  asked once: a failure only warns, and retrying belongs to a page that
+ *  shows the list. */
+export function prefetchSkills(): Promise<void> {
+  if (useSkills.getState().ready) return Promise.resolve();
+  return readKept(SKILLS_KEY, readSkills).then(
+    (skills) => { answered(SKILLS_KEY); useSkills.setState({ skills, ready: true }); },
+    (cause) => { console.warn("[prefetch] skills", cause); },
+  );
+}

@@ -72,6 +72,21 @@ async def stream_simple(
     Automatically resolves API key from environment if not provided.
     Mirrors streamSimple() from TypeScript.
     """
+    from .routing import routed
+    async for event in routed(model, lambda way, keys: _stream_simple_on(
+            way, context, _following(options, keys, SimpleStreamOptions))):
+        yield event
+
+
+def _following(options, keys, kind):
+    """``options`` for a request moved along ``keys`` (unchanged for ``None``)."""
+    if not keys:
+        return options
+    return (options or kind()).model_copy(update={"only_credentials": keys})
+
+
+async def _stream_simple_on(model: Model, context: Context, options: SimpleStreamOptions | None):
+    """``stream_simple`` through one way (``routing.routed`` picks it)."""
     from openprogram.models.auth.provider_policy import require_supported_provider
     require_supported_provider(model.provider)
     with _job_operation_deadline() as record_activity:
@@ -153,6 +168,14 @@ async def stream(
     Stream with provider-specific options (no reasoning normalization).
     Mirrors stream() from TypeScript.
     """
+    from .routing import routed
+    async for event in routed(model, lambda way, keys: _stream_on(
+            way, context, _following(options, keys, StreamOptions))):
+        yield event
+
+
+async def _stream_on(model: Model, context: Context, options: StreamOptions | None):
+    """``stream`` through one way (``routing.routed`` picks it)."""
     from openprogram.models.auth.provider_policy import require_supported_provider
     require_supported_provider(model.provider)
     with _job_operation_deadline() as record_activity:

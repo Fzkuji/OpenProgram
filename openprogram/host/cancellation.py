@@ -12,6 +12,12 @@ both. Two things can cancel the code running in this context:
 
 Exactly one host owns the checkpoint at a time: installing a second one
 replaces the first. Without one, nothing but the bound event cancels.
+
+A blocking wait (a command the host collects) does not look at the
+checkpoint on a timer: it registers with :func:`on_cancel` and is woken when
+a stop is fired, then calls :func:`check_cancelled`. The same host installs
+how that registration reaches its stop signals
+(:func:`set_cancellation_waker`).
 """
 from __future__ import annotations
 
@@ -49,6 +55,29 @@ def set_cancellation_check(hook: Callable[[], None] | None) -> None:
     _cancellation_check = hook or _no_cancellation
 
 
+_cancellation_waker: Callable[[Callable[[], None]], Callable[[], None]] | None = None
+
+
+def set_cancellation_waker(hook: Callable[[Callable[[], None]], Callable[[], None]] | None) -> None:
+    """Install how :func:`on_cancel` registers: ``hook(callback)`` arranges
+    for ``callback`` to run when this context's stop is fired and returns
+    the function that undoes it."""
+    global _cancellation_waker
+    _cancellation_waker = hook
+
+
+def on_cancel(callback: Callable[[], None]) -> Callable[[], None]:
+    """Run ``callback`` (from any thread) when the code running in this
+    context may have been cancelled, so a blocking wait looks at
+    :func:`check_cancelled` then; returns the unregister. Without a host's
+    waker nothing calls it, and nothing but the waiter's own timeout ends
+    the wait early."""
+    hook = _cancellation_waker
+    if hook is None:
+        return lambda: None
+    return hook(callback)
+
+
 def run_cancellation_check() -> None:
     """Run only the installed checkpoint, not the bound cancel event."""
     _cancellation_check()
@@ -68,6 +97,8 @@ def check_cancelled() -> None:
 __all__ = [
     "CancelledError",
     "check_cancelled",
+    "on_cancel",
     "run_cancellation_check",
     "set_cancellation_check",
+    "set_cancellation_waker",
 ]

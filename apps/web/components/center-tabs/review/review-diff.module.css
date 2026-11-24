@@ -3,13 +3,15 @@
    accents so the same rules read on light and dark themes. */
 .diff {
   --review-numbers: 44px 44px;
+  /* Where a line's text starts: cards sit under it, past the numbers. */
+  --review-inset: 106px;
   padding: 4px 0 12px;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: 20px;
   color: var(--text-primary);
 }
-.oneNumber { --review-numbers: 48px; }
+.oneNumber { --review-numbers: 48px; --review-inset: 66px; }
 
 .line {
   display: grid;
@@ -61,13 +63,16 @@
   color: var(--text-muted);
 }
 
-/* Revert sits at the end of its hunk header; the comment button floats
-   over the end of the hovered line (only that line renders one). */
-.hunkAction {
+/* Revert and Stage sit at the end of their hunk header; the comment
+   button floats over the end of the hovered line (only that line renders
+   one). */
+.hunkActions {
   margin-left: auto;
   align-self: center;
-  color: var(--text-muted);
+  display: flex;
+  gap: 2px;
 }
+.hunkAction { color: var(--text-muted); }
 .line { position: relative; }
 .commentButton {
   position: absolute;
@@ -76,12 +81,74 @@
   color: var(--text-muted);
   background: var(--bg-primary);
 }
+/* A commented line ends in a small accent dot. */
+.dot {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+}
 .comment {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 6px 16px 10px;
+  margin: 6px 16px 10px var(--review-inset);
   font-family: var(--font-sans);
+}
+
+/* Notes pinned under a line: your comments and the agent's findings. */
+.card {
+  display: flex;
+  gap: 10px;
+  margin: 6px 16px 10px var(--review-inset);
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: 20px;
+}
+.avatar,
+.avatarAgent {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+}
+.avatar {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+.avatarAgent {
+  color: var(--accent-purple);
+  background: color-mix(in srgb, var(--accent-purple) 14%, transparent);
+}
+.cardMain { min-width: 0; flex: 1; }
+.cardTitle {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.card[data-severity="high"] .cardTitle { color: var(--accent-red); }
+.cardBody {
+  margin-top: 2px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cardActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
 }
 .comment textarea { min-height: 64px; }
 .commentActions {

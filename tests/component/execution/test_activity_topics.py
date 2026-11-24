@@ -105,3 +105,28 @@ def test_opening_a_chart_starts_one_backfill_and_a_failure_waits(tmp_path, monke
         topics.time.sleep(0.01)
     assert annotate_runs("backfill", tmp_path, [], asks) is False
     topics._retry_at.pop("backfill", None)
+
+
+def test_a_finished_pass_is_not_restarted_by_the_read_its_own_notice_causes(tmp_path, monkeypatch):
+    """A pass that ends with a message it could not see must not start again on the
+    chart read its change notice brings, or the two wake each other forever."""
+    from openprogram.runtime.context import session_db
+
+    class _NoIndex:
+        def read_index(self, session_id, read):
+            return None
+
+        def _session_dir(self, session_id):
+            return tmp_path
+
+    monkeypatch.setattr(session_db, "default_db", lambda: _NoIndex())
+    monkeypatch.setattr(topics, "_runs_changed", lambda session_id: None)
+    with topics._lock:
+        topics._running.add("unseen")
+    topics._sort_session("unseen")
+    try:
+        assert annotate_runs("unseen", tmp_path, [], [Ask("u1", "x")]) is False
+        with topics._lock:
+            assert "unseen" not in topics._running
+    finally:
+        topics._retry_at.pop("unseen", None)

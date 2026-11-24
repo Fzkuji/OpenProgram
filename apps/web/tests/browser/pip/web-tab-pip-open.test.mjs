@@ -27,7 +27,7 @@ await build({
     b.onResolve({ filter: /browser-control-bar/ }, () => ({ path: "control-bar", namespace: "test-services" }));
     b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "control-bar"
       ? "export function BrowserControlBar() { return null; } export function ActionCueTravel() { return null; } export function BrowserPageCue() { return null; }"
-      : "export function desktopBridge() { return null; } export function installDesktopMenuHandlers() {} export function ensureWebView() {} export function removeVisibleWebTabBounds() {} export function registerVisibleWebTabBounds() {} export function setWebTabReady() {}" }));
+      : "export function desktopBridge() { return null; } export function wakeShownWebViews() {} export function installDesktopMenuHandlers() {} export function ensureWebView() {} export function removeVisibleWebTabBounds() {} export function registerVisibleWebTabBounds() {} export function setWebTabReady() {}" }));
   }}],
 });
 const { window } = parseHTML("<html><body></body></html>");

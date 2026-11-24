@@ -17,7 +17,7 @@ registerHooks({
    '@/lib/agents/branch-settings': 'export const persistBranchSettings = () => {}; export const draftTouchedPatch = () => ({})',
    '@/lib/session-store/session-scope': 'export const useSessionScope = s => globalThis.searchScopeHook(s)',
    '@/lib/i18n': 'export const useTranslation = () => globalThis.searchTranslation',
-   '@/lib/prefs/settings-cache': 'export const cachedFetch = async () => globalThis.searchCatalog; export const invalidate = () => {}',
+   '@/lib/prefs/settings-cache': 'export const cachedFetch = async () => globalThis.searchCatalog; export const useSettingsData = () => globalThis.searchCatalog; export const refreshSettings = async () => true; export const setCachedSettings = () => {}; export const prefetchSettings = () => {}; export const invalidate = () => {}',
    '@/components/ui/search-input': 'export const SearchInput = () => null',
    './owner-auth-bootstrap.ts': 'export const waitForOwnerAuthBootstrap = async () => {}; export const adoptOwnerAuthToken = async () => {}',
    './auth/owner-auth-bootstrap.ts': 'export const waitForOwnerAuthBootstrap = async () => {}; export const adoptOwnerAuthToken = async () => {}',

@@ -637,6 +637,41 @@ def test_a_conversation_joins_when_used_after_always_on_is_turned_on(agent, worl
     assert "new" not in ticker.due_sessions(10_000.0)
 
 
+def test_the_ticker_sleeps_until_the_earliest_wake_and_a_change_wakes_it(agent, world):
+    """No look every thirty seconds: the next tick is the earliest wake, and
+    a schedule or settings change signals the ticker to look again."""
+    from openprogram.host._platform import changes
+
+    db = world["db"]
+    with changes.listen(store.WAKES_TOPIC) as listener:
+        enable(agent, research=False, wake_minutes=10)
+        assert listener.wait(0), "turning always-on on wakes the ticker"
+        db.create_session("c1", agent, updated_at=1e12)
+        outlook = ticker.Outlook()
+        ticker.due_sessions(1000.0, outlook)
+        assert outlook.next_wake == 1000.0 + 600
+        assert outlook.due(1000.0, ticker.TICK_SECONDS) == 1600.0
+        assert f"{store.WAKES_TOPIC}:c1" in listener.wait(0), "joining wrote its schedule"
+        again = ticker.Outlook()
+        ticker.due_sessions(1001.0, again)
+        assert listener.wait(0) == set(), "a look that changes nothing does not wake it again"
+        assert again.due(1001.0, ticker.TICK_SECONDS) == 1600.0
+        enable(agent, research=False, wake_minutes=20)
+        assert listener.wait(0) == {f"{store.WAKES_TOPIC}:agent:{agent}"}, "a settings change wakes it"
+        runtime.note_user_turn("c1")
+        assert listener.wait(0) == {f"{store.WAKES_TOPIC}:c1"}, "a user's turn wakes it"
+
+
+def test_an_unfinished_stop_asks_for_the_next_tick(agent, world, monkeypatch):
+    enable(agent, research=False, wake_minutes=10)
+    ticker.due_sessions(1000.0)
+    enable(agent, enabled=False)
+    monkeypatch.setattr(ticker, "_stop_goals", lambda agent_id: False)
+    outlook = ticker.Outlook()
+    ticker.due_sessions(1100.0, outlook)
+    assert outlook.soon and outlook.due(1100.0, ticker.TICK_SECONDS) == 1100.0 + ticker.TICK_SECONDS
+
+
 def test_a_conversation_started_before_the_first_tick_still_joins(agent, world, monkeypatch):
     enable(agent, wake_minutes=10)
     saved_at = manager.get(agent).updated_at
@@ -1651,6 +1686,25 @@ def test_the_inbox_reads_each_conversation_once(agent, world, monkeypatch):
     assert sorted(reads) == ["c1", "phone"]
 
 
+def test_a_scheduled_result_waits_in_the_inbox_until_its_conversation_is_opened(agent, world, monkeypatch):
+    from openprogram.runtime.conversation.always_on import pending
+    from openprogram.runtime.scheduler import service as scheduler
+    # The task was set in a conversation of an Agent that is not always-on.
+    sid = world["db"].create_session("plain", "main", source="web")
+    monkeypatch.setattr(scheduler, "list_tasks", lambda: [{"id": "t1", "title": "Kyoto fares", "session_id": sid}])
+    row = store.add_report(sid, title="Kyoto fares", body="Fare dropped to 4,280", kind="finding", task_id="t1")
+    listed = [item for item in pending.items() if item["session_id"] == sid]
+    assert [(item["report_id"], item["task_id"], item["task_title"], item["kind"]) for item in listed] == [
+        (row["id"], "t1", "Kyoto fares", "finding")]
+    # An always-on Agent's own report carries no task.
+    enable(agent)
+    own = world["db"].create_session("c1", agent, source="web")
+    store.add_report(own, title="Merge?", body="", kind="approval")
+    assert [item["task_id"] for item in pending.items() if item["session_id"] == own] == [None]
+    assert pending.mark_seen(sid)
+    assert [item for item in pending.items() if item["session_id"] == sid] == []
+
+
 @pytest.fixture
 def desktop_fallback(monkeypatch, _no_system_notifications):
     """The real fallback with a short wait: ``posted`` fills, ``settle`` waits for it."""
@@ -2436,7 +2490,7 @@ def _decide(tool, args, **fields):
 
 
 GUARDED_CALLS = [
-    ("computer_use_agent", {"target": "browser", "action": "evaluate", "args": {"script": "1"}}),
+    ("computer_use", {"type": "browser", "action": "evaluate", "args": {"script": "1"}}),
     ("bash", {"command": "cd x && rm -rf build"}),
     ("bash", {"command": "find . -name x -delete"}),
     ("apply_patch", {"patch": "*** Begin Patch\n*** Delete File: a.py\n*** End Patch"}),

@@ -30,7 +30,7 @@
 <tr><th scope="row"><code translate="no">request_mode</code></th><td><code translate="no">native</code>：系统请求。<code translate="no">settings</code>：只能去设置。<code translate="no">targeted</code>：需要目标应用。<code translate="no">operation</code>：只有真实操作能验证。<code translate="no">none</code>：没有请求 API</td></tr>
 <tr><th scope="row"><code translate="no">settings</code></th><td>固定的能力专属系统设置 URL 或说明；所有者点击后才打开</td></tr>
 <tr><th scope="row"><code translate="no">identity</code></th><td>Bundle id 和 designated requirement，或 provider、路径身份</td></tr>
-<tr><th scope="row"><code translate="no">operations</code></th><td>需要该能力的工具。GUI 桌面需要屏幕录制和辅助功能；浏览器、VM 和普通 CLI 不需要</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>需要该能力的工具。<code translate="no">computer_use</code> 操作本机的 <code translate="no">app</code> 和 <code translate="no">screen</code> 需要屏幕录制和辅助功能；浏览器目标、其他机器和普通 CLI 不需要</td></tr>
 </tbody>
 </table>
 <p class="note">导入校验：id 唯一；每个 native 条目有不弹提示的检查和显式请求方式；有范围的条目说明状态语义；每个设置动作有固定目标；每个操作指向已声明的能力。</p>
@@ -53,7 +53,8 @@
 <tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>报告（schema 2）：平台、主机、执行身份、时间戳，每行含 id、类别、状态、详情、说明、请求方式、设置可用性、操作、恢复元数据</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/system/access/waits</code></th><td>未结束的等待，id 和 schema 相同</td></tr>
 <tr><th scope="row"><code translate="no">POST /api/system/access/setup</code></th><td>仅限所有者和回环地址。请求所有已注册的原生 runtime 能力，返回一份合并报告</td></tr>
-<tr><th scope="row"><code translate="no">POST /api/system/access/{id}</code></th><td>单行：重新检查，可选原生请求，返回新行。<code translate="no">open_settings=true</code> 只打开目标，绝不声称已授权</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/guide</code></th><td>仅限所有者和回环地址。请求体 <code translate="no">{"capabilities": [id, ...]}</code>。在后台按顺序处理每个缺失项：对话框类能力弹 macOS 自己的对话框，列表类能力打开对应面板并显示拖拽引导。返回 <code translate="no">{"ok": true, "started": [ids]}</code>；非 macOS 时 <code translate="no">started</code> 为空；未知 id 返回 400</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/{id}</code></th><td>单行：重新检查，可选原生请求，返回新行。<code translate="no">open_settings=true</code> 只打开目标（列表类能力带拖拽引导），绝不声称已授权</td></tr>
 </tbody>
 </table>
 <p class="note">响应禁止缓存，不含机密。前两行保持旧的 <code translate="no">screen_recording</code> 和 <code translate="no">accessibility</code> 线路格式；旧回执按旧格式读取。未知 id 是客户端错误，什么也不打开。权限规则、Auto 模式、profile、Worker 和端口不受影响。</p>
@@ -61,9 +62,9 @@
 <h2 id="flow">首次设置和操作</h2>
 <ol>
 <li>Web 设置按产品领域显示注册表、每项用途，每次加载页面做一次只读检查。</li>
-<li>用户选择“Set up all OpenProgram access”，或某行的“Request authorization”/“Open System Settings”。页面挂载、重连、轮询、历史回放和模型输出都不会发请求。</li>
+<li>用户选择“Set up all OpenProgram access”，或某行的“Request authorization”/“Open System Settings”。页面挂载、重连、轮询、历史回放和模型输出都不会发请求；唯一的自动动作是工具等待打开时的设置引导。</li>
 <li>后端按执行者串行化原生请求，用指定 runtime 请求后重新检查。macOS 仍可能弹多个对话框，UI 逐项报告结果。</li>
-<li>操作前 Worker 做一次新报告，只为缺失的必需能力创建持久的 <code translate="no">system_access</code> 等待。浏览器和 VM 操作跳过。</li>
+<li>操作前 Worker 做一次新报告，只为缺失的必需能力创建持久的 <code translate="no">system_access</code> 等待。调用需要哪项操作由工具回答：<code translate="no">computer_use</code> 由目标的 provider 回答，经运行时用 <code translate="no">register_operation_source</code> 装入的来源，所以宿主不点名任何目标。列出应用或显示器、浏览器目标和其他机器都不需要。</li>
 <li>回到应用触发只读刷新。授权后等待经 Worker 对账解除，同一执行从检查点继续：没有伪造回答、重试或新执行。</li>
 </ol>
 <table class="stack fixed">
@@ -72,8 +73,42 @@
 <tr><th scope="row">已确认授权的能力</th><td>后续步骤不再报告；一次报告要启动进程，约 0.4 秒</td></tr>
 <tr><th scope="row">有能力缺失</th><td>每步都报告，授权后立刻看到</td></tr>
 <tr><th scope="row">轮次中撤销授权</th><td>桌面后端让该步失败并指出设置项，下一轮重新报告</td></tr>
+<tr><th scope="row">没人能回应等待</th><td>调用以 <code translate="no">PERMISSION_MISSING:</code> 失败，写明缺哪些授权、去哪里授予，模型可以转告用户</td></tr>
 </tbody>
 </table>
+
+<h2 id="settings-guide">系统设置引导</h2>
+<p>屏幕录制和辅助功能（注册表标记 <code translate="no">settings_list</code>，行字段 <code translate="no">settings_guide</code>）没有能授权的对话框：授权是系统设置里应用列表中的一个开关，只打开面板会让用户自己找条目。</p>
+<p>OpenAI 的 Codex Computer Use 用一个贴在系统设置窗口上的小辅助窗口解决这个问题（其类名 <code translate="no">SystemSettingsAccessoryWindow</code>、<code translate="no">DraggableApplicationView</code>、<code translate="no">DragHintView</code>）。OpenProgram 照搬这一做法。</p>
+<figure>
+<svg viewBox="0 0 520 250" role="img" aria-label="引导面板贴在系统设置窗口下方，用户把应用图标拖进上方列表">
+<rect x="70" y="10" width="380" height="170" rx="10" fill="none" stroke="currentColor" opacity=".5"/>
+<text x="90" y="38" font-size="13" fill="currentColor">系统设置 › 辅助功能</text>
+<rect x="90" y="54" width="340" height="26" rx="4" fill="none" stroke="currentColor" opacity=".35"/>
+<rect x="90" y="84" width="340" height="26" rx="4" fill="none" stroke="currentColor" opacity=".35"/>
+<rect x="90" y="114" width="340" height="26" rx="4" fill="none" stroke="currentColor" stroke-dasharray="4 3" opacity=".6"/>
+<text x="102" y="132" font-size="11" fill="currentColor" opacity=".7">拖到这里</text>
+<rect x="60" y="188" width="400" height="54" rx="10" fill="none" stroke="currentColor"/>
+<rect x="74" y="197" width="36" height="36" rx="8" fill="currentColor" opacity=".25"/>
+<path d="M124 232 V200 M118 207 L124 200 L130 207" stroke="currentColor" fill="none" stroke-width="2"/>
+<text x="142" y="212" font-size="12" font-weight="bold" fill="currentColor">把 OpenProgram 拖到上方列表…</text>
+<text x="142" y="230" font-size="11" fill="currentColor" opacity=".7">已在列表里？打开它旁边的开关…</text>
+<path d="M92 196 C 92 160, 100 140, 120 128" stroke="currentColor" fill="none" stroke-dasharray="3 3"/>
+</svg>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">面板</th><td>打开确切的隐私面板（<code translate="no">Privacy_ScreenCapture</code>、<code translate="no">Privacy_Accessibility</code>）</td></tr>
+<tr><th scope="row">窗口</th><td>无边框、不激活的浮动面板，居中贴在系统设置窗口下方；屏幕下方没有空间时盖在窗口底边上。每 0.2 秒跟随窗口移动，窗口不在屏幕上时隐藏。用 <code translate="no">CGWindowListCopyWindowInfo</code> 按 <code translate="no">com.apple.systempreferences</code> 的 pid 找系统设置窗口</td></tr>
+<tr><th scope="row">图标</th><td>runtime 应用的图标，是一个 <code translate="no">NSDraggingSource</code>，把应用的文件 URL 拖进列表。第二行提示：应用已在列表里就打开开关</td></tr>
+<tr><th scope="row">身份</th><td>一个短命的辅助进程，用 worker 运行的同一个可执行文件启动（<code translate="no">openprogram.host.system_access.guide</code>），所以它给出的图标和它检查的授权都属于 macOS 授权的那个身份</td></tr>
+<tr><th scope="row">关闭</th><td>授权后（每 1.5 秒重新检查）、点 ×、系统设置关闭、或 10 分钟后。授权后开始这一批中下一个缺失项；其他方式关闭则结束这一批</td></tr>
+<tr><th scope="row">批次</th><td>同时只有一个引导；新的请求替换正在运行的。对话框类能力（日历、提醒事项、麦克风、摄像头）保留 macOS 自己的对话框，没有引导</td></tr>
+</tbody>
+</table>
+<p>显式流程使用它：<code translate="no">POST /api/system/access/guide</code>、<code translate="no">open_settings=true</code> 和“Set up all OpenProgram access”。工具的 <code translate="no">system_access</code> 等待打开时，引导自动启动，每个等待一次，从第一个缺失的列表类能力开始依次处理；任务停在持久等待上，对账看到授权后恢复。</p>
+<p>引导只打开页面和窗口，从不请求或声称授权。</p>
 
 <h2 id="identity-and-recovery">身份和恢复</h2>
 <ul>
@@ -81,7 +116,7 @@
 <li>读取状态、启动对账、重试和重复事件都不运行 <code translate="no">tccutil</code>，也不重置其他应用。</li>
 <li>经验证的过期回执可授权一次针对固定 OpenProgram bundle 身份的显式迁移；系统调用前写入的标记防止循环。其他情况（未验证代码、未知检查、要求未变、辅助功能迁移、其他应用）都走系统设置。</li>
 <li>产品不能预先授权从未作为目标的应用、从未选择的路径或已撤销的权限。绝不推断完全磁盘访问，也不把它当绕过手段请求。</li>
-<li>Linux portal 和 Windows 完整性规则保持平台专属。浏览器和 VM 用自己的 provider 或 session 边界。</li>
+<li>Linux portal 和 Windows 完整性规则保持平台专属。浏览器目标和其他机器用自己的 provider 或 session 边界。</li>
 </ul>
 
 <h2 id="trust">信任和并发</h2>
@@ -118,4 +153,5 @@
 </details>
 
 <h2 id="implementation-status">实现状态</h2>
-<p>已实现：注册表、EventKit 和 AVFoundation 原生检查与请求、带版本的报告、身份元数据、包检查、显式设置 UI、不自动请求的恢复、操作预检、桌面访问不可用或不支持时的终止处理。待完成：在端口 <code translate="no">18100</code> 上按当前 macOS 授权验证已安装的默认 App。</p>
+<p>已实现：注册表、EventKit 和 AVFoundation 原生检查与请求、带版本的报告、身份元数据、包检查、显式设置 UI、不自动请求的恢复、操作预检、桌面访问不可用或不支持时的终止处理、系统设置拖拽引导。</p>
+<p>待完成：在桌面上手动验证把图标拖进真实的系统设置列表、面板跟随移动的窗口；在端口 <code translate="no">18100</code> 上按当前 macOS 授权验证已安装的默认 App。</p>

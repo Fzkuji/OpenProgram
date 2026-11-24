@@ -127,7 +127,7 @@ def _browse_models_with_error(
             mid = m.get("id")
             if not mid:
                 continue
-            row = dict(md.get(mid, {}))
+            row = dict(md.get(mid) or _base_capabilities(mid, md))
             row.update({k: v for k, v in m.items() if v is not None})
             row["id"] = mid
             rows.append(row)
@@ -150,6 +150,25 @@ def _browse_models_with_error(
         with _browse_lock:
             _browse_cache[provider_id] = (time.time(), [dict(r) for r in rows])
     return rows, error
+
+
+# What a variant shares with the model it is a variant of. Price, context,
+# name and dates are the variant's own, so they are not carried over.
+_VARIANT_KEYS = ("family", "input_modalities", "vision", "attachment", "tools", "structured_output")
+
+
+def _base_capabilities(model_id: str, catalogue: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Capabilities for a model the catalogue does not list, from the listed
+    model its id extends (``grok-4.7-build-fast`` → ``grok-4.7``).
+
+    An official list often says nothing about what a model accepts, and a
+    row with no word on it is taken for text only: a subscription's own
+    variant of a model that reads images then refuses them."""
+    bases = [known for known in catalogue if model_id.startswith(known + "-")]
+    if not bases:
+        return {}
+    base = catalogue[max(bases, key=len)]
+    return {key: base[key] for key in _VARIANT_KEYS if key in base}
 
 
 def supports_fast(provider_id: str | None, model_id: str | None) -> bool:

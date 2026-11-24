@@ -51,12 +51,30 @@ def project_workdir_for(session_id: str) -> Optional[Path]:
     tells the two apart so the UI can show the repair affordance.
 
     Resolved fresh on every call (no caching) so a project relocation
-    takes effect from the next turn on."""
+    takes effect from the next turn on.
+
+    A project whose folder is on another machine has no folder here:
+    :func:`remote_project_folder` names it on that machine."""
     proj = _main_project(session_id)
-    if proj is None or not proj.path:
+    if proj is None or not proj.path or not _folder_is_here(proj):
         return None
     p = Path(proj.path).expanduser()
     return p if p.is_dir() else None
+
+
+def remote_project_folder(session_id: str) -> Optional[str]:
+    """The session's project folder on the machine that keeps it, or ``None``
+    when the folder is on this computer's disk. The path is the machine's
+    own: it is never looked at here."""
+    proj = _main_project(session_id)
+    if proj is None or not proj.path or _folder_is_here(proj):
+        return None
+    return proj.path
+
+
+def _folder_is_here(project) -> bool:
+    from openprogram.state.store.project.project_store import folder_is_here
+    return folder_is_here(project)
 
 
 def _main_project(session_id: str):
@@ -76,7 +94,7 @@ def project_path_missing(session_id: str) -> Optional[str]:
     ``None``. The single source of truth for the "project directory is
     missing" warning state shipped to the UI."""
     proj = _main_project(session_id)
-    if proj is None or not proj.path:
+    if proj is None or not proj.path or not _folder_is_here(proj):
         return None
     p = Path(proj.path).expanduser()
     return None if p.is_dir() else proj.path
@@ -107,6 +125,8 @@ def runtime_location_for(
     if bound_worktree is None:
         if worktree is not None:
             bound_worktree = worktree.worktree_path
+        elif project is not None and project.path and not _folder_is_here(project):
+            bound_worktree = project.path
         elif project is not None and project.path and Path(project.path).is_dir():
             bound_worktree = project.path
         elif project is not None and not getattr(project, "is_default", False):

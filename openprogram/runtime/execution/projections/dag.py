@@ -5,9 +5,10 @@ the runtime write into SessionDB as a ``/run`` executes:
 
   ``build_exec_dag()`` — turn a run's DAG subtree into the TNode dict
       the inline Execution DAG renders (``web/.../execution-dag.tsx``).
-  ``live_progress()``  — context manager: while a run executes, poll
-      the DAG and push ``tree_update`` + ``branches_list`` envelopes so
-      the UI fills in node by node instead of only after the run ends.
+  ``live_progress()``  — context manager: while a run executes, read
+      the DAG again whenever the conversation's nodes are written and push
+      ``tree_update`` + ``branches_list`` envelopes so the UI fills in
+      node by node instead of only after the run ends.
   ``reconcile_interrupted_runs()`` — on worker startup, flip nodes left
       frozen at ``status="running"`` (their executing process died) to
       ``error``, so the UI shows a failed run, not an eternal spinner.
@@ -15,9 +16,9 @@ the runtime write into SessionDB as a ``/run`` executes:
 This replaces the retired tree-Context event
 pipeline (commit "cut over to DAG, drop tree-Context event pipeline").
 That pipeline forwarded partial trees live; dropping it left a run
-showing nothing but a spinner until completion. The poller restores
-the live view by reading the DAG — the single source of truth — rather
-than re-introducing an event system. Frames reach the clients through
+showing nothing but a spinner until completion. The live view reads
+the DAG — the single source of truth — when a node write announces a
+change, rather than re-introducing an event system for partial trees. Frames reach the clients through
 :mod:`openprogram.runtime.interface_link`, or through ``on_event`` in an
 agentic subprocess.
 """
@@ -335,13 +336,71 @@ def _graph_push_signature(graph, head=None) -> str:
     )
 
 
+#: The least time between two reads of a run's DAG once its first tree went
+#: out; node writes within it go out together.
+LIVE_MIN_GAP_SECONDS = 1.0
+#: Before the first tree, writes within this long go out together.
+LIVE_FIRST_GAP_SECONDS = 0.1
+#: With no write announced, the DAG is read again only this often.
+LIVE_RESYNC_SECONDS = 60.0
+
+_watched_lock = threading.Lock()
+_watched_sessions: dict[str, int] = {}
+
+
+def _watch_session_files(session_id: str) -> Optional[list]:
+    """In the Worker, announce writes another process (an Agent method
+    run's forked child) makes to the conversation's logs; what this process
+    writes is announced by the log itself. Returns what to unwatch."""
+    from openprogram.host._platform import changes
+    if not changes.file_events_available():
+        return None
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        from openprogram.state.store.session.files.session_log import (
+            AGENT_LOG_DIRECTORY, MAIN_LOG, RECORDS_TOPIC,
+        )
+        pair = default_db()._open(session_id)  # noqa: SLF001
+        if pair is None:
+            return None
+        root = pair[0].path
+    except Exception:
+        _log.debug("session logs of %s not watched", session_id, exc_info=True)
+        return None
+    with _watched_lock:
+        count = _watched_sessions.get(session_id, 0)
+        _watched_sessions[session_id] = count + 1
+    if count == 0:
+        changes.watch(root, RECORDS_TOPIC, names={MAIN_LOG}, key=lambda _p: session_id)
+        changes.watch(root / AGENT_LOG_DIRECTORY, RECORDS_TOPIC, key=lambda _p: session_id)
+    return [root, root / AGENT_LOG_DIRECTORY]
+
+
+def _unwatch_session_files(session_id: str, paths: Optional[list]) -> None:
+    if not paths:
+        return
+    from openprogram.host._platform import changes
+    from openprogram.state.store.session.files.session_log import RECORDS_TOPIC
+    with _watched_lock:
+        count = _watched_sessions.get(session_id, 1) - 1
+        if count > 0:
+            _watched_sessions[session_id] = count
+            return
+        _watched_sessions.pop(session_id, None)
+    for path in paths:
+        changes.unwatch(path, RECORDS_TOPIC)
+
+
 def _poll(session_id: str, msg_id: str, func_name: str,
           stop: threading.Event,
-          on_event=None) -> None:
-    """Poll the DAG every ~1.2s and push two live streams until
-    ``stop`` is set: ``tree_update`` (inline Execution DAG) and
-    ``branches_list`` (right-rail History graph). Both are
-    signature-deduped so an idle tick sends nothing.
+          on_event=None, wake: Optional[threading.Event] = None) -> None:
+    """Push two live streams until ``stop`` is set: ``tree_update``
+    (inline Execution DAG) and ``branches_list`` (right-rail History
+    graph). The DAG is read once at the start and again when the
+    conversation's nodes are written (``RECORDS_TOPIC``), at most every
+    ``LIVE_MIN_GAP_SECONDS``. Both streams are signature-deduped. Nothing
+    in either is read from the clock (a node's duration is stored when it
+    ends), so no tick is needed to advance anything shown.
 
     ``on_event`` (optional) routes envelopes through a caller-provided
     callback instead of importing the worker's ``_broadcast_*``. This
@@ -465,18 +524,36 @@ def _poll(session_id: str, msg_id: str, func_name: str,
             # Poller thread: the next tick retries.
             _log.warning("branches push failed for session %s", session_id, exc_info=True)
 
-    # Fast warmup: the run's code node lands on disk a few hundred ms
-    # after dispatch, but a fixed 1.2s first tick made the UI wait up to
-    # 1.2s extra before the pending card could hydrate. Poll quickly
-    # (0.15s, doubling) until the FIRST tree goes out, then settle into
-    # the steady 1.2s cadence.
-    interval = 0.15
-    while not stop.wait(interval):
+    from openprogram.host._platform import changes
+    from openprogram.state.store.session.files.session_log import RECORDS_TOPIC
+
+    wake = wake if wake is not None else threading.Event()
+    me = threading.current_thread()
+
+    def on_records(keys: tuple[str, ...]) -> None:
+        # Not for this loop's own write of the tree onto the placeholder.
+        if threading.current_thread() is not me and (not keys or session_id in keys):
+            wake.set()
+
+    unsubscribe = changes.subscribe(RECORDS_TOPIC, on_records)
+    watched = _watch_session_files(session_id)
+    try:
+        wake.clear()
         _tick(force=False)
-        if state["last_tree"] is not None:
-            interval = 1.2
-        else:
-            interval = min(interval * 2, 1.2)
+        last = time.monotonic()
+        while not stop.is_set():
+            wake.wait(LIVE_RESYNC_SECONDS)
+            if stop.is_set():
+                break
+            gap = LIVE_MIN_GAP_SECONDS if state["last_tree"] is not None else LIVE_FIRST_GAP_SECONDS
+            if stop.wait(max(0.0, gap - (time.monotonic() - last))):
+                break
+            wake.clear()
+            _tick(force=False)
+            last = time.monotonic()
+    finally:
+        unsubscribe()
+        _unwatch_session_files(session_id, watched)
     # Final flush after stop: emit the terminal tree (root flipped to
     # completed) through the same channel so the card finalizes.
     _tick(force=True)
@@ -491,19 +568,22 @@ def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
         with live_progress(session_id, msg_id, func_name):
             result = loaded_func(**call_kwargs)
 
-    A daemon poller thread starts on enter and stops on exit (success
-    or exception), so a long ``Agent method`` run shows its
-    Execution DAG + History graph filling in live.
+    A daemon thread starts on enter and stops on exit (success or
+    exception); it reads the DAG when the conversation's nodes are
+    written, so a long ``Agent method`` run shows its Execution DAG +
+    History graph filling in live.
     """
     stop = threading.Event()
+    wake = threading.Event()
     thread = threading.Thread(
-        target=_poll, args=(session_id, msg_id, func_name, stop, on_event),
+        target=_poll, args=(session_id, msg_id, func_name, stop, on_event, wake),
         daemon=True, name=f"live-progress-{session_id}")
     thread.start()
     try:
         yield
     finally:
         stop.set()
+        wake.set()
         # Wait (bounded) for the poller's forced final flush to emit the
         # terminal tree before we return. In the Agent method
         # subprocess the process exits right after this block; without
@@ -671,6 +751,64 @@ def reconcile_session_projection(session_id: str) -> int:
             fixed += 1
         return fixed
 
+#: Where a finished restart pass records when it began and which sessions it
+#: left with something open, beside the store's other index files.
+_RECONCILED_FILE = ".restart-reconciled.json"
+#: A log written this close before a pass began counts as written after it.
+_RECONCILED_MARGIN_SECS = 5.0
+
+
+def _last_reconciled(store) -> tuple[float, set[str]]:
+    try:
+        data = json.loads((store.root_path / _RECONCILED_FILE).read_text(encoding="utf-8"))
+        return float(data["started"]), set(data.get("open") or [])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0.0, set()
+
+
+def _record_reconciled(store, started: float, still_open: set[str]) -> None:
+    from openprogram.state.store.session.files.atomic_file import atomic_write_text
+
+    try:
+        atomic_write_text(store.root_path / _RECONCILED_FILE,
+                          json.dumps({"started": started, "open": sorted(still_open)}))
+    except OSError:
+        # Without the record the next start reads every session, as before.
+        _log.warning("restart reconciliation was not recorded", exc_info=True)
+
+
+def _written_since(store, session_id: str, moment: float) -> bool:
+    """Whether any log of the session was written after ``moment``."""
+    import os
+    from openprogram.host._platform.filesystem import filesystem_path
+    from openprogram.state.store.session.files.session_state_file import _log_files
+
+    try:
+        logs = _log_files(store._session_dir(session_id))  # noqa: SLF001
+    except Exception:
+        return True
+    for log in logs:
+        try:
+            if os.stat(filesystem_path(log)).st_mtime >= moment:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _has_open_work(nodes) -> bool:
+    """Whether a session's nodes still show a run or an attached job in progress."""
+    for node in nodes:
+        meta = node.metadata or {}
+        if meta.get("status") in {"running", "cancelling"}:
+            return True
+        attach = meta.get("attach")
+        if (meta.get("function") == "attach" and isinstance(attach, dict)
+                and attach.get("status") in {"pending", "queued", "running"}):
+            return True
+    return False
+
+
 def reconcile_interrupted_runs() -> int:
     """Finish durable cancellations and mark abandoned runs interrupted.
 
@@ -705,11 +843,32 @@ def reconcile_interrupted_runs() -> int:
     # them. For any node whose metadata.status == "running", flip to
     # "interrupted" via SessionNodeWriter.update which rewrites the
     # on-disk JSON.
+    # A session is read whole to look at its nodes, so only those that can
+    # hold something a dead worker left are read: the ones whose logs were
+    # written since the last finished pass began (every node, run row and
+    # goal state is a line of them), the ones that pass left with work open,
+    # and the ones whose row says running. Reading all of them took a Worker
+    # to 700 MB in its first seconds. Each one read is let go again.
+    started = time.time()
+    last_started, left_open = _last_reconciled(store)
+    try:
+        from openprogram.runtime.execution import default_store as _executions
+        left_open |= set(_executions().tables.log.active_sessions())
+    except Exception:
+        # The marker list is one of several reasons to read a session.
+        _log.debug("unfinished-session markers were not read", exc_info=True)
+    since = last_started - _RECONCILED_MARGIN_SECS
+    still_open: set[str] = set()
     for sess in store.list_sessions(limit=10**9, include_archived=True):
-        with session_goals.owner(store, sess["id"]) as acquired:
+        sid = sess["id"]
+        if (last_started and sid not in left_open
+                and (sess.get("status") or "") not in {"running", "cancelling"}
+                and not _written_since(store, sid, since)):
+            continue
+        with store.passing_through(sid), session_goals.owner(store, sid) as acquired:
             if not acquired:
+                still_open.add(sid)
                 continue
-            sid = sess["id"]
             shim = SessionNodeWriter(store, sid)
             # A durable approval has ended its process intentionally. Restart
             # must not turn its resumable assistant node into an interruption.
@@ -838,6 +997,12 @@ def reconcile_interrupted_runs() -> int:
                 except Exception:
                     # Reconciliation continues; the row is retried on the next start.
                     _log.warning("session %s running status not cleared", sid, exc_info=True)
+            try:
+                if canonical_active or waiting_nodes or _has_open_work(store.get_nodes(sid)):
+                    still_open.add(sid)
+            except Exception:
+                still_open.add(sid)
+    _record_reconciled(store, started, still_open)
     return fixed
 
 

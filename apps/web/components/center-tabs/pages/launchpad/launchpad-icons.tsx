@@ -15,7 +15,7 @@ export const TONES = {
   teal: ["#4fd6d0", "#139c9a"], violet: ["#c08bff", "#8b3fe6"], pink: ["#ff8fc0", "#e2407f"],
 } as const;
 export type Tone = keyof typeof TONES;
-export type IconArt = "files" | "chat" | "browser" | "terminal" | "calculator" | "reader" | "analysis" | "pdf" | "research" | "office" | "recording" | "generic";
+export type IconArt = "files" | "chat" | "browser" | "terminal" | "calculator" | "reader" | "analysis" | "pdf" | "research" | "office" | "recording" | "window" | "generic";
 
 /** A superellipse |x|^5 + |y|^5 = 1: the continuous corner of macOS icons. */
 const TILE = (() => {
@@ -32,7 +32,7 @@ const TILE_COLORS: Record<Exclude<IconArt, "generic">, readonly [string, string]
   files: ["#5aa7ff", "#2563eb"], chat: ["#5fe08a", "#16a34a"], browser: ["#4a4fb8", "#1c1e57"],
   terminal: ["#4b4f5c", "#1f2128"], calculator: ["#ffd29a", "#ff9f43"], reader: ["#ffb15e", "#ef6c1a"],
   analysis: ["#4fe0d2", "#0e9f96"], pdf: ["#ff8f86", "#d92d20"], research: ["#4c5bd4", "#1e2460"],
-  office: ["#5aa2ff", "#2f6bf0"], recording: ["#5b6275", "#22252e"],
+  office: ["#5aa2ff", "#2f6bf0"], recording: ["#5b6275", "#22252e"], window: ["#8f97ff", "#4a4fd6"],
 };
 
 /** A four-point sparkle centred on the origin. */
@@ -156,6 +156,15 @@ function art(kind: IconArt, main: string, id: string): ReactNode {
       <circle cx="79" cy="27" r="12.5" fill="#000" opacity=".18" />
       <circle cx="79" cy="27" r="11" fill="#fff" />
       <circle cx="79" cy="27" r="7.5" fill="#ef4444" />
+    </>;
+    case "window": return <>
+      <rect x="15" y="22" width="70" height="56" rx="8" fill="#fff" opacity=".35" />
+      <path d="M23 22h54a8 8 0 0 1 8 8v4H15v-4a8 8 0 0 1 8-8z" fill="#fff" opacity=".5" />
+      <rect x="27" y="40" width="46" height="31" rx="5" fill="#fff" />
+      <path d="M32 40h36a5 5 0 0 1 5 5v2H27v-2a5 5 0 0 1 5-5z" fill="#e0e3ff" />
+      <circle cx="32" cy="43.5" r="1.6" fill="#ff6159" /><circle cx="37" cy="43.5" r="1.6" fill="#ffbd2e" /><circle cx="42" cy="43.5" r="1.6" fill="#28c941" />
+      <rect x="33" y="53" width="22" height="3.4" rx="1.7" fill="#4a4fd6" opacity=".55" />
+      <rect x="33" y="60" width="14" height="3.4" rx="1.7" fill="#4a4fd6" opacity=".35" />
     </>;
     case "generic": return <>
       <rect x="24" y="24" width="52" height="52" rx="12" fill="#fff" opacity=".9" />

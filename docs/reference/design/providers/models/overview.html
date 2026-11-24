@@ -49,6 +49,7 @@
 <p class="note">Directories use underscores (<code translate="no">amazon_bedrock/</code>); <code translate="no">id</code> keeps hyphens. One service with two protocols is two endpoints of one provider.</p>
 <h2>Browse</h2>
 <p>Provider list: <code translate="no">provider.json</code> providers plus the models.dev index, with names and status only. Model list: queried for one provider, by <code translate="no">_browse_models_with_error</code>: the official source when credentialed, models.dev filling gaps or standing in, else empty.</p>
+<p>A model the official list names and models.dev does not takes what it accepts (images, files, tools) from the listed model its id extends, <code translate="no">grok-4.7-build-fast</code> from <code translate="no">grok-4.7</code>: an official list seldom says what a model accepts, and a row with no word on it is text only. Price, context and name are never carried over.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Source shape</th><th scope="col">Fetcher</th></tr></thead>
 <tbody>
@@ -60,6 +61,7 @@
 </table>
 <p class="note">A provider that departs from standard ships <code translate="no">list_models.py</code> exposing <code translate="no">fetch(provider_id, timeout)</code>; <code translate="no">_load_fetcher</code> imports it by directory, no central edit. Success: <code translate="no">list[dict]</code> with id and name. Failure: <code translate="no">{"error": …}</code>. <code translate="no">fetch_and_normalize</code> is the one normalisation point.</p>
 <p>Ordinary results use a short memory cache. Subscription catalogues also keep an atomic last-known-good copy: a failed request can show stale rows, but only a non-empty official catalogue can retire models.</p>
+<p>The models.dev catalogue is kept in memory and on disk, fresh for an hour. The disk copy's age is its file's: every command is a new process, and one that took the file for stale whatever its age downloaded the catalogue again and waited about three seconds for it on its way out.</p>
 <h2>Enable, disable, refresh</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>

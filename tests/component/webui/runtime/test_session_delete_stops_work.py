@@ -84,6 +84,7 @@ def test_stop_session_work_cancels_roots_waits_slot_and_inbox(monkeypatch):
 def test_delete_session_stops_work_before_removing_the_repo(monkeypatch):
     from openprogram.interfaces.server import server as _s
     from openprogram.interfaces.server.ws_actions.session import handle_delete_session
+    import openprogram.interfaces.server.ws_actions.session.lifecycle as lifecycle
     import openprogram.runtime.context.session_db as session_db
 
     order: list[str] = []
@@ -99,10 +100,13 @@ def test_delete_session_stops_work_before_removing_the_repo(monkeypatch):
         ),
     )
     monkeypatch.setattr(_s, "_broadcast", lambda msg: broadcasts.append(json.loads(msg)))
+    monkeypatch.setattr(lifecycle, "_close_browser_tabs", lambda sid: None)
+    monkeypatch.setattr(lifecycle, "_remove_conversation_instances", lambda sid: order.append(f"instances:{sid}"))
 
+    # s1 was never loaded since the worker started: its container goes all the same.
     asyncio.run(handle_delete_session(_FakeWS(), {"session_id": "s1"}))
 
-    assert order == ["stop:s1", "delete:s1"]
+    assert order == ["stop:s1", "delete:s1", "instances:s1"]
     assert broadcasts == [{"type": "session_deleted", "session_id": "s1"}]
 
 
@@ -160,7 +164,10 @@ def test_clear_sessions_stops_every_session(monkeypatch):
     async def _list(ws, cmd):
         return None
 
+    removed: list[tuple[str, ...]] = []
     monkeypatch.setattr(lifecycle, "handle_list_sessions", _list)
+    monkeypatch.setattr(lifecycle, "_close_browser_tabs", lambda sid: None)
+    monkeypatch.setattr(lifecycle, "_remove_conversation_instances", lambda *sids: removed.append(sids))
     with _s._sessions_lock:
         saved = dict(_s._sessions)
         _s._sessions.clear()
@@ -172,3 +179,5 @@ def test_clear_sessions_stops_every_session(monkeypatch):
 
     assert sorted(stopped) == ["a", "b"]
     assert sorted(deleted) == ["a", "b"]
+    # One removal for all of them, not one thread and one ``docker ps`` per conversation at once.
+    assert len(removed) == 1 and sorted(removed[0]) == ["a", "b"]

@@ -49,6 +49,7 @@
 <p class="note">目录用下划线（<code translate="no">amazon_bedrock/</code>），<code translate="no">id</code> 保留连字符。同一服务两种协议是一个供应商的两个端点。</p>
 <h2>浏览</h2>
 <p>供应商列表：有 <code translate="no">provider.json</code> 的供应商加 models.dev 索引，只有名字和状态。模型列表：针对单个供应商，由 <code translate="no">_browse_models_with_error</code> 查询：有凭据时用官方来源，models.dev 补全或顶替，否则为空。</p>
+<p>官方列表里有、models.dev 里没有的模型，接受什么输入（图片、文件、工具）取自它的 id 所延伸的那个已收录模型，<code translate="no">grok-4.7-build-fast</code> 取自 <code translate="no">grok-4.7</code>：官方列表很少说明模型接受什么，而没有说明的一行就是纯文字。价格、上下文和名字不继承。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">来源形态</th><th scope="col">拉取器</th></tr></thead>
 <tbody>
@@ -60,6 +61,7 @@
 </table>
 <p class="note">接口不标准的供应商在目录里放 <code translate="no">list_models.py</code>，暴露 <code translate="no">fetch(provider_id, timeout)</code>；<code translate="no">_load_fetcher</code> 按目录名导入，不用集中修改。成功：带 id 和 name 的 <code translate="no">list[dict]</code>。失败：<code translate="no">{"error": …}</code>。<code translate="no">fetch_and_normalize</code> 是唯一的规范化点。</p>
 <p>普通结果用短内存缓存。订阅目录另存原子的最后完好副本：请求失败时可显示过期行，但只有非空的官方目录才能退役模型。</p>
+<p>models.dev 目录存在内存和磁盘里，一小时内算新。磁盘副本的新旧按文件时间算：每条命令都是新进程，不看时间一律当作过期的话，每条命令都会重新下载整份目录，并在退出时等它约三秒。</p>
 <h2>启用、禁用、刷新</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>

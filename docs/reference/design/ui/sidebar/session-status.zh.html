@@ -12,6 +12,7 @@
 </tbody>
 </table>
 <p class="note"><code translate="no">ConvItem</code> 决定状态，<code translate="no">StatusMarker</code> 绘制。选中用 <code translate="no">aria-current="true"</code> 表示。CSS 在未选中行屏蔽运行和结束的伪元素。</p>
+<p class="note">铃铛的<a href="activity-view.zh.html">动态视图</a>列出标记处于前三种状态的对话。</p>
 
 <h2 id="what-counts-as-running">什么算运行中</h2>
 <p>对话里只要有一轮占着运行槽，这一行就是运行中，不管在哪条分支：选中分支的轮次（<code translate="no">runningTasks</code>），或别的分支上的轮次（<code translate="no">sessionsWithBranchRun</code>，数据在 <code translate="no">lib/chat/run/other-branch-runs.ts</code>）。输入框的停止键仍只管选中分支（<a href="../turn-lifecycle/turn-occupancy.zh.html">轮次占用</a>）。</p>

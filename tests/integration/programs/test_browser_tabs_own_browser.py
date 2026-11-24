@@ -52,36 +52,36 @@ def driver(monkeypatch, tmp_path):
 
 
 def test_with_no_app_window_a_page_opens_is_operated_and_closes_in_the_drivers_own_browser(driver, site):
-    opened = driver.run("open", {"url": site}, "s1")
+    opened = driver.run("create_tab", {"url": site}, "s1")
     assert opened["ok"] and opened["title"] == "First" and "sign-ins" in opened["note"]
-    listed = driver.run("tabs", {}, "s1")["tabs"]
+    listed = driver.run("list_tabs", {}, "s1")["tabs"]
     assert [(row["tab"], row["shown"], row.get("current")) for row in listed] == [(opened["tab"], "background", True)]
     # Another conversation does not list it as its own.
-    assert driver.run("tabs", {}, "s2") == {"ok": True, "other_tabs": 1, "tabs": []}
+    assert driver.run("list_tabs", {}, "s2") == {"ok": True, "other_tabs": 1, "tabs": []}
 
     clicked = driver.run("click", {"role": "link", "name": "Next"}, "s1")
     assert clicked["ok"] and clicked["title"] == "Second" and "arrived" in clicked["page"]
-    shot = driver.run("screenshot", {}, "s1")
+    shot = driver.run("get_state", {"include": "screenshot"}, "s1")
     assert shot["ok"] and shot["_images"][0][:8] == b"\x89PNG\r\n\x1a\n"
 
     assert tabs.close_conversation_tabs("s1") == 1
     # The last tab took the browser with it, and its record.
     assert driver._own is None and driver._playwright is None
     assert pages.BrowserResourceStore().tabs_opened_by("s1") == set()
-    assert driver.run("read", {}, "s1")["reason_code"] == "tab_not_found"
+    assert driver.run("get_state", {}, "s1")["reason_code"] == "tab_not_found"
 
 
 def test_a_page_that_does_not_open_leaves_no_tab_and_no_browser_behind(driver):
-    failed = driver.run("open", {"url": "http://127.0.0.1:9/"}, "s1")
+    failed = driver.run("create_tab", {"url": "http://127.0.0.1:9/"}, "s1")
     assert failed["ok"] is False and failed["reason_code"] == "open_failed"
-    assert driver._own is None and driver.run("tabs", {"all": True}, "s1")["tabs"] == []
+    assert driver._own is None and driver.run("list_tabs", {"all": True}, "s1")["tabs"] == []
 
 
 def test_the_drivers_own_browser_closes_once_its_tabs_were_idle(driver, site, monkeypatch):
-    opened = driver.run("open", {"url": site}, "s1")
+    opened = driver.run("create_tab", {"url": site}, "s1")
     assert opened["ok"]
     monkeypatch.setattr(tabs, "OWN_IDLE_SECONDS", 0.0)
     driver._on_owner(driver._own_sweep)
     assert driver._own is None
-    gone = driver.run("read", {"tab": opened["tab"]}, "s1")
+    gone = driver.run("get_state", {"tab": opened["tab"]}, "s1")
     assert gone["ok"] is False and gone["reason_code"] in {"tab_closed", "tab_not_found"}

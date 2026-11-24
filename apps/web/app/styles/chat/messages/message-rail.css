@@ -66,8 +66,12 @@
   border: none;
   padding: 0;
   border-radius: var(--radius-full);   /* 圆头（GPT 风格）*/
-  background: var(--text-muted);
-  opacity: calc(0.45 * var(--rail-quiet, 1));
+  /* Where a tick stands in the conversation is its colour: the wordmark's
+     gradient runs down the whole rail, blue at the first turn and purple
+     at the last (--rail-at, 0 to 1, set per tick), so the two ends of a
+     long rail are told apart at a glance and stay so while it scrolls. */
+  background: color-mix(in oklab, var(--wordmark-to) calc(var(--rail-at, 0) * 100%), var(--wordmark-from));
+  opacity: calc(0.7 * var(--rail-quiet, 1));
   cursor: default;
   /* 坡度即时跟手：极短 width 过渡抹掉跳变，不拖沓。 */
   transition: width 45ms linear, opacity 80ms var(--ease-standard), background 80ms var(--ease-standard);

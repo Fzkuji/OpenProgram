@@ -1,0 +1,62 @@
+<title>Messages on the work chart</title>
+<meta name="description" content="What a message block on the Activity work chart says in each state, when it carries a button, and how new things arrive.">
+<h1>Messages on the work chart</h1>
+<p>A message block on the <a href="activity-panel.html#task-chart">work chart</a> has up to three lines: its task's title, what the reader asked, and how it stands. While it goes it says what it is doing now and for how long; once it ended, how long it took and what it did.</p>
+
+<h2 id="states">The last line</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">State</th><th scope="col">Last line</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running a call</th><td>"Running xelatex pres.tex · 3m 12s": the newest call under way, read from the reply as it streams; a command is named by its first part that is not a <code translate="no">cd</code> or an <code translate="no">export</code>, without its options or what follows <code translate="no">&amp;&amp;</code>; another tool is named in the step's own words, such as "Read notes.md"</td></tr>
+<tr><th scope="row">Sub-agents going</th><td>"Running 2 sub-agents · 3m 12s"</td></tr>
+<tr><th scope="row">No call running</th><td>"Thinking · 3m 12s", "Writing the reply · 3m 40s", "Retrying (2/3) · 1m 5s": read from the conversation's own copy of the reply as it streams. "Working" when the chart has no copy.</td></tr>
+<tr><th scope="row">Not started, stopping</th><td>"Queued", with no time; "Stopping…", "Pausing…"</td></tr>
+<tr><th scope="row">Waiting on the reader</th><td>"Waiting for your answer · 2m", "Waiting for approval · 2m", from its last event. What it asked takes the second line, in quotes.</td></tr>
+<tr><th scope="row">Paused</th><td>"Paused · 3m 12s", the time it worked</td></tr>
+<tr><th scope="row">Finished</th><td>"2m 42s · 4 commands, 2 edits"; with ", 1 failed" in the bright colour when a command, an edit or a sub-agent failed. Reads are not counted.</td></tr>
+<tr><th scope="row">Ended otherwise</th><td>"Failed · 41s" with the error as its second line; "Stopped by you · 44s"; "Interrupted · 12s"; a scheduled check's Nothing new, Skipped, Missed, Check failed</td></tr>
+</tbody>
+</table>
+<ul>
+<li>It never names the last step it took as if it were taking it now.</li>
+<li>While it goes, waits or is paused, the agent's glyph on it breathes.</li>
+<li>A topic sums its messages up: "Waiting for you · 2 messages", "Running · 2 messages", "Paused · 2 messages", else the count.</li>
+</ul>
+
+<h2 id="buttons">One button, only when it needs the reader</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Run</th><th scope="col">On the block</th></tr></thead>
+<tbody>
+<tr><th scope="row">Waiting for an answer or approval</th><td>Answer, or Review: goes to the composer's card</td></tr>
+<tr><th scope="row">Paused</th><td>Continue</td></tr>
+<tr><th scope="row">Under way</th><td>Nothing. The composer stops it (its Stop, or Esc); what is typed while it runs is added to it.</td></tr>
+</tbody>
+</table>
+<p class="note">Why. Every peer we read keeps run controls off the list and names the one thing under way in the present tense; none mixes tenses as our old "Running Ran · 4 commands" did.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Peer</th><th scope="col">Controls</th><th scope="col">Status words</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex desktop</th><td>One composer button: Stop, Steer or Queue</td><td>"Working for 1m 5s", "Worked for 2m 3s", "You stopped after 12s"; Needs input, Needs approval on the item</td></tr>
+<tr><th scope="row">Claude desktop</th><td>Stop in the composer</td><td>"Thinking…", "Running a command", "Waiting for your answer"</td></tr>
+<tr><th scope="row">Codex CLI, OpenCode, Pi</th><td>Esc</td><td>"Working", "Thinking…", "Retrying (2/3)"</td></tr>
+<tr><th scope="row">Cline</th><td>An answer pair while it waits, Cancel while it streams</td><td>"Thinking...", "Running"</td></tr>
+</tbody>
+</table>
+<p>We follow Codex desktop, the closest fit, and keep Continue because a paused run has no composer control.</p>
+
+<h2 id="no-stand-ins">No stand-ins</h2>
+<ul>
+<li>A message has a title line only once it has a task. Until then it shows what was asked alone.</li>
+<li>A run nobody asked for is titled once it said something.</li>
+<li>A message not sorted into a topic yet has a topic block with nothing drawn: room only, no name, not a button. The column's crumb is empty.</li>
+<li>While no topic has a name yet, the chart starts at the messages column and cannot be moved back to the empty one; once a topic is named, the way back appears.</li>
+<li>What was asked is its first line with a letter or a digit, so a pasted email's ______ rule is passed over.</li>
+</ul>
+
+<h2 id="arrives">What arrives</h2>
+<ul>
+<li>Each new chart glides what moved from where it was, in the slow tier (240 ms) on <code translate="no">--ease-standard</code>.</li>
+<li>What the old chart did not have fades in: a message that starts, a topic that gets its name.</li>
+<li>A title that arrives on a block already drawn fades in; the lines under it ride down to make room while the block grows.</li>
+</ul>
+<p>Source: <code translate="no">messageLine</code>, <code translate="no">doingNow</code> and <code translate="no">messageWords</code> in <code translate="no">running/agent-chart/agent-chart-model.ts</code>; <code translate="no">RunActions</code>, <code translate="no">useChartOptions</code> and <code translate="no">place</code> in <code translate="no">agent-chart.tsx</code>.</p>

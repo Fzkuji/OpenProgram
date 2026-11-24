@@ -27,7 +27,8 @@ _log = logging.getLogger(__name__)
 
 COLD_START_SECONDS = 120
 MIGRATION_LIMIT_SECONDS = 30 * 60
-_MIGRATION_FRESH_SECONDS = 15
+#: While the trial's Worker migrates, its start limit is kept this far ahead.
+_MIGRATION_STEP_SECONDS = 15
 _STOP_SECONDS = 20
 KEPT_FAILED_SECONDS = 7 * 86400
 LIVE_PORTS = (18100, 18200)
@@ -252,11 +253,8 @@ class TrialInstance:
             return False
 
     def _migrating(self) -> bool:
-        try:
-            marker = Layout(self.workspace.fake_root).migrating(self.version)
-            return time.time() - marker.stat().st_mtime <= _MIGRATION_FRESH_SECONDS
-        except OSError:
-            return False
+        from ..versions.store import migrating_process
+        return migrating_process(Layout(self.workspace.fake_root).migrating(self.version)) is not None
 
     def wait_ready(self, *, seconds: float = COLD_START_SECONDS,
                    migration_limit: float = MIGRATION_LIMIT_SECONDS) -> float:
@@ -283,7 +281,7 @@ class TrialInstance:
                 return now - started
             if self._migrating():
                 self.migration_seconds += now - last
-                deadline = max(deadline, min(now + _MIGRATION_FRESH_SECONDS, started + migration_limit))
+                deadline = max(deadline, min(now + _MIGRATION_STEP_SECONDS, started + migration_limit))
             last = now
             if now >= deadline:
                 raise TrialError(f"the {self.label} version did not answer /healthz within {int(deadline - started)} seconds")

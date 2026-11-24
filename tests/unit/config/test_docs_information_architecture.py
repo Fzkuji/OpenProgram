@@ -327,9 +327,13 @@ def test_previous_next_and_tabs_follow_document_language(tmp_path):
     page = discover(tmp_path)[0]
     rendered = render_prevnext(page, None)
     assert 'data-title-zh="介绍"' in rendered
-    assert 'data-href-zh="/docs/start/README.zh.html"' in rendered
+    # The Chinese page is the English address with .zh before .html: the
+    # link only says it has one, and the language switch works the address out.
+    assert 'href="/docs/start/README.html" data-zh' in rendered and "data-href-zh" not in rendered
     tabs = render_tabbar(build_tabs(tmp_path, [page]), 'start', '/docs/')
-    assert 'data-href-zh="/docs/start/README.zh.html"' in tabs
+    assert 'href="/docs/start/README.html"' in tabs and " data-zh>" in tabs and "data-href-zh" not in tabs
+    from scripts.docs_site.build import zh_link_attr
+    assert zh_link_attr("/docs/a.html", "/docs/zh/a.html") == ' data-href-zh="/docs/zh/a.html"'
 
 
 def test_language_check_includes_html_and_design_prose_but_preserves_code(tmp_path, monkeypatch):

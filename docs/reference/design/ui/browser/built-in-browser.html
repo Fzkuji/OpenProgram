@@ -2,7 +2,7 @@
 <meta name="description" content="The desktop App's built-in browser: toolbar, panes, data import, trust boundaries and how Agents use its pages.">
 <h1>Built-in browser</h1>
 
-<p>Pages render in Electron <code translate="no">WebContentsView</code>s on their own <code translate="no">persist:webtabs</code> profile, sharing no cookies or storage with the App. The Agent works on the same pages through the browser target of <code translate="no">computer_use_agent</code>: the user watches and can take over, and pages a session opens appear in that session's Resources.</p>
+<p>Pages render in Electron <code translate="no">WebContentsView</code>s on their own <code translate="no">persist:webtabs</code> profile, sharing no cookies or storage with the App. The Agent works on the same pages through <code translate="no">computer_use</code> with <code translate="no">type="browser"</code>: the user watches and can take over, and pages a session opens appear in that session's Resources.</p>
 
 <h2 id="toolbar">Toolbar and menus</h2>
 <table class="stack">
@@ -20,7 +20,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Level</th><th scope="col">Holds</th></tr></thead>
 <tbody>
-<tr><th scope="row">Toolbar</th><td>Frequent current-page actions. The star only saves or removes this page; Bookmarks opens the manager. No split controls, no Settings gear.</td></tr>
+<tr><th scope="row">Toolbar</th><td>Frequent current-page actions. The star only saves or removes this page; Bookmarks opens the manager. The pen left of the star is <a href="annotate.html">Annotate</a>. No split controls, no Settings gear.</td></tr>
 <tr><th scope="row">Browser <code translate="no">⋯</code></th><td>New browser tab, Collapse to floating window, Find, Comment on the page and Screenshot a region (where available), Zoom, Print, Bookmarks, History, Downloads, Show bookmarks bar, Import browser data, Clear browsing data, Browser settings</td></tr>
 <tr><th scope="row">Window menu</th><td>New pane or window, pane layout, OpenProgram Settings, Help, About</td></tr>
 <tr><th scope="row">Tab or pane controls</th><td>Splitting and arranging, which apply to Files, Chat, Browser and Terminal alike</td></tr>

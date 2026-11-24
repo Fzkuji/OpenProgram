@@ -67,7 +67,7 @@ let active: Active | null = null;
 let finished: Finished | null = null;
 
 const KIND_NAMES: Record<string, string> = {
-  session: "conversation", file: "file", web: "web", ntp: "new tab", builtin: "page", application: "application",
+  session: "conversation", file: "file", web: "web", ntp: "new tab", builtin: "page", application: "application", window: "app window",
 };
 
 /** The panes on screen now, by the tab each one shows. */
@@ -130,6 +130,74 @@ const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
 const hex = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, "0")).join("");
 const sleep = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms));
 
+/** Call `moved` whenever the element may have moved or changed size: it
+ *  or an ancestor resized or had its style or class changed, the window
+ *  resized or scrolled, and on each frame while a transition or animation
+ *  around it runs. Returns the stop. */
+export function followElement(element: HTMLElement, moved: () => void): () => void {
+  const chain: HTMLElement[] = [];
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) chain.push(node);
+  const resize = new ResizeObserver(() => moved());
+  const restyle = new MutationObserver(() => moved());
+  for (const node of chain) {
+    resize.observe(node);
+    restyle.observe(node, { attributes: true, attributeFilter: ["style", "class"] });
+  }
+  let running = 0;
+  let frame = 0;
+  const step = () => {
+    moved();
+    frame = running > 0 ? window.requestAnimationFrame(step) : 0;
+  };
+  const around = (event: Event) => event.target instanceof Node && event.target.contains(element);
+  const start = (event: Event) => {
+    if (!around(event)) return;
+    running += 1;
+    if (!frame) frame = window.requestAnimationFrame(step);
+  };
+  const stop = (event: Event) => {
+    if (!around(event)) return;
+    running = Math.max(0, running - 1);
+    moved();
+  };
+  const starts = ["transitionrun", "animationstart"];
+  const stops = ["transitionend", "transitioncancel", "animationend", "animationcancel"];
+  for (const type of starts) document.addEventListener(type, start, true);
+  for (const type of stops) document.addEventListener(type, stop, true);
+  window.addEventListener("resize", moved);
+  document.addEventListener("scroll", moved, true);
+  return () => {
+    resize.disconnect();
+    restyle.disconnect();
+    if (frame) window.cancelAnimationFrame(frame);
+    for (const type of starts) document.removeEventListener(type, start, true);
+    for (const type of stops) document.removeEventListener(type, stop, true);
+    window.removeEventListener("resize", moved);
+    document.removeEventListener("scroll", moved, true);
+  };
+}
+
+/** Call `closed` once when the element leaves the page or is hidden (no
+ *  width): told by the page's tree and the element's size. Returns the stop. */
+export function watchClosed(element: HTMLElement, closed: () => void): () => void {
+  let done = false;
+  const close = () => {
+    if (done) return;
+    done = true;
+    stop();
+    closed();
+  };
+  // The size comes with the observation; the tree check needs no layout.
+  const resize = new ResizeObserver(entries => {
+    if (!element.isConnected || entries.some(entry => entry.contentRect.width === 0)) close();
+  });
+  resize.observe(element);
+  const tree = new MutationObserver(() => { if (!element.isConnected) close(); });
+  tree.observe(document.body, { childList: true, subtree: true });
+  const stop = () => { resize.disconnect(); tree.disconnect(); };
+  return () => { done = true; stop(); };
+}
+
 /** An accent line just outside the pane, so it is never in the picture. */
 function outline(element: HTMLElement): () => void {
   const ring = document.createElement("div");
@@ -148,8 +216,8 @@ function outline(element: HTMLElement): () => void {
   };
   place();
   document.body.appendChild(ring);
-  const timer = window.setInterval(place, 200);
-  return () => { window.clearInterval(timer); ring.remove(); };
+  const stop = followElement(element, place);
+  return () => { stop(); ring.remove(); };
 }
 
 async function begin(
@@ -201,7 +269,7 @@ async function begin(
     const end = (reason: string, discard = false) => {
       ending ??= (async () => {
         window.clearTimeout(limit);
-        window.clearInterval(watch);
+        stopWatching();
         const seconds = Math.round((performance.now() - startedAt) / 10) / 100;
         if (recorder.state !== "inactive") recorder.stop();
         await stopped;
@@ -218,9 +286,7 @@ async function begin(
     // A recording nobody stops ends itself, and waits to be collected.
     const keep = (reason: string) => { void end(reason).then(result => { if (result) finished = result; }); };
     const limit = window.setTimeout(() => keep("limit"), maxSeconds * 1000);
-    const watch = window.setInterval(() => {
-      if (pane.element && (!pane.element.isConnected || pane.element.offsetWidth === 0)) keep("pane closed");
-    }, 500);
+    const stopWatching = pane.element ? watchClosed(pane.element, () => keep("pane closed")) : () => {};
     track.addEventListener("ended", () => keep("capture ended"));
     return { id, sessionId, pane: pane.id, width, height, fps: FRAME_RATE, end };
   } catch (error) {

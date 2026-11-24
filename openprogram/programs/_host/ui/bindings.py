@@ -14,13 +14,24 @@ def bind(session_id: str, instance_id: str) -> None:
     state.get_instance(instance_id)
     with state.connect() as db:
         _table(db)
-        db.execute('INSERT OR IGNORE INTO resource_bindings VALUES (?,?)', (session_id, instance_id))
+        added = db.execute('INSERT OR IGNORE INTO resource_bindings VALUES (?,?)', (session_id, instance_id)).rowcount
+    if added:
+        _changed(session_id)
 
 
 def release(session_id: str, instance_id: str) -> None:
     with state.connect() as db:
         _table(db)
-        db.execute('DELETE FROM resource_bindings WHERE session_id=? AND instance_id=?', (session_id, instance_id))
+        removed = db.execute('DELETE FROM resource_bindings WHERE session_id=? AND instance_id=?',
+                             (session_id, instance_id)).rowcount
+    if removed:
+        _changed(session_id)
+
+
+def _changed(session_id: str) -> None:
+    """The conversation's resources list shows its applications."""
+    from openprogram.host.resources import conversation_changes
+    conversation_changes.changed(session_id)
 
 
 def open_application_ids(session_id: str) -> set[str]:

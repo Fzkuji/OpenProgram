@@ -6,26 +6,17 @@
  * group's timeline ends with a row for it whose body is the failure. The
  * state goes away when the retry succeeds; nothing is kept.
  */
-import { useEffect, useState } from "react";
 import type { RetryStatus } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { COUNTDOWN, useNow } from "@/lib/clock/use-now";
 import { ExecutionStrip, StepRow } from "./execution-strip";
 
 type Text = ReturnType<typeof useTranslation>["text"];
 
-/** Whole seconds left before the next attempt, ticking once a second. */
+/** Whole seconds left before the next attempt, renewed as each one passes. */
 function useSecondsLeft(retry: RetryStatus): number {
   const due = (retry.receivedAt ?? 0) + (retry.delayMs ?? 0);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    setNow(Date.now());
-    if (due <= Date.now()) return;
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= due) clearInterval(timer);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [due]);
+  const now = useNow(COUNTDOWN, due);
   return Math.max(0, Math.ceil((due - now) / 1000));
 }
 

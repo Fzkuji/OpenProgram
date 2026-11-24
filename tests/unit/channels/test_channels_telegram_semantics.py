@@ -206,8 +206,23 @@ def test_text_free_update_ignored() -> None:
 
 # --- Adapter loops: revoked tokens, old edits, WeChat, Slack -----------------
 
+class _Stop(threading.Event):
+    """A stop event whose waits return at once and are written down."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waits: list[float] = []
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        return self.is_set()
+
+
 class _Client:
-    """Stands in for the safe HTTP client; answers polls from a script."""
+    """Stands in for the safe HTTP client; answers polls from a script.
+
+    The poll after the script ends is the one a stop arrives in.
+    """
 
     def __init__(self, responses: list, stop: threading.Event):
         self.responses = responses
@@ -221,10 +236,13 @@ class _Client:
         return False
 
     def _next(self, url):
-        self.polls += 1
-        status, body = self.responses.pop(0)
         if not self.responses:
             self.stop.set()
+            self.unhandled = {"ok": True, "result": [{"update_id": 99}], "msgs": [{"late": True}],
+                              "get_updates_buf": "late"}
+            return httpx.Response(200, json=self.unhandled, request=httpx.Request("POST", url))
+        self.polls += 1
+        status, body = self.responses.pop(0)
         return httpx.Response(status, json=body, request=httpx.Request("POST", url))
 
     def get(self, url, **_kw):
@@ -239,14 +257,12 @@ class _Client:
 
 def _run_telegram(monkeypatch, responses, stop=None):
     ch = _adapter()
-    stop = stop or threading.Event()
+    stop = stop or _Stop()
     client = _Client(responses, stop)
     monkeypatch.setattr("openprogram.host.security.safe_http.safe_client",
                         lambda *_a, **_k: client)
-    sleeps: list[float] = []
-    monkeypatch.setattr(telegram_module.time, "sleep", sleeps.append)
     ch.run(stop)
-    return client, sleeps
+    return client, stop.waits
 
 
 @pytest.mark.parametrize("status", [401, 404])
@@ -296,13 +312,11 @@ def _run_wechat(monkeypatch, responses):
     _accounts.save_credentials(
         "wechat", "a1", {"bot_token": "TOK", "ilink_bot_id": "BOT"},
     )
-    stop = threading.Event()
+    stop = _Stop()
     client = _Client(responses, stop)
     monkeypatch.setattr(wechat_module, "_wechat_client", lambda _base: client)
-    sleeps: list[float] = []
-    monkeypatch.setattr(wechat_module.time, "sleep", sleeps.append)
     wechat_module.WechatChannel(account_id="a1").run(stop)
-    return sleeps
+    return stop.waits
 
 
 def test_wechat_backs_off_on_non_2xx(monkeypatch):
@@ -316,6 +330,39 @@ def test_wechat_ok_poll_does_not_sleep_and_resets_backoff(monkeypatch):
         [(503, {}), (200, {"msgs": []}), (200, {"msgs": []}), (503, {})],
     )
     assert sleeps == [3, 3]
+
+
+def test_a_poll_that_a_stop_arrives_in_is_marked_and_its_answer_left_for_the_restart(monkeypatch):
+    """A stopping worker does not wait for a thread inside a long poll, so the
+    loop says when it is in one and takes nothing out of an answer that
+    arrives after the stop: the cursor and the offset stay where they were."""
+    seen: list[bool] = []
+
+    class _Watching(_Client):
+        def _next(self, url):
+            seen.append(self.adapter.awaiting_platform)
+            return super()._next(url)
+
+    _accounts.save_credentials("wechat", "a1", {"bot_token": "TOK", "ilink_bot_id": "BOT"})
+    stop = _Stop()
+    client = _Watching([(200, {"msgs": [], "get_updates_buf": "first"})], stop)
+    wechat = client.adapter = wechat_module.WechatChannel(account_id="a1")
+    monkeypatch.setattr(wechat_module, "_wechat_client", lambda _base: client)
+    handled: list = []
+    monkeypatch.setattr(wechat, "_handle_message", handled.append, raising=False)
+    wechat.run(stop)
+    assert seen == [True, True] and wechat.awaiting_platform is False
+    assert wechat_module._load_cursor_for_account("a1") == "first"
+    assert handled == []
+
+    stop = _Stop()
+    client = _Watching([(200, {"ok": True, "result": []})], stop)
+    telegram = client.adapter = _adapter()
+    monkeypatch.setattr("openprogram.host.security.safe_http.safe_client", lambda *_a, **_k: client)
+    offset = telegram.offset
+    telegram.run(stop)
+    assert seen[-2:] == [True, True] and telegram.awaiting_platform is False
+    assert telegram.offset == offset
 
 
 def test_wechat_cursor_write_is_atomic_and_round_trips(monkeypatch):

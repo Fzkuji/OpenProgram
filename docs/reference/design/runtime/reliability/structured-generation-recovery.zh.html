@@ -73,10 +73,10 @@
 <details>
 <summary>浏览器工具约定与 Desktop 注册</summary>
 <ul>
-<li>各阶段只暴露 <code translate="no">computer_use_agent</code>，并且只接受它在内置浏览器里的浏览器目标；提示词描述 <code translate="no">tabs</code>、<code translate="no">read</code>、<code translate="no">open</code> 和阶段可做的四个操作。工具缺失、登录和权限失败都明确报告，绝不因此改用其他通道或写入。</li>
-<li>有来源窗口但未绑定 Page 时，<code translate="no">tabs</code> 清单保留该来源。没有已授权来源时，清单不回退到所有桌面窗口。</li>
+<li>各阶段只暴露 <code translate="no">computer_use</code>，并且只接受它不带 <code translate="no">device</code> 和 <code translate="no">app</code> 的 <code translate="no">type="browser"</code> 目标；提示词描述 <code translate="no">list_tabs</code>、<code translate="no">get_state</code>、<code translate="no">create_tab</code> 和阶段可做的四个操作。工具缺失、登录和权限失败都明确报告，绝不因此改用其他通道或写入。</li>
+<li>有来源窗口但未绑定 Page 时，<code translate="no">list_tabs</code> 清单保留该来源。没有已授权来源时，清单不回退到所有桌面窗口。</li>
 <li>在子进程中，Page 清单经父进程 webtab 桥获取，只接受来源窗口和该执行获授权的绑定。子进程用自己的注册表生成并消费 Page 令牌，令牌不跨注册表传递。</li>
-<li>通过 <code translate="no">computer_use_agent</code> 和页面恢复打开 URL 时，都经 Resources 创建后台 Page，不依赖前台聊天路由、已挂载的 Browser 面板或已有页面。窗口注册和原生 Page 目标可用性是两个失败阶段。</li>
+<li>通过 <code translate="no">computer_use</code> 和页面恢复打开 URL 时，都经 Resources 创建后台 Page，不依赖前台聊天路由、已挂载的 Browser 面板或已有页面。窗口注册和原生 Page 目标可用性是两个失败阶段。</li>
 <li>直接 MCP 入口把失败的浏览器结果保留为 <code translate="no">ToolReturn(is_error=True)</code>；HTTP 分发成功不等于浏览器操作成功。</li>
 <li>Desktop 桥在启动和重连时立即注册确切的窗口标识，早于等待保留视图或资源恢复，之后可幂等重复。恢复未完成不阻塞打开第一个页面。注册绝不选择其他窗口或扩大归属。</li>
 <li><code translate="no">desktop_unavailable</code>：worker 此刻无法使用已注册的 Desktop WebTab。它不同于模型模仿工具调用，也不同于页面的网络或内容错误。</li>
@@ -102,7 +102,7 @@
 <tr><th scope="row">场景</th><td>先截断后成功、耗尽、混合失败计数、空和部分 EOF、禁用恢复、取消、已完成工具不重放、拒绝部分工具调用、返回的 provider 错误、显式输出上限、默认容量、上下文合法性、重启、未知副作用对账、传输与格式联合修复</td></tr>
 <tr><th scope="row">文件</th><td><code translate="no">runtime/context/compaction/request.py</code>、<code translate="no">runtime/agent/loop/</code>、<code translate="no">models/providers/structured_output.py</code>、<code translate="no">runtime/agent/runtime/providers.py</code> 和 <code translate="no">execution.py</code>、provider 重试工具、流持久化</td></tr>
 <tr><th scope="row">测试路径</th><td><code translate="no">tests/unit/agent/execution</code>、<code translate="no">tests/component/programs/tools</code>、<code translate="no">tests/component/context</code>、<code translate="no">tests/component/providers</code>、<code translate="no">tests/contracts</code>；改动其他生产边界时相应扩大</td></tr>
-<tr><th scope="row">浏览器实测</th><td>从空清单开始打开并观察 URL，无需手动创建 Browser。已安装服务只有在一次 <code translate="no">computer_use_agent</code> 浏览器调用列出标签页并读取其中一个、返回标题和元素 ref，且没有提交或保存任何内容时才通过。</td></tr>
+<tr><th scope="row">浏览器实测</th><td>从空清单开始打开并观察 URL，无需手动创建 Browser。已安装服务只有在一次 <code translate="no">computer_use</code> 浏览器调用列出标签页并读取其中一个、返回标题和元素 ref，且没有提交或保存任何内容时才通过。</td></tr>
 <tr><th scope="row">组报告实测</th><td>真实 provider 路由对比、原生只读工具调用、以实际提示词校验模式解析原始材料、用明确归属的测试数据生成本地草稿</td></tr>
 </tbody>
 </table>

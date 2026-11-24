@@ -147,6 +147,41 @@ def test_build_status_puts_it_together(tmp_path, monkeypatch):
     ledger.close()
 
 
+def test_each_key_carries_its_own_health_quota_and_spend(tmp_path, monkeypatch):
+    ledger = UsageLedger(db_path=tmp_path / "usage.db")
+    for cred, cost in (("cred-1", 0.5), ("cred-1", 0.25), ("cred-2", 1.0), (None, 9.0)):
+        ledger.append(UsageEvent(ts=NOW - DAY, session_id="s", call_kind="chat", provider="openrouter",
+                                 model_id="m", input_tokens=10, output_tokens=1, total_tokens=11,
+                                 cost_total=cost, cost_source="model_catalog", credential_id=cred))
+    ledger.append(UsageEvent(ts=NOW - 40 * DAY, session_id="s", call_kind="chat", provider="openrouter",
+                             model_id="m", input_tokens=1, output_tokens=1, total_tokens=2,
+                             cost_total=5.0, cost_source="model_catalog", credential_id="cred-2"))
+    assert ledger.credential_costs(since=NOW - 30 * DAY) == {
+        "openrouter": {"cred-1": pytest.approx(0.75), "cred-2": pytest.approx(1.0)}}
+    store = quota.QuotaStore(ledger)
+    monkeypatch.setattr(provider_status, "default_store", store)
+    store.observe("openrouter", "cred-1", [QuotaLimit(
+        limit_key="key_limit", label="Key limit", unit="usd", source="endpoint", fetched_at=NOW,
+        limit=20, remaining=0)], force_write=True)
+    store.observe("openrouter", "cred-2", [QuotaLimit(
+        limit_key="key_limit", label="Key limit", unit="usd", source="endpoint", fetched_at=NOW,
+        limit=20, remaining=12)], force_write=True)
+    monkeypatch.setattr(provider_status, "keys_of", lambda provider: [
+        _key(cred="cred-1"), _key(cred="cred-2", active=False, cooldown=NOW + 60)])
+    payload = provider_status.build_status(
+        providers=[{"id": "openrouter", "label": "OpenRouter", "enabled": True}], ledger=ledger, now=NOW)
+    first, second = payload["providers"][0]["keys"]
+    # The spent key is out of credit, its quota is its own, its spend counts only its calls.
+    assert first["health"]["state"] == "no_credit"
+    assert first["quota"]["account"] == "cred-1" and first["quota"]["limits"][0]["remaining"] == 0
+    assert first["spend_usd"] == pytest.approx(0.75) and first["plan"] is None
+    # The other is throttled on its own and shows its own limit.
+    assert second["health"] == {"state": "rate_limited", "until": NOW + 60, "detail": "HTTP 429"}
+    assert second["quota"]["limits"][0]["remaining"] == 12
+    assert second["spend_usd"] == pytest.approx(1.0)
+    ledger.close()
+
+
 def test_a_provider_names_its_company_and_its_way_from_the_one_table():
     assert provider_status.family_of("perplexity-agent", "Perplexity Agent") == {
         "family": "perplexity", "family_label": "Perplexity",

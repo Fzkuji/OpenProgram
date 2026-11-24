@@ -493,6 +493,28 @@ def worktree_notice(cwd: str) -> str:
             "here by their relative path; re-read a file here before editing it.")
 
 
+def _remote_environment_lines(env: Any, tools: Optional[list]) -> list[str]:
+    """Where a conversation on another machine runs, and that everything else stays here.
+
+    The machine is named by its id and described by its shell kind, so the
+    text names no kind. The sentence about this computer keeps a target
+    without a machine from being read as the environment's.
+    """
+    where = env.describe("shell")
+    if env.remote_files:
+        place = (f"Environment: machine {env.id} ({env.name}; {where}). This conversation's shell and file "
+                 "tools act on that machine, and paths are its paths.")
+    else:
+        place = (f"Environment: machine {env.id} ({env.name}; {where}). This conversation's shell commands "
+                 "run there; its working directories are mounted there at the same paths.")
+    names = {getattr(tool, "name", tool) for tool in tools or ()}
+    operated = (" computer_use calls without device act on this computer."
+                if "computer_use" in names else "")
+    here = (f"The chat itself and OpenProgram run on this computer, not on {env.id};" + operated
+            if operated else f"The chat itself and OpenProgram run on this computer, not on {env.id}.")
+    return [place, here]
+
+
 def environment_block(tools: Optional[list] = None,
                       additional_working_dirs: Optional[list] = None,
                       channel: str = "") -> str:
@@ -509,7 +531,7 @@ def environment_block(tools: Optional[list] = None,
     except Exception:
         osname = _os.name
     try:
-        from openprogram.host.environments import current_environment
+        from openprogram.host.machines import current_environment
         env = current_environment()
     except Exception:
         env = None
@@ -522,12 +544,8 @@ def environment_block(tools: Optional[list] = None,
     notice = worktree_notice(str(cwd))
     if notice:
         lines.append(notice)
-    if env is not None and env.kind == "ssh":
-        lines.append(f"Runs on SSH host {env.ssh_target} ({env.name}): shell and file tools act on "
-                     "that machine, and paths are remote paths.")
-    elif env is not None and env.kind == "docker":
-        lines.append(f"Runs in a Docker container from {env.image} ({env.name}): shell commands run "
-                     "inside it; the working directories are mounted at the same paths.")
+    if env is not None and env.remote_shell:
+        lines.extend(_remote_environment_lines(env, tools))
     if additional_working_dirs:
         lines.append("Also writable: " + ", ".join(additional_working_dirs))
     rules = _PLATFORM_RULES.get(channel or "", "")
@@ -645,6 +663,22 @@ def _build_deferred_catalog(agent: Any) -> str:
     return deferred_catalog_text(deferred) or ""
 
 
+def _build_devices(agent: Any) -> str:
+    """What computer_use can operate, for a prompt of its own. A
+    conversation's turns get it beside their message instead
+    (``catalog_beside``), so connecting a device never changes their prompt."""
+    tools = _tools_var.get()
+    if not tools or _catalog_beside_var.get():
+        return ""
+    if not any(getattr(t, "name", None) == "computer_use" for t in tools):
+        return ""
+    from openprogram.programs.tools.computer_use.computer_use.tool import devices_text
+    try:
+        return devices_text()
+    except Exception:
+        return ""
+
+
 _PLAN_MODE_TEXT = (
     "<plan-mode>\n"
     "This conversation is in plan mode: investigate and propose, "
@@ -714,7 +748,7 @@ def _build_capabilities(agent: Any) -> str:
     """What the agent can reach beyond its loaded tools: skills, the
     Program recipe, and the deferred tools it can load by name."""
     parts = [part for part in (
-        _build_skills(agent), _build_programs(agent), _build_deferred_catalog(agent),
+        _build_skills(agent), _build_programs(agent), _build_deferred_catalog(agent), _build_devices(agent),
     ) if part and part.strip()]
     return "\n\n".join(parts)
 

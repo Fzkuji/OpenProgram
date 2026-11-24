@@ -172,14 +172,15 @@ class TurnBindings:
         # created mid-turn is picked up by the next turn entry — within
         # the same turn the tool that ran worktree_create also calls
         # set_worktree explicitly so the rest of that turn sees it.
-        # Bind the session's environment (local / ssh / docker) so every
-        # tool in this turn runs where the conversation was created to
-        # run. A removed environment binds nothing: the backend lookup
-        # then reports it instead of silently running locally.
+        # Bind the session's environment (the machine its project is on)
+        # so every tool in this turn runs where the project is. A machine
+        # that was removed, switched off or lost its shell binds nothing:
+        # the backend lookup then reports it instead of silently running
+        # locally.
         _env = None
         try:
-            from openprogram.host.environments import (
-                EnvironmentError as _EnvError,
+            from openprogram.host.machines import (
+                MachineError as _EnvError,
                 bind_turn_environment,
                 resolve_for_session,
             )
@@ -205,12 +206,11 @@ class TurnBindings:
                     _wt_mgr.find_active_for_session(req.session_id, _branch)
                     if _branch else _wt_mgr.find_active_for_session(req.session_id)
                 )
-            if _env is not None and _env.kind == "ssh":
-                # An SSH conversation's files live on the remote host:
-                # its tools start in the environment's remote folder,
-                # never in a local project path.
-                from openprogram.host.environments.remote import remote_workdir
-                self._worktree_token = _set_wt(remote_workdir(_env))
+            if _env is not None and _env.remote_files:
+                # The project's folder is on that machine: its tools start
+                # there, at the project's path on the machine.
+                from openprogram.runtime.conversation.session_settings.workdir import remote_project_folder
+                self._worktree_token = _set_wt(remote_project_folder(req.session_id))
             elif _active_wt is not None:
                 self._worktree_token = _set_wt(_active_wt.worktree_path)
             else:
@@ -394,7 +394,7 @@ class TurnBindings:
                 from openprogram.host.sandbox import reset_turn_policy
                 reset_turn_policy(self._sandbox_token)
             if self._environment_token is not None:
-                from openprogram.host.environments import reset_turn_environment
+                from openprogram.host.machines import reset_turn_environment
                 reset_turn_environment(self._environment_token)
         except ValueError:
             _log.debug(

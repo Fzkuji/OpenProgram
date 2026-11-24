@@ -38,6 +38,9 @@ DEFAULT_CRON_ENV = "OPENPROGRAM_CRON_PATH"
 DEFAULT_SCHEDULER_ENV = "OPENPROGRAM_SCHEDULER_PATH"
 DEFAULT_REL_PATH = "scheduler/tasks.json"
 LEGACY_REL_PATH = "cron/schedule.json"
+#: The task file was saved: the scheduler worker (``worker.py``) reads it
+#: again and sleeps until its next due entry.
+TOPIC = "schedule.entries"
 
 DESCRIPTION = (
     "Create, list, update, and delete one-time, recurring, monitor, or webhook "
@@ -206,6 +209,8 @@ def _save(path: str, entries: list[dict[str, Any]]) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+    from openprogram.host._platform import changes
+    changes.signal(TOPIC)
 
 
 PREVIOUS_SUFFIX = ".previous"

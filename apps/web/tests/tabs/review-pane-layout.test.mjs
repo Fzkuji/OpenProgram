@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canPreview, hunkRange, lineCommentText, reviewHunks, reviewRows } from "../../components/center-tabs/review/review-diff-rows.ts";
+import {
+  canPreview, findingFixText, hunkRange, lineCommentText, reviewCommentsMessage, reviewHunks, reviewRows,
+} from "../../components/center-tabs/review/review-diff-rows.ts";
 import { installLoader } from "../_support/load.mjs";
 import { installDom, render } from "../_support/dom.mjs";
 
@@ -11,22 +13,36 @@ installLoader({
     // Stable functions: the pane's effects list `text` as a dependency, as the real hook keeps it stable.
     "@/lib/i18n": "const t = (key) => key; const text = (en) => en; const value = { t, text, locale: 'en' }; export const useTranslation = () => value; export const translateText = text;",
     "@/components/animated-icons": "export const FeatherIcon = () => null;",
-    "@/components/chat/messages/editing/quote-to-chat": "export const appendToComposer = () => {};",
+    "@/lib/chat/send/send-queue": "export const sendFromTranscript = (sessionId, text) => { (globalThis.__sentMessages ??= []).push({ sessionId, text }); return 'q1'; };",
     "@/lib/format-utils/toast": "export const showToast = () => {};",
+    // The socket is open unless a test closes it; reopening calls the reconnect handlers.
+    "@/lib/runtime-bridge/state": "export const getSocket = () => ({ readyState: globalThis.__socketOpen === false ? 3 : 1 });",
+    "@/lib/net/ws/change-bus": "export const onReconnected = (handler) => { (globalThis.__onReconnected ??= new Set()).add(handler); return () => globalThis.__onReconnected.delete(handler); };",
   },
   replace: {
     "/lib/net/ws/ws-request.ts": [
       "export const wsRequest = (action, payload, responseType, match, timeout, options) =>",
       "  new Promise((resolve) => (globalThis.__wsRequests ??= []).push({ action, payload, responseType, match, options, resolve }));",
+      "export const wsFire = (action, payload) => { (globalThis.__wsFired ??= []).push({ action, payload }); return true; };",
     ].join("\n"),
     "/components/files/file-viewer.tsx": "export const FileViewer = () => null;",
     "/components/ui/tooltip.tsx": "export const HoverTip = ({ children }) => children;",
     "/components/ui/dropdown-menu.tsx": [
+      // Menus render open, their items as buttons, so a test picks an item by name.
+      "import { createElement } from 'react';",
       "export const DropdownMenu = ({ children }) => children;",
       "export const DropdownMenuTrigger = ({ children }) => children;",
-      "export const DropdownMenuContent = () => null;",
-      "export const DropdownMenuItem = () => null;",
+      "export const DropdownMenuContent = ({ children }) => createElement('div', { role: 'menu' }, children);",
+      "export const DropdownMenuItem = ({ children, onSelect, disabled }) => createElement('button', { type: 'button', role: 'menuitem', disabled, onClick: () => onSelect?.() }, children);",
       "export const DropdownMenuSeparator = () => null;",
+      "export const DropdownMenuSub = ({ children }) => children;",
+      "export const DropdownMenuSubTrigger = ({ children }) => createElement('div', null, children);",
+      "export const DropdownMenuSubContent = ({ children }) => createElement('div', { role: 'menu' }, children);",
+    ].join("\n"),
+    "/components/ui/menu/menu-parts.tsx": [
+      "import { createElement } from 'react';",
+      "export const MenuRow = ({ label, checked }) => createElement('span', { 'data-checked': checked ? 'true' : undefined }, label);",
+      "export const MenuIcon = () => null;",
     ].join("\n"),
   },
 });
@@ -90,8 +106,14 @@ test("Each hunk carries its old and new sides for a revert", () => {
     "-gone",
   ].join("\n"), "modify");
   assert.deepEqual(hunks, [
-    { new_start: 1, old_lines: ["keep", "old", "tail"], new_lines: ["keep", "new", "tail"], revertible: true },
-    { new_start: 10, old_lines: ["ctx", "gone"], new_lines: ["ctx"], revertible: true },
+    {
+      old_start: 1, new_start: 1, old_lines: ["keep", "old", "tail"], new_lines: ["keep", "new", "tail"],
+      lines: [" keep", "-old", "+new", " tail"], revertible: true, stageable: true,
+    },
+    {
+      old_start: 10, new_start: 10, old_lines: ["ctx", "gone"], new_lines: ["ctx"],
+      lines: [" ctx", "-gone"], revertible: true, stageable: true,
+    },
   ]);
 });
 
@@ -105,6 +127,10 @@ test("Cut, staged, newline-less and whole-file hunks cannot be reverted", () => 
     "--- a/x.py [index-to-worktree]", "+++ b/x.py [index-to-worktree]", "@@ -1 +1 @@", "-b", "+c",
   ].join("\n"), "modify");
   assert.deepEqual(staged.map((hunk) => hunk.revertible), [false, true]);
+  // A staged hunk can still be unstaged; cut and whole-file hunks cannot.
+  assert.deepEqual(staged.map((hunk) => hunk.stageable), [true, true]);
+  assert.equal(reviewHunks("@@ -1,3 +1,3 @@\n a\n-b", "modify")[0].stageable, false);
+  assert.equal(reviewHunks("@@ -0,0 +1 @@\n+new", "add")[0].stageable, false);
   assert.equal(reviewHunks("@@ -1 +1 @@\n-a\n+b\n\\ No newline at end of file", "modify")[0].revertible, false);
   assert.equal(reviewHunks("@@ -0,0 +1 @@\n+new", "add")[0].revertible, false);
 });
@@ -117,6 +143,22 @@ test("A line comment names the file and line and quotes the code", () => {
   assert.equal(
     lineCommentText("src/x.py", { kind: "del", text: "-x = 2", oldNo: "7", newNo: "" }, "keep this"),
     "`src/x.py` line 7 (removed):\n> x = 2\nkeep this",
+  );
+});
+
+test("Pending comments go out as one message; a finding's Fix names its line", () => {
+  assert.equal(
+    reviewCommentsMessage([
+      { rel: "a.ts", side: "new", line: 3, quote: "const x = 1;", body: "why 1?" },
+      { rel: "b.ts", side: "old", line: 9, quote: "keep()", body: "keep this" },
+    ]),
+    "Please address my review comments on these changes:\n\n"
+      + "`a.ts` line 3:\n> const x = 1;\nwhy 1?\n\n"
+      + "`b.ts` line 9 (removed):\n> keep()\nkeep this",
+  );
+  assert.equal(
+    findingFixText({ rel: "a.ts", line: 3, severity: "high", body: " Off by one. " }),
+    "Please fix this review finding (high) in `a.ts` line 3:\n\nOff by one.",
   );
 });
 
@@ -142,11 +184,11 @@ const FILES = [
   { path: "/repo/b.ts", rel: "b.ts", op: "modify", added: 2, removed: 1 },
 ];
 let session = 0;
-async function mountPane() {
+async function mountPane(props = {}) {
   sent().length = 0;
   session += 1;
   const sessionId = `review-session-${session}`;
-  const view = await render(createElement(ReviewTabPane, { sessionId, assistantMsgId: "assistant-1" }));
+  const view = await render(createElement(ReviewTabPane, { sessionId, assistantMsgId: "assistant-1", ...props }));
   await settle(view);
   return { view, sessionId };
 }
@@ -181,7 +223,7 @@ test("A ready scope selects the first file and loads its diff against the snapsh
   await view.unmount();
 });
 
-test("A stale snapshot clears the pane and retries once; a second stale answer is shown", async () => {
+test("A stale snapshot clears the pane and retries once; a second stale answer says nothing and is asked again later", async () => {
   const { view } = await mountPane();
   const [first] = sentOf("review_scope");
   await answer(view, first, scopeAnswer(first, { status: "stale", error: "STALE_SNAPSHOT" }));
@@ -190,9 +232,11 @@ test("A stale snapshot clears the pane and retries once; a second stale answer i
   assert.equal(retries[1].payload.cursor, null);
   assert.equal(retries[1].payload.snapshot_id, undefined);
   await answer(view, retries[1], scopeAnswer(retries[1], { status: "stale", error: "STALE_SNAPSHOT" }));
-  assert.equal(sentOf("review_scope").length, 2, "no retry loop");
-  assert.match(view.container.textContent, /STALE_SNAPSHOT/);
+  assert.equal(sentOf("review_scope").length, 2, "no immediate retry loop");
+  assert.doesNotMatch(view.container.textContent, /STALE_SNAPSHOT|No changes in this scope/);
   assert.equal(view.container.querySelector("[data-mounted-diff-count]").dataset.mountedDiffCount, "0");
+  await view.act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
+  assert.equal(sentOf("review_scope").length, 3, "asked again after a backoff");
   await view.unmount();
 });
 
@@ -222,11 +266,173 @@ test("A history change in the same session reloads the scope; another session's 
   await view.unmount();
 });
 
-test("A disconnected scope request says so instead of loading forever", async () => {
+test("A scope request with no reply says nothing and is asked again", async () => {
   const { view } = await mountPane();
+  assert.doesNotMatch(view.container.textContent, /Loading/, "no notice while the files are read");
   const [scope] = sentOf("review_scope");
   await answer(view, scope, null);
-  assert.match(view.container.textContent, /Review request disconnected/);
-  assert.doesNotMatch(view.container.textContent, /Loading files/);
+  assert.doesNotMatch(view.container.textContent, /disconnected|Loading|No changes in this scope/i);
+  await view.act(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+  await settle(view);
+  assert.equal(sentOf("review_scope").length, 2, "the read is retried after a short wait");
+  await view.unmount();
+});
+
+const button = (view, label) => [...view.container.querySelectorAll("button")]
+  .find((element) => element.getAttribute("aria-label") === label || element.textContent.trim() === label);
+const DIFF = "--- a/a.ts [index-to-worktree]\n+++ b/a.ts [index-to-worktree]\n@@ -1,2 +1,2 @@\n keep\n-old\n+new";
+
+async function readyPane(scopeName, extra = {}) {
+  const mounted = await mountPane({ initialScope: scopeName });
+  const [scope] = sentOf("review_scope");
+  assert.equal(scope.payload.scope, scopeName);
+  await answer(mounted.view, scope, scopeAnswer(scope, {
+    status: "ready", snapshot_id: "snap-1", files: FILES, file_count: 2, source: "git", ...extra,
+  }));
+  const [diff] = sentOf("review_file_diff");
+  await answer(mounted.view, diff, { ...diff.payload, diff: DIFF, diff_state: "available", line_count: 4 });
+  return mounted;
+}
+
+test("The header is one row: the scope menu with its totals, and a … menu with Review with agent and File type", async () => {
+  const { view } = await mountPane();
+  const [scopeMenu, moreMenu] = view.container.querySelectorAll("header [role=menu]");
+  const items = (menu) => [...menu.querySelectorAll(":scope > * > [role=menuitem], :scope > [role=menuitem]")].map((item) => item.textContent);
+  assert.deepEqual(items(scopeMenu), ["This turn", "Unstaged", "Staged", "Branch"]);
+  assert.ok(button(view, "Review scope").textContent.startsWith("This turn"));
+  assert.ok(button(view, "Review options"));
+  assert.ok(moreMenu.textContent.includes("Review with agent"));
+  assert.ok(moreMenu.textContent.includes("File type"));
+  assert.equal(view.container.querySelector("[role=tab]"), null, "no segmented scope control");
+  await view.act(async () => button(view, "Branch").click());
+  assert.equal(sentOf("review_scope").at(-1).payload.scope, "branch");
+  await view.unmount();
+});
+
+test("Unstaged offers Stage on a hunk and the file; Staged offers Unstage; no staging without a local repo", async () => {
+  let { view } = await readyPane("unstaged", { staging: true });
+  assert.ok(button(view, "Stage"), "hunk Stage");
+  assert.ok(button(view, "Revert"), "hunk Revert stays");
+  await view.act(async () => button(view, "Stage").click());
+  const [stage] = sentOf("review_stage");
+  assert.equal(stage.responseType, "review_stage_result");
+  assert.equal(stage.payload.scope, "unstaged");
+  assert.equal(stage.payload.path, "/repo/a.ts");
+  assert.deepEqual(stage.payload.hunk, { old_start: 1, new_start: 1, lines: [" keep", "-old", "+new"] });
+  await answer(view, stage, { status: "ready" });
+  const reload = sentOf("review_scope");
+  assert.equal(reload.length, 2, "the scope reloads after staging");
+  await answer(view, reload[1], scopeAnswer(reload[1], {
+    status: "ready", snapshot_id: "snap-2", files: FILES, file_count: 2, source: "git", staging: true,
+  }));
+  await view.act(async () => button(view, "Stage file").click());
+  const stageFile = sentOf("review_stage");
+  assert.equal(stageFile.length, 2);
+  assert.equal(stageFile[1].payload.hunk, undefined);
+  assert.equal(stageFile[1].payload.snapshot_id, "snap-2");
+  await view.unmount();
+
+  ({ view } = await readyPane("staged", { staging: true }));
+  assert.ok(button(view, "Unstage file"));
+  await view.unmount();
+
+  ({ view } = await readyPane("unstaged", { staging: false }));
+  assert.equal(button(view, "Stage"), undefined);
+  assert.equal(button(view, "Stage file"), undefined);
+  await view.unmount();
+});
+
+test("Line comments stay pinned under their line and go out together", async () => {
+  const { useReviewNotes } = await import("../../components/center-tabs/review/review-notes-store.ts");
+  const { view, sessionId } = await readyPane("unstaged", { staging: true });
+  await view.act(async () => {
+    useReviewNotes.getState().addComment(sessionId, {
+      id: "c1", scope: "unstaged", path: "/repo/a.ts", rel: "a.ts", side: "new", line: 2, quote: "new", body: "Why new?",
+    });
+  });
+  const card = view.container.querySelector("[data-note=comment]");
+  assert.match(card.textContent, /Why new\?/);
+  assert.ok(button(view, "Edit") && button(view, "Delete"));
+  assert.match(view.container.textContent, /1 comment/);
+  globalThis.__sentMessages = [];
+  await view.act(async () => button(view, "Send to agent").click());
+  assert.deepEqual(globalThis.__sentMessages, [{
+    sessionId,
+    text: "Please address my review comments on these changes:\n\n`a.ts` line 2:\n> new\nWhy new?",
+  }]);
+  assert.deepEqual(useReviewNotes.getState().comments[sessionId], []);
+  assert.equal(view.container.querySelector("[data-note=comment]"), null);
+  await view.unmount();
+});
+
+test("Review with agent shows its findings under their lines; Fix sends them", async () => {
+  const { view, sessionId } = await readyPane("unstaged", { staging: true });
+  await view.act(async () => button(view, "Review with agent").click());
+  const [review] = sentOf("review_agent");
+  assert.equal(review.responseType, "review_agent_result");
+  assert.equal(review.payload.scope, "unstaged");
+  assert.equal(review.payload.snapshot_id, "snap-1");
+  assert.equal(button(view, "Stop review").disabled, false, "the busy button stops the review");
+  await answer(view, review, { status: "ready", findings: [
+    { path: "a.ts", line: 2, severity: "high", body: "This breaks callers." },
+  ] });
+  const card = view.container.querySelector("[data-note=finding]");
+  assert.match(card.textContent, /Agent review · high/);
+  assert.match(card.textContent, /This breaks callers\./);
+  globalThis.__sentMessages = [];
+  await view.act(async () => button(view, "Fix").click());
+  assert.equal(globalThis.__sentMessages[0].sessionId, sessionId);
+  assert.match(globalThis.__sentMessages[0].text, /review finding \(high\) in `a\.ts` line 2/);
+  assert.equal(view.container.querySelector("[data-note=finding]"), null);
+  assert.ok(button(view, "Review with agent"));
+  await view.unmount();
+});
+
+test("Stop review cancels the running review on the server and ignores its answer", async () => {
+  const { view } = await readyPane("unstaged");
+  await view.act(async () => button(view, "Review with agent").click());
+  const [review] = sentOf("review_agent");
+  assert.ok(review.payload.review_id, "the review is named so it can be stopped");
+  assert.ok(review.match.signal, "the wait is abortable");
+  globalThis.__wsFired = [];
+  await view.act(async () => button(view, "Stop review").click());
+  assert.deepEqual(globalThis.__wsFired, [{ action: "review_agent_cancel", payload: { review_id: review.payload.review_id } }]);
+  assert.equal(review.match.signal.aborted, true);
+  assert.equal(button(view, "Review with agent").disabled, false);
+  await answer(view, review, { status: "ready", findings: [
+    { path: "a.ts", line: 2, severity: "high", body: "Too late." },
+  ] });
+  assert.equal(view.container.querySelector("[data-note=finding]"), null);
+  await view.unmount();
+});
+
+test("A review whose socket dropped is asked for again and its findings still arrive", async () => {
+  const { view } = await readyPane("unstaged");
+  await view.act(async () => button(view, "Review with agent").click());
+  const [review] = sentOf("review_agent");
+  globalThis.__socketOpen = false;
+  await answer(view, review, null);
+  assert.equal(sentOf("review_agent_wait").length, 0, "waits for the socket to come back");
+  assert.ok(button(view, "Stop review"), "still running meanwhile");
+  globalThis.__socketOpen = true;
+  await view.act(async () => { for (const handler of [...globalThis.__onReconnected]) handler(); });
+  const [wait] = sentOf("review_agent_wait");
+  assert.equal(wait.payload.review_id, review.payload.review_id);
+  await answer(view, wait, { status: "ready", findings: [
+    { path: "a.ts", line: 2, severity: "medium", body: "Late but kept." },
+  ] });
+  assert.match(view.container.querySelector("[data-note=finding]").textContent, /Late but kept\./);
+  await view.unmount();
+});
+
+test("A failed Review with agent only makes the button usable again", async () => {
+  const { view } = await readyPane("unstaged");
+  await view.act(async () => button(view, "Review with agent").click());
+  const [review] = sentOf("review_agent");
+  await answer(view, review, null);
+  const [wait] = sentOf("review_agent_wait");
+  await answer(view, wait, { status: "error", error_code: "UNKNOWN_REVIEW" });
+  assert.equal(button(view, "Review with agent").disabled, false);
+  assert.equal(view.container.querySelector("[data-note=finding]"), null);
   await view.unmount();
 });

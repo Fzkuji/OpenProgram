@@ -44,7 +44,6 @@ import {
 } from "../ui";
 import {
   loadAgentSettings,
-  loadProviders,
   recordCacheWrite,
   refreshTokenBadge,
   renderTokenBadge,
@@ -127,8 +126,6 @@ interface ChatAckData {
   status_version?: number;
   /** Effective permission mode the backend adopted for this turn. */
   permission_mode?: string;
-  /** Environment the conversation runs in (pinned on its first message). */
-  environment_id?: string | null;
   /** Set by a function dispatch (retry_function) whose top-level code node
    *  was pre-created on disk at dispatch time — lets us hydrate the
    *  transcript immediately instead of waiting for the first tree_update. */
@@ -210,11 +207,6 @@ export function wsHandleChatAck(data: ChatAckData): void {
         preview: preview || null,
         created_at: Date.now() / 1000,
       };
-    }
-    // The first message pinned the conversation's environment: record it
-    // so the composer chip locks to it.
-    if ("environment_id" in data) {
-      convs[sid].environment_id = data.environment_id || null;
     }
     // Keep the ACK boundary here as well as in the message reducer so a
     // direct handler call cannot clear a composer before backend acceptance.
@@ -381,10 +373,6 @@ export function wsHandleStatus(msg: StatusMsg): void {
   runtimeState.isPaused = !!msg.paused;
   if (msg.stopped) {
     runtimeState.isRunning = false;
-    if (runtimeState._elapsedTimer) {
-      clearInterval(runtimeState._elapsedTimer);
-      runtimeState._elapsedTimer = null;
-    }
   }
   updatePauseBtn();
 }
@@ -536,9 +524,6 @@ interface SessionRow {
   sort_since?: number;
   channel?: string | null;
   account_id?: string | null;
-  /** Where the conversation runs (local / an SSH or Docker environment);
-   *  absent for conversations created before environments existed. */
-  environment_id?: string | null;
   peer?: string | null;
   peer_display?: string | null;
   source?: string | null;
@@ -620,7 +605,6 @@ export function handleSessionsList(data: SessionRow[]): void {
           updated_at: c.updated_at,
           channel: c.channel || null,
           account_id: c.account_id || null,
-          environment_id: c.environment_id || null,
           peer: c.peer || null,
           peer_display: c.peer_display || null,
           source: c.source || null,
@@ -641,7 +625,6 @@ export function handleSessionsList(data: SessionRow[]): void {
         }
         if ("channel" in c) convs[c.id].channel = c.channel || null;
         if ("account_id" in c) convs[c.id].account_id = c.account_id || null;
-        if ("environment_id" in c) convs[c.id].environment_id = c.environment_id || null;
         if ("peer" in c) convs[c.id].peer = c.peer || null;
         if ("peer_display" in c) convs[c.id].peer_display = c.peer_display || null;
         if ("preview" in c) convs[c.id].preview = c.preview || null;
@@ -690,7 +673,6 @@ export function handleSessionsList(data: SessionRow[]): void {
     if (provBadge && provBadge.textContent!.indexOf("\u{1F512}") === -1) {
       provBadge.textContent += " \u{1F512}";
     }
-    void loadProviders();
   }
 }
 
@@ -853,6 +835,13 @@ export function handleRunningTaskClear(
   const store = useSessionStore.getState();
   const current = store.runningTasks[sessionId];
   if (!cleared?.force && !shouldHonorRunningTaskClear(current, cleared)) {
+    // A slot without ids cannot tell whether this clear is its turn's:
+    // the session is asked once more.
+    if (current && !(current.msg_id || "").trim() && !(current.execution_id || "").trim()) {
+      void import("@/lib/chat/send/send-queue")
+        .then(({ runStateMayHaveChanged }) => runStateMayHaveChanged(sessionId))
+        .catch(() => { /* queue module unavailable: a reconnect asks */ });
+    }
     return false;
   }
   store.setRunningTaskFor(sessionId, null, "always");
@@ -983,7 +972,11 @@ export function handleChatResponse(data: ChatResponseData): void {
     if (sid) {
       setRunPhase(sid, undefined);
       const noOp = Boolean(data.no_op);
+      // A turn's own compaction that had nothing to cut leaves the history
+      // as it was, which is all the person needs to see: only a /compact
+      // they asked for answers that it changed nothing.
       if (noOp) {
+        if (!data.user_initiated) return;
         appendLocalNotice(sid, {
           id: "compaction_finished_" + Date.now().toString(36),
           role: "system",
@@ -1109,11 +1102,6 @@ export function handleChatResponse(data: ChatResponseData): void {
     void refreshTokenBadge();
     if (sid) {
       fetchBranches(sid, { force: true }).then(() => refreshBranchTokens());
-    }
-
-    if (runtimeState._elapsedTimer) {
-      clearInterval(runtimeState._elapsedTimer);
-      runtimeState._elapsedTimer = null;
     }
   }
 
@@ -1351,7 +1339,6 @@ export function initChatPage(): void {
   const m = window.location.pathname.match(/^\/s\/([^/]+)/);
   runtimeState.currentSessionId = m ? m[1] : null;
 
-  void loadProviders();
   if (!window.location.pathname.match(/^\/s\//)) {
     setWelcomeVisible(true);
   }
@@ -1372,5 +1359,7 @@ export function initChatPage(): void {
 
 // The follow-up prompt is injected as an HTML string carrying
 // `onclick="submitFollowUp()"`, so that one name has to resolve off
-// `window` at click time. Everything else is a direct import.
-Object.assign(window, { submitFollowUp });
+// `window` at click time. Everything else is a direct import. The
+// server prerender imports this module too (the sidebar marks rows
+// read through it), where there is no window to attach to.
+if (typeof window !== "undefined") Object.assign(window, { submitFollowUp });

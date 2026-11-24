@@ -30,6 +30,8 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel,
   destructive = false,
+  alternateLabel,
+  onAlternate,
   onConfirm,
   onCancel,
 }: {
@@ -39,6 +41,9 @@ export function ConfirmDialog({
   confirmLabel: React.ReactNode
   cancelLabel?: React.ReactNode
   destructive?: boolean
+  /** A third answer, set apart on the left as macOS sets "Don't Save". */
+  alternateLabel?: React.ReactNode
+  onAlternate?: () => void
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -70,6 +75,18 @@ export function ConfirmDialog({
           {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
+          {alternateLabel && onAlternate ? (
+            <AlertDialogAction
+              variant="elevated"
+              className="sm:mr-auto"
+              onClick={() => {
+                confirmed.current = true
+                onAlternate()
+              }}
+            >
+              {alternateLabel}
+            </AlertDialogAction>
+          ) : null}
           <AlertDialogCancel>{cancelLabel ?? text("Cancel", "取消")}</AlertDialogCancel>
           <AlertDialogAction
             variant={destructive ? "destructive" : "default"}
@@ -97,9 +114,12 @@ export type ConfirmRequest = {
   confirmLabel: string
   cancelLabel?: string
   destructive?: boolean
+  /** With it the question has three answers; see chooseAction(). */
+  alternateLabel?: string
 }
 
-type Pending = ConfirmRequest & { id: number; resolve: (ok: boolean) => void }
+export type ConfirmChoice = "confirm" | "alternate" | "cancel"
+type Pending = ConfirmRequest & { id: number; resolve: (choice: ConfirmChoice) => void }
 
 let nextId = 0
 let pending: Pending | null = null
@@ -111,8 +131,13 @@ function publish(next: Pending | null) {
 }
 
 export function confirmAction(request: ConfirmRequest): Promise<boolean> {
+  return chooseAction(request).then((choice) => choice === "confirm")
+}
+
+/** The three-answer form: confirm, the alternate answer, or cancel. */
+export function chooseAction(request: ConfirmRequest): Promise<ConfirmChoice> {
   return new Promise((resolve) => {
-    pending?.resolve(false)
+    pending?.resolve("cancel")
     publish({ ...request, id: ++nextId, resolve })
   })
 }
@@ -124,9 +149,9 @@ export function ConfirmDialogHost() {
     return () => { listeners.delete(setCurrent) }
   }, [])
   if (!current) return null
-  const settle = (ok: boolean) => {
+  const settle = (choice: ConfirmChoice) => {
     if (pending === current) publish(null)
-    current.resolve(ok)
+    current.resolve(choice)
   }
   return (
     <ConfirmDialog
@@ -136,8 +161,10 @@ export function ConfirmDialogHost() {
       confirmLabel={current.confirmLabel}
       cancelLabel={current.cancelLabel}
       destructive={current.destructive}
-      onConfirm={() => settle(true)}
-      onCancel={() => settle(false)}
+      alternateLabel={current.alternateLabel}
+      onAlternate={current.alternateLabel ? () => settle("alternate") : undefined}
+      onConfirm={() => settle("confirm")}
+      onCancel={() => settle("cancel")}
     />
   )
 }

@@ -14,6 +14,7 @@ import { webToolbarButton } from "../toolbar/toolbar-button";
 import { BookmarksLibraryButton, BrowserMenu } from "../toolbar/browser-controls";
 import { BookmarkBar } from "../bookmark-bar";
 import { AddressField, ToolbarTip } from "../toolbar/browser-chrome";
+import { AnnotateButton } from "../toolbar/annotate-button";
 import { BookmarkButton, resourceForLiveTab, usePipCollapseTarget, CollapseToPipButton, WebPaneStage, IframeAgentLayer, HomeButton } from "./pane-controls";
 
 export function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: string; menuOwnerId: string }) {
@@ -83,6 +84,14 @@ export function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; u
           onSubmit={navigate}
           ariaLabel={text("Address", "地址")}
         >
+          {/* The page is another site's document in an iframe, which this
+              window may not script, so annotating needs the desktop App. */}
+          <AnnotateButton
+            unavailable={text(
+              "Annotate needs the desktop App: a page from another site can't be marked up here",
+              "批注需要桌面 App：这里无法在其他网站的页面上标注",
+            )}
+          />
           <BookmarkButton tabId={tabId} url={url} title={title} />
         </AddressField>
         <BookmarksLibraryButton />

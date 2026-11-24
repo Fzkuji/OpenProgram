@@ -3,10 +3,11 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { AGENTS_KEY } from "@/lib/agents/agents-query";
+import { AGENTS_KEY, readAgents } from "@/lib/agents/agents-query";
 import { BotIcon, CheckIcon, MessageCircleIcon, PlusIcon, SearchIcon, SettingsIcon } from "@/components/animated-icons";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ManageEmptyState, ManagePageHeader, managePageStyles, ManageLoadingState } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManagePageHeader, managePageStyles } from "@/components/ui/manage-page";
+import { isAbort, readUntilAnswered } from "@/lib/abilities/kept-read";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { MenuRow } from "@/components/ui/menu/menu-parts";
@@ -46,7 +47,11 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 
 export function AgentsPage() {
   const { text } = useTranslation();
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const queryClient = useQueryClient();
+  // The list the shell (or a prefetch, or an earlier visit) already read
+  // draws at once; the page reads it again behind it.
+  const [initialRows] = useState(() => queryClient.getQueryData<Agent[]>(AGENTS_KEY)?.map(normalizeAgent));
+  const [agents, setAgents] = useState<Agent[]>(() => initialRows ?? []);
   const [baseline, setBaseline] = useState<Agent | null>(null);
   const [draft, setDraft] = useState<Agent | null>(null);
   const [tab, setTab] = useState<TabId>("overview");
@@ -55,8 +60,8 @@ export function AgentsPage() {
   const [quickOpen, setQuickOpen] = useState(false);
   const reduceMotion = useReducedMotion();
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  // True only until the first list arrives; nothing is drawn in its place.
+  const [loading, setLoading] = useState(() => initialRows === undefined);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -109,24 +114,38 @@ export function AgentsPage() {
     }
     setNotice(null); lastSelected = saved.id;
   }, []);
-  const loadAgents = useCallback(async (preferredId?: string, signal?: AbortSignal) => {
-    const data = await jsonFetch<{ agents: Agent[] }>("/api/agents", { signal });
-    if (!mounted.current || signal?.aborted) return;
-    const rows = data.agents.map(normalizeAgent);
-    setAgents(rows); setLoadError("");
+  const showRows = useCallback((rows: Agent[], preferredId?: string) => {
+    setAgents(rows);
     const next = rows.find((agent) => agent.id === (preferredId || lastSelected)) || rows.find((agent) => agent.default) || rows[0];
     if (next) applyAgent(next, true);
     else { setDraft(null); setBaseline(null); setConflict(null); lastSelected = ""; }
   }, [applyAgent]);
+  // A read after a change here always asks again.
+  const loadAgents = useCallback(async (preferredId?: string) => {
+    const saved = (await jsonFetch<{ agents: Agent[] }>("/api/agents")).agents;
+    if (!mounted.current) return;
+    showRows(saved.map(normalizeAgent), preferredId);
+  }, [showRows]);
   // Everything else that names an Agent (the composer chip, a message, a
   // binding row) reads the shared list, so a save here shows there at once.
-  const queryClient = useQueryClient();
   useEffect(() => { if (agents.length) queryClient.setQueryData(AGENTS_KEY, agents); }, [agents, queryClient]);
+  // Opening: the kept list is selected at once, then the list is read again
+  // (sharing the request the shell's own list sends as the page opens). A
+  // failed read keeps what is shown and is tried again quietly.
   useEffect(() => {
     const controller = new AbortController();
-    void loadAgents(undefined, controller.signal).catch((error) => { if (!controller.signal.aborted) setLoadError(errorMessage(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    if (initialRows) showRows(initialRows);
+    readUntilAnswered("agents-page:/api/agents", readAgents, controller.signal)
+      .then((saved) => {
+        if (!mounted.current || controller.signal.aborted) return;
+        const rows = saved.map(normalizeAgent);
+        // An unchanged list leaves the selection and any open panel alone.
+        if (!initialRows || JSON.stringify(rows) !== JSON.stringify(initialRows)) showRows(rows);
+        setLoading(false);
+      })
+      .catch((error) => { if (!isAbort(error)) console.warn("[agents] list read failed", error); });
     return () => controller.abort();
-  }, [loadAgents]);
+  }, [initialRows, showRows]);
   function updateDraft(patch: Partial<Agent>) { setDraft((current) => current ? { ...current, ...patch } : current); setNotice(null); }
   function lock(value: boolean) { busyRef.current = value; if (mounted.current) setBusy(value); }
   function discard() {
@@ -258,7 +277,7 @@ export function AgentsPage() {
   }
   const visible = agents.filter((agent) => `${agent.name} ${agent.id} ${agent.description}`.toLowerCase().includes(search.trim().toLowerCase()));
   const activeName = draft?.name || draft?.id || "";
-  const canStart = !models.loading && !models.error && Boolean(model) && !effortInvalid;
+  const canStart = !models.loading && Boolean(model) && !effortInvalid;
   function openAgent(agent: Agent) {
     if (agent.id === draft?.id) { setQuickOpen(true); return; }
     guard(() => { applyAgent(agent, true); setQuickOpen(true); });
@@ -275,10 +294,10 @@ export function AgentsPage() {
   const gridView = view === "grid" || !draft;
   return <div className={`main ${styles.agentsMain}`}><div className={`${managePageStyles.view} ${styles.agentView}`}>
     <ManagePageHeader title="Agents" railToggle={view === "editor" ? <RailToggle railKey={AGENTS_RAIL} controls="agents-rail" label={{ collapse: text("Collapse Agent list", "收起 Agent 列表"), expand: text("Expand Agent list", "展开 Agent 列表") }} /> : undefined}
-      toolbar={gridView && !loading && !loadError && agents.length ? <SearchInput className="min-w-[96px] flex-1 min-[761px]:flex-none min-[761px]:min-w-[140px] min-[761px]:w-[clamp(150px,24vw,280px)]" aria-label={text("Search Agents", "搜索 Agents")} value={search} onChange={setSearch} placeholder={text("Find an Agent…", "查找 Agent…")} /> : undefined}
-      actions={[{ label: text("New Agent", "新建 Agent"), onClick: () => openDialog("create"), icon: PlusIcon, disabled: busy || loading || Boolean(loadError), primary: true }]} />
+      toolbar={gridView && !loading && agents.length ? <SearchInput className="min-w-[96px] flex-1 min-[761px]:flex-none min-[761px]:min-w-[140px] min-[761px]:w-[clamp(150px,24vw,280px)]" aria-label={text("Search Agents", "搜索 Agents")} value={search} onChange={setSearch} placeholder={text("Find an Agent…", "查找 Agent…")} /> : undefined}
+      actions={[{ label: text("New Agent", "新建 Agent"), onClick: () => openDialog("create"), icon: PlusIcon, disabled: busy || loading, primary: true }]} />
     {notice ? <div className={notice.tone === "error" ? styles.errorBanner : styles.successBanner} role={notice.tone === "error" ? "alert" : "status"}><span>{notice.message}</span></div> : null}
-    {loading ? <ManageLoadingState>{text("Loading Agents…", "正在加载 Agents…")}</ManageLoadingState> : loadError ? <div className={styles.centerState} role="alert"><ManageEmptyState icon={<BotIcon size={20} />} title={text("Unable to load Agents", "无法加载 Agents")} description={loadError} action={<AgentButton variant="elevated" onClick={() => { setLoading(true); void loadAgents().catch((error) => setLoadError(errorMessage(error))).finally(() => setLoading(false)); }}>{text("Retry", "重试")}</AgentButton>} /></div> : !agents.length ? <div className={styles.centerState}><ManageEmptyState compact icon={<BotIcon size={20} />} title={text("Create your first Agent", "创建第一个 Agent")} description={text("Configure a model, capabilities, and optional memory.", "配置模型、能力和可选的长期记忆。")} action={<AgentButton icon={PlusIcon} onClick={() => openDialog("create")}>{text("New Agent", "新建 Agent")}</AgentButton>} /></div> : gridView ? <div key="grid" className={styles.viewFill}>
+    {loading ? null : !agents.length ? <div className={styles.centerState}><ManageEmptyState compact icon={<BotIcon size={20} />} title={text("Create your first Agent", "创建第一个 Agent")} description={text("Configure a model, capabilities, and optional memory.", "配置模型、能力和可选的长期记忆。")} action={<AgentButton icon={PlusIcon} onClick={() => openDialog("create")}>{text("New Agent", "新建 Agent")}</AgentButton>} /></div> : gridView ? <div key="grid" className={styles.viewFill}>
       <AgentGrid agents={agents} search={search} quickOpen={quickOpen} onOpen={openAgent}
         draft={draft} catalog={models} text={text} dirty={dirty} busy={busy} formError={formError} canStart={canStart}
         update={updateDraft} save={() => void save()} discard={discard} close={() => setQuickOpen(false)}

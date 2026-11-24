@@ -29,7 +29,8 @@ registerHooks({
 });
 
 const { useCenterTabs } = await import("../../../lib/tabs/center-tabs-store.ts");
-const { topLevelTabs, groupWebPages, revealExistingWebTab } = await import("../../../lib/browser/web-tab/web-page-management.ts");
+const { topLevelTabs, groupWebPages, revealExistingWebTab, closedHiddenPageTabs } = await import("../../../lib/browser/web-tab/web-page-management.ts");
+const { ingestBrowserResource, resetBrowserResources } = await import("../../../lib/chat/resources/session-resources.ts");
 const { normalizeCenterTabsPayload } = await import("../../../lib/tabs/center-tabs-persistence.ts");
 
 test("agent pages retain session ownership, pinning and popup provenance", () => {
@@ -263,4 +264,20 @@ test("a tab opened from another one goes to its right, after the ones it opened 
   useCenterTabs.setState({ activeId: "b" });
   store.openWebTab("https://link.test/");
   assert.deepEqual(useCenterTabs.getState().tabs.map(t => t.url).slice(3, 5), ["https://b.test/", "https://link.test/"]);
+});
+
+test("a conversation's closed page leaves the tab list unless it is in the strip", () => {
+  resetBrowserResources();
+  const page = (id, status, extra = {}) => ({ id: `row-${id}-${extra.branch_id || "main"}`, resource_id: `res-${id}`,
+    session_id: "a", conversation_session_id: "a", tab_id: id, kind: "web", source: "browser", title: id,
+    target: `https://${id}.test/`, status, control_state: status === "closed" ? "closed" : "idle", generation: 1, sequence: 1, ...extra });
+  ingestBrowserResource(page("gone", "closed"), "a");
+  ingestBrowserResource(page("open", "open"), "a");
+  ingestBrowserResource(page("pinned", "closed"), "a");
+  ingestBrowserResource(page("half", "closed"), "a");
+  ingestBrowserResource(page("half", "open", { branch_id: "br-b" }), "a");
+  const tab = (id, extra = {}) => ({ id, kind: "web", title: id, url: `https://${id}.test/`, agentOpened: true, agentSessionId: "a", ...extra });
+  const tabs = [tab("gone"), tab("open"), tab("pinned", { webPinned: true }), tab("half"), tab("unrecorded")];
+  assert.deepEqual(closedHiddenPageTabs(tabs, []), ["gone"]);
+  resetBrowserResources();
 });

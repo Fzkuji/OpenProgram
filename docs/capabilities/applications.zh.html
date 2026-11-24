@@ -47,7 +47,7 @@
 <table class="stack">
 <thead><tr><th scope="col">内置应用</th><th scope="col">作用</th><th scope="col">禁用后失去</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">browser</code></th><td><code translate="no">computer_use_agent</code> 操作的内置浏览器</td><td>浏览器目标；桌面目标照常工作</td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td><code translate="no">computer_use</code> 操作的内置浏览器</td><td><code translate="no">type="browser"</code>，带或不带指向你自己浏览器的 <code translate="no">app</code>；窗口和整屏照常工作</td></tr>
 <tr><th scope="row"><code translate="no">workflow_recording</code></th><td><a href="workflows/recording.zh.html">录制 Workflow</a>；其窗口不经输入框就能开始录制</td><td>输入框的<strong>录制 Workflow</strong> 和相关路由</td></tr>
 <tr><th scope="row"><code translate="no">office_editor</code>（<strong>ONLYOFFICE</strong>）</th><td>在文件窗口打开 Word、Excel 和 PowerPoint；其窗口在当前项目顶层新建空白文件并列出已有 Office 文档</td><td>这些文件只提供原文件下载</td></tr>
 <tr><th scope="row"><code translate="no">meeting</code></th><td><a href="meetings.zh.html">会议</a>：录制通话、转写，在新对话中总结</td><td>会议</td></tr>
@@ -61,7 +61,7 @@
 <tr><th scope="row">项目</th><td>每个项目一个，业务数据分开。打开时使用选中的项目；更改会话项目不会重新绑定。没有当前项目时，单个已保存绑定直接复用；首次使用或多个绑定时打开选择器，也可选新文件夹。</td></tr>
 </tbody>
 </table>
-<p class="next">示例：<a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/calculator">计算器</a>、<a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF 编辑器</a>（读取、批注和整理项目里的 PDF，只在你要求摘要时使用模型）</p>
+<p class="next">示例：<a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/calculator">计算器</a>、<a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF 编辑器</a>（读取、批注和整理项目里的 PDF，只在你要求摘要时使用模型）、<a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/auto_research">Auto Research</a>（一次跑研究项目的一项任务：领域综述、想法、论文检查、参考文献核查、评审和会议清单）</p>
 <h2 id="application-package">应用包</h2>
 <pre translate="no" tabindex="0"><code>{
   "id": "local.notes",
@@ -105,6 +105,7 @@
 <tr><th scope="row"><code translate="no">model.invoke</code></th><td>供 <code translate="no">llm()</code> 和 <code translate="no">agent()</code> 使用的环境 Runtime</td></tr>
 <tr><th scope="row"><code translate="no">files.project.read</code></th><td>绑定项目内的 <code translate="no">context.read_file(relative_path)</code></td></tr>
 <tr><th scope="row"><code translate="no">files.project.write</code></th><td>绑定项目内的 <code translate="no">context.write_file(relative_path, content)</code>；需要 Python 后端和 <code translate="no">--trust</code></td></tr>
+<tr><th scope="row"><code translate="no">chat</code></th><td>给页面而不是后端：自己的 <code translate="no">chat.*</code> 对话，用你的输入框显示，代替右侧栏</td></tr>
 </tbody>
 </table>
 <p class="note">能力限制的是宿主桥，不是受信任 Python 的操作系统权限。后端注册前在独立进程中检查；仅列出应用不会导入其代码。</p>
@@ -128,6 +129,11 @@
 <tr><th scope="row"><code translate="no">status(id, after)</code></th><td>状态、结果、错误、待回答问题、游标之后的事件</td></tr>
 <tr><th scope="row"><code translate="no">cancel(id)</code></th><td>取消执行</td></tr>
 <tr><th scope="row"><code translate="no">answer(id, requestId, answer)</code></th><td>回答当前问题</td></tr>
+<tr><th scope="row"><code translate="no">chat.open(key, folder)</code></th><td>需要 <code translate="no">chat</code>。打开 <code translate="no">key</code> 下的对话，一个键一段，在 <code translate="no">folder</code> 里干活；返回 <code translate="no">{session_id, project_id, folder}</code></td></tr>
+<tr><th scope="row"><code translate="no">chat.place(rect)</code></th><td>把输入框放在页面像素坐标 <code translate="no">{left, right, bottom}</code>；<code translate="no">null</code> 隐藏</td></tr>
+<tr><th scope="row"><code translate="no">chat.note(text)</code></th><td>之后每条消息旁边发给模型，最多 16,000 字符：页面正在显示什么</td></tr>
+<tr><th scope="row"><code translate="no">chat.reveal()</code>、<code translate="no">chat.close()</code></th><td>在聊天标签页打开这段对话；在这里关掉</td></tr>
+<tr><th scope="row"><code translate="no">on(event, listener)</code></th><td><code translate="no">"chat"</code>：打开的对话的消息、工具步骤和是否正在回复。<code translate="no">"composer"</code>：输入框高度。返回取消订阅的函数。</td></tr>
 </tbody>
 </table>
 <p class="note">其他实例的运行无法通过此桥访问。</p>

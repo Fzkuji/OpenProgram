@@ -112,6 +112,22 @@ def test_official_api_wins_and_models_dev_enriches(monkeypatch, mem_cfg):
     assert rows["live-1"]["context_window"] == 200000    # models.dev fills
 
 
+def test_unlisted_variant_takes_its_base_models_capabilities(monkeypatch, mem_cfg):
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {
+        "live": {"vision": False, "input_modalities": ["text"]},
+        "live-1": {"vision": True, "input_modalities": ["text", "image"], "input_cost": 3.0, "name": "Live One"},
+    })
+    monkeypatch.setattr(F, "fetch_and_normalize", lambda pid, timeout=15.0: {
+        "models": [{"id": "live-1-fast", "name": "Live One Fast"}, {"id": "other", "name": "Other"}],
+    })
+    rows = {r["id"]: r for r in listing.list_models_for_provider("acme")}
+    assert rows["live-1-fast"]["vision"] is True             # from live-1, the longest base
+    assert rows["live-1-fast"]["name"] == "Live One Fast"
+    assert "input_cost" not in rows["live-1-fast"]           # the price is the variant's own
+    assert not rows["other"].get("vision")
+
+
 # ---------------------------------------------------------------------------
 # Degradation: official API error → models.dev; both gone → manual/empty
 # ---------------------------------------------------------------------------

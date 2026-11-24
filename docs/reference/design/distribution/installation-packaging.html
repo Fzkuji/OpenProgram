@@ -33,7 +33,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Included</th><td>Pinned CPython (3.12.10), pinned <code translate="no">uv</code> (0.11.16), pinned Git, OpenProgram, prebuilt Web, standalone Ink bundle with Node.js. Capabilities in <code translate="no">scripts/release/product-runtime.json</code>: <code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
+<tr><th scope="row">Included</th><td>Pinned CPython (3.12.10), pinned <code translate="no">uv</code> (0.11.16), pinned Git, OpenProgram, prebuilt Web, standalone Ink bundle with Node.js. That Node is the only one: on macOS and Linux Playwright's driver runs on it through a link (<code translate="no">scripts/release/share-runtime-node.py</code>), where the Playwright package would otherwise bring a second copy of about 115 MB; Windows keeps both. Capabilities in <code translate="no">scripts/release/product-runtime.json</code>: <code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
 <tr><th scope="row">Excluded</th><td>Programs, PyTorch, torchvision, OpenCV, EasyOCR, sentence-transformers, triton, NVIDIA/CUDA. Computer use is a built-in tool and ships no weights</td></tr>
 <tr><th scope="row">Office editor</th><td>Pinned in the manifest as optional; installed after user consent</td></tr>
 <tr><th scope="row">Mutable data</th><td><code translate="no">~/.openprogram</code>: configuration, sessions, caches, user-added Programs. The runtime stays read-only</td></tr>
@@ -63,7 +63,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Question</th><th scope="col">Answer</th></tr></thead>
 <tbody>
-<tr><th scope="row">Why versioned names, not version-free</th><td>An installed v1.2.0 App looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> (or <code translate="no">-unsigned</code>) by name in the newest release, so that name must exist. Codex, OpenCode and Goose publish only version-free names, which leaves one name per file too; a second name for the same bytes is what we drop</td></tr>
+<tr><th scope="row">Why versioned names, not version-free</th><td>An installed v1.2.0 App looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> (or <code translate="no">-unsigned</code>) by name in the newest release, and a signed App that replaces itself looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code> first, so those names must exist. Codex, OpenCode and Goose publish only version-free names, which leaves one name per file too; a second name for the same bytes is what we drop</td></tr>
 <tr><th scope="row">Newest-download links</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>, published beside the documentation from <code translate="no">docs/_static_root/latest.html</code> and linked relatively, reads the newest release's file list from the GitHub API and opens that file; without an answer it opens the newest release page. Every App link on the Install and Download pages goes through it, so no install page names a release and none goes stale when one ships. Claude Code resolves "latest" the same way, from a pointer and a manifest rather than a duplicate file</td></tr>
 <tr><th scope="row">Checksums</th><td>GitHub shows each file's SHA-256 on the release page, and <code translate="no">release-manifest.json</code> lists every file's path, size and SHA-256. The App updater checks against that manifest, and the release notes' App table links to it in its checksum column</td></tr>
 <tr><th scope="row">Still published</th><td>The runtime archives' <code translate="no">.sha256</code>: <code translate="no">openprogram upgrade</code> in v1.2.0 requires that file by name before it updates. The update <code translate="no">SHA256SUMS</code>, which the signed update manifest hashes. Seed <code translate="no">.sha256</code>, read by the command-line installer</td></tr>
@@ -240,20 +240,6 @@
 </tbody>
 </table>
 </details>
-<details>
-<summary>Local App refresh: <code translate="no">scripts/local-instances/refresh-local-app.sh</code></summary>
-<ul>
-<li>Installs only <code translate="no">refs/heads/stable</code>, or during a promotion the fast-forward of it being promoted, moving <code translate="no">stable</code> once healthy (<a href="dev-instance.html#promoting-to-stable">Promoting to stable</a>). Without a <code translate="no">stable</code> branch, the checkout must contain local <code translate="no">main</code> and fetched <code translate="no">origin/main</code>.</li>
-<li>Paths are resolved first, so slashes, dot components and symlink aliases share checks and lock. A genuinely custom App keeps its own source check.</li>
-<li>Tracked, staged or non-ignored untracked changes refuse, before packaging, after it, and under the lock. HEAD changes during packaging rebuild; after the payload is frozen they abort.</li>
-<li>Checkout, bundle, runtime manifest and bundled Python metadata must have one version, except that the source may be newer than the installed App, whose Electron and bundle metadata are then upgraded. A downgrade is refused.</li>
-<li>Synchronizes main, preload, updater and runtime dependencies; never an <code translate="no">app.asar</code> over old modules. Rechecks source, wheel and App under the shared lock.</li>
-<li>Extraction loses execute bits on unpacked <code translate="no">node-pty</code> files, so staging restores installed modes and forces <code translate="no">spawn-helper</code> executable. Symlinks are not followed.</li>
-<li>Assembles, verifies and signs the new App in <code translate="no">.openprogram-refresh.*</code> beside the installed one while the old worker serves, then swaps the two by rename.</li>
-<li>Starts the embedded worker once; polls <code translate="no">:18100/healthz</code> for up to 300 s, with no repeat starts. Timeout reports endpoint and log.</li>
-<li>A failure after the swap renames the previous App back and starts and checks its worker the same way. The App reopens once the new or the restored version is up, keeping the primary status; failures before the App quits launch nothing. Cleanup errors never report success.</li>
-</ul>
-</details>
 
 <h2 id="thin-shell">Thin signed shell</h2>
 <p>A thin App is the shell alone, in <code translate="no">apps/desktop/shell/</code>, plus a seed under <code translate="no">Resources/seed</code>. Windows and Linux Apps are thin. The macOS App stays embedded unless <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code> is on.</p>
@@ -339,7 +325,6 @@
 <tr><th scope="row">Linux Desktop</th><td>Implemented, first published with v1.1.0. Update activation and going back on Linux need one more end-to-end run</td></tr>
 <tr><th scope="row">Release workflow</th><td>Independent legs and unsigned forms implemented and tested as scripts; the workflow itself has not yet run on GitHub</td></tr>
 <tr><th scope="row">One copy per file</th><td>Implemented; first release without the version-free copies and per-leg checksum files is v1.3.0. The runtime <code translate="no">.sha256</code> files can go once no supported release's <code translate="no">openprogram upgrade</code> asks for them</td></tr>
-<tr><th scope="row">Local refresh completion</th><td>Regression cases pass; installed-App acceptance open</td></tr>
 <tr><th scope="row"><code translate="no">openprogram update</code></th><td>Leftover command: its handler imports helpers that no longer exist and raises <code translate="no">ImportError</code>. <code translate="no">upgrade</code> is the update command</td></tr>
 </tbody>
 </table>

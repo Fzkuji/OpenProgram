@@ -22,6 +22,12 @@ export function nextBrowserHomeId(): string {
   return `browser:${Date.now().toString(36)}:${(browserHomeSeq++).toString(36)}`;
 }
 
+let windowTabSeq = 0;
+/** A tab holding another application's window; the window it shows can change. */
+export function nextWindowTabId(): string {
+  return `window:${Date.now().toString(36)}:${(windowTabSeq++).toString(36)}`;
+}
+
 let popupWebSeq = 0;
 export function nextPopupWebTabId(url: string): string {
   return `${webTabId(url)}:popup:${Date.now().toString(36)}:${(popupWebSeq++).toString(36)}`;

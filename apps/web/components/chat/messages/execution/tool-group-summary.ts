@@ -10,7 +10,8 @@ import { isTaskTool } from "../../../../lib/chat/transcript/task-blocks.ts";
 import { isAgentLive } from "../../../../lib/chat/transcript/row-status.ts";
 import { parseToolArgs, presentTool } from "./tool-presentation.ts";
 import { GUI_TOOL_NAMES, isGuiToolCall } from "./gui-tool-view.ts";
-import { appStepArgs, computerUseAgentTarget, isFreshCall, userBrowser } from "../../../../lib/computer-use/computer-use-agent-call.ts";
+import { USER_BROWSERS } from "../../../../lib/computer-use/browsers.ts";
+import { callStep, callTarget, machineLabel, resultFailed } from "../../../../lib/computer-use/computer-use-call.ts";
 
 type Text = (en: string, zh: string) => string;
 type Args = Record<string, unknown>;
@@ -68,6 +69,8 @@ interface Bucket {
   targets: Set<string>;
   /** Calls with no usable target. */
   anonymous: number;
+  /** The computer kind's named targets that are not an application: a screen, a browser, a machine. */
+  notApps?: Set<string>;
   /** Target of the call in progress, "" when it has none. */
   running?: string;
 }
@@ -181,12 +184,18 @@ export function parsePatch(patch: string): PatchSection[] {
   return sections;
 }
 
+/** A call that failed. A computer_use result says so in its first
+ *  line ("Error: …", "UNKNOWN_TARGET: …"), also where no flag was stored. */
+function erred(b: AssistantBlock): boolean {
+  return b.is_error === true || (b.is_error === undefined && b.tool === "computer_use" && resultFailed(b.result));
+}
+
 function failedBlock(b: AssistantBlock): boolean {
-  return b.is_error === true && b.outcome !== "cancelled";
+  return erred(b) && b.outcome !== "cancelled";
 }
 
 function succeeded(b: AssistantBlock): boolean {
-  return b.is_error !== true && b.outcome !== "failed" && b.outcome !== "cancelled"
+  return !erred(b) && b.outcome !== "failed" && b.outcome !== "cancelled"
     && b.outcome !== "not_started" && b.outcome !== "unknown";
 }
 
@@ -207,11 +216,12 @@ function kindOf(tool: string, text: Text, args: Args = {}): Kind {
   if (tool === "web_search") return "websearch";
   if (tool === "web_fetch") return "fetch";
   if (BROWSER.has(tool)) return "browser";
-  if (tool === "computer_use_agent") {
-    return isFreshCall(args) ? "agent" : computerUseAgentTarget(args) === "browser" ? "browser" : "computer";
+  if (tool === "computer_use") {
+    // OpenProgram's own browser on this computer reads as "the browser"; every other target by its name.
+    const call = callTarget(args);
+    return call.family === "browser" && !call.browser && !call.machine ? "browser" : "computer";
   }
   // browser_use is checked above: "operated the browser" says more than "GUI call".
-  // The public computer_use tool shares the GUI Agent capability's name.
   if (GUI_TOOL_NAMES.has(tool)) return isGuiToolCall(tool, args) ? "gui" : "computer";
   if (AGENT.has(tool)) return "agent";
   if (tool === "image_generate") return "imagegen";
@@ -377,10 +387,16 @@ function pastPhrase(bucket: Bucket, text: Text): string {
       return text("operated the browser", "操作了浏览器");
     case "gui":
       return calls === 1 ? text("ran a GUI call", "执行了 1 次 GUI 调用") : text(`ran ${calls} GUI calls`, `执行了 ${calls} 次 GUI 调用`);
-    case "computer":
-      return named ? text(`operated ${named}`, `操作了 ${named}`)
-        : bucket.targets.size > 1 ? text(`operated ${bucket.targets.size} apps`, `操作了 ${bucket.targets.size} 个应用`)
-        : text("operated an app", "操作了应用");
+    case "computer": {
+      if (named) return text(`operated ${named}`, `操作了 ${named}`);
+      const size = bucket.targets.size;
+      if (size > 1 && !bucket.notApps?.size) return text(`operated ${size} apps`, `操作了 ${size} 个应用`);
+      // Several targets of which some are not applications: name them, as "used a and b" does.
+      const [a, b] = [...bucket.targets];
+      if (size === 2) return text(`operated ${a} and ${b}`, `操作了 ${a} 和 ${b}`);
+      if (size > 2) return text(`operated ${a} and ${size - 1} more`, `操作了 ${a} 等 ${size} 项`);
+      return text("operated an app", "操作了应用");
+    }
     case "agent":
       return named ? text(`ran sub-agent ${named}`, `运行了子代理 ${named}`)
         : n === 1 ? text("ran a sub-agent", "运行了 1 个子代理") : text(`ran ${n} sub-agents`, `运行了 ${n} 个子代理`);
@@ -442,7 +458,30 @@ function presentPhrase(bucket: Bucket, text: Text): string {
 }
 
 /** Identifying target of a call for its bucket, "" when it has none. */
-function targetOf(kind: Kind, tool: string, args: Args): string {
+/** What a computer_use call operates, by name: "Calculator", "the screen", "Chrome", "Lab VM's screen". */
+function computerUseName(args: Args, text: Text): string {
+  const call = callTarget(args);
+  const machine = call.machine ? machineLabel(call.machine) : "";
+  if (call.family === "window") {
+    const app = pick(callStep(args), "app");
+    return app && machine ? text(`${app} on ${machine}`, `${machine} 上的 ${app}`) : app ?? machine;
+  }
+  if (call.family === "screen") {
+    if (machine) return text(`${machine}'s screen`, `${machine} 的屏幕`);
+    return text("the screen", "屏幕");
+  }
+  const own = USER_BROWSERS[call.browser];
+  if (own) return own.short;
+  if (call.family === "browser") return machine ? text(`the browser on ${machine}`, `${machine} 上的浏览器`) : "";
+  return machine || call.target;
+}
+
+/** A computer_use call that names the application it operates. */
+function operatesApp(args: Args): boolean {
+  return callTarget(args).family === "window" && !!pick(callStep(args), "app");
+}
+
+function targetOf(kind: Kind, tool: string, args: Args, text: Text): string {
   switch (kind) {
     case "read": return filePath(args) ?? "";
     case "search": return pick(args, "pattern", "query", "regex", "glob", "symbol") ?? "";
@@ -452,12 +491,7 @@ function targetOf(kind: Kind, tool: string, args: Args): string {
     case "program": return pick(args, "name", "program", "path") ?? "";
     case "skill": return pick(args, "name", "skill") ?? "";
     case "computer":
-      if (tool === "computer_use_agent") {
-        const target = computerUseAgentTarget(args);
-        if (target === "vm") return "VM";
-        if (target === "browser") return userBrowser(args) ?? "";
-        return pick(appStepArgs(args) ?? {}, "app") ?? "";
-      }
+      if (tool === "computer_use") return computerUseName(args, text);
       return pick(args, "app") ?? "";
     case "other": return tool;
     default: return "";
@@ -553,9 +587,12 @@ function groupFacts(all: AssistantBlock[], options: ToolGroupOptions) {
       if (to) messaged.add(to.slice(to.lastIndexOf(":") + 1));
       else spawnBlocks++;
     } else if (kind === "agent") spawnBlocks++;
-    const value = targetOf(kind, tool, args);
+    const value = targetOf(kind, tool, args, text);
     if (value) target.targets.add(value);
     else if (kind !== "agent") target.anonymous++;
+    if (value && kind === "computer" && tool === "computer_use" && !operatesApp(args)) {
+      (target.notApps ??= new Set()).add(value);
+    }
     if (running) target.running = value;
   });
   const known = new Set([...spawnNames, ...spawnHeads.filter((h): h is string => !!h)]);

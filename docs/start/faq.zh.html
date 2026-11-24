@@ -13,7 +13,8 @@ lsof -ti:18100 | xargs kill       # 释放残留进程占用的端口，然后�
 </details>
 <details id="empty-lists">
 <summary>页面打开了，但 Provider、模型和 Agent 全是空的</summary>
-<p>页面没有登录：手动输入地址打开时，所有列表为空，<strong>Local</strong> 标记变红，顶部有提示。安装没有缺东西。运行 <code translate="no">openprogram web</code>。要在其他浏览器打开，用 <code translate="no">openprogram web auth-url</code> 打印登录链接。服务每次启动都会生成新的登录，停止或重启后要重新通过 <code translate="no">openprogram web</code> 打开。</p>
+<p>页面没有登录：手动输入地址打开时，所有列表为空，<strong>Local</strong> 标记变红，顶部有提示。安装没有缺东西。运行 <code translate="no">openprogram web</code>。服务每次启动都会生成新的登录，停止或重启后要重新通过 <code translate="no">openprogram web</code> 打开。</p>
+<p>手机或另一台电脑改为配对一次，在<strong>设置 → 设备 → 添加设备</strong>里或用 <code translate="no">openprogram web pair</code>，设备在重启后仍保持登录，直到被吊销（<a href="../interfaces/other-devices.zh.html">在其他设备上使用 OpenProgram</a>）。</p>
 </details>
 <details>
 <summary><code translate="no">openprogram web</code> 打开的页面加载不出来</summary>

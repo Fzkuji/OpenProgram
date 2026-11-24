@@ -11,8 +11,9 @@ import { useState } from "react";
 import { SolarIcon } from "@/components/solar-icons";
 import { OperationCode } from "./approvals/operation-code";
 import { ComputerUseApproval } from "./approvals/computer-use-approval";
+import { asksAboutComputerUse } from "./approvals/computer-use-step";
 import { TerminalApproval } from "./approvals/terminal-approval";
-import { appStepArgs } from "@/lib/computer-use/computer-use-agent-call";
+import { callStep, callTarget } from "@/lib/computer-use/computer-use-call";
 import { Badge } from "@/components/ui/badge";
 import { BotGlyph } from "@/components/avatar/bot/bot-glyph";
 import { subAgentShape } from "@/lib/runtime-bridge/dag/render/agent-look";
@@ -444,10 +445,11 @@ function StepBody({
     );
   }
 
-  if (step.kind === "approval" && step.tool === "computer_use_agent" && !step.escalation && step.args) {
-    const appStep = appStepArgs(step.args);
-    if (appStep && typeof appStep.app === "string") {
-      return <ComputerUseApproval args={appStep} allowedScopes={step.allowedScopes} />;
+  if (step.kind === "approval" && step.tool === "computer_use" && !step.escalation && step.args) {
+    const call = callTarget(step.args);
+    const one = callStep(step.args);
+    if (asksAboutComputerUse(call, one)) {
+      return <ComputerUseApproval args={one} target={call} allowedScopes={step.allowedScopes} />;
     }
   }
   if (step.kind === "approval" && step.tool === "terminal_use" && !step.escalation && step.args) {

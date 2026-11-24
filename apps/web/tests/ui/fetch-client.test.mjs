@@ -54,6 +54,19 @@ describe("jsonFetch", () => {
     await assert.rejects(jsonFetch("/api/x"), { status: 409, message: "name taken", code: "CONFLICT" });
   });
 
+  test("a detail that is not a sentence still gives a text message, and its code", async () => {
+    serve(json({ detail: { code: "mcp_runtime_restart_failed", action: "retry_or_restart" } }, 500));
+    await assert.rejects(jsonFetch("/api/mcp/servers/x/restart", { method: "POST" }), (error) => {
+      assert.equal(typeof error.message, "string");
+      assert.equal(error.message, "mcp_runtime_restart_failed");
+      assert.equal(error.code, "mcp_runtime_restart_failed");
+      return true;
+    });
+
+    serve(json({ detail: [{ type: "missing", loc: ["body", "name"], msg: "Field required" }] }, 422));
+    await assert.rejects(jsonFetch("/api/x", { method: "POST" }), { status: 422, message: "name: Field required", code: undefined });
+  });
+
   test("a plain-text error body is the message; a JSON body without a message is quoted after the status", async () => {
     serve(new Response("Bad Gateway", { status: 502 }));
     await assert.rejects(jsonFetch("/api/x"), { status: 502, message: "Bad Gateway" });
@@ -87,5 +100,31 @@ describe("jsonFetch", () => {
     serve(json({ error: "unauthorized" }, 401));
     await assert.rejects(jsonFetch("/api/x"), { status: 401 });
     assert.equal(calls.length, 1);
+  });
+});
+
+describe("sharedRead", () => {
+  test("a read in flight is shared, and a later call reads again", async () => {
+    const { sharedRead } = await import("../../lib/net/shared-get.ts");
+    let reads = 0;
+    const waiting = [];
+    const read = () => { reads += 1; return new Promise((resolve) => waiting.push(() => resolve(reads))); };
+    const first = sharedRead("list", read);
+    const second = sharedRead("list", read);
+    const other = sharedRead("other", read);
+    assert.equal(reads, 2, "one read per key");
+    waiting.splice(0).forEach((answer) => answer());
+    assert.equal(await first, await second);
+    await other;
+    const later = sharedRead("list", read);
+    assert.equal(reads, 3, "a call after the answer reads again");
+    waiting.splice(0).forEach((answer) => answer());
+    await later;
+  });
+
+  test("a failed read is not kept", async () => {
+    const { sharedRead } = await import("../../lib/net/shared-get.ts");
+    await assert.rejects(sharedRead("broken", () => Promise.reject(new Error("no"))));
+    assert.equal(await sharedRead("broken", () => Promise.resolve("ok")), "ok");
   });
 });

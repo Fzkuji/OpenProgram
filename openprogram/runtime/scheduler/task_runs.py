@@ -25,10 +25,32 @@ import time
 from typing import Any
 from openprogram.host._platform.filesystem import replace_file
 
+#: The Scheduler's tasks or their runs changed: Activity's lists of a
+#: conversation's tasks read again (``host/_platform/changes.py``). Not keyed:
+#: a task names its conversation only inside the file.
+WORK_TOPIC = "work"
+
 KEEP = 20
 FAILURE_NOTICE = 3
 QUIET, RESULT, FAILED, SKIPPED, MISSED = "quiet", "result", "failed", "skipped", "missed"
 _TEXT_CHARS = 500
+
+
+def tasks_changed() -> None:
+    """Tell the windows; another process's writes reach them through
+    :func:`watch_files`."""
+    from openprogram.host._platform import changes
+    changes.signal(WORK_TOPIC)
+
+
+def watch_files() -> None:
+    """Signal :data:`WORK_TOPIC` when the task list or this record changes
+    on disk, written by any process (the CLI, the cron tool)."""
+    from openprogram.programs.tools.jobs.cron.cron import _resolve_path
+    from openprogram.host._platform import changes
+    tasks = _resolve_path()
+    changes.watch(os.path.dirname(tasks) or ".", WORK_TOPIC,
+                  names={os.path.basename(tasks), os.path.basename(_path())})
 
 
 def _path() -> str:
@@ -99,6 +121,7 @@ def record(task_id: str, status: str, text: str = "", tip: str | None = None,
                 runs = runs[1:]
         data[task_id] = {"failures": failures, "failed_checks": failed_checks, "runs": [run, *runs][:KEEP]}
         _write(path, data)
+    tasks_changed()
     return failures
 
 
@@ -116,6 +139,7 @@ def clear_failed_checks(task_id: str) -> None:
             entry["failures"] = max(int(entry.get("failures") or 0) - int(entry.get("failed_checks") or 0), 0)
             entry["failed_checks"] = 0
             _write(path, data)
+    tasks_changed()
 
 
 def recent(task_id: str) -> list[dict[str, Any]]:

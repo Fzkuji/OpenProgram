@@ -139,6 +139,7 @@
 <tr><th scope="row">关闭</th><td><code translate="no">ghost</code> <code translate="no">icon-sm</code>，<code translate="no">top-2 right-2</code>（仅 Dialog）</td></tr>
 <tr><th scope="row">动效</th><td>100ms 淡入和 <code translate="no">zoom-in-95</code>，不滑动</td></tr>
 <tr><th scope="row">确认</th><td><code translate="no">ConfirmDialog</code>，或经 <code translate="no">app/providers.tsx</code> 的 <code translate="no">&lt;ConfirmDialogHost /&gt;</code> 调用 <code translate="no">await confirmAction({...})</code>。删除或降低保护时用 <code translate="no">destructive</code>。Esc、点外部和 Cancel 都是取消。</td></tr>
+<tr><th scope="row">三个答案</th><td><code translate="no">await chooseAction({..., alternateLabel})</code> 在左侧加第三个按钮，和 macOS 把<strong>不保存</strong>与取消、保存分开放一样。</td></tr>
 <tr><th scope="row">模块类</th><td>只定尺寸：宽度、<code translate="no">max-width: none</code>、max-height、overflow</td></tr>
 <tr><th scope="row">通栏</th><td>源码查看器、函数运行器、供应商设置：<code translate="no">p-0 gap-0</code>，自己加内边距，<code translate="no">DialogFooter</code> <code translate="no">m-0</code></td></tr>
 </tbody>

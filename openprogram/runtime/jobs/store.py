@@ -82,8 +82,8 @@ def _jobs_path(session_id: str):
 
 
 def _load_raw(path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
+    # One read: asking whether the document exists first folds the
+    # session's log a second time for the same answer.
     try:
         blob = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
@@ -94,6 +94,19 @@ def _load_raw(path) -> dict[str, dict[str, Any]]:
     if not isinstance(jobs, dict):
         return {}
     return jobs
+
+
+#: A conversation's Jobs changed: its Activity lists read again
+#: (``host/_platform/changes.py``). Keyed by the sessions the Job is listed in.
+RUNS_TOPIC = "runs"
+
+
+def _runs_changed(session_id: str, job: Optional[Job] = None) -> None:
+    from openprogram.host._platform import changes
+    sessions = {session_id}
+    if job is not None:
+        sessions.update(sid for sid in (job.parent_session_id, job.caller_session_id) if sid)
+    changes.signal(RUNS_TOPIC, *sorted(sessions))
 
 
 def _write_raw(path, jobs: dict[str, dict[str, Any]]) -> None:
@@ -132,6 +145,7 @@ def save_job(
                 jobs = _load_raw(path)
                 jobs[job.id] = job.to_dict()
                 _write_raw(path, jobs)
+    _runs_changed(session_id, job)
     if _mirror:
         mirror_linked_job_to_caller(job)
 
@@ -307,6 +321,7 @@ def _update_job_status_locked(
                             setattr(t, k, v)
                     jobs[job_id] = t.to_dict()
                     _write_raw(path, jobs)
+                    _runs_changed(session_id, t)
             elif not can_transition(t.status, new_status):
                 raise ValueError(
                     f"illegal job transition {t.status.value} → "
@@ -334,6 +349,7 @@ def _update_job_status_locked(
                         setattr(t, k, v)
                 jobs[job_id] = t.to_dict()
                 _write_raw(path, jobs)
+                _runs_changed(session_id, t)
     return t
 
 
@@ -392,6 +408,7 @@ def reconcile_orphans(
                     _ = old  # quiet linter
                 if mutated:
                     _write_raw(path, rows)
+                    _runs_changed(sid)
     for job in linked_updates:
         mirror_linked_job_to_caller(job)
         # A cross-session linked job is also stored as a caller-side mirror

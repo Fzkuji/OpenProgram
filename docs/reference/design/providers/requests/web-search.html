@@ -8,6 +8,7 @@
 <thead><tr><th scope="col">API</th><th scope="col">Request tool</th><th scope="col">Advertised</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">openai-responses</code>, <code translate="no">openai-codex</code></th><td><code translate="no">{"type": "web_search"}</code></td><td>Yes</td></tr>
+<tr><th scope="row">xAI over <code translate="no">openai-responses</code></th><td>The same tool; the local <code translate="no">web_search</code> function is left out of the request, because xAI answers 400 “Duplicate tool names” to a function named like its search</td><td>Yes</td></tr>
 <tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">{"type": "web_search_20250305", "name": "web_search"}</code></td><td>Yes</td></tr>
 <tr><th scope="row"><code translate="no">google-generative-ai</code>, <code translate="no">gemini-subscription</code></th><td><code translate="no">{"google_search": {}}</code>, only in a request without function tools</td><td>No</td></tr>
 <tr><th scope="row">DeepSeek, Kimi, local models, OpenAI-compatible endpoints</th><td>None</td><td>No</td></tr>

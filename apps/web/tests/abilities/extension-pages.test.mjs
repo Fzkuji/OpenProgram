@@ -38,6 +38,7 @@ globalThis.HTMLFormElement = window.HTMLFormElement;
 const { createElement } = await import("react");
 const { SkillsList } = await import("../../components/skills/skills-list.tsx");
 const { McpPage } = await import("../../components/mcp/mcp-page.tsx");
+const { forgetKept } = await import("../../lib/abilities/kept-read.ts");
 
 const byLabel = (container, label) => container.querySelector(`[aria-label="${label}"]`);
 const click = (view, node) => view.act(() => { node.dispatchEvent(new window.Event("click", { bubbles: true })); });
@@ -48,6 +49,7 @@ afterEach(async () => {
   await view?.unmount();
   view = null;
   globalThis.__toggled = [];
+  forgetKept();
 });
 
 describe("Skills list switches", () => {
@@ -109,10 +111,21 @@ describe("MCP page actions", () => {
     assert.equal(alert.textContent, "server did not start");
   });
 
-  test("a failed server list load is shown as an alert", async () => {
-    globalThis.__jsonFetch = async () => { throw new Error("worker unreachable"); };
+  test("a failed server list load says nothing and the list arrives on a quiet retry", async () => {
+    let fail = true;
+    globalThis.__jsonFetch = async (url) => {
+      if (fail) throw new Error("worker unreachable");
+      return url === "/api/mcp/servers" ? { servers: [server] } : {};
+    };
     view = await render(createElement(McpPage, { embedded: true }));
     await flush(view);
-    assert.equal(view.container.querySelector('[role="alert"]')?.textContent, "worker unreachable");
+    assert.equal(view.container.querySelector('[role="alert"]'), null);
+    assert.doesNotMatch(view.container.textContent, /Loading|worker unreachable/);
+    fail = false;
+    for (let i = 0; i < 40 && !byLabel(view.container, "Disable linear"); i += 1) {
+      await view.act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    }
+    assert.ok(byLabel(view.container, "Disable linear"), "the list shows once a read answers");
+    assert.equal(view.container.querySelector('[role="alert"]'), null);
   });
 });

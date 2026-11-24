@@ -24,8 +24,8 @@
 <tr><th scope="row">代码搜索 <code translate="no">grep glob semble_* lsp_*</code></th><td>搜索了"tl-toggle"</td><td>搜索了 3 次</td><td>正在搜索"tl-toggle"…</td></tr>
 <tr><th scope="row">网页搜索 <code translate="no">web_search</code></th><td>搜索了网页</td><td>搜索了 2 次网页</td><td>正在搜索网页…</td></tr>
 <tr><th scope="row">抓取 <code translate="no">web_fetch</code></th><td>抓取了 docs.anthropic.com</td><td>抓取了 3 个网页</td><td>正在抓取 docs.anthropic.com…</td></tr>
-<tr><th scope="row">旧的浏览器工具 <code translate="no">web_use</code>、<code translate="no">playwright_browser</code>、<code translate="no">browser_use</code></th><td>操作了浏览器</td><td>操作了浏览器</td><td>正在操作浏览器…</td></tr>
-<tr><th scope="row">GUI 与电脑 <code translate="no">computer_use_agent</code>、GUI 工具</th><td>执行了 1 次 GUI 调用；操作了应用</td><td>执行了 2 次 GUI 调用</td><td>正在执行 GUI 调用…；正在操作应用…</td></tr>
+<tr><th scope="row">浏览器 <code translate="no">web_use</code>、<code translate="no">playwright_browser</code>、<code translate="no">browser_use</code>、本机内置浏览器上的 <code translate="no">computer_use</code></th><td>操作了浏览器</td><td>操作了浏览器</td><td>正在操作浏览器…</td></tr>
+<tr><th scope="row">GUI 与电脑 其他目标上的 <code translate="no">computer_use</code>、GUI 工具</th><td>执行了 1 次 GUI 调用；操作了 Calculator；操作了屏幕；操作了 Chrome；操作了 Lab VM 的屏幕</td><td>执行了 2 次 GUI 调用；操作了 2 个应用；操作了 Chrome 和屏幕；操作了 Chrome 等 3 项</td><td>正在执行 GUI 调用…；正在操作 Calculator…</td></tr>
 <tr><th scope="row">子代理 <code translate="no">agent task send_message mixture_of_agents</code></th><td>运行了子代理 Reviewer</td><td>运行了 2 个子代理</td><td>正在运行子代理 Reviewer…</td></tr>
 <tr><th scope="row">对等会话 <code translate="no">send_message</code> 发往另一个会话</th><td>给另一个会话发了消息</td><td>每个会话只计一次</td><td>正在给另一个会话发消息…</td></tr>
 <tr><th scope="row">图片 <code translate="no">image_generate</code>、<code translate="no">image_analyze</code></th><td>生成了 1 张图片；分析了 1 张图片</td><td>生成了 2 张图片；分析了 2 张图片</td><td>正在生成图片…；正在分析图片…</td></tr>
@@ -42,9 +42,9 @@
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row">思考</th><td>只有组里没有别的内容时才写“思考”或“思考中…”</td></tr>
-<tr><th scope="row">名称</th><td>桶里恰好一个不同目标时才写目标名。同一文件的重复调用只算一次。文件写 basename，搜索词加引号并截到 24 字符，抓取只写域名，命令从不写出。</td></tr>
+<tr><th scope="row">名称</th><td>桶里恰好一个不同目标时才写目标名；电脑桶的目标不全是应用时，写出两个，或写第一个和总数。同一文件的重复调用只算一次。文件写 basename，搜索词加引号并截到 24 字符，抓取只写域名，命令从不写出。</td></tr>
 <tr><th scope="row">数字</th><td>英文一个用 "a"/"an"，更多用数字。中文始终用数字加量词（<code translate="no">1 条命令</code>、<code translate="no">3 个文件</code>、<code translate="no">2 次</code>）。</td></tr>
-<tr><th scope="row">失败</th><td>标签后跟柔和的红色“· N 个失败”。失败的调用计入它的桶，但不计入徽标。</td></tr>
+<tr><th scope="row">失败</th><td>标签后跟柔和的红色“· N 个失败”。失败的调用计入它的桶，但不计入徽标。存储时没有 <code translate="no">is_error</code> 的 <code translate="no">computer_use</code> 调用，结果以错误码开头（<code translate="no">Error:</code>、<code translate="no">UNKNOWN_TARGET:</code>）就算失败。</td></tr>
 <tr><th scope="row">运行中</th><td>进行中调用的桶移到行尾，用现在时加“…”，闪光保留。调用结束后回到第一次出现的位置，恢复过去时。</td></tr>
 <tr><th scope="row">宽度</th><td>单行 28px。标签 <code translate="no">min-width:0</code> 加 CSS 省略号；失败提示、徽标、箭头 <code translate="no">flex:none</code>。没有字符预算。</td></tr>
 <tr><th scope="row">悬停</th><td>没有提示：这是记录内容，展开就能看到每次调用</td></tr>

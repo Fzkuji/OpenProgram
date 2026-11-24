@@ -154,6 +154,36 @@ class ProcessTreeOwner:
             raise RuntimeError("an active Windows Job Object is required")
         return _windows_job_active_processes(self._job_handle)
 
+    def watch_members(self, wake):
+        """Call ``wake()`` each time a member of the Windows job starts or
+        ends, until the returned stop is called.
+
+        The job posts its notifications to an I/O completion port; one
+        thread blocks on the port and calls ``wake`` for each, so the owner
+        reads :meth:`active_process_count` when it changes instead of on a
+        timer.
+        """
+        if _sys.platform != "win32" or self._job_handle is None:
+            raise RuntimeError("an active Windows Job Object is required")
+        import threading
+
+        port = _windows_job_completion_port(self._job_handle)
+
+        def follow() -> None:
+            while _windows_next_job_message(port) == _JOB_KEY:
+                wake()
+
+        thread = threading.Thread(target=follow, name="job-members", daemon=True)
+        thread.start()
+
+        def stop() -> None:
+            _windows_post_job_message(port, _STOP_KEY)
+            thread.join(timeout=1)
+            if not thread.is_alive():
+                _windows_close_handle(port)
+
+        return stop
+
     def terminate_members(self) -> None:
         """Terminate Windows members while retaining the handle for exit proof."""
         if _sys.platform != "win32" or self._job_handle is None:
@@ -317,6 +347,72 @@ def _windows_job_active_processes(job_handle: int) -> int:
     if not query(job_handle, 1, ctypes.byref(info), ctypes.sizeof(info), None):
         raise ctypes.WinError(ctypes.get_last_error())
     return int(info.ActiveProcesses)
+
+
+#: Completion keys on a job's port: the job's own notifications, and the
+#: one its watcher posts to end itself.
+_JOB_KEY, _STOP_KEY = 1, 2
+
+
+@_functools.cache
+def _windows_port_api():
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32, _, _ = _windows_job_api()
+    kernel32.CreateIoCompletionPort.argtypes = [wintypes.HANDLE, wintypes.HANDLE,
+                                                ctypes.c_size_t, wintypes.DWORD]
+    kernel32.CreateIoCompletionPort.restype = wintypes.HANDLE
+    kernel32.GetQueuedCompletionStatus.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD]
+    kernel32.GetQueuedCompletionStatus.restype = wintypes.BOOL
+    kernel32.PostQueuedCompletionStatus.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                                    ctypes.c_size_t, ctypes.c_void_p]
+    kernel32.PostQueuedCompletionStatus.restype = wintypes.BOOL
+    return kernel32
+
+
+def _windows_job_completion_port(job_handle: int) -> int:
+    """A new I/O completion port receiving ``job_handle``'s notifications
+    (member started, exited, the job empty) under :data:`_JOB_KEY`."""
+    import ctypes
+    from ctypes import wintypes
+
+    class AssociateCompletionPort(ctypes.Structure):
+        _fields_ = [("CompletionKey", ctypes.c_void_p), ("CompletionPort", wintypes.HANDLE)]
+
+    kernel32 = _windows_port_api()
+    invalid_handle = wintypes.HANDLE(-1)
+    port = kernel32.CreateIoCompletionPort(invalid_handle, None, 0, 1)
+    if not port:
+        raise ctypes.WinError(ctypes.get_last_error())
+    info = AssociateCompletionPort(_JOB_KEY, port)
+    # JobObjectAssociateCompletionPortInformation
+    if not kernel32.SetInformationJobObject(job_handle, 7, ctypes.byref(info), ctypes.sizeof(info)):
+        error = ctypes.get_last_error()
+        _windows_close_handle(port)
+        raise ctypes.WinError(error)
+    return int(port)
+
+
+def _windows_next_job_message(port: int) -> int:
+    """Block until the port has a notification; its completion key."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = _windows_port_api()
+    message, key, overlapped = wintypes.DWORD(), ctypes.c_size_t(), ctypes.c_void_p()
+    infinite = 0xFFFFFFFF
+    if not kernel32.GetQueuedCompletionStatus(port, ctypes.byref(message), ctypes.byref(key),
+                                              ctypes.byref(overlapped), infinite):
+        return _STOP_KEY  # the port was closed under the wait
+    return int(key.value)
+
+
+def _windows_post_job_message(port: int, key: int) -> None:
+    kernel32 = _windows_port_api()
+    kernel32.PostQueuedCompletionStatus(port, 0, key, None)
 
 
 def _windows_set_job_kill_on_close(job_handle: int, enabled: bool) -> None:

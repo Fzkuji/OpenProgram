@@ -1,6 +1,6 @@
 """OpenAI Codex (ChatGPT sign-in): plan windows from ``GET {backend}/wham/usage``.
 
-Unverified: the shape is Oh My Pi's (``packages/ai/src/usage/openai-codex.ts``:
+The shape is Oh My Pi's, confirmed by a real response (``packages/ai/src/usage/openai-codex.ts``:
 ``rate_limit.{primary,secondary}_window.{used_percent, limit_window_seconds,
 reset_at, reset_after_seconds}``, ``additional_rate_limits[]``,
 ``credits.{has_credits, unlimited, balance}``), and the Codex CLI calls the
@@ -17,7 +17,10 @@ from openprogram.models.providers.utils.http_transport.rate_limit import CodexCr
 from ..quota import SOURCE_ENDPOINT, QuotaLimit, codex_limits
 
 PROVIDERS = ("openai-codex",)
-VERIFIED = False
+VERIFIED = True
+#: A 401 here says the plan does not know this key or sign-in, not that
+#: requests with it fail, so it marks nothing on the credential.
+REFUSAL_IS_THE_KEYS = False
 ENDPOINT = "GET https://chatgpt.com/backend-api/wham/usage"
 SHAPE_FROM = "oh-my-pi packages/ai/src/usage/openai-codex.ts"
 DEFAULT_BASE = "https://chatgpt.com/backend-api"

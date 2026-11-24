@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Squash the promoted build into the slow `main` line and publish it to GitHub.
+# Sync `dev` to GitHub's `main`, and tag a release.
 #
-# Three local lines: `dev` takes every small commit and feeds the development
-# instance, `stable` moves only by promotion (`openprogram dev promote`) and
-# runs the stable App, and `main` is the slow line GitHub carries: one commit
-# per version, each holding a `stable` tree on top of the previous `main`
-# commit, so it never contains dev's history. refs/publish/last records the
-# commit the latest version was made from, so the next one lists only what is
-# new.
+# Two local lines: `dev` takes every commit and feeds the development
+# instance; `main` is the line GitHub carries, one squashed commit per sync,
+# each holding a `dev` tree on top of the previous `main` commit, so it never
+# contains dev's history. A sync without --tag is the daily upload: pushing
+# `main` starts no workflow. Only a `v*` tag starts the Release workflow,
+# whose published App is the stable install everyone updates to in the App.
+# refs/publish/last records the commit the latest sync was made from, so the
+# next one lists only what is new.
 #
-# Usage: scripts/publishing/publish-github.sh [-m "summary"] [--source <ref>] [--tag vX.Y.Z]
+# Usage: scripts/publishing/publish-github.sh -m "summary" [--source <ref>] [--tag vX.Y.Z]
 #                                  [--office-archive <file>] [--no-push] [--dry-run]
-#   -m         version summary; required when the source differs from main
-#   --source   commit to squash (default: stable, the promoted build)
+#   -m         what this sync brings; required when the source differs from main
+#   --source   commit to squash (default: dev)
 #   --tag      after pushing main, tag that commit and push the tag, which
 #              starts the Release workflow; needs every version place
 #              (scripts/release/release-version.py), the notes, and the
@@ -21,15 +22,15 @@
 #              the local copy of the pinned Office archive: checked against
 #              its pin, and put on the tag's draft release when neither the
 #              newest release nor that draft has it
-#   --no-push  add the version to local main only
-#   --dry-run  show the version's message and checks, change nothing
+#   --no-push  add the sync to local main only
+#   --dry-run  show the sync's message and checks, change nothing
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 summary=""
-source_ref="stable"
+source_ref="dev"
 tag=""
 office_archive=""
 push=1
@@ -135,14 +136,14 @@ if test -n "$tag"; then
 fi
 
 # The project's retired GitHub accounts are never named in anything published:
-# not in the tree, the version summary or the history of main. The scanner
+# not in the tree, the sync summary or the history of main. The scanner
 # holds them only as hashes and reads the source commit from the object store.
 check_retired_accounts() {
   local what="$1"
   shift
   local hits
   if ! hits="$("$python" -B "$repo_root/scripts/publishing/retired_accounts.py" --root "$repo_root" "$@" 2>&1)"; then
-    printf 'refusing to publish: %s names a retired account; fix it on dev and promote\n%s\n' "$what" "$hits" >&2
+    printf 'refusing to publish: %s names a retired account; fix it on dev\n%s\n' "$what" "$hits" >&2
     exit 1
   fi
 }
@@ -151,7 +152,7 @@ if test -n "$summary"; then
   printf '%s\n' "$summary" | check_retired_accounts "the summary" --stdin
 fi
 
-# The whole site leaves the machine, so every docs error stops a version. The
+# The whole site leaves the machine, so every docs error stops a sync. The
 # check reads the commit being published, not whatever this checkout holds.
 check_docs() {
   local parent status=0
@@ -164,23 +165,23 @@ check_docs() {
   git worktree prune
   trap - EXIT
   if test "$status" -ne 0; then
-    printf 'refusing to publish: the docs check on %s exited %s; fix it on dev and promote\n' \
+    printf 'refusing to publish: the docs check on %s exited %s; fix it on dev\n' \
       "$(git rev-parse --short "$source_commit")" "$status" >&2
     exit 1
   fi
 }
 
 if test -n "$main_head" && test "$(git rev-parse "$source_commit^{tree}")" = "$(git rev-parse "$main_head^{tree}")"; then
-  printf 'main already holds this tree; no new version\n'
+  printf 'main already holds this tree; nothing to sync\n'
   if test -n "$tag" && test "$dry_run" -eq 0; then
     ensure_office_released
   fi
 else
   if test -z "$summary"; then
-    printf 'a summary is required for a new version: -m "..."\n' >&2
+    printf 'a summary is required for a sync: -m "..."\n' >&2
     exit 2
   fi
-  # A version lists the commits since the previous one; the first lists none.
+  # A sync lists the commits since the previous one; the first lists none.
   base=""
   if test -n "$main_head"; then
     base="$(git rev-parse --verify --quiet refs/publish/last || true)"
@@ -190,7 +191,7 @@ else
     fi
   fi
 
-  # Refuse a version holding anything that looks like a live credential. AWS's
+  # Refuse a sync holding anything that looks like a live credential. AWS's
   # documented example key and one-line PEM fixtures in tests are not keys.
   added="$(git diff "${main_head:-$empty_tree}" "$source_commit" -U0 | grep -E '^\+' || true)"
   hits="$( { printf '%s\n' "$added" \
@@ -212,11 +213,11 @@ else
     if test -n "$base"; then
       printf 'Squashes %s local commits.\n' "$(git rev-list --count "$base..$source_commit")"
     else
-      printf 'First version on this line.\n'
+      printf 'First sync on this line.\n'
     fi
     printf '\nLocal-Source: %s\n' "$source_commit"
   } >"$message_file"
-  printf 'new version from %s on top of main %s\n\n' \
+  printf 'sync of %s on top of main %s\n\n' \
     "$(git rev-parse --short "$source_commit")" "${main_head:+$(git rev-parse --short "$main_head")}"
   cat "$message_file"
   git diff --shortstat "${main_head:-$empty_tree}" "$source_commit"
@@ -270,11 +271,11 @@ if test -n "$tag" && git ls-remote --exit-code --tags origin "refs/tags/$tag" >/
   exit 1
 fi
 git log --format='%an %ae %cn %ce%n%B' "$uploading" | check_retired_accounts "the history being uploaded" --stdin
-# Refuse to upload a version signed by anyone else. The history GitHub
+# Refuse to upload a sync signed by anyone else. The history GitHub
 # already has (the years before 1.0.0, many authors) is not uploaded again.
 foreign="$(git log --format='%h %ae %ce' "$uploading" | awk -v e="$publish_email" '$2 != e || $3 != e' | head -n 5)"
 if test -n "$foreign"; then
-  printf 'the versions being uploaded hold commits not signed by %s; refusing to push:\n%s\n' "$publish_name" "$foreign" >&2
+  printf 'the syncs being uploaded hold commits not signed by %s; refusing to push:\n%s\n' "$publish_name" "$foreign" >&2
   exit 1
 fi
 OPENPROGRAM_GITHUB_PUBLISH=1 git push origin refs/heads/main:refs/heads/main

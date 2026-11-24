@@ -126,7 +126,7 @@
 <tbody>
 <tr><td>The Harbor adapter dropping its error-text patterns; it types a failure by <code translate="no">error_kind</code>, then <code translate="no">error_reason</code>, and reads the text only when neither settles it, until one Harbor trial shows both readings agree</td><td>Waits for a trial</td></tr>
 <tr><td>The <code translate="no">stream-json</code> stream relaying history protocol 3 live (transcript updates and their gap recovery); it writes <code translate="no">init</code> and partial deltas live and the stored events at the end</td><td>Not built</td></tr>
-<tr><td>Dropping the CLI's fallbacks (the reply-text parse, the stale-version resend) once both instances announce the capabilities</td><td>Waits for a promotion</td></tr>
+<tr><td>Dropping the CLI's fallbacks (the reply-text parse, the stale-version resend) once both instances announce the capabilities</td><td>Waits for a release that carries them</td></tr>
 <tr><td>A Worker turn recorded with <code translate="no">source</code> <code translate="no">cli</code>; it stays a foreground source until the Web UI shows and stops such turns the same way</td><td>Not built</td></tr>
 <tr><td><code translate="no">--at</code> to a message inside a branch on the Worker; it runs in this process with a note</td><td>Not built</td></tr>
 <tr><td><code translate="no">branch_busy</code> for an in-process run that meets a turn another process runs on the branch</td><td>Not built</td></tr>

@@ -3,6 +3,14 @@ from unittest.mock import patch
 import pytest
 
 
+def _scope(monkeypatch, executions, parents=lambda *args: {}):
+    """Stand in for the conversation's execution scope."""
+    monkeypatch.setattr(
+        "openprogram.runtime.execution.conversation_scope.conversation_execution_scope",
+        lambda *args, **kwargs: (tuple(executions(*args)), parents(*args)),
+    )
+
+
 def test_resource_use_keeps_exact_owner_and_releases_on_error(tmp_path, monkeypatch):
     from openprogram.host.resources.session import ResourceUseStore, resource_use
     from openprogram.runtime.execution.run_control import (
@@ -14,7 +22,7 @@ def test_resource_use_keeps_exact_owner_and_releases_on_error(tmp_path, monkeypa
     monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-1")
     token = set_current_session_id("session-a")
     try:
-        with pytest.raises(ValueError), resource_use("vm", "Test VM", "https://user:secret@vm.test/api?token=secret", store=store):
+        with pytest.raises(ValueError), resource_use("machine", "Lab VM", "https://user:secret@vm.test/api?token=secret", store=store):
             rows = store.list("session-a")
             assert len(rows) == 1
             assert rows[0]["target"] == "https://vm.test/api"
@@ -30,7 +38,7 @@ def test_dead_or_reused_owner_is_not_an_active_resource(tmp_path, monkeypatch):
 
     store = ResourceUseStore(tmp_path / "resources.db")
     monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-1")
-    store.add("session-a", None, "docker", "Docker", "ubuntu:24.04")
+    store.add("session-a", None, "machine", "Builder", "ubuntu:24.04")
     monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-2")
     assert store.list("session-a") == []
 
@@ -63,29 +71,45 @@ def test_code_backends_do_not_register_software_resources(tmp_path, monkeypatch,
         reset_current_session_id(token)
 
 
-def test_vm_target_reports_attachment_during_the_call(tmp_path, monkeypatch):
+def test_a_machine_target_reports_its_row_during_the_call(tmp_path, monkeypatch):
+    from openprogram.host import machines
     from openprogram.host.resources.session import ResourceUseStore
     from openprogram.runtime.execution.run_control import (
         set_current_session_id,
         reset_current_session_id,
     )
     from openprogram.programs._host.execution import ToolReturn
-    from openprogram.programs.tools.computer_use.computer_use_agent import tool
-    from openprogram.programs.tools.computer_use.computer_use_agent.targets import vm
+    from openprogram.programs.tools.computer_use.computer_use import registry, tool
+    from openprogram.programs.tools.computer_use.computer_use.contract import Described, Provider, Row
 
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
-    monkeypatch.setattr(vm, "url", lambda: "http://vm.test:5000?secret=token")
 
-    def run(steps, args, session):
-        rows = ResourceUseStore().list("session-vm")
-        assert [(row["kind"], row["target"]) for row in rows] == [("vm", "http://vm.test:5000")]
-        return ToolReturn(text="ok")
-    monkeypatch.setattr(vm, "run", run)
-    token = set_current_session_id("session-vm")
+    class Lab(Provider):
+        family, machine = "screen", "lab"
+        capabilities = frozenset({"pixels", "pointer"})
+
+        def describe(self):
+            return Described("a virtual machine")
+
+        def resource(self, subject):
+            return Row("machine", "Lab VM", "http://vm.test:5000?secret=token")
+
+        def act(self, subject, steps, call):
+            rows = ResourceUseStore().list("session-lab")
+            assert [(row["kind"], row["title"], row["target"]) for row in rows] == [
+                ("machine", "Lab VM", "http://vm.test:5000")]
+            return ToolReturn(text="ok")
+
+    monkeypatch.setattr(registry, "providers", lambda conversation="": {"lab screen": Lab()})
+    # A call runs only on a machine that is still set up and switched on.
+    lab = machines.Machine(id="lab", name="Lab VM")
+    monkeypatch.setattr(machines, "get_machine", lambda machine_id, cfg=None: lab if machine_id == "lab" else None)
+    token = set_current_session_id("session-lab")
     try:
-        assert tool.computer_use_agent(target="vm", action="click", args={"x": 1, "y": 2}).text == "ok"
-        assert ResourceUseStore().list("session-vm") == []
+        result = tool.computer_use(device="lab", type="screen", action="click", args={"x": 1, "y": 2})
+        assert result.text == '[device="lab", type="screen"]\nok'
+        assert ResourceUseStore().list("session-lab") == []
     finally:
         reset_current_session_id(token)
 
@@ -115,10 +139,10 @@ def test_resource_route_keeps_processes_in_activity_only(tmp_path, monkeypatch):
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
-    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", lambda *args: [])
+    _scope(monkeypatch, lambda *args: [])
     checked = []
     monkeypatch.setattr(processes, "_authorize", lambda request, sid, record=None: checked.append((sid, record)))
-    ResourceUseStore().add("allowed", None, "vm", "VM", "http://vm.test/")
+    ResourceUseStore().add("allowed", None, "machine", "Lab VM", "http://vm.test/")
     store = ProcessStore()
     record = store.create(session_id="allowed", execution_id=None, tool_call_id=None,
                           command="sleep 100", cwd=None, backend_id="docker")
@@ -128,7 +152,7 @@ def test_resource_route_keeps_processes_in_activity_only(tmp_path, monkeypatch):
         result = client.get("/api/session/allowed/resources")
     assert result.status_code == 200
     assert {row["source"] for row in result.json()["items"]} == {"usage"}
-    assert [row["kind"] for row in result.json()["items"]] == ["vm"]
+    assert [(row["kind"], row["status"]) for row in result.json()["items"]] == [("machine", "attached")]
     assert store.get(record["id"])["status"] == "starting"
     assert len(checked) == 1
     assert result.headers["cache-control"] == "no-store"
@@ -150,11 +174,11 @@ def test_resource_route_reuses_scope_and_rejects_forged_owner(tmp_path, monkeypa
     def scope(*args):
         calls.append(1)
         return [SimpleNamespace(execution_id="exec-child", session_id="child")]
-    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", scope)
+    _scope(monkeypatch, scope)
     monkeypatch.setattr(processes, "_authorize", lambda *args: None)
     store = ResourceUseStore()
     for _ in range(20):
-        store.add("child", "exec-child", "vm", "VM", "http://vm.test/")
+        store.add("child", "exec-child", "machine", "Lab VM", "http://vm.test/")
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -162,5 +186,5 @@ def test_resource_route_reuses_scope_and_rejects_forged_owner(tmp_path, monkeypa
         assert result.status_code == 200
         assert len(result.json()["items"]) == 20
         assert calls == [1]
-        store.add("forged", "exec-child", "vm", "VM", "http://vm.test/")
+        store.add("forged", "exec-child", "machine", "Lab VM", "http://vm.test/")
         assert client.get("/api/session/parent/resources").status_code == 404

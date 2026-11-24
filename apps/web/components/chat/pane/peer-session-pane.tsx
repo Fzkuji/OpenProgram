@@ -21,7 +21,7 @@ import { SelectionQuote } from "../messages/editing/quote-to-chat";
  * right rail and DAG follow. Interacting with a pane sets it silently
  * (`setActive`), which changes no layout and interrupts no input.
  */
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -33,9 +33,7 @@ import {
   RECYCLE_MIN_ROWS,
   collectAlwaysLive,
   decideLiveRows,
-  foldKey,
   heightsFor,
-  setRowHeight,
   type WindowNode,
 } from "@/lib/chat/history/message-window";
 import { TranscriptReadStatus } from "../messages/list/transcript-read-status";
@@ -47,7 +45,7 @@ import { useChatAreaStick } from "../messages/list/use-chat-area-stick";
 import { useMessageViewport } from "../messages/list/use-message-viewport";
 import { useHistoryWindow } from "../messages/list/use-history-window";
 import { DecisionOutputs } from "../messages/runtime/decision-output";
-import { TranscriptRows, coveringOf, useOriginalsToggle, usePlacedDecisions } from "../messages/list/transcript-rows";
+import { TranscriptRows, usePlacedDecisions } from "../messages/list/transcript-rows";
 import { BotViewContext } from "../messages/list/transcript-view-scope";
 import { timeBreaks } from "@/lib/chat/transcript/bot-view";
 import { useBotView } from "@/lib/chat/transcript/use-bot-view";
@@ -143,9 +141,7 @@ export const PeerSessionPane = memo(function PeerSessionPane({
   const chatKey = scrollKey;
   // The pane draws its conversation as the main chat would, bot view included.
   const botView = useBotView(sessionId);
-  useOriginalsToggle();
   const heldRows = selectViewRows(sessionId)(useSessionStore.getState());
-  const { covered } = coveringOf(ids, heldRows, botView);
   const timeLabels = useMemo(() => timeBreaks(ids.flatMap((id) => {
     const message = selectRow(sessionId, id)(useSessionStore.getState());
     return message ? [message] : [];
@@ -154,16 +150,7 @@ export const PeerSessionPane = memo(function PeerSessionPane({
   const placedDecisions = usePlacedDecisions(sessionId, ids);
   const alwaysLive = collectAlwaysLive(ids, (id) => heldRows[id]);
   const { view, notifyMeasured } = useMessageViewport(chatKey, ids.length, true, areaRef);
-  const windowNodes: WindowNode[] = [];
-  for (let i = 0; i < ids.length;) {
-    if (!covered.has(ids[i])) {
-      windowNodes.push({ kind: "row", id: ids[i] });
-      i += 1;
-      continue;
-    }
-    windowNodes.push({ kind: "fold", id: ids[i] });
-    while (i < ids.length && covered.has(ids[i])) i += 1;
-  }
+  const windowNodes: WindowNode[] = ids.map((id) => ({ kind: "row", id }));
   const liveSet = chatKey
     ? decideLiveRows({
         nodes: windowNodes,
@@ -176,17 +163,6 @@ export const PeerSessionPane = memo(function PeerSessionPane({
         recycleMin: RECYCLE_MIN_ROWS,
       })
     : null;
-  // A fold of covered originals recycles as one node, measured like a row.
-  useLayoutEffect(() => {
-    const column = columnRef.current;
-    if (!chatKey || !liveSet || !column) return;
-    let changed = false;
-    column.querySelectorAll<HTMLElement>("[data-fold-id]").forEach((el) => {
-      const fid = el.dataset.foldId;
-      if (fid && setRowHeight(chatKey, foldKey(fid), el.offsetHeight) !== "same") changed = true;
-    });
-    if (changed) notifyMeasured();
-  });
 
   // `flex: 1` (not just height) — the .center-split-* wrapper is a flex row
   // with no explicit height, so the pane fills its slot by flexing.
@@ -255,8 +231,10 @@ export const PeerSessionPane = memo(function PeerSessionPane({
                 textAlign: "center",
               }}
             >
-              {readStatus === "error" || readStatus === "disconnected" ? null : sessionId && !historyLoaded
-                ? text("Loading conversation…", "加载会话中…")
+              {/* Until the conversation's read has arrived the pane stays
+                  blank: "start a conversation" would be untrue then. */}
+              {readStatus === "error" || readStatus === "disconnected" || (sessionId && !historyLoaded)
+                ? null
                 : text("Send a message to start", "发送消息以开始会话")}
             </div>
           ) : (
@@ -276,9 +254,15 @@ export const PeerSessionPane = memo(function PeerSessionPane({
       </div>
       {showJump ? (
         <div className="jump-latest-anchor" style={{ bottom: "calc(var(--peer-composer-h, 0px) + 12px)" }}>
-          <Button type="button" variant="elevated" size="xs" className="jump-latest text-primary ring-1 ring-primary/45" onClick={jumpToLatest}>
-            <ArrowDown data-icon="inline-start" aria-hidden="true" />
-            {text("Jump to latest", "跳到最新")}
+          <Button
+            type="button"
+            variant="elevated"
+            size="icon-sm"
+            className="jump-latest rounded-full text-primary"
+            aria-label={text("Jump to latest", "跳到最新")}
+            onClick={jumpToLatest}
+          >
+            <ArrowDown aria-hidden="true" />
           </Button>
         </div>
       ) : null}

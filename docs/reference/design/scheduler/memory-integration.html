@@ -88,20 +88,13 @@
 </tbody>
 </table>
 
-<h2>Scheduler page</h2>
-<ul>
-<li>Shared page header and theme tokens; <code translate="no">ManagePageHeader</code>, <code translate="no">ManageRow</code>. Search and the primary action share one row in the 64px topbar.</li>
-<li>Four compact filters in a row below the header, no sidebar; they wrap when narrow. Rows keep schedule, status and actions, numbered in visible order.</li>
-<li>Empty state: introduction and Create task centered; three suggestion cards in a centered grid up to 960px, one column when narrow, each with title, schedule, prompt and Use.</li>
-<li>Create and Use open the existing form without creating a task; Escape returns.</li>
-</ul>
+<p>Where the user sees and edits the tasks: <a href="tasks-page.html">Tasks page</a>.</p>
 
 <details>
 <summary>Choices</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Source</th><th scope="col">Handling</th></tr></thead>
 <tbody>
-<tr><th scope="row">Scheduled tasks product reference</th><td>Standalone page, Create, search, one-time, recurring and monitoring categories. No repeated hero title or large whitespace.</td></tr>
 <tr><th scope="row">Existing cron</th><td>Execution safety and cron-compatible entry points stay; named Scheduler, in the persistent worker</td></tr>
 <tr><th scope="row">Commitments, heartbeat</th><td>Not a Memory type; migration reads only, no tab, status field or special heartbeat</td></tr>
 <tr><th scope="row">Automatic dual writes</th><td>Rejected. Agents compose two existing tools.</td></tr>
@@ -113,8 +106,7 @@
 <ul>
 <li>The three Memory tools execute from a Scheduler prompt worker, deny and ask rules still win, and a scripted run updates a Topic with a Memory Git commit.</li>
 <li>Regressions cover initial and ordinary ticks, waits, oversleep, logging, CLI entry points and both fail-fast boundaries.</li>
-<li>No horizontal overflow at 360, 768 and 1440 px container widths; all four filters reachable; loading, search and error states unchanged.</li>
 </ul>
 
 <h2>Implementation status</h2>
-<p>Implemented: internal-agent lifecycle, tick isolation, page layout. Deferred: the external-token permission model.</p>
+<p>Implemented: internal-agent lifecycle, tick isolation. Deferred: the external-token permission model.</p>

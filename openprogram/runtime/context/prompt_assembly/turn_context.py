@@ -9,8 +9,9 @@ One storage form: the user node's ``turn_context`` list, each entry
   :func:`interruption_note`), a rewind the user made before it
   (``rewind``), the plan-mode note (``plan_mode``), the Goal note
   (``goal``) and its todo reminder (``todo_reminder``), the memory it
-  recalled (``memory_prefetch``), a scheduled run's note (``run_note``).
-  Whether the date, the plan-mode note, the Goal note and the todo reminder
+  recalled (``memory_prefetch``), a scheduled run's note (``run_note``), what
+  the application window the message was typed in says it is about
+  (``application``). Whether the date, the plan-mode note, the Goal note and the todo reminder
   go is decided from what the request's rendered history shows of earlier
   ones (:func:`turn_view`), so a compaction that drops them brings them
   back in full.
@@ -32,7 +33,7 @@ request's ``audience`` explicitly from the one place that builds the request.
 A node written before this list existed carries the old keys
 (``current_date``, ``memory_map``, ``memory_prefetch``, ``run_note``);
 :func:`entries` reads them in the order they were sent. New nodes are written
-with both forms for one promotion cycle, so a build that predates this list
+with both forms for one release, so a build that predates this list
 renders them the same (:func:`node_metadata`).
 """
 from __future__ import annotations
@@ -67,8 +68,9 @@ MOVABLE_SECTIONS = ("environment", "agents_md", "memory", "open_work", "capabili
 #: turn cannot use (``tool_availability``: they stay in the tools array and
 #: their calls are refused) come after the Pages. The deferred-tool catalog
 #: (``deferred_catalog``) comes last, after the memory section, so a change
-#: of one never moves the other.
-BESIDE_ONLY_SECTIONS = ("pages", "tool_availability", "deferred_catalog")
+#: of one never moves the other. The devices computer_use can operate
+#: (``devices``) come before it.
+BESIDE_ONLY_SECTIONS = ("pages", "tool_availability", "devices", "deferred_catalog")
 #: The section that lists the tools this turn cannot use.
 TOOL_AVAILABILITY = "tool_availability"
 #: The deferred-tool catalog section. Its note is the whole catalog on a
@@ -76,13 +78,21 @@ TOOL_AVAILABILITY = "tool_availability"
 #: afterwards (``programs.catalog_note``); its entry keeps the catalog it
 #: describes under ``catalog``, the baseline of the next turn's note.
 CATALOG = "deferred_catalog"
+#: The devices computer_use can operate, a list the same way: the whole of it
+#: first, then each device added, changed and removed
+#: (``computer_use.tool.devices_note``).
+DEVICES = "devices"
+#: Sections whose note is a list told in full once and as changes after;
+#: each entry keeps the list it describes under ``catalog``.
+LISTS = (CATALOG, DEVICES)
 
 # Where an entry renders, by id: the date first, then what happened before
 # the turn, then the sections, then what the turn recalled and its run note.
 # This is the order the old keys were sent in, so an old node renders the
 # same bytes.
 _ATTACHMENT_RANK = {"date": 0, "interrupted": 5, "rewind": 10, "plan_mode": 60, "goal": 65,
-                   "todo_reminder": 70, "memory_prefetch": 80, "run_note": 90}
+                   "todo_reminder": 70, "application": 75, "memory_prefetch": 80,
+                   "run_note": 90}
 _SECTION_RANK = 50
 _SECTION_ORDER = (*MOVABLE_SECTIONS, *BESIDE_ONLY_SECTIONS)
 
@@ -214,7 +224,7 @@ def last_sections(graph: Any, read_ids: list[str], audience: str) -> dict[str, s
             continue
         for entry in entries(node.metadata):
             if entry["kind"] == SECTION and entry["id"] not in found and shown(entry, audience):
-                found[entry["id"]] = _catalog_json(entry) if entry["id"] == CATALOG else entry["text"]
+                found[entry["id"]] = _catalog_json(entry) if entry["id"] in LISTS else entry["text"]
     return found
 
 
@@ -225,12 +235,13 @@ def _catalog_json(entry: Mapping) -> str:
     return json.dumps(catalog if isinstance(catalog, dict) else {}, sort_keys=True, ensure_ascii=False)
 
 
-def catalog_shown(section_notes: Optional[Mapping]) -> Optional[dict]:
-    """The deferred-tool catalog the last note in view described, or None
-    when no note of it is in view (:func:`last_sections`)."""
+def catalog_shown(section_notes: Optional[Mapping], ident: str = CATALOG) -> Optional[dict]:
+    """The list (the deferred-tool catalog, the devices) the last note of
+    section ``ident`` in view described, or None when no note of it is in
+    view (:func:`last_sections`)."""
     import json
 
-    raw = (section_notes or {}).get(CATALOG)
+    raw = (section_notes or {}).get(ident)
     if not isinstance(raw, str):
         return None
     try:
@@ -240,18 +251,19 @@ def catalog_shown(section_notes: Optional[Mapping]) -> Optional[dict]:
     return {str(k): str(v) for k, v in value.items()} if isinstance(value, dict) else None
 
 
-def catalog_stored(history: Any, *, exclude: Optional[str] = None) -> Optional[dict]:
-    """The catalog the last stored note of it on ``history`` (message rows)
-    described, for an engine that does not report what it shows."""
+def catalog_stored(history: Any, *, exclude: Optional[str] = None, ident: str = CATALOG) -> Optional[dict]:
+    """The list the last stored note of section ``ident`` on ``history``
+    (message rows) described, for an engine that does not report what it
+    shows."""
     for message in reversed(history or []):
         if not isinstance(message, Mapping) or message.get("role") != "user":
             continue
         if exclude and message.get("id") == exclude:
             continue
         entry = next((entry for entry in entries(message)
-                      if entry["kind"] == SECTION and entry["id"] == CATALOG), None)
+                      if entry["kind"] == SECTION and entry["id"] == ident), None)
         if entry is not None:
-            return catalog_shown({CATALOG: _catalog_json(entry)})
+            return catalog_shown({ident: _catalog_json(entry)}, ident)
     return None
 
 
@@ -555,6 +567,8 @@ def kept_sections(store: Any, session_id: str, built: str) -> tuple[str, dict[st
 __all__ = [
     "ATTACHMENT",
     "BESIDE_ONLY_SECTIONS",
+    "DEVICES",
+    "LISTS",
     "CATALOG",
     "CONVERSATION",
     "CONVERSATION_WITHOUT_MEMORY",

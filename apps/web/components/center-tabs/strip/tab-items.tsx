@@ -2,6 +2,7 @@
 
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { ApplicationTabGlyph } from "@/components/applications/application-glyph";
+import { WindowTabIcon } from "../window/window-tab-icon";
 
 /**
  * Strip tab presentation — the two components the strip maps over.
@@ -82,6 +83,8 @@ export function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: 
         <MessageCircleIcon ref={iconRef} size={14} />
       ) : tab.kind === "application" ? (
         <ApplicationTabGlyph appId={tab.applicationId} size={14} />
+      ) : tab.kind === "window" ? (
+        <WindowTabIcon windowId={tab.nativeWindowId} size={14} />
       ) : tab.kind === "file" ? (
         <FileTypeIcon name={tab.path ?? ""} size={14} />
       ) : tab.kind === "web" ? (
@@ -392,6 +395,8 @@ export function TabItem({
             <MessageCircleIcon ref={iconRef} size={14} />
           ) : tab.kind === "application" ? (
         <ApplicationTabGlyph appId={tab.applicationId} size={14} />
+      ) : tab.kind === "window" ? (
+        <WindowTabIcon windowId={tab.nativeWindowId} size={14} />
       ) : tab.kind === "file" ? (
             <FileTypeIcon name={tab.path ?? ""} size={14} />
           ) : tab.kind === "web" ? (

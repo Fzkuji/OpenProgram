@@ -31,7 +31,13 @@ def _tool_status(block: dict) -> str:
     outcome = block.get("outcome")
     if outcome == "cancelled":
         return "cancelled"
-    return "error" if outcome in ("not_started", "unknown") or block.get("is_error") else "done"
+    if outcome in ("not_started", "unknown") or block.get("is_error"):
+        return "error"
+    # A call the stream opened and no result has come back to: it is still running.
+    # The chat reads this only while its reply is live (assistant-bubble.tsx).
+    if block.get("result") is None and outcome is None and block.get("provider_executed") is not True:
+        return "running"
+    return "done"
 
 
 def _result(block: dict) -> str | None:

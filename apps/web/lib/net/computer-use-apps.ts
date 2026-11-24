@@ -36,20 +36,20 @@ async function lookUp(queries: string[]): Promise<void> {
   for (const app of reply?.apps ?? []) cache.set(app.query, app);
 }
 
-let running: { at: number; apps: ComputerUseApp[] } | null = null;
-const RUNNING_FRESH_MS = 10_000;
+let running: { mention: string; apps: ComputerUseApp[] } | null = null;
 
-/** The running apps, as the composer's @ menu offers them; kept for a few
- *  seconds so typing a name does not ask again on every key. */
-export async function runningApps(): Promise<ComputerUseApp[]> {
-  if (running && Date.now() - running.at < RUNNING_FRESH_MS) return running.apps;
+/** The running apps, as the composer's @ menu offers them: read once per
+ *  `mention` (one @ being typed), so typing a name does not ask again on
+ *  every key, and a new @ reads what runs now. */
+export async function runningApps(mention: string): Promise<ComputerUseApp[]> {
+  if (running?.mention === mention) return running.apps;
   const requestId = crypto.randomUUID();
   const reply = await wsRequest<{ request_id?: string; apps?: ComputerUseApp[] }>(
     "computer_use_apps", { running: true, request_id: requestId }, "computer_use_apps",
     (data) => data.request_id === requestId, 8000,
   );
   if (!reply?.apps) return running?.apps ?? [];
-  running = { at: Date.now(), apps: reply.apps };
+  running = { mention, apps: reply.apps };
   return reply.apps;
 }
 

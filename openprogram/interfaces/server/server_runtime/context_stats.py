@@ -152,6 +152,7 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
     # --- Chat usage: use last_usage (per-call = current context window size) ---
     # NOT session_usage (cumulative across all API calls, inflated for Codex).
     # last_usage.input_tokens = total tokens sent in the last call ≈ context size.
+    previous_chat_usage = conv.get("_chat_usage")
     if chat_runtime:
         usage = getattr(chat_runtime, 'last_usage', None)
         if usage and (usage.get("input_tokens") or usage.get("output_tokens") or usage.get("cache_read") or usage.get("cache_create")):
@@ -195,14 +196,21 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
     provider_name = provider_name or ""
 
     # The request that just finished measured the real prompt size, so the
-    # occupancy record switches to the ``measured`` basis and stores the
-    # measured/estimated ratio as calibration.
+    # occupancy record switches to the ``measured`` basis and keeps the
+    # count's difference from its estimate as ``offset``. A count that did
+    # not measure one request (``token_accounting.measure``) leaves the
+    # previous reading as the conversation's last measurement.
     measured = int((conv.get("_chat_usage") or {}).get("context_tokens") or 0)
     occupancy = state._build_context_occupancy(
         session_id, conv, measured_total=measured, window=context_window,
         request_input_estimate=int((conv.get("_chat_usage") or {}).get("request_input_estimate") or 0),
         running_turn=bool(getattr(chat_runtime, "running_turn", False)),
     )
+    if measured and occupancy.get("basis") != "measured":
+        if previous_chat_usage:
+            conv["_chat_usage"] = previous_chat_usage
+        else:
+            conv.pop("_chat_usage", None)
 
     stats = {
         "type": "context_stats",
@@ -237,9 +245,9 @@ def _resolve_context_window(provider_name, model) -> int | None:
 
 def _build_context_occupancy(session_id, conv, *, measured_total=None,
                              window=None, estimated_total=None,
-                             request_input_estimate=None, calibration=None,
+                             request_input_estimate=None, offset=None,
                              running_turn=False) -> dict:
-    """``{window, total_used, basis, estimated[, calibration]}`` for a session.
+    """``{window, total_used, basis, estimated[, offset]}`` for a session.
 
     Falls back to the last broadcast record when the estimate cannot be
     computed (a brand-new session with no branch yet, a DB read failure),
@@ -255,14 +263,13 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
             window=window,
             estimated_total=estimated_total,
             request_input_estimate=request_input_estimate,
-            calibration=calibration,
+            offset=offset,
         )
         snapshot = occupancy.pop("_breakdown", None)
         if snapshot is not None and conv is not None:
             occ = {
                 key: occupancy[key]
-                for key in ("window", "total_used", "basis", "estimated",
-                            "calibration", "calibration_source")
+                for key in ("window", "total_used", "basis", "estimated", "offset")
                 if key in occupancy
             }
             finalized = _cs.finalize_breakdown(
@@ -461,15 +468,10 @@ def session_context_stats(
         head_id is None or head_id == conv.get("head_id")
     ) and same_rev:
         out = {k: prev[k] for k in
-                ("window", "total_used", "basis", "estimated",
-                 "calibration", "calibration_source", "_context_rev")
+                ("window", "total_used", "basis", "estimated", "offset", "_context_rev")
                 if k in prev}
         if estimated_total is not None:
             out["estimated"] = int(estimated_total)
-            if int(estimated_total) > 0 and out.get("calibration_source") != "request":
-                out["calibration"] = round(
-                    int(out.get("total_used") or 0) / int(estimated_total), 4
-                )
         out["window"] = int(window or 0) or None
         return out
     return state._build_context_occupancy(
@@ -516,10 +518,13 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
         pass
     prev = conv.get("_last_context_stats") or {}
     current_provider, current_model = state._conv_model(conv)
-    reusable_calibration = (
-        prev.get("calibration")
+    # The last count's difference from its estimate carries over to the
+    # new estimate, on the same model only (``token_accounting.measure``).
+    # A ratio from an older record is never reused.
+    reusable_offset = (
+        prev.get("offset")
         if (not measured_total and prev.get("context_usage_version") == 2
-            and prev.get("calibration_source") == "request"
+            and isinstance(prev.get("offset"), int)
             and prev.get("provider") == current_provider
             and prev.get("model") == current_model)
         else None
@@ -527,11 +532,11 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
     occupancy = state._build_context_occupancy(
         session_id, conv, measured_total=measured_total,
         window=state._conv_context_window(conv),
-        calibration=reusable_calibration,
+        offset=reusable_offset,
     )
     stats = {
         **{k: v for k, v in prev.items()
-           if k not in ("calibration", "calibration_source", "breakdown")},
+           if k not in ("calibration", "calibration_source", "offset", "breakdown")},
         "type": "context_stats",
         "context_usage_version": 2,
         "session_id": session_id,
@@ -542,6 +547,15 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
         **occupancy,
         "_context_rev": conv["_context_rev"],
     }
+    # A last measurement the window cannot hold was a sum of several
+    # passes, recorded before such counts were refused; it is not shown.
+    from openprogram.runtime.context.token_accounting import measure
+    chat = stats.get("chat")
+    if isinstance(chat, dict) and not measure.plausible(
+            int(chat.get("context_tokens") or 0) or 1, 0, occupancy["window"]):
+        stats["chat"] = {**chat, "context_tokens": 0}
+        if isinstance(conv.get("_chat_usage"), dict):
+            conv["_chat_usage"] = {**conv["_chat_usage"], "context_tokens": 0}
     breakdown = conv.get("_last_context_breakdown")
     if breakdown:
         stats["breakdown"] = breakdown

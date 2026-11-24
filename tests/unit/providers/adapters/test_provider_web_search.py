@@ -79,6 +79,18 @@ def test_responses_adds_web_search_tool(tools):
     assert len(params["tools"]) == (2 if tools else 1)
 
 
+@pytest.mark.parametrize("provider, kept", [("openai", True), ("xai-subscription", False), ("xai", False)])
+def test_the_local_search_function_leaves_a_request_whose_provider_refuses_the_name_twice(provider, kept):
+    """xAI answers 400 "Duplicate tool names: web_search" to a function
+    named like its own search; OpenAI takes both."""
+    local = Tool(name="web_search", description="Search", parameters={"type": "object", "properties": {}})
+    model = _model("openai-responses", provider, "m")
+    params = responses._build_params(model, Context(messages=[], tools=[_TOOL, local]), {"web_search": True})
+    names = [t.get("name") for t in params["tools"] if t.get("type") == "function"]
+    assert ("web_search" in names) is kept and "read_file" in names
+    assert {"type": "web_search"} in params["tools"]
+
+
 def test_responses_without_switch_has_no_web_search_tool():
     model = _model("openai-responses", "openai", "gpt-5")
     assert "tools" not in responses._build_params(model, Context(messages=[]), {})

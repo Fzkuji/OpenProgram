@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Settings > Versions. Each change OpenProgram makes to itself is kept as a
+ * Settings > Versions and updates. The app's own version and updates come
+ * first (ApplicationSection); below them, each change OpenProgram makes to itself is kept as a
  * version; this page shows which one runs, which it falls back to, and lets
  * the owner undo. Going back and undoing run in a conversation, so the page
  * only starts them and opens that conversation.
@@ -23,6 +24,7 @@ import {
   versionsQuery,
 } from "@/lib/settings/versions";
 import { SettingsPage, SettingsRow, SettingsSection } from "../settings-ui";
+import { ApplicationSection } from "./application-section";
 
 export function VersionsSettings() {
   const { t, text } = useTranslation();
@@ -46,20 +48,11 @@ export function VersionsSettings() {
     <SettingsPage
       title={t("settings.tab.versions")}
       description={text(
-        "Each change OpenProgram makes to itself is kept as a version. Come here when something stopped working after a change.",
-        "OpenProgram 对自己的每次修改都会保留成一个版本。修改之后有东西不正常了，就来这里。",
+        "Which OpenProgram runs and its updates. Each change OpenProgram makes to itself is also kept as a version; come here when something stopped working after a change.",
+        "正在运行的 OpenProgram 版本和更新。OpenProgram 对自己的每次修改也会保留成一个版本，修改之后有东西不正常了，就来这里。",
       )}
     >
-      {versions.isError ? (
-        <SettingsSection>
-          <SettingsRow
-            label={text("The list of versions could not be read", "读不到版本列表")}
-            description={versions.error.message}
-          >
-            <Button variant="elevated" onClick={() => void versions.refetch()}>{text("Retry", "重试")}</Button>
-          </SettingsRow>
-        </SettingsSection>
-      ) : null}
+      <ApplicationSection />
       {page && !page.managed ? (
         <SettingsSection>
           <SettingsRow

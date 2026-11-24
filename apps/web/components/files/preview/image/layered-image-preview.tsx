@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 
-import { readPreviewBytes } from "@/lib/documents/read-preview-bytes";
+import { PreviewReadError, readPreviewBytes } from "@/lib/documents/read-preview-bytes";
+import { isPermanent, retryDelay } from "@/lib/abilities/kept-read";
 const MAX_PIXELS = 16_000_000;
 
 type PreviewData = { width: number; height: number; pixels: Uint8ClampedArray; layers: string[]; label: string };
@@ -90,22 +91,36 @@ export function LayeredImagePreview({ sourceUrl, path }: { sourceUrl: string; pa
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setData(null);
     setError(null);
-    (async () => {
+    // Reading the bytes and decoding them fail for different reasons: a read
+    // that failed in transit is asked again, quietly, with backoff; what the
+    // file itself is (too large, undecodable, refused by the server) is shown.
+    const attempt = async (n: number) => {
+      let bytes: Uint8Array;
       try {
-        const bytes = await readPreviewBytes(sourceUrl, controller.signal);
-        if (!active) return;
-        const buffer = bytes.buffer as ArrayBuffer;
-        const decoded = await decode(buffer, path);
-        if (active) setData(decoded);
+        bytes = await readPreviewBytes(sourceUrl, controller.signal);
       } catch (cause) {
         if (!active || controller.signal.aborted) return;
+        if (cause instanceof Error && cause.message === "PREVIEW_RESOURCE_LIMIT") { setError(cause.message); return; }
+        if (cause instanceof PreviewReadError && isPermanent({ status: cause.status })) { setError("CORRUPT_IMAGE"); return; }
+        console.warn("image preview read failed; reading again", { path, cause });
+        timer = setTimeout(() => void attempt(n + 1), retryDelay(n));
+        return;
+      }
+      if (!active) return;
+      try {
+        const decoded = await decode(bytes.buffer as ArrayBuffer, path);
+        if (active) setData(decoded);
+      } catch (cause) {
+        if (!active) return;
         const code = cause instanceof Error && ["UNSUPPORTED_IMAGE", "PREVIEW_RESOURCE_LIMIT", "CORRUPT_IMAGE"].includes(cause.message) ? cause.message : "CORRUPT_IMAGE";
         setError(code);
       }
-    })();
-    return () => { active = false; controller.abort(); };
+    };
+    void attempt(0);
+    return () => { active = false; if (timer) clearTimeout(timer); controller.abort(); };
   }, [sourceUrl, path]);
 
   useEffect(() => {
@@ -120,7 +135,7 @@ export function LayeredImagePreview({ sourceUrl, path }: { sourceUrl: string; pa
   }, [data]);
 
   if (error) return <div role="alert" style={{ padding: 16 }}><p>{text("This image cannot be previewed.", "无法预览此图片。")}</p><p>{error === "PREVIEW_RESOURCE_LIMIT" ? text("The file exceeds the 64 MiB preview limit.", "文件超过 64 MiB 预览限制。") : error === "UNSUPPORTED_IMAGE" ? text("This image uses unsupported color settings or exceeds 16 million pixels.", "图片颜色设置不受支持，或超过 1600 万像素。") : text("The file could not be read or decoded.", "无法读取或解码文件。")}</p><p><a href={sourceUrl} download={path.split("/").pop()}>{text("Download original", "下载原文件")}</a></p></div>;
-  if (!data) return <div role="status" style={{ padding: 16 }}>{text("Loading preview…", "正在加载预览…")}</div>;
+  if (!data) return null;
   return <div style={{ overflow: "auto", padding: 16 }}><p>{data.label === "PSD composite" ? text("PSD composite", "PSD 合成图") : text("TIFF first page", "TIFF 首页")} · {data.width} × {data.height}</p><canvas ref={canvasRef} aria-label={path} style={{ maxWidth: "100%", height: "auto", imageRendering: "auto" }} />{data.layers.length ? <div><p>{text("Layers", "图层")}</p><ul>{data.layers.map((layer, index) => <li key={`${layer}-${index}`}>{layer}</li>)}</ul></div> : null}</div>;
 }
 

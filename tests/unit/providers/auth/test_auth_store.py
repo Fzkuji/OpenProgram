@@ -341,7 +341,9 @@ def test_an_old_file_under_an_old_name_carries_over_to_the_current_one(tmp_path:
     legacy.write_text(json.dumps({"provider_id": "bailian", "account_id": "default", "credentials": [
         {"credential_id": "c1", "kind": "api_key", "payload": {"kind": "api_key", "auth_value": "sk-legacy"}}]}))
     s = AuthStore(root=tmp_path)
-    assert [p.provider_id for p in s.list_pools()] == ["alibaba-token-plan-cn"]
+    # The key is Alibaba Cloud's: every way of it that takes a key lists it.
+    from openprogram.models.auth.company_keys import key_ways
+    assert [p.provider_id for p in s.list_pools()] == sorted(key_ways("alibaba"))
     assert s.get("alibaba-token-plan-cn").credentials[0].payload.auth_value == "sk-legacy"
 
 

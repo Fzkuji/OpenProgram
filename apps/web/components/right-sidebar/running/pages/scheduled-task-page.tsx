@@ -51,10 +51,10 @@ export function ScheduledTaskPage({ target, context }: ActivityPageProps<"routin
   const { text, work } = context;
   const [axis, setAxis] = useState<ActivityAxis>(() => axisFor([], []));
   const task = work?.routines.find(entry => entry.id === target.taskId);
-  if (!task) return work ? activityGoneFrame(text) : <ActivityPageFrame kind={taskGlyph(task)} title={text("Scheduled task", "定时任务")} status={text("Loading…", "正在读取…")} axis={null}>{null}</ActivityPageFrame>;
+  if (!task) return work ? activityGoneFrame(text) : <ActivityPageFrame kind={taskGlyph(task)} title={text("Scheduled task", "定时任务")} axis={null}>{null}</ActivityPageFrame>;
   const last = task.runs?.[0];
   return <ActivityPageFrame kind={taskGlyph(task)} title={task.title} status={[routineSchedule(task, text), last && routineRunLabel(last, text)].filter(Boolean).join(" · ")} tone={last?.status === "failed" ? "warn" : "muted"} axis={axis}>
-    <ActivityActionRow icon={Calendar} label={text("Open in Scheduler", "在定时任务中打开")} note={text("Change or pause this task", "修改或暂停这个任务")} onClick={() => navigate("/scheduler")} />
+    <ActivityActionRow icon={Calendar} label={text("Open in Tasks", "在任务中打开")} note={text("Change or pause this task", "修改或暂停这个任务")} onClick={() => navigate("/tasks?tab=scheduled")} />
     <ActivityRow id="task-details" status={taskLine(task, context)}>{() => <TaskDetails task={task} context={context} />}</ActivityRow>
     <RunList source={{ kind: "task", taskId: task.id }} context={context} onAxis={setAxis} />
   </ActivityPageFrame>;

@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "@/lib/i18n";
 import { api } from "@/lib/net/api";
+import { errorDetailText } from "@/lib/net/error-text";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import type { DetectedEnvKey, DetectedPayload, KeyCheck, SuggestedModel } from "@/lib/settings/provider-status.generated";
 
@@ -53,23 +54,27 @@ function suggestionOf(check: KeyCheck): Suggestion {
   return { top: check.models, count: check.model_count ?? check.models.length, enabled: check.enabled_models, providerEnabled: check.provider_enabled };
 }
 
+/** What reading a provider's models answers. */
+interface ModelsReply { models?: Model[] }
+
+/** What checking an environment key answers. */
+interface EnvCheckReply { check?: KeyCheck | null; error?: unknown }
+
 async function readModels(id: string): Promise<Model[]> {
   const r = await fetch(`/api/providers/${encodeURIComponent(id)}/models`);
   if (!r.ok) return [];
-  const d = await r.json().catch(() => ({}));
-  return (d.models as Model[]) ?? [];
+  const d = await r.json().catch((): ModelsReply => ({})) as ModelsReply;
+  return d.models ?? [];
 }
 
 /** Add provider (design §4): pick → key or sign-in, checked automatically,
  *  with a one-line result → default model → Start chatting. */
 export function AddProviderDialog({
-  open, start, detected, detectedFailed = false, onRetryDetected, catalogue, onOpenChange, onConnected, onOpenProvider,
+  open, start, detected, catalogue, onOpenChange, onConnected, onOpenProvider,
 }: {
   open: boolean;
   start: AddStart;
   detected: DetectedPayload | null;
-  detectedFailed?: boolean;
-  onRetryDetected?: () => void;
   catalogue: Provider[];
   onOpenChange: (open: boolean) => void;
   /** Something was stored: the page re-reads its lists. */
@@ -118,13 +123,13 @@ export function AddProviderDialog({
     setStep({ step: "connect", choice, family, check: null, envVar: row.env_var, busy: true });
     try {
       const r = await fetch(`${credentialUrl(choice.id, `env:${row.env_var}`)}/check`, { method: "POST" });
-      const d = await r.json().catch(() => ({}));
-      const check = (d.check ?? null) as KeyCheck | null;
+      const d = await r.json().catch((): EnvCheckReply => ({})) as EnvCheckReply;
+      const check = d.check ?? null;
       if (r.ok) {
         changed();
         if (check && USABLE.has(check.result)) { toModelStep(choice, suggestionOf(check)); return; }
       }
-      setStep({ step: "connect", choice, family, check: check ?? { result: "rejected", http_status: r.status, detail: d.error ?? null, fix_page: null, fix_url: null, balance: null, model_count: null, models: [], enabled_models: [], provider_enabled: false, auto_enabled: false }, envVar: row.env_var, busy: false });
+      setStep({ step: "connect", choice, family, check: check ?? { result: "rejected", http_status: r.status, detail: d.error === undefined || d.error === null ? null : errorDetailText(d.error, ""), fix_page: null, fix_url: null, balance: null, model_count: null, models: [], enabled_models: [], provider_enabled: false, auto_enabled: false }, envVar: row.env_var, busy: false });
     } catch {
       setStep({ step: "connect", choice, family, check: null, envVar: null, busy: false });
     } finally {
@@ -195,8 +200,6 @@ export function AddProviderDialog({
     body = (
       <PickProvider
         detected={detected}
-        detectedFailed={detectedFailed}
-        onRetry={onRetryDetected}
         catalogue={catalogue}
         autoFocus
         usingEnv={usingEnv}

@@ -773,7 +773,7 @@ COMPATIBILITY_FIXTURES = {
         True,
         None,
     ),
-    "computer_use.vm": (
+    "computer_use.osworld": (
         "configured_service",
         "POST",
         "http://configured.example.test:17654",

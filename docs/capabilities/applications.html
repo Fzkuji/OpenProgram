@@ -47,7 +47,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Built-in</th><th scope="col">What it does</th><th scope="col">Disabling removes</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">browser</code></th><td>The built-in browser that <code translate="no">computer_use_agent</code> operates</td><td>The browser target; desktop targets keep working</td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td>The built-in browser that <code translate="no">computer_use</code> operates</td><td><code translate="no">type="browser"</code>, with and without <code translate="no">app</code> naming your own browser; windows and the screen keep working</td></tr>
 <tr><th scope="row"><code translate="no">workflow_recording</code></th><td><a href="workflows/recording.html">Workflow recording</a>; its window starts a recording without the composer</td><td>The composer's <strong>Record a workflow</strong> and the routes</td></tr>
 <tr><th scope="row"><code translate="no">office_editor</code> (<strong>ONLYOFFICE</strong>)</th><td>Word, Excel and PowerPoint in the file window; its window starts a blank file in the current project and lists its Office documents</td><td>Those files offer only the original-file download</td></tr>
 <tr><th scope="row"><code translate="no">meeting</code></th><td><a href="meetings.html">Meetings</a>: records a call, transcribes it, summarizes in a new chat</td><td>Meetings</td></tr>
@@ -61,7 +61,7 @@
 <tr><th scope="row">Project</th><td>One per project, separate business data. Uses the selected project when opened; changing the conversation's project does not rebind. No current project: a single saved binding is reused; first use or several bindings opens a chooser, which also accepts a new folder.</td></tr>
 </tbody>
 </table>
-<p class="next">Examples: <a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/calculator">calculator</a>, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF editor</a> (reads, annotates and reorganizes the project's PDFs; uses your model only when you ask for a summary)</p>
+<p class="next">Examples: <a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/calculator">calculator</a>, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF editor</a> (reads, annotates and reorganizes the project's PDFs; uses your model only when you ask for a summary), <a href="https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/auto_research">Auto Research</a> (runs one task of a research project at a time: field surveys, ideas, paper checks, citation checks, reviews and venue checklists)</p>
 <h2 id="application-package">Application package</h2>
 <pre translate="no" tabindex="0"><code>{
   "id": "local.notes",
@@ -105,6 +105,7 @@
 <tr><th scope="row"><code translate="no">model.invoke</code></th><td>An ambient Runtime for <code translate="no">llm()</code> and <code translate="no">agent()</code></td></tr>
 <tr><th scope="row"><code translate="no">files.project.read</code></th><td><code translate="no">context.read_file(relative_path)</code> inside the bound project</td></tr>
 <tr><th scope="row"><code translate="no">files.project.write</code></th><td><code translate="no">context.write_file(relative_path, content)</code> inside the bound project; needs a Python backend and <code translate="no">--trust</code></td></tr>
+<tr><th scope="row"><code translate="no">chat</code></th><td>The page, not the backend: <code translate="no">chat.*</code> conversations of its own, shown with your composer in place of the right sidebar</td></tr>
 </tbody>
 </table>
 <p class="note">Capabilities restrict the host bridge, not the operating-system permissions of trusted Python. Backends are checked in a separate process before registration; listing applications does not import their code.</p>
@@ -128,6 +129,11 @@
 <tr><th scope="row"><code translate="no">status(id, after)</code></th><td>Status, result, error, pending question, events after a cursor</td></tr>
 <tr><th scope="row"><code translate="no">cancel(id)</code></th><td>Cancels execution</td></tr>
 <tr><th scope="row"><code translate="no">answer(id, requestId, answer)</code></th><td>Answers its current question</td></tr>
+<tr><th scope="row"><code translate="no">chat.open(key, folder)</code></th><td>Needs <code translate="no">chat</code>. Opens the conversation kept under <code translate="no">key</code>, one per key, working in <code translate="no">folder</code>; returns <code translate="no">{session_id, project_id, folder}</code></td></tr>
+<tr><th scope="row"><code translate="no">chat.place(rect)</code></th><td>Puts the composer at <code translate="no">{left, right, bottom}</code> in page pixels; <code translate="no">null</code> hides it</td></tr>
+<tr><th scope="row"><code translate="no">chat.note(text)</code></th><td>Sent to the model beside each next message, up to 16,000 characters: what the page is showing</td></tr>
+<tr><th scope="row"><code translate="no">chat.reveal()</code>, <code translate="no">chat.close()</code></th><td>Opens the conversation in a chat tab; closes it here</td></tr>
+<tr><th scope="row"><code translate="no">on(event, listener)</code></th><td><code translate="no">"chat"</code>: the open conversation's messages, tool steps and whether a reply is running. <code translate="no">"composer"</code>: its height. Returns an unsubscribe function.</td></tr>
 </tbody>
 </table>
 <p class="note">Runs from another instance are inaccessible through this bridge.</p>

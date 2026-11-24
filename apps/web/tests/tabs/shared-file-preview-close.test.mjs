@@ -9,6 +9,7 @@ const ts=require('typescript');
 const {parseHTML}=require('linkedom');
 registerHooks({resolve(specifier,context,next){
  if(specifier==='next/navigation')return {url:'data:text/javascript,export const usePathname=()=>"/chat"; export const useRouter=()=>({push(){}});',shortCircuit:true};
+ if(specifier==='@/components/ui/confirm-dialog')return {url:'data:text/javascript,export const chooseAction=async(request)=>{globalThis.__asked.push(request);return globalThis.__answer;};export const confirmAction=async()=>true;',shortCircuit:true};
  if(specifier==='@/lib/external-libs')return {url:'data:text/javascript,export const externalLibsReady=async()=>{};',shortCircuit:true};
  if(specifier.endsWith('.module.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};
  const base=specifier.startsWith('@/')?new URL(specifier.slice(2),root).href:specifier.startsWith('.')&&!/\.[a-z]+$/i.test(specifier)?new URL(specifier,context.parentURL).href:null;
@@ -34,6 +35,7 @@ const {getOrCreateDocumentController}=await import(new URL('lib/files/document/d
 const {setDraftStoreAdapterForTests}=await import(new URL('lib/files/drafts/file-drafts.ts',root));
 const {MemoryDraftStore}=await import(new URL('lib/files/drafts/file-draft-store.ts',root));
 setDraftStoreAdapterForTests(new MemoryDraftStore());
+globalThis.__asked=[];globalThis.__answer='confirm';
 test('closing one preview keeps the shared document editable until the last owner closes', async()=>{
 const noop=()=>{};let lifecycle;
 function Receiver(){const activeId=useCenterTabs(s=>s.activeId);lifecycle=useTabLifecycle({activeId,cancelDrag:noop,setFocusedTabId:noop,freezeWidthsForMouseClose:noop,releaseFrozenWidths:noop});return createElement('div');}
@@ -56,6 +58,7 @@ const host=document.createElement('div');document.body.append(host);const view=c
 await act(async()=>view.render(createElement(Receiver)));
 await act(async()=>lifecycle.onTabsClose({stopPropagation(){}},[files[0]]));
 await act(async()=>lifecycle.finishClose(files[0]));
+assert.equal(globalThis.__asked.length,0,'a file another tab still shows is not asked about');
 try {
  assert.ok(useCenterTabs.getState().tabs.some(tab=>tab.id===files[1].id));
  assert.notEqual(second.getState().status,'closed');
@@ -65,8 +68,41 @@ try {
  assert.equal(await second.getState().snapshot.bytes.text(),'continued edit in remaining tab');
  second.update('last owner edit');
  await act(async()=>lifecycle.onTabsClose({stopPropagation(){}},[files[1]]));
- assert.equal(disk,'last owner edit');
+ assert.equal(globalThis.__asked.length,1,'the last owner of an unsaved edit is asked before closing');
+ assert.match(globalThis.__asked[0].title,/report\.md/);
+ assert.equal(disk,'last owner edit','Save writes the edit');
  assert.equal(second.getState().status,'closed');
  await act(async()=>lifecycle.finishClose(files[1]));
 } finally {await act(async()=>view.unmount());host.remove();retained();}
+});
+
+test("Cancel keeps an unsaved file open; Don't Save closes it without writing", async()=>{
+const noop=()=>{};let lifecycle;
+function Receiver(){const activeId=useCenterTabs(s=>s.activeId);lifecycle=useTabLifecycle({activeId,cancelDrag:noop,setFocusedTabId:noop,freezeWidthsForMouseClose:noop,releaseFrozenWidths:noop});return createElement('div');}
+useCenterTabs.setState({tabs:[{id:'s:c',kind:'session',sessionId:'c',title:'C'}],groups:[],activeId:'s:c'});
+assert.equal(useCenterTabs.getState().openFilePreview('c',{projectId:'p',path:'deck.md'},true),true);
+const file=useCenterTabs.getState().tabs.find(t=>t.kind==='file');
+let writes=0;
+const doc=getOrCreateDocumentController({projectId:'p',path:'deck.md',draftStore:{get:async()=>null,delete:async()=>{},put:async()=>1},fetchImpl:async(_url,init)=>{
+ if(init?.method==='PUT'){writes++;return Response.json({ok:true,status:'committed',revision:'b'.repeat(64)});}
+ return new Response('original',{headers:{'x-document-revision':'a'.repeat(64),'x-document-version':'v1'}});
+}});
+await doc.hydrate({bytes:'original',revision:'a'.repeat(64)});
+const host=document.createElement('div');document.body.append(host);const view=createRoot(host);
+await act(async()=>view.render(createElement(Receiver)));
+try {
+ doc.update('unsaved edit');
+ globalThis.__asked=[];globalThis.__answer='cancel';
+ await act(async()=>lifecycle.onTabsClose({stopPropagation(){}},[file]));
+ assert.equal(globalThis.__asked.length,1);
+ assert.ok(useCenterTabs.getState().tabs.some(tab=>tab.id===file.id),'Cancel keeps the tab');
+ assert.equal(await doc.currentDraft().text(),'unsaved edit');
+ globalThis.__answer='alternate';
+ await act(async()=>lifecycle.onTabsClose({stopPropagation(){}},[file]));
+ await act(async()=>lifecycle.finishClose(file));
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(writes,0,"Don't Save writes nothing");
+ assert.equal(doc.currentDraft(),null,"Don't Save drops the draft");
+ assert.equal(doc.getState().status,'closed');
+} finally {await act(async()=>view.unmount());host.remove();globalThis.__answer='confirm';}
 });

@@ -10,6 +10,7 @@
  * just deleted, and owns the enter/exit animation bookkeeping
  * (`enteringIds` / `closingIds`) that the strip renders from.
  */
+import { preloadSession } from "@/lib/tabs/navigation/preload-session";
 import { isMacPlatform } from "@/lib/shortcut-keys";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -19,9 +20,12 @@ import { desktopBridge } from "@/lib/desktop/bridge/bridge-api";
 import { findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { openOverview } from "@/lib/tabs/canvas/canvas-overview";
 import { captureVisiblePanes } from "@/lib/tabs/canvas/window-snapshots";
+import { canvasPaneFrame, captureCanvasTransition } from "@/lib/tabs/canvas/canvas-transition";
+import { hideHeldFilePane, holdFilePane, releaseFilePane } from "@/lib/tabs/panes/held-file-panes";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/session/conversations";
-import { flushFileDocumentsBeforeClose } from "@/lib/files/drafts/file-drafts";
+import { discardFileDraftsBeforeClose, flushFileDocumentsBeforeClose, hasDirtyDraftsForPath } from "@/lib/files/drafts/file-drafts";
+import { chooseAction } from "@/components/ui/confirm-dialog";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -37,6 +41,7 @@ import { selectTabsReadyForHumanClose } from "@/lib/browser/control/browser-cont
 import { documentControllers } from "@/lib/files/document/document-controller";
 import { applicationRequest } from "@/lib/net/applications";
 import { showToast } from "@/lib/format-utils/toast";
+import { toggleActivityView } from "@/lib/prefs/recents-view";
 
 export function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -229,6 +234,8 @@ export function useTabLifecycle({
   }
 
   function onTabClick(tab: CenterTab) {
+    // The transcript read leaves now, not after the route transition commits.
+    if (tab.kind === "session" && tab.sessionId && !tab.draft && !tab.navigationRoute) preloadSession(tab.sessionId);
     const reactivateCurrentSession =
       tab.kind === "session" && tab.id === activeId;
     setFocusedTabId(tab.id);
@@ -274,49 +281,86 @@ export function useTabLifecycle({
   async function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
     e.stopPropagation();
     cancelDrag();
-    const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
-    const closing = new Set([...tabsToClose.map(tab => tab.id), ...closingInstances.current.keys()]);
+    const mouseClose = isMouseDrivenClose(e);
+    const closeTarget = e.target;
     const fileKey = (tab: CenterTab) => tab.kind === "file" && tab.path && (tab.projectId || tab.fileSessionId)
       ? tab.readOnly ? `attachment:${tab.fileSessionId}:${tab.path}` : `project:${tab.projectId}:${tab.path}`
       : null;
+    const ownedOutside = (key: string, closing: ReadonlySet<string>) =>
+      useCenterTabs.getState().tabs.some(owner => !closing.has(owner.id) && fileKey(owner) === key);
+    // Edits the file does not hold yet are asked about before anything
+    // closes, as a desktop editor asks: Save, Don't Save or Cancel. A file
+    // with nothing unsaved closes at once and is never written.
+    let choice: "confirm" | "alternate" | "cancel" = "confirm";
+    const unsaved: CenterTab[] = [];
+    {
+      const ready = selectTabsReadyForHumanClose(tabsToClose, useCenterTabs.getState().tabs);
+      const closing = new Set([...ready.map(tab => tab.id), ...closingInstances.current.keys()]);
+      const candidates = ready.filter((tab) => {
+        const key = fileKey(tab);
+        return key && !tab.readOnly && tab.projectId && tab.path && !ownedOutside(key, closing);
+      });
+      for (const tab of candidates) {
+        const controller = documentControllers.get(fileKey(tab)!);
+        // An open document holds its stored draft; only a file whose pane
+        // never opened is looked up in the draft store.
+        const dirty = controller ? controller.hasUnsavedChanges() : await hasDirtyDraftsForPath(tab.projectId!, tab.path!);
+        if (dirty) unsaved.push(tab);
+      }
+      if (unsaved.length) {
+        const name = (tab: CenterTab) => tab.path!.split("/").pop() || tab.path!;
+        choice = await chooseAction({
+          title: unsaved.length === 1
+            ? text(`Do you want to save the changes you made to "${name(unsaved[0])}"?`, `是否保存对“${name(unsaved[0])}”的更改？`)
+            : text(`Do you want to save the changes you made to ${unsaved.length} files?`, `是否保存对 ${unsaved.length} 个文件的更改？`),
+          description: unsaved.length === 1
+            ? text("Your changes will be lost if you don't save them.", "如果不保存，你的更改将会丢失。")
+            : text(`${unsaved.map(name).join(", ")}. Your changes will be lost if you don't save them.`,
+              `${unsaved.map(name).join("、")}。如果不保存，你的更改将会丢失。`),
+          confirmLabel: text("Save", "保存"),
+          alternateLabel: text("Don't Save", "不保存"),
+          cancelLabel: text("Cancel", "取消"),
+        });
+        if (choice === "cancel") return;
+      }
+    }
+    // The tabs may have changed while the question was open.
+    const ready = selectTabsReadyForHumanClose(
+      tabsToClose.filter(tab => useCenterTabs.getState().tabs.some(current => current.id === tab.id) && !closingInstances.current.has(tab.id)),
+      useCenterTabs.getState().tabs);
+    if (ready.length === 0) return;
+    const fileTabs = ready.filter((tab) => tab.kind === "file");
+    const closing = new Set([...ready.map(tab => tab.id), ...closingInstances.current.keys()]);
     // The documents only these tabs show; closing them releases the documents.
-    const owned = (key: string) => useCenterTabs.getState().tabs.some(owner => !closing.has(owner.id) && fileKey(owner) === key);
+    const owned = (key: string) => ownedOutside(key, closing);
     const released = fileTabs.flatMap((tab) => {
       const key = fileKey(tab);
       if (!key || owned(key)) return [];
       const controller = documentControllers.get(key);
-      return controller ? [{ key, controller }] : [];
+      return controller ? [{ key, controller, tab }] : [];
     });
-    const release = async (background: boolean) => {
+    const discarded = choice === "alternate" ? unsaved.filter(tab => ready.some(r => r.id === tab.id)) : [];
+    // The tab goes in the click's frame whatever its document needs: a
+    // save, an Office export or a network round trip never holds the close,
+    // and a save that fails (the file moved, the disk changed) cannot keep
+    // a pane on screen. The document is saved and released afterwards, in
+    // its pane, which stays mounted out of sight until then; what could not
+    // be saved stays in the draft store and is offered when the file opens.
+    const release = async () => {
+      // Don't Save: what the file does not hold is dropped, nothing is written.
+      if (discarded.length && !(await discardFileDraftsBeforeClose(discarded))) return false;
       if (!(await flushFileDocumentsBeforeClose(fileTabs))) return false;
-      try {
-        for (const { key, controller } of released) {
-          // Reopened while the tab was going: the new tab keeps the document.
-          if (background && owned(key)) continue;
-          await controller.close();
-        }
-        return true;
-      } catch {
-        return false;
+      let saved = true;
+      for (const { key, controller } of released) {
+        // Reopened while the tab was going: the new tab keeps the document.
+        if (owned(key)) continue;
+        try { await controller.close(); } catch { saved = false; }
       }
+      return saved;
     };
-    // Edits not yet saved, a native editor that may still hold input, or a
-    // project document whose state is not loaded (its draft may be unsaved)
-    // are saved before the tab goes, so a failed save keeps it open. Any
-    // other document is released after its tab has gone: the save, editor
-    // and network round trips never hold the close.
-    const unloaded = fileTabs.some((tab) => {
-      const key = fileKey(tab);
-      return Boolean(key && !tab.readOnly && !owned(key) && !documentControllers.has(key));
-    });
-    const saveFirst = unloaded || released.some(({ controller }) => !controller.canReplacePreview());
-    if (saveFirst && !(await release(false))) {
-      showToast(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"), { tone: "error" });
-      return;
-    }
     // An application window closing releases its chat's hold on the
     // application, so its entries go back to deferred for that chat.
-    for (const tab of tabsToClose) {
+    for (const tab of ready) {
       if (tab.kind !== "application" || !tab.applicationId || !tab.applicationInstanceId || !tab.applicationSessionId) continue;
       void applicationRequest(`/api/applications/${encodeURIComponent(tab.applicationId)}/close`, "POST", {
         instance_id: tab.applicationInstanceId, session_id: tab.applicationSessionId,
@@ -324,37 +368,51 @@ export function useTabLifecycle({
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.
-    // Runs AFTER the discard prompt: a cancelled close must not freeze.
     // The strip marks the closing row entry BEFORE pinning — React only
     // stamps data-tab-closing on the next render, which is after
     // freezeStripWidths has walked the row, so without the early mark the
     // closing tab gets pinned too and its exit shrink fights the inline
     // width.
-    const ready = selectTabsReadyForHumanClose(tabsToClose, useCenterTabs.getState().tabs);
-    if (ready.length === 0) return;
-    if (isMouseDrivenClose(e)) freezeWidthsForMouseClose(e.target);
+    if (mouseClose && !unsaved.length) freezeWidthsForMouseClose(closeTarget);
     else releaseFrozenWidths();
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
     // A pane closed out of a split that stays open has no exit in the strip
-    // (the split's tab stays as it is), so it goes at once, and the panes
-    // beside it take its room in the same frame.
+    // (the split's tab stays as it is): it leaves the layout at once and
+    // folds away on the canvas while the panes beside it grow into its room.
     const { groups } = useCenterTabs.getState();
     const closingIds = new Set(ready.map(tab => tab.id));
     const leavesSplit = (tab: CenterTab) =>
       findCenterTabGroup(groups, tab.id)?.memberIds.some(id => !closingIds.has(id)) ?? false;
     for (const tab of ready) closingInstances.current.set(tab.id, tab);
     const animated = ready.filter(tab => !leavesSplit(tab));
-    for (const tab of ready) if (leavesSplit(tab)) finishClose(tab);
+    const folding = ready.filter(leavesSplit);
+    const frames = new Map(folding.map(tab => [tab.id, canvasPaneFrame(tab.id)] as const));
+    for (const { tab } of released) holdFilePane(tab, frames.get(tab.id) ?? null);
+    if (folding.length) captureCanvasTransition({}, { closing: folding.map(tab => tab.id), held: released.map(({ tab }) => tab.id) });
+    for (const tab of folding) finishClose(tab);
     if (animated.length) setClosingIds((prev) => {
       const next = new Set(prev);
       for (const tab of animated) next.add(tab.id);
       return next;
     });
-    if (!saveFirst && fileTabs.length) {
-      void release(true).then((saved) => {
-        if (!saved) showToast(text("Unable to save this document.", "无法保存此文件。"), { tone: "error" });
-      });
+    // A fold that never played (the canvas was not on screen) still ends.
+    if (folding.length) window.setTimeout(() => { for (const tab of folding) hideHeldFilePane(tab.id); }, 600);
+    if (fileTabs.length) {
+      void release().then((saved) => {
+        if (saved) return;
+        const reopen = fileTabs.find(tab => !tab.readOnly && tab.projectId && tab.path);
+        showToast(discarded.length
+          ? text("Unable to discard the changes to this document. They are kept as a draft.", "无法放弃此文件的更改，改动已保留为草稿。")
+          : text("Unable to save this document. Its changes are kept as a draft.", "无法保存此文件，改动已保留为草稿。"), {
+          tone: "error",
+          duration: 10_000,
+          action: reopen ? {
+            label: text("Open", "打开"),
+            run: () => { useCenterTabs.getState().openFileTab(reopen.projectId!, reopen.path!); },
+          } : undefined,
+        });
+      }).finally(() => { for (const { tab } of released) releaseFilePane(tab.id); });
     }
   }
 
@@ -417,7 +475,7 @@ export function useTabLifecycle({
       if (tab) onTabClickRef.current(tab);
     };
     window.addEventListener("op-activate-center-tab", onActivateTab);
-    // New chat, tab switching and Settings. The desktop App's menu accelerators send
+    // New chat, tab switching, Settings and Activity. The desktop App's menu accelerators send
     // them as op-tab-shortcut (they work while a web page has focus too); a
     // browser gets them from the keyboard where it lets the page have them.
     const runShortcut = (shortcut: TabShortcut) => {
@@ -431,6 +489,10 @@ export function useTabLifecycle({
       }
       if (shortcut.action === "open-settings") {
         navigate("/settings/general");
+        return;
+      }
+      if (shortcut.action === "toggle-activity") {
+        toggleActivityView();
         return;
       }
       const id = tabForShortcut(useCenterTabs.getState(), shortcut);

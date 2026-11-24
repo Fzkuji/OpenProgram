@@ -31,13 +31,13 @@ def _sandbox_network_domains() -> dict:
 
 
 def _computer_use_app() -> dict:
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop.backends import support
+    from openprogram.programs.tools.computer_use.computer_use.desktop.backends import support
     state = support()
     return {"available": bool(state["available"]), "reason": str(state.get("reason") or "")}
 
 
 def _computer_use_code() -> dict:
-    from openprogram.programs.tools.computer_use.computer_use_agent import code
+    from openprogram.programs.tools.computer_use.computer_use import code
     if code.available():
         return {"available": True, "reason": ""}
     if sys.platform != "darwin":
@@ -129,6 +129,9 @@ FEATURES: tuple[tuple[str, str, str, str | None, Probe], ...] = (
     ("sandbox_network_domains", "Sandbox network rules by domain", "沙箱按域名的网络规则",
      "sandbox.network_domains", _sandbox_network_domains),
     ("computer_use_app", "Computer use: application windows", "电脑操作：应用窗口", None, _computer_use_app),
+    # The whole screen goes through the same local driver as application windows, and is off until turned on.
+    ("computer_use_screen", "Computer use: whole screen", "电脑操作：整个屏幕", "computer_use.whole_screen",
+     _computer_use_app),
     ("computer_use_code", "Computer use: code", "电脑操作：代码", None, _computer_use_code),
     ("workflow_recording", "Workflow recording", "工作流录制", None, _workflow_recording),
     ("meeting_system_audio", "Meetings: the computer's sound", "会议：电脑声音", None, _meeting_system_audio),

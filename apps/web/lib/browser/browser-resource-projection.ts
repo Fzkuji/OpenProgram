@@ -9,12 +9,16 @@ import {
   getPreviewPreference,
   hideResourcePreview,
   recoverSessionResources,
+  setShownResourceSessions,
   resourceSessionId,
   setBrowserConnection,
   showResourcePreview,
   useBrowserResourceStore,
   viewedBranchFor,
 } from "@/lib/chat/resources/session-resources";
+import { onChanged } from "@/lib/net/ws/changes";
+import { closedHiddenPageTabs } from "@/lib/browser/web-tab/web-page-management";
+import { desktopBridge, wakeShownWebViews } from "@/lib/desktop/desktop-bridge";
 import {
   clearYieldingOnDisconnect,
   settlePendingClose,
@@ -22,6 +26,9 @@ import {
 } from "@/lib/browser/control/browser-control";
 
 export { recoverSessionResources };
+
+/** The Worker's topic for a conversation's resources list. */
+export const CONVERSATION_RESOURCES = "conversation.resources";
 
 export function viewedConversationId(
   tabs: readonly { id: string; kind: string; sessionId?: string; agentSessionId?: string; diffSessionId?: string; draft?: boolean }[],
@@ -134,6 +141,63 @@ export function applyBrowserConnection(connected: boolean): void {
   if (!connected) clearYieldingOnDisconnect();
 }
 
+/** Read the resources of the conversations on screen now, and again when
+ *  the Worker says one of them changed (`conversation.resources`, keyed by
+ *  conversation; host/resources/conversation_changes.py), never on a timer.
+ *  A hidden window holds what changed and reads it once it shows; reads
+ *  that are asked for while one is out run once after it. Returns the stop. */
+export function readShownResourcesOnChange(
+  sessions: readonly string[],
+  read: (sessionId: string) => Promise<void> = recoverSessionResources,
+): () => void {
+  let disposed = false;
+  let running = false;
+  const wanted = new Set<string>();
+  const held = new Set<string>();
+  const hidden = () => document.visibilityState === "hidden";
+  async function drain() {
+    if (running) return;
+    running = true;
+    while (!disposed && wanted.size) {
+      const ids = sessions.filter(id => wanted.has(id));
+      wanted.clear();
+      for (const id of ids) {
+        if (disposed) break;
+        try {
+          await read(id);
+        } catch {
+          /* snapshot recovery is optional */
+        }
+      }
+    }
+    running = false;
+  }
+  function want(ids: readonly string[]) {
+    if (disposed || !ids.length) return;
+    if (hidden()) {
+      for (const id of ids) held.add(id);
+      return;
+    }
+    for (const id of ids) wanted.add(id);
+    void drain();
+  }
+  const off = onChanged(CONVERSATION_RESOURCES, keys => {
+    want(keys === null ? sessions : sessions.filter(id => keys.includes(id)));
+  });
+  const onVisible = () => {
+    if (hidden()) return;
+    held.clear();
+    want(sessions);
+  };
+  want(sessions);
+  document.addEventListener("visibilitychange", onVisible);
+  return () => {
+    disposed = true;
+    off();
+    document.removeEventListener("visibilitychange", onVisible);
+  };
+}
+
 /** Window-level projection: follow PiP, snapshot recovery, disconnect. One owner. */
 export function BrowserResourceProjection({ sessionId }: { sessionId: string | null }) {
   const tabs = useCenterTabs(s => s.tabs);
@@ -153,39 +217,26 @@ export function BrowserResourceProjection({ sessionId }: { sessionId: string | n
   }, [rows, pendingCloses]);
 
   useEffect(() => {
+    const store = useCenterTabs.getState();
+    for (const id of closedHiddenPageTabs(store.tabs, store.groups)) store.closeTab(id);
+  }, [rows, tabs]);
+
+  useEffect(() => {
     if (!sessionId) return;
     // The panes beside the focused one can float a preview too. The
     // focused conversation goes last, so its snapshot is the freshest.
     const sessions = [...(besideKey ? besideKey.split("\n") : []), sessionId];
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let running = false;
-    // A hidden window skips the poll and catches up once it shows again.
-    async function poll() {
-      if (running) return;
-      running = true;
-      clearTimeout(timer);
-      if (document.visibilityState !== "hidden") {
-        for (const id of sessions) {
-          try {
-            await recoverSessionResources(id);
-          } catch {
-            /* snapshot recovery is optional */
-          }
-        }
-      }
-      running = false;
-      if (!disposed) timer = setTimeout(poll, 3000);
-    }
-    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
-    void poll();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    setShownResourceSessions(sessions);
+    return readShownResourcesOnChange(sessions);
   }, [sessionId, besideKey]);
+
+  // The pages of a conversation that has come on screen get their views
+  // now, so each is loaded by the time it is opened. `rows` is here because
+  // a page may be listed by a conversation other than the one that opened it.
+  useEffect(() => {
+    const bridge = desktopBridge();
+    if (sessionId && bridge) wakeShownWebViews(bridge);
+  }, [sessionId, besideKey, rows, tabs]);
 
   useEffect(() => {
     const onConnection = (event: Event) => {

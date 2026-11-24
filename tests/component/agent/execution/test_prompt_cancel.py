@@ -55,4 +55,6 @@ def test_stop_does_not_wait_for_provider_cleanup(real_agent_chat, monkeypatch):
     current = h.store.get_execution(execution.execution_id)
     _command(h, "execution.cancel", current, "cancel-cleanup")
     _wait(lambda: h.store.get_execution(execution.execution_id).status.value == "cancelled", timeout=2)
-    _wait(lambda: bool(cleaned), timeout=2)
+    # The loop gives a close two seconds before it cancels it (settle_unwinding);
+    # the wait is for that to happen at all, not for how fast.
+    _wait(lambda: bool(cleaned), timeout=15)

@@ -12,6 +12,8 @@ Members:
 - ``TAG``, ``MAX_SECONDS``, ``PURPOSES``, ``RecordingError``: the message
   tag, the time limit, the purposes (``workflow``, ``context``) and the
   error a missing or refused recording raises.
+- ``TOPIC``: the change topic a recording's status is signalled on, keyed
+  by its id (:mod:`openprogram.host._platform.changes`).
 - ``start(purpose)``, ``get(id)``, ``active()``, ``directory_of(id)``:
   the recording life cycle (``session``).
 - ``summary(directory)``, ``compose(directory)``, ``step_rows(directory)``:
@@ -33,6 +35,7 @@ class WorkflowRecordingService:
 
     TAG = describe.TAG
     MAX_SECONDS = session.MAX_SECONDS
+    TOPIC = session.TOPIC
     PURPOSES = session.PURPOSES
     RecordingError = session.RecordingError
 

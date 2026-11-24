@@ -35,7 +35,7 @@ applications/
 <tr><th scope="row">Kept across navigation</th><td>Loaded directories, selection, expanded folders, call graphs</td></tr>
 <tr><th scope="row">Revalidated</th><td>Visible folders and the selected graph, in the background every five seconds and on focus or manual refresh</td></tr>
 <tr><th scope="row">Unchanged response</th><td>A revision acknowledgement only</td></tr>
-<tr><th scope="row">Failure</th><td>Usable content stays; retry is offered</td></tr>
+<tr><th scope="row">Failure</th><td>Usable content stays; the read is tried again quietly with backoff. Nothing read yet: the place stays empty</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

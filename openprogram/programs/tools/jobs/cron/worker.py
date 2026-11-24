@@ -1,7 +1,7 @@
 """Scheduler worker for one-time, recurring, and monitor tasks.
 
-Reads the task file produced by the ``scheduler`` tool every minute. For
-each due entry, spawns a
+Reads the task file produced by the ``scheduler`` tool when an entry is
+due and when the file changes. For each due entry, spawns a
 detached subprocess running the entry's ``prompt`` via
 ``process_user_turn``; a ``reminder`` entry fires in-process as one
 ``reminder.fired`` event (``openprogram/runtime/scheduler/reminders.py``).
@@ -28,6 +28,14 @@ Design notes:
   macros. ``@reboot`` fires once when the worker starts.
 - When day-of-month and day-of-week are both restricted (not ``*``),
   they combine with OR, matching Vixie/ISC cron semantics.
+- Between ticks the loop sleeps until the next entry is due (a firing
+  minute, a one-time task's time, a command's time limit), and wakes
+  sooner when the task file changes: ``cron._save`` signals
+  :data:`TOPIC` in this process, and the file's events (and those of the
+  ``run-endings`` folder) signal it from any other. It looks every
+  :data:`RESYNC_SECONDS` in any case, and every minute where file events
+  cannot be had. One wait lasts at most :data:`_SLICE_SECONDS`, so a
+  firing passed while the computer slept is seen within that long.
 - The daemon logs an ordinary tick failure and waits for the next minute.
   ``--once`` remains fail-fast, and process-control ``BaseException`` values
   are never converted into daemon retries.
@@ -58,7 +66,8 @@ from openprogram.host._platform.processes import kill_process_tree, process_star
 from openprogram.host.backend.local import _invocation
 from openprogram.host import sandbox as _sandbox
 
-from .cron import _load, _resolve_path, _save, _store_lock, _verify_execution_spec, report_refusal
+from .cron import TOPIC, _load, _resolve_path, _save, _store_lock, _verify_execution_spec, report_refusal
+from openprogram.host._platform import changes
 from openprogram.host._platform.filesystem import replace_file
 
 
@@ -73,6 +82,16 @@ _MACRO_EXPANSIONS = {
     "@midnight": "0 0 * * *",
     "@hourly":   "0 * * * *",
 }
+
+#: A look even when nothing is due or changed, in case a change was lost.
+RESYNC_SECONDS = 300.0
+#: The longest single wait. A wait's clock may stand still while the
+#: computer sleeps; waking this often by the wall clock bounds how late a
+#: firing passed in sleep is seen. A wake that finds nothing due does nothing.
+_SLICE_SECONDS = 60.0
+#: How far ahead a recurring expression is searched for its next firing:
+#: four years, so a 29 February still has one.
+_SEARCH_DAYS = 4 * 366
 
 # A recurring task whose time passed while the worker was not running fires
 # once if that time is under this old; an older one only leaves a missed row.
@@ -185,6 +204,23 @@ def match(expr: str, now: dt.datetime) -> bool:
     if fields is None:
         return False
     return now.minute in fields.minutes and now.hour in fields.hours and _day_matches(fields, now.date())
+
+
+def _next_match(expr: str, after: dt.datetime) -> dt.datetime | None:
+    """The earliest clock reading after ``after`` that ``expr`` names, to the minute."""
+    fields = _parsed(expr)
+    if fields is None:
+        return None
+    day = after.date()
+    for _ in range(_SEARCH_DAYS):
+        if _day_matches(fields, day):
+            for hour in sorted(fields.hours):
+                for minute in sorted(fields.minutes):
+                    candidate = dt.datetime.combine(day, dt.time(hour, minute))
+                    if candidate > after:
+                        return candidate
+        day += dt.timedelta(days=1)
+    return None
 
 
 def _latest_match(expr: str, after: dt.datetime, before: dt.datetime) -> dt.datetime | None:
@@ -1449,12 +1485,95 @@ def _tick(
     return fired
 
 
+def _next_due(entries: list[dict[str, Any]], state: dict[str, Any], now: float) -> float | None:
+    """When the next tick has something to do (``time.time()``), or ``None``
+    when only a change to the task file can bring one.
+
+    Never before the next minute: a tick looks at the current minute, and
+    what it left undone (a once task past its time that did not start, a
+    command over its limit not yet reaped) is tried again a minute later.
+    """
+    from openprogram.runtime.scheduler.time_limits import COMMAND_LIMIT_S
+
+    minute = dt.datetime.fromtimestamp(now).replace(second=0, microsecond=0)
+    earliest = (minute + dt.timedelta(minutes=1)).timestamp()
+    found: list[float] = []
+    for entry in entries:
+        entry_id = str(entry.get("id") or "")
+        if entry.get("enabled", True) is False or not entry_id:
+            continue
+        if entry.get("type") == "once":
+            if _last_stamp(state, entry_id) is not None and not _start_abandoned(state.get(entry_id)):
+                continue
+            try:
+                due = dt.datetime.fromisoformat(str(entry.get("run_at") or "").replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if due.tzinfo is not None:
+                found.append(due.timestamp())
+            continue
+        following = _next_match(str(entry.get("cron") or "").strip(), minute)
+        if following is not None:
+            found.append(following.timestamp())
+    found.extend(row["at"] + COMMAND_LIMIT_S for row in _read_commands()
+                 if isinstance(row, dict) and isinstance(row.get("at"), (int, float)))
+    try:
+        from openprogram.runtime.scheduler.run_finish import _kept_directory
+        if any(name.endswith(".json") for name in os.listdir(_kept_directory())):
+            found.append(earliest)
+    except OSError:
+        pass
+    return max(min(found), earliest) if found else None
+
+
+def _watch_files() -> None:
+    """The task file and the run endings another process writes wake the loop."""
+    from openprogram.runtime.scheduler.run_finish import _kept_directory
+
+    path = _resolve_path()
+    changes.watch(os.path.dirname(path) or ".", TOPIC, names={os.path.basename(path)})
+    changes.watch(_kept_directory(), TOPIC)
+
+
+def _next_minute(now: float) -> float:
+    return (dt.datetime.fromtimestamp(now).replace(second=0, microsecond=0)
+            + dt.timedelta(minutes=1)).timestamp()
+
+
+def _wait(due: float | None, stopped: Callable[[], bool], slice_seconds: float = _SLICE_SECONDS) -> None:
+    """Wait for ``due`` (``time.time()``), a change, a stop, or the resync."""
+    started = time.time()
+    while not stopped():
+        now = time.time()
+        until = started + RESYNC_SECONDS
+        if due is not None:
+            until = min(until, due)
+        if not changes.file_events_available():
+            until = min(until, _next_minute(now))
+        if now >= until:
+            return
+        if changes.wait_for(_listener, resync=min(slice_seconds, until - now)):
+            return
+
+
+_listener = changes.listen(TOPIC)
+
+
+class _Stop(threading.Event):
+    """The scheduler's stop in the Worker: setting it also ends the wait."""
+
+    def set(self) -> None:
+        super().set()
+        _listener.wake()
+
+
 def run_forever(stop_event: threading.Event | None = None) -> None:
     """Run the worker loop until SIGINT/SIGTERM."""
     stop = {"flag": False}
 
     def _on_signal(_signum: int, _frame: Any) -> None:
         stop["flag"] = True
+        _listener.wake()
 
     if stop_event is None:
         from openprogram.host.process_logging import configure_process_logging
@@ -1466,12 +1585,23 @@ def run_forever(stop_event: threading.Event | None = None) -> None:
     print(f"scheduler-worker started. schedule={_resolve_path()}  logs={_logs_dir()}")  # noqa: T201 - terminal status
     print("press Ctrl+C to stop.")  # noqa: T201 - terminal prompt
 
+    def stopped() -> bool:
+        return stop["flag"] or bool(stop_event and stop_event.is_set())
+
+    try:
+        _watch_files()
+    except Exception as exc:  # noqa: BLE001 - it still wakes on its own time and in-process saves
+        _LOG.warning("task file not watched: %s: %s", type(exc).__name__, exc)
+    # A lock wait does not return for Ctrl-C on Windows: the standalone
+    # worker there wakes every second to let it through.
+    slice_seconds = 1.0 if stop_event is None and os.name == "nt" else _SLICE_SECONDS
     reboot = True
 
     while True:
         try:
-            # Read each minute: editing a task can clear what was fired.
+            # Read each pass: editing a task can clear what was fired.
             _tick(_load_state(), reboot=reboot)
+            due = _next_due(_load(_resolve_path()), _load_state(), time.time())
         except Exception as exc:  # noqa: BLE001 — retry at the next minute
             _LOG.warning(
                 "scheduler tick failed: %s: %s",
@@ -1479,18 +1609,12 @@ def run_forever(stop_event: threading.Event | None = None) -> None:
                 exc,
                 exc_info=True,
             )
+            due = _next_minute(time.time())
         reboot = False
-        if stop["flag"] or (stop_event and stop_event.is_set()):
+        if stopped():
             break
-        now = dt.datetime.now()
-        remain = 60 - now.second - now.microsecond / 1_000_000
-        deadline = time.monotonic() + remain
-        # Break sleep into 1s chunks so signals are responsive
-        while remain > 0 and not stop["flag"] and not (stop_event and stop_event.is_set()):
-            chunk = min(1.0, remain)
-            time.sleep(chunk)
-            remain = deadline - time.monotonic()
-        if stop["flag"] or (stop_event and stop_event.is_set()):
+        _wait(due, stopped, slice_seconds)
+        if stopped():
             break
 
     print("\nscheduler-worker stopped.")  # noqa: T201 - terminal status
@@ -1523,7 +1647,7 @@ def start_in_worker() -> tuple[threading.Event, threading.Thread]:
     from openprogram.runtime.scheduler import reminders
 
     reminders.install()
-    stop = threading.Event()
+    stop = _Stop()
     thread = threading.Thread(
         target=run_forever,
         args=(stop,),

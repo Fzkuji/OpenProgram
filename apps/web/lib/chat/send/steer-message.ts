@@ -5,14 +5,18 @@ import { useSessionStore } from "@/lib/session-store";
 import { queuedMessagePayload } from "@/lib/chat/send/queued-attachments";
 import { queueFor, useSendQueue } from "@/lib/chat/send/send-queue";
 import type { CommandResult, ExecutionCommand } from "@/lib/execution/execution-debugger";
+import { onReconnected } from "@/lib/net/ws/change-bus";
 
-type Confirmation = { timer?: ReturnType<typeof setTimeout>; delay: number };
+/** A steer waiting to be confirmed: after a lost request, a backoff timer;
+ *  while the server holds the command, the events that can change it. */
+type Confirmation = { timer?: ReturnType<typeof setTimeout>; delay: number; stop?: () => void };
 const confirmations = new Map<string, Confirmation>();
 const confirmationKey = (sessionId: string, messageId: string) => `${sessionId}\0${messageId}`;
 
 function clearConfirmation(key: string): void {
   const pending = confirmations.get(key);
   if (pending?.timer !== undefined) clearTimeout(pending.timer);
+  pending?.stop?.();
   confirmations.delete(key);
 }
 
@@ -48,16 +52,50 @@ function targetGone(sessionId: string): "ended" | "unavailable" {
   return useSessionStore.getState().runningTasks[sessionId]?.execution_id ? "ended" : "unavailable";
 }
 
+/** Ask about the steer's command again. A request that got no answer is
+ *  tried again after a growing pause. A command the server holds (accepted,
+ *  applying, or unknown after a take-back) is asked about when something
+ *  can have changed it: its execution moved, the conversation's run
+ *  changed, or the socket came back; never on a timer. */
 function confirmLater(sessionId: string, messageId: string, transportFailed: boolean): void {
   const key = confirmationKey(sessionId, messageId);
   const prior = confirmations.get(key);
   if (prior?.timer !== undefined) clearTimeout(prior.timer);
-  const delay = transportFailed ? Math.min((prior?.delay ?? 750) * 2, 30000) : 1500;
-  const pending: Confirmation = { delay };
-  pending.timer = setTimeout(() => {
-    pending.timer = undefined;
+  prior?.stop?.();
+  if (transportFailed) {
+    const pending: Confirmation = { delay: Math.min((prior?.delay ?? 750) * 2, 30000) };
+    pending.timer = setTimeout(() => {
+      pending.timer = undefined;
+      void steerQueuedMessage(sessionId, messageId);
+    }, pending.delay);
+    confirmations.set(key, pending);
+    return;
+  }
+  const pending: Confirmation = { delay: 750 };
+  const executionId = queueFor(sessionId).find(row => row.id === messageId)?.steerCommand?.execution_id;
+  const again = () => {
+    if (confirmations.get(key) !== pending) return;
+    pending.stop?.();
+    pending.stop = undefined;
     void steerQueuedMessage(sessionId, messageId);
-  }, delay);
+  };
+  const onExecution = (event: Event) => {
+    const moved = (event as CustomEvent<{ execution?: { execution_id?: string } }>).detail?.execution?.execution_id;
+    if (!executionId || !moved || moved === executionId) again();
+  };
+  const events = typeof window !== "undefined" && typeof window.addEventListener === "function" ? window : null;
+  events?.addEventListener("op:execution-update", onExecution);
+  const offRun = typeof useSessionStore.subscribe === "function"
+    ? useSessionStore.subscribe((state, previous) => {
+      if (state.runningTasks[sessionId] !== previous.runningTasks[sessionId]) again();
+    })
+    : () => {};
+  const offOpen = onReconnected(again);
+  pending.stop = () => {
+    events?.removeEventListener("op:execution-update", onExecution);
+    offRun();
+    offOpen();
+  };
   confirmations.set(key, pending);
 }
 

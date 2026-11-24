@@ -1,5 +1,6 @@
 <title>macOS 投递</title>
 <meta name="description" content="macOS 后端如何在后台投递输入、处理文件对话框和桌面空间、等待忙碌的应用以及拒绝操作。">
+<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/macos.py openprogram/programs/tools/computer_use/computer_use/desktop/skylight.py">
 <h1>macOS 投递</h1>
 <p>已观察的控件消失且无法安全重新匹配时，工具自动读取完整的新状态，返回 <code translate="no">observation_required</code>，由 Agent 按新状态选择下一步。该控件对应的步骤及后续批量步骤均不发送；此前完成的步骤保留，不会重放。刷新本身失败时仍如实报告错误。</p>
 
@@ -97,7 +98,7 @@
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">等待时机</th><td><code translate="no">get_state</code>、<code translate="no">list_windows</code> 和 <code translate="no">act</code> 在向应用询问任何东西之前都这样等待，等待在后端的锁之外；<code translate="no">settle</code> 在读取窗口之前等待；<code translate="no">wait</code> 从不等待，模型可以用它让应用做完。</td></tr>
-<tr><th scope="row">沉默的步骤</th><td><code translate="no">targets/app.py</code> 把应用一直没有回应的步骤按已完成返回，不带状态，并写明不要重复。</td></tr>
+<tr><th scope="row">沉默的步骤</th><td><code translate="no">providers/desktop.py</code> 把应用一直没有回应的步骤按已完成返回，不带状态，并写明不要重复。</td></tr>
 <tr><th scope="row">被拒绝的步骤</th><td>因为应用没有回应而被拒绝的步骤什么都没有发出（<code translate="no">action_dispatched: false</code>）；一串步骤里，它之前的步骤保持已执行，不再等第二次。</td></tr>
 <tr><th scope="row">其他失败</th><td>步骤已发出之后读取状态的其他失败（应用退出、屏幕锁定）写在这一步的 <code translate="no">Done</code> 之后，绝不会被报成没有发生。</td></tr>
 </tbody>

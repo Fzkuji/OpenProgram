@@ -144,12 +144,33 @@ test("discard retains a failed native destroy for an explicit retry",async()=>{
   failed=false;await value.discard();assert.equal(destroys,2);assert.equal(value.currentDraft(),null);assert.equal(records.values.size,0);
 });
 
-test("close exports pending native input even before a dirty notification",async()=>{
-  const value=controller(async()=>committed(b),new Records(),"pending-cell.xlsx");
-  await value.hydrate({bytes:"old",revision:a});let exports=0;
-  value.attachRichEditor({getState:()=>({dirty:false,readonly:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy(){},
-    save:async(_format,options)=>{assert.notEqual(options?.commitPendingInput,false);exports++;await value.stageRichExport("pending input");}});
-  await value.close();assert.equal(exports,1);assert.equal(await value.getState().snapshot.bytes.text(),"pending input");
+test("close exports a native editor only for changes it reported",async()=>{
+  for(const dirty of [false,true]){
+    const requests=[];
+    const value=controller(async(_url,init)=>{requests.push(init?.method);return committed(b);},new Records(),`close-${dirty}.xlsx`);
+    await value.hydrate({bytes:"old",revision:a});let exports=0;
+    value.attachRichEditor({getState:()=>({dirty,readonly:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy(){},
+      save:async(_format,options)=>{assert.notEqual(options?.commitPendingInput,false);exports++;await value.stageRichExport("edited");}});
+    await value.close();
+    if(dirty){assert.equal(exports,1);assert.equal(await value.getState().snapshot.bytes.text(),"edited");}
+    else{assert.equal(exports,0,"a writable editor nobody changed is closed without writing the file");assert.deepEqual(requests,[]);}
+  }
+});
+
+test("closing asks only about edits the file does not hold, and Don't Save writes nothing",async()=>{
+  const requests=[];
+  const value=controller(async(_url,init)=>{requests.push(init?.method);return committed(b);},new Records(),"ask.pptx");
+  await value.hydrate({bytes:"old",revision:a});let dirty=false;let exports=0;
+  value.attachRichEditor({getState:()=>({dirty,readonly:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy(){},
+    save:async()=>{exports++;await value.stageRichExport("edited");}});
+  assert.equal(value.hasUnsavedChanges(),false,"an opened file nobody changed has nothing to save");
+  dirty=true;value.markRichEditorDirty(true);
+  assert.equal(value.hasUnsavedChanges(),true,"an engine edit not yet exported is unsaved");
+  await value.discard();
+  assert.equal(value.hasUnsavedChanges(),false);
+  await value.close();
+  assert.equal(exports,0,"Don't Save never exports the engine");assert.deepEqual(requests,[]);
+  assert.equal(await value.getState().snapshot.bytes.text(),"old");
 });
 
 test("restoring history first publishes native edits before replacing the engine", async()=>{
@@ -160,7 +181,7 @@ test("restoring history first publishes native edits before replacing the engine
     return committed(init.method === "PUT" ? b : c);
   },new Records(),"restore-native.docx");
   await value.hydrate({bytes:"old",revision:a});
-  value.attachRichEditor({getState:()=>({readonly:false,dirty:false}),setReadonly(){},flushPendingSaves:async()=>{},
+  value.attachRichEditor({getState:()=>({readonly:false,dirty:true}),setReadonly(){},flushPendingSaves:async()=>{},
     save:async()=>{await value.stageRichExport("native edit");},destroy(){destroyed=true;}});
   await value.restore("version");
   assert.deepEqual(published,["native edit","restore"]);assert.equal(destroyed,true);
@@ -211,14 +232,15 @@ test('confirmed autosave reacquires metadata without hiding a later external edi
   await value.checkForUpdates();assert.equal(value.getState().snapshot.diskVersion,'new');
   disk='external';await value.refresh();assert.equal(await value.getState().snapshot.bytes.text(),'external');await value.close();
 });
-test('refresh commits pending native input before replacing its engine',async()=>{
+test('refresh replaces a native editor nobody changed without writing the file',async()=>{
   let disk='old';const value=controller(async(_url,init)=>{
     if(init?.method==='PUT'){disk=await init.body.text();return committed(b);}
     return new Response(disk,{headers:{'x-document-revision':disk==='old'?a:b}});
   },new Records(),'refresh-cell.xlsx');await value.load();
   let destroyed=false;value.attachRichEditor({getState:()=>({dirty:false,readonly:false}),setInputEnabled(){},setReadonly(){},flushPendingSaves:async()=>{},
     save:async()=>{await value.stageRichExport('pending cell');},destroy(){destroyed=true;}});
-  await value.refresh();assert.equal(destroyed,true);assert.equal(await value.getState().snapshot.bytes.text(),'pending cell');await value.close();
+  disk='changed outside';await value.refresh();assert.equal(destroyed,true);
+  assert.equal(await value.getState().snapshot.bytes.text(),'changed outside','the disk version is read, not overwritten');await value.close();
 });
 
 test("a file reopened while its closed tab is still releasing the document gets a fresh controller", async () => {

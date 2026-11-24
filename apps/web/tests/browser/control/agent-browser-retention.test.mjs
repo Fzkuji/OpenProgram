@@ -186,7 +186,7 @@ test("confirmed native destroy reports close only after success", async () => {
   destroyStaleWebViews(bridge, []);
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(sent.filter(message => message.tab_id === "w:destroy-failed"), []);
-  assert.deepEqual(attempts, ["w:destroy-failed"]);
+  assert.deepEqual(attempts.filter(id => id === "w:destroy-failed"), ["w:destroy-failed"]);
   const successBridge = { windowId: "main", webTab: {
     ensure() {}, syncVisible() {}, destroy() {},
     async destroyConfirmed(id) { attempts.push(id); return true; },

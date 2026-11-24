@@ -37,7 +37,7 @@ framework(action="interface", operation="tabs.list",
 <li>原生历史、下载、浏览器导入和更新控制沿用现有 Desktop 功能。浏览器窗口把仅原生能力报告为不可用。</li>
 <li>窗口呈现需要已连接的视图；后端业务操作和已安装应用的操作不需要渲染前端。</li>
 <li>未保存的文件标签页须先保存或丢弃，才能自动关闭。</li>
-<li>网页用 <code translate="no">computer_use_agent(target="browser")</code> 或 <code translate="no">tabs.openWebTab</code> 打开和关闭。原生 Page 呈现命令用 <code translate="no">arguments.tab</code> 指明标签页，即该目标的 <code translate="no">tabs</code> 列出的 id；它需要 <code translate="no">computer_use_agent</code> 所需的权限。</li>
+<li>网页用 <code translate="no">computer_use(type="browser")</code> 或 <code translate="no">tabs.openWebTab</code> 打开和关闭。原生 Page 呈现命令用 <code translate="no">arguments.tab</code> 指明标签页，即该目标的 <code translate="no">list_tabs</code> 列出的 id；它需要 <code translate="no">computer_use</code> 所需的权限。</li>
 </ul>
 <h2 id="authority">权限</h2>
 <table class="stack fixed">

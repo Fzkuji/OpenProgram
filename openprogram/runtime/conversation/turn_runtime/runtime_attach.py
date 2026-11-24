@@ -249,14 +249,17 @@ def _wrap_agentic_runtime_block(
                         from openprogram.runtime.conversation import surface_context
                         from openprogram.runtime.permissions.policy import permission_decision, surface_grant_applies
                         from openprogram.programs import get_agent_tool
+                        from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
-                        screen_tool = get_agent_tool("computer_use_agent")
-                        list_tabs = {"target": "browser", "action": "tabs"}
+                        screen_tool = get_agent_tool("computer_use")
+                        # A call that only looks at the conversation's own Pages, from
+                        # whichever target the providers say those are; none without one.
+                        pages = screen.page_surface_call()
                         decision = permission_decision(
-                            screen_tool, effective_req, list_tabs,
-                        ) if screen_tool is not None else None
+                            screen_tool, effective_req, pages,
+                        ) if screen_tool is not None and pages is not None else None
                         if (decision is not None and decision.outcome == "allow"
-                                and surface_grant_applies("computer_use_agent", effective_req, list_tabs)):
+                                and surface_grant_applies("computer_use", effective_req, pages)):
                             try:
                                 captured_surface = surface_context.capture_pages()
                             except RuntimeError:

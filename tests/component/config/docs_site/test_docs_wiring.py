@@ -188,11 +188,11 @@ def _publish(repository: Path) -> subprocess.CompletedProcess:
 
 def test_publish_checks_the_commit_it_ships(publishable: Path) -> None:
     repository = publishable
-    # stable has the violation; this checkout has moved on and repaired it.
+    # dev has the violation; this checkout has moved to a branch that repaired it.
     _write(repository / "docs/bad.html", '<h1 style="x">Bad</h1>\n')
     _git(repository, "add", ".")
     _git(repository, "commit", "--no-verify", "--quiet", "-m", "Bad")
-    _git(repository, "branch", "stable")
+    _git(repository, "checkout", "--quiet", "-b", "repair")
     (repository / "docs/bad.html").unlink()
     _git(repository, "add", ".")
     _git(repository, "commit", "--quiet", "-m", "Repaired")
@@ -208,7 +208,6 @@ def test_publish_checks_the_commit_it_ships(publishable: Path) -> None:
 
 def test_publish_ignores_a_violation_that_is_not_shipping(publishable: Path) -> None:
     repository = publishable
-    _git(repository, "branch", "stable")
     _write(repository / "docs/bad.html", '<h1 style="x">Bad</h1>\n')  # dirty, unshipped
 
     assert _publish(repository).returncode == 0
@@ -225,11 +224,6 @@ def test_deploy_reports_docs_problems_and_quarantines_the_build() -> None:
     assert report < script.index("export OPENPROGRAM_DOCS_FORMAT=quarantine")
     assert script.index("export OPENPROGRAM_DOCS_FORMAT=quarantine") < script.index("stage-release-assets.sh")
     subprocess.run(["bash", "-n", str(ROOT / "scripts/local-instances/refresh-dev-instance.sh")], check=True)
-
-
-def test_stable_refresh_quarantines_when_it_has_to_build() -> None:
-    script = (ROOT / "scripts/local-instances/refresh-local-app.sh").read_text(encoding="utf-8")
-    assert 'OPENPROGRAM_DOCS_FORMAT=quarantine $build_nice "$repo_root/scripts/release/stage-release-assets.sh"' in script
 
 
 def test_self_update_builds_docs_in_quarantine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

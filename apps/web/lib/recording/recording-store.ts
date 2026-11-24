@@ -10,6 +10,7 @@
 import { create } from "zustand";
 
 import { desktopBridge, type RecordingSummary } from "@/lib/desktop/bridge/bridge-api";
+import { errorDetailText } from "@/lib/net/error-text";
 
 export const RECORDING_TAG = "recorded-demonstration";
 
@@ -44,6 +45,14 @@ export function recordingAvailable(): boolean {
   return !!bridge?.recording && bridge.platform === "darwin";
 }
 
+/** The worker's answer to starting a recording. */
+interface RecordingStartReply {
+  id?: unknown;
+  max_seconds?: unknown;
+  error?: unknown;
+  capability?: unknown;
+}
+
 export interface RecordingStartError {
   message: string;
   /** The system access capability to open in System Settings, if one is missing. */
@@ -66,9 +75,12 @@ export async function startRecording(
   } catch {
     return { message: "Could not reach the worker." };
   }
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.id) {
-    return { message: String(body.error || "The recording could not start."), capability: body.capability };
+  const body = await response.json().catch(() => ({})) as RecordingStartReply;
+  if (!response.ok || typeof body.id !== "string" || !body.id) {
+    return {
+      message: errorDetailText(body.error, "The recording could not start."),
+      capability: typeof body.capability === "string" ? body.capability : undefined,
+    };
   }
   useRecordingStore.getState().setActive({ id: body.id, composer });
   const opened = await bridge.recording.openBar({

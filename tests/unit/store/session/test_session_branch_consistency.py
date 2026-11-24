@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -485,6 +486,27 @@ def test_reconcile_leaves_idle_sessions_alone(store):
     assert store.get_session("s1")["status"] == "idle"
 
 
+def test_reconcile_does_not_leave_the_sessions_it_read_in_memory(store):
+    """The restart pass reads every session whole; kept, that is every
+    conversation of the profile held for the life of the Worker."""
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", status="running")
+    store._sessions.clear()
+    assert "s1" not in store._sessions
+
+    _exec_dag.reconcile_interrupted_runs()
+    assert "s1" not in store._sessions, "a session the pass read in is let go"
+    assert store.get_session("s1")["status"] != "running"
+    store._sessions.clear()
+
+    store.get_nodes("s1")
+    assert "s1" in store._sessions
+    _exec_dag.reconcile_interrupted_runs()
+    assert "s1" in store._sessions, "a session something else holds stays"
+
+
 def test_reconcile_finishes_a_durable_cancellation_intent(store):
     """A restart after cancel intent must finish cancelled, not interrupted."""
     from openprogram.state.store.session.nodes import Call, ROLE_CODE
@@ -643,3 +665,33 @@ def test_delete_nodes_refuses_while_run_active(store, srv, monkeypatch):
     assert not data["ok"] and "is running" in data["error"]
     assert data["blocking"]["selected"] is True
     assert store.message_exists("s1", ids[1])
+
+
+def test_reconcile_reads_only_sessions_written_since_the_last_pass(store, monkeypatch):
+    import os
+
+    from openprogram.runtime.execution.projections import dag as _exec_dag
+
+    store.create_session("quiet", "main")
+    store.create_session("busy", "main")
+    _exec_dag.reconcile_interrupted_runs()
+    long_ago = time.time() - 3600
+    for sid in ("quiet", "busy"):
+        os.utime(store._session_dir(sid) / "main.jsonl", (long_ago, long_ago))
+    store.update_session("busy", status="running")
+
+    read: list[str] = []
+    original = store.get_nodes
+    monkeypatch.setattr(store, "get_nodes", lambda sid, *a, **k: (read.append(sid), original(sid, *a, **k))[1])
+    _exec_dag.reconcile_interrupted_runs()
+
+    assert "busy" in read and "quiet" not in read
+    assert store.get_session("busy")["status"] == "interrupted"
+
+
+def test_a_session_nobody_asked_for_leaves_memory_and_reads_back_the_same(store):
+    store.create_session("s", "main")
+    store.get_nodes("s")
+    assert store.release_idle(3600) == 0 and "s" in store._sessions
+    assert store.release_idle(0) == 1 and "s" not in store._sessions
+    assert store.get_session("s")["id"] == "s"

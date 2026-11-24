@@ -28,7 +28,7 @@
 <tr><th scope="row">行身份</th><td>消息 id、<code translate="no">tool_call_id</code> 和 <code translate="no">card_id</code> 保持稳定。锚点、测量高度、到达动画和导轨继续工作。被替换的窗口在绘制前按消息 id 恢复。</td></tr>
 <tr><th scope="row">滚动归属</th><td>只有 <code translate="no">useChatAreaStick</code> 写跟随位置。只有 <code translate="no">history-viewport</code> 恢复锚点。加载器和 WebSocket 处理函数不滚动。</td></tr>
 <tr><th scope="row">子代理隔离</th><td><code translate="no">job_id</code> 帧绝不进入对话。存储键仍是 <code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>。折叠的行不加载任何内容。子代理会话记录按分支顺序排列。运行进行中 HEAD 绝不移动。</td></tr>
-<tr><th scope="row">重连约定</th><td>先读会话记录，再恢复执行，且只用快照。请求 id 关联、15 秒期限配可见重试并保留缓存行、忽略过期回复、<code translate="no">run_seq</code> 排序、重放未决问题和授权。重试状态只存在于实时。</td></tr>
+<tr><th scope="row">重连约定</th><td>先读会话记录，再恢复执行，且只用快照。请求 id 关联、15 秒期限后安静地按退避重试（保留缓存行；会话已不存在就关闭）、忽略过期回复、<code translate="no">run_seq</code> 排序、重放未决问题和授权。重试状态只存在于实时。</td></tr>
 <tr><th scope="row">合并保证</th><td>快照和替换规则见<a href="../chat/chat-turn-visual-spec.zh.html#transcript-consistency">会话记录更新归属</a>。发送失败的行和本地行在加载后保留。<a href="reads.zh.html">读取与客户端规则</a>和<a href="live.zh.html">实时更新</a>说明每项的机制。</td></tr>
 <tr><th scope="row">上限</th><td>服务端分页：首次读取 6 轮或 128 KiB，后续页 25 轮或 512 KiB，单个完整轮次总是允许。浏览器：6 页、8 MiB、四个缓存对话（<code translate="no">MAX_CACHED_SESSIONS = 4</code>）。页读取从不运行完整水合。验收是 300,000 节点的真实服务端基准，加上现有的 300,000 行浏览器测试，后者在步骤 5 改用轮次表述。</td></tr>
 <tr><th scope="row">增量批处理</th><td>每批一个动画帧。一行的待写文本先于该行的任何条目或终态变化刷新。</td></tr>

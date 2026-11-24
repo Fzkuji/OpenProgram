@@ -18,6 +18,7 @@ import hmac
 import json
 import os
 import re
+import asyncio
 import secrets
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
@@ -35,6 +36,10 @@ from openprogram.host.security.backend_endpoint import (
     create_owner_challenge_proof,
     is_loopback_host,
     resolve_effective_origins,
+)
+from openprogram.interfaces.server.device_access import (
+    DeviceRegistry,
+    label_from_user_agent,
 )
 
 _INLINE_SCRIPT_RE = re.compile(
@@ -63,6 +68,7 @@ _PUBLIC_FRONTEND_ROUTES = frozenset(
         "/scheduler",
         "/settings",
         "/skills",
+        "/tasks",
     }
 )
 _PUBLIC_STATIC_FILES = frozenset(
@@ -131,6 +137,9 @@ class OwnerAuthState:
     token_path: Path | None = None
     access_snapshot_path: Path | None = None
     _lock_handle: IO[str] | None = field(default=None, repr=False)
+    # Paired devices. In memory for a state built from a raw token (tests);
+    # ``start`` gives it the profile's ``web/devices.json``.
+    devices: DeviceRegistry = field(default_factory=DeviceRegistry, repr=False)
 
     @classmethod
     def from_raw_token(
@@ -156,6 +165,19 @@ class OwnerAuthState:
                 normalized_bind_host, int(port), allowed_origins
             ),
         )
+
+    def allow_origins(self, added: Iterable[str] = (), removed: Iterable[str] = ()) -> None:
+        """Change the Origins this running server answers, without a restart.
+
+        Remote access through a same-host proxy (Tailscale Serve) adds its
+        address here as it is switched on; the bind address itself only
+        changes on the next start.
+        """
+        from openprogram.host.security.backend_endpoint import canonicalize_origin
+
+        gone = {canonicalize_origin(origin) for origin in removed}
+        new = {canonicalize_origin(origin) for origin in added}
+        self.effective_origins = frozenset((set(self.effective_origins) - gone) | new)
 
     @classmethod
     def start(
@@ -205,6 +227,7 @@ class OwnerAuthState:
             state.token_path = root / "web" / "token"
             state.access_snapshot_path = root / "web" / "access.json"
             state._lock_handle = handle
+            state.devices = DeviceRegistry(root / "web" / "devices.json")
             _write_private_text(state.token_path, state.token)
             _write_private_text(
                 state.access_snapshot_path,
@@ -255,6 +278,11 @@ class OwnerAuthState:
         return f"openprogram_owner_{installation_id}"
 
     @property
+    def device_cookie_name(self) -> str:
+        installation_id = self.owner_principal_id.rsplit("/", 1)[-1]
+        return f"openprogram_device_{installation_id}"
+
+    @property
     def cookie_value(self) -> str:
         return _base64url_no_pad(
             hmac.digest(
@@ -273,6 +301,10 @@ class OwnerAuthState:
     def verify_token(self, value: str) -> bool:
         raw = _decode_token(value)
         return raw is not None and hmac.compare_digest(raw, self._token_bytes)
+
+    def verify_bearer(self, value: str) -> bool:
+        """The owner token or a paired device's credential."""
+        return self.verify_token(value) or self.devices.verify(value) is not None
 
     def close(self) -> None:
         if self._lock_handle is None:
@@ -361,7 +393,7 @@ def _request_origin(
             if not (
                 bearer_provided
                 and canonical_origin in state.effective_origins
-                and state.verify_token(bearer_token)
+                and state.verify_bearer(bearer_token)
             ):
                 raise OwnerAuthError("Origin does not match request origin")
     if (_one_header(headers, "sec-fetch-site") or "").lower() == "cross-site":
@@ -554,6 +586,41 @@ def _response_sender(send, *, no_store: bool, shell: bool, frameable: bool = Fal
     return wrapped
 
 
+async def _read_small_body(receive, limit: int) -> bytes | None:
+    """The request body, or None when it is larger than ``limit``."""
+    body = bytearray()
+    too_large = False
+    while True:
+        message = await receive()
+        if message.get("type") == "http.disconnect":
+            return None
+        chunk = message.get("body") or b""
+        if len(body) + len(chunk) > limit:
+            too_large = True
+        elif not too_large:
+            body.extend(chunk)
+        if not message.get("more_body"):
+            break
+    return None if too_large else bytes(body)
+
+
+def _strict_json(body: bytes):
+    """Parse JSON that has no duplicate keys; None when it does not parse."""
+
+    def pairs(values):
+        result = {}
+        for key, value in values:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(body, object_pairs_hook=pairs)
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 class OwnerAuthMiddleware:
     """Authenticate HTTP, SSE, and WebSocket before route dispatch."""
 
@@ -616,6 +683,9 @@ class OwnerAuthMiddleware:
         if scope["type"] == "http" and path == "/api/auth/bootstrap":
             await self._bootstrap(scope, receive, send, headers, request_origin, origin)
             return
+        if scope["type"] == "http" and path == "/api/auth/pair":
+            await self._pair(scope, receive, send, headers, request_origin, origin)
+            return
 
         if scope["type"] == "http" and scope.get("method") == "POST" \
                 and path.startswith("/hooks/") and path.count("/") == 2:
@@ -651,9 +721,21 @@ class OwnerAuthMiddleware:
         cookie_authenticated = cookie is not None and hmac.compare_digest(
             cookie, self.auth_state.cookie_value
         )
-        bearer_authenticated = bearer_provided and self.auth_state.verify_token(
-            bearer_token
-        )
+        device_id: str | None = None
+        if bearer_provided:
+            bearer_authenticated = self.auth_state.verify_token(bearer_token)
+            if not bearer_authenticated:
+                device_id = self.auth_state.devices.verify(bearer_token)
+                bearer_authenticated = device_id is not None
+        else:
+            bearer_authenticated = False
+            if not cookie_authenticated:
+                try:
+                    device_cookie = _cookie_value(headers, self.auth_state.device_cookie_name)
+                except OwnerAuthError:
+                    device_cookie = None
+                device_id = self.auth_state.devices.verify(device_cookie)
+                cookie_authenticated = device_id is not None
         if (bearer_provided and not bearer_authenticated) or (
             not bearer_provided and not cookie_authenticated
         ):
@@ -683,12 +765,44 @@ class OwnerAuthMiddleware:
             await _empty_response(send, 204)
             return
 
-        scope.setdefault("state", {})["authority"] = dict(self.auth_state.authority)
-        await self.app(
-            scope,
-            receive,
-            _response_sender(send, no_store=scope["type"] == "http", shell=False),
+        scope_state = scope.setdefault("state", {})
+        scope_state["authority"] = dict(self.auth_state.authority)
+        scope_state["device_id"] = device_id
+        sender = _response_sender(send, no_store=scope["type"] == "http", shell=False)
+        if scope["type"] == "websocket" and device_id is not None:
+            await self._device_socket(scope, receive, sender, device_id)
+            return
+        await self.app(scope, receive, sender)
+
+    async def _device_socket(self, scope, receive, send, device_id: str) -> None:
+        """Run a paired device's WebSocket; revoking the device closes it."""
+        loop = asyncio.get_running_loop()
+        revoked = asyncio.Event()
+        unwatch = self.auth_state.devices.watch(
+            device_id, lambda: loop.call_soon_threadsafe(revoked.set)
         )
+
+        async def guarded_receive():
+            if not revoked.is_set():
+                incoming = asyncio.ensure_future(receive())
+                waiting = asyncio.ensure_future(revoked.wait())
+                done, _ = await asyncio.wait(
+                    {incoming, waiting}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if incoming in done:
+                    waiting.cancel()
+                    return incoming.result()
+                incoming.cancel()
+            try:
+                await send({"type": "websocket.close", "code": 4401})
+            except Exception:
+                pass
+            return {"type": "websocket.disconnect", "code": 4401}
+
+        try:
+            await self.app(scope, guarded_receive, send)
+        finally:
+            unwatch()
 
     async def _challenge(self, scope, send) -> None:
         failed = scope.get("method") != "GET"
@@ -743,6 +857,82 @@ class OwnerAuthMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+    async def _pair(
+        self,
+        scope,
+        receive,
+        send,
+        headers: dict[str, list[str]],
+        request_origin: str,
+        origin: str | None,
+    ) -> None:
+        """Redeem a pairing code for a device credential.
+
+        A browser (it sends ``Origin``) receives the credential as an
+        HttpOnly cookie; a native client receives it in the body.
+        """
+        failed = scope.get("method") != "POST"
+        try:
+            if _one_header(headers, "authorization") is not None:
+                failed = True
+            if (_one_header(headers, "content-type") or "").lower() != "application/json":
+                failed = True
+            user_agent = _one_header(headers, "user-agent")
+        except OwnerAuthError:
+            failed = True
+            user_agent = None
+        body = await _read_small_body(receive, 512)
+        payload = None if body is None else _strict_json(body)
+        if not isinstance(payload, dict) or "code" not in payload \
+                or not set(payload) <= {"code", "label"} \
+                or not isinstance(payload.get("label", ""), str):
+            failed = True
+        redeemed = None
+        if not failed:
+            hint = payload.get("label") or label_from_user_agent(user_agent)
+            redeemed = self.auth_state.devices.redeem(payload["code"], label_hint=hint)
+        if redeemed is None:
+            await _http_response(send, 401, "pairing_rejected")
+            return
+        device, credential = redeemed
+        if origin is None:
+            body = json.dumps(
+                {"device_id": device.id, "token": credential},
+                separators=(",", ":"),
+            ).encode("utf-8")
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode("ascii")),
+                        (b"cache-control", b"no-store"),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+        secure = request_origin.startswith("https://")
+        # The browser keeps the cookie as long as it may (400 days); the
+        # server forgets a device after thirty idle days on its own.
+        cookie = (
+            f"{self.auth_state.device_cookie_name}={credential}; Path=/; "
+            "Max-Age=34560000; HttpOnly; SameSite=Strict"
+            + ("; Secure" if secure else "")
+        ).encode("ascii")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 204,
+                "headers": [
+                    (b"set-cookie", cookie),
+                    (b"cache-control", b"no-store"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": b""})
 
     async def _bootstrap(
         self,

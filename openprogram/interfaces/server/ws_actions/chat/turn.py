@@ -379,9 +379,6 @@ def _save_run_config(_s, req: _ChatRequest, conv: dict, msg_id: str):
                                       project_id=req.project_id)
             _bind_draft_channel(_s, req)
             req.cmd = materialized_guard(session_id, req.cmd, req.initial_branch_id)
-        from openprogram.host.environments import assign_new_session_environment
-        conv["environment_id"] = assign_new_session_environment(
-            session_db, session_id, req.requested_environment)
         if req.agent_invocation is not None:
             from ..agent_invocation import persist_agent_invocation
             persist_agent_invocation(session_id, req.agent_invocation, conv,
@@ -688,10 +685,25 @@ def _turn_request_fields(req: _ChatRequest, parsed: dict) -> dict:
         "service_tier": req.service_tier,
         "response_format": _response_format_payload,
         "attachments": req.attachments,
+        "application_note": application_note(req.cmd),
         "user_already_persisted": True,
         **_side_branch_fields(req),
         **_one_turn_fields(req),
     }
+
+
+#: The longest note an application window may send with a message.
+APPLICATION_NOTE_LIMIT = 16_000
+
+
+def application_note(cmd: dict) -> str | None:
+    """The note the composer in an application window sends beside the
+    message (``application_note``): what the window says the message is
+    about. It goes to the model with the message, never into its text."""
+    note = cmd.get("application_note")
+    if not isinstance(note, str):
+        return None
+    return note.strip()[:APPLICATION_NOTE_LIMIT] or None
 
 
 def _surface_fields(session_id: str, req: _ChatRequest, parsed: dict,
@@ -929,7 +941,6 @@ async def _send_chat_ack(ws, req: _ChatRequest, turn: _AdmittedTurn,
                 # The mode the turn runs with: a turn-only override
                 # (``turn_permission_mode``) wins over the branch's own.
                 "permission_mode": req.turn_permission_mode or effective_permission,
-                "environment_id": turn.conv.get("environment_id"),
                 **({"branch_id": turn.side_branch_id} if turn.side_branch_id else {}),
                 # Who took the turn, for a client that did not read it on
                 # connect (``handshake.server_identity``).

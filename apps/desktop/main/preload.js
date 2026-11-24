@@ -112,6 +112,23 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   // A snapshot of a region of this page (CSS px): a small thumbnail for the
   // window overview.
   captureRegion: (rect) => ipcRenderer.invoke("window:capture-region", rect),
+  // Another application's window inside a tab (main/windows/embedded-windows.js).
+  embeddedWindow: {
+    host: () => ipcRenderer.invoke("embedded-window:host"),
+    captureSource: (windowId) => ipcRenderer.invoke("embedded-window:source", windowId),
+    setCount: (count) => ipcRenderer.send("embedded-window:count", count),
+    onRelease: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("embedded-window:release", listener);
+      return () => ipcRenderer.removeListener("embedded-window:release", listener);
+    },
+    released: () => ipcRenderer.send("embedded-window:released"),
+    onHostChanged: (callback) => {
+      const listener = (_event, host) => callback(host);
+      ipcRenderer.on("embedded-window:host-changed", listener);
+      return () => ipcRenderer.removeListener("embedded-window:host-changed", listener);
+    },
+  },
   webTab: {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
     navigate: (id, url) => ipcRenderer.send("webtab:navigate", id, url),
@@ -136,6 +153,8 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     pickElement: (id) => ipcRenderer.invoke("webtab:pick-element", id),
     pickRegion: (id) => ipcRenderer.invoke("webtab:pick-region", id),
     cancelPick: (id) => ipcRenderer.send("webtab:cancel-pick", id),
+    annotate: (id, action, options) => ipcRenderer.invoke("webtab:annotate", id, action, options),
+    onAnnotateEvent: (cb) => fanOut("webtab:annotate-event", cb),
     zoom: (id, action) => ipcRenderer.invoke("webtab:zoom", id, action),
     print: (id) => ipcRenderer.invoke("webtab:print", id),
     capture: (id, mode) => ipcRenderer.invoke("webtab:capture", id, mode),
@@ -235,6 +254,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     setAutomaticChecks: (enabled) =>
       ipcRenderer.invoke("updates:set-automatic-checks", Boolean(enabled)),
     download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
     openRelease: () => ipcRenderer.invoke("updates:open-release"),
     onState: (cb) => subscribe("updates:state")(cb),
   },
@@ -352,4 +372,7 @@ contextBridge.exposeInMainWorld("openprogramTerminals", {
   agentTicket: (ticket) => ipcRenderer.invoke("terminal:agent-ticket", ticket),
   resource: (action, request = {}) => ipcRenderer.invoke("terminal:resource", action, request),
   onResource: subscribe("terminal:resource"),
+  // Output as it is written ({id, generation, data}); a view reads from its
+  // cursor when told, instead of on a timer.
+  onData: subscribe("terminal:data"),
 });

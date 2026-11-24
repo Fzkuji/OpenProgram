@@ -24,6 +24,7 @@ import { PlugZapIcon } from "@/components/animated-icons";
 import styles from "./mcp-page.module.css";
 import { confirmAction } from "@/components/ui/confirm-dialog";
 import { showToast } from "@/lib/format-utils/toast";
+import { errorDetailText } from "@/lib/net/error-text";
 
 /**
  * A stored `env` / `header` value as the API returns it: presence and
@@ -131,7 +132,7 @@ export function DetailView({
           { signal: ac.signal },
         );
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await r.json() as { outdated?: Record<string, unknown> };
         if (ac.signal.aborted) return;
         setUpdateAvailable(server.name in (d.outdated || {}));
       } catch { /* ignore aborts / network blips */ }
@@ -148,8 +149,9 @@ export function DetailView({
         { method: "POST" },
       );
       if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        showToast(text(`Update failed: ${d.detail || `HTTP ${r.status}`}`, `更新失败：${d.detail || `HTTP ${r.status}`}`), { tone: "error" });
+        const d = await r.json().catch(() => ({})) as { detail?: unknown };
+        const why = errorDetailText(d.detail, `HTTP ${r.status}`);
+        showToast(text(`Update failed: ${why}`, `更新失败：${why}`), { tone: "error" });
         return;
       }
       setUpdateAvailable(false);
@@ -320,11 +322,7 @@ export function DetailView({
         )}
       </div>
 
-      {!detail ? (
-        <div className="text-fs-xs text-text-muted">
-          {text("Loading tools...", "正在加载工具...")}
-        </div>
-      ) : (detail.tool_schemas || []).length === 0 ? (
+      {!detail ? null : (detail.tool_schemas || []).length === 0 ? (
         <div className="text-fs-xs text-text-muted">
           {server.error === "disabled"
             ? text("Tool list will appear here after you enable the server.", "启用服务器后，工具列表会显示在这里。")
@@ -362,8 +360,9 @@ function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
       const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/auth/reauth`,
         { method: "POST" });
       if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        showToast(text(`Re-auth failed: ${d.detail || `HTTP ${r.status}`}`, `重新认证失败：${d.detail || `HTTP ${r.status}`}`), { tone: "error" });
+        const d = await r.json().catch(() => ({})) as { detail?: unknown };
+        const why = errorDetailText(d.detail, `HTTP ${r.status}`);
+        showToast(text(`Re-auth failed: ${why}`, `重新认证失败：${why}`), { tone: "error" });
         return;
       }
       onDone();

@@ -5,6 +5,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { QUIET_QUERY, warnOnFailure } from "./quiet-query";
 
 type Text = (en: string, zh: string) => string;
 
@@ -40,9 +41,10 @@ export interface VersionsOverview {
 
 export const versionsQuery = queryOptions({
   queryKey: ["settings", "versions"] as const,
-  queryFn: () => jsonFetch<VersionsOverview>("/api/versions"),
+  queryFn: warnOnFailure("/api/versions", () => jsonFetch<VersionsOverview>("/api/versions")),
   staleTime: 0,
   refetchOnWindowFocus: true,
+  ...QUIET_QUERY,
 });
 
 export function versionName(number: number | null | undefined, text: Text): string {

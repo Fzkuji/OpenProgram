@@ -55,9 +55,12 @@ def test_a_key_added_while_another_process_changes_the_list_is_kept(tmp_path: Pa
     # The CLI adds a key while the worker is between its read and its write.
     AuthStore(root=tmp_path).add_credential(_key("sk-second-00000002"))
     assert worker.wait(30) == 0
-    rows = json.loads((tmp_path / "auth" / "openai" / "credentials.json").read_text())["credentials"]
-    assert [r["payload"]["auth_value"] for r in rows] == ["sk-first-000000001", "sk-second-00000002"]
-    assert rows[0]["label"] == "renamed"
+    rows = AuthStore(root=tmp_path).get("openai").credentials
+    assert [r.payload.auth_value for r in rows] == ["sk-first-000000001", "sk-second-00000002"]
+    assert rows[0].label == "renamed"
+    # The way's file keeps both rows and neither secret.
+    saved = json.loads((tmp_path / "auth" / "openai" / "credentials.json").read_text())["credentials"]
+    assert [r["payload"]["auth_value"] for r in saved] == ["", ""]
 
 
 def test_uses_counted_by_four_processes_all_arrive_and_leave_the_secrets_file_alone(tmp_path: Path):

@@ -18,7 +18,6 @@ export function RasterSurface({ controller, bytes, path, readOnly, mode, onReady
   useEffect(() => { editor.current?.setReadonly(readOnly || mode === "preview"); }, [mode, readOnly]);
   return <div style={{ height: "100%", minHeight: 320, position: "relative" }}>
     {error && <div role="alert" className={styles.error}>{error}</div>}
-    {loading && <span>{readOnly ? "Loading preview…" : "Loading image editor…"}</span>}
     <div ref={host} data-raster-editor="true" aria-busy={loading} style={{ height: "100%", visibility: loading ? "hidden" : "visible" }} />
   </div>;
 }

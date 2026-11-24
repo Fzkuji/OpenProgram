@@ -18,7 +18,7 @@ export function RunList({ source, context, before, renderInside, onAxis, reportN
   const { text, now } = context;
   const store = useActivityRowStore();
   const openVersion = useSyncExternalStore(store.subscribe, store.version, store.version);
-  const { runs, total, loaded, failed, events, eventsFailed, showMore } = useActivityRuns({
+  const { runs, total, loaded, events, showMore } = useActivityRuns({
     sessionId: context.sessionId, source, active: context.active, isOpen: store.has, openVersion,
   });
 
@@ -79,7 +79,7 @@ export function RunList({ source, context, before, renderInside, onAxis, reportN
       const custom = renderInside?.(run);
       if (custom) return custom;
       if (run.is_report) return <ActivityDetail><ActivityKeyValue label={text("Report", "报告")} value={cleanRunTitle(run.reply, text)} /></ActivityDetail>;
-      return <RunInsides rowId={rowId} run={run} events={events[rowId]} failed={Boolean(eventsFailed[rowId])} context={context} axis={axis} />;
+      return <RunInsides rowId={rowId} run={run} events={events[rowId]} context={context} axis={axis} />;
     };
     const day = start !== null ? dayName(start, text, now) : previousDay;
     let dayRow = null;
@@ -97,7 +97,7 @@ export function RunList({ source, context, before, renderInside, onAxis, reportN
     {before}
     <ActivityInListReact.Provider value={true}>
       {rows}
-      {runs.length === 0 && loaded ? <ActivityDetail><ActivityKeyValue label="" value={failed ? text("Could not read the runs. Retrying automatically.", "读不到运行记录，正在自动重试。") : text("No runs yet.", "还没有运行。")} /></ActivityDetail> : null}
+      {runs.length === 0 && loaded ? <ActivityDetail><ActivityKeyValue label="" value={text("No runs yet.", "还没有运行。")} /></ActivityDetail> : null}
       {earlier > 0 ? <ActivityShowMore label={text(`Show ${earlier} earlier`, `显示更早的 ${earlier} 个`)} onClick={() => void loadEarlier()} /> : null}
     </ActivityInListReact.Provider>
   </>;

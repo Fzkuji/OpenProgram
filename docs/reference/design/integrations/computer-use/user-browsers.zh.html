@@ -1,0 +1,58 @@
+<title>用户的浏览器</title>
+<meta name="description" content="computer_use 如何驱动用户自己的浏览器：Chromium 系经 Playwright Extension，Safari 经 AppleScript，Firefox 经 WebDriver BiDi，以及后两者共用的页面层。">
+<meta name="covers" content="openprogram/programs/applications/browser/catalog.py openprogram/programs/applications/browser/safari.py openprogram/programs/applications/browser/firefox.py openprogram/programs/applications/browser/script_page.py">
+<h1>用户的浏览器</h1>
+
+<p>带 <code translate="no">app</code> 的 <code translate="no">type="browser"</code> 驱动用户已经在用的浏览器，带他们的标签页和登录状态。每个浏览器动作相同、快照格式相同，背后是三种引擎。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">引擎</th><th scope="col"><code translate="no">app</code></th><th scope="col">通道</th><th scope="col">模块</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chromium</th><td><code translate="no">chrome</code>、<code translate="no">chrome-beta</code>、<code translate="no">chrome-dev</code>、<code translate="no">chrome-canary</code>、<code translate="no">edge</code>、<code translate="no">edge-beta</code>、<code translate="no">edge-dev</code>、<code translate="no">edge-canary</code>、<code translate="no">brave</code>、<code translate="no">vivaldi</code>、<code translate="no">opera</code>、<code translate="no">arc</code>、<code translate="no">chromium</code></td><td>扩展模式的 Playwright MCP，经 Playwright Extension 中继 CDP</td><td><code translate="no">extension.py</code></td></tr>
+<tr><th scope="row">Safari</th><td><code translate="no">safari</code>（macOS）</td><td><code translate="no">osascript</code>：标签页和 <code translate="no">doJavaScript</code> 用 JXA，新标签页用 AppleScript</td><td><code translate="no">safari.py</code>，基于 <code translate="no">script_page.py</code></td></tr>
+<tr><th scope="row">Firefox</th><td><code translate="no">firefox</code></td><td>远程代理 WebSocket 上的 WebDriver BiDi</td><td><code translate="no">firefox.py</code>，基于 <code translate="no">script_page.py</code></td></tr>
+</tbody>
+</table>
+
+<p>模块都在 <code translate="no">openprogram/programs/applications/browser/</code>。<code translate="no">catalog.py</code> 每个浏览器一行（名字、显示名、引擎、Playwright 渠道、数据目录、可执行文件、bundle id、进程名）；注册表、工具描述和参数检查、提供方以及网页上的名称（<code translate="no">apps/web/lib/computer-use/browsers.ts</code>）都按这个顺序读。</p>
+
+<h2 id="decisions">决定</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有 Chromium 系浏览器都走 Playwright Extension</th><td>这个扩展在 Chrome 应用商店上，Brave、Vivaldi、Opera、Arc 和 Chromium 都从那里安装。一种通道只需一套动作映射和一套 ref。</td></tr>
+<tr><th scope="row">没有 Playwright 渠道的浏览器用可执行文件指定，并设 <code translate="no">PWTEST_EXTENSION_USER_DATA_DIR</code></th><td>Playwright MCP 0.0.79 只认 Chrome 和 Edge 的渠道。给了 <code translate="no">--executable-path</code> 时，它只能通过这个变量找到装了扩展的配置文件，并据此加上 <code translate="no">--user-data-dir</code> 和 <code translate="no">--profile-directory</code>；不设的话，连接页会在没有扩展的配置文件里打开。</td></tr>
+<tr><th scope="row">Safari 用 AppleScript，不用 WebKit 或 <code translate="no">safaridriver</code></th><td>Playwright 的 WebKit 不是用户的 Safari，没有他们的登录状态。<code translate="no">safaridriver</code> 驱动一个单独的自动化窗口，会把用户锁在外面，也不留状态。Apple 事件能到达用户自己的标签页，<code translate="no">do JavaScript</code> 在里面运行页面层。</td></tr>
+<tr><th scope="row">Safari 的异步结果在一次 <code translate="no">osascript</code> 运行里轮询</th><td><code translate="no">doJavaScript</code> 只返回同步值。启动脚本开始工作，把结果按令牌存在页面上；同一次 JXA 运行每 50 毫秒读一次，所以一步只起一个进程，而不是每次轮询一个。</td></tr>
+<tr><th scope="row">Safari 的标签页键靠启发式保持</th><td>Safari 的标签页没有 id。只要窗口和序号、或 URL 和标题仍与上次列表相符，标签页就保留它的键；两者都不符的标签页得到新键，所以过期的键会被拒绝，而不是落到别的页面上。</td></tr>
+<tr><th scope="row">Safari 把错误对应到解决办法</th><td>-1743 是缺少自动化权限；错误里出现“Allow JavaScript from Apple Events”说明开发菜单里的设置没开；两者都返回 <code translate="no">PERMISSION_MISSING</code> 并写明开关。-600 和 -1728 表示 Safari 或标签页没了，调用会说明是哪个。</td></tr>
+<tr><th scope="row">Safari 截图用窗口截取</th><td>Safari 没有经 Apple 事件的页面截图。桌面驱动的 <code translate="no">capture_window</code>（ScreenCaptureKit）不抬起窗口就能截取，再裁到视口；不是窗口里正显示的标签页会被拒绝，因为它没有像素。<code translate="no">create_tab</code> 在后台开新窗口，新页面可以截图，用户看到的也不变。</td></tr>
+<tr><th scope="row">Firefox 用 WebDriver BiDi</th><td>Firefox 没有供 Playwright 用的扩展模式，CDP 支持也已移除。Firefox 内置的远程代理对用户自己的配置文件说 BiDi，动作需要的命令都有：树、导航、执行脚本、输入、文件、截图、控制台和网络事件。</td></tr>
+<tr><th scope="row">端口 9222，在后台启动</th><td>9222 是 Firefox <code translate="no">--remote-debugging-port</code> 的默认值。Firefox 关着时，首次调用带代理启动它（macOS 上用 <code translate="no">open -g</code>，不切到前台）。没带代理运行的 Firefox 无法附加，调用返回 <code translate="no">PERMISSION_MISSING</code>，请用户重启它。</td></tr>
+<tr><th scope="row">每个进程一个 BiDi 会话</th><td>Firefox 只允许一个 BiDi 会话。各对话共用这条连接，各自记住自己选中的上下文；最后一个对话结束时关闭会话，Firefox 继续运行。</td></tr>
+<tr><th scope="row">Safari 和 Firefox 共用一个页面层</th><td>两种通道都没有 Playwright 的快照。<code translate="no">script_page.py</code> 注入一个脚本，写出与 Playwright 相同的大纲（角色、名称、<code translate="no">[ref=eN]</code>）并按这些 ref 操作，复用内置浏览器的指针、悬停、滚动、插入和字段脚本，指南和模型在哪里看到的都是同一种格式。</td></tr>
+<tr><th scope="row">ref 存在页面上的 <code translate="no">WeakMap</code> 里</th><td>ref 要在调用之间保留，又不能标记 DOM。<code translate="no">window.__openprogram</code> 把 ref 映射到 <code translate="no">WeakRef</code>、把元素映射到 ref，页面删掉的节点会被释放，它的 ref 返回 <code translate="no">ELEMENT_GONE</code>；导航后重新开始。</td></tr>
+<tr><th scope="row">只对前台标签页用真实输入</th><td>BiDi 输入以可信事件送达页面，但要求标签页可见；Safari 没有经 Apple 事件的输入。后台标签页由页面层发合成事件（输入、Enter 提交表单、Tab 移动焦点、Backspace 和 Delete），所以选标签页从不改变用户看到的东西。</td></tr>
+<tr><th scope="row">应用名不区分大小写，浏览器简称是别名</th><td>模型写 <code translate="no">chrome</code> 或 <code translate="no">Safari</code> 的次数不比写完整名少。<code translate="no">type="window"</code> 的匹配在各平台上本来就不区分大小写；macOS 在精确匹配失败后还会映射简称（<code translate="no">chrome</code> 到 Google Chrome，<code translate="no">edge</code> 到 Microsoft Edge 等）。</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-each-engine-lacks">各引擎缺什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">引擎</th><th scope="col">不可用</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chromium</th><td>筛选控制台消息和请求</td></tr>
+<tr><th scope="row">Safari</th><td><code translate="no">upload_file</code>、读控制台和网络、给没在显示的标签页截图</td></tr>
+<tr><th scope="row">Firefox</th><td>对后台标签页的可信输入</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>浏览器目录、所有 Chromium 系浏览器和渠道、Safari、Firefox、页面层、窗口别名、指南、设置说明和网页上的名称。单元测试用替身覆盖：假页面、假 <code translate="no">osascript</code> 和假 BiDi 代理。</td></tr>
+<tr><th scope="row">未实际运行</th><td>上述任何浏览器；Safari 的 JXA 脚本只用 <code translate="no">osacompile</code> 编译过。</td></tr>
+<tr><th scope="row">未实现</th><td>Firefox Developer Edition 和 Nightly、Safari Technology Preview。Windows 上的 Arc 靠匹配它的包目录找到，未经测试。</td></tr>
+</tbody>
+</table>

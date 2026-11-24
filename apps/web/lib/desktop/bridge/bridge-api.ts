@@ -46,6 +46,18 @@ export interface DesktopBridge {
     write(id: string, chunk: ArrayBuffer): Promise<boolean>;
     close(id: string, discard?: boolean): Promise<{ path: string; bytes: number } | null>;
   };
+  /** Another application's window inside a tab. Absent in shells older than this build. */
+  embeddedWindow?: {
+    host(): Promise<import("@/lib/desktop/embedded-window/embedded-window").EmbedHost | null>;
+    /** The capture source id of a window, for getUserMedia; null when it has none. */
+    captureSource(windowId: number): Promise<string | null>;
+    setCount(count: number): void;
+    /** The App window is closing: give the windows back, then call `released`. */
+    onRelease(callback: () => void): () => void;
+    released(): void;
+    /** The App window moved or was resized; returns the unsubscribe. */
+    onHostChanged(callback: (host: import("@/lib/desktop/embedded-window/embedded-window").EmbedHost) => void): () => void;
+  };
   webTab: DesktopWebTabApi;
   tabTransfer: DesktopTabTransferApi;
   /** Keeps reporting the cursor (page CSS px) while a right or middle button

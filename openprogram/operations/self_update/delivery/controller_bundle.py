@@ -301,12 +301,12 @@ def _private_python(runtime: Path) -> Path:
 
 
 def clone_private_runtime(update_dir: Path, runtime: Path,
-                          module: str = "openprogram.operations.self_update.control.dev_stable") -> Path:
+                          module: str = "openprogram.operations.self_update.control.dev_deploy") -> Path:
     """Copy a runtime into this update's directory and return its Python.
 
-    Deploying and promoting replace the development runtime and the App's
-    runtime while the controller runs, and this codebase imports lazily, so
-    the controller runs from a copy that neither can touch. A clone costs
+    A deploy replaces the development runtime while the controller runs,
+    and this codebase imports lazily, so the controller runs from a copy
+    the deploy cannot touch. A clone costs
     nothing on APFS. Re-entry probes the saved copy.
     """
     target = update_dir / "controller" / "runtime"

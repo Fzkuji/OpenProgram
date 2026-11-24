@@ -8,6 +8,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { SecretInput } from "@/components/ui/secret-input";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
+import { errorDetailText } from "@/lib/net/error-text";
 import { normalizeSecretReplacement } from "@/lib/net/auth/secret-replacement";
 
 /** Single API-key input — masked status plus explicit replacement. Used by
@@ -33,11 +34,11 @@ export function ApiKey({
   const loadPreview = useCallback(async () => {
     try {
       const r = await fetch(`/api/config/key/${encodeURIComponent(envVar)}`);
-      const d = await r.json();
+      const d = await r.json() as { has_value?: boolean; masked?: string };
       setMasked(d.has_value ? d.masked || "" : "");
       setReplacement("");
-    } catch {
-      /* ignore */
+    } catch (error) {
+      console.warn(`The saved ${envVar} could not be read`, error);
     }
   }, [envVar]);
 
@@ -54,14 +55,14 @@ export function ApiKey({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_keys: { [envVar]: v } }),
       });
-      const d = await r.json();
+      const d = await r.json() as { saved?: boolean; error?: unknown };
       if (d.saved) {
         setReplacement("");
         onChanged();
         loadPreview();
         onSaved?.();
       } else {
-        showToast(d.error || text("Could not save the key.", "无法保存密钥。"), { tone: "error" });
+        showToast(errorDetailText(d.error, text("Could not save the key.", "无法保存密钥。")), { tone: "error" });
       }
     } catch {
       showToast(text("Could not save the key.", "无法保存密钥。"), { tone: "error" });

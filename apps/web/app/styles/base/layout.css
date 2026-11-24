@@ -47,6 +47,15 @@
 .app .page-col {
   margin-right: 7px;
 }
+/* So does an application that holds its own conversation, which hides
+   the right rail too. A split column already steps 7px over the window
+   edge, so it lands back on the edge, where the canvas padding keeps the gap. */
+.app .center-col[data-right-rail-hidden] {
+  margin-right: 7px;
+}
+.app .center-col[data-split][data-right-rail-hidden] {
+  margin-right: 0;
+}
 /* Non-chat routes render their page frame inside the same card. Pages
    size themselves to the viewport (100vh); clamp them to the card. */
 .app .page-col > * {

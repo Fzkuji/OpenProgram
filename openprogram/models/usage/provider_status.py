@@ -129,6 +129,14 @@ class KeyHealth(TypedDict):
     use_count: int
     #: When ``status`` was last written (the pool's ``updated_at``), to weigh it against a later quota read.
     status_at: Optional[float]
+    #: This credential's own state, from its newest evidence: a card draws one row per credential.
+    health: "HealthWire"
+    #: The limits this credential reported, and the last failed read of its endpoint.
+    quota: "QuotaWire"
+    #: A subscription's plan for this sign-in ("plus", "prolite"); null when unknown or a key.
+    plan: Optional[str]
+    #: Billed USD of this credential's calls in the last 30 days; null for a subscription.
+    spend_usd: Optional[float]
 
 
 class FixWire(TypedDict):
@@ -303,6 +311,51 @@ def keys_of(provider: str) -> list[KeyHealth]:
             "last_used_at": cred.last_used_at_ms / 1000 if cred.last_used_at_ms else None,
             "use_count": int(cred.use_count or 0),
             "status_at": cred.updated_at_ms / 1000 if cred.updated_at_ms else None,
+            "health": {"state": "unknown", "until": None, "detail": None},
+            "quota": _NO_QUOTA,
+            "plan": None,
+            "spend_usd": None,
+        })
+    return out
+
+
+_NO_QUOTA: QuotaWire = {"kind": "none", "account": None, "fetched_at": None, "stale": False, "limits": [],
+                        "read_error": None, "read_at": None}
+
+
+def key_health(key: KeyHealth, report: Optional[QuotaReport], now: float,
+               read: Optional[dict] = None) -> HealthWire:
+    """One credential's state: its newest evidence (:func:`_key_view`), then a
+    spent limit it reported, which stops it until the limit resets."""
+    state, detail = _key_view(key, now, read)
+    until = key["cooldown_until"] if state == "rate_limited" else None
+    if state == "ready" and report is not None:
+        spent = [limit for limit in report.limits if limit.status == "exhausted"]
+        if spent:
+            limit = max(spent, key=lambda item: item.resets_at or 0.0)
+            balance = limit.limit_key.rsplit(":", 1)[-1] in ("balance", "key_limit", "credits")
+            state = "no_credit" if balance else "rate_limited"
+            until = None if balance else limit.resets_at
+            detail = limit.label
+    return {"state": state, "until": until, "detail": detail}
+
+
+def with_key_views(provider: str, keys: list[KeyHealth], reports: list[QuotaReport], now: float,
+                   reads: dict[str, dict], spend: dict[str, float], subscription: bool) -> list[KeyHealth]:
+    """``keys`` with each credential's own health, quota, plan and spend."""
+    by_account = {r.account: r for r in reports}
+    out: list[KeyHealth] = []
+    for key in keys:
+        cid = key["credential_id"]
+        report = by_account.get(cid)
+        read = reads.get(cid)
+        own = {**key, "active": True}
+        out.append({
+            **key,
+            "health": key_health(key, report, now, read),
+            "quota": quota_of([report] if report else [], [own], now, {cid: read} if read else {}),
+            "plan": plan_of(provider, [key]) if subscription else None,
+            "spend_usd": None if subscription else round(spend.get(cid, 0.0), 6),
         })
     return out
 
@@ -456,8 +509,8 @@ def family_of(provider_id: str, label: str) -> _Family:
 def by_company(providers: list[ProviderStatus]) -> list[ProviderStatus]:
     """The list with each company's ways together, where its first one was,
     in the company table's order (the ChatGPT subscription before the API)."""
-    from openprogram.models.auth.login.login_method_registry import COMPANIES
-    rank = {w.provider: i for company in COMPANIES for i, w in enumerate(company.ways)}
+    from openprogram.models.auth.login.login_method_registry import companies
+    rank = {w.provider: i for company in companies() for i, w in enumerate(company.ways)}
     groups: dict[str, list[ProviderStatus]] = {}
     for provider in providers:
         groups.setdefault(provider["family"], []).append(provider)
@@ -520,7 +573,12 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
         from .quota_fetchers import refresh as read_quota
         read_quota(ids, reason="open")
     from .quota_fetchers import last_reads
-    days = ledger.provider_days(since=(int(now // 86400) - DAYS + 1) * 86400)
+    since = (int(now // 86400) - DAYS + 1) * 86400
+    days = ledger.provider_days(since=since)
+    try:
+        key_costs = ledger.credential_costs(since=since)
+    except Exception:
+        key_costs = {}
     defaults = _default_models(now, ledger)
     from openprogram.models.providers.catalog.local import is_local_provider
     out: list[ProviderStatus] = []
@@ -529,10 +587,11 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
         listed = keys_of(pid)
         # Health, quota and plan come from the credentials in use.
         keys = in_use(listed)
-        reports = default_store.reports(pid)
+        all_reports = default_store.reports(pid)
+        all_reads = last_reads(pid)
         stored = {k["credential_id"] for k in keys} | {""}
-        reports = [r for r in reports if r.account in stored]
-        reads = {a: r for a, r in last_reads(pid).items() if a in stored}
+        reports = [r for r in all_reports if r.account in stored]
+        reads = {a: r for a, r in all_reads.items() if a in stored}
         local = is_local_provider(pid)
         billing: Billing = "local" if local else (
             "subscription" if is_subscription(pid) else "api_key")
@@ -553,7 +612,8 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
             "spend": spend_of(pid, [d for d in days if d["provider"] == pid], now),
             # The model last picked or most used, else the first one on.
             "default_model": defaults.get(pid) or (None if local else first_enabled_model(pid)),
-            "keys": listed,
+            "keys": with_key_views(pid, listed, all_reports, now, all_reads, key_costs.get(pid, {}),
+                                   billing == "subscription"),
             "fix": fix_for(pid, health["state"]),
             "console_url": console_url(pid, "keys"),
             "plan": plan_of(pid, keys) if billing == "subscription" else None,

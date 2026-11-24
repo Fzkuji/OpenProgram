@@ -86,7 +86,9 @@ def _project_for(session_id: str):
 
     Returns a ``Project`` only when the session is tied to an actual
     filesystem directory we should commit into. Ad-hoc / default sessions
-    and any resolution failure → None (caller no-ops).
+    and any resolution failure → None (caller no-ops). So is a project
+    whose folder is on another machine: auto-commit runs ``git`` on this
+    computer's disk, and that folder is not on it.
     """
     try:
         from openprogram.state.store.project import project_store as _projects
@@ -94,7 +96,7 @@ def _project_for(session_id: str):
     except (ImportError, OSError, ValueError) as e:
         logger.debug("project lookup failed for %s: %s", session_id, e)
         return None
-    if proj is None or proj.is_default or not proj.path:
+    if proj is None or proj.is_default or not proj.path or not _projects.folder_is_here(proj):
         return None
     if not Path(proj.path).expanduser().is_dir():
         return None

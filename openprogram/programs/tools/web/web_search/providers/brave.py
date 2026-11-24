@@ -8,7 +8,8 @@ Docs: https://api.search.brave.com/app/documentation/web-search/get-started
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import get_json
@@ -26,10 +27,10 @@ class BraveProvider:
     requires_env: tuple = ("BRAVE_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("BRAVE_API_KEY"))
+        return bool(service_key("brave"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("BRAVE_API_KEY", "")
+        key = service_key("brave")
         if not key:
             raise RuntimeError("BRAVE_API_KEY not set")
         params = {

@@ -7,7 +7,7 @@ have set up key-based auth ahead of time.
 Calls share one multiplexed connection per target (``ControlMaster``),
 so the many small reads and writes a file tool makes don't each pay a
 full handshake. ``workdir`` is where commands start when the caller
-gives no cwd: an SSH environment's remote folder. Windows' OpenSSH client
+gives no cwd: the machine's remote folder. Windows' OpenSSH client
 has no connection sharing, so there every call opens its own connection.
 
 The remote side speaks UTF-8 whatever this machine's code page is, and the
@@ -19,7 +19,7 @@ import os
 import shlex
 import subprocess
 
-from openprogram.host.backend.base import Backend, RunResult, decode_maybe
+from openprogram.host.backend.base import Backend, RunResult, decode_maybe, running_on, spawned_on
 from openprogram.host._platform.process_ownership import no_window_creation_flags
 
 
@@ -39,8 +39,8 @@ class SshBackend(Backend):
     def __init__(self, target: str, workdir: str = "") -> None:
         if not target:
             raise RuntimeError(
-                "ssh backend: no SSH target. Add an SSH environment in "
-                "Settings > Environments or with `openprogram environments add`."
+                "ssh backend: no SSH target. Add an SSH machine in "
+                "Settings > Machines or with `openprogram machines add --shell ssh target=...`."
             )
         self.target = target
         self.workdir = workdir
@@ -72,6 +72,10 @@ class SshBackend(Backend):
 
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
+        with running_on(self.machine_id):
+            return self._run(command, timeout, cwd)
+
+    def _run(self, command: str, timeout: float, cwd: str | None) -> RunResult:
         try:
             proc = subprocess.run(
                 self._ssh_argv(command, cwd),
@@ -106,6 +110,10 @@ class SshBackend(Backend):
         decoding on the way. Returns ``(exit_code, stdout, stderr)``;
         exit code 255 means ssh itself failed (connection, auth).
         """
+        with running_on(self.machine_id):
+            return self._run_bytes(command, data, timeout)
+
+    def _run_bytes(self, command: str, data: bytes | None, timeout: float) -> tuple[int, bytes, bytes]:
         try:
             proc = subprocess.run(
                 ["ssh", *self._options(), self.target, command],
@@ -130,7 +138,7 @@ class SshBackend(Backend):
         # -T disables pseudo-tty allocation so our PIPEs stay clean
         # line streams. Process output is captured via the remote ssh
         # client streaming stdout back over the same socket.
-        return subprocess.Popen(
+        return spawned_on(self.machine_id, subprocess.Popen(
             **self.spawn_spec(command, cwd=cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -139,4 +147,4 @@ class SshBackend(Backend):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-        )
+        ))

@@ -4,11 +4,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">概念</th><th scope="col">含义</th></tr></thead>
 <tbody>
-<tr><th scope="row">列表</th><td>每个 provider 一个文件 <code translate="no">~/.openprogram/auth/&lt;provider&gt;/credentials.json</code>：<code translate="no">strategy</code> 和有序的 <code translate="no">credentials</code>。每次修改（<code translate="no">AuthStore.mutate</code>）从读到写都持有文件锁，并作用在当时的文件上，所以 CLI 加的密钥、别的进程刷新的令牌都不会丢。删除或替换密钥时连同上一份好副本（<code translate="no">.bak</code>、<code translate="no">.bad-*</code>）一起去掉，密钥不留在磁盘上（<code translate="no">models/auth/store.py</code>）。</td></tr>
+<tr><th scope="row">列表</th><td>每个 provider 一个文件 <code translate="no">~/.openprogram/auth/&lt;provider&gt;/credentials.json</code>：<code translate="no">strategy</code> 和有序的 <code translate="no">credentials</code>。API key 的密钥存在<a href="credential-model.zh.html">所属厂商的文件</a>里。每次修改（<code translate="no">AuthStore.mutate</code>）从读到写都持有文件锁，并作用在当时的文件上，所以 CLI 加的密钥、别的进程刷新的令牌都不会丢。删除或替换密钥时连同上一份好副本（<code translate="no">.bak</code>、<code translate="no">.bad-*</code>）一起去掉，密钥不留在磁盘上（<code translate="no">models/auth/store.py</code>）。</td></tr>
 <tr><th scope="row">使用次数</th><td><code translate="no">&lt;provider&gt;/usage.json</code>：每个凭据的使用次数、今天的次数、最近使用，以及 <code translate="no">evenly</code> 轮到哪里。请求只写这个文件，从不写密钥文件。</td></tr>
 <tr><th scope="row">凭据</th><td><code translate="no">id</code>、<code translate="no">label</code>、<code translate="no">kind</code>（<code translate="no">api_key</code>、<code translate="no">oauth</code>、<code translate="no">device_code</code>、<code translate="no">import</code>、<code translate="no">token</code>、<code translate="no">credential_process</code>）、<code translate="no">source</code>（<code translate="no">web</code>、<code translate="no">cli</code>、<code translate="no">import</code>、<code translate="no">env</code>）、<code translate="no">identity</code>、<code translate="no">enabled</code>、<code translate="no">status</code>、冷却、被封的模型、最近错误、最近使用</td></tr>
 <tr><th scope="row">状态</th><td><code translate="no">ready</code>、<code translate="no">cooling</code>、<code translate="no">quota</code>、<code translate="no">invalid_key</code>、<code translate="no">needs_login</code></td></tr>
-<tr><th scope="row">环境变量 key</th><td>provider 读取的变量（<code translate="no">login_method_registry.env_vars</code>）已设置时，是一行只读的 <code translate="no">env:&lt;VAR&gt;</code>，使用时从环境读取；保存它的位置和状态，不保存值</td></tr>
+<tr><th scope="row">环境变量 key</th><td>provider 读取的变量（<code translate="no">login_method_registry.env_vars</code>）已设置时，是一行只读的 <code translate="no">env:&lt;VAR&gt;</code>，使用时从环境读取；保存它的位置和状态，不保存值。一家公司几种方式共读的变量，在每个方式上都是一行（<a href="../provider-management.zh.html#shared-environment-keys">一把密钥，多种方式</a>）</td></tr>
 <tr><th scope="row">重新登录</th><td>同一个 <code translate="no">account_id</code> 或邮箱就地更新原来那一行：id、名称、位置都不变</td></tr>
 </tbody>
 </table>
@@ -28,7 +28,7 @@
 <tr><th scope="row">429，Retry-After ≤ 5 秒</th><td>不变</td><td>同一个凭据再试一次</td></tr>
 <tr><th scope="row">429</th><td><code translate="no">cooling</code>，时长按 Retry-After，否则 60 秒起每次翻倍，最多 15 分钟</td><td>下一个可用的</td></tr>
 <tr><th scope="row">额度或余额</th><td><code translate="no">quota</code>，到服务给的重置时间，否则 24 小时</td><td>下一个可用的</td></tr>
-<tr><th scope="row">401，或指明密钥的 403</th><td>登录先刷新一次（只在这里，adapter 不再刷新）；之后 <code translate="no">invalid_key</code> 或 <code translate="no">needs_login</code></td><td>刷新后用同一个，否则下一个</td></tr>
+<tr><th scope="row">401，或指明密钥的 403</th><td>登录先刷新一次（只在这里，adapter 不再刷新）；之后 <code translate="no">invalid_key</code> 或 <code translate="no">needs_login</code></td><td>刷新后用同一个，否则下一个；密钥全部被拒：<a href="credential-model.zh.html#request">改走同厂商的另一个接入点</a></td></tr>
 <tr><th scope="row">其他 403</th><td>关于模型的 403（验证、组织）封这个模型；关于地区或策略的不动密钥</td><td>下一个可用的，或报错</td></tr>
 <tr><th scope="row">模型被拒</th><td>这个模型封 24 小时</td><td>下一个可用的</td></tr>
 <tr><th scope="row">5xx、网络</th><td>不变</td><td>同一个凭据退避重试两次</td></tr>

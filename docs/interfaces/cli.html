@@ -18,7 +18,7 @@
 <tr><th scope="row">Ctrl-C or SIGTERM</th><td>Stops the turn on the worker, as the Web UI's stop button does, and waits up to 30 seconds for it to end (2 seconds once a second signal comes); exit code 130, or 143 for SIGTERM. A worker restart during that wait does not lose the stop: the command reconnects and stops the turn on the worker that comes back. If the worker did not confirm the stop, stderr says the turn may still be running</td></tr>
 <tr><th scope="row">Stopped in the Web UI</th><td><code translate="no">[cancelled]</code> on stderr, exit code 130; the partial reply stays in the session</td></tr>
 <tr><th scope="row">Worker error</th><td>Printed to stderr, exit code 1</td></tr>
-<tr><th scope="row">Worker restart (refresh, promote)</th><td>The command reconnects and follows the same turn to its end</td></tr>
+<tr><th scope="row">Worker restart (deploy, update)</th><td>The command reconnects and follows the same turn to its end</td></tr>
 <tr><th scope="row">No worker back within three minutes, or the turn was interrupted</th><td>The command says so; the Web UI session shows where it stopped</td></tr>
 </tbody>
 </table>

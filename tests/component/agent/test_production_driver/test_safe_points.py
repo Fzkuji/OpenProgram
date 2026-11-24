@@ -48,6 +48,7 @@ def test_app_control_safe_point_waits_before_tool_effect_and_resumes_once(
 ):
 
     from openprogram.host import system_access
+    from tests.support import screen_targets
     from openprogram.runtime.conversation.checkpoint import runtime_contract_snapshot
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.conversation.production_driver import AgentProductionDriver
@@ -122,8 +123,9 @@ def test_app_control_safe_point_waits_before_tool_effect_and_resumes_once(
             ],
         },
     )
-    args = {"target": "app", "action": "click", "args": {"app": "Notes", "element_index": 1}}
-    manifest = system_access.access_manifest_for_tool("computer_use_agent", args)
+    screen_targets.install(monkeypatch, screen_targets.App())
+    args = {"type": "window", "action": "click", "args": {"app": "Notes", "element": 1}}
+    manifest = system_access.access_manifest_for_tool("computer_use", args)
     assert manifest is not None
 
     assert (
@@ -156,7 +158,7 @@ def test_app_control_safe_point_waits_before_tool_effect_and_resumes_once(
     )
     payload = {
         "tool_call_id": "gui-call",
-        "tool_name": "computer_use_agent",
+        "tool_name": "computer_use",
         "arguments": args,
         "next_tool_index": 0,
         "pre_wait": manifest,
@@ -201,6 +203,7 @@ def test_forced_app_control_uses_durable_system_wait_before_subprocess(
 ):
 
     from openprogram.host import system_access
+    from tests.support import screen_targets
     from openprogram.runtime.conversation.production_driver import AgentProductionDriver
     from openprogram.runtime.execution.control import RuntimeControlService
     from openprogram.runtime.execution.driver import DriverRegistry
@@ -208,11 +211,12 @@ def test_forced_app_control_uses_durable_system_wait_before_subprocess(
 
     store = ExecutionStore(tmp_path / "forced-system.sqlite3")
     revision = store.create_revision(manifest={"entrypoint": "forced"})
+    screen_targets.install(monkeypatch, screen_targets.App())
     payload = {
         "version": 1,
         "kind": "forced_tool",
-        "tool_name": "computer_use_agent",
-        "tool_input": {"target": "app", "args": {"app": "Notes"}},
+        "tool_name": "computer_use",
+        "tool_input": {"type": "window", "args": {"app": "Notes"}},
         "source": "web",
         "agent_id": "main",
     }
@@ -1168,6 +1172,7 @@ def test_app_control_granted_before_the_boundary_still_records_the_tool_intent(
     """The manifest captured with the tool list said "waiting"; access was
     granted by the time the tool reached its boundary. No wait opens, and
     tool.started finds the dispatch intent like for any other tool."""
+    from tests.support import screen_targets
 
     from openprogram.host import system_access
     from openprogram.runtime.conversation.checkpoint import runtime_contract_snapshot
@@ -1217,8 +1222,9 @@ def test_app_control_granted_before_the_boundary_still_records_the_tool_intent(
         ],
     }
     monkeypatch.setattr(system_access, "report", lambda: not_granted)
-    args = {"target": "app", "action": "click", "args": {"app": "Notes", "element_index": 1}}
-    manifest = system_access.access_manifest_for_tool("computer_use_agent", args)
+    screen_targets.install(monkeypatch, screen_targets.App())
+    args = {"type": "window", "action": "click", "args": {"app": "Notes", "element": 1}}
+    manifest = system_access.access_manifest_for_tool("computer_use", args)
     assert manifest is not None
 
     assert hook("provider.before", {
@@ -1239,7 +1245,7 @@ def test_app_control_granted_before_the_boundary_still_records_the_tool_intent(
     }
     monkeypatch.setattr(system_access, "report", lambda: granted)
     payload = {
-        "tool_call_id": "gui-call", "tool_name": "computer_use_agent",
+        "tool_call_id": "gui-call", "tool_name": "computer_use",
         "arguments": args, "next_tool_index": 0, "pre_wait": manifest,
     }
     assert hook("tool.before", payload) is False

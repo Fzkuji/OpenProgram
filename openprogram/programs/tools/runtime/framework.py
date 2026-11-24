@@ -16,7 +16,7 @@ def framework(action: str = 'describe', operation: str = '', arguments: dict | N
     operation describes exact-window UI/native commands; use returned names and
     schemas to manipulate views without screen automation. A command on a web
     tab names it as arguments.tab and as its first argument, by the tab's id
-    from computer_use_agent(target="browser", action="tabs"). Never retry an
+    from computer_use(type="browser", action="list_tabs"). Never retry an
     uncertain mutation or use this entry to answer your own approval request.
     Tool approval and owner/backend/sandbox restrictions still apply.
     """

@@ -134,3 +134,39 @@ def test_one_unreadable_update_does_not_block_other_results(store_fixture, tmp_p
     delivered = [n.metadata["self_update"]["update_id"] for n in index.nodes_by_seq
                  if n.metadata.get("source") == "self_update_result"]
     assert delivered == ["su_test"]
+
+
+def test_a_delivered_update_is_read_again_only_when_its_files_change(store_fixture, tmp_path, monkeypatch):
+    from openprogram.state import paths
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.operations.self_update.delivery import delivery
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr(delivery, "_settled", {})
+    clock = [0.0]
+    monkeypatch.setattr(delivery, "_clock", lambda: clock[0])
+    updates = SelfUpdateStore()
+    updates.create(replace(_request(), session_id="p1", origin_assistant_id="a1"))
+    updates.transition("su_test", UpdatePhase.ABORTED)
+    projected = []
+    project = delivery._project
+    monkeypatch.setattr(delivery, "_project",
+                        lambda store, record: projected.append(record.request.update_id) or project(store, record))
+
+    assert delivery.deliver_pending() == 1
+    assert delivery.deliver_pending() == 0, "the pass after a delivery finds nothing left"
+    read = len(projected)
+    for _ in range(3):
+        assert delivery.deliver_pending() == 0
+    assert len(projected) == read, "an update with every result delivered is not projected on each pass"
+
+    receipt = updates.root / "su_test" / "delivery.json"
+    receipt.write_text(receipt.read_text().replace('"terminal"', '"earlier"'))
+    assert delivery.deliver_pending() == 1, "a changed file is looked at on the next pass"
+    read = len(projected)
+    assert delivery.deliver_pending() == 0
+    assert delivery.deliver_pending() == 0
+    clock[0] += delivery.RECHECK_SECONDS
+    assert delivery.deliver_pending() == 0
+    assert len(projected) > read + 1, "and every update is checked in full again after five minutes"

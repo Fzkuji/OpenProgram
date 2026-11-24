@@ -3,6 +3,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import openprogram.interfaces.channels  # noqa: F401  the Server registers the channel interface the routes read
 from openprogram.runtime.conversation.always_on import runtime
 from openprogram.runtime.agent_registry import manager
 from openprogram.interfaces.server.routes.catalog import agents

@@ -37,9 +37,9 @@
 </table>
 <p class="note">API 密钥导入凭据库：<a href="auth.html">认证</a>。所有 Provider 都支持流式。多模态按模型决定，以 UI 为准。提示词缓存仅在标注处经代码验证。</p>
 <h2>自定义 Provider</h2>
-<p>设置 → Provider：必填显示名称和 base URL；不填 id 时由名称生成。<code translate="no">https://api.example.com</code> 解析为 <code translate="no">/v1</code>；明确的路径如 <code translate="no">/compatible-mode/v1</code> 保留。<strong>Fetch models</strong> 浏览端点的 <code translate="no">/models</code>。存为 <code translate="no">providers.&lt;id&gt;</code>，带 <code translate="no">source: "custom"</code>。</p>
+<p>设置 → 模型服务：必填显示名称和 base URL；不填 id 时由名称生成。<code translate="no">https://api.example.com</code> 解析为 <code translate="no">/v1</code>；明确的路径如 <code translate="no">/compatible-mode/v1</code> 保留。<strong>Fetch models</strong> 浏览端点的 <code translate="no">/models</code>。存为 <code translate="no">providers.&lt;id&gt;</code>，带 <code translate="no">source: "custom"</code>。</p>
 <h2>哪个会话在用哪个模型</h2>
-<p>设置 → Provider 打开时是 <strong>Overview</strong>，一张按现在、24 小时或 7 天显示的图。</p>
+<p>设置 → 模型服务 打开时是 <strong>Overview</strong>，一张按现在、24 小时或 7 天显示的图。</p>
 <table class="stack">
 <thead><tr><th scope="col">左侧</th><th scope="col">右侧</th></tr></thead>
 <tbody>
@@ -56,7 +56,7 @@
 </table>
 <p class="note">悬停一行可突出它的连线。点会话打开，点 Provider 进入设置。下方 <strong>Recent model switches</strong> 列出每次切换及原因。窗口内没有调用的会话只计数。这张图需要较宽的窗格。</p>
 <h2 id="fallback-models">回退模型</h2>
-<p>用于被限流、过载、宕机或不可达的模型。在设置 → 系统 → 模型里设置，或：</p>
+<p>用于被限流、过载、宕机或不可达的模型。在设置 → 模型服务 → 行为里设置，或：</p>
 <pre translate="no"><code>openprogram config set model_fallback.mode same-provider
 openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "openai/gpt-5.5"]'</code></pre>
 <table class="stack fixed">
@@ -69,7 +69,7 @@ openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "o
 </table>
 <p class="note">只在回复还没有任何文本时切换。认证错误、无效请求、上下文已满和内容策略拒绝不重试。<code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> 覆盖此设置。</p>
 <h2 id="redacting-secrets-in-requests">请求脱敏</h2>
-<p>默认关闭。设置 → 系统 → 模型里的 <strong>Redact secrets in requests</strong>，或 <code translate="no">openprogram config set privacy.redact_requests true</code>。每次请求前，这些内容换成 <code translate="no">[[SECRET_1]]</code>、<code translate="no">[[EMAIL_2]]</code> 这样的占位符：</p>
+<p>默认关闭。设置 → 模型服务 → 行为里的 <strong>Redact secrets in requests</strong>，或 <code translate="no">openprogram config set privacy.redact_requests true</code>。每次请求前，这些内容换成 <code translate="no">[[SECRET_1]]</code>、<code translate="no">[[EMAIL_2]]</code> 这样的占位符：</p>
 <ul>
 <li>形状可识别的 API 密钥和 token：Anthropic、OpenAI、GitHub、AWS、Google、Slack、JWT</li>
 <li>私钥块</li>

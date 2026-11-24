@@ -15,13 +15,14 @@ await build({
   absWorkingDir: web, entryPoints: ['components/chat/messages/bubbles/assistant-bubble.tsx'],
   external: ['react'], bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: file,
   plugins: [{ name: 'bubble-services', setup(b) {
-    b.onResolve({ filter: /^(@\/|\.\.?\/)/ }, a => a.importer.endsWith('assistant-bubble.tsx') && !['@/lib/format-utils/format','@/lib/chat/transcript/owned-children','@/lib/chat/transcript/row-status','@/lib/chat/transcript/task-blocks'].includes(a.path) ? { path: a.path, namespace: 'stub' } : null);
+    b.onResolve({ filter: /^(@\/|\.\.?\/)/ }, a => a.importer.endsWith('assistant-bubble.tsx') && !['@/lib/format-utils/format','@/lib/chat/transcript/owned-children','@/lib/chat/transcript/row-status','@/lib/chat/transcript/task-blocks','@/lib/chat/rewind/rewind-logic'].includes(a.path) ? { path: a.path, namespace: 'stub' } : null);
     b.onLoad({ filter: /.*/, namespace: 'stub' }, a => ({ resolveDir: web, contents:
-      a.path.includes('session-store') ? 'export const useSessionStore = selector => selector(globalThis.approvalState); export const selectRow = () => () => undefined, selectViewRows = () => () => ({});' :
+      a.path.includes('session-store') ? 'export const useSessionStore = selector => selector(globalThis.approvalState); export const selectRow = () => () => undefined, selectViewRows = () => () => (globalThis.approvalState.rows ?? {});' :
       a.path.includes('pending-steers') ? 'export const PendingSteers=()=>null;' :
       a.path.includes('rewind-error-actions') ? 'export const RewindErrorActions=()=>null; export const useRewindOffered=()=>false;' :
       a.path.includes('agent-style') ? 'export const agentColor=()=>"", agentInitial=()=>"", agentDisplayName=()=>"Agent", useAgentProfile=()=>({name:"Agent"});' :
       a.path.includes('i18n') ? 'export const useTranslation=()=>({text:(en)=>en});' :
+      a.path.includes('machines/store') ? 'export const useMachines=(selector)=>selector({items:[]});' :
       a.path.includes('use-avatar-align') ? 'export const useAvatarAlign=()=>({containerRef:null,avatarTop:0});' :
       a.path.endsWith('/markdown') ? 'export const useMarkdownReady=()=>{}, renderMarkdown=t=>t;' :
       a.path.includes('streaming-blocks') ? 'export const splitMarkdownBlocks=t=>[t];' :
@@ -159,4 +160,21 @@ test('a split pane keeps its own sub-agent cards in its timeline, whatever sessi
   },sessionIdOverride:'peer'}));
   assert.doesNotMatch(draw('peer'), /attach-row/);
   assert.match(draw('other'), /attach-row/);
+});
+
+test('a failed reply stops showing its error once a newer message follows it', () => {
+  const failed = { id:'failed', role:'assistant', rowKind:'assistant', status:'error', content:'', errorDetail:'[error] refused' };
+  const draw = (messageOrder, rows, msg = failed) => {
+    globalThis.approvalState={currentSessionId:'s1',pendingDecisions:[],executionUpdateOrders:{},messageOrder:{s1:messageOrder},rows};
+    return renderToStaticMarkup(createElement(AssistantBubble,{msg,sessionIdOverride:'s1'}));
+  };
+  const rows = { u1:{id:'u1',role:'user'}, failed, u2:{id:'u2',role:'user'} };
+  assert.match(draw(['u1','failed'], rows), /could not be completed/);
+  // Nothing but the error: no row at all.
+  assert.equal(draw(['u1','failed','u2'], rows), '');
+  // What it wrote before failing stays, without the notice.
+  const partial = { ...failed, blocks:[{type:'text',text:'Partial response'}] };
+  const html = draw(['u1','failed','u2'], { ...rows, failed: partial }, partial);
+  assert.match(html, /Partial response/);
+  assert.doesNotMatch(html, /could not be completed/);
 });

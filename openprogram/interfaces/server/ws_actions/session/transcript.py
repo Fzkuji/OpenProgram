@@ -220,8 +220,8 @@ def splice_compaction_event_rows(
     covered message (the fold / boundary before the kept tail). It is
     built off ``conv['messages']`` so it never enters LLM context. A
     superseded summary gets no row, and nothing marks the moment a
-    compaction ran: its count, sizes and time are reported with the
-    context breakdown (``last_compaction``).
+    compaction ran. Its count, sizes and time stay on the summary node, for
+    logs; no interface shows them.
 
     Only a summary of the shown branch gets its card: one whose covered
     segment lies wholly on it, the rule ``render_context`` uses to put a

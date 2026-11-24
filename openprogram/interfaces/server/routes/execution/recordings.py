@@ -3,6 +3,7 @@
 Endpoints:
   POST /api/recordings                       {purpose} → {id, started_at, max_seconds}
   GET  /api/recordings/{id}                  state, elapsed time, step and image counts
+  GET  /api/recordings/{id}/events           the same status as a stream, sent again on each change
   POST /api/recordings/{id}/stop             the summary shown in the composer
   POST /api/recordings/{id}/discard          stops and deletes
   POST /api/recordings/{id}/narration        {t, text} → appends a ``say`` event
@@ -17,12 +18,16 @@ it provides; while the application is disabled every route answers 404.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 
 from fastapi import Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 _IMAGE = re.compile(r"^\d{4}\.jpg$")
+#: A stream with nothing to say still sends a comment this often, so a
+#: connection that went away is noticed and closed.
+_STREAM_KEEPALIVE_SECONDS = 30.0
 
 
 def _recorder():
@@ -91,6 +96,60 @@ def register(app):
             return missing(recording_id)
         return JSONResponse({**recording.summary(directory), "state": "finished"},
                             headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/recordings/{recording_id}/events")
+    async def api_recording_events(recording_id: str, request: Request):
+        """The recording's status as server-sent events: one now, and one
+        each time it changes (a step, typing begun, the end), so the
+        recording bar never asks again on a timer. The stream ends with the
+        finished status, or with ``{"state": "missing"}`` for a recording
+        that does not exist."""
+        if (recording := _recorder()) is None:
+            return JSONResponse(NOT_ENABLED, status_code=404)
+        if (refused := _local_owner(request)) is not None:
+            return refused
+        from openprogram.host._platform import changes
+
+        loop = asyncio.get_running_loop()
+        wake = asyncio.Event()
+
+        def poke(keys: tuple[str, ...]) -> None:
+            if not keys or recording_id in keys:
+                loop.call_soon_threadsafe(wake.set)
+
+        def current() -> dict:
+            live = recording.get(recording_id)
+            if live is not None:
+                return live.status()
+            try:
+                directory = recording.directory_of(recording_id)
+            except recording.RecordingError:
+                return {"state": "missing"}
+            return {**recording.summary(directory), "state": "finished"}
+
+        async def stream():
+            unsubscribe = changes.subscribe(recording.TOPIC, poke)
+            try:
+                changed = True
+                while True:
+                    if changed:
+                        wake.clear()
+                        status = current()
+                        yield f"data: {json.dumps(status, ensure_ascii=False)}\n\n"
+                        if status.get("state") in {"finished", "missing"}:
+                            return
+                    try:
+                        await asyncio.wait_for(wake.wait(), _STREAM_KEEPALIVE_SECONDS)
+                        changed = True
+                    except asyncio.TimeoutError:
+                        # Nothing changed: the status is sent again only when it does.
+                        yield ": keepalive\n\n"
+                        changed = False
+            finally:
+                unsubscribe()
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.post("/api/recordings/{recording_id}/stop")
     async def api_recording_stop(recording_id: str, request: Request):

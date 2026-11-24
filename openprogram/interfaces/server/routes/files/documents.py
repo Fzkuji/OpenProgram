@@ -99,7 +99,10 @@ def register(app):
                     raise HTTPException(status_code=403, detail="path not allowed")
             if not target.is_file():
                 raise HTTPException(status_code=404, detail="not a file")
-            return {"version": disk_version(target)}
+            # From now on a change to the file is announced to the window
+            # under this key (document_changes.py), instead of it asking again.
+            from .document_changes import follow
+            return {"version": disk_version(target), "watch": follow(target)}
         try:
             return JSONResponse(await asyncio.to_thread(metadata), headers={"Cache-Control": "no-store"})
         except DocumentHistoryError as exc:

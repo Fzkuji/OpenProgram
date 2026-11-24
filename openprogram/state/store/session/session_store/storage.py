@@ -181,6 +181,7 @@ class StorageOperations:
                     cached = None
                 if cached:
                     self._sessions.move_to_end(session_id)
+                    self._used_at[session_id] = shared.time.monotonic()
             if not create_if_missing:
                 verified_log = shared.SessionLog(sdir)
                 if sdir.is_symlink():
@@ -223,6 +224,8 @@ class StorageOperations:
             with self._lock:
                 # New key lands at the MRU (end) of the OrderedDict.
                 self._sessions[session_id] = (session_log, idx)
+                self._opened_by[session_id] = shared.opening_call()
+                self._used_at[session_id] = shared.time.monotonic()
                 # Evict least-recently-used entries beyond the cap. The
                 # just-inserted session is at the MRU end, so popitem(last=
                 # False) (oldest) never evicts it as long as cap >= 1. An
@@ -230,7 +233,9 @@ class StorageOperations:
                 # an in-flight turn keeps its own (log, idx) reference and is
                 # unaffected by being dropped from this dict.
                 while len(self._sessions) > self._cache_cap:
-                    self._sessions.popitem(last=False)
+                    dropped, _ = self._sessions.popitem(last=False)
+                    self._opened_by.pop(dropped, None)
+                    self._used_at.pop(dropped, None)
             try:
                 self._recover_session_rewinds_before_exposure(session_id)
             except BaseException:

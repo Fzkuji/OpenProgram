@@ -57,13 +57,11 @@ export function ProviderKeys({ provider, sessionId, onClose }: {
   const { data: list } = useQuery({
     queryKey: providerCredentialsKey(provider),
     queryFn: () => readCredentials(provider),
-    staleTime: 30_000,
   });
   const { data: session } = useQuery({
     queryKey: sessionCredentialsKey(sessionId ?? ""),
     queryFn: () => readSession(sessionId!),
     enabled: !!sessionId,
-    staleTime: 30_000,
   });
   const rows = list?.credentials ?? [];
   if (!sessionId || rows.length < 2 || !list) return null;

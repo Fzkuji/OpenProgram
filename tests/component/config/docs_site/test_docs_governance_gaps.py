@@ -115,8 +115,19 @@ def read(html: str):
 
 def test_a_removed_verb_as_a_whole_span_is_an_error():
     change = parser_change(cli(), cli(rename=True))
-    found = list(_removed_cli_tokens(FakeRepository(change), "docs/x.html", read('<code>copy-models</code>')))
+    page = read('<code>openprogram dev status</code>\n<code>copy-models</code>')
+    found = list(_removed_cli_tokens(FakeRepository(change), "docs/x.html", page))
     assert [f.rule for f in found] == ["claims.command"] and found[0].severity == "error"
+
+
+def test_a_removed_verb_counts_only_on_a_page_about_its_group():
+    # "default" left `machines`; a page naming the home project's id `default` is not about it.
+    change = ParserChange(frozenset(), frozenset(), frozenset({(("machines",), "default")}),
+                          frozenset({"default"}), frozenset({"machines"}))
+    assert not list(_removed_cli_tokens(FakeRepository(change), "docs/x.html",
+                                        read('<p>the home project (id <code>default</code>)</p>')))
+    page = read('<p><code>machines</code> verbs: <code>list</code>, <code>default</code></p>')
+    assert [f.subject for f in _removed_cli_tokens(FakeRepository(change), "docs/x.html", page)] == ["default"]
 
 
 def test_a_removed_top_level_verb_counts_only_where_it_is_written_as_a_command():

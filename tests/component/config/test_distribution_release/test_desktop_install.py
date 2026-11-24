@@ -18,14 +18,14 @@ from ._support import (
 
 @pytest.mark.macos
 @MACOS_DESKTOP_INSTALL
-def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
+def test_installer_keeps_one_canonical_app_and_local_build_never_installs(tmp_path: Path) -> None:
     package = _desktop_package()
-    assert package["scripts"]["dist"] == "npm run app:install"
-    assert package["scripts"]["app:install"] == "bash scripts/package-and-install-app.sh"
+    assert package["scripts"]["dist"] == "bash scripts/package-app.sh"
+    assert "app:install" not in package["scripts"]
     assert "dist:dir" not in package["scripts"]
 
     installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
-    packager = (ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh").read_text(
+    packager = (ROOT / "apps" / "desktop" / "scripts" / "package-app.sh").read_text(
         encoding="utf-8"
     )
     installer_text = installer.read_text(encoding="utf-8")
@@ -66,10 +66,9 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert "npm exec --workspace apps/desktop -- electron-builder" in packager
     smoke = 'bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"'
     assert smoke in packager
-    assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
-    assert packager.index(smoke) < packager.index(
-        'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"'
-    )
+    assert "install-app.sh" not in packager
+    assert "local-macos-signing" not in packager
+    assert packager.index(smoke) < packager.index('ditto "$built_app" "$output_app"')
     assert 'lock_root="$HOME/Library/Caches/OpenProgram"' in packager
     assert 'acquire_pid_lock "$lock_file"' in packager
     assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir"' in packager
@@ -489,10 +488,10 @@ def test_local_desktop_install_compares_the_staged_candidate(
 
 @pytest.fixture
 def isolated_packager(tmp_path: Path) -> Path:
-    packager = tmp_path / "repo" / "apps" / "desktop" / "scripts" / "package-and-install-app.sh"
+    packager = tmp_path / "repo" / "apps" / "desktop" / "scripts" / "package-app.sh"
     packager.parent.mkdir(parents=True)
     packager.write_bytes(
-        (ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh").read_bytes()
+        (ROOT / "apps" / "desktop" / "scripts" / "package-app.sh").read_bytes()
     )
     return packager
 
@@ -530,9 +529,9 @@ def test_packager_honors_one_stable_user_lock_across_worktrees(
 
 @pytest.mark.macos
 @MACOS_DESKTOP_INSTALL
-@pytest.mark.parametrize("build_only", [True, False])
-def test_packager_build_only_writes_artifact_without_installing(
-    tmp_path: Path, build_only: bool, isolated_packager: Path,
+@pytest.mark.parametrize("explicit_output", [True, False])
+def test_packager_writes_artifact_without_installing(
+    tmp_path: Path, explicit_output: bool, isolated_packager: Path,
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -585,12 +584,17 @@ def test_packager_build_only_writes_artifact_without_installing(
     )
     fake_bash.chmod(0o755)
 
-    output = tmp_path / "artifact" / "OpenProgram.app"
+    if explicit_output:
+        output = tmp_path / "artifact" / "OpenProgram.app"
+    else:
+        output = repo / "apps" / "desktop" / "dist" / "local" / "OpenProgram.app"
+        (output / "Contents").mkdir(parents=True)
+        (output / "Contents" / "stale").write_text("previous build", encoding="utf-8")
     completed = subprocess.run(
         [
             "/bin/bash",
             str(isolated_packager),
-            *(["--output", str(output)] if build_only else []),
+            *(["--output", str(output)] if explicit_output else []),
         ],
         check=False,
         env={
@@ -607,16 +611,14 @@ def test_packager_build_only_writes_artifact_without_installing(
     )
 
     assert completed.returncode == 0, completed.stderr
-    # --output is an isolated self-update artifact; only its trusted controller
-    # may access the owner's persistent identity after deferred resource writes.
-    assert signing_trace.read_text().splitlines() == (
-        ["smoke"] if build_only else ["prepare", "sign", "smoke", "install"])
-    assert output.is_dir() is build_only
-    assert installed_marker.exists() is not build_only
-    if build_only:
-        assert f"OpenProgram App artifact written to {output}" in completed.stdout
-        marker = output / "Contents" / "Resources" / "openprogram-source-revision"
-        assert marker.read_text(encoding="ascii") == revision + "\n"
+    # Neither form signs with the owner's identity or installs anything: the
+    # stable App is the official release and only its own updater changes it.
+    assert signing_trace.read_text().splitlines() == ["smoke"]
+    assert not installed_marker.exists()
+    assert f"OpenProgram App artifact written to {output}" in completed.stdout
+    assert not (output / "Contents" / "stale").exists()
+    marker = output / "Contents" / "Resources" / "openprogram-source-revision"
+    assert marker.read_text(encoding="ascii") == revision + "\n"
 
 
 

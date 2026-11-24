@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { systemAccessRequired } from "@/lib/access/system-access-result";
+import { errorDetailText } from "@/lib/net/error-text";
 
 type Row = {
   id: string;
@@ -17,11 +18,21 @@ type Row = {
   instruction?: string;
 };
 
+interface AccessReport { capabilities?: unknown; error?: unknown }
+type AccessRequestReply = Row & { error?: unknown };
+
+function isRow(value: unknown): value is Row {
+  if (!value || typeof value !== "object") return false;
+  const { id, status } = value as Record<string, unknown>;
+  return typeof id === "string" && typeof status === "string";
+}
+
 /**
  * Native setup belongs to the visible owner UI, never to model-written prose.
- * `autoOpen` only starts status polling and lets the parent acknowledge a live
- * wait. It never POSTs an authorization request. Every POST below is directly
- * reachable from a user click.
+ * `autoOpen` only lets the parent acknowledge a live wait. It never POSTs an
+ * authorization request. Every POST below is directly reachable from a user
+ * click. Status is checked on mount, when the window shows or gets focus
+ * back, and after each setup action.
  */
 export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, onAutoOpen }: {
   output?: unknown; requiredCapabilities?: string[]; autoOpen: boolean; onAutoOpen?: () => void;
@@ -46,17 +57,25 @@ export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, o
     lifetime.current = controller;
     busy.current = false;
     setPending(""); setChecked(false); setRows([]);
+    // A failed check keeps what was read before and asks again, quietly.
+    let failures = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     async function check() {
       if (busy.current || controller.signal.aborted) return;
       const current = ++version.current;
       try {
         const response = await fetch("/api/system/access", { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(String(response.status));
-        const data = await response.json();
+        const data = await response.json() as AccessReport;
         if (!Array.isArray(data.capabilities)) throw new Error("Invalid access report");
-        if (!controller.signal.aborted && current === version.current) { setRows(data.capabilities); setChecked(true); setError(""); }
-      } catch {
-        if (!controller.signal.aborted && current === version.current) { setChecked(false); setError(text("Could not verify system access.", "无法确认系统权限。")); }
+        const read = data.capabilities.filter(isRow);
+        failures = 0;
+        if (!controller.signal.aborted && current === version.current) { setRows(read); setChecked(true); setError(""); }
+      } catch (error) {
+        if (controller.signal.aborted || current !== version.current) return;
+        console.warn("system access check failed; checking again", error);
+        clearTimeout(retry);
+        retry = setTimeout(() => void check(), Math.min(30_000, 1000 * 2 ** failures++));
       }
     }
     const visible = () => { const active = document.visibilityState === "visible"; setVisibleNow(active); if (active) void check(); };
@@ -64,17 +83,19 @@ export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, o
     void check();
     window.addEventListener("focus", visible);
     document.addEventListener("visibilitychange", visible);
-    return () => { controller.abort(); window.removeEventListener("focus", visible); document.removeEventListener("visibilitychange", visible); };
-  }, [key, text]);
+    return () => { controller.abort(); clearTimeout(retry); window.removeEventListener("focus", visible); document.removeEventListener("visibilitychange", visible); };
+  }, [key]);
 
-  useEffect(() => {
-    if (!local || !armed) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh.current(); }, 2000);
-    return () => window.clearInterval(timer);
-  }, [local, armed]);
+  // The operating system announces no permission change, but granting one
+  // means working in System Settings or the system's own prompt, another
+  // application: this window loses focus and gets it back when the user
+  // returns, and the `focus` listener above checks then. Nothing checks on
+  // a timer. A grant made without coming back is picked up by the Worker,
+  // which resumes the run and closes the wait (system_access.waits).
 
-  // This acknowledgement starts polling only. It is intentionally separate
-  // from setup(), so reconnect/history replay cannot produce a native prompt.
+  // This acknowledgement only marks the wait seen. It is intentionally
+  // separate from setup(), so reconnect/history replay cannot produce a
+  // native prompt.
   useEffect(() => {
     if (!autoOpen || !local || !visibleNow || armed) return;
     setArmed(true);
@@ -93,11 +114,10 @@ export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, o
     setPending(row.id); setError("");
     try {
       const response = await fetch(`/api/system/access/${encodeURIComponent(row.id)}?open_settings=${openSettings ? "true" : "false"}`, { method: "POST", signal });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || String(response.status));
+      const result = await response.json() as AccessRequestReply;
+      if (!response.ok) throw new Error(errorDetailText(result.error, String(response.status)));
       if (!signal.aborted) {
-        setRows(previous => previous.map(item => item.id === row.id ? result : item));
-        if (openSettings) setArmed(true);
+        setRows(previous => previous.map(item => item.id === row.id && isRow(result) ? result : item));
         void refresh.current();
       }
     } catch (e) {
@@ -114,9 +134,9 @@ export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, o
     setPending("all"); setError("");
     try {
       const response = await fetch("/api/system/access/setup", { method: "POST", signal });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || String(response.status));
-      if (!signal.aborted) { setRows(Array.isArray(result.capabilities) ? result.capabilities : []); setArmed(true); void refresh.current(); }
+      const result = await response.json() as AccessReport;
+      if (!response.ok) throw new Error(errorDetailText(result.error, String(response.status)));
+      if (!signal.aborted) { setRows(Array.isArray(result.capabilities) ? result.capabilities.filter(isRow) : []); void refresh.current(); }
     } catch (e) {
       if (!signal.aborted) setError(e instanceof Error ? e.message : text("Could not initialize system access.", "无法初始化系统权限。"));
     } finally {
@@ -137,7 +157,7 @@ export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, o
   return <div role="status" aria-label={text("System access", "系统权限")}
     style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", color: "var(--text-secondary)", fontSize: "inherit" }}>
     <span>{error || (!local ? text("Waiting for authorization on the execution computer.", "等待执行电脑完成系统授权。")
-      : !checked ? text("Checking system access…", "正在检查系统权限…")
+      : !checked ? ""
       : !missing.length ? text("System access is ready.", "系统权限已就绪。")
       : text("Waiting for system authorization…", "等待系统授权…"))}</span>
     {checked && missing.length > 0 && <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>

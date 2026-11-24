@@ -94,6 +94,14 @@ def worktree_create(
         pr: PR number / ``#number`` / GitHub PR URL. Opens the
             worktree on that PR's branch instead of ``base_ref``.
     """
+    from openprogram.host.machines.remote import remote_fs
+    if remote_fs() is not None:
+        # The project's folder is on another machine; a managed worktree is made from a folder here.
+        return (
+            "[worktree_create error] remote_project: this conversation's project is on another "
+            "machine, and managed worktrees are made from folders on this computer. Run "
+            "`git worktree add` with bash on that machine instead."
+        )
     sid = _current_session_id()
     mgr = get_manager()
     from openprogram.state.worktree.store import current_branch_for

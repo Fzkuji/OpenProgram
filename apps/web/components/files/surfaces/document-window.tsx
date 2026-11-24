@@ -25,25 +25,56 @@ import type { RasterEditorInstance } from "@/lib/documents/raster-editor";
 import { confirmAction } from "@/components/ui/confirm-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isPermanent, retryDelay } from "@/lib/abilities/kept-read";
+import { useChanged } from "@/lib/net/ws/changes";
+
+/**
+ * What a failed first read of a document means. The controller names the
+ * HTTP status in its message ("Unable to read document (404)."): 404/410 is
+ * a file that is gone; another 4xx is the server's final answer; a 5xx,
+ * 408/425/429 or a network failure (fetch's TypeError) is asked again.
+ * Anything else (an unreadable local draft, a missing revision) is a fact.
+ */
+export function documentReadOutcome(failure: unknown): "retry" | "gone" | "final" {
+  if (failure instanceof TypeError) return "retry";
+  const message = failure instanceof Error ? failure.message : String(failure ?? "");
+  const match = /^Unable to read document \((\d{3})\)/.exec(message);
+  if (!match) return "final";
+  const status = Number(match[1]);
+  if (status === 404 || status === 410) return "gone";
+  return isPermanent({ status }) ? "final" : "retry";
+}
+
+/** Close every tab showing this file; false when no tab shows it. */
+function closeFileTabs(projectId: string, path: string, sessionId: string | undefined): boolean {
+  const tabs = useCenterTabs.getState();
+  const open = tabs.tabs.filter(tab => tab.kind === "file" && tab.path === path
+    && (tab.projectId || "") === projectId && (tab.fileSessionId || undefined) === (sessionId || undefined));
+  for (const tab of open) tabs.closeTab(tab.id);
+  return open.length > 0;
+}
 
 /** Toolbar actions are the app's raised buttons (Undo / Review). */
 const BUTTON = cn(buttonVariants({ variant: "elevated", size: "xs" }), styles.button);
 
 interface VersionPreview { blob: Blob; content?: string; version?: string; side?: "before" | "after"; disk?: boolean; }
 
-export function DocumentWindow({ projectId, path, sessionId, readOnly = false, sectionNavigation, previewSessionId, onPageOpened }: {
+export function DocumentWindow({ projectId, path, sessionId, readOnly = false, sectionNavigation, previewSessionId, onPageOpened, onGone }: {
   projectId: string; path: string; sessionId?: string; readOnly?: boolean; sectionNavigation?: FileSectionNavigation;
   /** The chat this file previews for; an HTML page opens beside it. */
   previewSessionId?: string;
   onPageOpened?: () => void;
+  /** A window outside the tabs (an attachment preview) closes itself when the file is gone. */
+  onGone?: () => void;
 }) {
+  const onGoneRef = useRef(onGone);
+  onGoneRef.current = onGone;
   const { text } = useTranslation();
   const controller = useMemo(() => getOrCreateDocumentController({ projectId, path, sessionId, readOnly }),
     [projectId, path, sessionId, readOnly]);
   const [state, setState] = useState(controller.getState());
   const host = useRef<HTMLDivElement>(null);
   const refreshIcon = useActionIconAnimation(state.restoring || state.renaming);
-  const [updateError, setUpdateError] = useState<string | null>(null);
   // An editable Office file has no Preview/Edit switch: it opens writable.
   const officeAlwaysEdit = !readOnly && fileCapabilities(path).preview === "office" && !!officeCapability(path)?.editable;
   const restingMode = officeAlwaysEdit ? "edit" : "preview";
@@ -91,41 +122,77 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false, s
   const currentBytes = state.draft ?? state.snapshot?.bytes;
 
   useEffect(() => controller.subscribe(setState), [controller]);
+  // Opening reads the file until it answers: a network failure or a 5xx is
+  // asked again, quietly, with backoff. A file that is gone closes its tab;
+  // any other refusal is a fact about the file and is shown as before.
   useEffect(() => {
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const selections = selectionRequest;
-    void controller.load().catch((failure) => {
-      if (!active) return;
-      setError(String(failure.message ?? failure));
-      const navigation = sectionNavigationRef.current;
-      navigation?.consume(navigation.request.sequence);
-    });
-    return () => { active = false; selections.current++; };
-  }, [controller]);
+    const read = (attempt: number) => {
+      void controller.load().catch((failure: unknown) => {
+        if (!active) return;
+        const outcome = documentReadOutcome(failure);
+        if (outcome === "retry") {
+          console.warn("document read failed; reading again", { path, failure });
+          timer = setTimeout(() => read(attempt + 1), retryDelay(attempt));
+          return;
+        }
+        if (outcome === "gone" && !controller.hasLocalChanges()) {
+          if (onGoneRef.current) { onGoneRef.current(); return; }
+          if (closeFileTabs(projectId, path, sessionId)) return;
+        }
+        setError(failure instanceof Error ? failure.message : String(failure));
+        const navigation = sectionNavigationRef.current;
+        navigation?.consume(navigation.request.sequence);
+      });
+    };
+    read(0);
+    return () => { active = false; if (timer) clearTimeout(timer); selections.current++; };
+  }, [controller, projectId, path, sessionId]);
+  // A first read still being asked again says nothing; its failure is not news.
+  const quietLoad = !state.snapshot && state.status === "error" && !error;
   useEffect(() => {
     let active = true;
     if (currentBytes && currentBytes !== editedBytes.current && isText) void currentBytes.text().then((value) => { if (active) { setContent(value); setDecodedBytes(currentBytes); } });
     return () => { active = false; };
   }, [currentBytes, isText]);
 
+  // The file is looked at again only when the Worker says it changed on
+  // disk: the first look asks it to follow the file and names the key its
+  // `documents` frames carry (document_changes.py). A reconnect counts as a
+  // change, and a hidden window looks once it shows.
+  const [watchKey, setWatchKey] = useState<string | null>(null);
+  const hasSnapshot = !!state.snapshot;
+  const checkAbort = useRef<AbortController | null>(null);
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const check = async () => {
-      if (!document.hidden && host.current?.getClientRects().length) {
-        try { await controller.checkForUpdates(AbortSignal.any([abort.signal, AbortSignal.timeout(4000)])); if (!abort.signal.aborted) setUpdateError(null); }
-        catch { if (!abort.signal.aborted) setUpdateError(text("Could not check file updates. Refresh to retry.", "无法检查文件更新，请点击刷新重试。")); }
+    checkAbort.current = abort;
+    setWatchKey(null);
+    if (hasSnapshot) void (async () => {
+      try {
+        const key = await controller.follow(AbortSignal.any([abort.signal, AbortSignal.timeout(4000)]));
+        if (abort.signal.aborted) return;
+        setWatchKey(key);
+        // A change made before the Worker began following it.
+        await controller.checkForUpdates(abort.signal);
+      } catch (failure) {
+        if (!abort.signal.aborted) console.warn("file updates not followed", { path, failure });
       }
-      if (!abort.signal.aborted) timer = setTimeout(check, 5000);
-    };
-    timer = setTimeout(check, 5000);
-    return () => { abort.abort(); clearTimeout(timer); };
-  }, [controller, text]);
+    })();
+    return () => { abort.abort(); };
+  }, [controller, path, hasSnapshot]);
+  useChanged("documents", async () => {
+    const abort = checkAbort.current;
+    if (!abort || abort.signal.aborted) return;
+    try { await controller.checkForUpdates(AbortSignal.any([abort.signal, AbortSignal.timeout(4000)])); }
+    catch (failure) { if (!abort.signal.aborted) console.warn("file update check failed", { path, failure }); }
+  }, watchKey ? [watchKey] : []);
 
   async function refresh() {
     await perform(async () => {
       await controller.refresh();
-      selectionRequest.current++; setSelected(null); setUpdateError(null);
+      selectionRequest.current++; setSelected(null);
     });
   }
 
@@ -285,11 +352,11 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false, s
       {!readOnly && <button className={BUTTON} aria-expanded={historyOpen}
         onClick={() => historyOpen ? setHistoryOpen(false) : void openHistory()}>{text("History", "历史")}</button>}
     </div>
-    {(state.externalChanged || updateError) && <div className={styles.updateNotice} role="status">
-      {state.externalChanged ? text("File changed. Refresh to load the latest version.", "文件已修改。点击刷新加载最新版本。") : updateError}
+    {state.externalChanged && <div className={styles.updateNotice} role="status">
+      {text("File changed. Refresh to load the latest version.", "文件已修改。点击刷新加载最新版本。")}
       {controller.hasLocalChanges() && <span>{text("Your local edits are preserved.", "本地编辑已保留。")}</span>}
     </div>}
-    {(error || state.error) && <div className={styles.error} role="alert">
+    {(error || state.error) && !quietLoad && <div className={styles.error} role="alert">
       {error || state.error}
       {(state.status === "error" || state.status === "conflict") && <span>
         <button className={BUTTON} onClick={() => void perform(() => state.snapshot ? controller.flush() : controller.load())}>{text("Retry", "重试")}</button>
@@ -338,7 +405,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false, s
       </div>}
       <div hidden={(mode === "edit" && (isRaster || editorOpened)) || Boolean(selected)} style={{ height: "100%" }}>
         {snapshot ? <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId}
-          sectionNavigation={mode === "preview" && (decodedBytes === currentBytes || editedBytes.current === currentBytes) ? sectionNavigation : undefined} snapshot={snapshot} sourceBlob={currentBytes} /> : <span>{text("Loading…", "加载中…")}</span>}
+          sectionNavigation={mode === "preview" && (decodedBytes === currentBytes || editedBytes.current === currentBytes) ? sectionNavigation : undefined} snapshot={snapshot} sourceBlob={currentBytes} /> : null}
       </div>
       </>}
     </div>

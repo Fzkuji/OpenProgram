@@ -43,6 +43,8 @@
 - **2026-11-14 · v1.2.0** — Branches of one conversation run side by side, Stop takes effect at once, and the Windows App arrives.
 - **2026-11-10 · v1.1.0** — Rewind from any sent message; the App comes to Linux.
 - **2026-11-06 · v1.0.0** — First release of the 1.x line: desktop App with split views, background computer use, meetings and an always-on scheduler.
+- **2026-08-17 · v0.7.0** — A built-in browser beside files, chat and the terminal, which agents can read and operate.
+- **2026-03-31 · v0.1.0** — First public release: agentic functions, Python functions whose steps a model carries out, recorded in a context tree.
 
 <a id="install"></a>
 

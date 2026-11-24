@@ -1,7 +1,8 @@
-"""Reports still waiting for the user, across every always-on conversation.
+"""Reports still waiting for the user, across every always-on conversation
+and every conversation a scheduled task reports into.
 
-The pending inbox (the sidebar's Pending page and the top of the Activity
-panel) lists them in two groups:
+The inbox (the Inbox tab of the Tasks page, the count on the sidebar's Tasks
+row and the top of the Activity panel) lists them in two groups:
 
 - **approval** reports wait for a decision: one stays until a person writes
   after it in that conversation or in a channel conversation the report was
@@ -13,8 +14,17 @@ panel) lists them in two groups:
   ``mark_seen`` when a client opens the conversation, or at once when the
   conversation was on screen as the report came in).
 
+A scheduled task's result (a report with ``task_id``) is news like a
+finding: it is also a message in the chat, and it stays in the inbox until
+the user opens that conversation. Its item carries the task's id and title,
+so the inbox shows it came from a scheduled task, not from an Agent.
+
 Reports older than ``MAX_AGE_DAYS`` drop out either way, so a question
 answered somewhere else does not wait forever.
+
+The windows read the inbox again when :data:`store.INBOX_TOPIC` is
+signalled: a report is written or marked seen (``store``), or a person wrote
+in a conversation (:func:`person_wrote`), which can answer a decision.
 """
 from __future__ import annotations
 
@@ -46,6 +56,15 @@ def _written_by_a_person(message: dict[str, Any]) -> bool:
             and message.get("speaker_kind") != "runtime")
 
 
+def person_wrote(session_id: str, message: dict[str, Any]) -> None:
+    """A message was added to ``session_id``: if a person wrote it, a
+    decision waiting there (or in a conversation it was copied from) may be
+    answered."""
+    if _written_by_a_person(message):
+        from openprogram.host._platform import changes
+        changes.signal(store.INBOX_TOPIC, session_id)
+
+
 def _last_user_message_at(session_id: str) -> float:
     """When a person last wrote on the conversation's main chain; 0 if never."""
     try:
@@ -63,8 +82,7 @@ def _last_user_message_at(session_id: str) -> float:
 
 
 def _waiting(session_id: str, rows: list[dict[str, Any]], oldest: float) -> list[dict[str, Any]]:
-    # A scheduled task's result is a message in the chat, not an inbox item.
-    fresh = [row for row in rows if (row.get("at") or 0) >= oldest and not row.get("task_id")]
+    fresh = [row for row in rows if (row.get("at") or 0) >= oldest]
     if not fresh:
         return []
     answered: dict[str, float] = {}
@@ -89,14 +107,24 @@ def items(now: float | None = None) -> list[dict[str, Any]]:
     """Every report still waiting for the user, newest first."""
     from openprogram.runtime.agent_registry import manager
     from openprogram.runtime.conversation.always_on.runtime import owner_conversation
+    from openprogram.runtime.scheduler import service as scheduler
 
     now = time.time() if now is None else now
     oldest = now - MAX_AGE_DAYS * 86400
     found: list[dict[str, Any]] = []
+    done: set[str] = set()
+    try:
+        tasks = {str(task.get("id")): task for task in scheduler.list_tasks()}
+    except Exception:
+        _log.warning("scheduled tasks not read for the inbox", exc_info=True)
+        tasks = {}
 
     def collect(session: dict[str, Any], agent_id: str, agent_name: str) -> None:
         sid = str(session["id"])
+        done.add(sid)
         for row in _waiting(sid, store.load_reports(sid, REPORTS_PER_CONVERSATION), oldest):
+            task_id = row.get("task_id")
+            task = tasks.get(str(task_id)) if task_id else None
             found.append({
                 "session_id": sid,
                 "session_title": session.get("title") or "",
@@ -107,6 +135,8 @@ def items(now: float | None = None) -> list[dict[str, Any]]:
                 "title": row.get("title") or "",
                 "body": row.get("body") or "",
                 "at": row.get("at") or 0,
+                "task_id": str(task_id) if task_id else None,
+                "task_title": ((task or {}).get("title") or row.get("title") or "") if task_id else None,
             })
 
     for spec in manager.list_all():
@@ -121,6 +151,17 @@ def items(now: float | None = None) -> list[dict[str, Any]]:
         for session in sessions:
             if owner_conversation(session):
                 collect(session, spec.id, spec.name or spec.id)
+    # A scheduled task reports into the conversation it was set in, of any Agent.
+    for sid in sorted({str(task.get("session_id")) for task in tasks.values() if task.get("session_id")} - done):
+        try:
+            session = _db().get_session(sid)
+        except Exception:
+            continue
+        if not owner_conversation(session):
+            continue
+        agent_id = str(session.get("agent_id") or "main")
+        spec = manager.get(agent_id)
+        collect(session, agent_id, (spec.name or spec.id) if spec is not None else agent_id)
     found.sort(key=lambda item: item["at"], reverse=True)
     return found
 

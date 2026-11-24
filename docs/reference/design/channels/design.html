@@ -78,6 +78,7 @@ send("telegram", "default", "1234", "Good morning")</code></pre>
 <tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown to Telegram HTML (everything escaped; the poster falls back to tag-stripped text if entities are rejected), Slack mrkdwn, Discord passthrough, WeChat plain text. Code is placeholder-protected.</td></tr>
 <tr><th scope="row">Adapters</th><td>Only the event loop and parsing into <code translate="no">ChannelMessage</code>. <strong>They do not send</strong>; everything after the parse lives in <code translate="no">handle_inbound</code>.</td></tr>
 <tr><th scope="row"><code translate="no">run_forever(stop)</code></th><td>A raising <code translate="no">run()</code> reconnects: 5 s doubling, cap 300 s, reset after surviving 60 s. A clean return means permanently stopped, e.g. invalid WeChat token.</td></tr>
+<tr><th scope="row"><code translate="no">waiting_for_platform()</code></th><td>Wraps a long poll. A stopping worker waits up to 2 s for adapter threads, but not for one inside a poll: an answer that arrives after the stop is left unread, so the cursor or offset hands it out again after the restart.</td></tr>
 </tbody>
 </table>
 <h3 id="structured-errors">Structured errors</h3>
@@ -134,7 +135,7 @@ register_channel("whatsapp", WhatsAppChannel)</code></pre>
 <tr><th scope="row"><code translate="no">_broadcast.py</code></th><td>WS frames on the event bus (<code translate="no">emit_ws_frame</code> → <code translate="no">ws.frame</code>); channels never import webui</td><td><code translate="no">dispatch_inbound</code></td></tr>
 <tr><th scope="row"><code translate="no">_question_bridge.py</code></th><td>Pushes a pending <code translate="no">runtime.ask</code> into the chat</td><td>Question path</td></tr>
 <tr><th scope="row"><code translate="no">_question_commands.py</code></th><td><code translate="no">/answer</code>, <code translate="no">/decline</code></td><td><code translate="no">_conversation</code></td></tr>
-<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>Adapter heartbeats</td><td>Status API</td></tr>
+<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>Adapter running marks: set when the thread starts, cleared when it ends</td><td>Status API</td></tr>
 <tr><th scope="row"><code translate="no">bound_reply.py</code></th><td>Sends a bound chat's assistant reply to its channel for turns that did not come from the channel</td><td><code translate="no">openprogram.runtime.conversation.bound_reply</code></td></tr>
 <tr><th scope="row"><code translate="no">link_registration.py</code></th><td>Implements <code translate="no">openprogram.runtime.channel_link</code>, so core code reaches channels without importing this interface</td><td>Core, on import</td></tr>
 <tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">CHANNEL_CLASSES</code>, <code translate="no">register_channel</code>, entry points</td><td>Web UI status, worker</td></tr>
@@ -185,7 +186,7 @@ register_channel("whatsapp", WhatsAppChannel)</code></pre>
 <tr><th scope="row">TUI activity feed</th><td><code translate="no">apps/cli/src/components/ChannelActivityFeed.tsx</code></td></tr>
 <tr><th scope="row">TUI channel turn</th><td><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td></tr>
 <tr><th scope="row">Composer channel chip, always shown</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/channel-chip.tsx</code>, <code translate="no">apps/web/components/chat/top-bar/menus/channel-choices.ts</code></td></tr>
-<tr><th scope="row">Health badge</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>: alive, stale, unknown</td></tr>
+<tr><th scope="row">Health badge</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>: alive, reconnecting, signed out, failed, unknown</td></tr>
 <tr><th scope="row">Local access management</th><td><code translate="no">apps/web/components/settings/channels/access-list.tsx</code>, loopback-only <code translate="no">/api/channels/access</code></td></tr>
 </tbody>
 </table>

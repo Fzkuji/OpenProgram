@@ -1,4 +1,5 @@
 import { jsonFetch } from "./fetch-client";
+import { sharedRead } from "./shared-get.ts";
 import { branchTarget } from "@/lib/agents/branch-target";
 import type {
   Provider,
@@ -69,6 +70,15 @@ function mapModel(m: RawModel, provider: string): Model {
   };
 }
 
+/** The enabled models; the picker and a settings page asking together share
+ *  the read. `?probe=local` asks local servers now (the picker opening). */
+const enabledModels = <T>(url = "/api/models/enabled") => sharedRead(url, () => jsonFetch<T>(url));
+type PickerRead = { models: RawModel[]; providers?: Record<string, PickerProvider> };
+const pickerModels = (data: PickerRead) => ({
+  models: data.models.map((m) => mapModel(m, m.provider ?? "")),
+  providers: data.providers ?? {},
+});
+
 export const api = {
   listProviders: () =>
     jsonFetch<{ providers: Provider[] }>("/api/providers/list").then((d) => d.providers),
@@ -79,17 +89,18 @@ export const api = {
     ),
 
   listEnabledModels: () =>
-    jsonFetch<{ models: RawModel[] }>("/api/models/enabled").then((d) =>
+    enabledModels<{ models: RawModel[] }>().then((d) =>
       d.models.map((m) => mapModel(m, m.provider ?? ""))
     ),
 
   /** The model picker's read: the enabled models plus, per provider, what
    *  the picker shows beside them (state, fix, quota left, balance). */
-  listPickerModels: () =>
-    jsonFetch<{ models: RawModel[]; providers?: Record<string, PickerProvider> }>("/api/models/enabled").then((d) => ({
-      models: d.models.map((m) => mapModel(m, m.provider ?? "")),
-      providers: d.providers ?? {},
-    })),
+  listPickerModels: () => enabledModels<PickerRead>().then(pickerModels),
+
+  /** The same read as the picker opens: local servers (Ollama, LM Studio…)
+   *  are probed now, since nothing announces one starting or stopping. */
+  listPickerModelsProbingLocal: () =>
+    enabledModels<PickerRead>("/api/models/enabled?probe=local").then(pickerModels),
 
   toggleProvider: (provider: string, enabled: boolean) =>
     jsonFetch<{ ok: true }>(`/api/providers/${provider}/toggle`, {
@@ -134,7 +145,7 @@ export const api = {
 
   listFunctions: () => jsonFetch<AgenticFunction[]>("/api/programs"),
 
-  getProgramsMeta: () => jsonFetch<FunctionsMeta>("/api/programs/meta"),
+  getProgramsMeta: () => sharedRead("/api/programs/meta", () => jsonFetch<FunctionsMeta>("/api/programs/meta")),
 
   setProgramsMeta: (meta: FunctionsMeta) =>
     jsonFetch<{ ok: true }>("/api/programs/meta", {

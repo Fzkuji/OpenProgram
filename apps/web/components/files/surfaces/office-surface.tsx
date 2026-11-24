@@ -5,7 +5,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useEffectEvent } from "@/lib/hooks/use-effect-event";
 import { useEffect, useRef, useState } from "react";
 import type { DocumentController } from "@/lib/files/document/document-controller";
-import { createBoundOfficeEditor, OFFICE_EDITOR_DISABLED, officeHostAvailability, type OfficeEditorInstance } from "@/lib/documents/office-editor";
+import { createBoundOfficeEditor, IncompleteReadError, OFFICE_EDITOR_DISABLED, officeHostAvailability, type OfficeEditorInstance } from "@/lib/documents/office-editor";
 import styles from "./document-window.module.css";
 import officeStyles from "./office-surface.module.css";
 import { buttonVariants } from "@/components/ui/button";
@@ -32,7 +32,8 @@ export function OfficeSurface({ controller, bytes, path, readOnly, mode }: {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmedReadonly, setConfirmedReadonly] = useState(true);
-  const busy = !error && (loading || confirmedReadonly !== (readOnly || mode === "preview"));
+  const wantReadonly = readOnly || mode === "preview";
+  const busy = !error && (loading || confirmedReadonly !== wantReadonly);
   // The editor opens on the bytes and mode of that moment; later edits and
   // mode switches go through the open editor instead of reopening it.
   const editorOpening = useEffectEvent(() => ({ bytes, mode }));
@@ -84,16 +85,26 @@ export function OfficeSurface({ controller, bytes, path, readOnly, mode }: {
         instance.setReadonly(readOnly || currentMode.current === "preview");
         setLoading(false);
       } catch (failure) {
-        if (active) { setError(failure instanceof Error ? failure.message : String(failure)); setLoading(false); }
+        if (!active) return;
+        if (failure instanceof IncompleteReadError) {
+          const { expected, kept } = failure.read;
+          const sheets = /\.(xlsx|xlsm|xltx)$/i.test(path);
+          setError(sheets
+            ? message(`The built-in editor read only ${kept} of the ${expected} sheets in this file, so it was not opened. The file was not changed. Download it or open it in Excel.`,
+              `内置编辑器只读出此文件 ${expected} 个工作表中的 ${kept} 个，所以没有打开。文件没有被改动。可以下载，或在 Excel 中打开。`)
+            : message(`The built-in editor read only ${kept} of the ${expected} slides in this file, so it was not opened. The file was not changed. Download it or open it in PowerPoint or Keynote.`,
+              `内置编辑器只读出此文件 ${expected} 页幻灯片中的 ${kept} 页，所以没有打开。文件没有被改动。可以下载，或在 PowerPoint、Keynote 中打开。`));
+        } else setError(failure instanceof Error ? failure.message : String(failure));
+        setLoading(false);
       }
     })();
     return () => { active = false; abort.abort(); const instance = editor.current; editor.current = null; if (instance) void instance.destroy(); };
   }, [controller, path, readOnly, attempt, installRequested]);
-  useEffect(() => { if (editor.current) editor.current.setReadonly(readOnly || mode === "preview"); }, [mode, readOnly]);
+  useEffect(() => { if (editor.current) editor.current.setReadonly(wantReadonly); }, [wantReadonly]);
   useEffect(() => { host.current?.toggleAttribute("inert", busy); }, [busy]);
   const startupError = error !== null && editor.current === null;
-  return <div className={`office-editor-surface relative h-full min-h-[320px] overflow-hidden`}>
-    <div ref={host} data-office-editor="true" aria-busy={busy} className="h-full"
+  return <div className={`office-editor-surface relative flex h-full min-h-[320px] flex-col overflow-hidden`}>
+    <div ref={host} data-office-editor="true" aria-busy={busy} className="min-h-0 flex-1"
       style={{ visibility: loading || startupError || needsInstall || disabled ? "hidden" : "visible" }} />
     {error && !startupError && <div role="alert" className={`${styles.error} ${officeStyles.officeRuntimeError}`}>{error}</div>}
     {disabled ? <div role="status" className={officeStyles.officeLoading}>
@@ -114,11 +125,11 @@ export function OfficeSurface({ controller, bytes, path, readOnly, mode }: {
       <span className={officeStyles.officeLoadingTitle}>{text("Unable to open document", "无法打开文档")}</span>
       <span className={officeStyles.officeLoadingDetail}>{error}</span>
       <button className={BUTTON} onClick={() => setAttempt(value => value + 1)}>{text("Retry", "重试")}</button>
-    </div> : loading && <div role="status" className={officeStyles.officeLoading}>
+    </div> : loading && phase === "install" && <div role="status" className={officeStyles.officeLoading}>
+      {/* The install the user asked for shows its progress; opening a
+          document says nothing while it opens. */}
       <LoaderCircle size={24} strokeWidth={1.5} className={officeStyles.officeSpinner} aria-hidden="true" />
-      <span className={officeStyles.officeLoadingTitle}>{phase === "install" ? text("Downloading and installing Office support…", "正在下载并安装 Office 支持…") : phase === "resources"
-        ? text("Preparing document viewer…", "正在准备文档预览…")
-        : text("Opening document…", "正在打开文档…")}</span>
+      <span className={officeStyles.officeLoadingTitle}>{text("Downloading and installing Office support…", "正在下载并安装 Office 支持…")}</span>
       <span className={officeStyles.officeLoadingDetail}>{path.split("/").pop()}</span>
     </div>}
   </div>;

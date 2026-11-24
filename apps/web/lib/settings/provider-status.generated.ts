@@ -83,6 +83,10 @@ export interface KeyHealth {
   last_used_at: number | null;
   use_count: number;
   status_at: number | null;
+  health: HealthWire;
+  quota: QuotaWire;
+  plan: string | null;
+  spend_usd: number | null;
 }
 
 export interface FixWire {

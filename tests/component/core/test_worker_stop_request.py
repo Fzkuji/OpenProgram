@@ -82,19 +82,62 @@ def test_windows_stop_of_a_gone_worker_writes_no_request(monkeypatch, request_fi
     assert not request_file.exists()
 
 
-def test_the_worker_leaves_its_wait_when_a_stop_names_it(request_file) -> None:
-    naps = []
+def test_the_worker_leaves_its_wait_when_a_stop_names_it(request_file, monkeypatch) -> None:
+    from openprogram.host._platform import changes
 
-    def nap(seconds):
-        naps.append(seconds)
-        if len(naps) == 3:
+    monkeypatch.setattr(changes, "watch", lambda *args, **kwargs: None)
+    waits = []
+
+    def wait(listener):
+        waits.append(listener)
+        if len(waits) == 3:
             request_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
-        assert len(naps) < 10, "the request was not read"
+        assert len(waits) < 10, "the request was not read"
 
     with pytest.raises(KeyboardInterrupt):
-        runner._wait_for_stop(sleep=nap)
-    assert len(naps) == 3
-    assert max(naps) <= 0.5  # the shutdown has to fit in stop_worker's five seconds
+        runner._wait_for_stop(wait=wait)
+    assert len(waits) == 3
+
+
+def test_without_file_events_the_request_is_read_often_enough(monkeypatch) -> None:
+    """The shutdown has to fit in stop_worker's five seconds."""
+    from openprogram.host._platform import changes
+
+    monkeypatch.setattr(changes, "file_events_available", lambda: False)
+    timeouts = []
+    listener = changes.Listener(())
+    monkeypatch.setattr(listener, "wait", lambda timeout: timeouts.append(timeout) or set())
+    changes.wait_for(listener, resync=runner._STOP_WAKE_SECONDS, poll=runner._STOP_POLL_SECONDS)
+    assert timeouts == [runner._STOP_POLL_SECONDS] and runner._STOP_POLL_SECONDS <= 0.5
+
+
+def test_the_request_file_event_wakes_the_wait_at_once(request_file) -> None:
+    """With file events the main thread sleeps until the request is written."""
+    import threading
+    import time
+
+    from openprogram.host._platform import changes
+
+    changes.start_watching()
+    try:
+        stopped = threading.Event()
+        elapsed = []
+
+        def main():
+            started = time.monotonic()
+            try:
+                runner._wait_for_stop()
+            except KeyboardInterrupt:
+                elapsed.append(time.monotonic() - started)
+                stopped.set()
+
+        threading.Thread(target=main, daemon=True).start()
+        time.sleep(1.5)  # the watcher has started on the request's folder
+        request_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
+        assert stopped.wait(5.0), "the request's file event did not wake the wait"
+    finally:
+        changes.stop_watching()
+        changes.unwatch(request_file.parent, runner._STOP_TOPIC)
 
 
 def test_a_request_for_another_process_is_not_this_workers(request_file) -> None:

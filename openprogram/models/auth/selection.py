@@ -328,7 +328,7 @@ def _unavailable(provider: str, pool: CredentialPool, model: str, *, pinned_id: 
         head = f"No {provider} key can be used now."
     states = "; ".join(f"{r['label']}: {_said(r['state'])}" + (f" until {time.strftime('%H:%M', time.localtime(r['back_at']))}"
                        if r["back_at"] else "") for r in rows)
-    message = f"{head} {states}." if states else f"{head} Add a key in Settings → Providers."
+    message = f"{head} {states}." if states else f"{head} Add a key in Settings → Model services."
     return NoUsableCredential(message, provider_id=provider, rows=rows, pinned_id=pinned_id,
                               wait_ms=wait_ms, wait_label=wait_label)
 
@@ -678,7 +678,11 @@ class _Run:
         self.opts = opts
         self.attempt = attempt
         self.session = conversation_of(getattr(opts, "session_id", None))
-        self.tried: set[str] = set()
+        # A request moved here along its keys uses those keys and no other.
+        only = getattr(opts, "only_credentials", None)
+        self.outside: frozenset = frozenset(
+            c.id for c in get_store().get(provider).credentials if c.id not in only) if only else frozenset()
+        self.tried: set[str] = set(self.outside)
         self.notices = 0
         self.waited = False
         self.started = False
@@ -688,7 +692,7 @@ class _Run:
         self.first: Optional[Credential] = None
         self.cred = self.lease = self.inner = None
         try:
-            self.first = choose(provider, model_id, session_id=self.session)
+            self.first = choose(provider, model_id, session_id=self.session, exclude=self.outside)
         except NoUsableCredential as none:
             if none.wait_ms is None or none.wait_ms > WAIT_FOR_RECOVERY_MS:
                 raise _llm_error(provider, model, none) from none
@@ -738,7 +742,7 @@ class _Run:
             yield event
         # A little past the time, so the clock has surely passed it.
         await asyncio.sleep((none.wait_ms + 50) / 1000)
-        self.tried.clear()
+        self.tried = set(self.outside)
 
     async def _pick_after(self, failed: Optional[Credential], outcome: Optional[Outcome],
                           first: Optional[Credential] = None):

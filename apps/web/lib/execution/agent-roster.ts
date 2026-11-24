@@ -1,6 +1,6 @@
 /**
- * The Agents roster of the Activity overview: which status a helper's row
- * wears, which helpers are listed and which fold into "N finished".
+ * A helper in Activity: which status it wears, whether it is still going,
+ * and what its work cost.
  *
  * The page knows at once what runs and what waits on the reader (the
  * executions and the chat's open decisions); the server adds what only it
@@ -28,9 +28,6 @@ export function rosterStatus(look: RosterLook, facts?: RosterFacts | null): Rost
   return look === "err" || facts?.agent_status === "failed" ? "failed" : "idle";
 }
 
-/** Listed in the open: everything still going, everything that needs the
- *  reader, and what failed. What ended normally folds away. */
-export const rosterListed = (status: RosterStatus): boolean => status !== "idle";
 /** Still going or waiting on the reader. */
 export const rosterLive = (status: RosterStatus): boolean => status !== "idle" && status !== "failed";
 /** Waits on the reader. */
@@ -45,18 +42,4 @@ export function rosterCost(facts?: RosterFacts | null): number | null {
 export function rosterTotal(costs: (number | null)[]): number | null {
   const known = costs.filter((cost): cost is number => cost !== null);
   return known.length ? known.reduce((sum, cost) => sum + cost, 0) : null;
-}
-
-/** Rows in tree order (a child after its parent, `depth` one more) split
- *  into the ones listed and the ones folded as finished. A finished row
- *  with a listed row under it stays, so the tree still hangs together. */
-export function splitRoster<T extends { depth: number }>(rows: T[], listed: (row: T) => boolean): { shown: T[]; finished: T[] } {
-  const keep = rows.map(listed);
-  rows.forEach((row, index) => {
-    if (!keep[index]) return;
-    for (let i = index - 1, depth = row.depth; i >= 0 && depth > 1; i--) {
-      if (rows[i].depth < depth) { keep[i] = true; depth = rows[i].depth; }
-    }
-  });
-  return { shown: rows.filter((_, index) => keep[index]), finished: rows.filter((_, index) => !keep[index]) };
 }

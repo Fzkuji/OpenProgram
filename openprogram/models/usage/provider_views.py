@@ -131,14 +131,17 @@ def picker_balance(limits: list[QuotaLimit]) -> Optional[PickerBalance]:
 _ACTION_STATES = frozenset({"signed_out", "no_credit", "invalid_key", "not_configured", "not_running"})
 
 
-#: A local server's running/not-running probe is reused this long by the picker.
+#: A local server's running/not-running probe is reused this long by readers
+#: that run without the person opening anything (fallback offers, quota
+#: frames). Opening the picker probes again (``probe_local=True``).
 LOCAL_PROBE_MAX_AGE_S = 30.0
 
 
-def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = None) -> PickerProvider:
+def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = None,
+                 probe_local: bool = False) -> PickerProvider:
     """One provider's picker state from what is stored. No provider is asked;
     the only request is a keyless loopback probe of a local server, reused
-    for :data:`LOCAL_PROBE_MAX_AGE_S`."""
+    for :data:`LOCAL_PROBE_MAX_AGE_S` unless ``probe_local`` asks it now."""
     from openprogram.models.providers.catalog.local import is_local_provider
     from .quota_fetchers import last_reads
     now = time.time() if now is None else now
@@ -147,7 +150,7 @@ def picker_state(provider_id: str, *, configured: bool, now: Optional[float] = N
     reports = [r for r in default_store.reports(provider_id) if r.account in stored]
     reads = {a: r for a, r in last_reads(provider_id).items() if a in stored}
     if is_local_provider(provider_id):
-        health = local_health(provider_id, max_age=LOCAL_PROBE_MAX_AGE_S)
+        health = local_health(provider_id, max_age=0.0 if probe_local else LOCAL_PROBE_MAX_AGE_S)
     else:
         health = health_of(keys, reports, now, reads)
         if not configured:
@@ -182,14 +185,17 @@ class ProviderQuotaEvent(ProviderQuotaFrame):
     picker: Optional[PickerProvider]
 
 
-def picker_states(provider_ids: list[str], *, now: Optional[float] = None) -> dict[str, PickerProvider]:
-    """The picker state of each provider; a provider that fails to read is left out."""
+def picker_states(provider_ids: list[str], *, now: Optional[float] = None,
+                  probe_local: bool = False) -> dict[str, PickerProvider]:
+    """The picker state of each provider; a provider that fails to read is
+    left out. ``probe_local`` probes local servers now instead of reusing a
+    recent probe."""
     from openprogram.models.providers.catalog.metadata import credential_status_snapshot, is_configured
     out: dict[str, PickerProvider] = {}
     with credential_status_snapshot():
         for pid in dict.fromkeys(provider_ids):
             try:
-                out[pid] = picker_state(pid, configured=is_configured(pid), now=now)
+                out[pid] = picker_state(pid, configured=is_configured(pid), now=now, probe_local=probe_local)
             except Exception:
                 continue
     return out

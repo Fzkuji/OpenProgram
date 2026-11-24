@@ -10,8 +10,8 @@
  * 平滑滚到那条消息并闪一下。sticky 挂在滚动容器（#chatArea）里。
  * 钉为章节的那一轮（用户消息的 chapterPinnedAt，见 lib/chat/transcript/
  * chapter.ts）刻度是主题紫色、加粗，静息更长（CHAPTER_W），交互与其他刻度相同。
- * 回复里声明了任务的那一轮（lib/chat/transcript/task-blocks.ts）刻度稍长
- * （TASK_W），预览卡列出任务标题，点一条滚到那个任务块并展开。
+ * 回复里声明了任务的那一轮（lib/chat/transcript/task-blocks.ts）刻度和普通的
+ * 一样长：只有章节更长。它的预览卡列出任务标题，点一条滚到那个任务块并展开。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -44,7 +44,6 @@ const EMPTY_ORDER: string[] = [];
 const BASE_W = 9; // 静息宽度 px
 const MAX_EXTRA_W = 27; // 放大最多再加的宽度 px：最长 36，和右上角控件竖条同宽
 const CHAPTER_W = 18; // 钉为章节的刻度静息宽度 px：一眼能从普通刻度里挑出来
-const TASK_W = 14; // 回复里声明了任务的那一轮：比普通刻度长，比章节短
 const CARD_LEAVE_MS = 160; // 从刻度移到预览卡里的任务条目，中间那段空隙不收卡
 const NO_SEGMENTS: TaskSegment[] = [];
 const GAP = 10; // 刻度间距 px（固定，不随消息数压缩；超长时 rail 内部滚动）
@@ -154,10 +153,9 @@ function scrollToMsg(id: string, onSeek?: (id: string) => void): void {
     : (container.querySelector(`[data-msg-slot="${esc}"]`) as HTMLElement | null);
   const target = el ?? slot;
   if (!target) return;
-  if (el?.closest(".compaction-orig-fold[data-open='0']")) return;
   const flash = () => {
     const live = container.querySelector(`[data-msg-id="${esc}"]`) as HTMLElement | null;
-    if (!live || live.closest(".compaction-orig-fold[data-open='0']")) return;
+    if (!live) return;
     const bubble = (live.querySelector(".message-content") as HTMLElement) ?? live;
     // 橙色背景闪烁一下（滚到位后触发）。
     bubble.classList.remove("rail-flash");
@@ -269,18 +267,11 @@ function PreviewCard({
 }
 
 export function MessageRail({
-  hiddenKey = "",
   onSeek,
 }: {
-  hiddenKey?: string;
   onSeek?: (id: string) => void;
 }) {
-  const all = useUserMessages();
-  const msgs = useMemo(() => {
-    if (!hiddenKey) return all;
-    const hidden = new Set(hiddenKey.split("\n"));
-    return all.filter((m) => !hidden.has(m.id));
-  }, [all, hiddenKey]);
+  const msgs = useUserMessages();
   const [activeId, setActiveId] = useState<string | null>(null);
   // 光标最靠近的刻度索引；null = 鼠标不在条上。预览卡、加宽、加亮
   // 都锁到这同一条，保证"指哪条就是哪条"。
@@ -404,7 +395,7 @@ export function MessageRail({
   // 条归零（三角形凸包，非曲线）。基于离散 hoverIdx，跟手不滞后。
   const SPAN = 4; // 命中条向外第几条收回静息长度
   const widthAt = (i: number): number => {
-    const rest = msgs[i]?.chapter ? CHAPTER_W : msgs[i]?.tasks?.length ? TASK_W : BASE_W;
+    const rest = msgs[i]?.chapter ? CHAPTER_W : BASE_W;
     if (hoverIdx == null) return rest;
     const d = Math.abs(i - hoverIdx);
     const t = Math.max(0, 1 - d / SPAN);
@@ -435,6 +426,9 @@ export function MessageRail({
       <div
         ref={railRef}
         className="msg-rail"
+        // No scrollbar of any kind beside the ticks: the ticks are the
+        // position, and the app's overlay thumb stood as a line next to them.
+        data-scrollbar="none"
         style={{ gap: GAP }}
         onMouseMove={(e) => { keepCard(); setHoverIdx(idxFromY(e.clientY)); }}
         onMouseLeave={() => leaveRail(hoverIdx)}
@@ -456,7 +450,12 @@ export function MessageRail({
               (i === hoverIdx ? " hovered" : "") +
               (m.chapter ? " chapter" : "")
             }
-            style={{ width: widthAt(i) }}
+            style={{
+              width: widthAt(i),
+              // Position in the conversation, 0 at the first turn and 1 at
+              // the last: the stylesheet turns it into the tick's colour.
+              ["--rail-at" as string]: msgs.length > 1 ? (i / (msgs.length - 1)).toFixed(3) : 0,
+            }}
             aria-label={m.preview}
             onFocus={() => setHoverIdx(i)}
             onBlur={() => setHoverIdx((cur) => (cur === i ? null : cur))}

@@ -226,9 +226,10 @@ def _working_directory(session_ctx: dict[str, Any]) -> Path:
             _log.debug("active worktree lookup failed for session %s", session_id, exc_info=True)
         try:
             from openprogram.state.store.project import project_for_session
+            from openprogram.state.store.project.project_store import folder_is_here
 
             project = project_for_session(session_id)
-            if project is not None and project.path:
+            if project is not None and project.path and folder_is_here(project):
                 path = Path(project.path).expanduser()
                 if path.is_dir():
                     return path

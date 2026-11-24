@@ -155,6 +155,13 @@ BOUNDARY_MANIFEST = (
         ),
     ),
     BoundaryExclusion(
+        path="programs/applications/browser/firefox.py",
+        boundary_owner="browser-control",
+        reason="the loopback probe of the user's Firefox remote agent port on 127.0.0.1 is outside Runtime URL fetch policy",
+        kinds=frozenset({"socket.create_connection"}),
+        call_counts=(("socket.create_connection", 1),),
+    ),
+    BoundaryExclusion(
         path="interfaces/cli/worker_client.py",
         boundary_owner="owner-control-plane",
         reason="owner CLI commands (mcp, execution, providers status) call the authenticated OpenProgram backend",
@@ -191,6 +198,27 @@ BOUNDARY_MANIFEST = (
         reason="the worker probes its own /healthz on a fixed numeric 127.0.0.1 port, with no proxy",
         kinds=frozenset({"urllib.request.build_opener"}),
         call_counts=(("urllib.request.build_opener", 1),),
+    ),
+    BoundaryExclusion(
+        path="host/processes/channel.py",
+        boundary_owner="owner-control-plane",
+        reason="a command's doorbell: a waiter or writer joins its supervisor's numeric 127.0.0.1 port with a token; no URL is fetched",
+        kinds=frozenset({"socket.create_connection"}),
+        call_counts=(("socket.create_connection", 2),),
+    ),
+    BoundaryExclusion(
+        path="host/machines/peer.py",
+        boundary_owner="owner-control-plane",
+        reason="pairing with and probing another OpenProgram the owner linked, on the addresses its own pairing link names, with no proxy or redirects",
+        kinds=frozenset({"httpx.post", "httpx.get"}),
+        call_counts=(("httpx.post", 1), ("httpx.get", 1)),
+    ),
+    BoundaryExclusion(
+        path="host/security/remote_access.py",
+        boundary_owner="owner-control-plane",
+        reason="a UDP socket is pointed at a numeric address to read which LAN address this computer would use; nothing is sent",
+        kinds=frozenset({"socket.connect"}),
+        call_counts=(("socket.connect", 1),),
     ),
     BoundaryExclusion(
         path="interfaces/cli/ink.py",

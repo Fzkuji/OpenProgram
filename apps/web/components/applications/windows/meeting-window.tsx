@@ -16,11 +16,14 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/select";
-import { ManageEmptyState, ManageIconButton, ManageLoadingState, ManagePage, ManagePageHeader, ManageRow, ManageSummary, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManageIconButton, ManagePage, ManagePageHeader, ManageRow, ManageSummary, managePageStyles as shared } from "@/components/ui/manage-page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Markdown } from "@/lib/format-utils/markdown";
+import { isPermanent, retryDelay } from "@/lib/abilities/kept-read";
 import { useTranslation } from "@/lib/i18n";
 import { useApplicationList } from "@/lib/net/application-list";
+import { useChanged } from "@/lib/net/ws/changes";
+import { SECONDS, useNow } from "@/lib/clock/use-now";
 import { pushPath } from "@/lib/nav/shallow-nav";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
@@ -50,27 +53,42 @@ function lastLanguage(): string {
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: "no-store" });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(String((body as { error?: string }).error || `HTTP ${response.status}`));
+  if (!response.ok) {
+    // The status travels with the error: a 4xx is the server's final answer.
+    throw Object.assign(new Error(String((body as { error?: string }).error || `HTTP ${response.status}`)), { status: response.status });
+  }
   return body as T;
 }
 
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => performance.now());
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => setNow(performance.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
+/**
+ * Read until an answer comes: a failure warns and is asked again after a
+ * growing pause; a 4xx is final and goes to `refused` instead. Returns a
+ * function that stops it (the caller's effect cleanup).
+ */
+export function readQuietly<T>(what: string, read: () => Promise<T>, answer: (value: T) => void, refused: () => void): () => void {
+  let live = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const attempt = (n: number) => {
+    read().then(value => { if (live) answer(value); }, (reason: unknown) => {
+      if (!live) return;
+      if (isPermanent(reason)) { console.warn(`${what} refused`, reason); refused(); return; }
+      console.warn(`${what} failed; reading again`, reason);
+      timer = setTimeout(() => attempt(n + 1), retryDelay(n));
+    });
+  };
+  attempt(0);
+  return () => { live = false; if (timer) clearTimeout(timer); };
 }
+
+/** The meeting list as last read, so the window opened again shows it at once. */
+let meetingsRead: MeetingList | null = null;
 
 export function MeetingWindow() {
   const { text } = useTranslation();
   const { builtin } = useApplicationList();
   const enabled = builtin.find(item => item.id === MEETING_APPLICATION)?.enabled !== false;
   const recorder = useMeetingRecorder();
-  const [list, setList] = useState<MeetingList | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [list, setList] = useState<MeetingList | null>(meetingsRead);
   const [title, setTitle] = useState("");
   const [language, setLanguage] = useState("");
   const [asking, setAsking] = useState(false);
@@ -78,31 +96,42 @@ export function MeetingWindow() {
   const [selected, setSelected] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<MeetingStatus | null>(null);
   const recording = recorder.phase === "recording" || recorder.phase === "stopping";
-  const now = useNow(recording);
+  // The live clock counts whole seconds from the start (`startedAt` is on
+  // the page's performance clock).
+  const startedAt = recorder.active ? performance.timeOrigin + recorder.active.startedAt : 0;
+  const now = useNow(recording && recorder.active ? SECONDS : null, startedAt);
 
+  // A read that fails keeps the list on screen and is asked again, quietly;
+  // a 4xx is final and is not asked again.
+  const keepList = useCallback((read: MeetingList) => { meetingsRead = read; setList(read); }, []);
   const refresh = useCallback(async () => {
     try {
-      setList(await getJson<MeetingList>("/api/meetings"));
-      setLoadError("");
+      keepList(await getJson<MeetingList>("/api/meetings"));
     } catch (reason) {
-      setLoadError(reason instanceof Error ? reason.message : String(reason));
+      console.warn("meeting list read failed", reason);
     }
-  }, []);
-  useEffect(() => { if (enabled) void refresh(); }, [enabled, refresh]);
+  }, [keepList]);
+  useEffect(() => {
+    if (!enabled) return;
+    return readQuietly("meeting list read", () => getJson<MeetingList>("/api/meetings"), keepList, () => {});
+  }, [enabled, keepList]);
   useEffect(() => { setLanguage(lastLanguage()); }, []);
 
-  // While recording or while a meeting is still being processed, poll.
-  const busy = recording || !!list?.meetings.some(row => row.state === "transcribing" || row.state === "summarizing");
-  useEffect(() => {
-    if (!busy) return;
-    const timer = setInterval(() => {
-      void refresh();
-      const id = useMeetingRecorder.getState().active?.id;
-      if (id) getJson<MeetingStatus>(`/api/meetings/${id}`).then(setLive, () => {});
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [busy, refresh]);
+  // A meeting's state or counts changed (a chunk arrived or was
+  // transcribed, the summary finished): the Worker says so.
+  useChanged("meetings", () => {
+    if (!enabled) return;
+    const id = useMeetingRecorder.getState().active?.id;
+    return Promise.all([
+      refresh(),
+      id ? getJson<MeetingStatus>(`/api/meetings/${id}`).then(setLive, () => {}) : undefined,
+    ]);
+  });
   useEffect(() => { if (!recording) setLive(null); }, [recording]);
+  const activeId = useMeetingRecorder(state => state.active?.id);
+  useEffect(() => {
+    if (activeId) getJson<MeetingStatus>(`/api/meetings/${activeId}`).then(setLive, () => {});
+  }, [activeId]);
 
   async function start() {
     try {
@@ -151,7 +180,7 @@ export function MeetingWindow() {
       title={text("Meetings", "会议")}
       toolbar={list ? <ManageSummary>{text(`${meetings.length} meetings`, `${meetings.length} 场会议`)}</ManageSummary> : null}
     />
-    {(errorText || loadError) && <div role="alert" className={shared.errorBar}>{errorText || loadError}</div>}
+    {errorText && <div role="alert" className={shared.errorBar}>{errorText}</div>}
     <div className={shared.body}>
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
         {!enabled ? (
@@ -159,7 +188,7 @@ export function MeetingWindow() {
         ) : <>
           {list && !list.ffmpeg && <p className={styles.notice}>{list.ffmpeg_missing}</p>}
           {list && !list.speech && <p className={styles.notice}>{text(
-            "No speech engine is set up, so recordings cannot be transcribed. Add an OpenAI or Groq key in Settings → Providers, or install whisper.cpp; Settings → Voice chooses the engine.",
+            "No speech engine is set up, so recordings cannot be transcribed. Add an OpenAI or Groq key in Settings → Model services, or install whisper.cpp; Settings → Voice chooses the engine.",
             "还没有可用的语音识别引擎，录音无法转写。请在“设置 → 模型服务”添加 OpenAI 或 Groq 的 key，或安装 whisper.cpp；引擎在“设置 → 语音”中选择。",
           )}</p>}
 
@@ -167,7 +196,7 @@ export function MeetingWindow() {
             <section className={styles.recordCard} aria-label={text("Recording", "录制中")}>
               <div className="flex items-center gap-[10px] min-w-0">
                 <span className={styles.liveDot} aria-hidden />
-                <strong className={styles.liveClock}>{clock(now - recorder.active.startedAt)}</strong>
+                <strong className={styles.liveClock}>{clock(now - startedAt)}</strong>
                 <span className={styles.rowDir}>{recorder.active.title}</span>
                 <span className={styles.rowDir}>{languageLabel(live?.language ?? recorder.active.language, text)}</span>
               </div>
@@ -218,9 +247,7 @@ export function MeetingWindow() {
 
           <section aria-label={text("Past meetings", "过往会议")}>
             <h2 className={styles.heading}>{text("Past meetings", "过往会议")}</h2>
-            {!list && !loadError ? (
-              <ManageLoadingState>{text("Loading meetings…", "正在加载会议…")}</ManageLoadingState>
-            ) : meetings.length === 0 ? (
+            {!list ? null : meetings.length === 0 ? (
               <ManageEmptyState compact icon={<Mic size={20} />} title={text("No meetings yet", "还没有会议")} description={text("Recorded meetings appear here with their transcript and summary.", "录过的会议会连同转写稿和摘要显示在这里。")} />
             ) : (
               <div>
@@ -275,15 +302,24 @@ function MeetingDetail({ meeting, onSummarize, onOpenConversation }: {
   const finished = meeting.state === "done" || meeting.state === "interrupted";
 
   useEffect(() => {
-    let live = true;
-    getJson<{ lines: TranscriptLine[] }>(`/api/meetings/${meeting.id}/transcript`)
-      .then(body => { if (live) setLines(body.lines); }, () => { if (live) setLines([]); });
+    // A read that fails is asked again, quietly, with backoff; its tab stays
+    // as it was meanwhile. A 4xx is final: the meeting has no such text.
+    const stops = [readQuietly(
+      "meeting transcript read",
+      () => getJson<{ lines: TranscriptLine[] }>(`/api/meetings/${meeting.id}/transcript`),
+      body => setLines(body.lines),
+      () => setLines([]),
+    )];
     if (meeting.has_summary) {
-      getJson<{ markdown: string }>(`/api/meetings/${meeting.id}/summary`)
+      stops.push(readQuietly(
+        "meeting summary read",
+        () => getJson<{ markdown: string }>(`/api/meetings/${meeting.id}/summary`),
         // The transcript tab shows the transcript; the file's <details> copy is for readers of summary.md.
-        .then(body => { if (live) setSummary(body.markdown.split("\n<details>")[0]); }, () => { if (live) setSummary(""); });
+        body => setSummary(body.markdown.split("\n<details>")[0]),
+        () => setSummary(""),
+      ));
     } else setSummary("");
-    return () => { live = false; };
+    return () => { for (const stop of stops) stop(); };
   }, [meeting.id, meeting.has_summary, meeting.state, meeting.transcribed]);
 
   return <section className={styles.recordCard} aria-label={meeting.title}>
@@ -299,14 +335,14 @@ function MeetingDetail({ meeting, onSummarize, onOpenConversation }: {
         </div>
       </div>
       <TabsContent value="summary">
-        {summary === null ? <ManageLoadingState>{text("Loading…", "正在加载…")}</ManageLoadingState>
+        {summary === null ? null
           : summary ? <div className={styles.meetingSummary}><Markdown source={summary} escapeRawHtml /></div>
             : <p className={styles.lead}>{meeting.state === "transcribing" || meeting.state === "summarizing"
               ? text("The summary is being written.", "摘要正在生成。")
               : meeting.summary_error || text("No summary yet.", "还没有摘要。")}</p>}
       </TabsContent>
       <TabsContent value="transcript">
-        {lines === null ? <ManageLoadingState>{text("Loading…", "正在加载…")}</ManageLoadingState>
+        {lines === null ? null
           : lines.length === 0 ? <p className={styles.lead}>{text("Nothing was transcribed.", "没有转写出内容。")}</p>
             : <ol className={styles.transcript}>
               {lines.map((line, index) => <li key={index} className={styles.transcriptLine} data-speaker={line.speaker.split(":")[0]}>

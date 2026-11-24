@@ -285,6 +285,18 @@ def test_reports_after_the_last_message_can_be_folded():
     assert cut == len(history) - 4
 
 
+def test_one_giant_turn_followed_by_a_short_one_is_folded():
+    # No boundary leaves four messages behind it, yet the finished giant
+    # turn is what fills the window: it is summarized, the short one kept.
+    history = [
+        {'role': 'user', 'content': 'read every log', '_context_tokens': 540},
+        {'role': 'assistant', 'content': 'read them all', '_context_tokens': 166_000},
+        {'role': 'user', 'content': 'shorter please', '_context_tokens': 580},
+        {'role': 'assistant', 'content': 'ok', '_context_tokens': 120},
+    ]
+    assert Summarizer().find_cut_index(history, context_window=256_000) == 2
+
+
 def test_a_conversation_without_reports_cuts_where_it_did():
     history = [
         {'role': 'user', 'content': 'only request', '_context_tokens': 50},

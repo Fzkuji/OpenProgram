@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useDesktopBridge } from "@/lib/desktop/use-desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
+import { setShowBookmarksBar, showBookmarksBar, subscribeBrowserPrefs } from "@/lib/browser/browser-prefs";
 import { BrowserImportDialog } from "@/components/center-tabs/browser/browser-home-page";
 import { SettingsHeading, SettingsPage, SettingsRow, SettingsSection } from "../settings-ui";
 
@@ -17,6 +18,11 @@ export function BrowserSettings() {
   const [clearCookies, setClearCookies] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState("");
+  const [bookmarksVisible, setBookmarksVisible] = useState(showBookmarksBar);
+  useEffect(
+    () => subscribeBrowserPrefs(() => setBookmarksVisible(showBookmarksBar())),
+    [],
+  );
 
   async function clearData() {
     if (!bridge?.browserData || (!clearHistory && !clearCookies)) return;
@@ -44,10 +50,16 @@ export function BrowserSettings() {
     <SettingsPage
       title={t("settings.tab.browser")}
       description={text(
-        "Import and clear the built-in browser's local data. The bookmarks bar is in Appearance.",
-        "导入和清除内置浏览器的本地数据。书签栏在「外观」里。",
+        "The built-in browser's bookmarks bar, and importing and clearing its local data.",
+        "内置浏览器的书签栏，以及导入和清除它的本地数据。",
       )}
     >
+      <SettingsSection title={text("Display", "显示")}>
+        <SettingsRow label={text("Show bookmarks bar", "显示书签栏")} htmlFor="show-bookmarks-bar">
+          <Switch id="show-bookmarks-bar" checked={bookmarksVisible} onCheckedChange={(checked) => setShowBookmarksBar(checked)} />
+        </SettingsRow>
+      </SettingsSection>
+
       {bridge?.browserImport ? (
         showImport ? (
           <section className="flex flex-col gap-3">

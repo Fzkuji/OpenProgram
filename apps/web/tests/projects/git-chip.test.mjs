@@ -106,7 +106,7 @@ test('a dirty folder opens branches in a worktree; review and the agent hand-off
   assert.deepEqual(calls.find(([a]) => a === 'git_create_worktree'), ['git_create_worktree', { path: '/repo', branch: 'main' }]);
   assert.equal(calls.find(([a]) => a === 'git_switch_branch'), undefined);
   await act(async () => row('2 uncommitted files').dispatchEvent(new Event('click', { bubbles: true })));
-  assert.deepEqual(globalThis.gitReviews[0], ['s1', undefined, 'workspace']);
+  assert.deepEqual(globalThis.gitReviews[0], ['s1', undefined, 'unstaged']);
   await act(async () => row('Commit & open PR').dispatchEvent(new Event('click', { bubbles: true })));
   assert.match(globalThis.gitDraft, /pull request/);
   await unmount();

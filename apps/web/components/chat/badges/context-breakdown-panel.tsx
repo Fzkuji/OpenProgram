@@ -19,14 +19,13 @@ import { cn } from "@/lib/utils";
 import {
   CHECK_SLOT_PAD,
   GROUP_LABEL,
-  MENU_NOTE,
   MENU_PANEL,
   MENU_SEPARATOR,
   MENU_TRAILING,
   itemCls,
 } from "@/components/ui/menu/menu-styles";
 import { getSocket } from "@/lib/runtime-bridge/state";
-import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session/session-history-loader";
+import { revealMessage } from "@/lib/chat/history/reveal-message";
 import { occupancyOf, occupancySnapshot } from "@/lib/chat/context-occupancy";
 import {
   readContextBreakdownCache,
@@ -35,8 +34,6 @@ import {
   type ContextBreakdown as Breakdown,
 } from "@/lib/chat/context-breakdown-cache";
 import { isCompacting } from "@/lib/chat/run/run-operation";
-import { formatMessageTime } from "@/lib/chat/transcript/message-time";
-import { announceReaderSeek } from "@/lib/chat/history/chat-scroll";
 
 interface Props {
   sessionId: string | null;
@@ -113,47 +110,9 @@ function messageKindLabel(kind: string, text: Text): string {
   }
 }
 
-/** The last compaction on the branch, as one sentence under Compact. */
-function lastCompactionNote(c: NonNullable<Breakdown["last_compaction"]>, text: Text): string {
-  const when = typeof c.at === "number" && c.at > 0 ? formatMessageTime(new Date(c.at * 1000)) : "";
-  const sizes = c.tokens_before != null && c.tokens_after != null
-    ? `, ${fmt(c.tokens_before)} → ${fmt(c.tokens_after)}` : "";
-  return text(
-    `Last compacted${when ? ` ${when}` : ""}: ${c.covered} messages${sizes}`,
-    `上次压缩${when ? ` ${when}` : ""}：${c.covered} 条消息${sizes}`,
-  );
-}
-
 /** A message preview without Markdown punctuation. */
 function plain(textValue: string): string {
   return textValue.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim();
-}
-
-/** Scroll the transcript to a message and flash it, loading the page of
- *  history around it first when it isn't in the transcript yet (the same
- *  route find-in-conversation takes). */
-async function revealMessage(sessionId: string, id: string): Promise<void> {
-  const loaded = useSessionStore.getState().messageOrder[sessionId]?.includes(id);
-  if (!loaded) await loadSessionHistoryWindow(sessionId, "around", id);
-  const esc = CSS.escape(id);
-  const find = () => document.querySelector<HTMLElement>(
-    `#chatMessages [data-msg-id="${esc}"], #chatMessages [data-msg-ids~="${esc}"]`,
-  );
-  // A recycled row is a sized slot until it is live; bring it near first.
-  for (let i = 0; i < 20 && !find(); i += 1) {
-    const slot = document.querySelector<HTMLElement>(`[data-msg-slot="${esc}"]`);
-    // A seek started outside the transcript: a growing reply must not pull
-    // the view back to the latest while it moves.
-    if (slot) announceReaderSeek(slot);
-    slot?.scrollIntoView({ block: "center" });
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  }
-  const el = find();
-  if (!el) return;
-  announceReaderSeek(el);
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add("dag-flash");
-  window.setTimeout(() => el.classList.remove("dag-flash"), 1400);
 }
 
 function buildCategories(d: Breakdown, text: Text, onReveal: (id: string) => void): Category[] {
@@ -403,6 +362,9 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
   // 只显示用量，不显示上限和百分比。
   const { used: totalUsed, window: win } = occupancyOf(data);
   const usedPct = win > 0 ? Math.min(1, totalUsed / win) : 0;
+  // A measurement the window cannot hold was several passes summed (an
+  // older record); the server no longer keeps one, and it is not shown.
+  const shownMeasured = lastMeasured && (!win || lastMeasured <= win * 1.05) ? lastMeasured : 0;
 
   const categories = useMemo(
     () => buildCategories(data ?? ({} as Breakdown), text, (id) => {
@@ -526,7 +488,7 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
             {data?.basis === "estimated" && (
               <span>
                 {text("est.", "估算")}
-                {lastMeasured ? ` · ${text("last measured", "上次实测")} ${fmt(lastMeasured)}` : ""}
+                {shownMeasured ? ` · ${text("last measured", "上次实测")} ${fmt(shownMeasured)}` : ""}
               </span>
             )}
           </div>
@@ -579,11 +541,6 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
           {/* A chat with no session has nothing to compact. */}
           {sessionId && <div className={MENU_SEPARATOR} />}
           {sessionId && compactRow}
-          {sessionId && data?.last_compaction && (
-            <div className={cn(MENU_NOTE, "pt-0.5")} data-last-compaction>
-              {lastCompactionNote(data.last_compaction, text)}
-            </div>
-          )}
         </>
       )}
     </div>

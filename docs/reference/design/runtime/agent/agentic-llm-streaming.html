@@ -40,7 +40,7 @@
 <thead><tr><th scope="col">Carrier</th><th scope="col">Holds</th><th scope="col">Limit</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">execution_stream</code></th><td>Attempts, blocks and text of one LLM node. Driven per frame.</td><td>Never touches the assistant reply content</td></tr>
-<tr><th scope="row"><code translate="no">tree_update</code></th><td>Tree structure, status and <code translate="no">stream_preview</code> from the checkpoint. Polled about every 1.2 s.</td><td>A terminal status is a critical frame</td></tr>
+<tr><th scope="row"><code translate="no">tree_update</code></th><td>Tree structure, status and <code translate="no">stream_preview</code> from the checkpoint. Sent when the run writes a node, at most once a second.</td><td>A terminal status is a critical frame</td></tr>
 <tr><th scope="row"><code translate="no">Call.output</code></th><td>Final output, written when the node closes</td><td>Stream state is a preview, never the final result</td></tr>
 </tbody>
 </table>

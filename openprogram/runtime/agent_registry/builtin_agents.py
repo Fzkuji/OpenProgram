@@ -341,7 +341,7 @@ _JOBS: tuple[dict[str, Any], ...] = (
             first="Ask for the profile (or read it from the files given) and the search criteria, then run the first scan.",
         ),
         "tools": {"mode": "selected", "web_search": True,
-                  "allowed": ["web_search", "web_fetch", "computer_use_agent", "read", "pdf", "write", "send_file", "remind", "send_message"] + _MEMORY + _PLAN},
+                  "allowed": ["web_search", "web_fetch", "computer_use", "read", "pdf", "write", "send_file", "remind", "send_message"] + _MEMORY + _PLAN},
         "memory": "read_write",
         "always_on": {"research": True, "wake_minutes": None},
     },
@@ -608,6 +608,8 @@ _KNOWN_FINGERPRINTS: dict[str, dict[str, str]] = {
         "0e61dd16897ee806cdbce5a1b127831e84b7e77f96f79dbacd991670244752c5": "zh",
     },
     "career-scout": {
+        "f32e1b561f1c84903b717b48d146c355e0f1b61c2becda289c6c8260f937a7ff": "en",
+        "40d6b073414ff64835e7c1ac333a3af601756bca4d8dd43a81e60f7c40d7d86a": "zh",
         "3d1b962bdaa315ee4da5bd53d607c9330f2c24bff7c55b96e0745a49604d5720": "en",
         "881e55e5dd381c76587556cf98d1a30f5b86a7b7234f149728317ec08da672ae": "zh",
         "3753e952d3fd74881e67e1116c9ad88edaa563f7ce5bd4d8fd27ef20ec2b4b51": "en",

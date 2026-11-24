@@ -1,49 +1,54 @@
-"""Default environment section.
+"""Machines section.
 
-Where new conversations run: this computer, an SSH host, or a Docker
-container. The full list is managed with ``openprogram environments``;
-this wizard step picks the default and can add one SSH or Docker
-environment on the way.
+A project is a folder on one machine, and its conversations run there:
+this computer, or a machine with a shell. The machines themselves are
+managed with ``openprogram machines``; this wizard step lists them and can
+add one, asking for the settings its shell kind declares.
 """
 from __future__ import annotations
 
 
+def _add_machine(text, choose) -> str | None:
+    from openprogram.host.machines import kinds, new_machine_id, save_machine
+    shells = [kind for kind in kinds.all_kinds("shell") if not kind.local_only]
+    labels = {kind.label: kind for kind in shells}
+    picked = choose("Its shell:", list(labels), next(iter(labels), ""))
+    if picked is None:
+        return None
+    kind = labels[picked]
+    suggested = new_machine_id(kind.name)
+    machine_id = text("Machine id (lowercase, e.g. devbox):", default=suggested) or suggested
+    shell: dict = {"kind": kind.name}
+    required = set(kind.settings.get("required") or ())
+    for key, spec in (kind.settings.get("properties") or {}).items():
+        spec = spec if isinstance(spec, dict) else {}
+        title = spec.get("title") or key
+        hint = "" if key in required else " (blank = default)"
+        value = text(f"{title}{hint}:", default=str(spec.get("default") or "")) or ""
+        if value:
+            shell[key] = value
+    return save_machine({"id": machine_id, "shell": shell}).id
+
+
 def run_backend_section() -> int:
-    from openprogram.host.environments import (
-        EnvironmentError,
-        default_environment_id,
-        list_environments,
-        save_environment,
-        set_default_environment,
-    )
+    from openprogram.host.machines import MachineError, list_environments
     from openprogram.interfaces.cli.setup_sections.prompts import _choose_one, _text
 
-    envs = list_environments()
-    choices = [env.id for env in envs] + ["+ add SSH host", "+ add Docker container"]
-    picked = _choose_one("Default environment for new conversations:",
-                         choices, default_environment_id())
+    add, done = "+ add a machine", "done"
+    print("Machines a project can be on: " + ", ".join(machine.id for machine in list_environments()))
+    picked = _choose_one("Add a machine with a shell?", [done, add], done)
     if picked is None:
         print("Cancelled.")
         return 1
-    if picked.startswith("+ add"):
-        kind = "ssh" if "SSH" in picked else "docker"
-        env_id = _text("Environment id (lowercase, e.g. devbox):", default="")
-        payload = {"id": env_id or "", "kind": kind}
-        if kind == "ssh":
-            payload["ssh_target"] = _text("SSH host (user@host):", default="") or ""
-            payload["workdir"] = _text("Remote folder (blank = home):", default="") or ""
-        else:
-            payload["image"] = _text("Container image:", default="ubuntu:24.04") or ""
+    if picked == add:
         try:
-            picked = save_environment(payload).id
-        except EnvironmentError as exc:
+            added = _add_machine(_text, _choose_one)
+        except MachineError as exc:
             print(f"[error] {exc}")
             return 1
-    try:
-        set_default_environment(picked)
-    except EnvironmentError as exc:
-        print(f"[error] {exc}")
-        return 1
-    print(f"New conversations start in: {picked}")
-    print("Manage the list with `openprogram environments`.")
+        if added is None:
+            print("Cancelled.")
+            return 1
+        print(f"Added machine: {added}. Open a folder on it to make a project there.")
+    print("Manage machines with `openprogram machines`.")
     return 0

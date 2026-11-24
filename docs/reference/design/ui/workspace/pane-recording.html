@@ -3,13 +3,13 @@
 <meta name="covers" content="openprogram/programs/applications/browser/video.py">
 <h1>Pane recording</h1>
 
-<p>An Agent records one pane to a video of exactly that pane's rectangle, with actions of <code translate="no">computer_use_agent</code>. There is no menu, button or shortcut for a person. The App captures its own pages, so macOS never asks for Screen Recording and no approval is added.</p>
+<p>An Agent records one pane to a video of exactly that pane's rectangle, with actions of <code translate="no">computer_use</code>. There is no menu, button or shortcut for a person. The App captures its own pages, so macOS never asks for Screen Recording and no approval is added.</p>
 
 <h2 id="actions">What the Agent calls</h2>
-<p>Three actions on target <code translate="no">browser</code>, the target that already reaches the App and owns <code translate="no">screenshot</code>. Names and limits follow <code translate="no">start_audio_recording</code> and <code translate="no">stop_audio_recording</code> of target <code translate="no">app</code>.</p>
-<pre translate="no" tabindex="0">computer_use_agent(target="browser", action="start_video_recording", args={"pane": "conversation"})
+<p>Three actions on <code translate="no">type="browser"</code>, the target that already reaches the App and owns <code translate="no">get_state</code>, which takes its screenshots. Names and limits follow <code translate="no">start_audio_recording</code> and <code translate="no">stop_audio_recording</code> of <code translate="no">type="window"</code>.</p>
+<pre translate="no" tabindex="0">computer_use(type="browser", action="start_video_recording", args={"pane": "conversation"})
 …
-computer_use_agent(target="browser", action="stop_video_recording")
+computer_use(type="browser", action="stop_video_recording")
 
 Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 ~/.openprogram/computer-use/video/20261110-101500-conversation.mp4.</pre>
@@ -18,14 +18,14 @@ Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 <tbody>
 <tr><th scope="row"><code translate="no">start_video_recording</code></th><td><code translate="no">pane</code>: what to record, below. <code translate="no">max_duration</code>: seconds, 60 by default, at most 600.</td><td>At once: the pane, its size in pixels and the limit. Recording goes on while the Agent acts.</td></tr>
 <tr><th scope="row"><code translate="no">stop_video_recording</code></th><td><code translate="no">discard</code>: delete instead of saving</td><td><code translate="no">path</code>, <code translate="no">seconds</code>, <code translate="no">width</code>, <code translate="no">height</code>, <code translate="no">fps</code>, <code translate="no">bytes</code>, and <code translate="no">ended</code>: why it ended when not by this call</td></tr>
-<tr><th scope="row"><code translate="no">panes</code></th><td>None</td><td>The panes on screen in the answering window: id, kind, title, size</td></tr>
+<tr><th scope="row"><code translate="no">list_panes</code></th><td>None</td><td>The panes on screen in the answering window: id, kind, title, size</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
 <thead><tr><th scope="col"><code translate="no">pane</code></th><th scope="col">Records</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">conversation</code></th><td>This conversation's own pane, when it is on screen</td></tr>
-<tr><th scope="row">An id from <code translate="no">panes</code></th><td>Any center tab or canvas pane on screen: conversation, file, application, built-in page such as Settings</td></tr>
+<tr><th scope="row">An id from <code translate="no">list_panes</code></th><td>Any center tab or canvas pane on screen: conversation, file, application, built-in page such as Settings</td></tr>
 <tr><th scope="row"><code translate="no">window</code></th><td>The whole window. Web views show as empty areas.</td></tr>
 <tr><th scope="row">A web tab</th><td>Refused for now</td></tr>
 </tbody>
@@ -49,7 +49,7 @@ Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 <tbody>
 <tr><th scope="row">No App window answers</th><td>Video recording needs the OpenProgram desktop App with a window open; open it and call again.</td></tr>
 <tr><th scope="row">Conversation not on screen</th><td>Says so and lists the panes that are</td></tr>
-<tr><th scope="row">Unknown or missing pane</th><td>The error lists the panes on screen, as <code translate="no">panes</code> would</td></tr>
+<tr><th scope="row">Unknown or missing pane</th><td>The error lists the panes on screen, as <code translate="no">list_panes</code> would</td></tr>
 <tr><th scope="row">Already recording</th><td>Already recording tk3fa; call stop_video_recording first.</td></tr>
 <tr><th scope="row">Nothing to stop</th><td>Nothing is being recorded; call start_video_recording first.</td></tr>
 <tr><th scope="row"><code translate="no">max_duration</code> out of range</th><td>max_duration must be between 0 and 600 seconds</td></tr>

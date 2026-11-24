@@ -49,7 +49,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">变化算谁的</th><td><code translate="no">operated(pid)</code> 指明一个步骤操作哪些进程：<code translate="no">args.app</code> 指的应用（<code translate="no">front.named</code>），用户的 Chrome 或 Edge，或内置浏览器所在的 App（<code translate="no">front.bundles</code>）。其他应用到了前台，就是用户自己切过去的：留在那里，之后前台还给它。</td></tr>
+<tr><th scope="row">变化算谁的</th><td><code translate="no">operated(pid)</code> 指明一个步骤操作哪些进程：窗口调用写明的应用（<code translate="no">app</code>，<code translate="no">front.named</code>），用户的 Chrome 或 Edge，或内置浏览器所在的 App（<code translate="no">front.bundles</code>）。其他应用到了前台，就是用户自己切过去的：留在那里，之后前台还给它。</td></tr>
 <tr><th scope="row">用户本来就在</th><td>步骤开始时用户就在被操作的应用里，则不监视。</td></tr>
 <tr><th scope="row">有上限</th><td>一个步骤反复抢前台时，还回去六次，之后不再处理。</td></tr>
 <tr><th scope="row">拦下的事件</th><td>在带标注的会话位置设一个主动拦截点，接收类型 19（失去前台）、20（获得前台）和子类型为 1 或 2 的类型 13（应用启动期间收到的那一对）。只有前台确实还回去之后才丢弃事件，所以不会让应用相信不属实的状态。</td></tr>
@@ -65,9 +65,9 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">入口</th><th scope="col">使用者</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">kept(operated)</code></th><td><code translate="no">targets/app.py</code> 和 <code translate="no">targets/browser.py</code> 包住每一次调用，结构化步骤和代码模式都覆盖。</td></tr>
+<tr><th scope="row"><code translate="no">kept(operated)</code></th><td>窗口、内置浏览器和用户浏览器的 provider（<code translate="no">providers/desktop.py</code>、<code translate="no">built_in_browser.py</code>、<code translate="no">user_browser.py</code>）包住每一次调用，结构化步骤和代码模式都覆盖。</td></tr>
 <tr><th scope="row"><code translate="no">watch_for(operated, seconds)</code></th><td>自更新切换，在桌面外壳重新启动的 30 s 内。</td></tr>
-<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> 和 <code translate="no">scripts/local-instances/install-dev-app.sh</code> 单独运行这个文件；这时它只需要标准库，没有辅助功能授权时每 50 ms 读一次前台。</td></tr>
+<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/local-instances/install-dev-app.sh</code> 单独运行这个文件；这时它只需要标准库，没有辅助功能授权时每 50 ms 读一次前台。</td></tr>
 </tbody>
 </table>
 

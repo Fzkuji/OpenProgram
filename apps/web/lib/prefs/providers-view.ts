@@ -1,5 +1,5 @@
 /**
- * providers-view: whether Settings → LLM Providers lists providers as cards
+ * providers-view: whether Settings → Model services lists providers as cards
  * or as compact rows. A view preference, so it lives in localStorage like
  * the sidebar's recents view and the Activity panel's folds; cards wherever
  * storage is unavailable.

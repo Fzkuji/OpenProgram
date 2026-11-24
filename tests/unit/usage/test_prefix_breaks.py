@@ -290,3 +290,23 @@ def test_changing_the_cache_lifetime_setting_announces_the_break(monkeypatch):
     monkeypatch.setattr(settings.user_config, "update_config", lambda _fn: None)
     assert settings.set_setting("models.prompt_cache_ttl", "1h").get("value") == "1h"
     assert seen == ["ttl_switch"]
+
+
+def test_an_unannounced_break_writes_where_the_texts_differ_to_the_log(ledger, caplog):
+    prefix._texts.clear()
+    _check(_request("hi", "the dog is called Pip"), ledger)
+    with caplog.at_level("INFO", logger=prefix.__name__):
+        check = _check(_request("hi", "the dog is called Rex", "more"), ledger, now=1010.0)
+    assert check.break_cause == "history:user"
+    logged = caplog.text
+    assert "unit 3 (history:user)" in logged
+    assert "called Pip" in logged and "called Rex" in logged
+
+
+def test_an_announced_break_is_not_written_to_the_log(ledger, caplog):
+    prefix._texts.clear()
+    _check(_request("hi"), ledger)
+    prefix.expect_break("s1", "compaction", ledger=ledger)
+    with caplog.at_level("INFO", logger=prefix.__name__):
+        _check(_request("summary"), ledger, now=1010.0)
+    assert "prompt prefix broke" not in caplog.text

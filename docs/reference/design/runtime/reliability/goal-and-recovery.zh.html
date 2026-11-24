@@ -219,7 +219,7 @@
 <tr><th scope="row">之后</th><td>只代表验证时成立。不监控、不重开。人工豁免必须是带原因的显式修订。验收也可能出错。</td></tr>
 <tr><th scope="row">无进展</th><td>按结果和证据判断，不看工具次数。没有工具调用的自动轮次会让下一个提示带警告；连续第二次则以 <code translate="no">stalled</code> 停止（<code translate="no">IDLE_ROUND_LIMIT</code> 为 2）。</td></tr>
 <tr><th scope="row"><code translate="no">blocked</code></th><td>同一真实阻塞在至少三个 Goal 轮次中重复，且没有独立工作</td></tr>
-<tr><th scope="row">等待</th><td>有存活句柄时等待，不做空转模型轮次。持久等待保存 <code translate="no">work_id</code>、修订、句柄、观察版本和消费键。通知仅在意图为 run、版本匹配且无当前执行时准入一次。对账以退避轮询。暂停、取消或修订使唤醒失效但保留结果。查询超时不代表操作已停止。</td></tr>
+<tr><th scope="row">等待</th><td>有存活句柄时等待，不做空转模型轮次。持久等待保存 <code translate="no">work_id</code>、修订、句柄、观察版本和消费键。通知仅在意图为 run、版本匹配且无当前执行时准入一次。对账在最早的等待截止时间和运行表变化时醒来，处理到期或可恢复的等待。暂停、取消或修订使唤醒失效但保留结果。查询超时不代表操作已停止。</td></tr>
 </tbody>
 </table>
 

@@ -12,7 +12,7 @@
 }
 .connectionLine { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 0 12px 8px; color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-xs)); }
 .connectionLine > span:first-child { flex: 1; min-width: 0; }
-.connectionLine[data-health="stale"], .connectionLine[data-health="gap"] { color: var(--accent-red); }
+.connectionLine[data-health="stale"] { color: var(--accent-red); }
 .layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); flex: 1; min-height: 0; }
 .executionTree, .treeBranch { min-width: 0; }
 .executionItem { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: var(--ui-button-radius); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }

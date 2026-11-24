@@ -153,14 +153,11 @@ test("legacy file cards hide empty results, retry errors, and ignore stale respo
       },
     });
   });
-  assert.match(host.textContent, /Could not load file changes/);
+  // A failed background read shows nothing and is asked again by itself.
+  assert.doesNotMatch(host.textContent, /Could not load file changes|Retry/);
   assert.equal(host.querySelector(".turn-files-review"), null);
   const beforeRetry = socket.sent.filter((frame) => frame.action === "review_scope").length;
-  await act(async () => {
-    host.querySelector(".turn-files-load-error button").dispatchEvent(
-      new window.Event("click", { bubbles: true }),
-    );
-  });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
   await flush();
   assert.equal(
     socket.sent.filter((frame) => frame.action === "review_scope").length,

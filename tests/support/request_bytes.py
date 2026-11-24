@@ -179,7 +179,7 @@ def install_bench(monkeypatch, tmp_path: Path, wire: str, tools: list[AgentTool]
     monkeypatch.setattr(agent_registry(), "get", lambda agent_id: None)
     monkeypatch.setattr("openprogram.models.providers.catalog.models.get_model",
                         lambda provider, model_id: model if model_id == model.id else None)
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool",
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool",
                         lambda *_args, **_kwargs: (list(tools), False))
     return TurnBench(model=model, monkeypatch=monkeypatch, db=db)
 

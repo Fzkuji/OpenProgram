@@ -52,11 +52,15 @@ const {
   showResourcePreview,
   getPreviewPreference,
   followPreviewBinding,
+  setShownResourceSessions,
 } = await import("../../../lib/chat/resources/session-resources.ts");
 const {
   reconcileRestoredWebUrl,
   restoreRetainedWebViews,
   retryRestoreWebTab,
+  wakeShownWebViews,
+  webViewWanted,
+  browserPageInventory,
 } = await import("../../../lib/desktop/desktop-bridge.ts");
 const { persistNativeWebTabState } = await import("../../../lib/desktop/bridge/bridge-restoration.ts");
 
@@ -191,6 +195,86 @@ test("hidden restore waits for snapshot and does not reload a live native URL", 
     useCenterTabs.getState().tabs[0].url,
     "https://arxiv.org/abs/1?utm=live#pdf",
   );
+});
+
+test("a restart reads ahead only the conversations on screen", async () => {
+  resetBrowserResources();
+  const confirmed = (id, session) => ({
+    id, kind: "web", title: id, url: `https://example.test/${id}`,
+    urlNativeAt: 1_700_000_000_000, agentSessionId: session,
+  });
+  useCenterTabs.setState({
+    tabs: [confirmed("w:shown", "shown"), confirmed("w:other", "other"), {
+      id: "w:unconfirmed", kind: "web", title: "old", url: "https://example.test/old",
+      agentSessionId: "unconfirmed",
+    }],
+    activeId: "s:shown",
+    groups: [],
+    splitWebTabId: null,
+  });
+  const ensured = [];
+  const bridge = {
+    windowId: "main",
+    webTab: {
+      ensure(id, url) { ensured.push([id, url]); },
+      inspect: async () => null,
+      onState: () => () => {},
+    },
+  };
+  const read = [];
+  globalThis.fetch = async (url) => {
+    read.push(String(url).replace(/^.*\/api\/session\//, "").replace(/\/resources.*$/, ""));
+    return { ok: true, text: async () => JSON.stringify({ items: [] }) };
+  };
+  setShownResourceSessions(["shown"]);
+  try {
+    await restoreRetainedWebViews(bridge);
+  } finally {
+    setShownResourceSessions([]);
+  }
+  assert.deepEqual(read, ["shown", "unconfirmed"]);
+  assert.deepEqual(ensured.map(([id]) => id), ["w:shown", "w:other", "w:unconfirmed"]);
+});
+
+test("a restart makes views only for the pages that are wanted", async () => {
+  resetBrowserResources();
+  const page = (id, session) => ({
+    id, kind: "web", title: id, url: `https://example.test/${id}`,
+    urlNativeAt: 1_700_000_000_000, ...(session ? { agentSessionId: session } : {}),
+  });
+  useCenterTabs.setState({
+    tabs: [page("w:own"), page("w:on-screen", "on-screen"), page("w:away", "away")],
+    activeId: "s:on-screen",
+    groups: [],
+    splitWebTabId: null,
+  });
+  const ensured = [];
+  const bridge = {
+    windowId: "main",
+    webTab: {
+      ensure(id) { ensured.push(id); },
+      inspect: async () => null,
+      onState: () => () => {},
+    },
+  };
+  globalThis.fetch = async () => ({ ok: true, text: async () => JSON.stringify({ items: [] }) });
+  setShownResourceSessions(["on-screen"]);
+  try {
+    await restoreRetainedWebViews(bridge, { wantedOnly: true });
+    assert.deepEqual(ensured, ["w:own", "w:on-screen"]);
+    // The worker is told the tab is there, so its page is not called failed.
+    const inventory = await browserPageInventory(bridge, null, { restore: true });
+    assert.deepEqual(inventory.pages, []);
+    assert.deepEqual(inventory.dormant_tabs, ["w:own", "w:on-screen", "w:away"]);
+    // Its conversation comes on screen: the view is made then.
+    setShownResourceSessions(["away"]);
+    wakeShownWebViews(bridge);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(ensured, ["w:own", "w:on-screen", "w:away"]);
+    assert.equal(webViewWanted({ id: "w:away", agentSessionId: "away" }), true);
+  } finally {
+    setShownResourceSessions([]);
+  }
 });
 
 test("persisted native navigation C beats stale backend B after restart", async () => {

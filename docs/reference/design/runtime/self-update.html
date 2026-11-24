@@ -75,8 +75,8 @@
 <tbody>
 <tr><th scope="row"><code translate="no">checkout</code></th><td><code translate="no">developer.json</code> exists</td><td>Explains this is a developer checkout; activates nothing</td></tr>
 <tr><th scope="row"><code translate="no">versions</code></th><td><code translate="no">sys.prefix</code> inside <code translate="no">&lt;root&gt;/versions/</code></td><td>Full lifecycle on macOS, Windows, Linux</td></tr>
-<tr><th scope="row"><code translate="no">dev_stable</code></th><td>Source repo has a <code translate="no">stable</code> branch</td><td><a href="#this-machine">This machine</a></td></tr>
-<tr><th scope="row"><code translate="no">legacy_app</code></th><td>Packaged App with an embedded runtime, no source repo</td><td><code translate="no">_prepare_update</code> path and App installer transaction, macOS only</td></tr>
+<tr><th scope="row"><code translate="no">dev_deploy</code></th><td>The worker runs the <code translate="no">dev</code> profile and its source repo has a <code translate="no">dev</code> branch</td><td><a href="#development-instance">Development instance</a></td></tr>
+<tr><th scope="row"><code translate="no">legacy_app</code></th><td>Packaged App with an embedded runtime otherwise; the official, Developer ID signed App is refused and pointed to Check for updates</td><td><code translate="no">_prepare_update</code> path and App installer transaction, macOS only</td></tr>
 <tr><th scope="row"><code translate="no">checkout</code></th><td>Otherwise, a source checkout</td><td>As above</td></tr>
 </tbody>
 </table>
@@ -94,7 +94,7 @@
 <tr><th scope="row"><code translate="no">undo(target)</code></th><td><a href="#undo">Undo</a></td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">status</code> and <code translate="no">versions</code> are free. <code translate="no">self_update</code> adds <code translate="no">unsafe_in=["plan"]</code>. <code translate="no">dev_stable</code> and <code translate="no">legacy_app</code> keep <code translate="no">prepare(worktree_id, candidate_sha, goal, assertions, ...)</code>.</p>
+<p class="note"><code translate="no">status</code> and <code translate="no">versions</code> are free. <code translate="no">self_update</code> adds <code translate="no">unsafe_in=["plan"]</code>. <code translate="no">dev_deploy</code> and <code translate="no">legacy_app</code> keep <code translate="no">prepare(worktree_id, candidate_sha, goal, assertions, ...)</code>.</p>
 <dl class="pairs">
 <dt>Validation</dt><dd><code translate="no">prepare</code> requires an existing, linked, clean worktree with commits beyond <code translate="no">local</code>; errors return to the model. The candidate may be based on any ancestor of <code translate="no">local</code>; it is rebased, not refused.</dd>
 <dt>Authorization</dt><dd>In default mode the owner's call runs without a card. Ask mode or an ask rule produces the ordinary card. A non-owner is refused by identity.</dd>
@@ -135,7 +135,7 @@
 <tr><th scope="row">Verifier</th><td><code translate="no">store.claim_verifier</code>, <code translate="no">_validate_event</code>, <code translate="no">verification_channel.load_grant</code> and <code translate="no">control/recovery.py</code> accept <code translate="no">VERIFIER_PHASES = {TRIAL, VERIFYING}</code>.</td></tr>
 <tr><th scope="row"><code translate="no">self-updates/</code></th><td>A versioned protocol read by the old controller and the candidate's worker. During <code translate="no">activating</code> and <code translate="no">verifying</code> only the controller writes. Readers ignore unknown keys in protocol-tagged files.</td></tr>
 <tr><th scope="row">Controller</th><td><code translate="no">python -I -B -m openprogram.operations.self_update.control.supervisor &lt;update_id&gt;</code> from <code translate="no">versions/&lt;controller_version&gt;/venv</code>, pinned until terminal. Restarted on abnormal exit by launchd <code translate="no">KeepAlive={SuccessfulExit=false}</code>, a Scheduled Task, <code translate="no">systemd-run --user</code>, or <code translate="no">setsid</code> as fallback.</td></tr>
-<tr><th scope="row">Liveness</th><td>Heartbeat every 5 s; a watchdog thread in <code translate="no">operations/worker/runner.py</code> relaunches the controller past 30 s. <code translate="no">maintenance.json</code> has a deadline, and an expired marker is ignored. An expired <code translate="no">probation_deadline</code> is a failure at the launcher.</td></tr>
+<tr><th scope="row">Liveness</th><td>The controller writes its pid and start time to <code translate="no">controller.json</code> once and writes nothing more; the Worker's watchdog (<code translate="no">control/watchdog.py</code>) learns from the operating system the moment that process ends and relaunches the controller, giving a launched one 30 s to appear. <code translate="no">maintenance.json</code> has a deadline, and an expired marker is ignored. An expired <code translate="no">probation_deadline</code> is a failure at the launcher.</td></tr>
 <tr><th scope="row">Start sweep</th><td><code translate="no">recover_pending_updates</code> relaunches the controller of any non-terminal update. If <code translate="no">current</code> no longer names the candidate during <code translate="no">activating</code> or <code translate="no">verifying</code>, it records <code translate="no">rolled_back</code>, leaves maintenance, delivers and starts diagnosis.</td></tr>
 </tbody>
 </table>
@@ -254,7 +254,7 @@ writer=controller</pre>
 <thead><tr><th scope="col">Trial check, in order</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">1 Baseline</th><td>The old version on the copy records doctor rows</td></tr>
-<tr><th scope="row">2 Cold start</th><td>Reaches <code translate="no">/healthz</code> within 120 s, extended by <code translate="no">boot/&lt;id&gt;.migrating</code> up to 30 minutes</td></tr>
+<tr><th scope="row">2 Cold start</th><td>Reaches <code translate="no">/healthz</code> within 120 s, extended up to 30 minutes while <code translate="no">boot/&lt;id&gt;.migrating</code> names a process that still runs</td></tr>
 <tr><th scope="row">3 <code translate="no">system_probe</code></th><td>Candidate identity, <code translate="no">/healthz</code>, <code translate="no">/chat</code>, WebSocket ping, doctor rows under the regression rule</td></tr>
 <tr><th scope="row">4 Browser probe</th><td>With Playwright</td></tr>
 <tr><th scope="row">5 Full Agent turn</th><td>Against <code translate="no">trial/fake_model.py</code>: one tool call, then a final answer</td></tr>
@@ -402,7 +402,7 @@ writer=controller</pre>
 <tr><th scope="row">Admission</th><td>Closes only from activation step 3 to step 11</td></tr>
 <tr><th scope="row">Schema and config</th><td>Changes are additive; old code tolerates unknown tables, columns and keys</td></tr>
 <tr><th scope="row">SQLite reader floor</th><td>A store keeps <code translate="no">min_reader_schema</code> beside <code translate="no">PRAGMA user_version</code> (<code translate="no">state/store/reader_floor.py</code>), refused only when newer than the code knows. Run state needs none: older readers skip unknown tables and columns on log lines.</td></tr>
-<tr><th scope="row">Migrating store</th><td>Touches <code translate="no">boot/&lt;id&gt;.migrating</code> every 5 s</td></tr>
+<tr><th scope="row">Migrating store</th><td>Writes its pid and start time to <code translate="no">boot/&lt;id&gt;.migrating</code> once and removes it when done; readers check that the process still runs (<code translate="no">versions/store.py</code> <code translate="no">migrating_process</code>)</td></tr>
 <tr><th scope="row">Destructive migration</th><td>Needs the trailer, is backed up at activation step 6, and is stated in the result, the rollback result and <code translate="no">versions list</code></td></tr>
 </tbody>
 </table>
@@ -437,26 +437,20 @@ writer=controller</pre>
 </ol>
 <p class="note">A release needing a <code translate="no">shell_compat</code> outside the shell's range waits for the DMG or EXE shell update.</p>
 
-<h2 id="this-machine">This machine (<code translate="no">dev_stable</code>)</h2>
-<p class="note">The development instance is the trial and promotion is the switch. Both Apps run in the shell's embedded mode. See <a href="../distribution/dev-instance.html">Development instance</a>. The detached controller runs from a private copy (<code translate="no">delivery/controller_bundle.py</code>) and clears <code translate="no">OPENPROGRAM_SESSION_ID</code>.</p>
+<h2 id="development-instance">Development instance (<code translate="no">dev_deploy</code>)</h2>
+<p class="note">A change made in the development instance is a commit on <code translate="no">dev</code>, and deploying it is the update. The stable instance is the official App, which only its own updater changes, so nothing here waits for it. See <a href="../distribution/dev-instance.html">Development instance</a>. The detached controller runs from a private copy (<code translate="no">delivery/controller_bundle.py</code>) with neither a session nor a profile in its environment.</p>
 <h3>Land</h3>
 <ol>
+<li>Wait for the calling turn to be saved.</li>
 <li>Rebase the candidate onto <code translate="no">dev</code>.</li>
 <li><code translate="no">git merge --ff-only &lt;sha&gt;</code> in the primary checkout, up to 10 tries. A rebase conflict or overlapping dirty file: <code translate="no">aborted</code> with the list.</li>
-<li><code translate="no">openprogram dev deploy &lt;sha&gt;</code>.</li>
 </ol>
-<h3>Promote</h3>
+<h3>Deploy</h3>
 <ol start="4">
-<li><code translate="no">system_probe</code> and browser probe on <code translate="no">18200</code>.</li>
-<li>Wait up to 30 minutes for no stable tasks.</li>
-<li>If <code translate="no">stable</code> contains the commit, go to step 8. Else <code translate="no">openprogram dev promote &lt;sha&gt;</code>. On “only the commit the development instance serves”, redeploy, repeat step 4 once, promote again; a second refusal: <code translate="no">aborted</code>.</li>
-<li>A failed refresh leaves <code translate="no">stable</code> and the App on the previous version. Failed or unhealthy: <code translate="no">git revert</code> on <code translate="no">dev</code>, deploy, promote. <code translate="no">rolled_back</code> names the revert.</li>
+<li><code translate="no">openprogram dev deploy &lt;sha&gt;</code>, unless the instance already serves it. This restarts the worker that asked.</li>
+<li><code translate="no">system_probe</code> and browser probe on <code translate="no">18200</code>. Pass: <code translate="no">succeeded</code>, delivered by the restarted worker. Fail: <code translate="no">aborted</code>; the commit stays on <code translate="no">dev</code> and the next commit fixes it.</li>
 </ol>
-<h3>Deliver</h3>
-<ol start="8">
-<li>Deliver after stable restarts.</li>
-</ol>
-<p class="note">Undo here is <code translate="no">git revert</code> on <code translate="no">dev</code>. The trial engine and version layout run in tests with temporary <code translate="no">HOME</code> and ephemeral ports.</p>
+<p class="note">Undo here is <code translate="no">git revert</code> on <code translate="no">dev</code>, submitted like any change. The trial engine and version layout run in tests with temporary <code translate="no">HOME</code> and ephemeral ports.</p>
 
 <h2 id="packaging">Packaging</h2>
 <table class="stack fixed">
@@ -476,7 +470,7 @@ writer=controller</pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Built</th><td>State machine and schema 2, queue, switch controller and launchers on all platforms, heartbeat, watchdog, held turns, subsystems, sweep, every <code translate="no">self_update</code> action, version store, pointer, launcher, retention, trial engine, release fetch and replay through <code translate="no">openprogram upgrade</code>, thin shell loader, seed, recovery page, handshake, relaunch, CLI seed installers</td></tr>
+<tr><th scope="row">Built</th><td>State machine and schema 2, queue, switch controller and launchers on all platforms, controller exit watch, watchdog, held turns, subsystems, sweep, every <code translate="no">self_update</code> action, version store, pointer, launcher, retention, trial engine, release fetch and replay through <code translate="no">openprogram upgrade</code>, thin shell loader, seed, recovery page, handshake, relaunch, CLI seed installers</td></tr>
 <tr><th scope="row">Unverified</th><td>Windows: no part of the version store has run there. Its branches are tested through stand-ins and a cross-compiled launcher. <code translate="no">windows-desktop</code> runs the shell checks on Windows; <code translate="no">windows-core</code> runs the launcher test only.</td></tr>
 <tr><th scope="row">Not done</th><td>No Windows App or Windows update files are published: the one Release run that built them failed there. Linux thin Apps and signed update files are published; a switch on an installed copy is not yet observed. The macOS App embeds its runtime unless <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code> is set. macOS privacy-grant gate needs a human click.</td></tr>
 <tr><th scope="row">Kept for now</th><td><code translate="no">legacy_app</code>, <code translate="no">delivery/bootstrap.py</code>, the App path of <code translate="no">control/supervisor.py</code>, <code translate="no">repair/owner_repair.py</code>, <code translate="no">owner_terminal.py</code>, until published Apps are thin. <code translate="no">package_protocol.py</code> while <code translate="no">native_checks.py</code> and <code translate="no">ui_checks.py</code> read it.</td></tr>

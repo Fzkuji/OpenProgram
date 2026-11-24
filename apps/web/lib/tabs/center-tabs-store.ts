@@ -9,6 +9,7 @@ import { browserActions } from "./store/browser";
 import { layoutActions } from "./store/layout/layout";
 import { navigationActions } from "./store/navigation";
 import { pagesActions } from "./store/pages";
+import { windowActions } from "./store/windows";
 import { sessionsActions } from "./store/sessions";
 import { splitActions } from "./store/layout/split";
 import { bindTransfers } from "./store/transfers";
@@ -61,6 +62,7 @@ export const useCenterTabs = create<CenterTabsState>((set, get) => {
     ...sessionsActions(set, get, closedSessionAckTombstones, sentDraftSessions),
     ...pagesActions(set, get, closedSessionAckTombstones),
     ...browserActions(set),
+    ...windowActions(set),
     ...splitActions(set)
   };
 });

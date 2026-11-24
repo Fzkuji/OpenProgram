@@ -21,11 +21,12 @@
 
 <h2 id="anthropic">Loading on Anthropic</h2>
 <p>A provider declares a native form under <code translate="no">tool_search</code> in <code translate="no">provider.json</code>. Anthropic declares <code translate="no">anthropic-reference</code> for <code translate="no">anthropic-messages</code>, with <code translate="no">models_off: ["haiku"]</code>.</p>
+<p>The Grok subscription endpoint declares none: it answers a <code translate="no">tool_search_call</code> item with 422 "unknown item type", so a load there appends to the array after every other tool.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Part</th><th scope="col">With the form</th><th scope="col">Without it</th></tr></thead>
 <tbody>
 <tr><th scope="row">Search result</th><td><code translate="no">tool_reference</code> blocks only, plus a sibling text block: the search's <a href="#codex">note</a>, or <code translate="no">Tool loaded.</code> when no text is there; the result text stays on the node for the UI</td><td>The result text</td></tr>
-<tr><th scope="row">Array</th><td>Loaded tools appended with <code translate="no">defer_loading: true</code>, in first-load order, from the definition the load record kept</td><td>Loaded tools appended as ordinary entries; the request records an expected break <code translate="no">tool_loaded</code></td></tr>
+<tr><th scope="row">Array</th><td>Loaded tools appended with <code translate="no">defer_loading: true</code>, in first-load order, from the definition the load record kept</td><td>Loaded tools appended as ordinary entries after every other tool, in first-load order (<code translate="no">split_tools_for_dispatch</code>); the request records an expected break <code translate="no">tool_loaded</code></td></tr>
 <tr><th scope="row">Beta header</th><td><code translate="no">advanced-tool-use-2025-11-20</code>; on Vertex <code translate="no">tool-search-tool-2025-10-19</code></td><td>None</td></tr>
 <tr><th scope="row">Cache</th><td>Fingerprint skips deferred entries; breakpoint on the last ordinary tool</td><td>Unchanged</td></tr>
 <tr><th scope="row">No match, error, summary-carried tool</th><td>Plain text result; a carried tool is an ordinary entry</td><td>Same</td></tr>

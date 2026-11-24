@@ -63,7 +63,7 @@
 <details>
 <summary>Scheduled tasks</summary>
 <ul>
-<li>Run in the background, outside your branch list. Each run starts clean: it sees the task and its last result, not the conversation. Nothing new: you hear nothing. Something changed: an ordinary message in the conversation, with a notification.</li>
+<li>Run in the background, outside your branch list. Each run starts clean: it sees the task and its last result, not the conversation. Nothing new: you hear nothing. Something changed: an ordinary message in the conversation, with a notification, and an item in the <strong>Tasks</strong> Inbox until you open the conversation.</li>
 <li>Three failures in a row: it tells you once.</li>
 <li>The Activity panel shows each task's last result and last 20 runs; each opens in place to show what it did. The Agent can see the task and read its results.</li>
 </ul>
@@ -103,7 +103,7 @@
 <tr><th scope="row">Conversation and unread dot</th><td>Always, unless it is on screen (no dot). A minimized or background window does not count</td></tr>
 <tr><th scope="row">Desktop App notification</th><td>While no App window has focus; clicking opens the conversation. With no App open, your computer shows it anyway, unless the conversation is on screen in a browser. Per kind, default on.</td></tr>
 <tr><th scope="row">Channels</th><td>Per kind, default on</td></tr>
-<tr><th scope="row"><strong>Pending</strong> in the sidebar</th><td>With a count. <strong>Waiting for your decision</strong>: approvals, until you write in that conversation; a handoff, a reminder or a Goal carrying on does not count, and turning always-on off keeps them. <strong>New</strong>: findings and finished work, until you open it. Also at the top of every Activity panel as <strong>Waiting for you</strong>. <strong>Open</strong> goes to the conversation. Older than seven days drops off.</td></tr>
+<tr><th scope="row"><strong>Tasks</strong> in the sidebar, <strong>Inbox</strong> tab</th><td>The row shows a count. <strong>Waiting for your decision</strong>: approvals, until you write in that conversation; a handoff, a reminder or a Goal carrying on does not count, and turning always-on off keeps them. <strong>New</strong>: findings, finished work and scheduled task results (shown with a calendar), until you open the conversation. Also at the top of every Activity panel as <strong>Waiting for you</strong>. <strong>Open</strong> goes to the conversation. Older than seven days drops off.</td></tr>
 </tbody>
 </table>
 <p><strong>Tell it what to report</strong> in the conversation ("don't tell me about passing builds"). Each rule becomes a report preference of the Agent, followed by every later check-in and scheduled run. Only your own turns can add one, never a check-in or scheduled run. The Activity panel lists them for deletion, and each report offers to stop reports like it.</p>
@@ -133,11 +133,11 @@
 <h2 id="in-the-conversations-activity-panel">In the Activity panel</h2>
 <details>
 <summary>Activity panel line</summary>
-<p>In the conversation's <a href="../interfaces/web.html#conversation-activity">Activity panel</a> the main agent's row gets an <strong>Always-on</strong> line: whether a check-in is running and the next wake after quiet hours, with the agent's reason when it chose that wake.</p>
-<p>Its page has an <strong>Always-on</strong> row above the runs: standing goal, current Goal, wake schedule, whether it is alive (when it last woke, wakes and failures in 24 hours, or a wake long overdue), last wake with result and cost, today's check-in spending and report preferences. Reports are rows among the runs.</p>
+<p>In the conversation's <a href="../interfaces/web.html#conversation-activity">Activity panel</a> the work chart's top row is the <strong>Next wake</strong>: when, how often, quiet hours, and first of all a check-in that was interrupted or a budget that is used up. A check-in that is running is a message on the chart.</p>
+<p>That row opens the main agent's page, which has an <strong>Always-on</strong> row above the runs: standing goal, current Goal, wake schedule, whether it is alive (when it last woke, wakes and failures in 24 hours, or a wake long overdue), last wake with result and cost, today's check-in spending and report preferences. Reports are rows among the runs.</p>
 <p><strong>Wake now</strong> runs a wake now, or in five minutes if a turn is running, and retries a check-in that failed or was interrupted by a restart. A later check-in the Agent set for itself stays as it was.</p>
 </details>
-<p>A new, empty chat with an always-on Agent offers three things to say to it. Clicking one only fills the box; it disappears once the box has text.</p>
+<p>When you switch an empty chat to an always-on Agent, it spells ALWAYS-ON once in glyphs, which then scatter and fade; the chat stays empty after that. Opening a chat or switching between chats and windows plays nothing.</p>
 <p>A conversation with an always-on Agent reads like a chat with a bot: short paragraphs as separate bubbles (at most four, and code, tables and lists stay with the text around them), the time shown again after 30 minutes and on a new day.</p>
 <p>Thinking, tool steps and message buttons are not drawn; three dots show while the Agent works after its last words.</p>
 <p>A reply that fails or stops short says so in a line under it, a reply cut by a restart continues as the one reply, and web sources sit once under the last bubble. Nothing is removed; this also applies to older conversations, and turning always-on off brings the full view back.</p>

@@ -33,16 +33,6 @@ def _cleanup_session_resources(session_id: str, conv: dict):
         state._running_tasks.pop(session_id, None)
         for key in [key for key in state._branch_running_tasks if key[0] == session_id]:
             state._branch_running_tasks.pop(key, None)
-    # A Docker environment's per-session container goes with the session.
-    try:
-        from openprogram.host.backend.docker import remove_session_containers
-        state.threading.Thread(target=remove_session_containers, args=(session_id,),
-                               daemon=True).start()
-    except Exception:
-        # Docker backend is optional; leftover containers are reaped by Docker
-        # cleanup.
-        _log.debug(
-            "container cleanup not started for session %s", session_id, exc_info=True)
 
 
 def _stop_session_work(session_id: str, *, reason: str) -> list[str]:

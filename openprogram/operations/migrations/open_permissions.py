@@ -13,7 +13,7 @@ import logging
 import os
 from pathlib import Path
 
-from openprogram.state.paths import get_state_dir
+from openprogram.state import paths as state_paths
 from openprogram.host._platform.filesystem import replace_file
 
 _log = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def _marker(state: Path) -> Path:
 def run() -> bool:
     """Rewrite the stored data if this profile has not finished. Returns whether it did."""
     global _resume_owed
-    state = get_state_dir()
+    state = state_paths.get_state_dir()
     if _marker(state).exists():
         return False
     _release_agent_holds(state / "agents")
@@ -63,7 +63,7 @@ async def resume_open_approvals() -> None:
             await reconcile_permission_waits(session_id, service=service, force=True)
         except Exception:  # noqa: BLE001
             _log.warning("open permissions: approvals in %s not resumed", session_id, exc_info=True)
-    marker = _marker(get_state_dir())
+    marker = _marker(state_paths.get_state_dir())
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("done\n", encoding="utf-8")
     _resume_owed = False

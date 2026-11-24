@@ -68,12 +68,13 @@ class TurnCompaction:
         budgets = getattr(self.engine, "budgets", None)
         if budgets is None:
             return False
-        budget = budgets.allocate(
+        from openprogram.runtime.context.token_accounting import measure
+        budget = measure.apply(budgets.allocate(
             context_window=real_context_window(self.model),
             system_prompt=self.system_prompt or "",
             history=messages,
             tools=list(self.tools or []),
-        )
+        ), measure.latest(self.req.session_id, self.model))
         return bool(self.engine.should_auto_compact(SimpleNamespace(budget_pct=budget.input_used_pct)))
 
     async def __call__(self, messages: list, trigger: str) -> Optional[list]:

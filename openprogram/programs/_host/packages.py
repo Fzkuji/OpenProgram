@@ -373,17 +373,21 @@ def name_problem(name: str, directory: Path | None = None) -> str:
 def fingerprint(directory: Path) -> tuple:
     """A cheap signature of a package's files and Git state."""
     rows = []
-    for base, names, files in os.walk(directory):
+    # Plain strings, not path objects: the Programs watcher takes this of
+    # every package every two seconds.
+    top = os.fspath(directory)
+    cut = len(top.rstrip(os.sep)) + 1
+    for base, names, files in os.walk(top):
         names[:] = sorted(n for n in names if n not in _IGNORED_DIRS and not n.startswith("."))
         for file in sorted(files):
             if file.endswith((".pyc", ".pyo")):
                 continue
-            path = Path(base) / file
+            path = os.path.join(base, file)
             try:
-                stat = path.stat()
+                stat = os.stat(path)
             except OSError:
                 continue
-            rows.append((str(path.relative_to(directory)), stat.st_mtime_ns, stat.st_size))
+            rows.append((path[cut:], stat.st_mtime_ns, stat.st_size))
             if len(rows) > 2000:
                 break
     git = directory / ".git"
@@ -431,11 +435,21 @@ def _checked_commit(directory: Path) -> str:
     return commit if _COMMIT.fullmatch(commit) else ""
 
 
+_git_found = False
+
+
 def git_available() -> bool:
+    """Whether ``git`` runs. A yes is kept for the process: it was asked once
+    per package on every load, a subprocess each time; a no is asked again,
+    since Git may be installed while the Worker runs."""
+    global _git_found
+    if _git_found:
+        return True
     try:
-        return subprocess.run(["git", "--version"], capture_output=True, timeout=10).returncode == 0
+        _git_found = subprocess.run(["git", "--version"], capture_output=True, timeout=10).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+    return _git_found
 
 
 def record_checked(directory: Path, commit: str) -> None:
@@ -451,8 +465,12 @@ def git_state(directory: Path) -> tuple[str, bool]:
     if not (directory / ".git").exists():
         return "", True
     try:
-        head = subprocess.run(["git", "-C", str(directory), "rev-parse", "--verify", "-q", "HEAD"],
-                              capture_output=True, text=True, timeout=10).stdout.strip()
+        # The files name the commit in an ordinary checkout; Git is asked
+        # only where they do not (a linked worktree, an unborn branch).
+        head = _git_head_commit(directory / ".git")
+        if not _COMMIT.fullmatch(head):
+            head = subprocess.run(["git", "-C", str(directory), "rev-parse", "--verify", "-q", "HEAD"],
+                                  capture_output=True, text=True, timeout=10).stdout.strip()
         status = subprocess.run(["git", "-C", str(directory), "status", "--porcelain", "--untracked-files=all"],
                                 capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
@@ -620,6 +638,10 @@ def _replace(name: str, directory: Path, status: PackageStatus, new: str, note: 
     status.state, status.error, status.revision, status.entries, status.note = "error", reason, "", [], ""
 
 
+#: States asked for ahead by the load pass in progress, by directory.
+_asked_states: dict[Path, tuple[str, bool]] = {}
+
+
 def _load_one(name: str, directory: Path) -> None:
     status = _status.setdefault(name, PackageStatus(name, str(directory)))
     status.path = str(directory)
@@ -647,7 +669,7 @@ def _load_one(name: str, directory: Path) -> None:
         return
     if loaded and _failed.get(name) == checked:
         return
-    head, dirty = git_state(directory)
+    head, dirty = _asked_states.pop(directory, None) or git_state(directory)
     note = _working_copy_note(directory, checked, head, dirty)
     if loaded and status.revision == checked and status.state == "loaded":
         status.note = note
@@ -715,12 +737,26 @@ def load_user_packages(root: Path | None = None) -> dict[str, PackageStatus]:
         for name, directory in found.items():
             if not name_problem(name, directory):
                 _point_finder(name, directory)
+        changed = []
         for name, directory in found.items():
             current = fingerprint(directory)
             if _fingerprints.get(name) == current and name in _status:
                 continue
             _fingerprints[name] = current
-            _load_one(name, directory)
+            changed.append((name, directory))
+        # Each package's state is one ``git status``, a process of its own:
+        # asked side by side, five take what one takes when a Worker starts.
+        if len(changed) > 1 and git_available():
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(changed)),
+                                    thread_name_prefix="package-git-state") as pool:
+                states = dict(zip((d for _, d in changed), pool.map(git_state, (d for _, d in changed))))
+            _asked_states.update(states)
+        try:
+            for name, directory in changed:
+                _load_one(name, directory)
+        finally:
+            _asked_states.clear()
         return dict(_status)
 
 

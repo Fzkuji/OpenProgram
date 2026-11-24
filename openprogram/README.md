@@ -16,7 +16,7 @@ for; each group is a plain package with no code of its own.
 | Programs (top level) | `programs/` |
 | `runtime/` — the agent runtime | `agent/` (one model call: `Agent`, `agent()`, the tool loop), `conversation/` (chats and turns), `jobs/` (background runs), `agent_registry/` (saved Agents), `permissions/`, `context/`, `execution/` (pause, cancel, recovery), `events/`, `commands/`, `proactive/`, `scheduler/` |
 | `interfaces/` — how people and programs talk to it | `acp/`, `channels/`, `speech/`, `server/`, `cli/` |
-| `host/` — the machine it runs on | `backend/`, `environments/`, `sandbox/`, `processes/`, `resources/`, `system_access/`, `lsp/`, `security/` (including `identity_header.py`), `_platform/` (filesystem, locking, processes, terminal) |
+| `host/` — the machine it runs on | `backend/`, `machines/`, `sandbox/`, `processes/`, `resources/`, `system_access/`, `lsp/`, `security/` (including `identity_header.py`), `_platform/` (filesystem, locking, processes, terminal) |
 | `models/` — model access | `providers/`, `auth/` (including `auth/credentials/`), `usage/` |
 | `state/` — what it keeps | `store/`, `memory/`, `worktree/`, `attachments.py`, `paths.py` (state directory layout), `settings.py` (the `SETTINGS` registry for config.json), `program_directory.py` (user Program folders) |
 | `extensions/` — what extends it | `plugins/`, `skills/`, `mcp/` (client and `mcp/server/`) |

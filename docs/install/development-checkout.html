@@ -1,56 +1,36 @@
 <title>Development checkout</title>
-<meta name="description" content="Deploy a source checkout to the development instance, promote it to stable, and sign macOS builds.">
+<meta name="description" content="Deploy a source checkout to the development instance beside the official App, and sign macOS builds.">
 <h1>Development checkout</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 44 680 320" role="img" aria-label="After a commit, openprogram dev deploy puts it on the development instance, then openprogram dev promote moves it to the stable instance. Promotion requires three things: the development instance runs exactly this commit, it is healthy, and stable only moves forward. If any fails it is refused and goes back to the development instance. When all pass it backs up, then updates stable and the App.">
+<svg class="fig-wide" viewBox="0 44 680 232" role="img" aria-label="A commit on dev goes to the development instance with openprogram dev deploy: port 18200, data in ~/.openprogram-dev. The stable instance is the official App: a GitHub Release reaches it only through the App's own Check for updates, on port 18100 with data in ~/.openprogram. Nothing moves from the development instance to stable.">
   <defs>
     <marker id="dv-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
-    <marker id="dv-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
   </defs>
-  <text class="t-big" x="0" y="96">Commit</text>
-  <line class="ln" x1="84" y1="89" x2="196" y2="89" marker-end="url(#dv-a)"/>
-  <text class="t-cmd mid notranslate" translate="no" x="140" y="58">openprogram</text>
-  <text class="t-cmd mid notranslate" translate="no" x="140" y="78">dev deploy</text>
-  <text class="t-big" x="208" y="96">Development</text>
-  <text class="t-soft" x="208" y="122">port 18200</text>
-  <text class="t-soft" x="208" y="142">data ~/.openprogram-dev</text>
-  <line class="ln" x1="336" y1="89" x2="486" y2="89" marker-end="url(#dv-a)"/>
-  <text class="t-cmd mid notranslate" translate="no" x="411" y="58">openprogram</text>
-  <text class="t-cmd mid notranslate" translate="no" x="411" y="78">dev promote</text>
-  <rect class="tile" x="498" y="52" width="182" height="112" rx="8"/>
-  <text class="t-big" x="514" y="96">Stable</text>
-  <text class="t-soft" x="514" y="122">port 18100</text>
-  <text class="t-soft" x="514" y="142">data ~/.openprogram</text>
-  <circle class="gate" cx="411" cy="89" r="5"/>
-  <line class="ln-faint" x1="411" y1="96" x2="411" y2="184"/>
-  <text class="t-soft" x="330" y="204">Requires</text>
-  <text class="t-soft" x="540" y="204">Otherwise</text>
-  <text x="330" y="236">Serves exactly this commit</text>
-  <text class="t-soft" x="540" y="236">deploy it first</text>
-  <text x="330" y="268">Development is healthy</text>
-  <text class="t-soft" x="540" y="268">fix it, then promote</text>
-  <text x="330" y="300">Stable only moves forward</text>
-  <text class="t-soft" x="540" y="300">include stable first</text>
-  <text class="t-soft" x="330" y="334">Passes: back up ~/.openprogram (latest 5 kept),</text>
-  <text class="t-soft" x="330" y="354">then update stable and the App</text>
-  <path class="ln-no" d="M318 230H310V294H318M310 262H250V162" marker-end="url(#dv-n)"/>
-  <text class="t-no" x="190" y="254">refused</text>
+  <text class="t-big" x="0" y="96">Commit on dev</text>
+  <line class="ln" x1="140" y1="89" x2="300" y2="89" marker-end="url(#dv-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="220" y="58">openprogram</text>
+  <text class="t-cmd mid notranslate" translate="no" x="220" y="78">dev deploy</text>
+  <text class="t-big" x="314" y="96">Development</text>
+  <text class="t-soft" x="314" y="122">port 18200</text>
+  <text class="t-soft" x="314" y="142">data ~/.openprogram-dev</text>
+  <line class="ln-faint" x1="0" y1="168" x2="680" y2="168"/>
+  <text class="t-big" x="0" y="226">GitHub Release</text>
+  <line class="ln" x1="140" y1="219" x2="300" y2="219" marker-end="url(#dv-a)"/>
+  <text class="t-cmd mid" x="220" y="208">Check for updates</text>
+  <rect class="tile" x="300" y="182" width="280" height="90" rx="8"/>
+  <text class="t-big" x="314" y="226">Stable, the official App</text>
+  <text class="t-soft" x="314" y="250">port 18100, data ~/.openprogram</text>
 </svg>
 <ol class="flow fig-narrow">
-  <li><strong>Commit</strong></li>
+  <li><strong>Commit on dev</strong></li>
   <li class="via"><code translate="no">openprogram dev deploy</code></li>
-  <li><strong>Development</strong><small>port 18200</small><small>data <code translate="no">~/.openprogram-dev</code></small></li>
-  <li class="via"><code translate="no">openprogram dev promote</code>
-    <p class="refused">Refused if any fails, back to development</p>
-    <dl class="pairs">
-      <dt>Serves exactly this commit</dt><dd>otherwise deploy it first</dd>
-      <dt>Development is healthy</dt><dd>otherwise fix it, then promote</dd>
-      <dt>Stable only moves forward</dt><dd>otherwise include stable first</dd>
-    </dl>
-    <p class="note">Passes: back up <code translate="no">~/.openprogram</code> (latest 5 kept), then update stable and the App</p>
-  </li>
-  <li class="flow-end"><strong>Stable</strong><small>port 18100</small><small>data <code translate="no">~/.openprogram</code></small></li>
+  <li class="flow-end"><strong>Development</strong><small>port 18200</small><small>data <code translate="no">~/.openprogram-dev</code></small></li>
+</ol>
+<ol class="flow fig-narrow">
+  <li><strong>GitHub Release</strong></li>
+  <li class="via">Check for updates</li>
+  <li class="flow-end"><strong>Stable, the official App</strong><small>port 18100</small><small>data <code translate="no">~/.openprogram</code></small></li>
 </ol>
 </figure>
 
@@ -60,11 +40,10 @@
 <tr><th scope="row"><code translate="no">openprogram dev deploy</code><span class="arg"><code translate="no">[ref]</code> default <code translate="no">dev</code></span></th><td>Builds into <code translate="no">~/.openprogram-dev/runtime</code>; on macOS also updates <code translate="no">/Applications/OpenProgram Dev.app</code>. The stable App keeps running.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>Opens it in the default browser, signed in. Each deploy signs browsers out again; OpenProgram Dev signs itself back in.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev copy-models</code></th><td>Copies stable provider settings, API keys and CLI-delegated logins. OAuth logins are signed in separately.</td></tr>
-<tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>What each instance runs and which commits promoting would bring</td></tr>
-<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>Runs <code translate="no">scripts/local-instances/refresh-local-app.sh</code> for that commit, which moves <code translate="no">stable</code> to it once the new version is healthy. Run by hand, the script installs only <code translate="no">refs/heads/stable</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>The stable App's release, the development instance's commit, and the <code translate="no">dev</code> commits not deployed yet</td></tr>
 </tbody>
 </table>
-<p>An Agent does the same with <code translate="no">self_update(action="prepare")</code> from a worktree of the source repository. After the turn ends, a detached controller waits for the stable App's running tasks, then promotes exactly that commit and reports in the conversation that asked. If promotion fails, it lands a revert on <code translate="no">dev</code> and promotes that.</p>
+<p>An Agent in the development instance does the same with <code translate="no">self_update(action="prepare")</code>: after the turn, the commit lands on <code translate="no">dev</code>, deploys, and the result comes back to the conversation. A failed change stays on <code translate="no">dev</code> for the next commit to fix.</p>
 <p class="note">Full rules: <a href="../reference/design/distribution/dev-instance.html">Stable and development instances</a>. Architecture and trust boundaries: <a href="../reference/design/distribution/automatic-updates.html">Automatic updates</a>.</p>
 
 <details>
@@ -76,27 +55,12 @@ openprogram upgrade</code></pre>
 <p><a href="../server/upgrading.html">Source checkout recovery</a></p>
 </details>
 
-<details>
-<summary>What <code translate="no">refresh-local-app.sh</code> does</summary>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
-<tbody>
-<tr><th scope="row">Build</th><td>Builds, verifies and signs the new App beside the installed one before quitting it, so a failure there changes nothing. A failure after the switch puts the previous App and worker back, and the script says which step failed.</td></tr>
-<tr><th scope="row">Updates</th><td>PATH and embedded Python installations, bundled Node and Ink resources, the App icon.</td></tr>
-<tr><th scope="row">Probe</th><td>The complete embedded runtime, before regenerating its capability manifest and restarting the default worker. Also upgrades older manifests; a failed probe stops the refresh.</td></tr>
-<tr><th scope="row">Worker interpreter</th><td>Embedded Python with <code translate="no">-I -B</code>; an existing launchd service is rebound to it, and detached startup uses it too. After the health check the script checks the real process's executable and flags: a matching package revision does not prove the interpreter.</td></tr>
-<tr><th scope="row">Checkpoints</th><td>Keep their strict tool contract, so switching Python paths can invalidate implementation fingerprints.</td></tr>
-<tr><th scope="row">Node</th><td>The copy must work outside its installation, checked before the App is touched. If PATH selects a Node that needs adjacent libraries, set <code translate="no">OPENPROGRAM_NODE_BIN</code> to a standalone executable.</td></tr>
-</tbody>
-</table>
-</details>
-
 <details id="macos-signing">
 <summary>macOS signing and public releases</summary>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Mode</th><th scope="col">What happens</th></tr></thead>
 <tbody>
-<tr><th scope="row">Local iteration</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> uses a persistent local certificate and sends nothing to Apple. Keep its signing state outside the repository; do not delete it to fix a permission prompt.</td></tr>
+<tr><th scope="row">Development App</th><td><code translate="no">scripts/local-instances/install-dev-app.sh</code> signs <code translate="no">OpenProgram Dev.app</code> with a persistent local certificate and sends nothing to Apple. Keep its signing state outside the repository; do not delete it to fix a permission prompt.</td></tr>
 <tr><th scope="row">Public release</th><td>The <code translate="no">Release</code> workflow runs for a <code translate="no">v*</code> tag or manually for an existing immutable tag. It signs the App and native components with Developer ID, waits for notarization, staples and validates tickets, runs the packaged-runtime checks, then publishes checksummed artifacts. Branch pushes do not trigger it.</td></tr>
 </tbody>
 </table>
@@ -106,6 +70,6 @@ openprogram upgrade</code></pre>
 <li>Do not recreate a certificate or app password per release. If one expires or is revoked, update its Secret and retry.</li>
 <li>The submission ID is in the signing job log. <code translate="no">In Progress</code>: Apple is not done. <code translate="no">Accepted</code>: publication allowed. Anything else stops publication. The 45-minute wait timeout does not cancel the submission.</li>
 <li>Inspect with <code translate="no">xcrun notarytool info SUBMISSION_ID --keychain-profile PROFILE</code> and <code translate="no">xcrun notarytool log SUBMISSION_ID --keychain-profile PROFILE</code>. After fixing the cause, rerun the failed workflow for the same tag; a new build may create a new submission.</li>
-<li>A Developer ID App has a different identity, and local refresh refuses to overwrite it. Switching modes can require fresh macOS permission consent. Agent bypass settings do not control macOS permissions.</li>
+<li>The official App carries the Developer ID identity and the development App the local one, so macOS permissions are granted to each separately. Agent bypass settings do not control macOS permissions.</li>
 </ul>
 </details>

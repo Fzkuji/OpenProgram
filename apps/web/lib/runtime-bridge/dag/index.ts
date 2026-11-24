@@ -136,9 +136,9 @@ export function refreshHistoryContextRange(
   if (!changed && lastRangeRead?.url === url && now - lastRangeRead.at < RANGE_READ_WINDOW_MS) return;
   lastRangeRead = { url, at: now };
   fetch(url)
-    .then((r) => (r.ok ? r.json() : null))
+    .then((r) => (r.ok ? r.json() as Promise<{ node_ids?: string[]; nodes?: CoverageNode[] }> : null))
     .then((j) => {
-      if (j) setHistoryContextRange(j.node_ids || [], j.nodes || null);
+      if (j) setHistoryContextRange(Array.isArray(j.node_ids) ? j.node_ids : [], Array.isArray(j.nodes) ? j.nodes : null);
     })
     .catch(() => {
       /* leave undimmed on failure */

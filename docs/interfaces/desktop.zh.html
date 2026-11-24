@@ -81,7 +81,7 @@
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">包含</th></tr></thead>
 <tbody>
 <tr><th scope="row">工具栏</th><td>后退、前进、刷新或停止、主页、带书签星标的地址栏、书签、外部打开、Browser 菜单。地址栏只高亮域名；锁表示 HTTPS。</td></tr>
-<tr><th scope="row">书签栏</th><td>默认显示。从 Browser 菜单或 <strong>设置 → 外观 → 显示书签栏</strong> 隐藏。</td></tr>
+<tr><th scope="row">书签栏</th><td>默认显示。从 Browser 菜单或 <strong>设置 → 浏览器 → 显示书签栏</strong> 隐藏。</td></tr>
 <tr><th scope="row">窄窗格</th><td>不常用操作收进菜单；地址栏、后退、刷新或停止、星标和菜单保留</td></tr>
 <tr><th scope="row">Browser 菜单</th><td>新浏览器标签页、书签、历史、书签栏显示、资料导入、清除浏览数据、Browser 设置。窗口和窗格操作仍在 OpenProgram 菜单。</td></tr>
 <tr><th scope="row">加载中</th><td>刷新变成 <strong>Stop loading（停止加载）</strong>；工具栏下有一条线，减少动态时静止</td></tr>
@@ -109,6 +109,16 @@
 </tbody>
 </table>
 <p class="note">两者都进入聚焦的对话，否则是打开该页面的 Agent 所在对话，否则是你上次所在的对话。选取和选区运行在网页看不到的脚本上下文里，选区不会出现在图片中。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">批注（星标左边的笔）</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">点击元素</th><td>描边、编号图钉和带选择器的批注卡片。写下要改什么；<strong>调整</strong>可直接在页面上试大小、间距和颜色。</td></tr>
+<tr><th scope="row">拖出方框</th><td>虚线区域批注</td></tr>
+<tr><th scope="row"><strong>发送到对话</strong></th><td>发送一条消息，优先发往页面所属的对话：地址、按编号列出的每条批注及其文字和调整值，附带图钉的截图</td></tr>
+<tr><th scope="row">Esc、<strong>丢弃</strong></th><td>Esc 停止批注并保留批注；丢弃会移除批注和预览样式</td></tr>
+</tbody>
+</table>
+<p class="note">仅桌面 App：在网页浏览器里按钮不可用，因为那里无法在其他网站的页面上标注。见<a href="../reference/design/ui/browser/annotate.zh.html">浏览器批注</a>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">页面操作</th><th scope="col">行为</th></tr></thead>
 <tbody>
@@ -158,14 +168,15 @@
 </tbody>
 </table>
 <h3>角落预览</h3>
-<p>你留在聊天而 Agent 打开页面时出现。默认 300×198.75（16:9 图像加标题栏）。</p>
+<p>你留在聊天而 Agent 打开页面、使用其他应用的窗口、运行终端或使用应用时出现。默认 300×198.75（16:9 图像加标题栏）。各类的控件相同；应用窗口实时显示，平台允许时可以直接点击和输入，终端可以直接输入。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row"><strong>关闭小窗（X）</strong></th><td>隐藏；页面留在<strong>会话资源</strong></td></tr>
 <tr><th scope="row"><strong>打开页面</strong></th><td>把同一页面显示为普通标签页，独占控制释放后其他对话可获取。原预览保留。</td></tr>
+<tr><th scope="row"><strong>在标签页打开</strong></th><td>窗口、终端或应用：在单独的标签页里显示同一个对象，不是副本。</td></tr>
 <tr><th scope="row">拖标题栏；边和角</th><td>移动；调整大小。没有可见手柄。底层页面不改变大小。</td></tr>
-<tr><th scope="row"><strong>更多 → 自动显示 Agent 正在操作的网页</strong></th><td>自动预览跟随 Agent 的页面；关闭则固定。不改变 Agent 目标，不启动 Agent，不改变页面生命周期。</td></tr>
+<tr><th scope="row"><strong>更多 → 自动显示 Agent 正在操作的内容</strong></th><td>自动预览跟随 Agent 的页面；关闭则固定。不改变 Agent 目标，不启动 Agent，不改变页面生命周期。</td></tr>
 </tbody>
 </table>
 <p class="note">每个预览属于自己的对话，并随之切换。保留的页面对其他 Agent 不可见。预览留在所属窗格内，分屏时悬于聊天上方，控件不被相邻网页遮挡。Web UI 没有原生视图，回退到 iframe 或新标签页打开控件。</p>
@@ -178,13 +189,41 @@
 <li>同一观察上连续三次操作失败或断言不满足时，停止并给出原因。被拒绝时停止，不重复。报告阻塞绝不算完成。操作计数统计 Page 变更。</li>
 </ul>
 </details>
+<h2 id="app-windows">其他应用的窗口</h2>
+<p>标签页里可以放另一个应用的窗口，比如备忘录、Excel 或终端。在新标签页里选 <strong>应用窗口</strong>，再选那个窗口。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="OpenProgram 窗口左边是对话，右边的标签页里是另一个应用的窗口。关闭标签页，窗口回到原来的位置。">
+<rect class="tile" x="0" y="10" width="420" height="130" rx="8"/>
+<line class="ln-faint" x1="170" y1="10" x2="170" y2="140"/>
+<text class="mid" x="85" y="80">对话</text>
+<rect class="tile" x="186" y="26" width="218" height="98" rx="6"/>
+<text class="mid" x="295" y="82">另一个应用的窗口</text>
+<text class="t-soft" x="450" y="56">关闭标签页</text><text x="450" y="78">窗口回到</text><text x="450" y="98">原来的位置</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>左边</dt><dd>对话</dd>
+<dt>右边的标签页</dt><dd>另一个应用的窗口</dd>
+<dt>关闭标签页</dt><dd>窗口回到原来的位置</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">平台</th><th scope="col">窗口怎样放进标签页</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows、Linux（X11）</th><td>窗口本身移进 App，照常使用。</td></tr>
+<tr><th scope="row">macOS</th><td>标签页实时显示这个窗口，并把点击、滚动和输入转给它，不会把那个应用切到前台。窗口就待在标签页后面，所以它的菜单在你看到的位置弹出。输入法打的字整段送过去。需要“屏幕录制”和“辅助功能”权限。</td></tr>
+<tr><th scope="row">Linux（Wayland）</th><td>不支持：Wayland 不允许一个应用摆放另一个应用的窗口。</td></tr>
+</tbody>
+</table>
+<p>要把标签页里的窗口交给 Agent，在输入框里输入 <code translate="no">@</code>，在<strong>标签页里的窗口</strong>下选中它；消息会写明这个窗口，Agent 就操作这一个。</p>
+<p class="note">退出 App 时会先把所有窗口还回去。窗口被关掉后，标签页会重新列出打开的窗口。macOS 上 Command+Tab 这类系统快捷键仍由系统处理，受版权保护的视频显示为黑色。</p>
+<p class="next">设计：<a href="../reference/design/ui/desktop/embedded-windows.zh.html">嵌入其他应用的窗口</a></p>
 <h2>会话资源</h2>
 <p>右侧栏的 <strong>资源</strong> 列出所选会话拥有的内容。分屏中点聊天，Files、Activity 和资源都切到它；点网页则保留上次的聊天。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">分组</th><td>Webpage、VM、Desktop、Terminal、Application、Container、Remote environment、Other resources。空组隐藏。折叠按会话和类型保存，只隐藏行。分组标题整行可点。</td></tr>
-<tr><th scope="row">列出</th><td>完整的软件或环境对象。命令、脚本和输出属于 Activity，留在后台运行的命令例外，显示为 Background terminal。<code translate="no">computer_use_agent</code> 运行时显示其应用或虚拟机。文件另列。没有搜索框；没有归属记录的视图和新草稿不显示内容。</td></tr>
+<tr><th scope="row">分组</th><td>Webpage、Desktop、Machine、Terminal、Application、Other resources。空组隐藏。折叠按会话和类型保存，只隐藏行。分组标题整行可点。</td></tr>
+<tr><th scope="row">列出</th><td>完整的软件或环境对象。命令、脚本和输出属于 Activity，留在后台运行的命令例外，显示为 Background terminal。<code translate="no">computer_use</code> 运行时显示它在这台电脑上操作的窗口、屏幕或浏览器，或在别处操作的机器。文件另列。没有搜索框；没有归属记录的视图和新草稿不显示内容。</td></tr>
 <tr><th scope="row">附加网页</th><td>保持对话可见，把标签页或窗格手柄拖到 <strong>资源</strong>。含多个网页的分屏要拖该网页的手柄。蓝色预览显示 <strong>Release to add to Resources</strong>；失败时显示重试，页面不变。</td></tr>
 <tr><th scope="row">Agent 创建的页面</th><td>不进顶部标签栏，除非固定或分屏。没有归属的页面留在标签栏。</td></tr>
 <tr><th scope="row">关闭</th><td>关闭会话网页的标签页只隐藏视图；<strong>Open in tab</strong> 重新打开。<strong>Close webpage</strong> 才真正关闭，未确认时行恢复。独立网页直接关闭。</td></tr>
@@ -274,7 +313,7 @@
 </table>
 <h2>Programs</h2>
 <p>Abilities → Programs 有两个根。<strong>Tools</strong>：<code translate="no">openprogram/programs/tools/</code>，按类别。<strong>Applications</strong>：内置的来自 <code translate="no">openprogram/programs/applications/</code>，已安装的在 <code translate="no">~/.openprogram/programs/</code>。每项展开为入口和源文件；详情显示是否禁用，你的包还显示加载失败或暂不可调用。放在其他应用目录里的目录应用单独列出并注明目录。打开时选中第一个应用，没有则第一个工具。</p>
-<p class="note">离开时保留目录树、选中项和调用图。可见时每五秒及重新聚焦时检查；未变文件复用分析。检查失败保留上次内容。</p>
+<p class="note">离开时保留目录树、选中项和调用图。Program 或应用变化、重新聚焦和窗口重新显示时重读；未变文件复用分析。检查失败保留上次内容。</p>
 <details>
 <summary>长对话</summary>
 <ul>
@@ -283,4 +322,4 @@
 <li>DAG 打开时才加载。Markdown 使用有界缓存。存储的历史和模型上下文不变。</li>
 </ul>
 </details>
-<p class="note">本地 App 刷新保留已解包原生依赖的权限，并恢复 node-pty 辅助程序的执行权限。</p>
+<p class="note">增量打包 App 时保留已解包原生依赖的权限，并恢复 node-pty 辅助程序的执行权限。</p>

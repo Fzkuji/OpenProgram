@@ -43,6 +43,8 @@
 - **2026-11-14 · v1.2.0** — Ramos de uma conversa rodam lado a lado, Parar age na hora e chega o App para Windows.
 - **2026-11-10 · v1.1.0** — Voltar a partir de qualquer mensagem enviada; o App chega ao Linux.
 - **2026-11-06 · v1.0.0** — Primeira versão da linha 1.x: App de desktop com visões divididas, uso do computador em segundo plano, reuniões e um agendador sempre ativo.
+- **2026-08-17 · v0.7.0** — Um navegador integrado ao lado dos arquivos, do chat e do terminal, que os agentes podem ler e operar.
+- **2026-03-31 · v0.1.0** — Primeira versão pública: funções agênticas, funções Python cujos passos um modelo executa, registradas em uma árvore de contexto.
 
 <a id="install"></a>
 

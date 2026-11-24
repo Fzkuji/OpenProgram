@@ -56,6 +56,10 @@ def resolve_document(project_id: str, relative: str) -> tuple[Path, str]:
     relative = _relative(relative)
     project = _owner(project_id)
     from openprogram.state.store.project.location import bound_execution_state, refresh_project_location
+    from openprogram.state.store.project.project_store import folder_is_here
+    if not folder_is_here(project):
+        # Its files are on another machine; the Files panel writes them there.
+        raise DocumentHistoryError("project folder is on another machine", "PROJECT_LOCATION_UNAVAILABLE")
     if not getattr(project, "is_default", False):
         refresh_project_location(project_id)
         project = _owner(project_id)

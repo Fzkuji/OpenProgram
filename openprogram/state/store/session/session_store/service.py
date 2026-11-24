@@ -29,7 +29,7 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
     _INDEX_FIELDS = frozenset({
         "id", "agent_id", "title", "created_at", "updated_at",
         "source", "channel", "account_id", "peer_display", "peer_id",
-        "pinned", "archived", "group", "status", "unread", "environment_id",
+        "pinned", "archived", "group", "status", "unread",
         "sort_at", "sort_since", "agent_trial",
     })
 
@@ -51,6 +51,11 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
         # size-capped at ``_cache_cap`` — see the _DEFAULT_CACHE_CAP note.
         self._sessions: "OrderedDict[str, tuple[SessionLog, SessionMemoryIndex]]" = shared.OrderedDict()
         self._cache_cap = cache_cap if cache_cap is not None else shared._resolve_cache_cap()
+        #: Which call first read each cached session in, for the Worker's
+        #: memory sample (``opening_call``).
+        self._opened_by: dict[str, str] = {}
+        #: When each cached session was last asked for (``release_idle``).
+        self._used_at: dict[str, float] = {}
         self._lock = shared.threading.Lock()
         # Filesystem work is serialized per conversation, not across the
         # store, through the process-wide conversation lock (_session_lock).
@@ -96,6 +101,45 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
                 self._sessions.pop(session_id, None)
         shared.report_foreign_change(session_id)
 
+
+    @shared.contextmanager
+    def passing_through(self, session_id: str):
+        """Read a session without leaving it in memory.
+
+        A pass over every session (the restart reconciliation) reads each
+        one whole; kept, they are every conversation the profile has, held
+        for as long as the process lives. A session that was already in
+        memory stays: something else is using it. One this pass read in is
+        dropped afterwards and read again, from its checkpoint, by whoever
+        asks next.
+        """
+        with self._lock:
+            held = session_id in self._sessions
+        try:
+            yield
+        finally:
+            if not held:
+                with self._lock:
+                    self._sessions.pop(session_id, None)
+                    self._opened_by.pop(session_id, None)
+                    self._used_at.pop(session_id, None)
+
+    def release_idle(self, idle_seconds: float) -> int:
+        """Drop the sessions nobody asked for in this long from memory.
+
+        One conversation read whole is tens of megabytes, so the count limit
+        alone let a Worker hold every conversation opened since it started.
+        A dropped one is read from its files again when asked for.
+        """
+        cutoff = shared.time.monotonic() - idle_seconds
+        with self._lock:
+            idle = [session_id for session_id in self._sessions
+                    if self._used_at.get(session_id, 0.0) <= cutoff]
+            for session_id in idle:
+                self._sessions.pop(session_id, None)
+                self._opened_by.pop(session_id, None)
+                self._used_at.pop(session_id, None)
+        return len(idle)
 
     def mark_merged(self, session_id: str, head_ids: list[str]) -> None:
         """Record that these head ids have been merged into another

@@ -1,0 +1,58 @@
+<title>User browsers</title>
+<meta name="description" content="How computer_use drives the user's own browsers: Chromium browsers through the Playwright Extension, Safari through AppleScript, Firefox through WebDriver BiDi, and the page layer the last two share.">
+<meta name="covers" content="openprogram/programs/applications/browser/catalog.py openprogram/programs/applications/browser/safari.py openprogram/programs/applications/browser/firefox.py openprogram/programs/applications/browser/script_page.py">
+<h1>User browsers</h1>
+
+<p><code translate="no">type="browser"</code> with <code translate="no">app</code> drives a browser the user already runs, with their tabs and sign-ins. Every browser takes the same actions and returns the same snapshot; three engines sit behind them.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Engine</th><th scope="col"><code translate="no">app</code></th><th scope="col">Transport</th><th scope="col">Module</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chromium</th><td><code translate="no">chrome</code>, <code translate="no">chrome-beta</code>, <code translate="no">chrome-dev</code>, <code translate="no">chrome-canary</code>, <code translate="no">edge</code>, <code translate="no">edge-beta</code>, <code translate="no">edge-dev</code>, <code translate="no">edge-canary</code>, <code translate="no">brave</code>, <code translate="no">vivaldi</code>, <code translate="no">opera</code>, <code translate="no">arc</code>, <code translate="no">chromium</code></td><td>Playwright MCP in extension mode, relaying CDP through the Playwright Extension</td><td><code translate="no">extension.py</code></td></tr>
+<tr><th scope="row">Safari</th><td><code translate="no">safari</code> (macOS)</td><td><code translate="no">osascript</code>: JXA for tabs and <code translate="no">doJavaScript</code>, AppleScript for new tabs</td><td><code translate="no">safari.py</code> over <code translate="no">script_page.py</code></td></tr>
+<tr><th scope="row">Firefox</th><td><code translate="no">firefox</code></td><td>WebDriver BiDi over the remote agent's WebSocket</td><td><code translate="no">firefox.py</code> over <code translate="no">script_page.py</code></td></tr>
+</tbody>
+</table>
+
+<p>All modules are in <code translate="no">openprogram/programs/applications/browser/</code>. <code translate="no">catalog.py</code> holds one row per browser (name, label, engine, Playwright channel, data directory, executables, bundle ids, process names); the registry, the tool's description and its argument check, the provider and the web labels (<code translate="no">apps/web/lib/computer-use/browsers.ts</code>) all read that order.</p>
+
+<h2 id="decisions">Decisions</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Every Chromium browser goes through the Playwright Extension</th><td>The extension is a Chrome Web Store extension, and Brave, Vivaldi, Opera, Arc and Chromium install from that store. One transport keeps one action mapping and one set of refs.</td></tr>
+<tr><th scope="row">A browser without a Playwright channel is named by its executable, with <code translate="no">PWTEST_EXTENSION_USER_DATA_DIR</code></th><td>Playwright MCP 0.0.79 knows only the Chrome and Edge channels. Given <code translate="no">--executable-path</code>, it finds the profile with the extension only through that variable, from which it adds <code translate="no">--user-data-dir</code> and <code translate="no">--profile-directory</code>; without it the connect page opens in a profile without the extension.</td></tr>
+<tr><th scope="row">Safari through AppleScript, not WebKit or <code translate="no">safaridriver</code></th><td>Playwright's WebKit is not the user's Safari and has none of their sign-ins. <code translate="no">safaridriver</code> drives a separate automation window that locks out the user and keeps no state. Apple Events reach the user's own tabs; <code translate="no">do JavaScript</code> runs the page layer in them.</td></tr>
+<tr><th scope="row">Safari's async results are polled inside one <code translate="no">osascript</code> run</th><td><code translate="no">doJavaScript</code> returns only a synchronous value. A kick script starts the work and stores its result on the page under a token; the same JXA run then reads it every 50 ms, so a step costs one process, not one per poll.</td></tr>
+<tr><th scope="row">Safari tab keys are kept by a heuristic</th><td>Safari tabs have no ids. A tab keeps its key while its window and index, or its URL and title, still match the last listing; a tab that matches neither gets a new key, so a stale key is refused instead of landing on another page.</td></tr>
+<tr><th scope="row">Safari maps its errors to the fix</th><td>-1743 is a missing Automation permission; "Allow JavaScript from Apple Events" in the error means the Develop setting is off; both answer <code translate="no">PERMISSION_MISSING</code> naming the switch. -600 and -1728 mean Safari or the tab is gone, and the call says which.</td></tr>
+<tr><th scope="row">Safari screenshots are window captures</th><td>Safari has no page capture over Apple Events. The desktop driver's <code translate="no">capture_window</code> (ScreenCaptureKit) captures the window without raising it, cropped to the viewport; a tab that is not the one showing in its window is refused, since its pixels do not exist. <code translate="no">create_tab</code> opens a new window in the background so the new page can be captured without changing what the user sees.</td></tr>
+<tr><th scope="row">Firefox through WebDriver BiDi</th><td>Firefox has no extension mode for Playwright and its CDP support was removed. The remote agent built into Firefox speaks BiDi to the user's own profile, with every command the actions need: tree, navigate, evaluate, input, files, screenshots, console and network events.</td></tr>
+<tr><th scope="row">Port 9222, started in the background</th><td>9222 is Firefox's default for <code translate="no">--remote-debugging-port</code>. When Firefox is closed the first call starts it with the agent (<code translate="no">open -g</code> on macOS, so nothing comes to the front). A Firefox running without the agent cannot be attached to, so the call answers <code translate="no">PERMISSION_MISSING</code> asking the user to restart it.</td></tr>
+<tr><th scope="row">One BiDi session per process</th><td>Firefox allows one BiDi session. Conversations share the connection and each keeps its own selected context; the last conversation to end closes the session and leaves Firefox running.</td></tr>
+<tr><th scope="row">A shared page layer for Safari and Firefox</th><td>Neither transport has Playwright's snapshot. <code translate="no">script_page.py</code> injects one script that writes the same outline Playwright writes (role, name, <code translate="no">[ref=eN]</code>) and acts on those refs, reusing the built-in browser's pointer, hover, scroll, insert and field scripts, so a guide and a model see one format everywhere.</td></tr>
+<tr><th scope="row">Refs live in a <code translate="no">WeakMap</code> on the page</th><td>Refs must survive between calls without marking the DOM. <code translate="no">window.__openprogram</code> maps refs to <code translate="no">WeakRef</code>s and elements to refs, so a node the page removes is freed and its ref answers <code translate="no">ELEMENT_GONE</code>; a navigation starts fresh.</td></tr>
+<tr><th scope="row">Real input only on the tab in front</th><td>BiDi input goes to the page as trusted events but needs the tab to be visible; Safari has no input over Apple Events. A tab in the background gets synthetic events from the page layer (typing, Enter submitting its form, Tab moving focus, Backspace and Delete), so choosing a tab never switches what the user sees.</td></tr>
+<tr><th scope="row">App names match without regard to case, and browser short names are aliases</th><td>A model writes <code translate="no">chrome</code> or <code translate="no">Safari</code> as often as the bundle name. <code translate="no">type="window"</code> matching was already case-insensitive on every platform; macOS also maps the short names (<code translate="no">chrome</code> to Google Chrome, <code translate="no">edge</code> to Microsoft Edge, …) after an exact match fails.</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-each-engine-lacks">What each engine lacks</h2>
+<table class="stack">
+<thead><tr><th scope="col">Engine</th><th scope="col">Not available</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chromium</th><td>filtering console messages and requests</td></tr>
+<tr><th scope="row">Safari</th><td><code translate="no">upload_file</code>, console and network reads, a screenshot of a tab that is not showing</td></tr>
+<tr><th scope="row">Firefox</th><td>trusted input on a tab in the background</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>The catalog, every Chromium browser and channel, Safari, Firefox, the page layer, the window aliases, the guides, the settings help and the web labels. Unit tests cover them against fakes: a fake page, a fake <code translate="no">osascript</code> and a fake BiDi agent.</td></tr>
+<tr><th scope="row">Not run live</th><td>Any of these browsers; the Safari JXA scripts were only compiled with <code translate="no">osacompile</code>.</td></tr>
+<tr><th scope="row">Not implemented</th><td>Firefox Developer Edition and Nightly, Safari Technology Preview. Arc on Windows is found by a glob of its package directory and is untested.</td></tr>
+</tbody>
+</table>

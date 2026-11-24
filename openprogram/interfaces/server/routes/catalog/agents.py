@@ -190,7 +190,23 @@ def _validated_patch(raw: object) -> dict[str, Any]:
     return out
 
 
+#: Signalled when a saved Agent's ``agent.json`` changed, written here or by
+#: another process (the CLI): windows read their Agents again when told.
+AGENTS_TOPIC = "agents"
+
+
+def watch_agents() -> None:
+    """Tell the windows each time a saved Agent changes."""
+    from openprogram.host._platform import changes
+    from openprogram.runtime.agent_registry.manager import agent_dir
+
+    changes.publish(AGENTS_TOPIC)
+    changes.watch(agent_dir("_").parent, AGENTS_TOPIC, recursive=True, names={"agent.json"})
+
+
 def register(app: FastAPI) -> None:
+    watch_agents()
+
     @app.get("/api/agents")
     def list_agents():
         from openprogram.runtime.agent_registry import manager as _agents

@@ -621,6 +621,7 @@ class AdmissionOperations:
                     "context": shared.contextvars.copy_context(),
                 }
                 self._jobs[job.id] = entry
+                self._budget_wake.set()
                 self._done_events[job.id] = done_ev
             else:
                 cancel_ev = entry["event"]

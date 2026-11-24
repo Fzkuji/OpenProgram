@@ -1,0 +1,58 @@
+<title>Tasks page</title>
+<meta name="description" content="One page for unattended work: an Inbox of what always-on Agents and scheduled tasks left for the user, and the scheduled tasks themselves.">
+<meta name="covers" content="apps/web/components/tasks/ apps/web/components/scheduler/ apps/web/components/sidebar/sidebar-primary-nav.tsx openprogram/runtime/conversation/always_on/pending.py">
+<h1>Tasks page</h1>
+
+<p>Work that runs without the user has two ends, what is set to run and what came back, and they share one page.</p>
+<p class="note">Reference: Codex's Automations, which keeps the scheduled automations and their results needing review under one entry.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="The sidebar's Tasks row, with the Inbox count, opens the Tasks page. Its header has two tabs. Inbox lists reports from always-on Agents and results of scheduled task runs, read from the inbox query. Scheduled lists the tasks as a list or a calendar, read from the scheduler API.">
+  <defs><marker id="tp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="55" width="150" height="60" rx="8"/>
+  <text class="t-big" x="16" y="82">Tasks row</text>
+  <text class="t-soft" x="16" y="102">Inbox count</text>
+  <line class="ln" x1="150" y1="85" x2="238" y2="85" marker-end="url(#tp-a)"/>
+  <rect class="tile" x="250" y="10" width="190" height="65" rx="8"/>
+  <text class="t-big" x="266" y="38">Inbox</text>
+  <text class="t-soft" x="266" y="60">decisions, then news</text>
+  <rect class="tile" x="250" y="95" width="190" height="65" rx="8"/>
+  <text class="t-big" x="266" y="123">Scheduled</text>
+  <text class="t-soft" x="266" y="145">list or calendar</text>
+  <line class="ln" x1="560" y1="42" x2="452" y2="42" marker-end="url(#tp-a)"/>
+  <line class="ln" x1="560" y1="127" x2="452" y2="127" marker-end="url(#tp-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="566" y="46">/api/always-on/pending</text>
+  <text class="t-cmd notranslate" translate="no" x="566" y="131">/api/scheduler/tasks</text>
+</svg>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sidebar</th><td>One row, <strong>Tasks</strong>, with the calendar glyph at the end of the primary nav, where Scheduler was. A quiet number on its right counts Inbox items; none at zero.</td><td>Pending and Scheduler were two rows for one kind of work. The count says something needs the user without a coloured badge.</td></tr>
+<tr><th scope="row">Header</th><td><code translate="no">ManagePageHeader</code>: title <strong>Tasks</strong> and two tabs, <strong>Inbox</strong> and <strong>Scheduled</strong>, each with its count as a muted number after the label. The toolbar follows the tab: Inbox shows "N need you"; Scheduled shows its summary, search, Refresh and <strong>New task</strong>.</td><td>Search and New task act only on scheduled tasks.</td></tr>
+<tr><th scope="row">Opening tab</th><td>A link that names one (<code translate="no">/tasks?tab=inbox</code> or <code translate="no">scheduled</code>) wins; otherwise Inbox when it has items; otherwise the tab last chosen, kept in <code translate="no">localStorage</code>; Scheduled the first time.</td><td>Something waiting is why the user came; with nothing waiting, the page is as they left it.</td></tr>
+<tr><th scope="row">Inbox</th><td>"Waiting for your decision" (approvals) then "New" (findings, finished work, scheduled results), <code translate="no">ManageRow</code> rows with <strong>Open</strong>. The icon is the Agent's avatar, or the calendar for a scheduled task's result, whose description starts "Scheduled task". Empty: "Nothing waiting".</td><td>Where a report came from decides how to answer it.</td></tr>
+<tr><th scope="row">Scheduled results</th><td>A scheduled run that has something to say still posts a chat message, and its report (<code translate="no">task_id</code>) is also an Inbox item until the conversation is opened. The inbox scans the conversations tasks report into as well as always-on Agents' (<code translate="no">always_on/pending.py</code>).</td><td>A result the user has not seen needs them as much as an Agent's finding; leaving it only in the chat hid it in whichever conversation the task was set from.</td></tr>
+<tr><th scope="row">Scheduled</th><td>The Scheduler's content unchanged: the type row (All, One-time, Recurring, Monitors) with a List / Calendar switch (<code translate="no">ToggleGroup</code>) at its end; the view is remembered as before.</td><td>The header tabs are the page's own; the view is a choice inside one tab.</td></tr>
+<tr><th scope="row">Old routes</th><td><code translate="no">/pending</code> redirects to <code translate="no">/tasks?tab=inbox</code>, <code translate="no">/scheduler</code> to <code translate="no">/tasks?tab=scheduled</code>. The command palette, tab names and icons, and Activity's <strong>Open in Tasks</strong> use <code translate="no">/tasks</code>.</td><td>Kept tabs and bookmarks still land.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Scheduled tab layout</summary>
+<ul>
+<li>Shared page header and theme tokens; <code translate="no">ManageRow</code> rows keep schedule, status and actions, numbered in visible order.</li>
+<li>The type filters sit in a row below the header, no sidebar; they wrap when narrow.</li>
+<li>Empty state: introduction and Create task centered; three suggestion cards in a centered grid up to 960px, one column when narrow, each with title, schedule, prompt and Use.</li>
+<li>Create and Use open the existing form without creating a task; Escape returns.</li>
+</ul>
+</details>
+
+<ul>
+<li><strong>Code</strong>: <code translate="no">apps/web/components/tasks/</code> (<code translate="no">tasks-page.tsx</code>, <code translate="no">tasks-inbox.tsx</code>, <code translate="no">tasks-tabs.ts</code>), <code translate="no">apps/web/components/scheduler/scheduler-page.tsx</code> (the Scheduled tab), <code translate="no">apps/web/lib/agents/pending-inbox.ts</code> (the inbox query).</li>
+<li><strong>Tests</strong>: <code translate="no">apps/web/tests/agents/pending-inbox.test.mjs</code>, <code translate="no">apps/web/tests/settings/scheduler/scheduler-page.test.mjs</code>, <code translate="no">tests/unit/agent/test_always_on.py</code>.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented. Scheduled runs report only findings; a scheduled run that asks for a decision has no kind of its own yet.</p>

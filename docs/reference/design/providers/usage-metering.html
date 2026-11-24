@@ -8,7 +8,7 @@
 <thead><tr><th scope="col">Record</th><th scope="col">Lives in</th><th scope="col">Answers</th><th scope="col">Written by</th></tr></thead>
 <tbody>
 <tr><th scope="row">Message columns</th><td>Assistant message history</td><td>What did this message cost (per-message pill)</td><td><code translate="no">persist_assistant_message</code> in <code translate="no">runtime/conversation/turn_runtime/persistence.py</code></td></tr>
-<tr><th scope="row">Compaction budget</th><td>Session meta <code translate="no">_usage</code></td><td>Real input tokens last turn, cache hit rate, whether to compact. Sub-microsecond reads</td><td><code translate="no">UsageTracker.record_turn</code> in <code translate="no">runtime/context/token_accounting/usage.py</code></td></tr>
+<tr><th scope="row">Last request</th><td>Session meta <code translate="no">_usage</code></td><td>Real input tokens of the last turn, per branch, and cache hit rate. Whether to compact reads the request size of <code translate="no">token_accounting/measure.py</code> instead (<a href="../context/compaction.html#measuring">How large a request is</a>)</td><td><code translate="no">UsageTracker.record_turn</code> in <code translate="no">runtime/context/token_accounting/usage.py</code></td></tr>
 <tr><th scope="row">Ledger</th><td><code translate="no">~/.openprogram/usage.db</code>, profile-aware</td><td>Global spend across sessions, models, sources and time</td><td><code translate="no">record_message</code> in <code translate="no">models/usage/recorder.py</code></td></tr>
 </tbody>
 </table>

@@ -26,7 +26,7 @@ Public surface (re-exported here for convenience):
 
 ## Files in this directory
 
-- **`dev_instance.py`** — Stable and development instances of one source checkout
+- **`dev_instance.py`** — The development instance of a source checkout, beside the official App
 - **`lifecycle.py`** — Lifecycle controls for the persistent worker process
 - **`lock.py`** — Single-holder file lock for the persistent worker
 - **`paths.py`** — State file paths for the persistent worker

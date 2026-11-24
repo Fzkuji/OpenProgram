@@ -96,7 +96,7 @@
 <li>openclaw's memory plugin is the default slot; its tool description makes recall mandatory and requires surfacing <code translate="no">disabled=true</code> to the user. Failed retrieval returns <code translate="no">disabled</code>, <code translate="no">unavailable</code>, a warning and an action. An empty workspace is declared normal in its bootstrap template.</li>
 <li>hermes has no list action; every write returns the full list.</li>
 <li>codex-cli has List, Read, Search and AddAdHocNote behind <code translate="no">Feature::MemoryTool</code> (off) and <code translate="no">memories.dedicated_tools</code>.</li>
-<li>OpenProgram's memory writer runs the Claude Code SDK with <code translate="no">setting_sources=[]</code>, so the host's <code translate="no">CLAUDE.md</code> never reaches it (<code translate="no">state/memory/agent_runtime/claude_code.py</code>). The reading agent has no equivalent statement.</li>
+<li>OpenProgram's memory writer is a detached session with its own system prompt and only the memory tools, so the host's <code translate="no">CLAUDE.md</code> never reaches it (<code translate="no">runtime/conversation/memory_agent.py</code>). The reading agent has no equivalent statement.</li>
 </ul>
 </details>
 

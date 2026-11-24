@@ -59,7 +59,7 @@
 <thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">Bind address <code translate="no">web.host</code></th><td>Default <code translate="no">127.0.0.1</code>, this machine only. <code translate="no">0.0.0.0</code> exposes the authenticated UI to other interfaces and needs at least one <code translate="no">web.allowed_origins</code> entry. On an untrusted network prefer HTTPS through a same-host reverse proxy</td></tr>
-<tr><th scope="row">Sign-in</th><td>Every API and WebSocket request needs the owner cookie, set by a sign-in link, or a bearer token. Otherwise 401. Public: <code translate="no">/healthz</code>, page shells, <code translate="no">/docs</code>, and Scheduler webhooks under <code translate="no">/hooks/</code>, guarded by the task's own key</td></tr>
+<tr><th scope="row">Sign-in</th><td>Every API and WebSocket request needs the owner cookie, set by a sign-in link, a paired device's credential (<code translate="no">openprogram web pair</code>), or a bearer token. Otherwise 401. Public: <code translate="no">/healthz</code>, page shells, <code translate="no">/docs</code>, and Scheduler webhooks under <code translate="no">/hooks/</code>, guarded by the task's own key</td></tr>
 <tr><th scope="row">Host</th><td>Must name an effective origin: loopback when bound to loopback, plus <code translate="no">web.allowed_origins</code>. Otherwise 403</td></tr>
 <tr><th scope="row"><code translate="no">Sec-Fetch-Site</code></th><td><code translate="no">cross-site</code> gets 403</td></tr>
 <tr><th scope="row"><code translate="no">Origin</code>, when present</th><td>Must match the request's own origin. Otherwise 403</td></tr>
@@ -103,7 +103,7 @@
 <thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">security.outbound_url.model_tools</code></th><td><code translate="no">open</code> (default): in your own turns <code translate="no">web_fetch</code> and image downloads reach any address, port and HTTP method. <code translate="no">strict</code>: applies the address checks. Other people's turns and the server's own calls are always strict</td></tr>
-<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td>JSON list of app names or bundle ids <code translate="no">computer_use_agent</code> will not touch. Empty by default</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td>JSON list of app names or bundle ids <code translate="no">computer_use</code> will not touch. Empty by default</td></tr>
 <tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>Stops it typing into password fields. Off by default</td></tr>
 <tr><th scope="row"><code translate="no">sandbox.mode</code></th><td>Used by a scheduled task with no conversation; otherwise its conversation's Sandbox setting when it fires</td></tr>
 <tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>With the startup, Git and state paths in <a href="../capabilities/permissions.html">permissions</a>, the only paths the sandbox restricts</td></tr>

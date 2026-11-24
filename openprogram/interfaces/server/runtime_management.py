@@ -288,6 +288,16 @@ def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dic
         return {}
 
 
+def _has_enabled_models(p_name: str) -> bool:
+    """Whether ``p_name`` has a model the owner enabled. A provider outside
+    the runtime table names its models itself and counts as having them."""
+    from openprogram.models.providers.catalog.registry import PROVIDERS
+    from openprogram.models.providers.catalog.models import get_models
+
+    entry = PROVIDERS.get(p_name)
+    return entry is None or bool(get_models(entry["model_namespace"]))
+
+
 def _probe_one_provider(p_name: str):
     """Probe a single provider. Returns (name, runtime, models) or None on failure.
 
@@ -311,6 +321,10 @@ def _probe_one_provider(p_name: str):
         from openprogram.models.providers.catalog.metadata import is_configured as _is_configured
         if not _is_configured(p_name):
             raise RuntimeError(f"{p_name} not configured")
+        if not _has_enabled_models(p_name):
+            # The owner turned none of its models on: not a candidate, and
+            # nothing went wrong, so nothing is logged.
+            return None
         if p_name in _CLI_PROVIDERS:
             import shutil as _shutil
             if not _shutil.which(_CLI_BINS.get(p_name, p_name)):
@@ -510,7 +524,7 @@ def _get_session_runtime(session_id: str, msg_id: str = None):
 
     if not provider:
         raise RuntimeError(
-            "No model available. Enable a model in Settings → Providers "
+            "No model available. Enable a model in Settings → Model services "
             "(or install a CLI such as codex/claude/gemini, or set an API key)."
         )
 

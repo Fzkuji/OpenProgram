@@ -3,13 +3,13 @@
 <meta name="covers" content="openprogram/programs/applications/browser/video.py">
 <h1>面板录制</h1>
 
-<p>Agent 用 <code translate="no">computer_use_agent</code> 的动作，把一个面板录成画面正好是该面板矩形的视频。没有给人用的菜单、按钮或快捷键。App 采集的是自己的页面，所以 macOS 不会来要“屏幕录制”权限，也不新增任何批准步骤。</p>
+<p>Agent 用 <code translate="no">computer_use</code> 的动作，把一个面板录成画面正好是该面板矩形的视频。没有给人用的菜单、按钮或快捷键。App 采集的是自己的页面，所以 macOS 不会来要“屏幕录制”权限，也不新增任何批准步骤。</p>
 
 <h2 id="actions">Agent 调用什么</h2>
-<p>三个动作，挂在 <code translate="no">browser</code> 目标上：它已经连着 App，<code translate="no">screenshot</code> 也在这里。命名和限制跟 <code translate="no">app</code> 目标的 <code translate="no">start_audio_recording</code>、<code translate="no">stop_audio_recording</code> 一致。</p>
-<pre translate="no" tabindex="0">computer_use_agent(target="browser", action="start_video_recording", args={"pane": "conversation"})
+<p>三个动作，挂在 <code translate="no">type="browser"</code> 上：它已经连着 App，截图用的 <code translate="no">get_state</code> 也在这里。命名和限制跟 <code translate="no">type="window"</code> 的 <code translate="no">start_audio_recording</code>、<code translate="no">stop_audio_recording</code> 一致。</p>
+<pre translate="no" tabindex="0">computer_use(type="browser", action="start_video_recording", args={"pane": "conversation"})
 …
-computer_use_agent(target="browser", action="stop_video_recording")
+computer_use(type="browser", action="stop_video_recording")
 
 Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 ~/.openprogram/computer-use/video/20261110-101500-conversation.mp4.</pre>
@@ -18,14 +18,14 @@ Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 <tbody>
 <tr><th scope="row"><code translate="no">start_video_recording</code></th><td><code translate="no">pane</code>：录什么，见下表。<code translate="no">max_duration</code>：秒数，默认 60，最多 600。</td><td>立即返回：面板、像素尺寸和时长上限。Agent 接着操作，录制同时进行。</td></tr>
 <tr><th scope="row"><code translate="no">stop_video_recording</code></th><td><code translate="no">discard</code>：不保存，直接删除</td><td><code translate="no">path</code>、<code translate="no">seconds</code>、<code translate="no">width</code>、<code translate="no">height</code>、<code translate="no">fps</code>、<code translate="no">bytes</code>，以及 <code translate="no">ended</code>：不是这次调用结束时的原因</td></tr>
-<tr><th scope="row"><code translate="no">panes</code></th><td>无</td><td>应答窗口里当前可见的面板：id、类型、标题、尺寸</td></tr>
+<tr><th scope="row"><code translate="no">list_panes</code></th><td>无</td><td>应答窗口里当前可见的面板：id、类型、标题、尺寸</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
 <thead><tr><th scope="col"><code translate="no">pane</code></th><th scope="col">录的是</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">conversation</code></th><td>本会话自己的面板（需在屏幕上可见）</td></tr>
-<tr><th scope="row"><code translate="no">panes</code> 给出的 id</th><td>屏幕上任何中间标签页或画布格子：会话、文件、应用、设置这类内置页面</td></tr>
+<tr><th scope="row"><code translate="no">list_panes</code> 给出的 id</th><td>屏幕上任何中间标签页或画布格子：会话、文件、应用、设置这类内置页面</td></tr>
 <tr><th scope="row"><code translate="no">window</code></th><td>整个窗口。网页视图的位置是空白。</td></tr>
 <tr><th scope="row">网页标签</th><td>暂时拒绝</td></tr>
 </tbody>
@@ -49,7 +49,7 @@ Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
 <tbody>
 <tr><th scope="row">没有 App 窗口应答</th><td>视频录制需要打开着窗口的 OpenProgram 桌面 App；打开后再调用。</td></tr>
 <tr><th scope="row">会话不在屏幕上</th><td>说明这一点，并列出在屏幕上的面板</td></tr>
-<tr><th scope="row">面板不存在或没写</th><td>错误里列出屏幕上的面板，和 <code translate="no">panes</code> 的结果一样</td></tr>
+<tr><th scope="row">面板不存在或没写</th><td>错误里列出屏幕上的面板，和 <code translate="no">list_panes</code> 的结果一样</td></tr>
 <tr><th scope="row">已经在录</th><td>已在录制 tk3fa；先调用 stop_video_recording。</td></tr>
 <tr><th scope="row">没有可停止的</th><td>当前没有录制；先调用 start_video_recording。</td></tr>
 <tr><th scope="row"><code translate="no">max_duration</code> 超出范围</th><td>max_duration 必须在 0 到 600 秒之间</td></tr>

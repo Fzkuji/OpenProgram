@@ -95,6 +95,41 @@ def test_recalled_memory_stays_on_its_turns_message(bench, monkeypatch):
     assert _count(bench.history(-1), MEMORY) == 1
 
 
+def test_a_permission_mode_the_owner_set_leaves_the_turn_on_its_message(bench, monkeypatch):
+    """With a mode set from the selector, each request ends with a note of
+    the current mode. The turn's message is still the person's: recall is
+    searched with their words and the date and memory go in front of their
+    message, so the next turn re-sends everything but that last note."""
+    import copy
+
+    import openprogram.runtime.permissions as permissions
+
+    queries = []
+
+    class Memory:
+        def search(self, query, **_kwargs):
+            queries.append(query)
+            return MEMORY
+
+    monkeypatch.setattr("openprogram.state.memory.get_backend", lambda: Memory())
+    real = permissions.current_permission_request
+
+    def set_by_owner(req):
+        current = copy.copy(real(req))
+        current._permission_version, current.permission_mode = 3, "bypass"
+        return current
+
+    monkeypatch.setattr(permissions, "current_permission_request", set_by_owner)
+    bench.turn("what is my dog called", *_calls(bench, "dog"), _text(bench, "Pip"))
+    bench.turn("thanks", _text(bench, "ok"))
+    assert queries[:1] == ["what is my dog called"]
+    last, first_next = bench.history(1), bench.history(2)
+    note = "Runtime permission setting"
+    assert note in last[-1] and _count(last[:-1], MEMORY) == 1
+    assert_extends(last[:-1], first_next)
+    assert note in first_next[-1]
+
+
 def test_text_before_a_call_stays_in_its_round(bench):
     """The usual reply shape: a line of text, a call, then the answer."""
     model = bench.model
@@ -435,7 +470,7 @@ def test_a_tool_this_turn_cannot_use_stays_listed_and_is_refused(bench, monkeypa
     from tests.support.request_bytes import text_tool
 
     tools = [lookup_tool(), text_tool("ask_user_question", lambda arguments: "asked")]
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool", lambda *_a, **_k: (list(tools), False))
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool", lambda *_a, **_k: (list(tools), False))
     nobody = {"value": True}
     monkeypatch.setattr("openprogram.runtime.permissions.policy.nobody_answers", lambda req: nobody["value"])
     model = bench.model
@@ -476,10 +511,10 @@ def test_a_tool_added_between_turns_is_named(bench, monkeypatch, tmp_path):
     from tests.support.request_bytes import text_tool
 
     bench.turn("look up a", *_calls(bench, "a"), _text(bench, "42"))
-    tools = [lookup_tool(), text_tool("computer_use_agent", lambda arguments: "done")]
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool", lambda *_a, **_k: (tools, True))
+    tools = [lookup_tool(), text_tool("computer_use", lambda arguments: "done")]
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool", lambda *_a, **_k: (tools, True))
     bench.turn("open the page", _text(bench, "ok"))
-    assert _checks(bench, tmp_path)[-1].break_cause == "tools:computer_use_agent"
+    assert _checks(bench, tmp_path)[-1].break_cause == "tools:computer_use"
 
 
 def test_a_restart_between_turns_is_not_a_break(bench, monkeypatch, tmp_path):

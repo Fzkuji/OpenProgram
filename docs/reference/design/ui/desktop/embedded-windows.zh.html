@@ -1,0 +1,130 @@
+<title>嵌入其他应用的窗口</title>
+<meta name="description" content="桌面 App 的标签页怎样放进另一个应用的窗口，聊天预览怎样不移动窗口也显示它：Windows 和 X11 上是子窗口，macOS 上是实时画面加转发输入。">
+<h1>嵌入其他应用的窗口</h1>
+
+<p>类型为 <code translate="no">window</code> 的标签页放着另一个应用的一个窗口。每个平台按它的窗口系统允许的方式来做；标签页、发给 worker 的请求和归还窗口在各平台上都一样。聊天里的小预览可以同时显示同一个窗口，而不移动它。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 210" role="img" aria-label="页面向 App 窗口要句柄和几何信息，把标签页的矩形发给 worker；worker 在 Windows 和 X11 上把窗口变成 App 窗口的子窗口，在 macOS 上把窗口放到标签页后面并转发标签页里的输入，页面显示它的实时画面。">
+<rect class="tile" x="0" y="20" width="190" height="170" rx="8"/>
+<text class="mid" x="95" y="50">页面（标签页）</text>
+<text class="t-soft mid" x="95" y="80">矩形、是否显示</text>
+<text class="t-soft mid" x="95" y="102">指针、按键（macOS）</text>
+<text class="t-soft mid" x="95" y="124">实时画面（macOS）</text>
+<rect class="tile" x="245" y="20" width="190" height="70" rx="8"/>
+<text class="mid" x="340" y="50">App（Electron）</text>
+<text class="t-soft mid" x="340" y="72">句柄、缩放、采集源</text>
+<rect class="tile" x="245" y="120" width="190" height="70" rx="8"/>
+<text class="mid" x="340" y="150">Worker</text>
+<text class="t-soft mid" x="340" y="172">每个平台一个实现</text>
+<line class="ln-faint" x1="190" y1="55" x2="245" y2="55"/>
+<line class="ln-faint" x1="190" y1="155" x2="245" y2="155"/>
+<text x="470" y="62">Windows、X11</text><text class="t-soft" x="470" y="84">App 窗口的子窗口</text>
+<text x="470" y="140">macOS</text><text class="t-soft" x="470" y="162">在标签页后面，输入转发</text>
+<line class="ln-faint" x1="435" y1="155" x2="462" y2="80"/>
+<line class="ln-faint" x1="435" y1="155" x2="462" y2="150"/>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>页面</dt><dd>标签页的矩形和是否显示；macOS 上还有指针、按键和实时画面</dd>
+<dt>App</dt><dd>自己的窗口句柄、缩放和显示器倍率，以及窗口的采集源</dd>
+<dt>Worker</dt><dd>Windows 和 X11 上做成子窗口；macOS 上把窗口放到标签页后面并转发输入</dd>
+</dl>
+</figure>
+
+<h2>各平台</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">平台</th><th scope="col">模式</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td><code translate="no">native</code></td><td><code translate="no">SetParent</code> 挂到 App 的顶层窗口下；边框样式换成 <code translate="no">WS_CHILD</code>，归还时恢复。矩形用客户区的设备像素。</td></tr>
+<tr><th scope="row">Linux，X11</th><td><code translate="no">native</code></td><td><code translate="no">XReparentWindow</code> 挂到 App 的 X 窗口下，和窗口管理器给窗口加边框的方式一样；挂之前先撤回窗口，让窗口管理器放手（ICCCM 4.1.4）。归还时挂回根窗口的原位置，由窗口管理器重新接管。</td></tr>
+<tr><th scope="row">macOS</th><td><code translate="no">stream</code></td><td>窗口不能离开自己的进程。页面显示 ScreenCaptureKit 的实时画面（Chromium 的窗口采集，<code translate="no">chromeMediaSource: "desktop"</code>）。worker 用辅助功能把窗口移到标签页在屏幕上的位置、调成同样大小，并用 SkyLight 转发标签页里的事件。</td></tr>
+<tr><th scope="row">Linux，Wayland</th><td>无</td><td>任何客户端都不能摆放别人的界面；报告为不可用。</td></tr>
+</tbody>
+</table>
+
+<h2>标签页和预览</h2>
+<p>每个显示窗口的页面是一个<em>持有者</em>，id 由页面自己定。worker 按窗口记下有哪些持有者、各自是否摆放它。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">持有者</th><th scope="col">窗口</th></tr></thead>
+<tbody>
+<tr><th scope="row">有任一标签页</th><td>按上面的方式摆放。布局请求只认摆放它的持有者；预览发来的布局请求只回复窗口状态。</td></tr>
+<tr><th scope="row">只有预览</th><td>观察：记下它用于输入和状态，留在原处、原大小、原来的父窗口里，也不取消隐藏。</td></tr>
+<tr><th scope="row">最后一个标签页关闭，还有预览</th><td>先还回原位，再在它现在的位置观察它。</td></tr>
+<tr><th scope="row">最后一个持有者放手</th><td>摆放过就归还；否则直接忘掉。</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">平台</th><th scope="col">标签页转发输入</th><th scope="col">预览转发输入</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>是，SkyLight</td><td>是，SkyLight；点按窗口当前的位置换算到屏幕</td></tr>
+<tr><th scope="row">Windows</th><td>否，子窗口自己接收</td><td>是，用 <code translate="no">PostMessage</code> 投递</td></tr>
+<tr><th scope="row">X11</th><td>否，子窗口自己接收</td><td>否，预览只显示</td></tr>
+</tbody>
+</table>
+
+<h2>决定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows 和 X11 用窗口系统自己的嵌入</th><td>窗口仍是那个应用真正的窗口：没有延迟，输入、菜单和辅助功能都是它自己的。窗口管理器就是这样嵌入窗口的。</td></tr>
+<tr><th scope="row">macOS 用实时画面加转发输入</th><td>那里只有这一条路；Codex Computer Use 也让它操作的窗口保持实时采集，输入走的是 computer_use 后端已经在用的路线（参照 cua-driver）。</td></tr>
+<tr><th scope="row">macOS 上窗口待在标签页后面，大小相同</th><td>菜单、弹窗和输入法候选框是应用在窗口旁边另开的窗口，所以会出现在标签页显示窗口的位置上。应用把窗口提到前面时，它正好盖住标签页。</td></tr>
+<tr><th scope="row">画面按窗口原大小从标签页左上角画起</th><td>显示的内容和后面的窗口对齐；标签页里的一个点换算到窗口只需乘页面缩放。</td></tr>
+<tr><th scope="row">输入走一个队列、一个线程</th><td>事件按用户操作的顺序到达应用；移动和滚轮在页面里每帧合并一次，不会堵住连接。</td></tr>
+<tr><th scope="row">按键先进一个隐藏的输入框</th><td>输入法可以在那里组字；组好的文字按文字发送，其他按键按物理键码发送，任何键盘布局下快捷键都能用。不经按键进来的文字（听写、表情面板）也按文字发送。</td></tr>
+<tr><th scope="row">采集源经 <code translate="no">getUserMedia</code> 打开</th><td>不需要点击，所以刷新后恢复的标签页能自己重新显示窗口。</td></tr>
+<tr><th scope="row">预览从不移动窗口</th><td>预览跟着 Agent 或用户正在做的事；为了缩略图把窗口挪走，会改变它显示的内容。回复里的窗口位置让预览知道窗口的宽高比。</td></tr>
+<tr><th scope="row">Windows 预览的输入在后台投递</th><td>和 computer_use 后端后台点击走同一条路：鼠标消息发给点下面最深的子窗口、用它的客户区坐标，滚轮用屏幕坐标，按键发给线程的焦点窗口，都走一个队列。投递的按键不改变键盘状态，所以可打印的键按字符发送，Ctrl 加字母按控制字符发送，也就是 <code translate="no">TranslateMessage</code> 本来会生成的消息；要读键盘状态的快捷键需要窗口在前台。</td></tr>
+<tr><th scope="row">computer_use 从窗口树里找嵌入的窗口</th><td>嵌入的窗口是 App 窗口的子窗口，只遍历顶层窗口会漏掉它。后端找 OpenProgram App 窗口下属于别的进程的子窗口（Windows：进程映像名 <code translate="no">openprogram*</code>；X11：<code translate="no">WM_CLASS</code> 为 <code translate="no">openprogram*</code>，用 <code translate="no">XQueryTree</code>），列在它所属的应用下。不读 worker 的记录，所以智能体子进程里的后端也能看到；屏幕矩形取自窗口本身。</td></tr>
+<tr><th scope="row">App 先归还窗口再关闭</th><td>子窗口会随父窗口一起关闭。页面先归还窗口再回复；2 秒后 App 无论如何都会关闭。</td></tr>
+</tbody>
+</table>
+
+<h2>跟随窗口</h2>
+<p>预览不按定时器去看。窗口移动、改变大小、最小化或恢复、改名或关闭时，由操作系统告知；Worker 发出以窗口 ID 为键的 <code translate="no">embedded_windows</code>，预览在下一个动画帧读一次窗口状态。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">变化</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">窗口，macOS</th><td>每个进程一个辅助功能观察者：窗口上的 <code translate="no">AXMoved</code>、<code translate="no">AXResized</code>、最小化和恢复、<code translate="no">AXTitleChanged</code>、<code translate="no">AXUIElementDestroyed</code>；应用上的焦点窗口变化、隐藏、显示和激活。kqueue 的 <code translate="no">NOTE_EXIT</code> 接住不关窗口就退出的进程。一个 CFRunLoop 线程</td></tr>
+<tr><th scope="row">窗口，Windows</th><td>在窗口所属进程上 <code translate="no">SetWinEventHook</code>：位置、名称、显示、隐藏、销毁、最小化和前台，只算窗口对象本身。一个线程处理这些消息</td></tr>
+<tr><th scope="row">窗口，X11</th><td>用单独的连接在窗口上选 <code translate="no">StructureNotifyMask</code> 和 <code translate="no">PropertyChangeMask</code>：configure、map、unmap、reparent、destroy、名称和状态。一个线程在 <code translate="no">select</code> 里等</td></tr>
+<tr><th scope="row">App 窗口</th><td>Electron 的 <code translate="no">move</code> 和 <code translate="no">resize</code>，作为 <code translate="no">embedded-window:host-changed</code> 发给页面；页面缩放就是页面自己的 <code translate="no">resize</code></td></tr>
+<tr><th scope="row">标签页在页面里的位置</th><td><code translate="no">ResizeObserver</code>、一个裁成标签页自身矩形的交叉观察器（位置变了而大小没变时）、滚动，以及页面显示或隐藏</td></tr>
+<tr><th scope="row">丢失的画面</th><td>窗口变化、页面重新显示或重新获得焦点时重新采集</td></tr>
+</tbody>
+</table>
+<p>Worker 的线程随预览显示的第一个窗口启动，随最后一个结束。启动不了时（没有辅助功能权限），连接的回复里没有 <code translate="no">follows</code>，这个预览每 1.5 秒读一次状态并以同样的间隔重试丢失的画面，只在它打开期间。</p>
+
+<h2>请求</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">连接动作</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">embedded_windows</code></th><td>列出其他应用的普通窗口，不含 App 自己的进程</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_attach</code></th><td><code translate="no">window_id</code>、<code translate="no">holder</code>（默认 <code translate="no">"tab"</code>）、<code translate="no">place</code>（默认 true），摆放时还有 <code translate="no">host</code>。摆放或观察窗口；回复模式、标题、<code translate="no">frame</code>（屏幕矩形）、<code translate="no">placed</code>、<code translate="no">input</code>：这个持有者是否转发输入，以及 Worker 按事件跟随窗口时的 <code translate="no">follows</code></td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_layout</code></th><td><code translate="no">holder</code>、<code translate="no">host</code>：标签页移动、改变大小、隐藏或显示；预览发来的忽略</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_state</code></th><td>窗口是否还开着、标题和位置；带 <code translate="no">holder</code> 时还有这个持有者的 <code translate="no">input</code></td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_detach</code></th><td><code translate="no">holder</code> 放手；结果见持有者表</td></tr>
+<tr><th scope="row"><code translate="no">embedded_window_input</code></th><td>指针、滚轮、按键、文字和焦点事件，x、y 从窗口左上角算起；不回复。<code translate="no">input</code> 为 true 时才接收</td></tr>
+</tbody>
+</table>
+<p class="note">每个回复都是一条 <code translate="no">embedded_window</code> 消息，带着请求的 <code translate="no">request_id</code>。worker 停止时会归还它接管的所有窗口。</p>
+
+<h2>边界情况</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">窗口被关闭</th><td>标签页说明这一点，并重新列出打开的窗口</td></tr>
+<tr><th scope="row">恢复的标签页的窗口 ID 现在指向另一个应用的窗口</th><td>立即归还；标签页显示窗口列表</td></tr>
+<tr><th scope="row">以管理员身份运行的程序的窗口（Windows）</th><td>系统拒绝；显示原因</td></tr>
+<tr><th scope="row">窗口在另一个桌面空间（macOS）</th><td>没有采集源；标签页说明这一点</td></tr>
+<tr><th scope="row">标签页被隐藏</th><td>Windows 和 X11 隐藏子窗口；macOS 让窗口留在 App 后面</td></tr>
+<tr><th scope="row">系统快捷键、受保护的视频（macOS）</th><td>仍由系统处理；受保护的视频采集出来是黑的</td></tr>
+</tbody>
+</table>
+
+<p class="note">代码：<a href="https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/programs/tools/computer_use/computer_use/desktop/embedding"><code translate="no">computer_use/desktop/embedding/</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/server/ws_actions/embedded_window.py"><code translate="no">ws_actions/embedded_window.py</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/windows/embedded-windows.js"><code translate="no">apps/desktop/main/windows/embedded-windows.js</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/web/components/center-tabs/window"><code translate="no">apps/web/components/center-tabs/window/</code></a>。</p>
+
+<h2>实现状态</h2>
+<p>摆放在三个平台的真实桌面上都验证过：macOS 在 App 里，Windows 11（Arm64）用记事本，X11 在 Xvfb 上的 Openbox 下。Wayland 仍然不可用。持有者、观察、Windows 预览输入和 computer_use 找到嵌入窗口有单元测试覆盖，还没在真实的 Windows 或 X11 桌面上验证。</p>
+<p>按事件跟随在三个平台上都有单元测试；Windows 和 X11 的事件来源以及 macOS 观察者的通知还没在真实桌面上验证。</p>

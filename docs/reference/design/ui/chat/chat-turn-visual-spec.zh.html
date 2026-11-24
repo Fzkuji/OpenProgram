@@ -224,7 +224,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">刻度</th><td>每条用户消息一条，静息 9px，间距 10px，可视的那条更亮。过长时 rail 内部滚动。</td></tr>
+<tr><th scope="row">刻度</th><td>每条用户消息一条，静息 9px，间距 10px，可视的那条更亮。只有章节的刻度更长：给有任务的轮次再设一档长度，读起来是说不清的差别。过长时 rail 内部滚动，不显示任何滚动条，应用的浮动滑块也不出现：刻度本身就是位置，还有刻度没露出的那一端会淡出。</td></tr>
+<tr><th scope="row">颜色</th><td>刻度的颜色就是它在对话里的位置：字标的渐变沿整条刻度条铺开，第一轮是蓝色，最后一轮是紫色，上下两端一眼可分。当前可见和指针指向的刻度用亮文字色；章节是纯紫色且更粗</td></tr>
 <tr><th scope="row">位置</th><td>聊天区左缘、侧栏分隔线旁，用行内尺寸容器的 <code translate="no">100cqw</code> 定位</td></tr>
 <tr><th scope="row">指针</th><td>Y 映射到最近的刻度，该刻度最长到 36px，旁边打开预览卡（截断文本、附件标签）。绝不渲染全量列表。</td></tr>
 <tr><th scope="row">点击、Enter</th><td>平滑滚动到该消息并短暂高亮</td></tr>
@@ -265,7 +266,7 @@
 <tr><th scope="row">有持久化文件记录，或有直接写文件工具</th><td>挂载卡片</td></tr>
 <tr><th scope="row">无记录</th><td>无卡片，无审阅</td></tr>
 <tr><th scope="row">旧回合，进入视口时加载</th><td>不可见探针；空结果保持隐藏</td></tr>
-<tr><th scope="row">加载失败</th><td>“无法加载文件修改。”和重试</td></tr>
+<tr><th scope="row">读取失败</th><td>界面不变；按退避重新读取</td></tr>
 <tr><th scope="row">写入全部失败</th><td>“本轮文件操作未成功执行。”</td></tr>
 </tbody>
 </table>
@@ -275,8 +276,9 @@
 <thead><tr><th scope="col">范围</th><th scope="col">来源</th><th scope="col">包含</th><th scope="col">撤回</th></tr></thead>
 <tbody>
 <tr><th scope="row">本轮</th><td>本轮修改日志</td><td>主修改集；关联的子修改集按实际产生者分组</td><td>每条记录可恢复且之后未被改动时</td></tr>
-<tr><th scope="row">当前分支</th><td>活动谱系的修改投影</td><td>已完成回合和显式的还原、恢复、重新应用；不含同级分支、普通 Bash 和外部写入</td><td>只能从具体回合或检查点开始</td></tr>
-<tr><th scope="row">工作区</th><td>Git 已跟踪差异和 <code translate="no">ls-files --others --exclude-standard</code></td><td>未提交文件，遵守 <code translate="no">.gitignore</code>；非 Git 显示不可用</td><td>无</td></tr>
+<tr><th scope="row">未暂存</th><td>Git 工作区对比暂存区，以及 <code translate="no">ls-files --others --exclude-standard</code></td><td>尚未暂存的改动，包括未跟踪文件，遵守 <code translate="no">.gitignore</code>；非 Git 显示不可用</td><td>无；可暂存</td></tr>
+<tr><th scope="row">已暂存</th><td>Git 暂存区对比 HEAD</td><td>已暂存、等待下一次提交的改动</td><td>无；可取消暂存</td></tr>
+<tr><th scope="row">分支</th><td>活动谱系的修改投影</td><td>已完成回合和显式的还原、恢复、重新应用；不含同级分支、普通 Bash 和外部写入</td><td>只能从具体回合或检查点开始</td></tr>
 </tbody>
 </table>
 <table class="stack">
@@ -284,11 +286,11 @@
 <tbody>
 <tr><th scope="row">审阅、文件行</th><td>打开唯一确定的 <code translate="no">r:&lt;sessionId&gt;:&lt;assistantMsgId&gt;</code> 中央标签页；文件行同时选中路径</td><td>聊天内不加载差异；重复点击只聚焦或更新选择</td></tr>
 <tr><th scope="row">放置</th><td>未分栏时放在现有组内聊天右侧；完整分栏时作为普通活动标签页</td><td>不替换已有同伴，不加第三栏，不建第二个标签存储</td></tr>
-<tr><th scope="row">头部</th><td>标题、来源和总数；然后范围切换和类型菜单（全部类型、代码、测试、文档、大文件）</td><td>页面色，细线分隔</td></tr>
+<tr><th scope="row">头部</th><td>一行：范围菜单带增删行数；… 菜单里有让 agent 审阅和文件类型（全部、代码、测试、文档、大文件）。见<a href="../workspace/review-pane.zh.html#header">审阅面板</a></td><td>页面色，细线分隔</td></tr>
 <tr><th scope="row">栏宽 900px 以下</th><td>文件列表收进选中文件的头部：完整文件名、目录、执行者、产生回合、行数、<em>n / N</em> 菜单</td><td>900px 起：260px 列表，文件名在目录上方</td></tr>
 <tr><th scope="row">差异</th><td>无文件头；hunk 以行范围标注；长行换行；新增或删除的文件只有一列行号；分页在下方</td><td>一次只挂载一个有界差异</td></tr>
 <tr><th scope="row">预览</th><td>渲染当前的 Markdown、图片或 PDF</td><td>读取文件现在的样子；已删除文件没有预览</td></tr>
-<tr><th scope="row">行评论</th><td>点击行；多条评论带结构化位置进入下一条提示</td><td>不直接改文件，不声称已审查</td></tr>
+<tr><th scope="row">行评论、暂存、让 agent 审阅</th><td>见<a href="../workspace/review-pane.zh.html">审阅面板</a></td><td>评论不直接改文件；审阅意见不声称已修复</td></tr>
 <tr><th scope="row">大文件、二进制</th><td>统计、原因、打开文件</td><td>不完整渲染</td></tr>
 <tr><th scope="row">撤回冲突</th><td>审阅定位冲突文件</td><td>没有强制捷径</td></tr>
 </tbody>
@@ -308,7 +310,7 @@
 <tbody>
 <tr><th scope="row">精确归属</th><td>同 Codex：回合统计只来自已提交的修改</td></tr>
 <tr><th scope="row">独立审阅面</th><td>同两者：聊天放摘要，审阅放导航、内容和评论</td></tr>
-<tr><th scope="row">会话和仓库差异</th><td>一个标签页内三个范围</td></tr>
+<tr><th scope="row">会话和仓库差异</th><td>一个标签页内四个范围</td></tr>
 <tr><th scope="row">检查点恢复</th><td>回合级撤回，先完整预检，记录为新的日志事务</td></tr>
 <tr><th scope="row">不做</th><td>不围绕 Bash 扫描目录归属，不做近似回合差异，不静默部分恢复</td></tr>
 </tbody>
@@ -355,6 +357,7 @@
 <h2 id="chat-failures">失败的回复</h2>
 <ul>
 <li>保留部分回答和有序轨迹。其后、消息动作之前有一条终态通知：本地化标题，技术细节按需以纯文本展开。不增加自动重试。</li>
+<li>通知显示到读者发出更新的消息为止。之后不再显示，只有报错的回复也不留一行：已经被回应过的报错不需要读者再做什么，三次失败的尝试会在成功的那条消息上方读成三次警报。</li>
 <li>部分块和失败详情是分开的字段。节点输出为模型上下文和非 Web 使用方保留错误文本；Web 映射器从有序文本块恢复回答。</li>
 <li>节点在最终失败事件前持久化详情、原因、可重试性和重试延迟，历史恢复同一通知。旧的错误输出可识别，不改写历史，也不在通知里重复回答。</li>
 <li>取消、审批、嵌套详情、重试和分支语义、Goal 报告不变。Provider 错误分类仍为权威；没有第二个错误存储。</li>
@@ -363,7 +366,7 @@
 <summary>验收</summary>
 <ul>
 <li>公开回合输出文字和工具后失败：实时和冷历史都显示回答、轨迹和一条通知。</li>
-<li>空的和旧的失败回复保持可见。成功和取消的回复没有通知。详情在窄布局和暗色下可用。</li>
+<li>空的和旧的失败回复保持可见，直到后面有更新的消息。成功和取消的回复没有通知。详情在窄布局和暗色下可用。</li>
 <li>回归还覆盖浏览器权限继承和高层委派。绑定页面测试提供显式绑定，并期望同一观察失败三次后停止，带具体原因。</li>
 </ul>
 </details>
@@ -392,7 +395,7 @@
 <tr><th scope="row">释放</th><td>传输交接或失败后。完成时只清除未变的捕获草稿。</td></tr>
 <tr><th scope="row">排队</th><td>当前回合后按序分发。会话队列和编辑顺序相互独立；附件走普通队列投递。</td></tr>
 <tr><th scope="row">已消费的引导输入</th><td>显示在前后回复内容之间。其用户节点独立；回复保存有序边界，流式、取消和历史共用。旧记录用前驱边，绝不猜测文本偏移。</td></tr>
-<tr><th scope="row">投递</th><td>回执轮询确认同一命令，不改变等待标签，有界，且在 provider 静默时也工作。待定或不确定的项不能重发、编辑或移除。明确拒绝保留排队草稿；传输失败保持不确定，绝不重发。</td></tr>
+<tr><th scope="row">投递</th><td>同一命令在它的执行或会话的运行变化、或连接重新打开时再问一次，不改变等待标签，且在 provider 静默时也工作。待定或不确定的项不能重发、编辑或移除。明确拒绝保留排队草稿；传输失败保持不确定，绝不重发。</td></tr>
 <tr><th scope="row">流式引导</th><td>接受的文本中断进行中的文字或推理，保留已输出内容，关闭请求，在下一次模型请求前应用持久化命令。工具调用参数、运行中的工具和结构化输出等到安全点；不重放或取消工具。</td></tr>
 <tr><th scope="row">待引导时停止</th><td>保留部分回复及其历史位置。被取消拒绝的命令保持为带发送按钮的未发送草稿，绝不自动变成新回合。投影只能用比较并设置，把确切的顶层回合从其用户节点推进到其助手节点。</td></tr>
 </tbody>

@@ -60,7 +60,7 @@ def test_small_window_default_matches_provider_output_limit(requested, expected)
         return await events.result()
 
     if expected is None:
-        with pytest.raises(ValueError, match="Protected request"):
+        with pytest.raises(ValueError, match="does not fit"):
             asyncio.run(run())
         assert not seen
     else:
@@ -204,7 +204,7 @@ def test_native_schema_is_part_of_fixed_input_budget():
     options = SimpleStreamOptions(
         max_tokens=512, response_format=JsonSchemaOutput(schema=schema)
     )
-    with pytest.raises(ValueError, match="Protected request"):
+    with pytest.raises(ValueError, match="does not fit"):
         asyncio.run(RequestCompactor().prepare(context, model, options))
 
 
@@ -410,7 +410,7 @@ def test_fallback_rechecks_actual_model_window(monkeypatch):
                 model=primary, convert_to_llm=lambda messages: messages, max_tokens=512
             ),
         )
-        with pytest.raises(ValueError, match="Protected request"):
+        with pytest.raises(ValueError, match="does not fit"):
             await events.result()
 
     asyncio.run(run())

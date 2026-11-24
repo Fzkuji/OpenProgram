@@ -60,14 +60,34 @@ class CancellationToken:
         return self._event.is_set()
 
     def retire(self) -> None:
-        """End this token's life. Later ``cancel()`` calls do nothing."""
+        """End this token's life. Later ``cancel()`` calls do nothing.
+
+        The first retirement announces that the session's turn ended
+        (``TURN_ENDED_TOPIC``): what waits for the conversation to go quiet
+        looks again then."""
         with self._lock:
+            first = not self._retired
             self._retired = True
+        if first:
+            turn_ended(self.session_id)
 
     @property
     def retired(self) -> bool:
         with self._lock:
             return self._retired
+
+
+#: A turn of a conversation ended or its run slot was given back, keyed by
+#: the session (``host/_platform/changes.py``). Loops holding something for
+#: a busy conversation (agent notices, queued messages, command exit
+#: notices) wait on it instead of looking again every few seconds.
+TURN_ENDED_TOPIC = "turn_ended"
+
+
+def turn_ended(session_id: str | None) -> None:
+    """Announce that ``session_id`` may have gone quiet."""
+    from openprogram.host._platform import changes
+    changes.signal(TURN_ENDED_TOPIC, *((session_id,) if session_id else ()))
 
 
 # Internal token alias retained for code that imports the cancellation type.

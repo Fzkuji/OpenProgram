@@ -257,8 +257,11 @@ def _removed_cli_tokens(repository: Repository, path: str, found: PageReferences
     if change is None:
         return
     for command, token in sorted(change.removed):
-        # A flag other commands still take only counts on a page about this command.
-        if token not in change.vanished and not _names_command(found, command):
+        # A flag other commands still take only counts on a page about this command, and
+        # so does a removed subcommand: its name is often an ordinary word as well (a
+        # project id, a style), and alone it says nothing about the group it left.
+        about_command = token not in change.vanished or (bool(command) and not token.startswith("-"))
+        if about_command and not _names_command(found, command):
             continue
         lines = list(dict.fromkeys(_whole_span_lines(found, token)))
         if not command and not token.startswith("-") and not _names_command(found, ("openprogram", token)):

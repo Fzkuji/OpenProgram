@@ -62,13 +62,33 @@ def test_a_file_younger_than_a_day_is_kept_whatever_names_it(tmp_path):
     assert young.exists()
 
 
-def test_when_any_conversation_cannot_be_read_nothing_is_removed(tmp_path):
+def test_when_any_conversation_cannot_be_read_nothing_is_removed(tmp_path, monkeypatch):
     results = _results(tmp_path)
     old = _old(results / "ccc.txt")
     folder = _session(tmp_path, "s1", "{}")
-    (folder / "broken.jsonl").write_bytes(b"\xff\xfe\x00bad")
+    (folder / "broken.jsonl").write_bytes(b"{}")
+    read = tool_output_gc._names_in
+
+    def unreadable(path):
+        if path.name == "broken.jsonl":
+            raise PermissionError(path)
+        return read(path)
+
+    monkeypatch.setattr(tool_output_gc, "_names_in", unreadable)
     assert tool_output_gc.collect(results, [folder]) == []
     assert tool_output_gc.collect(results, None) == []
+    assert old.exists()
+
+
+def test_a_name_cut_by_a_piece_boundary_is_still_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(tool_output_gc, "_CHUNK_BYTES", 64)
+    monkeypatch.setattr(tool_output_gc, "_OVERLAP_BYTES", 48)
+    results = _results(tmp_path)
+    old = _old(results / "eee-long-name.txt")
+    for padding in range(40, 80):
+        record = "x" * padding + " tool_results/eee-long-name.txt " + "y" * 200 + "\xe4\xb8\xad"
+        folder = _session(tmp_path, f"s{padding}", record)
+        assert "eee-long-name.txt" in tool_output_gc.referenced_names([folder])
     assert old.exists()
 
 

@@ -50,6 +50,7 @@ const sidebarStubs = {
   '@/lib/runtime-bridge/state': 'export const runtimeState={};',
   '@/lib/tabs/navigation/open-session': 'export const openNewChat=()=>"draft";',
   './use-stable-scroll-end': 'export const useStableScrollEnd=()=>{};',
+  './update-badge': 'export const UpdateBadge=()=>null;',
 };
 const rightStubs = {
   'next/navigation': 'export const usePathname=()=>"/s/a";',

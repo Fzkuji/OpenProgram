@@ -27,7 +27,9 @@ import json
 import os
 from dataclasses import dataclass
 
-from .._http import post_json
+from openprogram.models.auth.services import service_key
+
+from .._http import ProviderHTTPError, post_json
 from ..registry import SearchResult
 
 
@@ -43,12 +45,15 @@ _WEB_SEARCH_TOOL = {
 }
 
 
+CHINA_BASE_URL = "https://api.moonshot.cn/v1"
+#: The address a key last worked at, so later searches go there first.
+_worked_at: dict[str, str] = {}
+
+
 def _resolve_api_key() -> str:
-    for var in _KEY_ENV_VARS:
-        value = os.environ.get(var, "").strip()
-        if value:
-            return value
-    return ""
+    """Moonshot AI's key (``services.service_key``): the company's stored
+    keys first, then ``KIMI_API_KEY`` / ``MOONSHOT_API_KEY``."""
+    return service_key("moonshot-search")
 
 
 def _resolve_base_url() -> str:
@@ -92,9 +97,12 @@ class MoonshotProvider:
         key = _resolve_api_key()
         if not key:
             raise RuntimeError(
-                "Kimi/Moonshot web_search needs KIMI_API_KEY or MOONSHOT_API_KEY."
+                "Kimi/Moonshot web_search needs a Moonshot AI key: add one on the "
+                "Moonshot AI provider, or set KIMI_API_KEY."
             )
         base_url = _resolve_base_url()
+        if base_url == DEFAULT_BASE_URL and _worked_at.get(key[-8:]):
+            base_url = _worked_at[key[-8:]]
         model = _resolve_model()
         endpoint = f"{base_url}/chat/completions"
 
@@ -112,7 +120,18 @@ class MoonshotProvider:
             if model in THINKING_DISABLED_MODELS:
                 body["thinking"] = {"type": "disabled"}
 
-            data = _post(endpoint, body, key, base_url)
+            try:
+                data = _post(endpoint, body, key, base_url)
+            except ProviderHTTPError as exc:
+                # A key is Moonshot's, not a region's: one the global address
+                # refuses is tried at the China one (unless an address is set).
+                if exc.status != 401 or base_url != DEFAULT_BASE_URL \
+                        or os.environ.get("MOONSHOT_BASE_URL", "").strip():
+                    raise
+                base_url = CHINA_BASE_URL
+                endpoint = f"{base_url}/chat/completions"
+                data = _post(endpoint, body, key, base_url)
+            _worked_at[key[-8:]] = base_url
 
             # Top-level search_results show up once Kimi has actually
             # called $web_search — accumulate across rounds.

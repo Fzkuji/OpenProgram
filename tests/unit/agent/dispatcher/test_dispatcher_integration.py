@@ -174,7 +174,7 @@ def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(t
         assert profile["system_prompt"] == "Frozen verifier"
         return original_model(profile, override)
     monkeypatch.setattr(D, "_resolve_model", resolve)
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool", lambda *_, **_kwargs: ([get_agent_tool("bash")], True))
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool", lambda *_, **_kwargs: ([get_agent_tool("bash")], True))
     text_stream = make_text_stream_fn(["verified"])
     async def stream(model, context, options):
         assert not context.tools
@@ -203,7 +203,7 @@ def test_verifier_tools_reach_the_provider_without_tool_search(tmp_db, monkeypat
         profile_snapshot={"id": "main", "system_prompt": "Frozen verifier", "tools": []},
         tools_override=[], model_override="frozen/model", branch_from=None, advance_head=False,
     )
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool",
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool",
                         lambda *_, **_kwargs: ([get_agent_tool("read"), observe], False))
     text_stream = make_text_stream_fn(["verified"])
     async def stream(model, context, options):

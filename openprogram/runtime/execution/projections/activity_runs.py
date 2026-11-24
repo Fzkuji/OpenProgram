@@ -186,10 +186,16 @@ def _source_events(
     if source.reply is not None:
         steps = _steps(index, source.reply)
         paired = _pair_sub_agents(index, source.reply, steps, jobs, index_of, started)
+        owners = _task_owners(source.reply)
         for step in steps:
             if step.id not in paired.consumed_steps:
                 events.append(_step_event(step, started))
         events.extend(paired.events)
+        if owners:
+            for event in events:
+                task = owners.get(event.get("tool_call_id") or "")
+                if task:
+                    event["task"] = task
         replied = _replied_event(source.reply, started)
         if replied is not None:
             events.append(replied)
@@ -223,12 +229,18 @@ def _chart_value(value: Any, depth: int = 0) -> Any:
     return value
 
 
+def _owned(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The task the call was made for, when its reply stamped one (``state/task_blocks.py``)."""
+    task = event.get("task")
+    return {"task": task} if task else {}
+
+
 def _chart_step(event: Mapping[str, Any]) -> dict[str, Any]:
     result = event["result"]
     # A failed step shows why. Any other step is named by how its result opens at most.
     kept = result[:CHART_ERROR_CHARS if event["failed"] else CHART_RESULT_PEEK] if isinstance(result, str) else None
     return {"kind": "step", "at": event["at"], "node_id": event["node_id"], "name": event["name"],
-            "input": _chart_value(event["input"]), "failed": event["failed"], "result": kept}
+            "input": _chart_value(event["input"]), "failed": event["failed"], "result": kept, **_owned(event)}
 
 
 def _job_steps(job: Any, index: Any, chart: ChartReads, started: float) -> list[dict[str, Any]]:
@@ -278,6 +290,7 @@ def _chart_event(event: Mapping[str, Any], index: Any, chart: ChartReads, jobs: 
         "conversation": event["conversation"],
         "children": [item for child in event["children"] if (item := _chart_event(child, index, chart, jobs, started)) is not None],
         "steps": _job_steps(job, index, chart, started) if job is not None else [],
+        **_owned(event),
     }
 
 
@@ -530,6 +543,25 @@ def _revision(index: Any, source: _Source, reads: ExecutionReads) -> str:
 # Steps
 
 
+def _task_owners(reply: Any) -> dict[str, str]:
+    """Each call of the reply that was made for a task, by its call id.
+    The reply's stored blocks carry the stamp (``state/task_blocks.py``)."""
+    extra = _metadata(reply).get("extra")
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except ValueError:
+            return {}
+    blocks = extra.get("blocks") if isinstance(extra, Mapping) else None
+    if not isinstance(blocks, list):
+        return {}
+    return {
+        block["tool_call_id"]: block["task"] for block in blocks
+        if isinstance(block, Mapping) and block.get("type") == "tool"
+        and isinstance(block.get("tool_call_id"), str) and isinstance(block.get("task"), str) and block["task"]
+    }
+
+
 def _step_ids(index: Any, reply: Any) -> list[str]:
     return [node.id for node in _child_steps(index, reply)]
 
@@ -635,12 +667,27 @@ def _started_in_run(index: Any, job: Any, in_run: set[str]) -> bool:
     return False
 
 
+def _calling_step(index: Any, job: Any, steps: Mapping[str, Any]) -> Any:
+    """The run's step the job was started from: its own call, or the program
+    call whose helper started it."""
+    for caller in _caller_ids(job):
+        seen: set[str] = set()
+        cursor: str | None = caller
+        while cursor and cursor not in seen:
+            if cursor in steps:
+                return steps[cursor]
+            seen.add(cursor)
+            node = index.get(cursor)
+            cursor = node.caller if node is not None else None
+    return None
+
+
 def _is_sub_agent_step(step: Any) -> bool:
     if step.name == "agent":
         return True
-    # Conversations recorded while computer_use_agent could hand a task to a new agent keep those calls.
+    # Conversations recorded while computer_use could hand a task to a new agent keep those calls.
     inputs = _parsed_input(step)
-    return step.name == "computer_use_agent" and isinstance(inputs, Mapping) and inputs.get("context") == "fresh"
+    return step.name == "computer_use" and isinstance(inputs, Mapping) and inputs.get("context") == "fresh"
 
 
 def _prompt_matches(step: Any, job: Any) -> bool:
@@ -651,7 +698,7 @@ def _prompt_matches(step: Any, job: Any) -> bool:
     if inputs.get("prompt") == prompt and prompt:
         return True
     brief = inputs.get("brief")
-    return step.name == "computer_use_agent" and isinstance(brief, str) and bool(brief) and brief in prompt
+    return step.name == "computer_use" and isinstance(brief, str) and bool(brief) and brief in prompt
 
 
 def _pair_sub_agents(
@@ -683,7 +730,15 @@ def _pair_sub_agents(
         pair(left_on_reply[0], healthy[0])
 
     seen = {job.id for job in owned}
-    events = [_job_event(job, pairs.get(job.id), jobs, index, index_of, seen, 0, started) for job in owned]
+    by_id = {step.id: step for step in steps}
+    events = []
+    for job in owned:
+        event = _job_event(job, pairs.get(job.id), jobs, index, index_of, seen, 0, started)
+        if event["tool_call_id"] is None:
+            # Started inside a program's call: the task is that call's.
+            calling = _calling_step(index, job, by_id)
+            event["tool_call_id"] = _string(_metadata(calling).get("tool_call_id")) if calling is not None else None
+        events.append(event)
     consumed = {step.id for step in pairs.values()}
     for step in free_steps.values():
         if _step_failed(step):
@@ -721,6 +776,7 @@ def _job_event(
         "error": job.error[:EVENT_TEXT_CHARS] if isinstance(job.error, str) and job.error else None,
         "created_at": created, "closed_as": status,
         "conversation": {"session_id": session, "head_id": job.head_id} if session and not never_started else None,
+        "tool_call_id": _string(_metadata(step).get("tool_call_id")) if step is not None else None,
         **_agent_facts(job),
         "children": _job_children(job, jobs, index, index_of, seen, depth, started),
     }
@@ -775,7 +831,7 @@ def _never_started_event(step: Any, started: float) -> dict[str, Any]:
     error = _output_text(step)
     return {
         "kind": "subagent", "at": _number(step.created_at) or started, "ended_at": None, "job_id": None,
-        "name": "Sub-agent", "agent_id": None, "context": None, "status": None, "never_started": True,
+        "tool_call_id": _string(_metadata(step).get("tool_call_id")), "name": "Sub-agent", "agent_id": None, "context": None, "status": None, "never_started": True,
         "failed": True, "brief": brief, "brief_truncated": brief_clipped, "result": None, "result_truncated": False,
         "error": error[:EVENT_TEXT_CHARS] if error else None, "created_at": None, "closed_as": None,
         "conversation": None, "children": [],

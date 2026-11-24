@@ -15,8 +15,13 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+from openprogram.host._platform import changes
 from openprogram.host._platform.filesystem import replace_file
 
+#: Signalled, keyed by the recording's id, when its status changes: a step is
+#: added, typing into a new element begins, or it stops. The recording bar
+#: follows it as a stream (``GET /api/recordings/{id}/events``).
+TOPIC = "recordings"
 MAX_SECONDS = 600
 WARN_SECONDS = 30
 MAX_IMAGES = 60
@@ -114,6 +119,7 @@ class Recording:
                 self._file.close()
                 self._file = None
             self._write_meta()
+        changes.signal(TOPIC, self.id)
 
     def discard(self) -> None:
         self.finish("discarded")
@@ -162,6 +168,7 @@ class Recording:
         self._file.flush()
         if event.get("type") not in {"say", "note"}:
             self._steps += 1
+            changes.signal(TOPIC, self.id)
 
     def add(self, event: dict, *, screenshot: Callable[[], bytes | None] | None = None) -> None:
         """Record one event from the capture backend.
@@ -229,6 +236,8 @@ class Recording:
             self._flush_typing()
             base = {k: v for k, v in event.items() if k not in {"char", "backspace", "secure", "t"}}
             typing = self._typing = _Typing(first_t=int(event["t"]), last=time.monotonic(), event=base)
+            # The bar counts typing that has begun as a step.
+            changes.signal(TOPIC, self.id)
         typing.last = time.monotonic()
         if event.get("secure"):
             typing.secure = True
@@ -335,5 +344,5 @@ def active() -> Recording | None:
         return next((r for r in _recordings.values() if r.state == "recording"), None)
 
 
-__all__ = ["MAX_SECONDS", "PURPOSES", "Recording", "RecordingError", "active", "directory_of", "get",
+__all__ = ["MAX_SECONDS", "PURPOSES", "TOPIC", "Recording", "RecordingError", "active", "directory_of", "get",
            "recordings_root", "start"]

@@ -49,7 +49,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">Whose change it is</th><td><code translate="no">operated(pid)</code> names the processes a step operates: the application of <code translate="no">args.app</code> (<code translate="no">front.named</code>), the user's Chrome or Edge, or the App for the built-in browser (<code translate="no">front.bundles</code>). Any other application that comes to the front is one the user switched to: it is left there and becomes the one the front is given back to.</td></tr>
+<tr><th scope="row">Whose change it is</th><td><code translate="no">operated(pid)</code> names the processes a step operates: the application a window call names (<code translate="no">app</code>, <code translate="no">front.named</code>), the user's Chrome or Edge, or the App for the built-in browser (<code translate="no">front.bundles</code>). Any other application that comes to the front is one the user switched to: it is left there and becomes the one the front is given back to.</td></tr>
 <tr><th scope="row">User already there</th><td>When the user is in the operated application as the step starts, nothing is watched.</td></tr>
 <tr><th scope="row">Bounded</th><td>A step that keeps taking the front is answered six times, then left.</td></tr>
 <tr><th scope="row">Events held back</th><td>An active tap on the annotated session for event types 19 (lost the front), 20 (gained it) and 13 with subtype 1 or 2 (the pair an application gets while it starts). An event is dropped only after the front has really been given back, so no application is left believing something untrue.</td></tr>
@@ -65,9 +65,9 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Entry</th><th scope="col">Used by</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">kept(operated)</code></th><td><code translate="no">targets/app.py</code> and <code translate="no">targets/browser.py</code> around every call, so structured steps and code mode are both covered.</td></tr>
+<tr><th scope="row"><code translate="no">kept(operated)</code></th><td>The window, built-in browser and user browser providers (<code translate="no">providers/desktop.py</code>, <code translate="no">built_in_browser.py</code>, <code translate="no">user_browser.py</code>) around every call, so structured steps and code mode are both covered.</td></tr>
 <tr><th scope="row"><code translate="no">watch_for(operated, seconds)</code></th><td>The self-update switch, for the 30 s in which the desktop shell relaunches.</td></tr>
-<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> and <code translate="no">scripts/local-instances/install-dev-app.sh</code>, which run the file by itself; it needs only the standard library there, and without the Accessibility grant it reads the front every 50 ms.</td></tr>
+<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/local-instances/install-dev-app.sh</code>, which runs the file by itself; it needs only the standard library there, and without the Accessibility grant it reads the front every 50 ms.</td></tr>
 </tbody>
 </table>
 

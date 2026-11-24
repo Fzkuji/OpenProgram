@@ -58,6 +58,10 @@ _worker_stopping = threading.Event()
 def begin_worker_shutdown() -> None:
     """Stop subsequent invocations without recording a user cancellation."""
     _worker_stopping.set()
+    # What waits for a conversation to go quiet looks now and finds the
+    # Worker stopping (a Goal turn waiting for its slot gives up).
+    from openprogram.runtime.execution.run_control.tokens import turn_ended
+    turn_ended(None)
 
 
 def is_worker_stopping() -> bool:
@@ -114,6 +118,39 @@ def check_cancelled() -> None:
     _cancel_hook()
 
 
+def _cancel_waker(callback):
+    """Run ``callback`` when a stop reaching this context is fired: the bound
+    tool cancel event (and the turn's event it wraps), the turn's token, or
+    the Worker beginning to stop. Returns the unregister."""
+    from openprogram.host._platform import changes
+    from openprogram.runtime.execution.run_control import wakeups
+    from openprogram.runtime.execution.run_control.tokens import TURN_ENDED_TOPIC
+
+    signals = []
+    event = _cancellation._current_cancel.get()
+    while event is not None and len(signals) < 8:
+        signals.append(event)
+        event = getattr(event, "parent", None)
+    token = _active_token()
+    if token is not None:
+        signals.append(token.event)
+    handles = []
+    for item in signals:
+        try:
+            handles.append(wakeups.register(item, callback))
+        except TypeError:
+            pass  # a signal that cannot be referenced weakly is seen at the waiter's resync
+    unsubscribe = changes.subscribe(
+        TURN_ENDED_TOPIC, lambda _keys: callback() if _worker_stopping.is_set() else None)
+
+    def end() -> None:
+        for handle in handles:
+            wakeups.unregister(handle)
+        unsubscribe()
+
+    return end
+
+
 # Register the cancel hook once at import time.
 _call_state.add_pre_invocation_hook(_cancel_hook)
 
@@ -121,6 +158,7 @@ _call_state.add_pre_invocation_hook(_cancel_hook)
 # is what makes the exec loop cancellable and gives Runtime.ask a session to
 # route to; without it the core keeps its headless defaults.
 _cancellation.set_cancellation_check(_cancel_hook)
+_cancellation.set_cancellation_waker(_cancel_waker)
 _call_state.set_session_id_provider(_execution_run_control.get_current_session_id)
 
 

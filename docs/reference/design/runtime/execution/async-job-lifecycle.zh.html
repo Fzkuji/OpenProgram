@@ -88,7 +88,7 @@
 
 <h2 id="handoffs">跨崩溃的交接</h2>
 
-<p>一个子 agent 请求在父 agent 和运行之间经过三次交接。每次交接先写下要做的事再动手，下一步是幂等的，Worker 的资源对账（启动时和每 5 秒）把死掉的进程留下的半截做完。共用部分在 <code translate="no">openprogram/runtime/jobs/handoff.py</code>。</p>
+<p>一个子 agent 请求在父 agent 和运行之间经过三次交接。每次交接先写下要做的事再动手，下一步是幂等的，Worker 的资源对账（启动时、运行表变化时，且至少每 60 秒一次）把死掉的进程留下的半截做完。共用部分在 <code translate="no">openprogram/runtime/jobs/handoff.py</code>。</p>
 
 <figure>
 <ol class="flow">

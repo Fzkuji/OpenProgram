@@ -36,7 +36,29 @@ TOOL_RESULTS_DIRNAME = "tool_results"
 
 # ``tool_results`` then the file name, with either separator, however many
 # times a JSON record escaped a backslash.
-_REFERENCE = re.compile(r"tool_results[/\\]+([A-Za-z0-9._-]+)")
+_REFERENCE = re.compile(rb"tool_results[/\\]+([A-Za-z0-9._-]+)")
+_MARK = b"tool_results"
+#: Record files are read this much at a time. Read whole as text, the logs of
+#: 650 conversations (900 MB) took the Worker to 2.7 GB ten minutes after
+#: every start.
+_CHUNK_BYTES = 1 << 20
+#: The end of one piece is read again with the next, so a name that a piece
+#: boundary cuts is still found whole. File names are far shorter.
+_OVERLAP_BYTES = 1024
+
+
+def _names_in(path: Path) -> set[str]:
+    names: set[str] = set()
+    carried = b""
+    with open(path, "rb") as file:
+        while True:
+            piece = file.read(_CHUNK_BYTES)
+            if not piece:
+                return names
+            buffer = carried + piece
+            if _MARK in buffer:
+                names.update(name.decode("ascii") for name in _REFERENCE.findall(buffer))
+            carried = buffer[-_OVERLAP_BYTES:]
 
 
 def referenced_names(session_dirs: Iterable[Path]) -> set[str] | None:
@@ -54,13 +76,12 @@ def referenced_names(session_dirs: Iterable[Path]) -> set[str] | None:
             return None
         for path in files:
             try:
-                text = path.read_text(encoding="utf-8")
+                names.update(_names_in(path))
             except FileNotFoundError:
                 continue
-            except (OSError, UnicodeDecodeError):
+            except OSError:
                 _log.warning("tool output collection: cannot read %s", path, exc_info=True)
                 return None
-            names.update(_REFERENCE.findall(text))
     return names
 
 

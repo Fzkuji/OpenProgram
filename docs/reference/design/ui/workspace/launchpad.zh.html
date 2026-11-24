@@ -1,0 +1,46 @@
+<title>新标签页启动台</title>
+<meta name="description" content="新标签页启动台如何翻页、编辑和整理图标，照 macOS 启动台来做。">
+<h1>新标签页启动台</h1>
+
+<p>新标签页是一个启动台，布局和操作都照 macOS 启动台：7 × 5 的图标网格分成多页，有搜索框、文件夹和编辑模式。启动台已有做法的地方就照搬，不另起一套。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">触控板两指滑动</th><td>页面跟着手指走，最多一页，两端有回弹。松开后，滑得够远或者甩了一下就停在下一页，否则回到原页。</td></tr>
+<tr><th scope="row">鼠标在空白处拖动</th><td>和两指滑动一样：页面跟着指针走，松开后停下。移动不到 6 px 的按下仍算点击。</td></tr>
+<tr><th scope="row">鼠标滚轮</th><td>滚一格直接翻一整页；一直滚，每 280 ms 翻一页</td></tr>
+<tr><th scope="row">⌘ 方向键、页码点</th><td>直接翻一整页</td></tr>
+<tr><th scope="row">方向键、回车</th><td>移动选中项，到行尾跨到下一页；回车打开</td></tr>
+<tr><th scope="row">直接打字</th><td>进入搜索框，结果替换各页</td></tr>
+<tr><th scope="row">按住 Option</th><td>按住时图标抖动，松开就停</td></tr>
+<tr><th scope="row">长按，或拖动图标</th><td>进入编辑模式，直到点完成、按 Escape 或点空白处</td></tr>
+<tr><th scope="row">拖动图标</th><td>直接就能拖，不用先按住。指针在另一个图标左半边就放到它前面，右半边就放到它后面，其他图标让位；停在它中心就建文件夹或放进去；停在两侧或页码点上就翻到那页；拖过最后一页就开新页。翻页后在网格外松手，图标落到当前页末尾。</td></tr>
+<tr><th scope="row">文件夹</th><td>在模糊的页面上方打开，名字可以改。把图标拖出面板就移出文件夹。</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">决定</h2>
+<ul>
+<li>页面跟着指针和手指走，滚轮一格或按键翻一整页：macOS 的启动台和分页滚动视图都是这样；桌面上用鼠标拖了却没反应，会被当成坏了。</li>
+<li>滚轮事件不说明来自哪个设备。行或页单位的位移、带小数的像素位移（macOS 鼠标加速），或者之后 34 ms 内没有下一个事件，都算滚了一格；触控板每帧都会发一个。一串从没横向移动、停下时没有惯性的事件，是滚轮快速滚动，也翻一页。</li>
+<li>放到图标前面还是后面，看指针过没过它的中线，所以紧挨空位的图标在指针越过中线之前不动；指针压在图标身上时等 450 ms 才让位，这样往中心去的指针能建成文件夹。</li>
+<li>拖动图标直接进入编辑模式，不用先长按，和启动台用鼠标时一样。</li>
+<li>Option 只在按住时显示编辑模式，想看看哪些图标能移除，不用再点完成。</li>
+</ul>
+
+<details>
+<summary>代码和验证</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">启动台</th><td><code translate="no">apps/web/components/center-tabs/pages/launchpad/launchpad.tsx</code>：图标拖动用 dnd-kit，触控板阶段用 <code translate="no">wheel-gestures</code>，鼠标翻页用指针事件</td></tr>
+<tr><th scope="row">布局</th><td><code translate="no">apps/web/lib/tabs/launchpad/launchpad-layout.ts</code>，测试在 <code translate="no">apps/web/tests/tabs/launchpad-layout.test.mjs</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。</p>
+
+<p class="next"><a href="center-tabs-and-split-layout.zh.html">中央标签页与分屏布局</a></p>

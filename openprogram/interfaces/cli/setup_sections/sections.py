@@ -219,13 +219,11 @@ def run_search_section() -> int:
     def _key_set(env_var: str | None) -> bool:
         if not env_var:
             return True
-        if os.environ.get(env_var):
-            return True
+        from openprogram.models.auth.services import key_for_env_var
         try:
-            from openprogram.state.config import read_config
-            return bool((read_config().get("api_keys") or {}).get(env_var))
+            return bool(key_for_env_var(env_var))
         except Exception:
-            return False
+            return bool(os.environ.get(env_var))
 
     rows = ["auto  (highest-priority available)"]
     values = ["auto"]
@@ -328,9 +326,11 @@ def run_tts_section() -> int:
             if key:
                 prompted_key = (entry["api_key_env"], key)
 
+    if prompted_key is not None:
+        from openprogram.models.auth.services import save_key
+        save_key(prompted_key[0], prompted_key[1], source="cli")
+
     def update(current: dict) -> None:
-        if prompted_key is not None:
-            current.setdefault("api_keys", {})[prompted_key[0]] = prompted_key[1]
         current["tts"] = entry
 
     update_config(update, expected_revision=revision)

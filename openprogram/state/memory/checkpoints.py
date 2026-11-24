@@ -11,6 +11,10 @@ from .management.transaction import git_commit_state, workspace_write_lock
 from .workspace_layout import runtime_dir
 
 INTERVAL_SECONDS = 300
+#: With no checkpoint pending, the loop looks on its own only this often.
+RESYNC_SECONDS = 300.0
+#: Signalled when a manual edit makes a checkpoint pending.
+TOPIC = "memory.checkpoint"
 
 
 def mark_pending(root: Path) -> None:
@@ -22,6 +26,8 @@ def mark_pending(root: Path) -> None:
     # Preserve the exact pre-edit state, even if it was written outside the UI.
     git_commit_state(root, "memory: before manual editing")
     atomic_write_text(path, json.dumps({"due": time.time() + INTERVAL_SECONDS}))
+    from openprogram.host._platform import changes
+    changes.signal(TOPIC)
 
 
 def checkpoint(root: Path, *, force: bool = False) -> str | None:
@@ -39,16 +45,49 @@ def checkpoint(root: Path, *, force: bool = False) -> str | None:
         return revision
 
 
+def pending_due(root: Path) -> float | None:
+    """When the pending checkpoint is due (``time.time()``), or None."""
+    try:
+        return float(json.loads((runtime_dir(root) / "manual-checkpoint.json").read_text(encoding="utf-8"))["due"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 async def run_checkpoints(stop: asyncio.Event) -> None:
-    """The server owns and joins this task; pending deadlines survive restarts."""
+    """The server owns and joins this task; pending deadlines survive restarts.
+
+    It sleeps until the pending checkpoint is due; a manual edit that makes
+    one pending wakes it (``TOPIC``)."""
+    from openprogram.host._platform import changes
     from . import is_enabled, store
-    while not stop.is_set():
+
+    loop = asyncio.get_running_loop()
+    wake = asyncio.Event()
+
+    def poke(_keys: tuple[str, ...]) -> None:
         try:
-            if is_enabled():
-                await asyncio.to_thread(checkpoint, store.root())
-        except Exception:
-            logging.getLogger(__name__).exception("Memory checkpoint failed")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=15)
-        except TimeoutError:
+            loop.call_soon_threadsafe(wake.set)
+        except RuntimeError:  # the loop is closing
             pass
+
+    unsubscribe = changes.subscribe(TOPIC, poke)
+    try:
+        while not stop.is_set():
+            wake.clear()
+            due = None
+            try:
+                if is_enabled():
+                    root = store.root()
+                    await asyncio.to_thread(checkpoint, root)
+                    due = await asyncio.to_thread(pending_due, root)
+            except Exception:
+                logging.getLogger(__name__).exception("Memory checkpoint failed")
+            timeout = RESYNC_SECONDS if due is None else min(RESYNC_SECONDS, max(0.0, due - time.time()) + 0.5)
+            tasks = {asyncio.ensure_future(stop.wait()), asyncio.ensure_future(wake.wait())}
+            try:
+                await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in tasks:
+                    task.cancel()
+    finally:
+        unsubscribe()

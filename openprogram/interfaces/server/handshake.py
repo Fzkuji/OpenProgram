@@ -20,7 +20,10 @@ fallback for anything the Worker does not name:
 * ``wire_facts``: the ``result`` frame of a turn no one watches carries what
   its requests sent (``models/providers/recording/wire_facts.py``);
 * ``no_web``: a ``chat`` command's ``turn_no_web`` runs that turn with no
-  web tool and no provider-side search (``openprogram --print --no-web``).
+  web tool and no provider-side search (``openprogram --print --no-web``);
+* ``remote_machine``: another computer's Worker may list this one's
+  conversations and forward actions on them here
+  (``remote_machines``); a Worker that does not name it is not connected.
 
 ``protocol`` is the highest history protocol the Worker serves (a client
 asks for one with ``history_version`` on ``load_session``).
@@ -38,6 +41,9 @@ HISTORY_PROTOCOL = 3
 #: What a ``chat`` turn's frames carry, beside the control capabilities.
 CHAT_CAPABILITIES = ("structured_output", "error_kind", "turn_overrides", "wire_facts",
                      "no_web")
+
+#: What another computer's Worker relies on to list and forward here.
+REMOTE_CAPABILITY = "remote_machine"
 
 # The longest name or version a client may give; anything else is dropped.
 _FIELD_LIMIT = 64
@@ -62,7 +68,7 @@ def server_identity() -> dict[str, Any]:
         "name": SERVER_NAME,
         "version": package_version(),
         "protocol": HISTORY_PROTOCOL,
-        "capabilities": sorted({*CONTROL_CAPABILITIES, *CHAT_CAPABILITIES}),
+        "capabilities": sorted({*CONTROL_CAPABILITIES, *CHAT_CAPABILITIES, REMOTE_CAPABILITY}),
     }
 
 
@@ -77,5 +83,5 @@ def client_identity(cmd: Any) -> dict[str, str] | None:
     return identity if "name" in identity else None
 
 
-__all__ = ["CHAT_CAPABILITIES", "HISTORY_PROTOCOL", "SERVER_NAME", "client_identity",
+__all__ = ["CHAT_CAPABILITIES", "HISTORY_PROTOCOL", "REMOTE_CAPABILITY", "SERVER_NAME", "client_identity",
            "package_version", "server_identity"]

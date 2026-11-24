@@ -25,6 +25,7 @@ import {
   requestResourceControl,
   recoverSessionResources,
   sessionResourceView,
+  resourcePages,
   setBrowserConnection,
   optimisticallyCloseBrowserResource,
   requestCloseBrowserResource,
@@ -48,13 +49,13 @@ test("active session or owned resource determines scope without stale global ses
 });
 
 test("switching sessions isolates web, file and heterogeneous backend resources", () => {
-  const backend = backendResourceRows(["docker", "vm", "device"].flatMap(kind => ["a", "b"].map(session_id => ({
+  const backend = backendResourceRows(["desktop", "machine", "device"].flatMap(kind => ["a", "b"].map(session_id => ({
     id: `${kind}:${session_id}`, source: "usage", session_id, kind, title: kind, target: "target", status: "in_use",
   }))), "a");
   const a = sessionResourceRows(tabs, backend, "a");
   const b = sessionResourceRows(tabs, backend, "b");
-  assert.deepEqual(a.map(r => r.kind), ["web", "docker", "vm", "device"]);
-  assert.deepEqual(b.map(r => r.kind), ["web", "docker", "vm", "device"]);
+  assert.deepEqual(a.map(r => r.kind), ["web", "desktop", "machine", "device"]);
+  assert.deepEqual(b.map(r => r.kind), ["web", "desktop", "machine", "device"]);
   assert.ok(a.every(r => r.sessionId === "a"));
   assert.ok(b.every(r => r.sessionId === "b"));
   assert.deepEqual(sessionResourceRows(tabs, backend, null), []);
@@ -62,7 +63,7 @@ test("switching sessions isolates web, file and heterogeneous backend resources"
 });
 
 test("authorized descendant scope does not relabel or include another session's resource", () => {
-  const item = { id: "r1", session_id: "child", source: "usage", kind: "vm", title: "Docker", target: "image", status: "running" };
+  const item = { id: "r1", session_id: "child", source: "usage", kind: "machine", title: "Builder", target: "image", status: "in_use" };
   const rows = backendResourceRows([item], "parent");
   assert.equal(rows[0].sessionId, "child");
   assert.equal(rows[0].scopeSessionId, "parent");
@@ -71,7 +72,7 @@ test("authorized descendant scope does not relabel or include another session's 
 });
 
 test("code views and process records never become software resources", () => {
-  const legacy = backendResourceRows([{ id: "p", session_id: "b", source: "process", kind: "docker", title: "Code", target: "image", status: "running" }], "b");
+  const legacy = backendResourceRows([{ id: "p", session_id: "b", source: "process", kind: "machine", title: "Code", target: "image", status: "running" }], "b");
   const rows = sessionResourceRows(tabs, legacy, "b");
   assert.deepEqual(rows.map(r => r.kind), ["web"]);
 });
@@ -111,7 +112,7 @@ test("browser associations keep exact page identity and group by branch not sess
       id: "assoc-c", resource_id: "page-c", branch_id: null, branch_name: null,
       title: "Legacy page", tab_id: "w:legacy", target: "https://legacy.test",
     }),
-    { id: "vm-a", session_id: "a", source: "usage", kind: "vm", title: "VM", target: "http://vm.test", status: "in_use" },
+    { id: "lab-a", session_id: "a", source: "usage", kind: "machine", title: "Lab VM", target: "http://vm.test", status: "in_use" },
   ], "a");
   assert.equal(backend.find(row => row.id === "assoc-a").resourceId, "page-a");
   assert.equal(backend.find(row => row.id === "assoc-b").resourceId, "page-a");
@@ -119,9 +120,9 @@ test("browser associations keep exact page identity and group by branch not sess
   const rows = sessionResourceRows(tabs, backend, "a");
   assert.equal(rows.filter(row => row.sourceId === "w:a" && row.source === "web").length, 0);
   const groups = groupSessionResources(rows);
-  assert.deepEqual(groups.map(group => group.key), ["web", "vm"]);
+  assert.deepEqual(groups.map(group => group.key), ["web", "machine"]);
   assert.ok(groups[0].rows.some(row => row.id === "assoc-c"));
-  assert.ok(groups[1].rows.some(row => row.kind === "vm"));
+  assert.ok(groups[1].rows.some(row => row.kind === "machine"));
 });
 
 test("optimistic close suppresses a late old event but authoritative snapshot restores on failure", () => {
@@ -271,12 +272,13 @@ test("a web row shows a real page title when the captured one is blank or a URL"
 });
 
 test("resource type order ignores branch names and keeps unknown kinds in other", () => {
-  const rows = ["mystery", "remote", "docker", "application", "terminal", "desktop", "vm", "web"].map((kind, i) => ({
+  // A kind no reporter writes any more (vm, docker, remote) is just another unknown one.
+  const rows = ["mystery", "vm", "machine", "application", "terminal", "desktop", "web"].map((kind, i) => ({
     id: String(i), source: "usage", kind, title: "Open Baidu", branchId: "branch", branchName: "Research", status: "open",
   }));
   const groups = groupSessionResources(rows);
-  assert.deepEqual(groups.map(group => group.key), ["web", "vm", "desktop", "terminal", "application", "docker", "remote", "other"]);
-  assert.equal(groups.at(-1).rows[0].kind, "mystery");
+  assert.deepEqual(groups.map(group => group.key), ["web", "desktop", "machine", "terminal", "application", "other"]);
+  assert.deepEqual(groups.at(-1).rows.map(row => row.kind), ["mystery", "vm"]);
   assert.deepEqual(groupSessionResources(rows.map(row => ({ ...row, title: "Renamed", branchName: "Renamed branch" }))).map(group => group.key), groups.map(group => group.key));
 });
 
@@ -748,4 +750,26 @@ test("default resource groups are listed even when they hold nothing", () => {
   const groups = groupSessionResources([], null, ["web", "application", "terminal"]);
   assert.deepEqual(groups.map(group => [group.key, group.rows.length]), [["web", 0], ["terminal", 0], ["application", 0]]);
   assert.deepEqual(groupSessionResources([]), []);
+});
+
+test("an @ names the pages this conversation's Resources list, all of them and no other conversation's", () => {
+  resetBrowserResources();
+  const pages = Array.from({ length: 7 }, (_, i) => browserItem({
+    id: `assoc-${i}`, resource_id: `page-${i}`, tab_id: `w:${i}`, title: `Page ${i}`,
+    target: `https://${i}.test/`, sequence: i + 1,
+  }));
+  applyResourceSnapshot([
+    ...pages,
+    browserItem({ id: "assoc-closed", resource_id: "page-closed", tab_id: "w:closed", status: "closed", control_state: "closed", sequence: 20 }),
+  ], "a");
+  applyResourceSnapshot([browserItem({
+    id: "assoc-b", resource_id: "page-b", session_id: "b", conversation_session_id: "b", tab_id: "w:b", title: "Other",
+  })], "b");
+  const tabs = [{ id: "w:3", kind: "web", title: "Live title", url: "https://3.test/live", faviconUrl: "data:,x", urlNativeAt: 1 }];
+  const listed = resourcePages("a", tabs);
+  assert.equal(listed.length, 7);
+  assert.ok(!listed.some(page => page.id === "w:closed" || page.id === "w:b"));
+  const live = listed.find(page => page.id === "w:3");
+  assert.deepEqual(live, { id: "w:3", title: "Live title", url: "https://3.test/live", faviconUrl: "data:,x" });
+  assert.deepEqual(resourcePages("b", []).map(page => page.title), ["Other"]);
 });

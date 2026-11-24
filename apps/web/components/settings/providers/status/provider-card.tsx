@@ -1,144 +1,104 @@
 "use client";
 
-import { Fragment, memo } from "react";
-import { KeyRound, Plus, Repeat, Server } from "lucide-react";
+/** A card of the provider list: a company with every credential of each
+ *  of its ways as one row. A row is three fixed parts, the same on every
+ *  card: who it is (the account, the key's name or last four, over its way
+ *  and plan), its limits as up to three rings (each over its name and when
+ *  it resets), and one last column that holds either an amount while the
+ *  credential works (credits, a balance, 30 days of spend) or why it does
+ *  not and when that changes. A row opens the provider's page; a danger
+ *  cell fixes what it names (sign in, replace the key, top up). */
+import { memo, useState } from "react";
+import { Plus } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import type { FixAction, ProviderStatus } from "@/lib/settings/provider-status.generated";
 import { cn } from "@/lib/utils";
 
-import { countsKeys, credentialCount } from "../detail/credential-model";
 import { providerLogo, ProviderIcon } from "../icons/provider-icon";
-import { bestHealth, billingLabel, dimmed, sparkValues, spendView, wayMeta, wayTitle, sharesKey, type CompanyGroup } from "./model";
-import { HealthChip, QuotaBlock, Sparkline } from "./parts";
+import { cardRows, foldedSummary, shownRows, wayTitle, type CardRow, type CompanyGroup, type Ring } from "./model";
 import styles from "./status.module.css";
 
 type Handlers = {
   now: number;
-  /** Open the provider's page; a fix names the action that brought it there. */
-  onOpen: (id: string, fix?: FixAction) => void;
+  /** Open the provider's page; a fix names the action, and the credential it is for. */
+  onOpen: (id: string, fix?: FixAction, credential?: string | null) => void;
   onConnect: (id: string) => void;
   onAddCredential: (id: string) => void;
 };
 
-/** The 30-day sparkline, spend (or tokens) and cache share; nothing before the first call. */
-function SpendStats({ p }: { p: ProviderStatus }) {
-  const { text } = useTranslation();
-  if (!(p.spend.calls > 0 || p.spend.total_tokens > 0)) return null;
-  const spend = spendView(p.spend, text, p.plan);
-  const spendText = <span className={styles.num}><b>{spend.value}</b> {spend.suffix}</span>;
+const R = 8.5;
+const LENGTH = 2 * Math.PI * R;
+
+/** What is left of one limit: a full ring is all of it, a faint red one
+ *  none, a dashed one a limit that could not be read. */
+function RingMark({ ring }: { ring: Ring }) {
+  const spent = ring.left != null && ring.left <= 0;
   return (
-    <div className={styles.cardStats}>
-      <Sparkline values={sparkValues(p.spend.series, spend.byCost)} dim={dimmed(p.health.state)} />
-      {spend.tip ? <HoverTip label={spend.tip}>{spendText}</HoverTip> : spendText}
-      {p.spend.cache_share != null ? (
-        <span className={styles.num}>{text("Cache", "缓存")} {Math.round(p.spend.cache_share * 100)}%</span>
+    <svg className={cn(styles.ring, "mb-0.5 block")} data-tone={spent ? "spent" : ring.left == null ? "unread" : ring.tone} width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <circle className={styles.ringTrack} cx="11" cy="11" r={R} />
+      {ring.left != null && !spent ? (
+        <circle className={styles.ringFill} cx="11" cy="11" r={R} strokeDasharray={`${(LENGTH * ring.left).toFixed(2)} ${LENGTH.toFixed(2)}`} transform="rotate(-90 11 11)" />
       ) : null}
-    </div>
+    </svg>
   );
 }
 
-/** How many credentials and in what state ("3 keys · 1 cooling · 1 invalid"),
- *  each part whole, a long count breaking between parts. */
-function CredentialCount({ p, now }: { p: ProviderStatus; now: number }) {
+const FIX_TIP: Record<FixAction, [string, string]> = {
+  sign_in: ["Sign in again", "重新登录"],
+  replace_key: ["Replace this key", "更换这把密钥"],
+  top_up: ["Top up", "充值"],
+  start_server: ["How to start it", "如何启动"],
+  connect: ["Connect", "接入"],
+};
+
+function CredentialRow({ row, now, onOpen }: { row: CardRow } & Pick<Handlers, "now" | "onOpen">) {
   const { text } = useTranslation();
-  return (
-    <span className="min-w-0 flex-1">
-      {credentialCount(p.keys, p.takes_keys, now, text).map((part, i) => (
-        <Fragment key={i}>
-          {i > 0 ? <span className="text-text-secondary"> · </span> : null}
-          <span className={cn("whitespace-nowrap", part.tone === "warning" && "text-(--warning-soft)", part.tone === "danger" && "text-(--danger-soft)")}>{part.label}</span>
-        </Fragment>
-      ))}
+  const { p, end } = row;
+  const open = () => onOpen(p.id);
+  const fix = end.fix;
+  const fixHere = () => {
+    if (!fix) return;
+    if (fix === "top_up" && p.fix?.action === "top_up" && p.fix.url) window.open(p.fix.url, "_blank", "noopener,noreferrer");
+    else onOpen(p.id, fix, row.credential);
+  };
+  const endCell = (
+    <span className={styles.rowEnd} data-tone={end.tone} data-end>
+      <span className={styles.rowTop}>{end.top}</span>
+      <span className={styles.rowSub}>{end.bottom}</span>
     </span>
   );
-}
-
-/** Add key (Add account for a provider signed in to), filled when it has none. */
-function AddCredential({ p, onAdd }: { p: ProviderStatus; onAdd: (id: string) => void }) {
-  const { text } = useTranslation();
-  if (p.billing === "local") return null;
-  return (
-    <Button variant={p.keys.length === 0 ? "default" : "elevated"} size="xs" onClick={(e) => { e.stopPropagation(); onAdd(p.id); }}>
-      <Plus data-icon="inline-start" aria-hidden="true" />
-      {countsKeys(p.keys, p.takes_keys) ? text("Add key", "添加密钥") : text("Add account", "添加账号")}
-    </Button>
+  const body = (
+    <div className={styles.credRow} data-provider={p.id} data-credential={row.credential ?? undefined} data-stale={row.stale || undefined} data-off={row.off || undefined}
+      role="button" tabIndex={0} onClick={open} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}>
+      <span className={styles.rowWho}>
+        <span className={styles.rowTop}>{row.inUse ? <span className={styles.inUse} aria-label={text("In use", "在用")} /> : null}{row.name}</span>
+        <span className={styles.rowSub} data-ways={row.listsWays || undefined}>{row.sub}</span>
+      </span>
+      <span className={cn(styles.rings, "grid grid-cols-[repeat(3,44px)] justify-end gap-2")} data-rings={row.rings.length}>
+        {row.rings.map((ring) => (
+          <HoverTip key={ring.key} label={ring.tip}>
+            <span className="flex min-w-0 flex-col items-center" data-limit={ring.key}>
+              <RingMark ring={ring} />
+              <span className={styles.ringLabel}>{ring.label}</span>
+              <span className={styles.ringUnder}>{ring.under}</span>
+            </span>
+          </HoverTip>
+        ))}
+      </span>
+      {fix ? (
+        <HoverTip label={text(...FIX_TIP[fix])}>
+          <Button variant="ghost" className={cn(styles.rowFix, "h-auto rounded-sm px-[6px] py-[4px] font-normal")} onClick={(e) => { e.stopPropagation(); fixHere(); }}>{endCell}</Button>
+        </HoverTip>
+      ) : endCell}
+    </div>
   );
-}
-
-/** One connected provider as a card (design §2, A): logo, name over its
- *  default model, health; one quota block; the 30-day sparkline, spend and
- *  cache share; and at the foot, pinned to the card's bottom, its billing
- *  kind, how many credentials it has and in what state ("3 keys · 1 cooling
- *  · 1 invalid"), with Add key (Add account for a provider signed in to),
- *  filled when it has none. The whole card opens the provider's page. */
-export const ProviderCard = memo(function ProviderCard({
-  p, now, onOpen, onConnect, onAddCredential,
-}: { p: ProviderStatus } & Handlers) {
-  const { text } = useTranslation();
-  const open = () => onOpen(p.id);
-  const keys = countsKeys(p.keys, p.takes_keys);
-  const none = p.keys.length === 0;
-  const subtitle = p.default_model ?? (none ? (keys ? text("No key yet", "还没有密钥") : text("Not signed in", "还没登录")) : "");
-  return (
-    <Card size="sm" className={styles.card} data-provider={p.id} data-health={p.health.state} onClick={open}>
-      <CardHeader className="grid-cols-[auto_minmax(0,1fr)_auto] has-data-[slot=card-action]:grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[10px]">
-        <ProviderIcon id={p.id} size={28} />
-        <div className="flex min-w-0 flex-col">
-          <CardTitle className="min-w-0">
-            <Button variant="link" className="h-auto max-w-full justify-start p-0 text-fs-base font-semibold text-text-bright" onClick={(e) => { e.stopPropagation(); open(); }}>
-              <span className="min-w-0 truncate">{p.label}</span>
-            </Button>
-          </CardTitle>
-          {subtitle ? <CardDescription className="truncate text-fs-xs text-text-secondary">{subtitle}</CardDescription> : null}
-        </div>
-        <CardAction className="col-start-3 row-span-1 self-center"><HealthChip health={p.health} /></CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-[10px]">
-        <QuotaBlock p={p} now={now} onConnect={() => onConnect(p.id)} onOpen={(fix) => onOpen(p.id, fix)} />
-        <SpendStats p={p} />
-        <div className={styles.cardFoot} data-credentials>
-          <Badge variant="outline" data-plan={p.plan ?? undefined}>{billingLabel(p.billing, text, p.plan)}</Badge>
-          <CredentialCount p={p} now={now} />
-          <AddCredential p={p} onAdd={onAddCredential} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-});
-
-/** One way of a company's card: its icon (a plan, a key, a local server),
- *  title over plan, connection and model, its own health; then its quota,
- *  spend and credentials with their add button. It opens that provider's page. */
-function WaySection({ p, shared, now, onOpen, onConnect, onAddCredential }: { p: ProviderStatus; shared: boolean } & Handlers) {
-  const { text } = useTranslation();
-  const open = () => onOpen(p.id);
-  const meta = wayMeta(p, { keys: countsKeys(p.keys, p.takes_keys), shared }, text);
-  const Icon = p.billing === "subscription" ? Repeat : p.billing === "local" ? Server : KeyRound;
-  return (
-    <section className={styles.way} data-provider={p.id} data-health={p.health.state} onClick={open}>
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[8px]">
-        <span className={styles.wayIcon} aria-hidden="true"><Icon /></span>
-        <div className="flex min-w-0 flex-col">
-          <Button variant="link" size="sm" className="h-auto max-w-full justify-start p-0 leading-[18px] font-medium text-text-bright" onClick={(e) => { e.stopPropagation(); open(); }}>
-            <span className="min-w-0 truncate">{wayTitle(p, text)}</span>
-          </Button>
-          {meta ? <span className="truncate text-fs-xs leading-4 text-text-secondary">{meta}</span> : null}
-        </div>
-        <HealthChip health={p.health} />
-      </div>
-      <QuotaBlock p={p} now={now} onConnect={() => onConnect(p.id)} onOpen={(fix) => onOpen(p.id, fix)} />
-      <SpendStats p={p} />
-      <div className={styles.wayFoot} data-credentials>
-        <CredentialCount p={p} now={now} />
-        <AddCredential p={p} onAdd={onAddCredential} />
-      </div>
-    </section>
-  );
+  return row.updated ? <HoverTip label={row.updated}>{body}</HoverTip> : body;
 }
 
 /** The provider whose logo stands for a company: its first way that has one. */
@@ -146,27 +106,59 @@ export function companyIcon(group: CompanyGroup): string {
   return group.ways.find((p) => providerLogo(p.id))?.id ?? group.family;
 }
 
-/** A company connected in more than one way (design §2): its logo and name
- *  over "N ways to connect", the best of its ways' health, and a section per
- *  way. A company connected one way only is a ProviderCard. */
-export const CompanyCard = memo(function CompanyCard({ group, ...handlers }: { group: CompanyGroup } & Handlers) {
+/** The one +: Add key or Add account for a provider, a menu of the ways for a company. */
+function AddButton({ group, onAdd }: { group: CompanyGroup; onAdd: (id: string) => void }) {
   const { text } = useTranslation();
-  const n = group.ways.length;
+  const ways = group.ways.filter((p) => p.billing !== "local");
+  if (!ways.length) return null;
+  const nameOf = (p: ProviderStatus) => (p.takes_keys ? text("Add key", "添加密钥") : text("Add account", "添加账号"));
+  const empty = ways.every((p) => p.keys.length === 0);
+  const trigger = (label: string, onClick?: () => void) => (
+    <Button variant={empty ? "default" : "ghost"} size="icon-xs" aria-label={label} className="ml-auto flex-none" onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
+      <Plus aria-hidden="true" />
+    </Button>
+  );
+  if (ways.length === 1) return <HoverTip label={nameOf(ways[0])}>{trigger(nameOf(ways[0]), () => onAdd(ways[0].id))}</HoverTip>;
   return (
-    <Card size="sm" className={cn(styles.card, styles.companyCard)} data-family={group.family}>
-      <CardHeader className="grid-cols-[auto_minmax(0,1fr)_auto] has-data-[slot=card-action]:grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[10px]">
-        <ProviderIcon id={companyIcon(group)} size={28} />
-        <div className="flex min-w-0 flex-col">
-          <CardTitle className="min-w-0 truncate font-semibold text-text-bright">{group.label}</CardTitle>
-          <CardDescription className="truncate text-fs-xs text-text-secondary">{text(`${n} ways to connect`, `${n} 种接入方式`)}</CardDescription>
-        </div>
-        <CardAction className="col-start-3 row-span-1 self-center"><HealthChip health={bestHealth(group.ways.map((p) => p.health))} /></CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-[10px] px-0">
-        {group.ways.map((p, i) => (
-          <WaySection key={p.id} p={p} shared={sharesKey(p, group.ways.slice(0, i))} {...handlers} />
+    <DropdownMenu>
+      <HoverTip label={text("Add", "添加")}><DropdownMenuTrigger asChild>{trigger(text("Add", "添加"))}</DropdownMenuTrigger></HoverTip>
+      <DropdownMenuContent align="end" sideOffset={4} className={cn(MENU_PANEL, "min-w-[200px] text-text-primary")}>
+        {ways.map((p) => (
+          <DropdownMenuItem key={p.id} className={cn(itemCls(false), MENU_ITEM_STATES)} onSelect={() => onAdd(p.id)}>
+            {wayTitle(p, text)}
+          </DropdownMenuItem>
         ))}
-      </CardContent>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** A company's card (or a provider's, when it is one way of its own). */
+export const CompanyCard = memo(function CompanyCard({ group, now, onOpen, onAddCredential }: { group: CompanyGroup } & Handlers) {
+  const { text } = useTranslation();
+  const [unfolded, setUnfolded] = useState(false);
+  const rows = cardRows(group, now, text);
+  const { shown, hidden } = unfolded ? { shown: rows, hidden: [] } : shownRows(rows);
+  const model = group.ways.find((p) => p.default_model)?.default_model ?? "";
+  return (
+    <Card size="sm" className={styles.card} data-family={group.family} data-provider={group.ways.length === 1 ? group.ways[0].id : undefined}>
+      <div className="flex min-w-0 items-center gap-2 pr-3 pb-1 pl-4">
+        <ProviderIcon id={companyIcon(group)} size={20} />
+        <span className={styles.cardTitle} data-slot="card-title">{group.label}</span>
+        {model ? <span className={styles.cardModel}>{model}</span> : null}
+        <AddButton group={group} onAdd={onAddCredential} />
+      </div>
+      <div className={cn(styles.credRows, "flex min-w-0 flex-col gap-2 px-3 pb-3")}>
+        {shown.map((row) => <CredentialRow key={row.key} row={row} now={now} onOpen={onOpen} />)}
+        {hidden.length ? (
+          <Button variant="ghost" className={cn(styles.credRow, "grid h-auto font-normal whitespace-normal")} data-folded onClick={() => setUnfolded(true)}>
+            <span className={styles.rowWho}>
+              <span className={styles.rowTop}>{text(`${hidden.length} more`, `还有 ${hidden.length} 个`)}</span>
+              <span className={styles.rowSub}>{foldedSummary(hidden)}</span>
+            </span>
+          </Button>
+        ) : null}
+      </div>
     </Card>
   );
 });

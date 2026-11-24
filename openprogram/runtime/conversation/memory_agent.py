@@ -27,7 +27,7 @@ from openprogram.models.providers.types import (
     ToolResultMessage,
 )
 
-from openprogram.state.memory.agent_runtime.claude_code import AgentExecutionError, AgentResult
+from openprogram.state.memory.writer_agent import AgentExecutionError, AgentResult
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def _matches(value: dict[str, Any], schema: dict[str, Any]) -> bool:
 
 
 def _native_tool(definition: Any) -> AgentTool:
-    """Adapt the existing managed MCP tool without duplicating its policy."""
+    """Adapt a managed memory tool without duplicating its policy."""
 
     async def execute(call_id, arguments, cancel, on_update):
         result = await definition.handler(arguments)

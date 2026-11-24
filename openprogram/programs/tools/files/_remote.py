@@ -1,9 +1,10 @@
-"""File tools for SSH environments.
+"""File tools for a conversation whose files are on another machine.
 
 Each file tool checks :func:`remote_target` first; when the running
-conversation lives in an SSH environment the tool delegates to the
-matching function here, which works on the remote disk through
-:class:`openprogram.host.environments.remote.RemoteFS`. Output formats match
+conversation's environment keeps its files on its own machine (its shell
+kind declares ``remote_files``) the tool delegates to the matching
+function here, which works on that machine's disk through
+:class:`openprogram.host.machines.remote.RemoteFS`. Output formats match
 the local tools so the model sees the same shapes either way.
 
 Remote files are outside the host's turn checkpoints, so revert/undo of
@@ -19,7 +20,7 @@ import shlex
 import tempfile
 from typing import Optional
 
-from openprogram.host.environments.remote import (
+from openprogram.host.machines.remote import (
     FRESH,
     RemoteFS,
     check_fresh,
@@ -77,8 +78,8 @@ def read(fs: RemoteFS, file_path: str, offset: int, limit: int) -> str:
         return f"Error: {path} is a directory, not a file"
     except (OSError, ConnectionError) as exc:
         return f"Error reading {path}: {exc}"
-    mark_seen(fs.env, path, data)
-    host = fs.env.ssh_target
+    mark_seen(fs.machine, path, data)
+    host = fs.label
     if path.lower().endswith(".pdf") or data[:5] == b"%PDF-":
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(data)
@@ -108,9 +109,9 @@ def _gate(fs: RemoteFS, path: str) -> tuple[Optional[bytes], Optional[str]]:
     if info.is_dir:
         return None, f"Error: {path} is a directory, not a file"
     data = fs.read_bytes(path)
-    state = check_fresh(fs.env, path, data)
+    state = check_fresh(fs.machine, path, data)
     if state != FRESH:
-        return data, stale_message(f"{fs.env.ssh_target}:{path}", state)
+        return data, stale_message(f"{fs.label}:{path}", state)
     return data, None
 
 
@@ -127,9 +128,9 @@ def write(fs: RemoteFS, file_path: str, content: str) -> str:
         fs.write_bytes(path, payload)
     except (OSError, ConnectionError) as exc:
         return f"Error writing {path}: {exc}"
-    mark_seen(fs.env, path, payload)
+    mark_seen(fs.machine, path, payload)
     _emit(path, "write")
-    return f"Wrote {len(content)} bytes to {fs.env.ssh_target}:{path}"
+    return f"Wrote {len(content)} bytes to {fs.label}:{path}"
 
 
 def edit(fs: RemoteFS, file_path: str, old_string: str, new_string: str,
@@ -160,10 +161,10 @@ def edit(fs: RemoteFS, file_path: str, old_string: str, new_string: str,
         fs.write_bytes(path, payload)
     except (OSError, ConnectionError) as exc:
         return f"Error editing {path}: {exc}"
-    mark_seen(fs.env, path, payload)
+    mark_seen(fs.machine, path, payload)
     _emit(path, "edit")
     replaced = count if replace_all else 1
-    return (f"Edited {fs.env.ssh_target}:{path} "
+    return (f"Edited {fs.label}:{path} "
             f"({replaced} replacement{'s' if replaced != 1 else ''})")
 
 
@@ -195,9 +196,9 @@ def apply_patch(fs: RemoteFS, sections: list[tuple[str, str, list[str]]]) -> str
                     continue
                 original = originals[path]
                 if original is not None:
-                    state = check_fresh(fs.env, path, original)
+                    state = check_fresh(fs.machine, path, original)
                     if state != FRESH:
-                        errors.append(stale_message(f"{fs.env.ssh_target}:{path}", state))
+                        errors.append(stale_message(f"{fs.label}:{path}", state))
                         continue
                 new_text, err, _ = _apply_hunks_to_text(drafts[path] or "", body, path)
                 if err:
@@ -212,7 +213,7 @@ def apply_patch(fs: RemoteFS, sections: list[tuple[str, str, list[str]]]) -> str
             else:
                 errors.append(f"Error: unknown op {op!r} for {path}")
     except (OSError, ConnectionError) as exc:
-        return f"Error reading patch targets on {fs.env.ssh_target}: {exc}"
+        return f"Error reading patch targets on {fs.label}: {exc}"
     if errors:
         return "\n".join(errors)
     results: list[str] = []
@@ -222,16 +223,16 @@ def apply_patch(fs: RemoteFS, sections: list[tuple[str, str, list[str]]]) -> str
                 if originals[path] is not None:
                     fs.delete(path)
                     _emit(path, "delete")
-                    results.append(f"Deleted {fs.env.ssh_target}:{path}")
+                    results.append(f"Deleted {fs.label}:{path}")
                 continue
             payload = text.encode("utf-8")
             fs.write_bytes(path, payload)
-            mark_seen(fs.env, path, payload)
+            mark_seen(fs.machine, path, payload)
             op = "add" if originals[path] is None else "update"
             _emit(path, op)
-            results.append(f"{'Added' if op == 'add' else 'Updated'} {fs.env.ssh_target}:{path}")
+            results.append(f"{'Added' if op == 'add' else 'Updated'} {fs.label}:{path}")
     except (OSError, ConnectionError) as exc:
-        results.append(f"Error: patch stopped part-way on {fs.env.ssh_target}: {exc}")
+        results.append(f"Error: patch stopped part-way on {fs.label}: {exc}")
     return "\n".join(results)
 
 
@@ -319,7 +320,7 @@ def glob(fs: RemoteFS, pattern: str, path: str | None) -> str:
     matches.sort(key=lambda row: row[0], reverse=True)
     paths = [p for _, p in matches]
     if not paths:
-        return f"No matches for {pattern!r} under {fs.env.ssh_target}:{root}"
+        return f"No matches for {pattern!r} under {fs.label}:{root}"
     if len(paths) > 500:
         return f"# {len(paths)} matches (showing 500 newest)\n" + "\n".join(paths[:500])
     return f"# {len(paths)} matches\n" + "\n".join(paths)

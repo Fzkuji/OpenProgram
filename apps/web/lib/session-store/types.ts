@@ -148,10 +148,6 @@ export interface ComposerSettings {
    *  value, its source (``branch``, ``agent``, ``project``, ``global``) and
    *  what it is when the branch sets nothing (``inherited``). */
   resolved?: ResolvedBranchSettings;
-  /** Environment a draft will run in (local / an SSH or Docker
-   *  environment id). Sent with the first message, which pins it; the
-   *  conversation's own environment_id decides afterwards. */
-  environment?: string;
 }
 
 /** ``resolved`` of a branch-settings read (``branch_settings.resolved_settings``). */
@@ -515,9 +511,6 @@ export interface ConvSummary {
   peer_display?: string;
   channel?: string;
   account_id?: string;
-  /** Where the conversation runs; null/undefined = the default environment
-   *  (conversations created before environments existed). */
-  environment_id?: string | null;
   peer?: string;
   preview?: string | null;
   pinned?: boolean;

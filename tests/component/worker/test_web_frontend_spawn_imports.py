@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import threading
-import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -9,6 +7,7 @@ import pytest
 
 from openprogram.host._platform import process_ownership
 from openprogram.operations.worker import web
+from openprogram.host._platform import changes
 
 
 @pytest.fixture
@@ -28,23 +27,20 @@ def frontend(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "threading", SimpleNamespace(Thread=thread))
     popen = Mock()
     monkeypatch.setattr(web.subprocess, "Popen", popen)
-    return SimpleNamespace(build_id=build_id, thread=thread, popen=popen)
+    watched = Mock()
+    monkeypatch.setattr(changes, "watch", watched)
+    return SimpleNamespace(build_id=build_id, thread=thread, popen=popen, watched=watched)
 
 
 def run_rebuilds(frontend, monkeypatch):
     builds = iter(["second", "third"])
 
-    test_thread = threading.get_ident()
-    real_sleep = time.sleep
-
-    def tick(seconds):
-        # Only the watcher callback below runs on this thread; other threads
-        # in the process keep sleeping for real instead of draining builds.
-        if threading.get_ident() != test_thread:
-            return real_sleep(seconds)
+    def changed(_listener, **_timing):
+        # What the file event of a new build wakes the watcher with.
         frontend.build_id.write_text(next(builds), encoding="utf-8")
+        return {web._BUILD_ID_TOPIC}
 
-    monkeypatch.setattr(time, "sleep", tick)
+    monkeypatch.setattr(changes, "wait_for", changed)
     callback = frontend.thread.call_args.kwargs["target"]
     with pytest.raises(StopIteration):
         callback()
@@ -62,6 +58,8 @@ def test_start_and_rebuilds_use_platform_flags(frontend, monkeypatch, flags, res
 
     assert web.start_web_frontend(backend_port=18099, web_port=18100) is initial
     frontend.thread.return_value.start.assert_called_once_with()
+    # The new build is seen by its file event, not by reading BUILD_ID on a timer.
+    frontend.watched.assert_called_once_with(frontend.build_id.parent, web._BUILD_ID_TOPIC, names={"BUILD_ID"})
     run_rebuilds(frontend, monkeypatch)
 
     assert helper.call_count == 3

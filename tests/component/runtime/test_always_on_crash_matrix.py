@@ -44,6 +44,10 @@ def world(tmp_path, monkeypatch):
     from openprogram.state.store.session import session_store
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    # These Workers are forked, where a real one is spawned: macOS aborts a forked child that loads AppKit
+    # for the first time, which a turn's <devices> list does to read the desktop grants.
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    monkeypatch.setattr(macos, "missing_permissions", lambda: [])
     session_store.shared._default_store = None
     model = Model(id="scripted", name="scripted", api=_API, provider="scripted-crash",
                   base_url="http://scripted.invalid")

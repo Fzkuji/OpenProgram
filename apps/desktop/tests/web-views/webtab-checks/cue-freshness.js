@@ -12,8 +12,8 @@ async function flushAsync() {
 
 async function checkBackgroundPreview() {
   testContext.hooks.registerWebTabIpc();
-  const winA = testContext.fakeWindow(811);
-  const winB = testContext.fakeWindow(812);
+  const winA = testContext.shownWindow(811);
+  const winB = testContext.shownWindow(812);
   const ctxA = testContext.registerContext("preview-a", winA);
   const ctxB = testContext.registerContext("preview-b", winB);
   const record = testContext.hooks.ensureView(ctxA, "mirror-page", "https://example.com/mirror");
@@ -71,7 +71,7 @@ async function checkBackgroundPreview() {
   const transferred = testContext.generatedNativeRecords.at(-1);
   transferred.controls[0].resolve();
   transferred.delayExecuteJavaScript();
-  const dest = testContext.registerContext("preview-dest", testContext.fakeWindow(813));
+  const dest = testContext.registerContext("preview-dest", testContext.shownWindow(813));
   const pendingTransfer = testContext.ipcHandlers.get("webtab:preview")(
     { sender: winA.webContents },
     "transfer-preview",
@@ -89,7 +89,7 @@ async function checkBackgroundPreview() {
 
 async function checkActionCueFreshness() {
   testContext.hooks.registerWebTabIpc();
-  const win = testContext.fakeWindow(821);
+  const win = testContext.shownWindow(821);
   const ctx = testContext.registerContext("cue-fresh", win);
   testContext.hooks.ensureView(ctx, "cue-page", "https://example.com/cue");
   const controlled = testContext.generatedNativeRecords.at(-1);
@@ -182,7 +182,7 @@ async function checkActionCueFreshness() {
 
 async function checkActionCueWorkerIncarnation() {
   testContext.hooks.registerWebTabIpc();
-  const win = testContext.fakeWindow(833);
+  const win = testContext.shownWindow(833);
   const ctx = testContext.registerContext("cue-incarnation", win);
   testContext.hooks.ensureView(ctx, "retained-page", "https://example.com/retained");
   const controlled = testContext.generatedNativeRecords.at(-1);
@@ -246,7 +246,7 @@ async function checkActionCueWorkerIncarnation() {
 
 async function checkOverlappingActionCues() {
   testContext.hooks.registerWebTabIpc();
-  const win = testContext.fakeWindow(832);
+  const win = testContext.shownWindow(832);
   const ctx = testContext.registerContext("cue-overlap", win);
   testContext.hooks.ensureView(ctx, "overlap-page", "https://example.com/overlap");
   const controlled = testContext.generatedNativeRecords.at(-1);

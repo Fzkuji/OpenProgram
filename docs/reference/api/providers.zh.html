@@ -17,7 +17,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")</code></pre>
 <tr><th scope="row">其他</th><td><code translate="no">Runtime("provider:model")</code></td><td>第一个已启用模型</td><td>该 provider 的 key</td></tr>
 </tbody>
 </table>
-<p class="note">API key 存在凭据库：<strong>设置 → Provider</strong>，或 <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>。Anthropic、OpenAI、Google SDK 是基础依赖；OAuth provider 直接走 HTTP。</p>
+<p class="note">API key 存在凭据库：<strong>设置 → 模型服务</strong>，或 <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>。Anthropic、OpenAI、Google SDK 是基础依赖；OAuth provider 直接走 HTTP。</p>
 <h2 id="create_runtime-detect_provider">函数</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">函数</th><th scope="col">行为</th></tr></thead>
@@ -56,7 +56,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 <tr><th scope="row"><code translate="no">gemini</code></th><td>Google Generative Language</td><td>添加 key 时接受的环境变量名：<code translate="no">GEMINI_API_KEY</code>、<code translate="no">GOOGLE_API_KEY</code>、<code translate="no">GOOGLE_GENERATIVE_AI_API_KEY</code></td></tr>
 </tbody>
 </table>
-<p class="note">都包含流式、工具循环和 DAG 记录。自定义 provider：<strong>设置 → Provider → 添加自定义 provider</strong>（名称和 base URL），然后 <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> 或 <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>。只有主机的 base URL 解析为 <code translate="no">/v1</code>；显式 API 路径保留。</p>
+<p class="note">都包含流式、工具循环和 DAG 记录。自定义 provider：<strong>设置 → 模型服务 → 添加自定义 provider</strong>（名称和 base URL），然后 <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> 或 <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>。只有主机的 base URL 解析为 <code translate="no">/v1</code>；显式 API 路径保留。</p>
 <span id="openai"></span>
 <span id="gemini"></span>
 <h2 id="openai-codex">订阅 provider</h2>
@@ -79,7 +79,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 rt = Runtime(model="deepseek:deepseek-chat")
 # or
 rt = create_runtime(provider="deepseek", model="deepseek-chat")</code></pre>
-<p class="note">deepseek、groq、openrouter、minimax、kimi 和目录中其余 provider 走模型注册表，与聊天分发器同一路径。未指定模型且无已注册模型时抛 <code translate="no">ValueError</code>：在<strong>设置 → Provider</strong> 中启用，或查看 <code translate="no">openprogram providers available &lt;provider&gt;</code>。</p>
+<p class="note">deepseek、groq、openrouter、minimax、kimi 和目录中其余 provider 走模型注册表，与聊天分发器同一路径。未指定模型且无已注册模型时抛 <code translate="no">ValueError</code>：在<strong>设置 → 模型服务</strong> 中启用，或查看 <code translate="no">openprogram providers available &lt;provider&gt;</code>。</p>
 <h2 id="custom-providers">自定义 Provider</h2>
 <pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
 

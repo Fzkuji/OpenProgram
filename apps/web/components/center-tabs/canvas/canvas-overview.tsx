@@ -113,15 +113,31 @@ export function CanvasOverview() {
   }, []);
 
   // A window on screen is pictured once it settles (after a switch or a
-  // layout change), when the App loses focus or hides, and every 30s while
-  // nobody is using it, so its card (saved across restarts) looks like it
-  // did when it was last seen.
+  // layout change), when the App loses focus or hides, and after its
+  // content changed: 5s after it stops changing, at most every 30s while it
+  // keeps changing, never while someone is using it. So its card (saved
+  // across restarts) looks like it did when it was last seen, and nothing
+  // is pictured again while nothing changes.
   useEffect(() => {
-    let timer: number | undefined, lastInput = Date.now();
-    const input = () => { lastInput = Date.now(); };
-    const idle = window.setInterval(() => {
-      if (document.visibilityState === "visible" && Date.now() - lastInput > 5000 && !canvasPanesMoving()) void captureVisiblePanes([], 260, { background: true });
-    }, 30000);
+    let timer: number | undefined, idle: number | undefined, lastInput = 0, due = 0;
+    const arm = (wait: number) => { window.clearTimeout(idle); idle = window.setTimeout(settled, wait); };
+    const settled = () => {
+      const quiet = Date.now() - lastInput;
+      if (quiet < 5000) { arm(5000 - quiet); return; }
+      due = 0;
+      if (document.visibilityState === "visible" && !canvasPanesMoving()) void captureVisiblePanes([], 260, { background: true });
+    };
+    const changed = () => {
+      const at = Date.now();
+      if (!due) due = at + 30000;
+      arm(Math.max(0, Math.min(5000, due - at)));
+    };
+    const input = () => { lastInput = Date.now(); changed(); };
+    // Content that changes by itself (a reply streaming in) counts too.
+    const content = new MutationObserver(records => {
+      if (records.some(record => (record.target instanceof Element ? record.target : record.target.parentElement)?.closest("[data-canvas-root]"))) changed();
+    });
+    content.observe(document.body, { childList: true, characterData: true, subtree: true });
     const hidden = () => { if (document.visibilityState === "hidden") now(); };
     const later = () => {
       window.clearTimeout(timer);
@@ -143,7 +159,7 @@ export function CanvasOverview() {
     window.addEventListener("keydown", input, true);
     window.addEventListener("wheel", input, { capture: true, passive: true });
     return () => {
-      off(); look.disconnect(); window.clearTimeout(timer); window.clearInterval(idle);
+      off(); look.disconnect(); content.disconnect(); window.clearTimeout(timer); window.clearTimeout(idle);
       window.removeEventListener("blur", now);
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("pointerdown", input, true);

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import logging
 
 from openprogram.runtime.permissions.modes import DEFAULT_PERMISSION
@@ -194,18 +195,43 @@ def continuation_allowed(store, record):
     return not window["expired"]
 
 
+_UNSETTLED = frozenset({"pending", "resuming", "failed"})
+#: The restart record of an update, as it was when nothing in it was left to
+#: continue: ``update id -> (inode, size, modification time)``.
+_nothing_left: dict[str, tuple] = {}
+
+
+def _signature(path) -> tuple | None:
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    return info.st_ino, info.st_size, info.st_mtime_ns
+
+
 def _resume(store, record, runner):
     from openprogram.runtime.execution.model import CommandStatus, ExecutionStatus
 
     executions = runner._execution_store
+    # Every finished update comes here each five seconds. One with no restart
+    # record, or whose record was read as it is now and held nothing left to
+    # continue, is passed over without the lock or a read.
+    signature = _signature(store.root / record.request.update_id / "restart.json")
+    if signature is None or _nothing_left.get(record.request.update_id) == signature:
+        return
     with store._locked():
         path, manifest = _load(store, record)
         if not path.exists() or load_maintenance(store) is not None:
             return
         if not continuation_allowed(store, record):
             return
+    if not any(item["status"] in _UNSETTLED for item in manifest["executions"].values()):
+        if len(_nothing_left) >= 512:
+            _nothing_left.clear()
+        _nothing_left[record.request.update_id] = signature
+        return
     for execution_id, item in manifest["executions"].items():
-        if item["status"] not in {"pending", "resuming", "failed"}:
+        if item["status"] not in _UNSETTLED:
             continue
         pause = executions.get_command(
             _command_id(record.request.update_id, execution_id, "pause")

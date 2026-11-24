@@ -46,6 +46,32 @@ def read_config() -> dict[str, Any]:
     return _document(path, raw)
 
 
+#: The bytes :func:`read_config_value` last parsed, and what they held.
+_parsed_bytes: tuple[bytes | None, dict[str, Any]] = (None, {})
+
+
+def read_config_value(key: str) -> Any:
+    """One top-level value of the config file, a copy the caller may change.
+
+    For a value read many times per request: the file is read each time, and
+    parsed only when its bytes changed.
+    """
+    import copy
+    from openprogram.host._platform.filesystem import retry_sharing_violation
+
+    global _parsed_bytes
+    path = get_config_path()
+    try:
+        raw = retry_sharing_violation(path.read_bytes)
+    except FileNotFoundError:
+        raw = None
+    known, document = _parsed_bytes
+    if raw is None or raw != known:
+        document = _document(path, raw)
+        _parsed_bytes = (raw, document)
+    return copy.deepcopy(document.get(key))
+
+
 def read_config_with_revision() -> tuple[dict[str, Any], str]:
     """Read a prompt snapshot and its exact-byte revision under the file lock."""
     path = get_config_path()

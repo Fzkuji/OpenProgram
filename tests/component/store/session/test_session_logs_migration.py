@@ -77,3 +77,21 @@ def test_a_field_without_a_column_survives_a_node_update(tmp_path):
 
     reopened = SessionStore(tmp_path / "agent")
     assert reopened.get_branch("s1")[-1]["loaded_deferred_tools"] == ["web_search"]
+
+
+def test_a_finished_session_that_is_still_asked_for_stays_in_memory(tmp_path, monkeypatch):
+    """The Job runner asks about finished Jobs every pass; dropping their
+    session between two passes read its log again on each one."""
+    import time
+
+    from openprogram.runtime.execution.store import ExecutionStore
+
+    clock = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    store = ExecutionStore(tmp_path / "tables.sqlite3")
+    finished = _finished_turn(store, "asked")
+    clock[0] += 7200
+    assert store.get_execution(finished) is not None
+    assert store.tables.forget_finished_sessions(3600) == 0
+    clock[0] += 3601
+    assert store.tables.forget_finished_sessions(3600) == 1

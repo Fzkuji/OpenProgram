@@ -221,17 +221,17 @@ class Summarizer:
                       and n - i >= self.protect_last_n
                       and sum(_has_text_block(m) for m in messages[i:])
                       >= self.keep_min_messages]
-        if not boundaries:
-            return 0
         for cut in boundaries:
             if sum(tokens[cut:]) <= effective_keep:
                 return cut
         # The two-turn preference is not a hard floor. A single completed
         # tool-heavy turn can exceed the entire keep budget while the next
         # user request is short. In that case summarize the completed turn
-        # and keep the active/latest user turn intact.
+        # and keep the active/latest user turn intact. This holds when no
+        # boundary leaves the preferred tail at all, too: one giant turn
+        # followed by a short one is exactly that case.
         for cut in turn_starts[1:]:
-            if sum(tokens[cut:]) <= effective_keep:
+            if cut >= max(1, self.protect_first_n) and sum(tokens[cut:]) <= effective_keep:
                 return cut
         return boundaries[-1] if boundaries else 0
 

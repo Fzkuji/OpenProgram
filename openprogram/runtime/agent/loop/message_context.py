@@ -5,17 +5,32 @@ import copy
 import json
 from typing import Any
 
+from openprogram.models.providers.types import UserMessage
+
+
+class RuntimeNote(UserMessage):
+    """A user-role note the runtime puts after the turn's message for one
+    request (the current permission mode), never stored.
+
+    It is not the turn's message: the memory recalled for the turn is
+    searched with the person's own words, and the turn's date and recalled
+    memory go in front of their message, where later turns render them from
+    its node. Taken for the turn's message, the note became the recall query
+    and carried the block, and every next turn re-read the previous one
+    from its message on."""
+
 
 def _latest_user_text(messages: list) -> str:
     """Walk back from the end and return the last user-role text.
 
     Memory prefetch uses this as the recall query for the upcoming
     turn. Empty string if no user message is present (e.g. on the
-    first model warmup call).
+    first model warmup call). A :class:`RuntimeNote` is not a user's
+    message and is passed over.
     """
     for msg in reversed(messages):
         role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
-        if role != "user":
+        if role != "user" or isinstance(msg, RuntimeNote):
             continue
         content = getattr(msg, "content", None)
         if content is None and isinstance(msg, dict):
@@ -76,7 +91,7 @@ def _inject_memory_prefetch(llm_messages: list, block: str, anchor: str | None =
         anchor = None
     for index in range(len(llm_messages or []) - 1, -1, -1):
         msg = llm_messages[index]
-        if _field(msg, "role") != "user":
+        if _field(msg, "role") != "user" or isinstance(msg, RuntimeNote):
             continue
         if anchor and _latest_user_text([msg]) != anchor:
             continue

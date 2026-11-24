@@ -15,10 +15,9 @@
 <thead class="sr"><tr><th scope="col">Route</th><th scope="col">Purpose</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">/chat</code>, <code translate="no">/s/&lt;session-id&gt;</code></th><td>Chat; direct link to one session. Switching sessions keeps the page and WebSocket.</td></tr>
-<tr><th scope="row"><code translate="no">/pending</code></th><td>Always-on Agent reports from all conversations: awaiting your decision, then new</td></tr>
 <tr><th scope="row"><code translate="no">/agents</code></th><td>Create, configure, start conversations: model, abilities, memory, context</td></tr>
 <tr><th scope="row"><code translate="no">/applications</code></th><td>Install from a local folder; open, enable, hide from the new tab page, update, uninstall</td></tr>
-<tr><th scope="row"><code translate="no">/scheduler</code></th><td>One-time, recurring and monitor tasks and <a href="../capabilities/reminders.html">reminders</a>, filtered by type, as a list or <a href="../capabilities/reminders.html#calendar-view">calendar</a>; pause, resume, delete</td></tr>
+<tr><th scope="row"><code translate="no">/tasks</code></th><td><strong>Inbox</strong>: reports from always-on Agents and scheduled task results across all conversations, awaiting your decision, then new. <strong>Scheduled</strong>: one-time, recurring and monitor tasks and <a href="../capabilities/reminders.html">reminders</a>, filtered by type, as a list or <a href="../capabilities/reminders.html#calendar-view">calendar</a>; pause, resume, delete</td></tr>
 <tr><th scope="row"><code translate="no">/chats</code>, <code translate="no">/history</code></th><td>Projects, home project first; each with Chats, Memory, Settings, Info tabs</td></tr>
 <tr><th scope="row"><code translate="no">/memory</code></th><td>History on Memory: wiki, journal, core memories</td></tr>
 <tr><th scope="row"><code translate="no">/projects</code></th><td>History on Chats; Settings holds per-project permission rules and defaults</td></tr>
@@ -30,11 +29,12 @@
 </tbody>
 </table>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Settings tab</th><th scope="col">Holds</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Settings group</th><th scope="col">Holds</th></tr></thead>
 <tbody>
-<tr><th scope="row">General</th><td>Language, suggestions, user, notifications, runtime version, Desktop update status</td></tr>
-<tr><th scope="row">Providers</th><td><a href="../models/README.html">Models</a>, credentials, auth</td></tr>
-<tr><th scope="row">Other tabs</th><td>Appearance, Memory, Search, Browser, Voice, Environments, Channels, Import, Usage, System, Versions</td></tr>
+<tr><th scope="row">Personal</th><td>General (language, suggestions, user, notifications, web server), Appearance</td></tr>
+<tr><th scope="row">Models and abilities</th><td>Model services (<a href="../models/README.html">models</a>, credentials, routing, behavior), Token Usage, Memory, Web Search, Voice</td></tr>
+<tr><th scope="row">Computers and connections</th><td>Machines (with this computer's system access), Browser, Channels</td></tr>
+<tr><th scope="row">Data</th><td>Import, Versions and updates (app version and updates, kept versions)</td></tr>
 </tbody>
 </table>
 <details>
@@ -49,7 +49,7 @@
 <p class="note">A choice you make yourself is kept.</p>
 </details>
 
-<h3 id="settings-versions">Settings → Versions</h3>
+<h3 id="settings-versions">Settings → Versions and updates</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
 <tbody>
@@ -71,7 +71,7 @@
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
 <tbody>
 <tr><th scope="row">Open</th><td><strong>⌘K</strong> (<strong>Ctrl+K</strong>) anywhere except a terminal, which keeps it; again or Escape closes</td></tr>
-<tr><th scope="row"><strong>Actions</strong></th><td>New chat; Agents, Skills, Applications, Projects, History, Memory, Scheduler, Settings</td></tr>
+<tr><th scope="row"><strong>Actions</strong></th><td>New chat; Agents, Skills, Applications, Projects, History, Memory, Tasks, Settings</td></tr>
 <tr><th scope="row"><strong>Sessions</strong></th><td>Up to 300 unarchived, most recent first, with last activity or <strong>Running</strong>. Selects an open tab if there is one. Matches title, latest message preview and project name, not message contents.</td></tr>
 </tbody>
 </table>
@@ -85,6 +85,7 @@
 <tr><th scope="row">Cmd+Shift+T</th><td>Reopen the last closed tab</td></tr>
 <tr><th scope="row">Cmd+Shift+] Cmd+Shift+[</th><td>Next, previous tab</td></tr>
 <tr><th scope="row">Cmd+1 … Cmd+8, Cmd+9</th><td>That tab, last tab</td></tr>
+<tr><th scope="row">Cmd+Option+U</th><td>Sidebar Activity, and back</td></tr>
 <tr><th scope="row">Cmd+F, Cmd+G, Shift+Cmd+G</th><td>Find, next, previous; in find also Enter, Shift+Enter</td></tr>
 <tr><th scope="row">↑ on the first line, ↓ past newest</th><td>Recall a message, restore your draft. Editing recalled text starts a new cycle; modified arrows and selections edit normally.</td></tr>
 </tbody>
@@ -224,7 +225,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row">Ticks on the left edge</th><td>One per message, with two or more of yours. Point for a preview card; click to scroll. A turn with a task has a longer tick, and its card lists the tasks: click one to go to its block.</td></tr>
+<tr><th scope="row">Ticks on the left edge</th><td>One per message, with two or more of yours. Point for a preview card; click to scroll. Every tick is the same length, a chapter's longer. A turn with a task lists its tasks on the card: click one to go to its block.</td></tr>
 <tr><th scope="row"><strong>Pin as chapter</strong>, reply action row</th><td>Thicker purple tick, filled bookmark, shown action row; on every branch containing that message and in every window</td></tr>
 <tr><th scope="row"><strong>Unpin chapter</strong></th><td>Removes it</td></tr>
 </tbody>
@@ -267,7 +268,7 @@
 <tr><th scope="row">Markdown</th><td>Styled as you type; markers hidden away from the cursor. Sends the original.</td></tr>
 <tr><th scope="row">Long paste</th><td>Over 2,000 characters becomes <strong>Pasted · N lines</strong>: hover to preview, Backspace removes. Fully sent; the message shows a chip you can expand. <strong>lost</strong> means re-paste.</td></tr>
 <tr><th scope="row"><code translate="no">@path</code></th><td>Searched in the working directory: worktree or project folder, else the default project; a new chat uses its chosen project. Becomes a chip.</td></tr>
-<tr><th scope="row"><code translate="no">@</code> tabs and apps</th><td>Above files: open tabs and running apps matching title, address, name or bundle id. <code translate="no">/</code> in the query searches only files. Apps the agent may never operate are hidden.</td></tr>
+<tr><th scope="row"><code translate="no">@</code> pages, windows and apps</th><td>Above files: every web page this conversation's Resources lists (not other conversations' pages), windows of other applications shown in tabs, and running apps, matching title, address, name or bundle id. <code translate="no">/</code> in the query searches only files. Apps the agent may never operate are hidden.</td></tr>
 <tr><th scope="row">Secrets</th><td>Tokens and keys display masked with an eye toggle: GitHub, OpenAI and Anthropic <code translate="no">sk-</code>, AWS <code translate="no">AKIA</code>, Slack, Stripe, Google, Hugging Face, npm, GitLab, JWTs, PEM. Display only: the model gets the full text.</td></tr>
 <tr><th scope="row">Quote</th><td>Select text, <strong>Add to chat</strong>: into that pane's draft</td></tr>
 <tr><th scope="row"><strong>Edit message</strong></th><td>Text, URLs, attachments, <code translate="no">@</code> mentions. Cmd/Ctrl+Enter saves, Escape cancels; failures keep your edits.</td></tr>
@@ -369,7 +370,7 @@
 <tr><th scope="row"><strong>Rewind to here</strong> availability</th><td>Every sent user message; disabled, with the reason in its tip, while its branch runs or files upload. Message and attachments return above any draft.</td></tr>
 <tr><th scope="row">What it restores</th><td>Edit-tool changes only. Files changed only by shell commands, and commits, stay. Files another conversation changed later are left alone and listed.</td></tr>
 <tr><th scope="row"><strong>Rewound here</strong>, <strong>Undo rewind</strong>, <strong>Redo rewind</strong></th><td>Rewound turns are kept and the row marks the spot. Sending again adds a version beside them. Undo and redo move the conversation only.</td></tr>
-<tr><th scope="row"><strong>Fork from here</strong></th><td>New conversation with the history through this message and its reply; this one stays. Also, with Rewind, in the right-click menu.</td></tr>
+<tr><th scope="row"><strong>Fork from here</strong></th><td>New conversation with the history through this message and its reply; this one stays. Its <strong>Branched from</strong> banner quotes the message, and <strong>Back to original</strong> returns to it. Also, with Rewind, in the right-click menu.</td></tr>
 <tr><th scope="row">‹ N / M ›</th><td>Switches version; never deletes</td></tr>
 <tr><th scope="row"><strong>Copy conversation</strong>, ⋯ menu</th><td>A separate conversation to HEAD, or the last finished turn while running; same project, environment, Agent, model and settings. Titled "(copy)" with a <strong>Copied from</strong> banner.</td></tr>
 <tr><th scope="row"><code translate="no">/branch &lt;name&gt;</code></th><td>Names the branch; without a name, from its content</td></tr>
@@ -395,10 +396,13 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row">Lists</th><td>Files changed by a turn, the branch or the folder, with diffs</td></tr>
+<tr><th scope="row">Scopes</th><td><strong>This turn</strong>, <strong>Unstaged</strong> (not yet staged, new files included), <strong>Staged</strong>, <strong>Branch</strong>, with diffs. <strong>N uncommitted files</strong> in the Git menu opens Unstaged.</td></tr>
 <tr><th scope="row"><strong>Revert</strong> on a block</th><td>Restores those lines on disk if they still read as shown; otherwise refreshes. File History can undo it. Waits during a turn.</td></tr>
-<tr><th scope="row"><strong>Revert</strong> refuses</th><td>Outside the project, staged changes, blocks split across pages, end-of-file blocks without a newline, whole added or deleted files</td></tr>
-<tr><th scope="row">Comment button on a line</th><td><strong>Add to message</strong> adds file, line, quote and comment to the draft. ⌘Enter adds, Escape cancels.</td></tr>
+<tr><th scope="row"><strong>Revert</strong> refuses</th><td>Outside the project, the Staged scope, blocks split across pages, end-of-file blocks without a newline, whole added or deleted files</td></tr>
+<tr><th scope="row"><strong>Stage</strong>, <strong>Stage file</strong></th><td>In Unstaged: adds the block or file to the next commit. In Staged they read <strong>Unstage</strong>, <strong>Unstage file</strong>. Local Git projects only; not in an SSH conversation. Waits during a turn.</td></tr>
+<tr><th scope="row">Comment button on a line</th><td>The comment stays under its line, with <strong>Edit</strong> and <strong>Delete</strong>, and is kept for the conversation until sent. ⌘Enter saves, Escape cancels.</td></tr>
+<tr><th scope="row">Bottom bar</th><td><strong>N comments</strong>: <strong>Send to agent</strong> sends them all as one message (file, line, quoted line, comment); <strong>Discard</strong> drops them</td></tr>
+<tr><th scope="row"><strong>Review with agent</strong></th><td>The conversation's model reviews the shown scope. Findings appear under their lines with a severity: <strong>Fix</strong> asks the agent to fix one, <strong>Dismiss</strong> hides it. It is in the <strong>…</strong> menu at the right of the header, beside <strong>File type</strong>; the scope menu on the left shows the scope and its totals. While it runs the header shows <strong>Reviewing</strong> with the time so far and a stop button.</td></tr>
 </tbody>
 </table>
 </details>
@@ -407,11 +411,12 @@
 <table class="stack">
 <thead><tr><th scope="col">Section</th><th scope="col">Lists</th><th scope="col">Its page</th></tr></thead>
 <tbody>
-<tr><th scope="row"><strong>Waiting for you</strong>, when any</th><td>Always-on reports left for you</td><td>Opens the conversation</td></tr>
-<tr><th scope="row"><strong>Agents</strong></th><td><strong>Main agent</strong> with state and sub-agent count; a red badge counts waiting items. One row per branch, <strong>Current</strong> marked. Always-on status line when <a href="../capabilities/always-on-agents.html">on</a>.</td><td>Its runs, newest first, with what each did inside it; the <strong>Always-on</strong> row when on; a branch offers <strong>Switch to this branch</strong></td></tr>
-<tr><th scope="row"><strong>Programs and commands</strong></th><td>Commands and background programs running now, and programs that failed; finished ones leave the list</td><td>Progress, command, terminal output, <strong>Stop program</strong>, directory and environment under <strong>Technical details</strong>; a command shows its output once it returned</td></tr>
+<tr><th scope="row"><strong>Waiting for you</strong>, when any</th><td>Always-on reports and scheduled task results left for you</td><td>Opens the conversation</td></tr>
+<tr><th scope="row"><strong>Sent messages</strong>, when any</th><td>Messages to other conversations still unanswered</td><td>Opens that conversation</td></tr>
+<tr><th scope="row"><strong>Programs and commands</strong></th><td>Background programs running now; one leaves the list when it ends, failed or not, and its outcome stays in the chat. A command the agent waits on reads in the chat</td><td>Progress, command, terminal output, <strong>Stop program</strong>, directory and environment under <strong>Technical details</strong>; a command shows its output once it returned</td></tr>
 <tr><th scope="row"><strong>Open work</strong>, when any</th><td><a href="../capabilities/agents.html#open-work">What the agent still owes you</a></td><td>Note, <strong>Mark done</strong> or <strong>Reopen</strong>, <strong>Remove</strong></td></tr>
-<tr><th scope="row"><strong>Scheduled tasks</strong></th><td>Scheduler tasks, <a href="../capabilities/reminders.html">reminders</a>, <a href="../capabilities/event-triggers.html">event triggers</a> from this conversation</td><td><strong>Open in Scheduler</strong>; a <strong>Task</strong> row with its prompt or command, and for webhooks the address and key with <strong>Copy</strong>; its last 20 runs</td></tr>
+<tr><th scope="row"><strong>Scheduled tasks</strong></th><td>Scheduler tasks, <a href="../capabilities/reminders.html">reminders</a>, <a href="../capabilities/event-triggers.html">event triggers</a> from this conversation</td><td><strong>Open in Tasks</strong>; a <strong>Task</strong> row with its prompt or command, and for webhooks the address and key with <strong>Copy</strong>; its last 20 runs</td></tr>
+<tr><th scope="row">The work chart</th><td>Topics, their messages titled by their tasks, the steps and what is inside a step, one column each. From the messages on, a bar's colour is the agent. Each agent's glyph appears once, with a red count for what waits for you; a sub-agent is the step that started it. With <a href="../capabilities/always-on-agents.html">always-on</a>, the next wake is the top row. Before the first run: one <strong>Main agent</strong> row.</td><td>A glyph opens its agent: its runs, newest first, with what each did inside it; the <strong>Always-on</strong> row when on; a branch offers <strong>Switch to this branch</strong>. A sub-agent's glyph opens its conversation.</td></tr>
 </tbody>
 </table>
 <dl class="pairs">
@@ -421,7 +426,7 @@
 <dt>Width</dt><dd>Drag the panel's edge, or focus it and press Left or Right; saved per browser. Wider, runs and their timeline sit side by side; narrower, <strong>Timeline</strong> switches between them</dd>
 <dt>Headings</dt><dd>Fold, per browser</dd>
 <dt>Program drafts</dt><dd>Opening a Program from Abilities starts a draft tab with no execution history</dd>
-<dt>Grouping</dt><dd>Agents and runs, by branch</dd>
+<dt>Grouping</dt><dd>By task; every branch's messages share one chart</dd>
 </dl>
 <details>
 <summary>Sub-agents</summary>
@@ -477,6 +482,7 @@
 <thead class="sr"><tr><th scope="col">Sidebar</th><th scope="col">How</th></tr></thead>
 <tbody>
 <tr><th scope="row">Shows</th><td>Projects with non-archived chats; others stay in the selector</td></tr>
+<tr><th scope="row">Activity</th><td>The bell beside the filter (Cmd+Option+U) swaps the list for chats of the last 7 days that are running, waiting for you, failed or unread, by day, newest first. Amber dot on the bell: a chat waits for input. ⋯ → <strong>Mark all as read</strong>. Remembered here.</td></tr>
 <tr><th scope="row">Group</th><td><strong>Group by → Project</strong>; drag a header, or Alt+Up, Alt+Down. Saved here.</td></tr>
 <tr><th scope="row">Sort projects</th><td>Newest, oldest, name, manual. Chat direction and A–Z are separate. Pins stay on top.</td></tr>
 <tr><th scope="row">Move chats</th><td>Drag, or <strong>Move to project</strong>. Records move; later turns use the new folder and memory; old memory stays. Not while running.</td></tr>

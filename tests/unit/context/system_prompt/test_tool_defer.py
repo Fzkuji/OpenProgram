@@ -174,6 +174,20 @@ def test_discovery_promotes_only_the_loaded_tool():
     assert [t.name for t in repeated] == [t.name for t in after]
 
 
+def test_a_loaded_tool_joins_the_array_at_its_end_in_load_order():
+    """What was sent before a load stays as it was: loaded tools come after
+    every resident tool, in the order they were first loaded."""
+    apply_default_deferral()
+    tools = agent_tools(toolset="full")
+    before, _ = _split(tools)
+    after, _ = _split(tools, [_search("scheduler"), _search("memory_get", "call-2")])
+    names = [t.name for t in after]
+    assert names[:len(before)] == [t.name for t in before]
+    assert names[len(before):] == ["scheduler", "memory_get"]
+    swapped, _ = _split(tools, [_search("memory_get"), _search("scheduler", "call-2")])
+    assert [t.name for t in swapped][len(before):] == ["memory_get", "scheduler"]
+
+
 def test_a_request_without_the_search_does_not_load_the_tool():
     """A nested run, another branch, or an edit from before the search reads
     messages without the result, so the tool is not loaded there."""

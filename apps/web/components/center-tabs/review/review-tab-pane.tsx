@@ -1,23 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Eye, FileDiff, Minus, MoreHorizontal, Plus, Sparkles, Square } from "lucide-react";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { FileViewer } from "@/components/files/file-viewer";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HoverTip } from "@/components/ui/tooltip";
 
-import { FeatherIcon } from "@/components/animated-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   CHECK_SLOT_PAD,
   MENU_ITEM_STATES,
+  MENU_NOTE,
   MENU_PANEL,
   MENU_SEPARATOR,
   itemCls,
@@ -37,13 +40,25 @@ import type {
   ScopeState,
 } from "./review-tab-types";
 import { requestReviewScope } from "./use-review-scope";
-import { requestReviewDiff, requestRevertHunk } from "./use-review-diff";
-import { hunkRange, lineCommentText, type DiffLine, type ReviewHunk } from "./review-diff-rows.ts";
-import { appendToComposer } from "@/components/chat/messages/editing/quote-to-chat";
+import { cancelAgentReview, requestAgentReview, requestReviewDiff, requestRevertHunk, requestStage } from "./use-review-diff";
+import {
+  findingFixText,
+  hunkRange,
+  reviewCommentsMessage,
+  rowLine,
+  type DiffLine,
+  type ReviewHunk,
+} from "./review-diff-rows.ts";
+import { finishReview, sessionComments, sessionFindings, startReview, stopReview, useReviewNotes } from "./review-notes-store";
+import type { ReviewFinding } from "./review-tab-types";
+import { sendFromTranscript } from "@/lib/chat/send/send-queue";
 import { showToast } from "@/lib/format-utils/toast";
 import { MenuCheck } from "@/components/ui/menu/menu-check";
 import { MenuRow, type MenuGlyph } from "@/components/ui/menu/menu-parts";
 import { useEffectEvent } from "@/lib/hooks/use-effect-event";
+import { useNow } from "@/lib/clock/use-now";
+import { ELAPSED_CADENCE, formatElapsed } from "@/lib/format-utils/elapsed";
+import { cn } from "@/lib/utils";
 
 /** What a Review pane last showed, by its source. A pane mounts again
  *  whenever its window comes back (a tab switch, a merge), and starting
@@ -57,6 +72,8 @@ type ReviewMemory = {
   scopeState: ScopeState;
   diffState: DiffState;
 };
+/** The scope menu's sections: the agent's turn, the Git index, the branch. */
+const SCOPE_GROUPS: readonly (readonly ReviewScope[])[] = [["turn"], ["unstaged", "staged"], ["branch"]];
 const CATEGORY_GLYPHS: Record<"All" | "Code" | "Tests" | "Docs" | "Large", MenuGlyph> = {
   All: "list",
   Code: "code-square",
@@ -95,6 +112,10 @@ export function ReviewTabPane({
   const [diffCursor, setDiffCursor] = useState<string | null>(null);
   const [diffHistory, setDiffHistory] = useState<string[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // A read that got no reply is asked again, quietly, with backoff; what
+  // the pane shows stays meanwhile.
+  const [diffRetry, setDiffRetry] = useState(0);
+  const failedReads = useRef({ scope: 0, diff: 0 });
   const [category, setCategory] = useState<ReviewCategory>(memory?.category ?? "All");
   // Documents and images can be read rendered; the choice carries over
   // to the next file that supports it.
@@ -215,15 +236,10 @@ const data = await requestReviewScope({
       });
       if (controller.signal.aborted) return;
       if (!data) {
-        setScopeState((current) => ({
-          ...current,
-          loading: false,
-          status: "error",
-          error: text("Review request disconnected", "审阅请求连接已断开"),
-          category,
-          query,
-          sort,
-        }));
+        console.warn("review scope read got no reply; reading again", { sessionId, scope });
+        const wait = Math.min(30_000, 1000 * 2 ** failedReads.current.scope++);
+        const timer = setTimeout(() => setRefreshNonce((value) => value + 1), wait);
+        controller.signal.addEventListener("abort", () => clearTimeout(timer));
         return;
       }
       const stale = data.status === "stale" || data.error === "STALE_SNAPSHOT";
@@ -236,14 +252,21 @@ const data = await requestReviewScope({
           setRefreshNonce((value) => value + 1);
           return;
         }
+        // Still stale after the fresh request: nothing is shown for it,
+        // and the scope is asked again later, with backoff.
         setScopeState((current) => ({
           ...current,
           loading: false,
           status: "stale",
           error: data.error ?? "STALE_SNAPSHOT",
         }));
+        console.warn("review scope is still stale; reading again", { sessionId, scope });
+        const wait = Math.min(30_000, 1000 * 2 ** failedReads.current.scope++);
+        const timer = setTimeout(() => setRefreshNonce((value) => value + 1), wait);
+        controller.signal.addEventListener("abort", () => clearTimeout(timer));
         return;
       }
+      failedReads.current.scope = 0;
       const files: ReviewFile[] = data.files ?? [];
       setScopeState({
         loading: false,
@@ -263,6 +286,7 @@ const data = await requestReviewScope({
         category: data.category as ReviewCategory | undefined,
         query: data.query as string | undefined,
         sort: data.sort as ReviewSort | undefined,
+        staging: data.staging === true,
       });
       setSelectedPath((current) => {
         if (current && files.some((file) => file.path === current)) return current;
@@ -303,27 +327,26 @@ const data = await requestReviewScope({
       });
       if (controller.signal.aborted) return;
       if (!data) {
-        setDiffState({
-          loading: false,
-          path: selectedPath,
-          error: text("Diff request disconnected", "差异请求连接已断开"),
-        });
+        console.warn("review diff read got no reply; reading again", { sessionId, path: selectedPath });
+        const wait = Math.min(30_000, 1000 * 2 ** failedReads.current.diff++);
+        const timer = setTimeout(() => setDiffRetry((value) => value + 1), wait);
+        controller.signal.addEventListener("abort", () => clearTimeout(timer));
         return;
       }
-      if (data.error === "STALE_SNAPSHOT") {
+      failedReads.current.diff = 0;
+      // A stale answer is read once more from a fresh snapshot of the scope.
+      // Stale again, or any other refusal: the file list stays and this
+      // file's diff is not drawn; asking again would get the same answer.
+      const refreshSnapshotOnce = () => {
         const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
-        const retry = staleRecoveryRef.current !== recoveryKey;
+        if (staleRecoveryRef.current === recoveryKey) return false;
         staleRecoveryRef.current = recoveryKey;
         clearReviewForStale();
-        if (retry) setRefreshNonce((value) => value + 1);
-        else {
-          setScopeState((current) => ({
-            ...current,
-            loading: false,
-            status: "stale",
-            error: data.error,
-          }));
-        }
+        setRefreshNonce((value) => value + 1);
+        return true;
+      };
+      if (data.error === "STALE_SNAPSHOT") {
+        if (!refreshSnapshotOnce()) setDiffState({ loading: false, path: selectedPath, error: data.error });
         return;
       }
       if (data.error === "STALE_CURSOR") {
@@ -334,7 +357,7 @@ const data = await requestReviewScope({
         setDiffHistory([]);
         if (retry) {
           setDiffState({ loading: true, path: selectedPath });
-        } else {
+        } else if (!refreshSnapshotOnce()) {
           setDiffState({ loading: false, path: selectedPath, error: data.error });
         }
         return;
@@ -368,6 +391,7 @@ const data = await requestReviewScope({
     sort,
     text,
     clearReviewForStale,
+    diffRetry,
   ]);
 
   const selected = useMemo(
@@ -380,6 +404,12 @@ const data = await requestReviewScope({
   const sourceLabel = scopeState.source === "git"
     ? "Git workspace"
     : text("Mutation journal", "修改日志");
+  const scopeLabels: Record<ReviewScope, string> = {
+    turn: text("This turn", "本轮"),
+    unstaged: text("Unstaged", "未暂存"),
+    staged: text("Staged", "已暂存"),
+    branch: text("Branch", "分支"),
+  };
   const categoryLabels: Record<ReviewCategory, string> = {
     All: text("All types", "全部类型"),
     Code: text("Code", "代码"),
@@ -411,6 +441,7 @@ const data = await requestReviewScope({
     setDiffHistory([]);
   };
   const filePages = scopeState.prev_cursor != null || scopeState.next_cursor != null;
+  const noChanges = reviewScopeIsEmpty(scopeState);
   const diffPages = Boolean(selected) && !showPreview
     && (diffHistory.length > 0 || diffState.next_cursor != null);
 
@@ -443,87 +474,228 @@ const data = await requestReviewScope({
     window.dispatchEvent(new CustomEvent("turn-files-history-changed", { detail: { sessionId } }));
   };
 
+  const [stagingFile, setStagingFile] = useState(false);
+  // Unstaged scope stages, Staged scope unstages; only a local Git project.
+  const staging: "stage" | "unstage" | undefined = !scopeState.staging ? undefined
+    : scope === "unstaged" ? "stage" : scope === "staged" ? "unstage" : undefined;
+
+  /** Stage or unstage one hunk, or the whole file without one, then
+   *  reload the scope: the index moved, so the snapshot is stale. */
+  const stageChange = async (hunk?: ReviewHunk) => {
+    const snapshotId = scopeState.snapshot_id;
+    if (!selected || !snapshotId || !staging) return;
+    const result = await requestStage({
+      sessionId, scope, category, query, sort, path: selected.path, snapshotId, hunk,
+    });
+    if (result?.status === "conflict") {
+      showToast(text("The index no longer matches this change; the diff was refreshed", "暂存区已和这处改动不一致，差异已刷新"));
+    } else if (result?.status === "blocked") {
+      showToast(text("Wait for the current turn to finish, then try again", "请等当前这一轮结束后再试"));
+      return;
+    } else if (result?.status !== "ready" && result?.error_code !== "STALE_SNAPSHOT") {
+      showToast(staging === "stage"
+        ? text(`Could not stage: ${result?.error ?? "no response"}`, `无法暂存：${result?.error ?? "没有响应"}`)
+        : text(`Could not unstage: ${result?.error ?? "no response"}`, `无法取消暂存：${result?.error ?? "没有响应"}`));
+      return;
+    }
+    setScopeState((current) => ({ ...current, snapshot_id: undefined }));
+    setRefreshNonce((value) => value + 1);
+    window.dispatchEvent(new CustomEvent("op:git-changed", { detail: {} }));
+  };
+
+  // Line comments wait here, per conversation, until they are sent together.
+  const comments = useReviewNotes(sessionComments(sessionId));
+  const findings = useReviewNotes(sessionFindings(sessionId));
+  const reviewing = useReviewNotes((state) => state.reviewing[sessionId] ?? 0);
+  const reviewNow = useNow(reviewing ? ELAPSED_CADENCE : null, reviewing);
+  const notes = useReviewNotes.getState();
+  const fileComments = useMemo(
+    () => comments.filter((comment) => comment.scope === scope && comment.path === selected?.path),
+    [comments, scope, selected?.path],
+  );
+  const fileFindings = useMemo(
+    () => findings.filter((finding) => finding.scope === scope && finding.rel === selected?.rel),
+    [findings, scope, selected?.rel],
+  );
+
   const commentOnLine = (row: DiffLine, comment: string) => {
     if (!selected) return;
-    appendToComposer(sessionId, lineCommentText(selected.rel, row, comment), false);
-    showToast(text("Comment added to your message", "评论已加入待发送的消息"));
+    const { side, line } = rowLine(row);
+    notes.addComment(sessionId, {
+      id: globalThis.crypto.randomUUID(),
+      scope,
+      path: selected.path,
+      rel: selected.rel,
+      side,
+      line,
+      quote: row.text.slice(1),
+      body: comment.trim(),
+    });
+  };
+  const sendComments = () => {
+    if (!comments.length) return;
+    if (sendFromTranscript(sessionId, reviewCommentsMessage(comments))) notes.clearComments(sessionId);
+  };
+  const fixFinding = (finding: ReviewFinding) => {
+    if (sendFromTranscript(sessionId, findingFixText(finding))) notes.removeFinding(sessionId, finding.id);
+  };
+
+  /** Review with agent: the conversation's model reviews this scope. Its
+   *  findings replace the ones it gave this scope before. A failure only
+   *  makes the button usable again. While it runs the same button stops
+   *  it, and the server cancels the model request. */
+  const reviewWithAgent = async () => {
+    const snapshotId = scopeState.snapshot_id;
+    if (!snapshotId || reviewing) return;
+    const reviewed = scope;
+    const { reviewId, signal } = startReview(sessionId);
+    try {
+      const result = await requestAgentReview({
+        sessionId, assistantMsgId, scope: reviewed, category, query, sort, snapshotId, reviewId, signal,
+      });
+      if (signal.aborted || result?.status !== "ready" || !result.findings) return;
+      const kept = (useReviewNotes.getState().findings[sessionId] ?? []).filter((finding) => finding.scope !== reviewed);
+      notes.setFindings(sessionId, [
+        ...kept,
+        ...result.findings.map((finding) => ({
+          id: globalThis.crypto.randomUUID(),
+          scope: reviewed,
+          rel: finding.path,
+          line: finding.line,
+          severity: finding.severity,
+          body: finding.body,
+        })),
+      ]);
+      showToast(result.findings.length
+        ? text(
+          `Agent review: ${result.findings.length} ${result.findings.length === 1 ? "finding" : "findings"}`,
+          `Agent 审阅：${result.findings.length} 条意见`,
+        )
+        : text("Agent review found nothing to raise", "Agent 审阅没有发现问题"));
+    } finally {
+      finishReview(sessionId, reviewId);
+    }
+  };
+
+  const stopAgentReview = () => {
+    const reviewId = stopReview(sessionId);
+    if (reviewId) cancelAgentReview(reviewId);
   };
 
   return (
     <div className={styles.page} data-testid="review-tab-pane">
       <header className={styles.header}>
-        <div className={styles.titleRow}>
-          <span className={styles.logo} aria-hidden="true"><FeatherIcon size={16} /></span>
-          <h1>{text("Review", "审阅")}</h1>
-          <span className={styles.source}>{sourceLabel}</span>
-          {scopeState.linked_impacts.length ? (
-            <span
-              className={styles.linkedImpacts}
-              data-tip={scopeState.linked_impacts
-                .map((impact) => `${impact.job_id ?? "actor"} · ${impact.status ?? impact.relation ?? "linked"}`)
-                .join("\n")}
-            >
-              {text(
-                `${scopeState.linked_impacts.length} linked`,
-                `${scopeState.linked_impacts.length} 个关联任务`,
-              )}
-            </span>
-          ) : null}
-          <div className={styles.totals} aria-label={text("Change totals", "修改统计")}>
-            <span>{text(`${scopeState.file_count} ${scopeState.file_count === 1 ? "file" : "files"}`, `${scopeState.file_count} 个文件`)}</span>
-            <i>+{scopeState.added ?? "—"}</i>
-            <em>−{scopeState.removed ?? "—"}</em>
-          </div>
-        </div>
-        <div className={styles.controlRow}>
-          <Tabs value={scope} onValueChange={(value) => chooseScope(value as ReviewScope)} activationMode="manual">
-            <TabsList aria-label={text("Review scope", "审阅范围")}>
-              {([
-                ["turn", text("This turn", "本轮")],
-                ["branch", text("Current branch", "当前分支")],
-                ["workspace", text("Workspace", "工作区")],
-              ] as const).map(([value, label]) => (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="px-3 text-fs-xs"
-                  disabled={value === "turn" && !assistantMsgId}
-                >
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <DropdownMenu>
+        {/* One row, as in Codex's Changes pane: the scope menu is the title
+            and carries the totals; everything used less often sits in the
+            … menu. A running review adds its time and a stop button. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className={styles.scopeButton} aria-label={text("Review scope", "审阅范围")}>
+              <span className={styles.scopeName}>{scopeLabels[scope]}</span>
+              <span className={styles.totals}>
+                <i>+{scopeState.added ?? "—"}</i>
+                <em>−{scopeState.removed ?? "—"}</em>
+              </span>
+              <ChevronDown aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className={cn(MENU_PANEL, "min-w-[200px] text-text-primary")}>
+            {SCOPE_GROUPS.map((group, index) => (
+              <span key={group.join()} className="contents">
+                {index ? <DropdownMenuSeparator className={MENU_SEPARATOR} /> : null}
+                {group.map((value) => (
+                  <DropdownMenuItem
+                    key={value}
+                    className={cn(itemCls(false), MENU_ITEM_STATES)}
+                    disabled={value === "turn" && !assistantMsgId}
+                    onSelect={() => chooseScope(value)}
+                  >
+                    <MenuRow label={scopeLabels[value]} checked={scope === value} />
+                  </DropdownMenuItem>
+                ))}
+              </span>
+            ))}
+            <DropdownMenuSeparator className={MENU_SEPARATOR} />
+            <div className={MENU_NOTE}>
+              {`${sourceLabel} · ${text(
+                `${scopeState.file_count} ${scopeState.file_count === 1 ? "file" : "files"}`,
+                `${scopeState.file_count} 个文件`,
+              )}`}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {scopeState.linked_impacts.length ? (
+          <span
+            className={styles.linkedImpacts}
+            data-tip={scopeState.linked_impacts
+              .map((impact) => `${impact.job_id ?? "actor"} · ${impact.status ?? impact.relation ?? "linked"}`)
+              .join("\n")}
+          >
+            {text(
+              `${scopeState.linked_impacts.length} linked`,
+              `${scopeState.linked_impacts.length} 个关联任务`,
+            )}
+          </span>
+        ) : null}
+        <span className="flex-1" />
+        {reviewing ? (
+          <span className={styles.reviewing} role="status">
+            <Sparkles aria-hidden="true" className={styles.busy} />
+            <span>{text("Reviewing", "审阅中")}</span>
+            <span className={styles.elapsed}>{formatElapsed((reviewNow - reviewing) / 1000, text)}</span>
+            <HoverTip label={text("Stop review", "停止审阅")}>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={text("Stop review", "停止审阅")} onClick={stopAgentReview}>
+                <Square aria-hidden="true" fill="currentColor" />
+              </Button>
+            </HoverTip>
+          </span>
+        ) : null}
+        <DropdownMenu>
+          <HoverTip label={text("Review options", "审阅选项")}>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="elevated" aria-label={text("File category", "文件分类")}>
-                {categoryLabels[category]}
-                <ChevronDown size={14} aria-hidden="true" />
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={text("Review options", "审阅选项")}>
+                <MoreHorizontal aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className={MENU_PANEL}>
-              {(["All", "Code", "Tests", "Docs", "Large"] as const).map((value) => (
-                <DropdownMenuItem
-                  key={value}
-                  className={`${itemCls(false)} ${MENU_ITEM_STATES}`}
-                  onSelect={() => chooseCategory(value)}
-                >
-                  <MenuRow glyph={CATEGORY_GLYPHS[value]} label={categoryLabels[value]} checked={category === value} />
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+          </HoverTip>
+          <DropdownMenuContent align="end" className={cn(MENU_PANEL, "min-w-[200px] text-text-primary")}>
+            <DropdownMenuItem
+              className={cn(itemCls(false), MENU_ITEM_STATES)}
+              disabled={!reviewing && (scopeState.loading || !scopeState.snapshot_id || scopeState.files.length === 0)}
+              onSelect={() => (reviewing ? stopAgentReview() : void reviewWithAgent())}
+            >
+              <MenuRow
+                glyph="stars"
+                label={reviewing ? text("Stop review", "停止审阅") : text("Review with agent", "让 agent 审阅")}
+              />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className={MENU_SEPARATOR} />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={cn(itemCls(false), MENU_ITEM_STATES)}>
+                <MenuRow glyph="tuning-2" label={text("File type", "文件类型")} trail={categoryLabels[category]} submenu />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={cn(MENU_PANEL, "text-text-primary")}>
+                {(["All", "Code", "Tests", "Docs", "Large"] as const).map((value) => (
+                  <DropdownMenuItem
+                    key={value}
+                    className={cn(itemCls(false), MENU_ITEM_STATES)}
+                    onSelect={() => chooseCategory(value)}
+                  >
+                    <MenuRow glyph={CATEGORY_GLYPHS[value]} label={categoryLabels[value]} checked={category === value} />
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <div className={`${styles.body} grid grid-cols-[minmax(0,1fr)] flex-1 min-h-0`}>
         <aside className={styles.files} aria-label={text("Changed files", "修改的文件")}>
-          {scopeState.loading ? (
-            <div className={styles.empty}>{text("Loading files…", "正在加载文件…")}</div>
-          ) : scopeState.error ? (
-            <div className={styles.empty}>{scopeState.error}</div>
-          ) : scopeState.files.length === 0 ? (
-            <div className={styles.empty}>{text("No changes in this scope", "此范围没有修改")}</div>
+          {/* Files already read stay while they are read again; with none,
+              the list is blank until they arrive. A failed read says nothing. */}
+          {scopeState.files.length === 0 ? (
+            noChanges ? <div className={styles.empty}>{text("No changes in this scope", "此范围没有修改")}</div> : null
           ) : scopeState.files.map((file) => (
             <button
               type="button"
@@ -583,21 +755,41 @@ const data = await requestReviewScope({
                     {selected.op === "add" ? text("New file", "新文件") : text("Deleted", "已删除")}
                   </span>
                 ) : null}
-                <span className="ml-[auto] flex items-center gap-[8px] flex-none">
-                  {previewable ? (
-                    <Tabs value={showPreview ? "preview" : "changes"} onValueChange={(value) => setView(value as "changes" | "preview")} activationMode="manual">
-                      <TabsList aria-label={text("View", "查看方式")}>
-                        {([
-                          ["changes", text("Changes", "改动")],
-                          ["preview", text("Preview", "预览")],
-                        ] as const).map(([value, label]) => (
-                          <TabsTrigger key={value} value={value} className="px-2.5 text-fs-xs">
-                            {label}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                    </Tabs>
-                  ) : null}
+                <span className="ml-[auto] flex items-center gap-[4px] flex-none">
+                  {/* Stage and Preview are icons that show while the header
+                      is hovered or focused, as Codex's file header does. */}
+                  <span className={styles.fileActions}>
+                    {staging ? (
+                      <HoverTip label={staging === "stage" ? text("Stage file", "暂存文件") : text("Unstage file", "取消暂存文件")}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={staging === "stage" ? text("Stage file", "暂存文件") : text("Unstage file", "取消暂存文件")}
+                          disabled={stagingFile}
+                          onClick={() => {
+                            setStagingFile(true);
+                            void stageChange().finally(() => setStagingFile(false));
+                          }}
+                        >
+                          {staging === "stage" ? <Plus aria-hidden="true" /> : <Minus aria-hidden="true" />}
+                        </Button>
+                      </HoverTip>
+                    ) : null}
+                    {previewable ? (
+                      <HoverTip label={showPreview ? text("Show changes", "查看改动") : text("Preview", "预览")}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={showPreview ? text("Show changes", "查看改动") : text("Preview", "预览")}
+                          onClick={() => setView(showPreview ? "changes" : "preview")}
+                        >
+                          {showPreview ? <FileDiff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                        </Button>
+                      </HoverTip>
+                    ) : null}
+                  </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -680,25 +872,37 @@ const data = await requestReviewScope({
               // The file list is folded away in narrow panes, so its
               // loading, error and empty states show here too.
               <div className={styles.empty}>
-                {scopeState.loading
-                  ? text("Loading files…", "正在加载文件…")
-                  : scopeState.error
-                    ?? (scopeState.files.length
-                      ? text("Select a file to inspect", "选择文件以查看差异")
-                      : text("No changes in this scope", "此范围没有修改"))}
+                {scopeState.files.length
+                  ? text("Select a file to inspect", "选择文件以查看差异")
+                  : noChanges
+                    ? text("No changes in this scope", "此范围没有修改")
+                    : null}
               </div>
             ) : showPreview ? (
               <div className={styles.preview}><FileViewer projectId="" path={selected.path} abs sessionId={sessionId} /></div>
-            ) : diffState.loading ? (
-              <div className={styles.empty}>{text("Loading diff…", "正在加载差异…")}</div>
-            ) : diffState.error ? (
-              <div className={styles.empty}>{diffState.error}</div>
+            ) : diffState.loading || diffState.error || scopeState.status !== "ready" ? (
+              // No diff to draw: still on its way, refused, or the scope has
+              // no snapshot to read diffs from. The file list says the rest.
+              <div className={styles.empty} />
             ) : diffState.diff_state === "large" || diffState.diff_state === "large_line" ? (
               <div className={styles.empty}>{text("Diff exceeds the bounded preview size", "差异超过预览大小限制")}</div>
             ) : diffState.diff_state === "binary" ? (
               <div className={styles.empty}>{text("Binary file", "二进制文件")}</div>
             ) : diffState.diff ? (
-              <ReviewDiff diff={diffState.diff} op={selected?.op} onRevertHunk={revertHunk} onComment={commentOnLine} />
+              <ReviewDiff
+                diff={diffState.diff}
+                op={selected?.op}
+                onRevertHunk={scope === "staged" ? undefined : revertHunk}
+                staging={staging}
+                onStageHunk={stageChange}
+                onComment={commentOnLine}
+                comments={fileComments}
+                onEditComment={(id, body) => notes.editComment(sessionId, id, body)}
+                onDeleteComment={(id) => notes.removeComment(sessionId, id)}
+                findings={fileFindings}
+                onDismissFinding={(id) => notes.removeFinding(sessionId, id)}
+                onFixFinding={fixFinding}
+              />
             ) : (
               <div className={styles.empty}>{text("No textual changes", "没有文本改动")}</div>
             )}
@@ -734,10 +938,31 @@ const data = await requestReviewScope({
               </div>
             ) : null}
           </div>
+          {comments.length ? (
+            <div className={styles.commentBar} role="region" aria-label={text("Pending comments", "待发送的评论")}>
+              <span className={styles.commentCount}>
+                {text(`${comments.length} ${comments.length === 1 ? "comment" : "comments"}`, `${comments.length} 条评论`)}
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => notes.clearComments(sessionId)}>
+                {text("Discard", "丢弃")}
+              </Button>
+              <Button type="button" size="sm" onClick={sendComments}>
+                {text("Send to agent", "发送给 agent")}
+              </Button>
+            </div>
+          ) : null}
         </main>
       </div>
     </div>
   );
+}
+
+/** "No changes" is said only when the server listed the scope and it is
+ *  empty: a listing that is still on its way, stale or refused says nothing.
+ *  A snapshot the server could not keep ("unavailable") still lists files. */
+export function reviewScopeIsEmpty(state: Pick<ScopeState, "loading" | "status" | "files">): boolean {
+  return !state.loading && state.files.length === 0
+    && (state.status === "ready" || state.status === "unavailable");
 }
 
 function fileName(rel: string): string {

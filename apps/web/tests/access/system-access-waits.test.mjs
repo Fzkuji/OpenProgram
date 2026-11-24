@@ -59,6 +59,7 @@ const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { SystemAccessWaits } = await import("../../components/chat/messages/runtime/system-access-waits.tsx");
 const { rememberSystemAccessWait, rememberedSystemAccessWaits } = await import("../../lib/access/system-access-wait-state.ts");
+const { dispatchChanged } = await import("../../lib/net/ws/changes.ts");
 const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution",required_capabilities:["screen_recording"]};
 
  test("durable waiting UI shows explicit setup without prompting or retries", async () => {
@@ -75,6 +76,13 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
   try {
     await act(async () => root.render(createElement(SystemAccessWaits,{sessionId:"session"})));
     assert.equal(host.textContent, "");
+    assert.equal(timers.size, 0, "no timer reads the waits again");
+    const waitReads = () => calls.filter(([url]) => url.includes("/waits?")).length;
+    const before = waitReads();
+    await act(async () => dispatchChanged("system_access.waits", ["another-session"]));
+    assert.equal(waitReads(), before, "another conversation's change is not read");
+    await act(async () => dispatchChanged("system_access.waits", ["session"]));
+    assert.equal(waitReads(), before + 1, "a change of this conversation's runs reads the waits");
     waits = [waiting];
     await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:{...waiting,live:true}}})));
     assert.match(host.textContent,/Waiting for system authorization/);

@@ -46,6 +46,8 @@ installLoader({
     "@/lib/browser/control/browser-action-cue": "export const controlSurfaceVisible = () => false;",
     "../toolbar/browser-controls": "export const BookmarksLibraryButton = () => null; export const BrowserMenu = () => null;",
     "../toolbar/view-source-button": "export const ViewSourceButton = () => null;",
+    "../toolbar/annotate-button": "export const AnnotateButton = () => null;",
+    "./use-page-annotate": "export const usePageAnnotate = () => ({ supported: false, active: false, start() {}, exit() {} });",
     "../bookmark-bar": "export const BookmarkBar = () => null;",
     "../toolbar/browser-chrome": "export const AddressField = () => null; export const ToolbarTip = ({ children }) => children;",
     "./pane-controls": [

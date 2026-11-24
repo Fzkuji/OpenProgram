@@ -37,9 +37,9 @@
 </table>
 <p class="note">API keys are imported into the credential store: <a href="auth.html">Authentication</a>. Every provider streams. Multimodal input is per model; trust the UI. Prompt caching is verified in code only where noted.</p>
 <h2>Custom providers</h2>
-<p>Settings → Providers: a display name and base URL are required; an id is derived from the name if omitted. <code translate="no">https://api.example.com</code> resolves to <code translate="no">/v1</code>; an explicit path such as <code translate="no">/compatible-mode/v1</code> is kept. <strong>Fetch models</strong> browses the endpoint's <code translate="no">/models</code>. Stored as <code translate="no">providers.&lt;id&gt;</code> with <code translate="no">source: "custom"</code>.</p>
+<p>Settings → Model services: a display name and base URL are required; an id is derived from the name if omitted. <code translate="no">https://api.example.com</code> resolves to <code translate="no">/v1</code>; an explicit path such as <code translate="no">/compatible-mode/v1</code> is kept. <strong>Fetch models</strong> browses the endpoint's <code translate="no">/models</code>. Stored as <code translate="no">providers.&lt;id&gt;</code> with <code translate="no">source: "custom"</code>.</p>
 <h2>Which session uses which model</h2>
-<p>Settings → Providers opens on <strong>Overview</strong>, a map for now, 24 hours or 7 days.</p>
+<p>Settings → Model services opens on <strong>Overview</strong>, a map for now, 24 hours or 7 days.</p>
 <table class="stack">
 <thead><tr><th scope="col">Left</th><th scope="col">Right</th></tr></thead>
 <tbody>
@@ -56,7 +56,7 @@
 </table>
 <p class="note">Hover a row to pick out its lines. Click a session to open it, a provider for its settings. <strong>Recent model switches</strong> below lists each with its reason. Sessions with no call in the window are only counted. The map needs a wide pane.</p>
 <h2 id="fallback-models">Fallback models</h2>
-<p>For a model that is rate limited, overloaded, down or unreachable. Set under Settings → System → Models, or:</p>
+<p>For a model that is rate limited, overloaded, down or unreachable. Set under Settings → Model services → Behavior, or:</p>
 <pre translate="no"><code>openprogram config set model_fallback.mode same-provider
 openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "openai/gpt-5.5"]'</code></pre>
 <table class="stack fixed">
@@ -69,7 +69,7 @@ openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "o
 </table>
 <p class="note">A switch happens only before any reply text. Authentication errors, invalid requests, a full context window and content-policy refusals are not retried. <code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> overrides the setting.</p>
 <h2 id="redacting-secrets-in-requests">Redacting secrets in requests</h2>
-<p>Off by default. <strong>Redact secrets in requests</strong> under Settings → System → Models, or <code translate="no">openprogram config set privacy.redact_requests true</code>. Before each request these become placeholders such as <code translate="no">[[SECRET_1]]</code>, <code translate="no">[[EMAIL_2]]</code>:</p>
+<p>Off by default. <strong>Redact secrets in requests</strong> under Settings → Model services → Behavior, or <code translate="no">openprogram config set privacy.redact_requests true</code>. Before each request these become placeholders such as <code translate="no">[[SECRET_1]]</code>, <code translate="no">[[EMAIL_2]]</code>:</p>
 <ul>
 <li>API keys and tokens with a recognizable shape: Anthropic, OpenAI, GitHub, AWS, Google, Slack, JWTs</li>
 <li>Private key blocks</li>

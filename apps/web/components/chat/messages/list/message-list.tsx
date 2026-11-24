@@ -1,5 +1,5 @@
 "use client";
-import { TranscriptReadStatus } from "./transcript-read-status";
+import { TranscriptReadStatus, useTranscriptReadSettled } from "./transcript-read-status";
 
 /**
  * Message list — the React message stream.
@@ -17,7 +17,6 @@ import { TranscriptReadStatus } from "./transcript-read-status";
 import {
   memo,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -33,7 +32,7 @@ import { selectRow, selectViewRows, useMessageIds, useSessionStore } from "@/lib
 
 import { useTranslation } from "@/lib/i18n";
 import { runtimeState } from "@/lib/runtime-bridge/state";
-import { RECYCLE_MIN_ROWS, collectAlwaysLive, decideLiveRows, foldKey, heightsFor, noteChatWidth, setRowHeight, type WindowNode } from "@/lib/chat/history/message-window";
+import { RECYCLE_MIN_ROWS, collectAlwaysLive, decideLiveRows, heightsFor, noteChatWidth, type WindowNode } from "@/lib/chat/history/message-window";
 
 import { DecisionOutputs } from "../runtime/decision-output";
 import { SystemAccessWaits } from "../runtime/system-access-waits";
@@ -43,7 +42,7 @@ import { AgentBranchBanner } from "../cards/agent-branch-banner";
 import { WorktreeBranchMarker } from "../cards/worktree-branch-marker";
 import { BranchedFromBanner } from "../cards/branched-from-banner";
 import { SelectionQuote } from "../editing/quote-to-chat";
-import { TranscriptRows, coveringOf, useOriginalsToggle, usePlacedDecisions } from "./transcript-rows";
+import { TranscriptRows, usePlacedDecisions } from "./transcript-rows";
 import { BotTyping } from "../bubbles/bot-message";
 import { BotViewContext } from "./transcript-view-scope";
 import { timeBreaks } from "@/lib/chat/transcript/bot-view";
@@ -75,10 +74,8 @@ export const MessageList = memo(function MessageList({
   const viewKey = transcriptViewKey(sessionId, chatKey);
   useHistoryWindow(sessionId, paintRows);
   const ids = useMessageIds(viewKey);
-  useOriginalsToggle();
   const { shown: botView, markerRef: viewMarker, labelledRows } = useBotViewTransition(viewKey, useBotView(viewKey));
   const heldRows = selectViewRows(viewKey)(useSessionStore.getState());
-  const { covered: coveredSet, hidden: hiddenCovered } = coveringOf(ids, heldRows, botView);
   // Read as the three things drawn from it: the task object is replaced by
   // every status frame of a run.
   const isRunning = useSessionStore((s) => !!viewKey && s.runningTasks[viewKey] != null);
@@ -103,6 +100,7 @@ export const MessageList = memo(function MessageList({
   );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
   const readStatus = useSessionStore(s => sessionId ? s.transcriptReadStatus[sessionId] : undefined);
+  const readSettled = useTranscriptReadSettled(sessionId);
   const { showJump, jumpToLatest } = useChatAreaStick(
     chatKey,
     lastId,
@@ -116,21 +114,7 @@ export const MessageList = memo(function MessageList({
     [pendingAnchor, railTarget, findTarget],
   );
   const {view, notifyMeasured} = useMessageViewport(chatKey, ids.length, paintRows);
-  const windowNodes: WindowNode[] = [];
-  {
-    let i = 0;
-    while (i < ids.length) {
-      const id = ids[i];
-      if (coveredSet.has(id)) {
-        const first = id;
-        while (i < ids.length && coveredSet.has(ids[i])) i += 1;
-        windowNodes.push({ kind: "fold", id: first });
-      } else {
-        windowNodes.push({ kind: "row", id });
-        i += 1;
-      }
-    }
-  }
+  const windowNodes: WindowNode[] = ids.map((id) => ({ kind: "row", id }));
   if (paintRows && chatKey && typeof document !== "undefined") {
     const areaW = document.getElementById("chatArea")?.clientWidth ?? 0;
     if (areaW > 0) noteChatWidth(chatKey, areaW);
@@ -147,20 +131,6 @@ export const MessageList = memo(function MessageList({
         recycleMin: RECYCLE_MIN_ROWS,
       })
     : null;
-  useLayoutEffect(() => {
-    if (!paintRows || !chatKey || !liveSet) return;
-    const root = document.getElementById("chatMessages");
-    if (!root) return;
-    let changed = false;
-    root.querySelectorAll<HTMLElement>("[data-fold-id]").forEach((el) => {
-      const fid = el.dataset.foldId;
-      if (!fid) return;
-      if (setRowHeight(chatKey, foldKey(fid), el.offsetHeight) !== "same") {
-        changed = true;
-      }
-    });
-    if (changed) notifyMeasured();
-  });
   const [jumpShown, setJumpShown] = useState(false);
   const [jumpLeaving, setJumpLeaving] = useState(false);
   useEffect(() => {
@@ -265,8 +235,11 @@ export const MessageList = memo(function MessageList({
 
   // Session switch with nothing cached yet: skeleton placeholder
   // instead of an empty area / welcome flash. Minimap etc. wait too.
-  if (sessionId && (readStatus === "loading" || (!readStatus && loadingId === sessionId)) && ids.length === 0) {
-    return <TranscriptSkeleton />;
+  // A read that failed keeps the same placeholder while it is asked again;
+  // one that got a permanent answer draws what there is (nothing to wait for).
+  if (sessionId && ids.length === 0 && !readSettled && (readStatus === "loading" || readStatus === "error"
+    || readStatus === "disconnected" || (!readStatus && loadingId === sessionId))) {
+    return <><TranscriptReadStatus sessionId={sessionId} /><TranscriptSkeleton /></>;
   }
 
   return (
@@ -278,7 +251,7 @@ export const MessageList = memo(function MessageList({
       <AgentBranchBanner />
       <WorktreeBranchMarker />
       {paintRows ? (
-        <MessageRail hiddenKey={[...hiddenCovered].join("\n")} onSeek={setRailTarget} />
+        <MessageRail onSeek={setRailTarget} />
       ) : null}
       {paintRows ? <ConversationFind sessionId={sessionId} onTarget={setFindTarget} /> : null}
       {paintRows ? (
@@ -309,19 +282,20 @@ export const MessageList = memo(function MessageList({
               <Button
                 type="button"
                 variant="elevated"
-                className="jump-latest text-primary ring-1 ring-primary/45"
+                size="icon-lg"
+                className="jump-latest rounded-full text-primary"
+                aria-label={text("Jump to latest", "跳到最新")}
+                data-live={isRunning ? "" : undefined}
                 onClick={jumpToLatest}
               >
+                <ArrowDown className="jump-latest-arrow" aria-hidden />
                 {isRunning ? (
-                  <span className="jump-latest-live" data-icon="inline-start" aria-hidden>
+                  <span className="jump-latest-live" aria-hidden>
                     <i />
                     <i />
                     <i />
                   </span>
-                ) : (
-                  <ArrowDown data-icon="inline-start" aria-hidden />
-                )}
-                {text("Jump to latest", "跳到最新")}
+                ) : null}
               </Button>
             </div>,
             jumpHost,

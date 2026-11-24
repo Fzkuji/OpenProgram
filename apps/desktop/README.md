@@ -9,10 +9,10 @@ Electron shell around the OpenProgram web UI, with native browser tabs
 
 Loads `http://127.0.0.1:$OPENPROGRAM_WEB_PORT/chat` (default port 18100). If the
 worker is not reachable it spawns `openprogram worker start`, shows a waiting page
-and probes `/healthz` every second until the worker answers. While an installer
-(`install-app.sh`, `scripts/local-instances/refresh-local-app.sh`) holds the lock next to the
-bundle, `/Applications/.openprogram-app-install.lock`, the backend is down because
-it is being replaced: the page says the App is updating and no worker is started
+and probes `/healthz` every second until the worker answers. While the installer
+(`install-app.sh`) holds the lock next to the bundle,
+`/Applications/.openprogram-app-install.lock`, the backend is down because it is
+being replaced: the page says the App is updating and no worker is started
 from the half-installed runtime.
 Override the startup URL entirely with `OPENPROGRAM_DESKTOP_URL=http://... npm run dev`.
 
@@ -39,16 +39,16 @@ Release builds stage the Web export, build an OpenProgram wheel, install it into
 a uv-managed portable CPython runtime, and include that runtime under Electron
 resources:
 
-    npm run dist        # build, validate, and replace /Applications/OpenProgram.app
+    npm run dist        # build and validate apps/desktop/dist/local/OpenProgram.app
     npm run dist:mac    # local unsigned packaging; production uses the release workflow
     npm run dist:win          # Windows x64 NSIS package with the complete runtime
     npm run dist:win:arm64    # Windows arm64 NSIS package with the complete runtime
 
-`npm run dist` builds the unpacked app in a random temporary directory. It never
-opens that temporary bundle. After validation it replaces the single canonical
-`/Applications/OpenProgram.app`, removes the previous bundle and build staging,
-and reopens only the canonical path if the app was already running. Repeating the
-command does not retain versioned or task-named `.app` copies. Versioned DMG/ZIP
+`npm run dist` builds the unpacked app in a random temporary directory, smoke-tests
+its runtime, and copies it to `apps/desktop/dist/local/OpenProgram.app`, replacing
+the previous build there. It never installs: `/Applications/OpenProgram.app` is the
+official release and changes only through its own updater, and the development
+App is installed by `scripts/local-instances/install-dev-app.sh`. Versioned DMG/ZIP
 files remain release artifacts because immutable releases and automatic updates
 need them.
 

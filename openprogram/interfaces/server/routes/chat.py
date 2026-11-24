@@ -394,7 +394,7 @@ def run_agent_method_call(
         return {
             "error": (
                 "No model enabled. Enable a model in "
-                "Settings → Providers before running a function."
+                "Settings → Model services before running a function."
             ),
             "code": "no_model",
             "status_code": 409,

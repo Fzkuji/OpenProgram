@@ -48,10 +48,22 @@ from openprogram.runtime.context.session_dag.nodes import summary_covers_ids
 from openprogram.state.store.session.nodes import Call, Graph
 
 
+def latest_media_id(graph: Graph, read_ids: list[str]) -> "str | None":
+    """The last user message in ``read_ids`` that carries media: the only
+    one whose media is attached; earlier ones name their files."""
+    return next((nid for nid in reversed(list(read_ids))
+                 if (n := graph.nodes.get(nid)) is not None and n.is_user()
+                 and (n.metadata or {}).get("media")), None)
+
+
+_WHOLE_READ = object()
+
+
 def render_dag_messages(graph: Graph, read_ids: list[str],
                         session_directory: "str | None" = None,
                         reasoning_for: Any = None,
-                        audience: str = "own_prompt") -> list:
+                        audience: str = "own_prompt",
+                        latest_media: Any = _WHOLE_READ) -> list:
     """Translate ``read_ids`` into a pi-ai message list.
 
     Pure read path: it never writes. An over-cap node was already spilled
@@ -167,6 +179,12 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         last_assistant = None
         reply_identity = None
 
+    # Only the latest message with media attaches it; earlier ones name
+    # their files (``media.as_references``). A caller rendering one part of
+    # a chain names the chain's latest (``latest_media_id``).
+    if latest_media is _WHOLE_READ:
+        latest_media = latest_media_id(graph, read_ids)
+
     for nid in read_ids:
         node = graph.nodes.get(nid)
         if node is None:
@@ -188,11 +206,13 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             raw_text = _text(model_input or node.output)
             text = render_model_input_from(node.metadata or {}, _elide(raw_text, node))
             text = with_turn_block(text, _stored_turn_block(node, audience))
-            from openprogram.state.store.session.files.media import with_media
+            from openprogram.state.store.session.files.media import as_references, with_media
             # A turn with no text sent its pictures alone, with no text block.
             text_blocks = ([] if user_media and not raw_text.strip()
                            else [TextContent(type="text", text=text)])
-            content = with_media(text_blocks, user_media, session_directory)
+            content = (with_media(text_blocks, user_media, session_directory)
+                       if node.id == latest_media
+                       else as_references(text_blocks, user_media, session_directory))
             if not content:
                 continue
             messages.append(UserMessage(

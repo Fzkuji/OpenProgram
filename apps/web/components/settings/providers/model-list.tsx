@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import { api } from "@/lib/net/api";
+import { errorDetailText } from "@/lib/net/error-text";
 import { settingsSend } from "@/lib/settings/settings-request";
 import { cn } from "@/lib/utils";
 
@@ -90,11 +91,13 @@ export function ModelList({
       const r = await fetch(`/api/providers/${encodeURIComponent(provider.id)}/fetch-models`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
       });
-      const d = await r.json();
-      if (d.error) { setFetchStatus(text("Failed: ", "失败：") + d.error); return; }
-      setFetchStatus(d.added > 0
-        ? text(`Fetched ${d.fetched}, added ${d.added} new`, `已获取 ${d.fetched} 个，新增 ${d.added} 个`)
-        : text(`Fetched ${d.fetched} · up to date`, `已获取 ${d.fetched} 个 · 已是最新`));
+      const d = await r.json() as { fetched?: number; added?: number; error?: unknown };
+      if (d.error) { setFetchStatus(text("Failed: ", "失败：") + errorDetailText(d.error, String(r.status))); return; }
+      const fetched = Number(d.fetched ?? 0);
+      const added = Number(d.added ?? 0);
+      setFetchStatus(added > 0
+        ? text(`Fetched ${fetched}, added ${added} new`, `已获取 ${fetched} 个，新增 ${added} 个`)
+        : text(`Fetched ${fetched} · up to date`, `已获取 ${fetched} 个 · 已是最新`));
       onReload();
     } catch (e) {
       setFetchStatus(text("Failed: ", "失败：") + (e as Error).message);

@@ -12,7 +12,7 @@
 <tr><th scope="row">对话</th><td>HEAD 和所有消息保留</td><td>不变</td><td>当前分支回退；撤回的后缀只作恢复历史，不成为另一分支</td></tr>
 <tr><th scope="row">分支</th><td>不创建或移动</td><td>HEAD 保留</td><td>分支身份和名称不变；新消息延续回退后的当前分支</td></tr>
 <tr><th scope="row">冲突</th><td>任一路径不一致，整个操作被阻止</td><td>不做自动反向合并</td><td>任一不可恢复项都会阻止</td></tr>
-<tr><th scope="row">之后</th><td>追加撤销事务；卡片显示 Reverted；预检通过时可 Redo</td><td>当前分支 Review 折叠该撤销；预检通过时可 Reapply</td><td>预填原提示；没有文件对齐选择</td></tr>
+<tr><th scope="row">之后</th><td>追加撤销事务；卡片显示 Reverted；预检通过时可 Redo</td><td>分支 Review 折叠该撤销；预检通过时可 Reapply</td><td>预填原提示；没有文件对齐选择</td></tr>
 </tbody>
 </table>
 <p class="note">轮次卡片显示适用的 Undo 或 Revert；用户检查点打开 Restore 面板。Redo 和 Reapply 是新事务，没有线性 redo 栈。对话记录不提供分支操作；Copy conversation 在对话的 ⋯ 菜单里。</p>
@@ -35,7 +35,7 @@
 <p>分支身份独立于末尾消息。两次回退落在同一检查点或 ROOT 时，各 ref 保留自己的名称，并可按分支 id 分别选择。Undo 标记属于该身份。旧客户端按 head 选择的方式在没有歧义时保持兼容。</p>
 
 <h2 id="architecture">事实来源</h2>
-<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="可信文件修改工具（write、edit、apply_patch、经验证的适配器）把修改回执写入修改日志，日志提供本轮和当前分支 Review。Git 提供工作区 Review。普通 Bash 和外部进程没有回执。历史规划器读取日志、对话 DAG 和 Git，然后写持久意图、应用工作区事务，仅在对话模式下移动 HEAD。">
+<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="可信文件修改工具（write、edit、apply_patch、经验证的适配器）把修改回执写入修改日志，日志提供本轮和分支 Review。Git 提供未暂存和已暂存 Review。普通 Bash 和外部进程没有回执。历史规划器读取日志、对话 DAG 和 Git，然后写持久意图、应用工作区事务，仅在对话模式下移动 HEAD。">
   <defs><marker id="fm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="28">可信修改工具</text>
   <text class="t-soft" x="0" y="50">write、edit、apply_patch、</text>
@@ -46,14 +46,14 @@
   <text class="t-soft" x="260" y="50">前后摘要、版本内容</text>
   <line class="ln" x1="432" y1="23" x2="500" y2="23" marker-end="url(#fm-a)"/>
   <text class="t-big" x="512" y="28">Review</text>
-  <text class="t-soft" x="512" y="50">本轮、当前分支</text>
+  <text class="t-soft" x="512" y="50">本轮、分支</text>
   <text class="t-no" x="0" y="112">普通 Bash、外部写入</text>
   <text class="t-soft" x="0" y="132">无回执，无轮次 Undo</text>
   <text class="t-big" x="260" y="112">Git 工作区</text>
   <text class="t-soft" x="260" y="132">HEAD、index、worktree</text>
   <line class="ln" x1="432" y1="107" x2="500" y2="107" marker-end="url(#fm-a)"/>
   <text class="t-big" x="512" y="112">Review</text>
-  <text class="t-soft" x="512" y="132">工作区</text>
+  <text class="t-soft" x="512" y="132">未暂存、已暂存</text>
   <text class="t-big" x="0" y="196">对话 DAG</text>
   <text class="t-soft" x="0" y="216">节点、HEAD、分支</text>
   <text class="t-big" x="260" y="196">历史规划器</text>
@@ -67,8 +67,8 @@
 </svg>
 <ol class="flow fig-narrow">
   <li><strong>可信修改工具</strong><small>write、edit、apply_patch、经验证的适配器</small><p class="refused">普通 Bash、外部写入：无回执，无轮次 Undo</p></li>
-  <li><strong>修改日志</strong><small>提供本轮和当前分支 Review</small></li>
-  <li><strong>Git 工作区</strong><small>提供工作区 Review</small></li>
+  <li><strong>修改日志</strong><small>提供本轮和分支 Review</small></li>
+  <li><strong>Git 工作区</strong><small>提供未暂存和已暂存 Review</small></li>
   <li><strong>历史规划器</strong><small>读取这三者和对话 DAG；只有日志能授权恢复</small></li>
   <li class="flow-end"><strong>持久意图</strong><small>加锁、应用、校验，需要时再移动 HEAD</small></li>
 </ol>
@@ -201,7 +201,7 @@
 <tr><th scope="row">安装之后</th><td>当前 worker 无需重启即可提供，文档自动打开。关闭文档会停止它的请求；已请求的安装可继续完成。</td></tr>
 <tr><th scope="row">旧资源包</th><td>profile 资源仍可用；旧版本 App 内置资源不再选用。开发暂存是独立命令，普通构建忽略。</td></tr>
 <tr><th scope="row">隔离</th><td>独立来源，只允许资源树 GET 和 HEAD；不能访问主 API、鉴权或 WebSocket。两侧页面校验来源、实例、请求。宏默认关闭。没有独立来源的远程部署禁用编辑。</td></tr>
-<tr><th scope="row">加载</th><td>全尺寸渲染面上方居中的主题化遮罩，区分“加载资源”和“打开文档”。没有模拟百分比。错误会替换状态并提供重试。</td></tr>
+<tr><th scope="row">加载</th><td>全尺寸渲染面；加载资源和打开文档期间上面不画任何东西。只有用户要求的安装显示居中的主题化遮罩和进度，没有模拟百分比。启动错误显示并提供重试。</td></tr>
 <tr><th scope="row">销毁</th><td>固定的 mount 和 activate API，关闭时立即销毁待启动宿主。AbortSignal 在有界期限内取消可用性检查和激活。失败实例绝不挂到控制器。</td></tr>
 <tr><th scope="row">不提供</th><td>通用扩展注册表、自动更新、卸载控件、第三方上传</td></tr>
 </tbody>
@@ -266,7 +266,10 @@
 <tr><th scope="row">保留</th><td>人工项目修改归项目，模型记录归会话。聚合索引引用版本，不复制。归档会话仍可读。永久删除会移除所属版本，缓存不得再显示；记忆来源显示“原会话已删除”或失去链接。项目文件和人工历史在聊天删除后仍在。移动的项目按当前位置恢复；离线时只读。旧历史分批回填；无法确认归属的显示不可用。</td></tr>
 <tr><th scope="row">自动保存</th><td>编辑器撤销处理即时修改。草稿先持久化；文件在短合并窗口后发布，绝不等待历史周期。每次发布校验读取版本；重试幂等；迟到响应不能覆盖更新的草稿。失败保留草稿和可重试错误，不关闭标签。</td></tr>
 <tr><th scope="row">历史周期</th><td>连续编辑间隔约五分钟。切换文档、结束编辑或恢复也会结束周期。重启读取记录，绝不读当前文件。</td></tr>
-<tr><th scope="row">富编辑器</th><td>与标签无关：视图隐藏时导出引擎继续存活，最新内容进入持久草稿后才释放。Office iframe 不因 React 重挂载或 DOM 移动而重建。关闭、重命名和恢复等待最终导出；失败保留编辑器和草稿。预览和编辑共用实例；历史实例不能写。重命名期间禁用编辑，成功后重新打开新路径。</td></tr>
+<tr><th scope="row">富编辑器</th><td>与标签无关：视图隐藏时导出引擎继续存活，最新内容进入持久草稿后才释放。Office iframe 不因 React 重挂载或 DOM 移动而重建。重命名和恢复等待最终导出；失败保留编辑器和草稿。预览和编辑共用实例；历史实例不能写。重命名期间禁用编辑，成功后重新打开新路径。</td></tr>
+<tr><th scope="row">关闭</th><td>从不等待：标签立即关闭，格子保持挂载但不可见，直到导出保存完。原生编辑器只为它报告过的改动导出：关闭、刷新或替换一个没人改过的编辑器，都不会写文件。还没导出的修改先询问：保存、不保存或取消。</td></tr>
+<tr><th scope="row">读不全的文件</th><td>引擎读文件时漏掉幻灯片或工作表，导出就只会写回它读到的部分。所以可写的 PPTX 或 XLSX 编辑器，要等打开时做的一次导出（只比较、不保留）列出的幻灯片或工作表和文件一样多，才绑定到文档（<code translate="no">apps/web/lib/documents/office-fidelity.ts</code>）。列出更少的不打开：报错并给出两个数目，文件保持原样。</td></tr>
+<tr><th scope="row">实测</th><td>ONLYOFFICE 把一份 python-pptx 写的 10 页演示读成 0 页，关闭时用空文件替换了原文件</td></tr>
 </tbody>
 </table>
 </details>
@@ -297,13 +300,14 @@
 </table>
 </details>
 
-<h3 id="review-scopes">三种 Review 范围</h3>
+<h3 id="review-scopes">四种 Review 范围</h3>
 <table class="stack">
 <thead><tr><th scope="col">范围</th><th scope="col">来源</th><th scope="col">包含</th><th scope="col">恢复</th></tr></thead>
 <tbody>
 <tr><th scope="row">本轮</th><td>某 origin 轮次已提交的变更集</td><td>父轮变更集加所属子任务，各保留自己的 producer 轮次，去重，显示执行者</td><td>Undo 或 Revert：闭包内都有精确回执，执行者已结束，摘要一致</td></tr>
-<tr><th scope="row">当前分支</th><td>活动谱系的日志投影</td><td>所有轮次和显式 revert、rewind、reapply；不含兄弟分支和外部写入</td><td>从具体轮次或检查点发起；没有一键分支 Undo</td></tr>
-<tr><th scope="row">工作区</th><td>Git diff 加 <code translate="no">git ls-files --others --exclude-standard</code></td><td>未提交的变更，遵守 <code translate="no">.gitignore</code>；Unstaged、Staged、Branch、Commit</td><td>没有轮次 Undo。Git Discard 是单独入口。非 Git：不可用。</td></tr>
+<tr><th scope="row">未暂存</th><td>Git 工作区对比 index，加 <code translate="no">git ls-files --others --exclude-standard</code></td><td>尚未暂存的变更，遵守 <code translate="no">.gitignore</code></td><td>没有轮次 Undo；按块 Revert；暂存。非 Git：不可用。</td></tr>
+<tr><th scope="row">已暂存</th><td>Git index 对比 HEAD</td><td>已暂存、等待下一次提交的变更</td><td>没有轮次 Undo；取消暂存。非 Git：不可用。</td></tr>
+<tr><th scope="row">分支</th><td>活动谱系的日志投影</td><td>所有轮次和显式 revert、rewind、reapply；不含兄弟分支和外部写入</td><td>从具体轮次或检查点发起；没有一键分支 Undo</td></tr>
 </tbody>
 </table>
 
@@ -398,10 +402,10 @@
 <tr><th scope="row">符号链接、硬链接、特殊文件</th><td class="deny">不跟随不覆盖；显示路径和原因</td></tr>
 <tr><th scope="row">内容已被垃圾回收</th><td class="review">Review 可读，代码恢复关闭</td></tr>
 <tr><th scope="row">大文件无内容副本</th><td class="review">路径和大小精确；行数未知；无 Undo</td></tr>
-<tr><th scope="row">非 Git 工作区</th><td class="review">日志范围可用；工作区不可用</td></tr>
+<tr><th scope="row">非 Git 工作区</th><td class="review">日志范围可用；未暂存和已暂存不可用</td></tr>
 <tr><th scope="row">Reapply</th><td class="review">需要撤销后的摘要、后续无同谱系修改、after 内容可用</td></tr>
 <tr><th scope="row">应用时崩溃</th><td class="review">回滚；若回滚会破坏外部写入则 <code translate="no">recovery_required</code></td></tr>
-<tr><th scope="row">对被忽略路径或已授权外部路径的精确修改</th><td class="run">进入日志，可 Undo，不在工作区范围</td></tr>
+<tr><th scope="row">对被忽略路径或已授权外部路径的精确修改</th><td class="run">进入日志，可 Undo，不在未暂存范围</td></tr>
 <tr><th scope="row">被忽略的后台日志增长</th><td class="run">按设计排除</td></tr>
 <tr><th scope="row">数据库、API、部署、安装、Git index、进程、网络、未记录的 Bash</th><td class="ask">不在 Restore 范围；确认时列出可能重复的影响</td></tr>
 </tbody>
@@ -414,7 +418,7 @@
 <tr><th scope="row">Assistant 轮次卡片</th><td>文件数、净增删（含零）、前三个文件、约 40 px 标题、19 px <code translate="no">FeatherIcon</code>、2.5 px 双色比例条。强调文件名。宽度 420 px 以下显示 “N files”。</td><td>最新：Undo，然后 Redo。历史：Revert，然后 Reapply。每轮：Review。标题只显示可执行操作；不可用和被阻止的说明放在页脚。</td><td>标题徽标、禁用态徽章、产品品牌</td></tr>
 <tr><th scope="row">用户消息</th><td>Restore checkpoint</td><td>影响面板，明确边界，默认代码和对话</td><td>点击立即恢复</td></tr>
 <tr><th scope="row">对话 ⋯ 菜单</th><td>Copy conversation</td><td>只复制历史；文件不变</td><td>隐式恢复</td></tr>
-<tr><th scope="row">Changes 标签页</th><td>三种范围；文件列表和单文件差异；来源标签；计数覆盖完整筛选结果</td><td>Unified 或 side-by-side、行评论、Open file、Reveal。范围或筛选变化清空游标、选择和差异。</td><td>工作区轮次 Undo；只在客户端筛选</td></tr>
+<tr><th scope="row">Changes 标签页</th><td>四种范围；文件列表和单文件差异；来源标签；计数覆盖完整筛选结果</td><td>Unified 或 side-by-side、行评论、Open file、Reveal。范围或筛选变化清空游标、选择和差异。</td><td>工作区轮次 Undo；只在客户端筛选</td></tr>
 <tr><th scope="row">影响面板</th><td>提示、轮次和文件数、分支结果、模式、冲突</td><td>确认；取消无影响</td><td>阻止时强制执行</td></tr>
 <tr><th scope="row">分支切换</th><td>对话变化，文件保持</td><td>继续对话并处理当前文件</td><td>由分支历史引发的文件对齐提示或工具限制</td></tr>
 </tbody>

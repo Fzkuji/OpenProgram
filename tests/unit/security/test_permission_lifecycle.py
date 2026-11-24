@@ -50,6 +50,9 @@ def test_a_turn_probes_for_desktop_grants_before_its_first_application_step_only
     """Each probe starts a process; six clicks in a row used to start six."""
     import sys
     from openprogram.host import system_access
+    from tests.support import screen_targets
+
+    screen_targets.install(monkeypatch, screen_targets.App())
 
     monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id",
                         lambda: "owner/install/0123456789abcdef")
@@ -72,11 +75,11 @@ def test_a_turn_probes_for_desktop_grants_before_its_first_application_step_only
         req = TurnRequest(session_id="desktop-grants", user_text="test", agent_id="main",
                           source="web", permission_mode="bypass", permission_rules=None,
                           **owner_authority("owner/install/0123456789abcdef"))
-        tool = AgentTool(name="computer_use_agent", label="computer_use_agent", description="probe",
+        tool = AgentTool(name="computer_use", label="computer_use", description="probe",
                          parameters={"type": "object"}, execute=execute)
         return wrap_with_approval(tool, req, lambda event: None)
 
-    click = {"target": "app", "action": "click", "args": {"app": "Notes", "element_index": 3}}
+    click = {"type": "window", "action": "click", "args": {"app": "Notes", "element": 3}}
     wrapped = turn()
     # Not granted yet: the step waits for the grant, and each call looks again.
     assert wrapped._interaction_manifest("call-1", click)["kind"] == "system_access"

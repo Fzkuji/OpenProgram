@@ -33,7 +33,7 @@ def policy_changed(before, after, tool_name: str) -> bool:
 
     Mode and version decide every call; of the rules, only those naming this
     tool do. A rule added or removed for another tool meanwhile (an agent
-    started with a computer_use_agent grant takes it back when it ends) leaves
+    started with a computer_use grant takes it back when it ends) leaves
     the call's decision as reviewed.
     """
     from openprogram.runtime.permissions.policy import rules_for_tool

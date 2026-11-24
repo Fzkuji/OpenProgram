@@ -6,10 +6,12 @@
  * takes typing, folders made by dropping one icon on another, and an edit
  * mode where icons wobble and removable ones show ×.
  *
- * Pointer input comes from dnd-kit; where things land is computed here
- * from the grid geometry, and framer-motion animates icons into their new
- * places. Gestures trigger fixed animations (a page slides a whole page),
- * nothing follows the finger.
+ * Icon drags come from dnd-kit; where things land is computed here from
+ * the grid geometry, and framer-motion animates icons into their new
+ * places. Paging works as Launchpad's does: the pages follow two fingers
+ * on a trackpad or the mouse dragged across empty space, and settle on a
+ * page when let go; a wheel notch, an arrow key or a dot turns a whole
+ * page. Holding Option makes the icons wobble for as long as it is held.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
@@ -48,8 +50,20 @@ const FOLDER_COLUMNS = 5;
 const PLACEHOLDER = "\u0000placeholder";
 const REORDER_DWELL = 120;
 const MERGE_DWELL = 320;
+/** An icon under the pointer, but off its centre, makes room after this long. */
+const BODY_DWELL = 450;
 const EDGE_DWELL = 650;
 const LONG_PRESS = 600;
+/** An icon held over a page dot opens that page after this long. */
+const DOT_DWELL = 300;
+/** A press on empty space that moves less than this is a click. */
+const PAN_SLOP = 6;
+/** Mouse-wheel notches closer together than this turn one page, not several. */
+const NOTCH_GAP = 280;
+/** A wheel event alone for this long is a mouse notch; a trackpad sends the next within a frame or two. */
+const NOTCH_WINDOW = 34;
+/** Wheel events further apart than this start a new burst. */
+const BURST_GAP = 160;
 /** easeOutQuint: the end-of-strip nudge starts quickly and settles slowly. */
 const PAGE_EASE = [0.22, 1, 0.36, 1] as const;
 /** A page settles into place the way a scroll view's paging does. */
@@ -179,6 +193,12 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
   const folderPanelRef = useRef<HTMLDivElement>(null);
   const pending = useRef<{ key: string; timer: number } | null>(null);
   const edge = useRef<{ side: number; timer: number } | null>(null);
+  const dotHover = useRef<{ index: number; timer: number } | null>(null);
+  const dotsRef = useRef<HTMLDivElement>(null);
+  /** Edit mode that Option turned on, so letting go of Option ends it. */
+  const byOption = useRef(false);
+  /** Set when a press on empty space became a pan, so its click is dropped. */
+  const panned = useRef(false);
   const stripX = useMotionValue(0);
   const stripWidth = useRef(0);
   const pointer = useRef({ x: 0, y: 0 });
@@ -259,7 +279,8 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
   const clearTimers = () => {
     if (pending.current) window.clearTimeout(pending.current.timer);
     if (edge.current) window.clearTimeout(edge.current.timer);
-    pending.current = null; edge.current = null;
+    if (dotHover.current) window.clearTimeout(dotHover.current.timer);
+    pending.current = null; edge.current = null; dotHover.current = null;
   };
   const propose = (next: Intent | null, dwell: number) => {
     const key = JSON.stringify(next);
@@ -303,6 +324,19 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
       }
       return;
     }
+    // An icon held over a page dot opens that page, as on Launchpad.
+    const dots = dotsRef.current ? [...dotsRef.current.querySelectorAll<HTMLElement>("[data-page-dot]")] : [];
+    const overDot = dots.findIndex(dot => {
+      const r = dot.getBoundingClientRect();
+      return x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 8 && y <= r.bottom + 8;
+    });
+    if (overDot !== (dotHover.current?.index ?? -1)) {
+      if (dotHover.current) window.clearTimeout(dotHover.current.timer);
+      dotHover.current = overDot >= 0 && overDot !== current
+        ? { index: overDot, timer: window.setTimeout(() => { setPage(overDot); setIntent(null); }, DOT_DWELL) }
+        : null;
+    }
+    if (overDot >= 0) return;
     const lx = x - root.left, ly = y - root.top;
     const towards = lx < 40 ? -1 : lx > root.width - 40 ? 1 : 0;
     if (towards !== (edge.current?.side ?? 0)) {
@@ -322,16 +356,27 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
     const shown = previewPage(current);
     const index = row * COLUMNS + col;
     const under = shown[index];
+    // Over the gap the icon would land in, nothing changes.
+    if (under?.id === PLACEHOLDER) { propose(intent, REORDER_DWELL); return; }
     const base = shown.filter(entry => entry.id !== PLACEHOLDER);
-    if (under && under.id !== PLACEHOLDER) {
+    // Over another icon: its centre makes a folder; its left half places the
+    // dragged icon before it and its right half after it, so the icon beside
+    // the gap stays put until the pointer crosses its middle. Off the centre
+    // the icons also wait longer before making room, so a pointer on its way
+    // to the centre does not push the icon aside first.
+    let position = index, overBody = false;
+    if (under) {
       const cx = gridLeft + (col + 0.5) * cellW, cy = gridTop + row * cellH + icon / 2 + (cellH - icon - 22) / 2;
       const draggedIsFolder = layout.pages.flat().some(entry => entry.id === dragId && entry.kind === "folder");
       if (!draggedIsFolder && Math.hypot(lx - cx, ly - cy) < icon * 0.34) {
         propose({ type: "merge", target: under.id }, MERGE_DWELL);
         return;
       }
+      if (lx > cx) position = index + 1;
+      overBody = !draggedIsFolder && Math.abs(lx - cx) < icon / 2 && Math.abs(ly - cy) < icon / 2;
     }
-    propose({ type: "insert", page: current, index: Math.min(index, base.length) }, REORDER_DWELL);
+    const at = Math.min(shown.slice(0, position).filter(entry => entry.id !== PLACEHOLDER).length, base.length);
+    propose({ type: "insert", page: current, index: at }, overBody ? BODY_DWELL : REORDER_DWELL);
   };
 
   const endDrag = (commit: boolean) => {
@@ -341,6 +386,15 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
       if (intent.type === "insert") save(moveEntry(layout, id, intent.page, intent.index));
       else if (intent.type === "merge") save(mergeInto(layout, id, intent.target, `folder:${crypto.randomUUID()}`));
       else if (intent.type === "folder" && dragFromFolder) save(moveWithinFolder(layout, dragFromFolder, id, intent.index));
+    } else if (commit && id && !openFolder) {
+      // Let go off the grid (at a side, over a dot) after the pages turned:
+      // the icon goes to the end of the page on screen, as on Launchpad,
+      // not back where it came from.
+      const from = layout.pages.findIndex(entries => entries.some(entry => entry.id === id));
+      if (from !== current || dragFromFolder) {
+        const at = (shownPages[current] ?? []).filter(entry => entry.id !== id).length;
+        save(moveEntry(layout, id, current, at));
+      }
     }
     if (commit && intent?.type === "insert") setPage(intent.page);
     setDragId(null);
@@ -417,8 +471,8 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
   // fingers are on the trackpad the strip follows them, at most a page and
   // with a rubber band past the ends; when they lift it settles on the page
   // they moved towards, if they moved far enough, else back. The momentum
-  // after the lift never turns another page. A mouse wheel notch, one big
-  // step, turns a page outright. Wheel events carry no phases, so
+  // after the lift never turns another page. Mouse wheel notches are told
+  // apart below and turn whole pages. Wheel events carry no phases, so
   // wheel-gestures (the library Embla pages with) rebuilds the began /
   // momentum / ended phases from them.
   const live = useRef({ current, pageCount, width: box.width, blocked: false, goPage, turn, reduceMotion });
@@ -429,10 +483,14 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
     const gestures = WheelGestures({ reverseSign: false });
     let phase: "start" | "follow" | "done" = "done";
     let anchor = 0;
+    // Whether this gesture ever moved sideways: a wheel spun fast enough to
+    // send a stream never does, two fingers almost always do.
+    let sideways = false;
     const off = gestures.on("wheel", state => {
       const { current, pageCount, width, blocked, goPage, turn, reduceMotion } = live.current;
-      if (state.isStart) { phase = blocked ? "done" : "start"; anchor = -current * width; }
+      if (state.isStart) { phase = blocked ? "done" : "start"; anchor = -current * width; sideways = false; }
       if (phase === "done") return;
+      if (state.event.deltaX !== 0) sideways = true;
       const [x, y] = state.axisMovement;
       const moved = Math.abs(x) > Math.abs(y) ? x : y;
       if (state.isMomentum || state.isEnding) {
@@ -442,7 +500,10 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
           const direction = Math.sign(moved), next = current + direction;
           const [vx, vy] = state.axisVelocity;
           const flick = Math.abs(moved) >= 32 && Math.abs(Math.abs(x) > Math.abs(y) ? vx : vy) >= 0.6;
-          if ((Math.abs(moved) >= Math.max(48, width * 0.15) || flick) && next >= 0 && next <= pageCount - 1) goPage(next);
+          // A stream that stopped dead, with no momentum and never a sideways
+          // delta, was a wheel spun quickly: it turns a page like a notch.
+          const spun = state.isEnding && !state.isMomentum && !sideways && moved !== 0;
+          if ((Math.abs(moved) >= Math.max(48, width * 0.15) || flick || spun) && next >= 0 && next <= pageCount - 1) goPage(next);
           else void animate(stripX, -current * width, reduceMotion ? { duration: 0 } : SETTLE);
         }
         phase = "done";
@@ -460,12 +521,137 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
       const offset = past ? rubberBand(moved) : Math.max(-width, Math.min(width, moved));
       stripX.set(anchor - offset);
     });
+    // A mouse wheel turns a whole page per notch, as Launchpad's does, however
+    // small the notch's pixel delta: Chromium on macOS reports a slow notch
+    // as a few pixels, which the trackpad path above would only nudge and
+    // spring back. Wheel events do not say which device sent them, so a
+    // notch is told by its rhythm: a trackpad sends a stream, an event every
+    // frame from the first touch, while a notch arrives alone. The first
+    // event after a pause is held back for NOTCH_WINDOW ms; nothing follows
+    // → a notch, the page turns, and the burst it opens counts as wheel
+    // notches (one page per NOTCH_GAP); more follows → a trackpad, and the
+    // stream goes on to wheel-gestures. Line or page deltas are a wheel at once.
+    let burst: "wheel" | "trackpad" | null = null;
+    let lastEvent = -Infinity, lastTurn = -Infinity;
+    let held: { timer: number; direction: number } | null = null;
+    const turnBy = (direction: number, at: number) => {
+      if (live.current.blocked || at - lastTurn < NOTCH_GAP) return;
+      lastTurn = at;
+      live.current.turn(direction);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || live.current.blocked) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const gap = event.timeStamp - lastEvent;
+      lastEvent = event.timeStamp;
+      if (gap > BURST_GAP) burst = null;
+      if (held) {
+        // A second event inside the window: a stream, so a trackpad.
+        window.clearTimeout(held.timer);
+        held = null;
+        burst = "trackpad";
+      }
+      if (burst === "trackpad" || !delta) return;
+      // Sideways first deltas are a trackpad's: a wheel only scrolls sideways with Shift.
+      if (burst === null && event.deltaMode === 0 && event.deltaX !== 0 && !event.shiftKey) { burst = "trackpad"; return; }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      // Chromium on macOS scales a wheel's notches by the system's acceleration
+      // into fractional pixels (4.000244…); a trackpad's deltas are whole,
+      // unless page zoom (a fractional pixel ratio) divides them too.
+      const fractional = event.deltaX === 0 && Number.isInteger(window.devicePixelRatio) && Math.abs(delta - Math.round(delta)) > 1e-3;
+      if (burst === "wheel" || event.deltaMode !== 0 || fractional) { burst = "wheel"; turnBy(Math.sign(delta), event.timeStamp); return; }
+      const at = event.timeStamp;
+      held = { direction: Math.sign(delta), timer: window.setTimeout(() => {
+        const direction = held?.direction ?? 0;
+        held = null;
+        burst = "wheel";
+        turnBy(direction, at);
+      }, NOTCH_WINDOW) };
+    };
+    node.addEventListener("wheel", onWheel, { capture: true, passive: false });
     gestures.observe(node);
-    return () => { off(); gestures.disconnect(); };
+    return () => { if (held) window.clearTimeout(held.timer); node.removeEventListener("wheel", onWheel, { capture: true }); off(); gestures.disconnect(); };
   }, [rootRef, stripX]);
   useEffect(() => {
     if (document.activeElement === document.body) rootRef.current?.focus({ preventScroll: true });
   }, [rootRef]);
+
+  // Mouse paging, as Launchpad's: a press on empty space dragged sideways
+  // carries the pages with the pointer (a rubber band past the ends) and,
+  // let go, settles on the next page if it went far enough or was flung,
+  // else back. Presses on icons belong to dnd-kit; a press that never moved
+  // stays a click, which leaves edit mode.
+  const pan = useRef<{ id: number; x: number; anchor: number; moving: boolean; samples: { x: number; t: number }[] } | null>(null);
+  const onPanDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    panned.current = false;
+    if (event.button !== 0 || openFolderId || dragId) return;
+    if ((event.target as HTMLElement).closest("button, input, a, [data-no-pan]")) return;
+    pan.current = { id: event.pointerId, x: event.clientX, anchor: -current * box.width, moving: false, samples: [{ x: event.clientX, t: event.timeStamp }] };
+  };
+  const onPanMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = pan.current;
+    if (!state || state.id !== event.pointerId) return;
+    const dx = event.clientX - state.x;
+    if (!state.moving) {
+      if (Math.abs(dx) < PAN_SLOP) return;
+      state.moving = true;
+      panned.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      // A pan that starts while the strip still settles carries on from there.
+      stripX.stop();
+      state.anchor = stripX.get();
+      state.x = event.clientX;
+      return;
+    }
+    state.samples.push({ x: event.clientX, t: event.timeStamp });
+    if (state.samples.length > 6) state.samples.shift();
+    const moved = -dx;
+    const width = box.width;
+    const past = (current === 0 && moved < 0) || (current >= pageCount - 1 && moved > 0);
+    stripX.set(state.anchor - (past ? rubberBand(moved) : Math.max(-width, Math.min(width, moved))));
+  };
+  const onPanUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = pan.current;
+    if (!state || state.id !== event.pointerId) return;
+    pan.current = null;
+    if (!state.moving) return;
+    const moved = -(event.clientX - state.x);
+    const first = state.samples[0], last = state.samples[state.samples.length - 1];
+    const velocity = last.t > first.t && event.timeStamp - last.t < 80 ? -(last.x - first.x) / (last.t - first.t) : 0;
+    const direction = Math.sign(moved), next = current + direction;
+    const flick = Math.abs(moved) >= 32 && Math.abs(velocity) >= 0.5 && Math.sign(velocity) === direction;
+    if ((Math.abs(moved) >= Math.max(48, box.width * 0.15) || flick) && next >= 0 && next <= pageCount - 1) goPage(next);
+    else void animate(stripX, -current * box.width, reduceMotion ? { duration: 0 } : SETTLE);
+  };
+  const onPanCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (pan.current?.id !== event.pointerId) return;
+    const moving = pan.current.moving;
+    pan.current = null;
+    if (moving) void animate(stripX, -current * box.width, reduceMotion ? { duration: 0 } : SETTLE);
+  };
+
+  // Holding Option makes the icons wobble, and letting go stops them, as on
+  // Launchpad; edit mode entered another way stays until Done or Escape.
+  useEffect(() => {
+    const shown = () => !!rootRef.current?.offsetParent;
+    const down = (event: KeyboardEvent) => {
+      if (event.key !== "Alt" || event.repeat || !shown()) return;
+      setEditing(value => { if (!value) byOption.current = true; return true; });
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.key !== "Alt" || !byOption.current) return;
+      byOption.current = false;
+      setEditing(false);
+    };
+    const reset = () => { if (byOption.current) { byOption.current = false; setEditing(false); } };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", reset);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", reset); };
+  }, [rootRef]);
+  // A drag or a long press while Option is held keeps edit mode after Option goes.
+  useEffect(() => { if (dragId) byOption.current = false; }, [dragId]);
 
   // ---- render -----------------------------------------------------------
   const shift = reduceMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 520, damping: 40 };
@@ -482,7 +668,7 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
           launching={launching === entry.id}
           label={labelOf(entry)}
           onActivate={() => activate(entry)}
-          onLongPress={() => setEditing(true)}
+          onLongPress={() => { byOption.current = false; setEditing(true); }}
           removeLabel={removeLabel}
         />
       </motion.div>
@@ -521,7 +707,16 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
             {results.length === 0 && <p className={styles.empty}>{text("No results", "没有结果")}</p>}
           </div>
         ) : (
-          <div className={styles.viewport} data-dim={!!openFolder || undefined}>
+          <div
+            className={styles.viewport}
+            data-dim={!!openFolder || undefined}
+            onPointerDown={onPanDown}
+            onPointerMove={onPanMove}
+            onPointerUp={onPanUp}
+            onPointerCancel={onPanCancel}
+            onLostPointerCapture={onPanCancel}
+            onClickCapture={event => { if (panned.current) { panned.current = false; event.stopPropagation(); } }}
+          >
             <motion.div className={styles.strip} style={{ x: stripX }}>
               {shownPages.map((_, index) => (
                 <div key={index} className="absolute top-[0] bottom-[0]" style={{ left: index * box.width, width: box.width }} onClick={event => { if (event.target === event.currentTarget) setEditing(false); }}>
@@ -535,9 +730,9 @@ export function Launchpad({ items: itemList }: { items: LaunchItem[] }) {
         )}
 
         {!results && shownPages.length > 1 && (
-          <div className={styles.dots} data-dim={!!openFolder || undefined}>
+          <div ref={dotsRef} className={styles.dots} data-dim={!!openFolder || undefined}>
             {shownPages.map((_, index) => (
-              <button key={index} type="button" className={styles.dot} data-on={index === current || undefined}
+              <button key={index} type="button" data-page-dot className={styles.dot} data-on={index === current || undefined}
                 aria-label={text(`Page ${index + 1}`, `第 ${index + 1} 页`)} aria-current={index === current ? "page" : undefined}
                 onClick={() => goPage(index)} />
             ))}

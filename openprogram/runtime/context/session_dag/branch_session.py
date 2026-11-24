@@ -55,7 +55,6 @@ ROOT_ID = "ROOT"
 # are the fields ``load_session_run_config`` / ``tools_override_from_config``
 # and the server's per-session model resolution read.
 RUN_CONFIG_FIELDS = (
-    "environment_id",
     "provider_override",
     "model_override",
     "provider_name",
@@ -282,6 +281,42 @@ def copy_tip(session_id: str, *, running: bool, store: Any = None) -> str:
     raise BranchSessionError("unknown_message", "this conversation has no finished turn to copy yet")
 
 
+FORK_PREVIEW_CHARS = 40
+
+
+def fork_point(session_id: str, msg_id: str, *, store: Any = None) -> Optional[dict]:
+    """``{"msg_id", "preview"}`` of the prompt a fork at ``msg_id`` branched at.
+
+    That is the user turn ``msg_id`` belongs to (``msg_id`` itself when it
+    is a prompt), and the start of its text, at most
+    ``FORK_PREVIEW_CHARS`` characters, "…" when cut. None when the source
+    or that prompt is gone (deleted, or withdrawn by a rewind).
+    """
+    if store is None:
+        from openprogram.runtime.context.session_db import default_db
+        store = default_db()
+    source = store.get_session(session_id) if session_id else None
+    if source is None or not msg_id:
+        return None
+    hidden = set(source.get("rewind_hidden_nodes") or []) | set(source.get("rewind_hidden_heads") or [])
+    by_id = {n.id: n for n in store.get_nodes(session_id)}
+    cur: Optional[str] = msg_id
+    seen: set[str] = set()
+    while cur and cur != ROOT_ID and cur not in seen:
+        seen.add(cur)
+        node = by_id.get(cur)
+        if node is None or cur in hidden or (node.metadata or {}).get("display") == "root":
+            return None
+        if node.role == ROLE_USER and _is_chain_turn(node):
+            text = " ".join(str(node.output or "").split())
+            if len(text) > FORK_PREVIEW_CHARS:
+                text = text[:FORK_PREVIEW_CHARS].rstrip() + "…"
+            return {"msg_id": cur, "preview": text}
+        caller = node.caller if node.caller not in (None, "", ROOT_ID) else None
+        cur = node.predecessor or caller
+    return None
+
+
 def _carry_checkpoints(store: Any, source: str, target: str, id_map: dict[str, str]) -> None:
     """Keep "restore code" working on copied messages; a failure only loses that."""
     from openprogram.state.store.snapshot.checkpoint.prompt_checkpoints import carry_checkpoints
@@ -302,13 +337,17 @@ def branch_session(
     title: Optional[str] = None,
     store: Any = None,
     branch_id: Optional[str] = None,
+    forked: bool = False,
 ) -> str:
     """Copy the chain root→``msg_id`` of ``session_id`` into a new session.
 
     Returns the new session id. The new session is in the source's
     project and environment, bound to the same agent, carries the same
     run configuration, has HEAD on the copy of ``msg_id`` and records
-    ``branched_from: {"session_id", "msg_id"}`` in its meta.
+    ``branched_from: {"session_id", "msg_id"}`` in its meta, plus
+    ``"forked": True`` when the copy ends before the source's tip ("Fork
+    from here" on an earlier message), which the new conversation's
+    banner names with the message it branched at (``fork_point``).
 
     Raises :class:`BranchSessionError` for an unknown session or
     message, a function-internal node, or a reply still being written.
@@ -419,7 +458,8 @@ def branch_session(
     project_id = _source_field("project_id")
     if project_id:
         fields["project_id"] = project_id
-    fields["branched_from"] = {"session_id": session_id, "msg_id": msg_id}
+    fields["branched_from"] = {"session_id": session_id, "msg_id": msg_id,
+                               **({"forked": True} if forked else {})}
     new_title = _branch_title(source.get("title") or "", title)
     if title and title.strip():
         fields["_user_titled"] = True

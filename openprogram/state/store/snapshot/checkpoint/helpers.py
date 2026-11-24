@@ -42,10 +42,12 @@ def _project_locator(shim, abs_path: str) -> dict | None:
     from openprogram.state.store.project import project_for_session
     from openprogram.state.store.project.location import bound_execution_state
 
+    from openprogram.state.store.project.project_store import folder_is_here
+
     project = project_for_session(shim.session_id)
     if project is None or not getattr(project, "id", "") or not getattr(project, "path", ""):
         return None
-    if bound_execution_state(project) is not None:
+    if not folder_is_here(project) or bound_execution_state(project) is not None:
         return None
     root = Path(str(project.path)).expanduser()
     try:

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>任务页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2563eb}a:hover{color:#1d4ed8}
+</style>
+</helmet>
+<div style="min-height: 800px; box-sizing: border-box; background: #f5f6f8; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: #16181d; display: flex; flex-direction: column">
+
+  <header style="height: 48px; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #ffffff; border-bottom: 1px solid #e3e5e9">
+    <button type="button" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: #f3f4f6; font: inherit; font-size: 14px; font-weight: 600; color: #16181d; cursor: pointer; min-width: 0; max-width: 420px">
+      <span style="width: 20px; height: 20px; flex: 0 0 auto; border-radius: 5px; background: #eaf1fe; color: #1d4ed8; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">2N</span>
+      <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">2026-NeurIPS-Zichuan-Fu-OpenProgram</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5b616e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </button>
+    <span style="font-size: 12px; color: #374151; background: #eef0f3; border-radius: 4px; padding: 2px 6px; font-family: 'SF Mono', Menlo, monospace">main · 6c99ab3</span>
+  </header>
+
+  <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; min-height: 0">
+    <nav aria-label="任务" style="flex: 1 1 240px; max-width: 260px; box-sizing: border-box; background: #fbfbfc; border-right: 1px solid #e3e5e9; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{groups}}" as="group" hint-placeholder-count="3">
+        <div style="font-size: 12px; font-weight: 600; color: #5b616e; letter-spacing: 0.04em; padding: 12px 10px 6px">{{group.title}}</div>
+        <sc-for list="{{group.tasks}}" as="task" hint-placeholder-count="3">
+          <a href="#" style="{{task.rowStyle}}">
+            <span style="{{task.dotStyle}}" aria-label="{{task.state}}"></span>
+            <span style="flex: 1 1 auto">{{task.title}}</span>
+          </a>
+        </sc-for>
+      </sc-for>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px">
+
+      <div style="flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 13px; color: #5b616e">写作</div>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 650">论文检查</h1>
+          <p style="margin: 0; font-size: 14px; line-height: 22px; color: #5b616e">按 rules.json 检查一个章节或整篇论文的写法、引用和数字来源。上次：<span style="color: #15803d; font-weight: 600">通过</span>，在 6c99ab3。</p>
+        </div>
+
+        <section style="background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="font-size: 13px; font-weight: 600">范围</span>
+            <div role="radiogroup" aria-label="范围" style="display: inline-flex; align-self: flex-start; background: #f3f4f6; border-radius: 8px; padding: 3px; gap: 2px">
+              <button type="button" role="radio" aria-checked="false" style="height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #374151; font: inherit; font-size: 13px; cursor: pointer">整篇论文</button>
+              <button type="button" role="radio" aria-checked="true" style="height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: #ffffff; color: #16181d; font: inherit; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.08); cursor: pointer">一个章节</button>
+            </div>
+          </div>
+          <label style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600">
+            章节
+            <select style="height: 36px; padding: 0 10px; border: 1px solid #d5d8de; border-radius: 6px; background: #ffffff; font: inherit; font-size: 14px; font-weight: 400; color: #16181d">
+              <option>4.1 Experimental Settings</option>
+              <option>Abstract</option>
+              <option>1 Introduction</option>
+            </select>
+          </label>
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #15803d">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg>
+            这一节的章节计划已批准
+          </div>
+          <label style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600">
+            给 agent 的说明 <span style="font-weight: 400; color: #5b616e">可选，只在派 agent 时用</span>
+            <textarea rows="3" placeholder="比如：长句拆短，不改数字" style="padding: 8px 10px; border: 1px solid #d5d8de; border-radius: 6px; font: inherit; font-size: 14px; font-weight: 400; resize: vertical"></textarea>
+          </label>
+          <button type="button" style="align-self: flex-start; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0; color: #5b616e; font: inherit; font-size: 13px; cursor: pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+            高级：对比基线 HEAD · 只查改动 · 全部阶段
+          </button>
+        </section>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+          <button type="button" style="height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: #2563eb; color: #ffffff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+            派 agent 修改
+          </button>
+          <button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d8de; border-radius: 8px; background: #ffffff; color: #16181d; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">只检查</button>
+          <span style="font-size: 13px; color: #5b616e">agent 在草稿副本里改，项目文件不动</span>
+        </div>
+      </div>
+
+      <aside aria-label="运行进度" style="flex: 1 1 320px; max-width: 380px; min-width: 0; background: #ffffff; border: 1px solid #e3e5e9; border-radius: 12px; overflow: hidden">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #eef0f3">
+          <span style="width: 8px; height: 8px; border-radius: 4px; background: #2563eb"></span>
+          <b style="flex: 1 1 auto; font-size: 14px">agent 正在修改</b>
+          <span style="font-size: 13px; color: #5b616e; font-variant-numeric: tabular-nums">[已用时间]</span>
+          <button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #d5d8de; border-radius: 6px; background: #ffffff; font: inherit; font-size: 12px; cursor: pointer">停止</button>
+        </div>
+        <ol style="list-style: none; margin: 0; padding: 8px 0; display: flex; flex-direction: column">
+          <li style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg><span style="flex: 1 1 auto">检查前置条件</span><span style="color: #5b616e">[耗时]</span></li>
+          <li style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg><span style="flex: 1 1 auto">复制项目到草稿</span><span style="color: #5b616e">[耗时]</span></li>
+          <li style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px; background: #f3f6fd; font-weight: 600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"></path></svg><span style="flex: 1 1 auto">agent 修改 Experimental Settings</span><span style="color: #1d4ed8">进行中</span></li>
+          <li style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px; color: #5b616e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c3c8d0" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle></svg><span style="flex: 1 1 auto">在草稿上跑论文检查</span></li>
+          <li style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px; color: #5b616e"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c3c8d0" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle></svg><span style="flex: 1 1 auto">生成红绿对比 PDF</span></li>
+        </ol>
+        <p style="margin: 0; padding: 12px 16px; border-top: 1px solid #eef0f3; font-size: 12px; line-height: 18px; color: #5b616e">可以离开这页去做别的。跑完会在底部弹出提示，点「去审阅」直接打开这一轮。</p>
+      </aside>
+    </main>
+  </div>
+
+  <footer style="height: 26px; flex: 0 0 auto; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: #ffffff; border-top: 1px solid #e3e5e9; font-size: 12px; color: #5b616e">
+    <span style="display: flex; align-items: center; gap: 6px; color: #1d4ed8"><span style="width: 8px; height: 8px; border-radius: 4px; background: #2563eb"></span>论文检查 · agent 修改中</span>
+    <span>main · 6c99ab3</span>
+    <span style="flex: 1 1 auto"></span>
+    <span>1 轮待审阅</span>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+const base = 'display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 6px; font-size: 14px; text-decoration: none; ';
+const dots = { 通过: '#15803d', 有问题: '#b91c1c', 被挡住: '#b45309', 没跑过: '#c3c8d0' };
+const t = (title, state, on) => ({ title, state, dotStyle: 'width: 8px; height: 8px; margin: 0 4px; border-radius: 4px; background: ' + dots[state], rowStyle: base + (on ? 'background: #eaf1fe; color: #1d4ed8; font-weight: 600' : 'color: #16181d') });
+return {
+groups: [
+{ title: '研究', tasks: [t('调研材料', '通过'), t('想法与研究问题', '通过'), t('实验证据', '通过')] },
+{ title: '写作', tasks: [t('章节计划', '通过'), t('论文检查', '通过', true), t('参考文献核查', '通过')] },
+{ title: '发布', tasks: [t('代码发布', '没跑过'), t('海报与报告材料', '被挡住'), t('会议清单', '有问题')] }
+]
+};
+}
+}
+</script>
+</body>
+</html>

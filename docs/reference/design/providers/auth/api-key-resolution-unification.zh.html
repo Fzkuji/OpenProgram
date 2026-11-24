@@ -5,11 +5,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Provider</th><th scope="col">凭据来源</th></tr></thead>
 <tbody>
-<tr><th scope="row">有 key 或登录的 LLM provider</th><td><code translate="no">~/.openprogram</code> 下 AuthStore 里这个 provider 的列表，由设置页或 <code translate="no">openprogram providers keys &lt;provider&gt; add</code> 写入</td></tr>
+<tr><th scope="row">有 key 或登录的 LLM provider</th><td><code translate="no">~/.openprogram</code> 下 AuthStore 里这个 provider 的列表（它的登录和所属厂商的 key），由设置页或 <code translate="no">openprogram providers keys &lt;provider&gt; add</code> 写入</td></tr>
 <tr><th scope="row">Worker 环境里的 key 变量</th><td>同一列表里的只读一行（<code translate="no">env:&lt;VAR&gt;</code>），每次使用时从环境读取；取消设置该变量即删除</td></tr>
 <tr><th scope="row">Amazon Bedrock</th><td>AWS 凭据链；哨兵值 <code translate="no">"&lt;authenticated&gt;"</code>，没有 bearer key</td></tr>
 <tr><th scope="row">Google Vertex</th><td>GCP ADC 加项目和区域；同一哨兵值</td></tr>
-<tr><th scope="row"><code translate="no">config.json</code></th><td>从不为 LLM key 读取。<code translate="no">api_keys</code> 只服务网页搜索和 TTS。</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>从不读它取 key。<code translate="no">api_keys</code> 里原有的内容在启动时一次性搬进凭据库（<a href="credential-model.zh.html">厂商、接入点和凭据</a>）。</td></tr>
 </tbody>
 </table>
 <p class="note">只有一个列表，运行时、模型目录和状态页就不会说法不一，请求在已存 key 和环境 key 之间用同一种方式选择。</p>

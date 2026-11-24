@@ -83,6 +83,7 @@ export function AttachmentPreview({
             readOnly
             previewSessionId={capturedSessionId ?? undefined}
             onPageOpened={onClose}
+            onGone={onClose}
           />
         </div>
       </div>

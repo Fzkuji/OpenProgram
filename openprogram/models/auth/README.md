@@ -17,15 +17,18 @@
 
 - **`adoption.py`** — Adopting sign-ins other tools already hold on this machine
 - **`carry_over.py`** — The one-time carry-over of the old credential layout
+- **`company_keys.py`** — A company's API keys: each key stored once, for the company that issued it
 - **`context.py`** — Which conversation the current model call belongs to
 - **`credential_provider.py`** — Refreshing the sign-ins a request is about to use
 - **`doctor.py`** — Credential health report: what is wrong with the stored credential pools
+- **`key_move.py`** — Move every API key to the company that issued it, once per key
 - **`manage.py`** — Changing a provider's credential list, for the Providers page and the CLI
 - **`provider_contract.py`** — ProviderAuthContract
 - **`provider_policy.py`** — Anthropic credential requirements
 - **`refresh_lock.py`** — Cross-process lock held while one OAuth refresh token is spent
 - **`resolver.py`** — From a credential to what one request sends
 - **`selection.py`** — Which credential a request uses, and what a failure does to it
+- **`services.py`** — The services tools reach with a key, and which company's keys they read
 - **`store.py`** — The credential store: one ordered credential list per provider
 - **`summary.py`** — Short, secret-free descriptions of credentials for listings and reports
 - **`types.py`** — Auth v2

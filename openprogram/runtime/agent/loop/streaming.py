@@ -122,9 +122,13 @@ def _note_tool_loaded(config: Any, messages: Any) -> None:
     from openprogram.models.providers.settings.tool_search_spec import model_tool_search_form
     from openprogram.models.providers.shared.tool_loads import loaded_names
 
+    from openprogram.runtime.agent.loop.message_context import RuntimeNote
+
     if model_tool_search_form(getattr(config, "model", None)) is not None:
         return
     for message in reversed(list(messages or ())):
+        if isinstance(message, RuntimeNote):
+            continue
         if getattr(message, "role", None) != "toolResult":
             break
         if not getattr(message, "is_error", False) and loaded_names(getattr(message, "details", None)):
@@ -487,7 +491,10 @@ async def _stream_in_conversation(
     # Shared by outer chat and Runtime.exec()/llm()/agent() tool continuations.
     # Prepare after dynamic memory, tools, and response-format instructions.
     if context._request_compactor is None:
-        context._request_compactor = RequestCompactor()
+        # A conversation turn's counts describe the conversation's own
+        # request; a function's or a sub-call's describe another history.
+        context._request_compactor = RequestCompactor(
+            session_id=config.session_id if config.compact_turn is not None else None)
     llm_context = await context._request_compactor.prepare(llm_context, config.model, stream_opts, get_api_key=config.get_api_key)
     anchor = getattr(config.compact_turn, "anchor_id", None)
     if anchor:
@@ -767,12 +774,8 @@ async def _stream_in_conversation(
                     final_message.usage.request_input_estimate = request_input_estimate
                     if (final_message.model == config.model.id
                             and final_message.provider == config.model.provider):
-                        context._request_compactor.note_usage(
-                            config.model,
-                            measured_input=(final_message.usage.input
-                                            + final_message.usage.cache_read),
-                            request_estimate=request_input_estimate,
-                        )
+                        context._request_compactor.note_reply(
+                            config.model, final_message, request_input_estimate)
                 if receipt is not None:
                     receipt.update(stop_reason=final_message.stop_reason,
                                    usage=_durable_message(final_message.usage))

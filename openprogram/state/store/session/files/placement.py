@@ -10,6 +10,7 @@ readable until journaled migration publishes them.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Iterator
 
@@ -103,18 +104,25 @@ def iter_session_dirs(root: Path) -> Iterator[tuple[str, Path]]:
     if not root.is_dir():
         return
     seen: set[str] = set()
-    for project_dir in sorted(root.iterdir()):
-        if not project_dir.is_dir() or project_dir.name.startswith("."):
-            continue
-        chats = project_dir / CHATS
-        if not chats.is_dir():
-            continue
-        for child in sorted(chats.iterdir()):
-            if not child.is_dir() or child.name.startswith("."):
-                continue
-            if session_looks_present(child) and child.name not in seen:
-                seen.add(child.name)
-                yield child.name, child
+    # The listing already says which entries are folders; asking each one
+    # again cost a second lookup per conversation on a walk made every few
+    # seconds.
+    for project in _folders(str(root)):
+        for name in _folders(os.path.join(str(root), project, CHATS)):
+            child = root / project / CHATS / name
+            if name not in seen and session_looks_present(child):
+                seen.add(name)
+                yield name, child
+
+
+def _folders(directory: str) -> list[str]:
+    """Names of the visible folders in ``directory``, sorted; none if it is not one."""
+    try:
+        with os.scandir(directory) as entries:
+            return sorted(entry.name for entry in entries
+                          if not entry.name.startswith(".") and entry.is_dir())
+    except OSError:
+        return []
 
 
 class SessionFolderBusy(PermissionError):

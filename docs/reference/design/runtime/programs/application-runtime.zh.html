@@ -96,7 +96,7 @@
 <tr><th scope="row">顺序</th><td>文件、新建对话、浏览器、终端；带窗口的内置应用；已启用且可见的已安装应用。按钮不显示模型、端口、运行时或路径。</td></tr>
 <tr><th scope="row">再次打开</th><td>同一应用和项目复用已打开的标签页。不同项目用显式数据范围独立打开。</td></tr>
 <tr><th scope="row">没有活动项目</th><td>复用已保存的绑定；未绑定的项目应用询问一次。应用绝不跟随其他聊天标签页的工作目录。</td></tr>
-<tr><th scope="row">首次打开</th><td>可能显示依赖准备。失败留在应用页面，给出原因和 Retry。</td></tr>
+<tr><th scope="row">首次打开</th><td>可能显示依赖准备。读到实例之前页面留空；读取失败时安静地按退避重试，读过的实例立刻画出。</td></tr>
 <tr><th scope="row">关闭</th><td>只关闭视图。服务进程退出和任务中断分别报告。</td></tr>
 <tr><th scope="row">创建</th><td>从聊天开始：Agent 编写包和依赖声明，构建并验证，然后在该任务的授权内注册。只有成功才增加按钮；失败保留源码和错误以便修复。</td></tr>
 </tbody>
@@ -135,6 +135,7 @@
 <li>项目路径变化只更新绑定，不改变实例身份。Runtime 数据库保存执行事实，应用状态引用运行 ID。<code translate="no">localStorage</code> 只缓存可丢弃的视图偏好。</li>
 <li>用户数据绝不放在来源目录。</li>
 <li>Python 环境：每个应用和固定依赖集合一个，首次使用时创建，绝不安装进主 worker。列表只读 manifest，不启动进程。静态应用不启动 Python。发布的 UI 用构建产物：不起开发服务器，不装最新依赖，不在点击时重新生成。</li>
+<li>Runner 提前启动：打开窗口时以及之后每个操作，都为当前应用版本留两个已加载 Python、框架和后端的 runner 等着，操作不必付约一秒的启动时间。每个仍只跑一个操作；旧版本的 runner 被停掉，worker 退出时空闲的也随之退出。</li>
 </ul>
 
 <h2 id="models">模型与业务操作</h2>
@@ -147,6 +148,7 @@
 <tr><th scope="row">问题</th><td><code translate="no">context.ask()</code> 发出问题事件；回答绑定运行和请求 ID，只对当前待答问题生效。没有第二个 <code translate="no">ExecutionStatus</code>。</td></tr>
 <tr><th scope="row">提交</th><td>普通代码在事务提交前校验模型输出。自然语言的“已保存”不是证据。</td></tr>
 <tr><th scope="row">重试</th><td>请求键对提交去重；相同键配不同输入被拒绝。非幂等的外部效果要检查现有记录或询问用户；网络超时绝不重复执行。</td></tr>
+<tr><th scope="row">对话</th><td>声明 <code translate="no">chat</code> 的窗口有自己的普通对话，一个键一段，草稿 ID 在第一条消息时被采用。宿主把真正的输入框按页面要求的位置盖在 iframe 上，并隐藏右侧栏；页面按宿主推送的数据自己画消息。页面的说明作为 <code translate="no">application</code> 附件随每条消息发出，存在用户节点上。agent 像普通聊天一样在对话的文件夹里干活，不经过后端。</td></tr>
 </tbody>
 </table>
 

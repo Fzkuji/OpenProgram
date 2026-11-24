@@ -1,14 +1,13 @@
-"""Memory Writer and Manager execution through Claude Code."""
+"""Memory Writer and Manager execution through the registered writer agent."""
 
 from __future__ import annotations
 
 import json
 import shutil
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:  # the SDK is only needed to actually run a writer
-    from ..agent_runtime import ClaudeCodeAgent
+from ..writer_agent import MemoryWriterAgent
 from .. import chat_refs
 from .config import MemoryConfig
 from .guidance import repair_guidance
@@ -135,7 +134,7 @@ FIX_ROUNDS = 3
 
 
 def _turn(
-    agent: ClaudeCodeAgent,
+    agent: MemoryWriterAgent,
     workspace: MemoryWorkspace,
     audit: list[dict[str, Any]],
     *,
@@ -201,7 +200,7 @@ def _fix_in_place(
 def _run_agent(
     memory_dir: str | Path,
     *,
-    agent: ClaudeCodeAgent,
+    agent: MemoryWriterAgent,
     task: str,
     usage_logger: Any | None = None,
     final_output: list[str] | None = None,

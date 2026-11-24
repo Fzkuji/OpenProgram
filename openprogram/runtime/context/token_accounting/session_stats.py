@@ -32,9 +32,11 @@ local estimate drifts from what the provider charges.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
+import threading
 from typing import Callable, Optional
 
 _log = logging.getLogger(__name__)
@@ -78,6 +80,34 @@ def model_ref_window(model: Optional[str], provider: Optional[str] = None) -> Op
     except Exception:
         _log.debug("model window not resolved for %r", model, exc_info=True)
         return None
+
+
+def session_model(sess: dict):
+    """The Model a session row's next request goes to (the same choice as
+    :func:`session_model_window`), or ``None`` when it does not resolve."""
+    from openprogram.models.providers.catalog.models import find_model_ref
+
+    extra = sess.get("extra_meta") or {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except ValueError:
+            extra = {}
+    if not isinstance(extra, dict):
+        extra = {}
+    fallback = sess.get("provider_name") or None
+    for model, provider in (
+        (sess.get("model_override") or extra.get("model_override"),
+         sess.get("provider_override") or extra.get("provider_override") or fallback),
+        (sess.get("model"), fallback),
+    ):
+        if model:
+            try:
+                return find_model_ref(model, provider)
+            except Exception:
+                _log.debug("model not resolved for %r", model, exc_info=True)
+                return None
+    return None
 
 
 def session_model_window(sess: dict) -> tuple[str, Optional[int]]:
@@ -124,7 +154,56 @@ BREAKDOWN_CATEGORY_KEYS = (
 )
 
 
+class _Flight:
+    """One breakdown being computed, and the callers waiting for it."""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.result: Optional[dict] = None
+
+
+_flights: dict[tuple, _Flight] = {}
+_flights_lock = threading.Lock()
+
+
 def compute_breakdown(
+    session_id: str,
+    head_id: Optional[str] = None,
+    *,
+    context_window: Optional[int] = None,
+) -> dict:
+    """:func:`_compute_breakdown`, computed once for callers that ask at the same time.
+
+    Opening a conversation asks three times at once (the panel twice and the
+    ring), and each computation renders and counts the whole branch: side by
+    side they took a second, and held up every other request of the page.
+    """
+    from openprogram.runtime.context.session_db import default_db
+
+    head = head_id or (default_db().get_session(session_id) or {}).get("head_id")
+    key = (session_id, head, context_window)
+    with _flights_lock:
+        flight = _flights.get(key)
+        leads = flight is None
+        if leads:
+            flight = _flights[key] = _Flight()
+    if not leads:
+        flight.done.wait()
+        if flight.result is not None:
+            return copy.deepcopy(flight.result)
+        # The computation this one waited for failed; it computes its own.
+        return _compute_breakdown(session_id, head_id, context_window=context_window)
+    try:
+        result = _compute_breakdown(session_id, head_id, context_window=context_window)
+        flight.result = copy.deepcopy(result)
+        return result
+    finally:
+        with _flights_lock:
+            _flights.pop(key, None)
+        flight.done.set()
+
+
+def _compute_breakdown(
     session_id: str,
     head_id: Optional[str] = None,
     *,
@@ -288,7 +367,8 @@ def compute_breakdown(
     message_rows: list[dict] = []
     try:
         from openprogram.runtime.context.compaction.view import load_compaction_view
-        view = load_compaction_view(db, session_id, head_id, audience=audience)
+        view = load_compaction_view(db, session_id, head_id, audience=audience,
+                                    reasoning_for=session_model(sess), frozen=False)
         msgs = view.messages
         message_rows = view.history
     except (AttributeError, KeyError, TypeError):
@@ -468,9 +548,6 @@ def _classify(
     )
     _describe_tools(bd.get("tools") or [], mcp_items, tools)
     bd["messages_detail"] = _message_detail(message_rows, branch)
-    compaction = _last_compaction(branch)
-    if compaction:
-        bd["last_compaction"] = compaction
 
     bd["unclassified"] = 0
     bd["input_used"] = sum(
@@ -649,27 +726,6 @@ def _message_detail(rows: list[dict], branch: list[dict]) -> dict:
     }
 
 
-def _last_compaction(branch: list[dict]) -> Optional[dict]:
-    """What the compaction in effect on the branch did: how many messages
-    its summary covers, the occupancy before and after, and when it ran.
-    The /context panel states it; the transcript marks no such point."""
-    summary = next((m for m in branch or []
-                    if isinstance(m, dict) and m.get("compaction")), None)
-    if summary is None:
-        return None
-    covered = summary.get("summarised_count")
-    if not isinstance(covered, int):
-        covered = len(summary.get("covers_ids") or [])
-    out: dict = {"covered": covered}
-    before, after = summary.get("tokens_before"), summary.get("tokens_after")
-    if isinstance(before, (int, float)) and isinstance(after, (int, float)):
-        out["tokens_before"], out["tokens_after"] = int(before), int(after)
-    at = summary.get("compacted_at")
-    if isinstance(at, (int, float)) and at > 0:
-        out["at"] = float(at)
-    return out
-
-
 def _message_kind(row: dict) -> str:
     from openprogram.runtime.context.compaction.persistence import SUMMARY_NODE_NAME
 
@@ -722,20 +778,25 @@ def build_stats(
     window: Optional[int] = None,
     estimated_total: Optional[int] = None,
     request_input_estimate: Optional[int] = None,
-    calibration: Optional[float] = None,
+    offset: Optional[int] = None,
 ) -> dict:
     """The one context-occupancy record both frontends read.
 
     ``measured_total`` is the provider-billed prompt size of a request
-    that just completed. Passing it selects the ``measured`` basis; the
-    estimate is still computed alongside so ``calibration`` can report the
-    ratio between them. Omitting it selects ``estimated``.
+    that just completed. A plausible one (``token_accounting.measure``)
+    selects the ``measured`` basis and records ``offset``: the count less
+    the request's own estimate. Otherwise the basis is ``estimated``: the
+    estimate plus the last ``offset`` of the same model, never scaled by a
+    ratio (a count of several summed passes once read 3.95 times the
+    estimate and the ring stayed red after the conversation was small).
 
     ``window`` is the window of the model the caller resolved now (the
     turn's Model, or the session's current model); without one the
     session row's model decides. It is never read back from an earlier
     record, and ``None`` means unknown: the reader shows no limit.
     """
+    from openprogram.runtime.context.token_accounting import measure
+
     breakdown = None
     if estimated_total is None:
         breakdown = compute_breakdown(session_id, head_id, context_window=window)
@@ -746,11 +807,16 @@ def build_stats(
         est_window = int(window or 0)
     window = int(window or 0) or est_window or None
 
-    if measured_total and measured_total > 0:
+    paired_estimate = int(request_input_estimate or 0)
+    # Checked against the request's own estimate only: mid-turn the graph
+    # does not hold the turn's rounds yet, so its estimate is no yardstick.
+    if measured_total and measure.plausible(int(measured_total), paired_estimate, window):
         total_used = int(measured_total)
         basis = "measured"
     else:
-        total_used = round(estimated * calibration) if calibration and calibration > 0 else estimated
+        anchor = (measure.Anchor(measured=int(offset), estimate=0)
+                  if offset is not None and (not window or abs(int(offset)) <= window) else None)
+        total_used = measure.request_size(estimated, anchor)
         basis = "estimated"
 
     stats = {
@@ -759,19 +825,10 @@ def build_stats(
         "basis": basis,
         "estimated": estimated,
     }
-    if basis == "measured":
-        paired_estimate = int(request_input_estimate or 0)
-        if paired_estimate > 0:
-            stats["calibration"] = round(total_used / paired_estimate, 4)
-            stats["calibration_source"] = "request"
-        elif estimated > 0:
-            # Older provider records lack a paired request estimate. This
-            # ratio is informative only; graph edits must not reuse it.
-            stats["calibration"] = round(total_used / estimated, 4)
-            stats["calibration_source"] = "graph"
-    elif calibration and calibration > 0:
-        stats["calibration"] = calibration
-        stats["calibration_source"] = "request"
+    if basis == "measured" and paired_estimate > 0:
+        stats["offset"] = total_used - paired_estimate
+    elif basis == "estimated" and offset is not None and total_used != estimated:
+        stats["offset"] = int(offset)
     if breakdown is not None:
         stats["_breakdown"] = breakdown
     return stats

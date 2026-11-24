@@ -44,7 +44,7 @@ _restore_jobs: dict[int, tuple[int, asyncio.Task]] = {}
 # Sockets that registered again while their restore ran: the renderer creates
 # native Pages after its first register, so that pass may have missed them.
 _restore_reruns: set[int] = set()
-_RESTORABLE = frozenset({"restoring", "unavailable", "restore_failed"})
+_RESTORABLE = frozenset({"restoring", "unavailable", "restore_failed", "dormant"})
 _PNG_DATA_URL_PREFIX = "data:image/png;base64,"
 # Leave JSON framing headroom below Uvicorn's 16 MiB WebSocket message limit.
 _MAX_SCREENSHOT_DATA_URL_CHARS = 12 * 1024 * 1024
@@ -866,6 +866,10 @@ async def handle_webtab_result(ws, cmd: dict):
             **({"tab_entries": tab_entries}
                if isinstance(cmd.get("tab_entries"), list) else {}),
             **({"pages": pages} if isinstance(cmd.get("pages"), list) else {}),
+            **({"dormant_tabs": [
+                tab_id for tab_id in cmd["dormant_tabs"][:4096]
+                if isinstance(tab_id, str) and tab_id
+            ]} if isinstance(cmd.get("dormant_tabs"), list) else {}),
             **_recording_fields(cmd),
         }
     ev.set()
@@ -903,6 +907,11 @@ def restore_window_pages(ws, window_id: str, expected_revision: int | None = Non
     if not result.get("ok") or not isinstance(pages, list):
         store.mark_window_restorable(window_id, "restore_failed")
         return
+    # Tabs the window holds with no native view yet. Their pages are not
+    # lost: the view is made when the page is wanted.
+    waiting = result.get("dormant_tabs")
+    dormant_tabs = {tab_id for tab_id in waiting if isinstance(tab_id, str) and tab_id} \
+        if isinstance(waiting, list) else set()
     seen_tabs: set[str] = set()
     for page in pages:
         if not isinstance(page, dict):
@@ -938,7 +947,14 @@ def restore_window_pages(ws, window_id: str, expected_revision: int | None = Non
                 row = store.get_resource(resource_id) or {}
                 if (row.get("lifecycle") or "") in _RESTORABLE:
                     store.mark_restore_failed(resource_id)
-    if not seen_tabs:
+    store.mark_tabs_dormant(window_id, sorted(dormant_tabs - seen_tabs))
+    # A dormant page whose tab is gone is not coming back either.
+    for tab_id, resource_ids in store.dormant_tabs(window_id).items():
+        if tab_id in dormant_tabs and tab_id not in seen_tabs:
+            continue
+        for resource_id in resource_ids:
+            store.mark_restore_failed(resource_id)
+    if not seen_tabs and not dormant_tabs:
         store.mark_window_restorable(window_id, "restore_failed")
         return
     with store.connect() as db:

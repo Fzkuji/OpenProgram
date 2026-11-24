@@ -1,4 +1,4 @@
-"""`openprogram dev`: the development instance and promotion to stable."""
+"""`openprogram dev`: the development instance beside the official App."""
 from __future__ import annotations
 
 import sys
@@ -41,22 +41,18 @@ def _cmd_dev(args) -> int:
         if args.dev_verb == "auth-url":
             print(instances.auth_url())
             return 0
-        if args.dev_verb == "promote":
-            revision = instances.promote(args.revision, on_wait=lambda text: print(text, file=sys.stderr, flush=True))
-            print(f"stable now runs {_short(revision)}")
-            return 0
         value = instances.status()
         if getattr(args, "json", False):
             print(instances.as_json(value))
             return 0
         stable, dev = value["stable"], value["dev"]
-        print(f"stable  {_short(stable['installed_revision'])}  branch stable={_short(stable['branch_revision'])}  "
-              f":{stable['port']} {'healthy' if stable['healthy'] else 'down'}")
+        print(f"stable  release {stable['version'] or '-'}  :{stable['port']} "
+              f"{'healthy' if stable['healthy'] else 'down'}")
         print(f"dev     {_short(dev['deployed_revision'])}  branch {dev['branch']}={_short(dev['branch_revision'])}  "
               f":{dev['port']} {'healthy' if dev['healthy'] else 'down'}")
-        pending = value["promotable"]
+        pending = value["undeployed"]
         if pending:
-            print(f"\n{len(pending)} commit(s) promotable to stable:")
+            print(f"\n{len(pending)} commit(s) on {dev['branch']} not deployed yet:")
             for item in pending[:20]:
                 print(f"  {item['sha'][:10]}  {item['subject']}")
         return 0

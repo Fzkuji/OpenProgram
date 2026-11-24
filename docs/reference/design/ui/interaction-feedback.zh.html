@@ -16,12 +16,13 @@
 </table>
 
 <h2 id="shared-helper">共享辅助函数</h2>
-<p><code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code> 中的 <code translate="no">optimisticAction({apply, settled, revert, onTimeoutMessage})</code>。</p>
+<p><code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code> 中的 <code translate="no">optimisticAction({apply, settled, subscribe, revert, onTimeoutMessage})</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">参数</th><th scope="col">作用</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">apply</code></th><td>设置 0ms 状态</td></tr>
 <tr><th scope="row"><code translate="no">settled()</code></th><td>真实数据替代后为 true：消息已从 store 移除、树已重新填充、<code translate="no">branch.active</code> 已切换</td></tr>
+<tr><th scope="row"><code translate="no">subscribe</code></th><td><code translate="no">settled()</code> 读的那个 store；它每次变化时问一次，不按定时器问。唯一的定时器是一个 10 秒期限</td></tr>
 <tr><th scope="row"><code translate="no">revert</code></th><td>超时且 <code translate="no">settled()</code> 仍为 false 时运行，并显示提示</td></tr>
 </tbody>
 </table>

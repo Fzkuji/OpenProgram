@@ -35,11 +35,13 @@
 <tbody>
 <tr><th scope="row">图片、视频、音频</th><td>原位显示或播放</td></tr>
 <tr><th scope="row">PDF</th><td>第一页，裁到 16:9 画框</td></tr>
+<tr><th scope="row">Word、PowerPoint、Excel</th><td>由 worker 画出第一页（<code translate="no">/api/file-thumbnail</code>）：macOS 用快速查看，否则用编辑软件存在文件里的缩略图；裁到 16:9 画框。两者都没有就只显示名称行。应用内编辑器是 730 MB 的可选安装，每张卡片启动一次太重</td></tr>
 <tr><th scope="row">HTML</th><td>按 1280 × 720 绘制，缩放到 16:9 画框</td></tr>
 <tr><th scope="row">zip、tar</th><td>第一层，每个文件夹显示文件数</td></tr>
 <tr><th scope="row">文本</th><td>开头几行</td></tr>
 </tbody>
 </table>
+<p>有预览的卡片都占正文列的三分之一（240–440 px），一排三张：足够分辨是哪个文件，完整内容点一下就能打开。没有预览的卡片是单独一排的名称行。</p>
 <p>只有服务端放在消息上的附件才画卡片：<code translate="no">send_file</code> 发的文件，或<a href="#produced-files">本轮产出的文件</a>。浏览器不自己推导卡片。</p>
 <p>组装本轮最终文本时（<code translate="no">with_attachments</code>），模型为本轮没有记录的文件打出的标记改成文件名，回复内容和文本块里都一样：不出卡片、路径和自动预览，实时和重新加载后都是如此。用户消息里的上传和提及标记保持不变。</p>
 <ul>
@@ -69,6 +71,7 @@
 <tr><th scope="row">由 Worker 确认</th><td><code translate="no">GET /api/file-paths</code> 回答哪些候选是文件：绝对路径和 <code translate="no">~</code> 路径按 <code translate="no">readable_roots</code> 检查，相对路径先接到对话的工作目录上。只有确认过的路径才变成链接，所以长得像文件名的代码不会成为死链接</td></tr>
 <tr><th scope="row">开销</th><td>屏幕上所有回复的候选，每个对话合成一次请求（每次最多 64 条，只做 <code translate="no">stat</code>）；答案保留五分钟（不存在的文件二十秒，因为智能体可能还在生成）。文字先画出来，从不等待</td></tr>
 <tr><th scope="row">不是路由</th><td>只可能是本地路径的 markdown 链接（不是应用页面的 <code translate="no">/…</code>、<code translate="no">~/</code>、<code translate="no">./</code>、<code translate="no">../</code>、<code translate="no">file://</code>、盘符）在外壳路由之前被拦下，否则路由会把 <code translate="no">/Users/…</code> 当成页面。尚未确认的链接在点击时再查；文件不在时会提示。不带前缀的目标（<code translate="no">notes/plan.md</code>，或省略了协议的网址 <code translate="no">docs.example.ai</code>）要等确认后才变成文件链接，之前点击保持链接原本的行为</td></tr>
+<tr><th scope="row">路径里有空格</th><td>指向根目录、<code translate="no">~/</code>、<code translate="no">file://</code> 或盘符路径、且路径里有空格的链接（<code translate="no">[deck](/Users/me/ICDM 2026/deck.pptx)</code>）仍然是链接；按 CommonMark，空格会截断目标，整段变成纯文本。模型就是这样写路径的。网址仍按原规则（<code translate="no">lib/markdown/spaced-path-links.ts</code>）</td></tr>
 <tr><th scope="row">样式</th><td>和应用里渲染的 markdown 链接（文件预览里的链接）一个画法：链接色，下面一条淡下划线，悬停时变实。行内代码保留底色，也用链接色和这条下划线，所以即使链接色和代码色相近，不悬停也能和普通代码分开。只改装饰，路径变成链接时段落排版不变。回车可打开</td></tr>
 </tbody>
 </table>
@@ -287,7 +290,7 @@
 <tr><th scope="row">Claude Code 桌面版</th><td>回复里的路径点击后在文件面板或浏览器面板打开；右键有 Attach as context、Copy（绝对、相对、文件名）、Open in、Show in Finder</td></tr>
 <tr><th scope="row">KimiCode</th><td>点击打开文件预览；右键有复制路径和显示位置</td></tr>
 <tr><th scope="row">OpenCode v2</th><td>行内代码里的路径先确认文件存在才做成链接，此前未经检查的猜测产生过死链接</td></tr>
-<tr><th scope="row">Codex 应用</th><td>提示模型写成 <code translate="no">[app.py](/abs/path/app.py:12)</code> 链接，并在自己的编辑器里打开</td></tr>
+<tr><th scope="row">Codex 应用</th><td>提示模型写成 <code translate="no" data-claim="example">[app.py](/abs/path/app.py:12)</code> 链接，并在自己的编辑器里打开</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

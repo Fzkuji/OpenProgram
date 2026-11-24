@@ -211,8 +211,9 @@ def test_sandbox_and_remote_environments_resolve_in_the_same_function(monkeypatc
     assert (sandboxed.kind, sandboxed.path, sandboxed.sandboxed) == ("wsl-bash", "/bin/bash", True)
     assert sandboxed.host == host
     assert command_shell.resolve_shell(sandboxed=True, platform="linux").kind == "bash"
-    for kind in ("ssh", "docker"):
-        assert command_shell.resolve_shell(types.SimpleNamespace(kind=kind)).kind == "remote"
+    assert command_shell.resolve_shell(types.SimpleNamespace(remote_shell=True)).kind == "remote"
+    assert command_shell.resolve_shell(types.SimpleNamespace(remote_shell=False),
+                                       sandboxed=False, platform="win32") == host
 
 
 def test_the_sandbox_is_read_on_every_call(monkeypatch):
@@ -306,7 +307,7 @@ def test_environment_names_bash_not_the_login_shell(monkeypatch, tmp_path, unsan
 
 
 def test_environment_leaves_a_remote_shell_to_its_own_line() -> None:
-    assert components._command_shell_note(types.SimpleNamespace(kind="ssh")) == ""
+    assert components._command_shell_note(types.SimpleNamespace(remote_shell=True)) == ""
 
 
 @pytest.fixture

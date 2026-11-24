@@ -13,6 +13,7 @@
 </tbody>
 </table>
 <p class="note"><code translate="no">ConvItem</code> resolves the state; <code translate="no">StatusMarker</code> draws it. Selection is <code translate="no">aria-current="true"</code>. CSS suppresses running and finishing pseudo-elements on unselected rows.</p>
+<p class="note">The bell's <a href="activity-view.html">Activity view</a> lists the conversations whose marker is one of the first three states.</p>
 
 <h2 id="what-counts-as-running">What counts as running</h2>
 <p>A row is running while any turn of its conversation holds a run slot, on whichever branch: the selected branch's turn (<code translate="no">runningTasks</code>) or a turn on another branch (<code translate="no">sessionsWithBranchRun</code> over <code translate="no">lib/chat/run/other-branch-runs.ts</code>). The composer's Stop stays the selected branch's alone (<a href="../turn-lifecycle/turn-occupancy.html">turn occupancy</a>).</p>

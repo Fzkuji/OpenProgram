@@ -17,13 +17,21 @@ interface BootstrapDependencies {
 }
 
 const OWNER_TOKEN_FRAGMENT = /^#token=([A-Za-z0-9_-]{43})$/;
+// A one-time pairing code from `openprogram web pair`: redeemed for a
+// long-lived device cookie instead of the per-start owner cookie.
+// The code, then each other address of the same computer (`&via=`), which a
+// browser does not need: it already reached this one.
+const PAIRING_CODE_FRAGMENT = /^#pair=([A-Za-z0-9_-]{43})(?:&via=[A-Za-z0-9._~%-]+)*$/;
 const OWNER_TOKEN_VALUE = /^[A-Za-z0-9_-]{43}$/;
 const BOOTSTRAP_FAILURE =
   "Owner authentication failed. Open a new authenticated URL and try again.";
+export const PAIRING_FAILURE =
+  "This pairing link has expired or was already used. Create a new one on the computer.";
 
 function fragmentContainsToken(hash: string): boolean {
   if (!hash.startsWith("#")) return false;
-  return new URLSearchParams(hash.slice(1)).has("token");
+  const params = new URLSearchParams(hash.slice(1));
+  return params.has("token") || params.has("pair");
 }
 
 /**
@@ -42,12 +50,15 @@ export function createOwnerAuthBootstrapCoordinator({
   const fragment = location.hash;
   const hasToken = fragmentContainsToken(fragment);
   let token: string | null = null;
+  let pairingCode: string | null = null;
   let invalidFragment = false;
 
   if (hasToken) {
     history.replaceState(history.state, "", `${location.pathname}${location.search}`);
     const match = OWNER_TOKEN_FRAGMENT.exec(fragment);
+    const pairing = PAIRING_CODE_FRAGMENT.exec(fragment);
     if (match) token = match[1];
+    else if (pairing) pairingCode = pairing[1];
     else invalidFragment = true;
   }
 
@@ -60,6 +71,41 @@ export function createOwnerAuthBootstrapCoordinator({
       readyPromise = (async () => {
         if (invalidFragment) {
           throw new Error("Invalid owner authentication URL.");
+        }
+        if (pairingCode !== null) {
+          const code = pairingCode;
+          pairingCode = null;
+          let status = 0;
+          try {
+            const response = await fetch("/api/auth/pair", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code }),
+              credentials: "same-origin",
+              cache: "no-store",
+              redirect: "error",
+              referrerPolicy: "no-referrer",
+            });
+            status = response.status;
+          } catch {
+            status = 0;
+          }
+          if (status === 204) return;
+          // An old link opened again on a device that is already paired:
+          // its cookie still signs it in, so there is nothing to report.
+          try {
+            const session = await fetch("/api/auth/session", {
+              method: "GET",
+              credentials: "same-origin",
+              cache: "no-store",
+              redirect: "error",
+              referrerPolicy: "no-referrer",
+            });
+            if (session.status === 204) return;
+          } catch {
+            // Fall through to the pairing failure.
+          }
+          throw new Error(PAIRING_FAILURE);
         }
         if (token === null) return;
 

@@ -22,10 +22,23 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
+from typing import TYPE_CHECKING
 
-from openprogram.host.security import safe_http
 from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
+
+if TYPE_CHECKING:
+    import httpx
+
+
+def _net():
+    """``httpx`` and the safe client, imported at the first search: the HTTP
+    client takes 0.06 s to import, and this module is loaded with the
+    Programs by every command and standalone run."""
+    import httpx
+
+    from openprogram.host.security import safe_http
+
+    return httpx, safe_http
 
 
 class ProviderHTTPError(RuntimeError):
@@ -106,6 +119,7 @@ def get_bytes(
     return XML / RSS / Atom (ArXiv) rather than JSON. Same error-
     unwrapping semantics as ``get_json``.
     """
+    httpx, safe_http = _net()
     client = safe_http.safe_client("tool.web_search.fixed_api")
     try:
         with client:
@@ -129,6 +143,7 @@ def _execute(
     consumer: str,
     **kwargs,
 ) -> Any:
+    httpx, safe_http = _net()
     client = (
         safe_http.configured_safe_client(
             "tool.web_search.configured_api",

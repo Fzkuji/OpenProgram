@@ -1115,7 +1115,8 @@ class ProvidersOperations:
                 error.retryable = False  # type: ignore[attr-defined]
             if getattr(final, "error_transport_exhausted", False):
                 error.transport_exhausted = True  # type: ignore[attr-defined]
-            if message == "ValueError: Protected request content exceeds the model input budget":
+            from openprogram.runtime.context.compaction.request import TOO_LARGE
+            if message == f"ValueError: {TOO_LARGE}":
                 error.retryable = False
             raise error
     def _session_result(self, final, structured_format):

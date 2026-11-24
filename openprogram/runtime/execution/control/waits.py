@@ -330,6 +330,16 @@ class WaitsOperations:
         wait = DurableWaitStore(self.executions).get_wait(opened_id)
         assert wait is not None
         suspension = WaitSuspension(wait=wait, checkpoint=checkpoint, execution=paused, attempt=ended)
+        if kind == "system_access":
+            # The task waits; System Settings opens at the missing switch with
+            # the drag guide, once per wait. A grant resumes it (recover_wait_outcomes).
+            try:
+                from openprogram.host.system_access import guide
+                guide.start_for_wait(
+                    wait.wait_id, list(wait.request.get("required_capabilities") or ()),
+                )
+            except Exception:
+                _log.debug("system settings guide did not start for %s", wait.wait_id, exc_info=True)
         observer = self._wait_suspension_observer
         if observer is not None:
             observer(suspension)

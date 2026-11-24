@@ -6,12 +6,14 @@ import { Textarea } from "@/components/ui/textarea";
 import styles from "./project-settings.module.css";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useFolderPicker } from "@/components/ui/folder-picker";
+import { useFolderPickerOn } from "@/components/machines/open-folder-on";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws/ws-request";
 
 export interface EditableProject {
   hidden?: boolean; is_default?: boolean; id: string; name: string; path: string; icon?: string; description?: string; source_folders?: string[];
+  /** The machine the folder is on; source folders are chosen there. */
+  machine_id?: string;
 }
 const inputClass = styles.field;
 const icons = ["", "📁", "💻", "🔬", "📚", "🎮", "🧪", "📊", "🎨", "🌐", "⭐", "📝"];
@@ -26,7 +28,7 @@ export function ProjectEditor({ project, onClose, onSaved }: {
   const [folders, setFolders] = useState(project.source_folders ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const { pickFolder, folderPickerDialog, manualOpen } = useFolderPicker();
+  const { pickFolder, dialogs, dialogOpen: manualOpen } = useFolderPickerOn(project.is_default ? null : project.machine_id);
   async function save(event: React.FormEvent) {
     event.preventDefault(); setError(""); setSaving(true);
     try {
@@ -63,6 +65,6 @@ export function ProjectEditor({ project, onClose, onSaved }: {
         </form>
       </DialogContent>
     </Dialog>
-    {folderPickerDialog}
+    {dialogs}
   </>;
 }

@@ -6,7 +6,7 @@
   "glibcMinimum": "2.35",
   "sourceBuilds": {
     "macos-x86_64": ["cryptography"],
-    "windows-arm64": ["claude-agent-sdk", "cryptography", "httptools", "tiktoken"]
+    "windows-arm64": ["cryptography", "httptools", "tiktoken"]
   },
   "git": "v2.56.0-2",
   "gitAsset": "dugite-native-v2.56.0-a44aeca",

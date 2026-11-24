@@ -1,0 +1,31 @@
+/* The few parts the kit has no component for: PDF pins, diffs, report text. */
+html, body, #root { height: 100%; }
+body { background: var(--bg-primary); }
+
+.pdf-pin {
+  position: absolute; transform: translate(-4px, -100%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 11px 11px 11px 2px;
+  background: var(--accent-blue); color: #fff; font-size: 11px; font-weight: 700;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.pdf-pin.static { position: static; transform: none; width: 18px; height: 18px; font-size: 10px; }
+
+.diff { font: 12px/1.6 var(--font-mono); max-height: 360px; overflow: auto; padding: 6px 0; }
+.diff > div { padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+.diff .h { color: var(--text-muted); background: var(--bg-secondary); }
+.diff .d { background: color-mix(in oklab, var(--git-removed) 10%, transparent); }
+.diff .a { background: color-mix(in oklab, var(--git-added) 10%, transparent); }
+.diff del { background: color-mix(in oklab, var(--git-removed) 30%, transparent); text-decoration: line-through; }
+.diff ins { background: color-mix(in oklab, var(--git-added) 30%, transparent); text-decoration: none; }
+
+.md { font-size: 14px; line-height: 1.65; color: var(--text-primary); }
+.md h2, .md h3, .md h4, .md h5 { color: var(--text-bright); font-weight: 600; margin: 18px 0 6px; }
+.md h2 { font-size: 18px; } .md h3 { font-size: 16px; } .md h4, .md h5 { font-size: 14px; }
+.md p { margin: 6px 0; }
+.md ul { list-style: disc; padding-left: 20px; margin: 6px 0; }
+.md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg-tertiary); border-radius: 4px; padding: 0 4px; }
+.md pre { font-family: var(--font-mono); font-size: 12px; background: var(--bg-secondary); border-radius: 8px; padding: 10px 12px; overflow: auto; }
+.md table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--bg-secondary); font-weight: 600; }

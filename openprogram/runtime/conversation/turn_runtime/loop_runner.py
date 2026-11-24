@@ -285,46 +285,58 @@ def _named_tools(agent_profile, tools_override):
     return tools_override
 
 
-def _configure_browser_tool(tools, surface_context, *, enabled: bool | None = None,
-                             tools_override=None):
-    """Built-in browser Pages are a computer_use_agent target; while they exist the turn gets it.
+def _configure_screen_tool(tools, surface_context, *, enabled: bool | None = None,
+                            tools_override=None):
+    """computer_use is in the turn while a target is set up; returns the tools and whether the
+    conversation's Pages are within the turn's reach.
 
-    Without the browser application there are no Pages to operate. A turn whose
-    tool list is given by name (an always-on check-in, a skill's allowed tools)
-    gets it only when that list names it: a check-in is read-only, and the
-    screen tool would wait on a system-access prompt nobody is there to answer.
+    The targets follow the set-up (``available_targets``), never an open Page,
+    so the array stays the same from turn to turn. A turn whose tool list is
+    given by name (an always-on check-in, a skill's allowed tools) gets the
+    tool only when that list names it: a check-in is read-only, and the
+    screen tool would wait on a system-access prompt nobody is there to
+    answer. A turn with no tools at all (an Agent set to none) gets it only
+    for a Page the user attached. ``enabled`` is a resumed turn's own choice.
+
+    The second value says whether the Pages section goes with the turn: the
+    built-in browser is a target, and it has Pages now (or the resumed turn
+    had the tool, since the Page inventory is transient).
     """
     from openprogram.runtime.conversation.surface_context import browser_pages_available, tool_enabled
-    from openprogram.programs._host import services as _services
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
     current = list(tools or [])
-    if isinstance(tools_override, list) and "computer_use_agent" not in tools_override:
-        return [tool for tool in current if tool.name != "computer_use_agent"], False
-    if _services.lookup("browser") is None:
+    if isinstance(tools_override, list) and screen.NAME not in tools_override:
+        return [tool for tool in current if tool.name != screen.NAME], False
+    if not screen.available_targets():
         return current, False
     if enabled is None:
-        enabled = tool_enabled(surface_context) or (bool(current) and browser_pages_available(surface_context))
+        enabled = tool_enabled(surface_context) or bool(current)
+        pages = tool_enabled(surface_context) or browser_pages_available(surface_context)
+    else:
+        pages = enabled
     if not enabled:
         return current, False
 
     from openprogram.programs import get_agent_tool
 
-    screen_tool = next((tool for tool in current if tool.name == "computer_use_agent"), None)
+    screen_tool = next((tool for tool in current if tool.name == screen.NAME), None)
     if screen_tool is None:
-        screen_tool = get_agent_tool("computer_use_agent")
-    current = [tool for tool in current if tool.name != "computer_use_agent"]
-    if screen_tool is not None:
-        current.append(screen_tool)
-    return current, screen_tool is not None
+        screen_tool = get_agent_tool(screen.NAME)
+    current = [tool for tool in current if tool.name != screen.NAME]
+    if screen_tool is None:
+        return current, False
+    current.append(screen_tool)
+    return current, bool(pages) and screen.page_surface_call() is not None
 
 
-def _saved_browser_tool(saved_runtime_contract: Mapping | None) -> bool | None:
-    """Whether the checkpoint's turn could operate browser Pages, read from its tools."""
+def _saved_screen_tool(saved_runtime_contract: Mapping | None) -> bool | None:
+    """Whether the checkpoint's turn had the screen tool, read from its tools."""
     if saved_runtime_contract is None:
         return None
     names = {tool.get("name") for tool in saved_runtime_contract.get("tools") or []
              if isinstance(tool, Mapping)}
-    return "computer_use_agent" in names
+    return "computer_use" in names
 
 
 def _retain_saved_contract_tools(tools, saved_runtime_contract: Mapping | None):
@@ -536,8 +548,8 @@ def resolve_agent_runtime(
     # here: a turn whose mode changes keeps the tools the new mode allows.
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
     # The conversation's own turn keeps one tools array for the epoch: a tool
-    # this turn cannot use (no channel to post to, nobody to answer, no open
-    # Page, memory off …) stays in it, its calls are refused, and the
+    # this turn cannot use (no channel to post to, nobody to answer, memory
+    # off …) stays in it, its calls are refused, and the
     # ``tool_availability`` section beside the message says so (Codex, Hermes).
     # Other turns (a verification, a check-in, a self-update step) have their
     # own prompt and lane and drop such tools.
@@ -552,24 +564,11 @@ def resolve_agent_runtime(
     # The goal Program is the Programs form's entry; agents use create_goal.
     tools = [tool for tool in tools or [] if tool.name != "goal"]
     unavailable: dict[str, str] = {}
-    # Page inventory is transient. Keep this turn's browser-tool selection
-    # through reconnects; each actual browser action still validates access.
-    saved_browser_tool = _saved_browser_tool(saved_runtime_contract)
-    if pinned and saved_browser_tool is None:
-        # Whenever the browser application is loaded the screen tool is in
-        # the array, at its end; without a Page its calls are refused. A turn
-        # with no tools at all (an Agent set to none) gets none.
-        tools, browser_enabled = _configure_browser_tool(tools, req.surface_context, enabled=None,
-                                                          tools_override=_named_tools(agent_profile, req.tools_override))
-        if not browser_enabled and tools:
-            union, in_union = _configure_browser_tool(tools, req.surface_context, enabled=True,
-                                                      tools_override=_named_tools(agent_profile, req.tools_override))
-            if in_union:
-                tools = union
-                unavailable["computer_use_agent"] = "no browser Page is open in this conversation"
-    else:
-        tools, browser_enabled = _configure_browser_tool(tools, req.surface_context, enabled=saved_browser_tool,
-                                                          tools_override=_named_tools(agent_profile, req.tools_override))
+    # The screen tool follows the targets that are set up, so a pinned array
+    # keeps it from turn to turn; a resumed turn keeps the choice it made.
+    tools, browser_enabled = _configure_screen_tool(tools, req.surface_context,
+                                                    enabled=_saved_screen_tool(saved_runtime_contract),
+                                                    tools_override=_named_tools(agent_profile, req.tools_override))
     unavailable.update(turn_availability(req, tools))
     tools, unavailable = delegate_blocked(tools, unavailable)
     if not pinned:
@@ -703,8 +702,10 @@ def resolve_agent_runtime(
         except Exception:
             open_apps = set()
         req._deferred_catalog = deferred_catalog(tools, open_apps)
+        req._devices = _devices(tools, req.session_id)
     else:
         req._deferred_catalog = None
+        req._devices = None
     sections: dict = {}
     if saved_system_prompt is None and getattr(req, "session_id", None) and owner:
         # The prompt recorded on this branch is sent again when only its
@@ -963,6 +964,18 @@ def _off_selection(db, req) -> bool:
 _VIEW_NOTES = ("plan_mode", "goal", "todo_reminder")
 
 
+
+def _devices(tools: Any, session_id: str) -> Optional[dict]:
+    """What computer_use can operate now, by device, when the turn has the tool; else None."""
+    if not any(getattr(tool, "name", None) == "computer_use" for tool in tools or ()):
+        return None
+    from openprogram.programs.tools.computer_use.computer_use.tool import devices
+    try:
+        return devices(session_id)
+    except Exception:
+        _log.warning("listing the devices computer_use can operate failed", exc_info=True)
+        return None
+
 def _view_notes(req, beside: list, view, *, owner: bool) -> list:
     """``beside`` with the notes decided from what the request's rendered
     history shows (``turn_context.turn_view``; None when the engine did not
@@ -1111,6 +1124,19 @@ def _new_turn_agent_context(
             catalog_before = turn_context.catalog_stored(history, exclude=user_msg_id)
         beside = turn_context.put(beside, turn_context.SECTION, turn_context.CATALOG,
                                   catalog_note(catalog_before, catalog_now), catalog=catalog_now)
+    devices_now = getattr(req, "_devices", None)
+    if devices_now is not None:
+        # What computer_use can operate: the whole list when no earlier note
+        # is in view, then each device added, changed and removed, so its
+        # tool definition never changes (``computer_use.tool.devices_note``).
+        from openprogram.programs.tools.computer_use.computer_use.tool import devices_note
+        ident = turn_context.DEVICES
+        if reported is not None:
+            devices_before = turn_context.catalog_shown(reported, ident)
+        else:
+            devices_before = turn_context.catalog_stored(history, exclude=user_msg_id, ident=ident)
+        beside = turn_context.put(beside, turn_context.SECTION, ident,
+                                  devices_note(devices_before, devices_now), catalog=devices_now)
     beside = _view_notes(req, beside, getattr(prep, "turn_view", None), owner=owner)
     # ``memory_map_notes`` records whether this turn's requests render the
     # memory section's notes, so a resumed turn renders exactly what it sent.
@@ -1408,7 +1434,8 @@ def _safe_point_hook_for(req, *, tools, assistant_msg_id, execution_context):
 def _permission_context_transform(req, continuation):
     """Build the transform that appends the request context and the current permission mode."""
     async def _permission_context(messages, _cancel):
-        from openprogram.models.providers.types import TextContent, UserMessage
+        from openprogram.models.providers.types import TextContent
+        from openprogram.runtime.agent.loop.message_context import RuntimeNote
         from openprogram.runtime.permissions import current_permission_request
         from openprogram.runtime.context import Context
         request_context = Context.current()
@@ -1418,7 +1445,7 @@ def _permission_context_transform(req, continuation):
         version = getattr(current, "_permission_version", 0)
         if not version:
             return messages
-        return [*messages, UserMessage(
+        return [*messages, RuntimeNote(
             role="user", content=[TextContent(text=(
                 f"[Runtime permission setting, owner-confirmed version {version}] "
                 f"The current permission mode is {current.permission_mode}. "
@@ -1703,13 +1730,23 @@ def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out
     for k in ("input_tokens", "output_tokens",
               "cache_read_tokens", "cache_write_tokens"):
         tally.usage_total[k] += usage.get(k, 0)
-    # 当前上下文占用 ≈ 最后一次调用的 prompt 体积
-    # （input + cache_read）。turn 内多次调用的 input
-    # 之和会远超窗口，只能用于计费，不能用于占用率。
+    # The context in use is the prompt of the last request (input, cache
+    # reads and writes), by the one rule of ``token_accounting.measure``.
+    # A reply that ran provider-side tools reports several passes summed,
+    # and an implausible count measured no single request: either leaves
+    # the previous reading in place. Summed over a turn, inputs are billing.
+    from openprogram.runtime.context.token_accounting import measure as _measure
+    from openprogram.runtime.context.token_accounting.tokens import known_context_window
     prompt_tokens = (
         usage.get("input_tokens", 0)
         + usage.get("cache_read_tokens", 0)
+        + usage.get("cache_write_tokens", 0)
     )
+    if prompt_tokens > 0 and not (
+        _measure.single_pass(msg)
+        and _measure.plausible(prompt_tokens, int(usage.get("request_input_estimate") or 0),
+                               known_context_window(model) if model is not None else None)):
+        prompt_tokens = 0
     # Empty terminal events must not erase the last request.
     if prompt_tokens > 0:
         tally.usage_total["context_tokens"] = prompt_tokens

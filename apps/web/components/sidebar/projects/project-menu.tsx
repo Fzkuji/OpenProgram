@@ -18,6 +18,7 @@ import styles from "./project-settings.module.css";
 
 import { wsRequest } from "@/lib/net/ws/ws-request";
 import { ProjectOperationDialog, type ProjectOperation } from "./project-operation-dialog";
+import { projectFolderHere, useMachines } from "@/lib/machines/store";
 
 const item = itemCls(false) + " " + MENU_ITEM_STATES;
 export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: {
@@ -34,6 +35,9 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   const [operation,setOperation] = useState<ProjectOperation|null>(null);
   const [error,setError] = useState("");
   const pinned = view.pinnedProjects.includes(project.id);
+  // The file manager and git worktrees work on this computer's folders only:
+  // a project on an SSH host does not offer them.
+  const folderHere = projectFolderHere(project, useMachines((s) => s.items), useMachines((s) => s.kinds));
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
   }
@@ -51,9 +55,11 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
         ...["", ...view.projectSectionNames].map((section, index) => ({ id: `section:${index}`, label: section || text("Projects", "项目"), checked: (view.projectSections[project.id] || "") === section, onSelect: () => selectSection(section) })),
         { id: "new-section", label: text("New section…", "新建分区…"), separatorBefore: true, onSelect: () => setAddingSection(true) },
       ] },
-      { id: "reveal", label: text("Reveal in file manager", "在文件管理器中显示"), separatorBefore: true, onSelect: revealFolder },
-      { id: "worktree", label: text("Create permanent worktree", "创建持久 worktree"), onSelect: () => setOperation("create_project_worktree") },
-      { id: "archive", label: text("Archive chats", "归档聊天"), onSelect: () => setOperation("archive_project_chats") },
+      ...(folderHere ? [
+        { id: "reveal", label: text("Reveal in file manager", "在文件管理器中显示"), separatorBefore: true, onSelect: revealFolder },
+        { id: "worktree", label: text("Create permanent worktree", "创建持久 worktree"), onSelect: () => setOperation("create_project_worktree") },
+      ] : []),
+      { id: "archive", label: text("Archive chats", "归档聊天"), separatorBefore: !folderHere, onSelect: () => setOperation("archive_project_chats") },
       ...(!project.is_default ? [{ id: "remove", label: text("Remove project", "移除项目"), onSelect: () => setOperation("remove_project") }] : []),
     ]);
   }
@@ -75,8 +81,8 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
           <Menu.Item className={item} onSelect={()=>setAddingSection(true)}><MenuRow glyph="add-circle" label={text("New section…", "新建分区…")}/></Menu.Item>
         </Menu.SubContent></Menu.Portal></Menu.Sub>
         <Menu.Separator className={MENU_SEPARATOR}/>
-        <Menu.Item className={item} onSelect={revealFolder}><MenuRow glyph="folder-path-connect" label={text("Reveal in file manager", "在文件管理器中显示")}/></Menu.Item>
-        <Menu.Item className={item} onSelect={()=>setOperation("create_project_worktree")}><MenuRow glyph="git-branch" label={text("Create permanent worktree", "创建持久 worktree")}/></Menu.Item>
+        {folderHere&&<Menu.Item className={item} onSelect={revealFolder}><MenuRow glyph="folder-path-connect" label={text("Reveal in file manager", "在文件管理器中显示")}/></Menu.Item>}
+        {folderHere&&<Menu.Item className={item} onSelect={()=>setOperation("create_project_worktree")}><MenuRow glyph="git-branch" label={text("Create permanent worktree", "创建持久 worktree")}/></Menu.Item>}
         <Menu.Item className={item} onSelect={()=>setOperation("archive_project_chats")}><MenuRow glyph="archive" label={text("Archive chats", "归档聊天")}/></Menu.Item>
         {!project.is_default&&<Menu.Item className={item} onSelect={()=>setOperation("remove_project")}><MenuRow glyph="close-circle" label={text("Remove project", "移除项目")}/></Menu.Item>}
       </Menu.Content></Menu.Portal>

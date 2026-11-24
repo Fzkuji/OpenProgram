@@ -109,8 +109,9 @@ def register(app):
         # request budget on a guaranteed-to-fail call.
         try:
             if not backend.is_available():
+                from openprogram.interfaces.server import server as _s
                 missing = [e for e in (getattr(backend, "requires_env", None) or [])
-                           if not os.environ.get(e)]
+                           if not _s._get_api_key(e)]
                 return JSONResponse(content={
                     "ok": False,
                     "error": (
@@ -340,8 +341,8 @@ def register(app):
                 status_code=404,
                 content={"error": "unknown credential name"},
             )
-        from openprogram.interfaces.server import server as _s
-        val = os.environ.get(env_var) or _s._load_config().get("api_keys", {}).get(env_var, "")
+        from openprogram.models.auth.services import key_for_env_var
+        val = key_for_env_var(env_var)
         if not val:
             return JSONResponse(content={"has_value": False, "masked": ""})
         return JSONResponse(
@@ -349,17 +350,18 @@ def register(app):
         )
 
     @app.get("/api/models/enabled")
-    def api_enabled_models():
+    def api_enabled_models(probe: str = ""):
         """The picker's models and, per provider, what it shows beside them:
         configured or not, the state and its fix, the limit closest to
         running out and a balance (models/usage/provider_views.py). Stored
-        values only; no provider is asked (a local server's loopback probe
-        is reused for 30 s)."""
+        values only; no provider is asked. A local server's loopback probe
+        is reused for 30 s, except with ``?probe=local``, which the picker
+        sends as it opens so a server started or stopped since shows so."""
         from openprogram.models import listing as _mc
         from openprogram.models.usage.provider_views import picker_states
         models = _mc.list_enabled_models()
         try:
-            states = picker_states([m["provider"] for m in models])
+            states = picker_states([m["provider"] for m in models], probe_local=probe == "local")
         except Exception:
             _log.warning("model picker provider states failed", exc_info=True)
             states = {}

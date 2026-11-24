@@ -23,7 +23,7 @@ import { showActionsEnabled } from "@/lib/browser/control/browser-control";
 import { desktopBridge } from "./bridge-api";
 import { handleRecordCommand, type RecordCommand } from "../recording/pane-recorder";
 import { receiveBrowserResource, showCenterSurface, subscribeAgentPageGlow, subscribeWebTabPopups } from "./bridge-events";
-import { destroyStaleWebViews, persistNativeWebTabState, reregisterDesktopWindow, restorableResourceForTab, restoreRetainedWebViews, retryRestoreWebTab } from "./bridge-restoration";
+import { destroyStaleWebViews, persistNativeWebTabState, reregisterDesktopWindow, restorableResourceForTab, restoreRetainedWebViews, retryRestoreWebTab, tabIsExplicitlyClosed } from "./bridge-restoration";
 import { ensureWebView, isDesktopSplitLayoutAvailable, liveViewIds, waitForWebTabReady, webTabGeometryRevisions } from "./bridge-state";
 import { browserPageInventory, closeAgentWebTabResult, finalizeBoundWebTabActivation, finalizeBoundWebTabScreenshot, finalizeWebTabPreview, restorePriorActiveTabAfterFailedWebOpen, selectedMirrorTabById, sendWebTabResult, visibleWebTab, visibleWebTabById } from "./bridge-surfaces";
 import { installTabTransferHandlers, recoverPendingTabTransfers } from "./bridge-transfer";
@@ -94,7 +94,7 @@ export function installDesktopMenuHandlers(): void {
   window.addEventListener("op:browser-connection", (event: Event) => {
     if ((event as CustomEvent<{ connected: boolean }>).detail?.connected) {
       reregisterDesktopWindow(bridge);
-      void restoreRetainedWebViews(bridge).then(() => reregisterDesktopWindow(bridge));
+      void restoreRetainedWebViews(bridge, { wantedOnly: true }).then(() => reregisterDesktopWindow(bridge));
       return;
     }
     for (const id of liveViewIds) void bridge.webTab.showAction?.(id, null).catch(() => {});
@@ -188,7 +188,15 @@ export function installDesktopMenuHandlers(): void {
         guardedSocket.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: false }));
         return;
       }
-      void browserPageInventory(bridge, d.session_id, { restore: d.scope === "restore" }).then((inventory) => {
+      // An Agent asking for its pages gets the ones with no view yet too.
+      const waiting = d.scope === "restore" || !d.session_id ? [] : useCenterTabs.getState().tabs
+        .filter((tab) => tab.kind === "web" && !liveViewIds.has(tab.id)
+          && agentCanAccessWebTab(tab.id, d.session_id, useCenterTabs.getState()))
+        .map((tab) => tab.id);
+      const woken = waiting.length > 0
+        ? restoreRetainedWebViews(bridge, { tabIds: waiting }).catch(() => undefined)
+        : Promise.resolve();
+      void woken.then(() => browserPageInventory(bridge, d.session_id, { restore: d.scope === "restore" })).then((inventory) => {
         guardedSocket.send(JSON.stringify({
           action: "webtab_result",
           req_id: d.req_id,
@@ -369,11 +377,12 @@ export function installDesktopMenuHandlers(): void {
           : visibleWebTabById(d.tab_id))
         : null;
       const resource = tab?.kind === "web" ? restorableResourceForTab(tab.id) : undefined;
+      // A page with no view yet (its conversation has not been on screen
+      // since the App started) gets its view before the operation runs.
       if (
         tab?.kind === "web"
-        && resource
-        && resource.status !== "closed"
-        && resource.status !== "open"
+        && ((resource && resource.status !== "closed" && resource.status !== "open")
+          || (!liveViewIds.has(tab.id) && !tabIsExplicitlyClosed(tab.id)))
       ) {
         void retryRestoreWebTab(bridge, tab.id, canAccess).finally(() => runOp(tab));
       } else {
@@ -565,7 +574,7 @@ export function installDesktopMenuHandlers(): void {
     useCenterTabs.subscribe(reconcileNativeResources);
     reconcileNativeResources();
     reregisterDesktopWindow(bridge);
-    void restoreRetainedWebViews(bridge, { tabIds: startupWebTabIds }).then(
+    void restoreRetainedWebViews(bridge, { tabIds: startupWebTabIds, wantedOnly: true }).then(
       () => reregisterDesktopWindow(bridge),
     );
   });

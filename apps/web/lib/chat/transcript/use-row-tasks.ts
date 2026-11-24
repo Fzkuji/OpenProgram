@@ -53,3 +53,30 @@ export function revealTask(
   target.scrollIntoView({ behavior: "smooth", block: "center" });
   return true;
 }
+
+/** Scroll to one step of a reply (a tool call, by its block id): its task
+ *  block is opened first, and the step is scrolled to when it is drawn; a
+ *  step inside a folded strip is not, and the reader lands on the task
+ *  block, or on the reply for a call outside any task. */
+export function revealBlock(rowId: string, blockId: string, taskId?: string, root: ParentNode = document): boolean {
+  const reply = () => root.querySelector<HTMLElement>(`[data-msg-id="${esc(rowId)}"]`)
+    ?? root.querySelector<HTMLElement>(`[data-msg-slot="${esc(rowId)}"]`);
+  const step = () => reply()?.querySelector<HTMLElement>(`[data-block-id="${esc(blockId)}"]`) ?? null;
+  const go = (target: HTMLElement) => {
+    announceReaderSeek(target);
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const landed = taskId ? revealTask(taskId, rowId, root) : false;
+  const now = step();
+  if (now) { go(now); return true; }
+  if (!landed) {
+    const target = reply();
+    if (!target) return false;
+    go(target);
+  }
+  // Opening the task block draws its steps a frame later.
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(() => { const drawn = step(); if (drawn) go(drawn); }));
+  }
+  return true;
+}

@@ -344,3 +344,19 @@ def test_state_files_and_run_rows_read_from_the_checkpoint(tmp_path: Path, monke
     assert session_state_file.read_files(root) == {"todos.json": "[1]"}
     assert session_state_file.read_run_rows(root) == [[{"n": 1}]]
     assert starts == []
+
+
+def test_run_rows_nobody_read_are_let_go_and_read_again_when_asked(tmp_path: Path, monkeypatch):
+    from openprogram.state.store.session.files import session_state_file
+    monkeypatch.setattr(session_log, "CHECKPOINT_MIN_BYTES", 10_000)
+    root = tmp_path / "s"
+    _filled(root, 200).list_history()
+    monkeypatch.setattr(session_state_file, "_folded", type(session_state_file._folded)())
+    assert session_state_file.read_files(root) == {"todos.json": "[1]"}
+
+    assert session_state_file.release_idle_run_rows(3600) == 0
+    assert session_state_file.release_idle_run_rows(0) == 1
+    assert session_state_file._folded[str(root)].run_rows is None
+
+    assert session_state_file.read_files(root) == {"todos.json": "[1]"}
+    assert session_state_file.read_run_rows(root) == [[{"n": 1}]]

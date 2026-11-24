@@ -106,6 +106,15 @@ def _settle_terminal(executions: Any, execution: Any) -> None:
         from openprogram.runtime.scheduler import run_finish
 
         run_finish.close_run_tabs(str(getattr(execution, "execution_id", "") or ""))
+        # What computer use kept for the run (its code interpreter, an agent's tabs and element ids) ends too.
+        try:
+            from openprogram.programs.tools.computer_use.computer_use.tool import run_ended
+
+            run_ended(str(getattr(execution, "session_id", "") or ""),
+                      str(getattr(execution, "execution_id", "") or ""))
+        except Exception:
+            _log.warning("computer use state of %s not closed", getattr(execution, "execution_id", ""),
+                         exc_info=True)
 
 
 def _close_ownerless_run(executions: Any, execution: Any) -> None:

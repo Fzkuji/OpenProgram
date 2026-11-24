@@ -8,7 +8,7 @@ const source = transformSync(readFileSync(new URL('../../components/chat/message
 const output={status:'infeasible',reason_code:'system_access_required',system_access:[{id:'screen_recording',status:'not_granted'}]};
 function harness(autoOpen, responses, result=output) {
  let index=0, dirty=true, mounted=true, calls=[], resumed=0, view;
- const slots=[], effects=[], timers=new Set(), listeners=new Map();
+ const slots=[], effects=[], timers=new Set(), retries=new Set(), listeners=new Map();
  const react={
   useState(initial){const i=index++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>{const next=typeof v==='function'?v(slots[i]):v;if(next!==slots[i]){slots[i]=next;dirty=true;}}];},
   useRef(initial){const i=index++;return slots[i]??(slots[i]={current:initial});},
@@ -20,12 +20,14 @@ function harness(autoOpen, responses, result=output) {
  let text=(en)=>en;
  const module={exports:{}};
  vm.runInNewContext(source,{module,exports:module.exports,AbortController,document,window,
+  // A failed check is asked again later: held here, never fired by a test.
+  setTimeout:fn=>{retries.add(fn);return fn;},clearTimeout:fn=>retries.delete(fn),
   fetch:async(url,options={})=>{calls.push([url,options.method||'GET']);const next=responses.shift();if(!next)throw new Error('Unexpected request');return typeof next==='function'?next():next;},
   require:name=>name==='react'?react:name==='react/jsx-runtime'?{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}:name.includes('i18n')?{useTranslation:()=>({text})}:{systemAccessRequired}
  });
  const Component=module.exports.SystemAccessRecovery;
   async function flush(){for(let n=0;n<50;n++){if(dirty&&mounted){dirty=false;index=0;view=Component({output:result,autoOpen,onContinue:()=>resumed++});while(effects.length)effects.shift()();}await new Promise(resolve=>setImmediate(resolve));if(!dirty&&!effects.length)return;}throw new Error('Recovery did not settle');}
- return {flush,language:async()=>{text=(en)=>en;dirty=true;await flush();},poll:async()=>{for(const fn of timers)fn();await flush();},unmount:()=>{mounted=false;for(const slot of slots)slot?.cleanup?.();},get calls(){return calls;},get resumed(){return resumed;},get view(){return view;},get timers(){return timers.size;}};
+ return {flush,focus:async()=>{listeners.get('focus')?.();await flush();},language:async()=>{text=(en)=>en;dirty=true;await flush();},poll:async()=>{for(const fn of timers)fn();await flush();},unmount:()=>{mounted=false;for(const slot of slots)slot?.cleanup?.();},get calls(){return calls;},get resumed(){return resumed;},get view(){return view;},get timers(){return timers.size+retries.size;}};
 }
 const grant=()=>({ok:true,json:async()=>({capabilities:[{id:'screen_recording',status:'granted'}]})});
 test('actual recovery never retries the function after failed or successful checks',async()=>{
@@ -88,6 +90,18 @@ test('autoOpen only arms visible recovery and never requests native access',asyn
  const denied={ok:true,json:async()=>({capabilities:[{id:'calendar',status:'not_granted',can_request:true}]})};
  const h=harness(true,[denied,denied,denied]);
  await h.flush(); await h.poll();
+ assert.equal(h.calls.some(([,method])=>method==='POST'),false);
+ h.unmount();
+});
+
+test('nothing checks on a timer; coming back to the window checks again',async()=>{
+ const denied={ok:true,json:async()=>({capabilities:[{id:'screen_recording',status:'not_granted',settings_available:true}]})};
+ const h=harness(true,[denied,grant()]);
+ await h.flush();
+ assert.equal(h.calls.length,1);
+ assert.equal(h.timers,0,'no interval or retry is waiting while the user grants access');
+ await h.focus();
+ assert.equal(h.calls.length,2);
  assert.equal(h.calls.some(([,method])=>method==='POST'),false);
  h.unmount();
 });

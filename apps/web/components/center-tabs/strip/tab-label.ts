@@ -8,13 +8,14 @@ const pageLabels: Record<string, [string, string]> = {
   plugins: ["Plugins", "插件"], plugin: ["Plugins", "插件"],
   applications: ["Applications", "应用"], chats: ["History", "历史"],
   projects: ["Projects", "项目"], memory: ["Memory", "记忆"],
-  history: ["History", "历史"], scheduler: ["Scheduler", "定时任务"],
+  history: ["History", "历史"], tasks: ["Tasks", "任务"],
   settings: ["Settings", "设置"],
 };
 const settingsLabels: Record<string, [string, string]> = {
-  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["LLM Providers", "LLM 服务商"],
+  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["Model services", "模型服务"],
   channels: ["Channels", "消息渠道"], browser: ["Browser", "浏览器"],
-  system: ["System", "系统"], memory: ["Memory", "记忆"],
+  memory: ["Memory", "记忆"], machines: ["Machines", "机器"], voice: ["Voice", "语音"],
+  import: ["Import", "导入对话"], versions: ["Versions and updates", "版本与更新"],
   search: ["Web Search", "网页搜索"], usage: ["Token Usage", "Token 用量"],
   auth: ["Accounts", "账户"],
 };
@@ -37,6 +38,7 @@ export function labelOf(
   if (tab.kind === "builtin") return builtinPageLabel(tab.page, text);
   if (tab.kind === "file") return tab.title;
   if (tab.kind === "web") return tab.title || tab.url || "";
+  if (tab.kind === "window") return tab.title || tab.nativeWindowApp || text("App window", "应用窗口");
   // "New conversation" is the backend's placeholder until the first reply
   // names the session; keep showing "New chat" instead of flipping label.
   if (tab.draft || tab.title === "New conversation") return text("New chat", "新会话");

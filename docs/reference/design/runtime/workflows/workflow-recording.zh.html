@@ -80,7 +80,8 @@
 <li>消息或对话已说明如何处理录制时，只做那件事。</li>
 <li>否则做成 workflow：
 <ul>
-<li>每一步是结果的证据（文件改了、消息发了、数据取了），不是要重放的手势。用最可靠的工具：文件工具、shell、<code translate="no">web_fetch</code>、浏览器目标、连接器、API。只有别的工具到不了时才用 computer use 的 <code translate="no">app</code> 目标，使用稳定目标，每步后检查，不用坐标。</li>
+<li>每一步是结果的证据（文件改了、消息发了、数据取了），不是要重放的手势。用最可靠的工具：文件工具、shell、<code translate="no">web_fetch</code>、各浏览器目标、连接器、API。</li>
+<li>只有别的工具到不了时才用 computer use 的 <code translate="no">app</code> 目标，<code translate="no">screen</code> 目标只用于桌面、菜单栏、系统对话框和跨窗口拖动；指明稳定的应用、窗口和元素，每步后检查，不用坐标。</li>
 <li>决定哪些值是参数、哪些固定。含糊之处会改变 workflow 时，简短询问并等待。</li>
 <li>按编写指南在 <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 写包，带使用演示值的测试，运行 <code translate="no">openprogram programs check</code>。</li>
 <li>绝不把密码、验证码、密钥、账号或私人信息写进 workflow；用参数或占位符。</li>

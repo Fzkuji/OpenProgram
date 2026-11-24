@@ -150,19 +150,14 @@ def test_credential_list_carries_only_nonsecret_key_fields(secret_api):
     assert _LONG_SECRET not in response.text
 
 
-def test_config_replace_preserves_omitted_keys_and_has_exact_response(
+def test_config_replace_stores_the_key_and_leaves_the_rest_alone(
     secret_api, monkeypatch
 ):
-    secret_api.write_config(
-        {
-            "api_keys": {
-                "BRAVE_API_KEY": "existing-brave-key",
-                "TAVILY_API_KEY": "old-tavily-key",
-            }
-        }
-    )
-    monkeypatch.setenv("BRAVE_API_KEY", "existing-brave-key")
-    monkeypatch.setenv("TAVILY_API_KEY", "old-tavily-key")
+    from openprogram.models.auth.services import stored_key
+
+    secret_api.store.add_company_key("brave", "existing-brave-key")
+    secret_api.store.add_company_key("tavily", "old-tavily-key")
+    monkeypatch.setenv("BRAVE_API_KEY", "live-brave-key")
 
     response = secret_api.client.post(
         "/api/config",
@@ -171,12 +166,13 @@ def test_config_replace_preserves_omitted_keys_and_has_exact_response(
 
     assert response.status_code == 200
     assert response.json() == {"saved": True}
-    assert secret_api.read_config()["api_keys"] == {
-        "BRAVE_API_KEY": "existing-brave-key",
-        "TAVILY_API_KEY": "new-tavily-key",
-    }
-    assert os.environ["BRAVE_API_KEY"] == "existing-brave-key"
-    assert os.environ["TAVILY_API_KEY"] == "new-tavily-key"
+    # The key is the store's: one Tavily key, replaced; nothing in config.json
+    # and nothing written to the process environment.
+    assert [k["value"] for k in secret_api.store.company_keys("tavily")] == ["new-tavily-key"]
+    assert stored_key("BRAVE_API_KEY") == "existing-brave-key"
+    assert "api_keys" not in secret_api.read_config()
+    assert os.environ["BRAVE_API_KEY"] == "live-brave-key"
+    assert "TAVILY_API_KEY" not in os.environ
 
 
 @pytest.mark.parametrize(
@@ -228,10 +224,10 @@ def test_config_replace_rejected_credential_does_not_mutate(
     assert os.environ["OPENAI_API_KEY"] == "original-key"
 
 
-def test_config_delete_is_idempotent_and_clears_live_environment(
+def test_config_delete_is_idempotent_and_leaves_the_environment(
     secret_api, monkeypatch
 ):
-    secret_api.write_config({"api_keys": {"TAVILY_API_KEY": "stored-key"}})
+    secret_api.store.add_company_key("tavily", "stored-key")
     monkeypatch.setenv("TAVILY_API_KEY", "live-key")
 
     first = secret_api.client.delete("/api/config/key/TAVILY_API_KEY")
@@ -239,8 +235,9 @@ def test_config_delete_is_idempotent_and_clears_live_environment(
 
     assert first.status_code == second.status_code == 204
     assert first.content == second.content == b""
-    assert secret_api.read_config().get("api_keys", {}) == {}
-    assert "TAVILY_API_KEY" not in os.environ
+    assert secret_api.store.company_keys("tavily") == []
+    # A variable is read where it is set and never written.
+    assert os.environ["TAVILY_API_KEY"] == "live-key"
 
 
 def test_config_delete_rejects_body_without_mutation(secret_api, monkeypatch):

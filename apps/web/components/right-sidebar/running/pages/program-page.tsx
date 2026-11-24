@@ -40,7 +40,7 @@ export function ProgramPage({ target, context }: ActivityPageProps<"program">) {
     : processes.items.find(entry => entry.id === target.processId);
   if (!item) return processes.loaded && !processes.stale
     ? activityGoneFrame(text)
-    : <ActivityPageFrame kind={<Glyph name="code-square" tone="shell" large />} title={text("Program", "程序")} status={processes.stale ? text("Program details unavailable.", "暂时无法读取程序详情。") : text("Loading program…", "正在读取程序…")} axis={null}>{null}</ActivityPageFrame>;
+    : <ActivityPageFrame kind={<Glyph name="code-square" tone="shell" large />} title={text("Program", "程序")} axis={null}>{null}</ActivityPageFrame>;
 
   const look = progressLook(item.progress);
   const active = processIsActive(item) && item.status !== "unknown";
@@ -81,7 +81,7 @@ export function ProgramPage({ target, context }: ActivityPageProps<"program">) {
         {() => <ActivityDetail>
           {item.truncated ? <ActivityNote>{text("Earlier output was truncated; the process record is retained.", "较早的输出已截断，程序记录仍然保留。")}</ActivityNote> : null}
           <div className={styles.programOutput}>
-            <ProgramOutput output={processes.detail?.output || ""} live={active} empty={processes.detail ? text("No output yet.", "还没有输出。") : text("Loading output…", "正在读取输出…")} />
+            <ProgramOutput output={processes.detail?.output || ""} live={active} empty={processes.detail ? text("No output yet.", "还没有输出。") : ""} />
           </div>
         </ActivityDetail>}
       </ActivityRow>

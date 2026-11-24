@@ -1,0 +1,55 @@
+<title>在其他设备上使用 OpenProgram</title>
+<meta name="description" content="在手机、浏览器或另一台电脑上打开这台电脑的 OpenProgram：添加设备，扫码或粘贴一次性代码，再选择它在同一 Wi-Fi 下还是在任何地方都能连到这台电脑。">
+<h1>在其他设备上使用 OpenProgram</h1>
+<ol class="flow fig-narrow">
+  <li><strong>添加设备</strong><small>设置 → 设备：选择它是什么</small></li>
+  <li><strong>扫码或粘贴</strong><small>一次性代码，10 分钟内有效</small></li>
+  <li class="flow-end"><strong>已登录</strong><small>直到你吊销它，或它 30 天没有使用</small></li>
+</ol>
+<p>对话、文件和账号都留在运行它们的那台电脑上。手机或浏览器显示的是那台电脑的 OpenProgram；另一台电脑的 OpenProgram 则在自己的列表旁列出它的对话，并把你的操作发到那里。所有设备，不论手机还是服务器，都在<strong>设置 → 设备</strong>的同一个列表里。</p>
+
+<h2 id="add">添加设备</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设备</th><th scope="col">怎么做</th></tr></thead>
+<tbody>
+<tr><th scope="row">手机或平板</th><td>用相机扫二维码，会在它的浏览器里打开 OpenProgram，并且已经登录。</td></tr>
+<tr><th scope="row">另一台装了 OpenProgram 的电脑</th><td><strong>在这里看它的对话</strong>：粘贴它给出的链接。<strong>让它用这台</strong>：这台电脑给出链接，粘贴到那边。</td></tr>
+<tr><th scope="row">SSH 服务器</th><td>从 SSH 配置里选一台主机，或输入 <code translate="no">user@host</code>。添加后先测试连接。</td></tr>
+<tr><th scope="row">其他设备</th><td>用一句话描述它。会打开一个填好请求的新对话；智能体自己查参数，添加并测试设备。</td></tr>
+</tbody>
+</table>
+<p>代码只能用一次，显示期间会自动换新。如果还没有任何方式能连到这台电脑，添加设备时会提示打开“同一 Wi-Fi”。</p>
+
+<h2 id="ways-in">从哪里打开这台电脑</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">从哪里能连</th><th scope="col">怎么设置</th></tr></thead>
+<tbody>
+<tr><th scope="row">同一 Wi-Fi</th><td>这个网络里的手机和电脑；不加密，只在信任的网络上使用</td><td>打开开关，立即生效</td></tr>
+<tr><th scope="row">任何地方</th><td>任何网络，走 https</td><td>打开开关，在浏览器里登录一次 Tailscale。Tailscale 已内置在 OpenProgram 里：这台电脑和手机上都不用另外安装</td></tr>
+</tbody>
+</table>
+<p>能连到地址并不能直接登录：每台设备都要先用代码添加。链接里带着所有已打开的地址，对方会依次尝试，所以笔记本离开家后照样能用。</p>
+
+<h2 id="another-computer">另一台电脑的对话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开、发送、停止、确认</th><td>在那台电脑上进行，用它的模型、工具和文件</td></tr>
+<tr><th scope="row">在它的项目里新建对话</th><td>在那里创建和运行</td></tr>
+<tr><th scope="row">它离线</th><td>它的项目仍在列表里，显示红点，打开时什么都没有，直到它回来；没有复制任何东西可显示</td></tr>
+</tbody>
+</table>
+
+<h2 id="this-computer">这台电脑的权限</h2>
+<p>在列表里点<strong>这台电脑</strong>，可以看到 OpenProgram 在这里能使用哪些权限。点<strong>打开</strong>会跳到系统设置里对应的位置，下面出现一个小窗口，显示要拖进列表的应用；打开后这一行会自动变成已打开。控制其他应用和打开文件，由 macOS 在第一次用到时询问。</p>
+
+<h2 id="revoke">吊销与命令行</h2>
+<p>在设备的菜单里点<strong>吊销</strong>，它会立即退出，连接随之关闭。在终端里也可以：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram web pair</code></th><td>打印一次性链接和它的二维码</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web devices</code></th><td>列出已配对设备；<code translate="no">openprogram web devices revoke ID</code> 吊销一台</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="web.zh.html">Web 界面</a> · <a href="../capabilities/environments.zh.html">在另一台机器上运行对话</a> · <a href="../integrations/channels.zh.html">渠道</a></p>

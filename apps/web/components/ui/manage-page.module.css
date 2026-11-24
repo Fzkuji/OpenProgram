@@ -537,6 +537,12 @@
   text-align: center;
 }
 
+/* A header tab's count: a quiet number after the label. */
+.tabCountQuiet {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .subnavEnd {
   display: flex;
   align-items: center;

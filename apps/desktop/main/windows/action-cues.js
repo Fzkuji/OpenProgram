@@ -118,6 +118,11 @@ function createActionCues({
   // laid over the page's native view with a margin for the cursor. It
   // glows along the inside of the page's edge while the Agent holds the
   // page (setControlGlow), and the agent cursor glides to each step.
+  // The overlay is not a child of the App window: on macOS showing a child
+  // window orders its parent in front of every other app, so each step
+  // pulled the whole App over whatever the user was doing. It is placed in
+  // the window stack directly above the App window instead (moveAbove), so a
+  // window the user keeps in front covers the App and its overlay alike.
   function stopCueMotion(record) {
     if (record.actionCueFadeTimer != null) {
       clearTimeout(record.actionCueFadeTimer);
@@ -176,7 +181,6 @@ function createActionCues({
       return record.actionCueWindow;
     }
     const win = new BrowserWindow({
-      parent: ctx.win,
       frame: false,
       transparent: true,
       show: false,
@@ -220,8 +224,16 @@ function createActionCues({
         layoutControlOverlay(record);
       }
     };
-    ctx.win.on("move", relayout);
-    ctx.win.on("resize", relayout);
+    for (const event of ["move", "resize", "minimize", "restore", "hide", "show", "focus"]) {
+      ctx.win.on(event, relayout);
+    }
+  }
+
+  /** Put the overlay directly above its App window in the stack, not above every app. */
+  function orderAboveHost(ctx, win) {
+    try {
+      win.moveAbove(ctx.win.getMediaSourceId());
+    } catch { /* a window the server cannot order against: it stays where showing put it */ }
   }
 
   /** Lay the overlay over the page as it is now and send what it draws. */
@@ -230,7 +242,8 @@ function createActionCues({
     if (!win || win.isDestroyed?.()) return;
     const ctx = ownerOf(record);
     const drawn = record.controlHeld || record.actionCueHold;
-    if (!ctx || ctx.win.isDestroyed?.() || record.nativeVisible !== true || !drawn) {
+    if (!ctx || ctx.win.isDestroyed?.() || record.nativeVisible !== true || !drawn
+      || ctx.win.isVisible?.() === false || ctx.win.isMinimized?.() === true) {
       hideActionCueWindow(record);
       return;
     }
@@ -265,6 +278,7 @@ function createActionCues({
       if (typeof win.showInactive === "function") win.showInactive();
       else win.show();
     }
+    orderAboveHost(ctx, win);
   }
 
   /** Fade the overlay out, then hide it. */

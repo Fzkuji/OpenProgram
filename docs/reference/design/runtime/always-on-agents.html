@@ -4,10 +4,10 @@
 <p>Internal check-in prompts and their reply/call subtrees are omitted from the conversation DAG using their runtime speaker identity, including older stored turns. Reports and ordinary user messages remain visible; the original execution records are retained.</p>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="The ticker checks every 30 seconds and wakes a due conversation. One wake does at most one thing: start the standing Goal on the main chain, or run a check-in on a hidden side branch with read-only tools. A check-in that has something to say calls always_on_report, which appends a message on the main chain, sets the unread dot, and goes to desktop and channels by report kind. A check-in with nothing to say leaves no trace in the conversation.">
+<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="The ticker sleeps until the earliest due wake, or until a schedule or an Agent's settings change, and wakes a due conversation. One wake does at most one thing: start the standing Goal on the main chain, or run a check-in on a hidden side branch with read-only tools. A check-in that has something to say calls always_on_report, which appends a message on the main chain, sets the unread dot, and goes to desktop and channels by report kind. A check-in with nothing to say leaves no trace in the conversation.">
   <defs><marker id="ao-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="40">Ticker</text>
-  <text class="t-soft" x="0" y="66">every 30 seconds</text>
+  <text class="t-soft" x="0" y="66">at the next due wake</text>
   <line class="ln" x1="112" y1="33" x2="166" y2="33" marker-end="url(#ao-a)"/>
   <text class="t-big" x="178" y="40">Wake</text>
   <text class="t-soft" x="178" y="66">at most one thing</text>
@@ -25,7 +25,7 @@
   <text class="t-soft" x="539" y="196">desktop, channels</text>
 </svg>
 <ol class="flow fig-narrow">
-  <li><strong>Ticker</strong><small>every 30 seconds</small></li>
+  <li><strong>Ticker</strong><small>at the next due wake</small></li>
   <li><strong>Wake</strong><small>at most one thing</small></li>
   <li><strong>Goal</strong><small>main chain, normal tools</small><small>or</small><strong>Check-in</strong><small>hidden side branch, read-only tools</small><small>nothing to say: no trace</small></li>
   <li class="flow-end"><strong>Report</strong><small>message, unread dot, desktop, channels</small></li>
@@ -213,7 +213,7 @@
 <tr><th scope="row">Previous run still going</th><td>Recorded as <code translate="no">skipped</code>: leaves the failure count alone, and skips in a row share one row. A webhook answers 409 <code translate="no">previous_run_active</code>; a watch keeps the change for its next check. An unfinished run in the execution store counts while its process exists or it is paused, so the guard holds across a Worker restart and a dead child does not block later firings</td></tr>
 <tr><th scope="row">Conversation archived</th><td>No turn starts and the task branch is untouched. Recorded as <code translate="no">skipped</code>; the firing is used. A waking reminder notifies without its turn</td></tr>
 <tr><th scope="row">One-time task</th><td>Fires once. Changing its time clears the firing, so it fires at the new time. A claim left <code translate="no">starting</code> by a process that died fires at the next tick</td></tr>
-<tr><th scope="row">Any other reply</th><td><code translate="no">report_scheduled()</code>: main-chain message after the head, or the first one at ROOT in a conversation that has only the task's branch, unread dot, notification, the chat's bound channel when <code translate="no">notify.finding.channels</code> is on, never the picked channels; no pending-inbox entry</td></tr>
+<tr><th scope="row">Any other reply</th><td><code translate="no">report_scheduled()</code>: main-chain message after the head, or the first one at ROOT in a conversation that has only the task's branch, unread dot, notification, the chat's bound channel when <code translate="no">notify.finding.channels</code> is on, never the picked channels; an inbox entry marked with the task until the conversation is opened (<a href="#pending-inbox">inbox</a>)</td></tr>
 <tr><th scope="row">End of a run</th><td><code translate="no">runtime/scheduler/run_finish.py</code>. Only a terminal execution is an ending: a pause, an effect still being settled, or a turn held during a version switch records nothing and sends nothing. One execution counts once.</td></tr>
 <tr><th scope="row">Who finishes it</th><td>The turn's own process, the Worker that continued it after a restart, the next Worker for a run that outlived its own (<code translate="no">run-endings/</code>) and the replay of a held turn, all the same way</td></tr>
 <tr><th scope="row">Restart cannot continue it</th><td>Ends as a failure. A child Job whose caller was waiting on it also ends once no run above it is left, as an errored Job; a run whose parent is alive is never held back by that parent.</td></tr>
@@ -349,11 +349,13 @@
 </tbody>
 </table>
 
-<h3 id="pending-inbox">Pending inbox</h3>
+<h3 id="pending-inbox">Inbox</h3>
 <dl class="pairs">
-<dt>Source</dt><dd><code translate="no">always_on/pending.py</code>: every conversation of an Agent that is on or has always-on state, so turning off empties nothing (500 per Agent), last 20 reports each</dd>
+<dt>Source</dt><dd><code translate="no">always_on/pending.py</code>: every conversation of an Agent that is on or has always-on state, so turning off empties nothing (500 per Agent), plus every conversation a scheduled task reports into; last 20 reports each</dd>
+<dt>Scheduled results</dt><dd>A report with <code translate="no">task_id</code> is news like a finding; its item carries <code translate="no">task_id</code> and the task's title, and the Inbox draws it with the calendar instead of the Agent's avatar</dd>
+<dt>Shown</dt><dd>The <a href="../scheduler/tasks-page.html">Tasks page</a>'s Inbox tab, the count on the sidebar's Tasks row, <strong>Waiting for you</strong> atop every Activity panel</dd>
 <dt>Order</dt><dd>Newest first; older than seven days drops out</dd>
-<dt>Refresh</dt><dd>Answers publish no frame: clients re-read every 30 seconds and on focus</dd>
+<dt>Refresh</dt><dd>Clients read again on focus and on an <code translate="no">inbox</code> change, signalled when a report is written or seen or a person writes in a conversation (<a href="reliability/change-notification.html">change notification</a>)</dd>
 </dl>
 
 <h3 id="report-preferences">Report preferences</h3>
@@ -473,9 +475,9 @@
 <thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Content</th></tr></thead>
 <tbody>
 <tr><th scope="row">Agents → Always-on tab</th><td>Configuration, channel targets</td></tr>
-<tr><th scope="row">Activity row</th><td>No group of its own. The checked-out main agent's row gets an <strong>Always-on</strong> line: current work, next wake (marked in quiet hours; reason if self-set).</td></tr>
+<tr><th scope="row">Activity row</th><td>No group of its own. The work chart's first row is the next wake: an interrupted check-in or a used-up budget first, then quiet hours and the cadence. Before the first run the main agent's row has an <strong>Always-on</strong> line instead.</td></tr>
 <tr><th scope="row">Activity page</th><td>Standing goal, current Goal, wake days, quiet hours, last wake with outcome and cost (error and retry when interrupted), today's spending, preferences, reports with kinds and deliveries, Wake now</td></tr>
-<tr><th scope="row">Pending</th><td>Sidebar row with a count, opening a page of decisions and news. Same list under <strong>Waiting for you</strong> atop every Activity panel.</td></tr>
+<tr><th scope="row">Tasks → Inbox</th><td>The sidebar's Tasks row counts it; the tab lists decisions and news (<a href="../scheduler/tasks-page.html">Tasks page</a>). Same list under <strong>Waiting for you</strong> atop every Activity panel.</td></tr>
 <tr><th scope="row">WebSocket</th><td><code translate="no">always_on_report</code>, <code translate="no">always_on_update</code>, <code translate="no">transcript_update</code>, all with <code translate="no">session_id</code></td></tr>
 <tr><th scope="row">Python</th><td><code translate="no">openprogram.runtime.conversation.always_on</code>: <code translate="no">wake()</code>, <code translate="no">status()</code>, <code translate="no">report()</code>, <code translate="no">join()</code>, <code translate="no">schedule_wake()</code>, <code translate="no">add_preference()</code>, <code translate="no">remove_preference()</code>, <code translate="no">agent_for_session()</code>, <code translate="no">channel_targets()</code>; <code translate="no">always_on.handoff_migration.migrate()</code>; <code translate="no">always_on.schedule.is_quiet()</code>, <code translate="no">next_allowed()</code></td></tr>
 </tbody>
@@ -485,7 +487,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Endpoint</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">GET /api/always-on/pending</code></th><td><code translate="no">{items}</code>: conversation, Agent, kind, title, body, time</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/always-on/pending</code></th><td><code translate="no">{items}</code>: conversation, Agent, kind, title, body, time; <code translate="no">task_id</code> and <code translate="no">task_title</code> for a scheduled task's result</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/agents/{id}/always-on</code></th><td>Saved configuration and <code translate="no">channel_targets</code></td></tr>
 <tr><th scope="row"><code translate="no">PATCH /api/agents/{id}</code></th><td>Accepts <code translate="no">always_on</code> like any section</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/sessions/{id}/work</code></th><td>Status and reports, with open work and Scheduler tasks</td></tr>
@@ -519,7 +521,7 @@
 <tr><th scope="row">Claude Code</th><td>Routines on a schedule in the cloud; no standing goal</td><td>A list of routines</td></tr>
 <tr><th scope="row">Codex</th><td>Persistent mode: goal, status, completion criteria, next check-in written before sleep. Automations run scheduled local tasks.</td><td>A list; no calendar</td></tr>
 <tr><th scope="row">DeepSeek Harness</th><td>Scheduled tasks plugin (experimental): delay, time, interval of a minute or more, daily, weekly or cron with IANA zone; delivered into the original conversation; only while the app is open; cannot pause. No standing goal or background agent.</td><td>A tasks page with delivery records; no calendar</td></tr>
-<tr><th scope="row">OpenProgram</th><td>One standing goal per conversation, channels, quiet hours</td><td>Scheduler page: list and calendar (month, week, day, agenda) with Schedule-X</td></tr>
+<tr><th scope="row">OpenProgram</th><td>One standing goal per conversation, channels, quiet hours</td><td>Tasks page: an Inbox of what needs the user beside the scheduled tasks as a list or a calendar (month, week, day, agenda) with Schedule-X</td></tr>
 </tbody>
 </table>
 <dl class="pairs">
@@ -563,7 +565,7 @@
 <tr><th scope="row">Origin of an automatic Goal</th><td>Check-in, handoff or scheduled, set from the speaker; the standing Goal keeps its own origin; a user Goal stays empty</td><td>Stops, budget and the Goal starter need to tell them apart</td></tr>
 <tr><th scope="row">Unposted reports after restart</th><td>Posted once per Worker start if under one hour old</td><td>A restart must not extend the existing wait; older reports stay in Activity</td></tr>
 <tr><th scope="row">Delivery rows stuck sending</th><td>Resent under one hour; older rows become failed, cut off by a restart</td><td>Prevents a flood on the first scan</td></tr>
-<tr><th scope="row">Cron catch-up</th><td>Built; promoted after a credential-free rehearsal</td><td>Bounded by a lower-bound stamp, and missed rows ship with it</td></tr>
+<tr><th scope="row">Cron catch-up</th><td>Built; deployed after a credential-free rehearsal</td><td>Bounded by a lower-bound stamp, and missed rows ship with it</td></tr>
 <tr><th scope="row">Webhook during a run</th><td>Answers 409 <code translate="no">previous_run_active</code>; a watch hash is written only after spawn</td><td>The caller can retry and a watch fires again on its next poll</td></tr>
 <tr><th scope="row">Channel-side stop</th><td><code translate="no">/stop</code> cancels the session's root executions through the execution store, outside the session lock</td><td>A channel turn exists only in the execution store until it reaches the session graph</td></tr>
 </tbody>
@@ -579,7 +581,7 @@
 <tr><th scope="row">Identity and team</th><td>Durable handoff chains; reports as plain messages; always-on as an Agent setting</td><td>Maus ancestor refusal; owed-reply carry-through from <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/osa/dm.py">OSA direct messages</a>; atomic template install from <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/osa/templates.py">OSA templates</a>; handoff messages stay in the Bots' own chats, from <a href="https://docs.x.ai/grok-bot/chat-and-collaboration">Grok chat</a>, applied to delivery turns only</td><td>The <code translate="no">automation</code> marker; failure notes for a target that could not answer</td></tr>
 <tr><th scope="row">Tools, permissions, safety</th><td>No card ever waits in a check-in; name-fixed lists excluding MCP and bash; one-shot <code translate="no">hold_outbound</code>, off by default; the identity gate cannot be widened by mode</td><td>Only a person's own line is the request, from <a href="https://github.com/milind-soni/OpenMausBot/blob/HEAD/server/peer-provenance.ts">Maus provenance</a>; Maus fencing of earlier output; private-address block from <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/SECURITY.md">OSA security</a>, for check-ins only</td><td>A gate only where read text crosses into a full-power turn, shipped with that crossing; automatic Goals spend from the Agent's daily budget; turns with no window open their own browser tab</td></tr>
 <tr><th scope="row">Channels</th><td>Non-delivery reported in the App; files through a recorded tool call</td><td>OSA fence-aware split; OSA handling of 401, 404 and 409; <code translate="no">/stop</code> and <code translate="no">/help</code></td><td>Connect-only retry rule; durable state reduced to existing report rows; phone reach through chat apps, without a native app</td></tr>
-<tr><th scope="row">Product surface</th><td>Visible and deletable preferences; cost per check-in; hidden check-ins</td><td>Say what stopping keeps and where it runs, from Maus; teaching starters, from OSA</td><td>One stop rule; a promise is kept or refused</td></tr>
+<tr><th scope="row">Product surface</th><td>Visible and deletable preferences; cost per check-in; hidden check-ins</td><td>Say what stopping keeps and where it runs, from Maus</td><td>One stop rule; a promise is kept or refused</td></tr>
 <tr><th scope="row">Chat form</th><td>Stable bubble rule, cap of 4; <code translate="no">--reply-gap</code> fix; report captions</td><td>Nothing; an explicit send tool, fake pacing, the Maus table card and the OpenDots labelled fake user bubble are rejected</td><td>A messaging guide with an explicit chat-turn signal; <code translate="no">flatten_tables</code> for chat apps</td></tr>
 </tbody>
 </table>
@@ -591,7 +593,7 @@
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Meaning</th></tr></thead>
 <tbody>
 <tr><th scope="row">Scope</th><td>One worktree, one agent, one merge; affected tests only; both language docs updated with each behaviour change</td></tr>
-<tr><th scope="row">Release</th><td>Deploy to dev, promote at once, verify on stable, archive test chats. A batch whose check names a rehearsal or kill-and-resume does that first and promotes only after it passes</td></tr>
+<tr><th scope="row">Release</th><td>Deploy to the development instance, verify there, archive test chats. A batch whose check names a rehearsal or kill-and-resume does that first and is deployed only after it passes. Stable gets it with the next official release</td></tr>
 <tr><th scope="row">Rehearsal</th><td>Start the Worker under an empty environment on a copy of the data without <code translate="no">auth/</code>, keys, <code translate="no">executions.db</code>, <code translate="no">channels/</code>, <code translate="no">mcp_tokens/</code> or <code translate="no">mcp_servers.json</code>, and drive the tick path, with no new port or profile; assert that no channel adapter started</td></tr>
 <tr><th scope="row">Compare</th><td>An old-versus-new page and a yes before code, one page per wave; any behaviour change needs it, not only a visible one; mockups keep the real look</td></tr>
 <tr><th scope="row">Peers</th><td>Before borrowing from a peer, pull that clone and read the borrowed file at its latest commit</td></tr>
@@ -947,7 +949,7 @@
 <tr><th scope="row">63</th><td>An alive line in Activity</td><td>Mockup and compare</td><td>After 55</td><td>Built</td></tr>
 <tr><th scope="row">56</th><td>Crash matrix at claim, intent, report row and delivery</td><td>The matrix itself</td><td>After 2</td><td>Built</td></tr>
 <tr><th scope="row">57</th><td>The weekly routine: read-only report, checks, peer baseline, live smoke test</td><td>First Monday report</td><td>None</td><td>Built; the Monday task is created on the stable instance</td></tr>
-<tr><th scope="row">60</th><td>Empty chat starters</td><td>Mockup and compare</td><td>None</td><td>Built; awaits a look at an empty always-on chat</td></tr>
+<tr><th scope="row">60</th><td>Empty chat intro: ALWAYS-ON spelled once in glyphs, no text to click</td><td>Mockup and compare</td><td>None</td><td>Built</td></tr>
 <tr><th scope="row">61</th><td>Connection status in plain words</td><td>Mockup and compare</td><td>None</td><td>Built; awaits a look at the channels settings page</td></tr>
 </tbody>
 </table>

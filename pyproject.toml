@@ -131,12 +131,6 @@ dependencies = [
     # Memory retrieval ships both lexical and semantic backends. The encoder
     # weights remain an explicit download from Memory Settings.
     "rank-bm25>=0.2.2",
-    # Managed memory-tool schema plus the legacy Claude Code adapter used by
-    # benchmark paths. The product writer itself follows OpenProgram's default
-    # chat provider through AgentSession.
-    # 0.1.51 is where `permission_mode="dontAsk"` became a permission mode;
-    # an older SDK sends the writer's runs with a mode the CLI rejects.
-    "claude-agent-sdk>=0.1.51",
 ]
 
 [project.optional-dependencies]
@@ -269,8 +263,8 @@ include = ["openprogram", "openprogram.*"]
     "host/sandbox/shims/*.cjs",
     "host/sandbox/shims/*.py",
     "programs/applications/browser/*.cjs",
-    # computer_use_agent target guides, sent on a target's first call.
-    "programs/tools/computer_use/computer_use_agent/guides/*.md",
+    # computer_use target guides, sent on a target's first call.
+    "programs/tools/computer_use/computer_use/guides/*.md",
     # Base prompt and on-demand channel guides (runtime/context/prompt_assembly/components.py).
     "runtime/context/prompt_assembly/guides/*.md",
     # Provider registry — endpoints/model metadata read by

@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * "Copied from <conversation>" banner.
+ * "Copied from <conversation>" / "Branched from <conversation>" banner.
  *
  * Shown at the top of the transcript of a conversation made with "Copy
- * conversation" in the ⋯ menu: the server copied the source's history up
- * to its HEAD into this session and recorded `branched_from` on it, which
- * `session_loaded` carries. One click opens the source conversation the
- * same way a sidebar row does.
+ * conversation" in the ⋯ menu or "Fork from here" on a message: the
+ * server copied the source's history into this session and recorded
+ * `branched_from` on it, which `session_loaded` carries. A whole copy
+ * reads "Copied from …" and opens the source like a sidebar row does. A
+ * fork (the lineage has a `msg_id`) also quotes the start of the prompt
+ * it branched at (`msg_preview`) and goes back to that prompt in the
+ * source, flashing it (`at_msg_id`); once the prompt is gone it only
+ * opens the source.
  * Styling is the sub-agent banner's (agent-branch-banner.css).
  */
 
@@ -18,14 +22,20 @@ import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { openSession } from "@/lib/tabs/navigation/open-session";
+import { openSessionAtMessage } from "@/lib/chat/history/reveal-message";
 
 export interface BranchedFrom {
   session_id: string;
+  /** Set for a fork from an earlier message; null for a whole copy. */
   msg_id?: string | null;
   /** The source's title when the session was loaded. */
   title?: string | null;
   /** False once the source conversation was deleted. */
   exists?: boolean;
+  /** A fork's prompt in the source; null once it is gone. */
+  at_msg_id?: string | null;
+  /** The start of that prompt's text. */
+  msg_preview?: string | null;
 }
 
 /** The lineage the last load of ``sessionId`` reported, if any. */
@@ -59,15 +69,33 @@ export function BranchedFromBanner() {
   const name = (source && displayTitle(source))
     || (lineage.title || "").trim()
     || text("another conversation", "另一个会话");
+  if (!lineage.msg_id) {
+    return (
+      <div className="agent-branch-banner">
+        <span className="agent-branch-banner-label">
+          {text(`Copied from ${name}`, `复制自 ${name}`)}
+        </span>
+        {gone ? null : (
+          <button type="button" className="agent-branch-banner-back"
+            onClick={() => openSession(lineage.session_id)}>
+            {text("Open original", "打开原会话")}
+          </button>
+        )}
+      </div>
+    );
+  }
+  const preview = (lineage.msg_preview || "").trim();
   return (
     <div className="agent-branch-banner">
       <span className="agent-branch-banner-label">
-        {text(`Copied from ${name}`, `复制自 ${name}`)}
+        {text("Branched from ", "分支自 ")}
+        <strong>{name}</strong>
+        {preview ? text(` · at “${preview}”`, ` · 在“${preview}”处`) : null}
       </span>
       {gone ? null : (
         <button type="button" className="agent-branch-banner-back"
-          onClick={() => openSession(lineage.session_id)}>
-          {text("Open original", "打开原会话")}
+          onClick={() => openSessionAtMessage(lineage.session_id, lineage.at_msg_id)}>
+          {text("Back to original", "回到原会话")}
         </button>
       )}
     </div>

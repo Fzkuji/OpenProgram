@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { answered, readKept, retrySoon } from "./kept-read";
+
+const PLUGINS_KEY = "/api/plugins";
+const readPlugins = () => jsonFetch<{ plugins: PluginRow[]; errors: Record<string, string> }>(PLUGINS_KEY);
 
 export interface PluginRow {
   name: string;
@@ -33,8 +37,8 @@ interface PluginsState {
   errors: Record<string, string>;
   marketplaces: MarketplaceEntry[];
   tab: "installed" | "marketplace" | "errors";
-  loading: boolean;
-  loadError: string | null;
+  /** The list has come from the server at least once. */
+  ready: boolean;
   setTab: (t: PluginsState["tab"]) => void;
   refresh: () => Promise<void>;
   refreshMarketplaces: () => Promise<void>;
@@ -58,22 +62,18 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   errors: {},
   marketplaces: [],
   tab: "installed",
-  loading: false,
-  loadError: null,
+  ready: false,
 
   setTab: (tab) => set({ tab }),
 
+  // A failed read keeps the last list and asks again shortly.
   refresh: async () => {
-    set({ loading: true, loadError: null });
     try {
-      const d = await jsonFetch<{ plugins: PluginRow[]; errors: Record<string, string> }>(
-        "/api/plugins",
-      );
-      set({ plugins: d.plugins || [], errors: d.errors || {} });
+      const d = await readKept(PLUGINS_KEY, readPlugins);
+      answered(PLUGINS_KEY);
+      set({ plugins: d.plugins || [], errors: d.errors || {}, ready: true });
     } catch (e) {
-      set({ loadError: e instanceof Error ? e.message : String(e) });
-    } finally {
-      set({ loading: false });
+      retrySoon(PLUGINS_KEY, () => { void get().refresh(); }, e);
     }
   },
 
@@ -180,3 +180,14 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
     return d.items || [];
   },
 }));
+
+/** The Plugins page's first read, started before the page opens. It is
+ *  asked once: a failure only warns, and retrying belongs to a page that
+ *  shows the list. */
+export function prefetchPlugins(): Promise<void> {
+  if (usePluginsStore.getState().ready) return Promise.resolve();
+  return readKept(PLUGINS_KEY, readPlugins).then(
+    (d) => { answered(PLUGINS_KEY); usePluginsStore.setState({ plugins: d.plugins || [], errors: d.errors || {}, ready: true }); },
+    (cause) => { console.warn("[prefetch] plugins", cause); },
+  );
+}

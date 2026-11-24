@@ -7,5 +7,5 @@ const PdfPreview = lazy(() => import("../preview/pdf-preview"));
 export function PdfSurface({ bytes, path, controller, readOnly, saveStatus }: { bytes: Blob; path: string; controller: DocumentController; readOnly: boolean; saveStatus: string }) {
   const [sourceUrl] = useState(() => URL.createObjectURL(bytes));
   useEffect(() => () => URL.revokeObjectURL(sourceUrl), [sourceUrl]);
-  return <Suspense fallback={<span>Loading PDF…</span>}><PdfPreview sourceUrl={sourceUrl} path={path} controller={readOnly ? undefined : controller} saveStatus={saveStatus} /></Suspense>;
+  return <Suspense fallback={null}><PdfPreview sourceUrl={sourceUrl} path={path} controller={readOnly ? undefined : controller} saveStatus={saveStatus} /></Suspense>;
 }

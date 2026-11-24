@@ -90,6 +90,17 @@ def _tests_leave_the_front_application_alone(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_system_settings_guide(monkeypatch):
+    """No test opens System Settings or the permission drag guide; a test sees
+    what would have started, and gets the real starter for the tests of it."""
+    from openprogram.host.system_access import guide
+
+    real = guide._begin
+    monkeypatch.setattr(guide, "_begin", lambda capabilities: list(capabilities))
+    yield real
+
+
+@pytest.fixture(autouse=True)
 def _no_browser_of_its_own(monkeypatch):
     """A test's turn has the browser only when the test gives it an App window, on a
     machine with a browser installed as on one without; yields the real check."""
@@ -113,6 +124,25 @@ def _no_provider_keys_from_the_shell(monkeypatch):
         if name in names or name.endswith("_API_KEY"):
             monkeypatch.delenv(name, raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _port_and_profile_variables_end_as_they_began():
+    """``openprogram web --web-port`` and ``--profile`` set ``OPENPROGRAM_WEB_PORT``
+    and ``OPENPROGRAM_PROFILE`` for their own process; a test that runs them
+    would hand the port or the profile to every test after it in the same
+    process: a worker started there finds the port taken, and a script it
+    starts reads another profile's files."""
+    import os as _os
+
+    names = ("OPENPROGRAM_WEB_PORT", "OPENPROGRAM_PROFILE")
+    before = {name: _os.environ.get(name) for name in names}
+    yield
+    for name, value in before.items():
+        if value is None:
+            _os.environ.pop(name, None)
+        else:
+            _os.environ[name] = value
 
 
 @pytest.fixture(autouse=True)
@@ -448,7 +478,7 @@ def _screen_reads_as_unlocked(monkeypatch):
     locked. A run started before a break, or over SSH on a locked Mac,
     would otherwise fail every test that steps through the real backend.
     """
-    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
 
     monkeypatch.setattr(macos, "_screen_locked", lambda: False)
 

@@ -60,7 +60,7 @@
 <thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row">Before</th><td>Inspect form, identity and week; compose; change only observed editable inputs</td></tr>
-<tr><th scope="row">Allowed in <code translate="no">computer_use_agent</code></th><td>Only its browser target in the built-in browser: reading, exact-destination navigation, scrolling, filling observed inputs. Each action follows a fresh read of the same tab.</td></tr>
+<tr><th scope="row">Allowed in <code translate="no">computer_use</code></th><td>Only its built-in browser (<code translate="no">type="browser"</code>): reading, exact-destination navigation, scrolling, filling observed inputs. Each action follows a fresh read of the same tab.</td></tr>
 <tr><th scope="row">Blocked before execution</th><td>Submit or save clicks, unverified buttons, coordinate clicks, Enter and other submitting keys, arbitrary page execution</td></tr>
 <tr><th scope="row">After</th><td>Fresh same-page observation; each actual value compared exactly, whitespace included. <code translate="no">FILLED</code> only when all match, explicitly unsubmitted.</td></tr>
 <tr><th scope="row">Cannot prove success</th><td>Model claims, old observations, matching text in another field, ARIA text, missing, truncated or redacted values</td></tr>

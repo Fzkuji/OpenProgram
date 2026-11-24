@@ -17,12 +17,12 @@ import {
   BlocksIcon,
   CalendarDaysIcon,
   HistoryIcon,
-  InboxIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { refreshFunctionsList } from "@/lib/abilities/functions-actions";
+import { useChanged } from "@/lib/net/ws/changes";
 import { usePendingInbox } from "@/lib/agents/pending-inbox";
-import { Badge } from "@/components/ui/badge";
+import { prefetchPage, prefetchPagesWhenIdle, type PrefetchPage } from "@/lib/abilities/page-prefetch";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
@@ -43,6 +43,7 @@ function SidebarNavLink({
   icon: Icon,
   className = "",
   action,
+  prefetch,
 }: {
   href: string;
   id: string;
@@ -51,6 +52,8 @@ function SidebarNavLink({
   icon: NavIcon;
   className?: string;
   action?: ReactNode;
+  /** The page whose first reads start when the pointer or focus arrives. */
+  prefetch?: PrefetchPage;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
@@ -63,7 +66,11 @@ function SidebarNavLink({
         (active ? " " + sidebarNavItemActiveClass : "")
       }
       id={id}
-      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseEnter={() => {
+        iconRef.current?.startAnimation?.();
+        if (prefetch) void prefetchPage(prefetch);
+      }}
+      onFocus={() => { if (prefetch) void prefetchPage(prefetch); }}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
       <span className={sidebarNavIconClass}>
@@ -95,27 +102,19 @@ export function SidebarPrimaryNav() {
       else if (kind === "plugins" || kind === "skills" || kind === "programs") setAbilityHref(`/${kind}`);
     } catch { /* ignore */ }
   }, [pathname]);
-  // Reports from always-on Agents still waiting for the user (/pending).
-  const { items: pending } = usePendingInbox();
+  // What always-on Agents and scheduled tasks left for the user (the Tasks page's Inbox).
+  const { items: inbox } = usePendingInbox();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
   const refreshSvgRef = useRef<SVGSVGElement>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const refreshVisible = () => {
-      if (!cancelled && document.visibilityState === "visible") {
-        void refreshFunctionsList();
-      }
-    };
-    const id = window.setInterval(refreshVisible, 30_000);
-    document.addEventListener("visibilitychange", refreshVisible);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", refreshVisible);
-    };
-  }, []);
+  // The Worker's `programs:changed` frame refreshes the function list
+  // (lib/net/ws/use-ws.ts); `useChanged` reads it once more after the socket
+  // comes back, since a frame sent while it was down is lost.
+  useChanged("programs", () => refreshFunctionsList());
+
+  // Every page's first reads and code, once, when the app is idle after start.
+  useEffect(() => prefetchPagesWhenIdle(), []);
 
   function doRefresh() {
     if (refreshing) return;
@@ -147,13 +146,15 @@ export function SidebarPrimaryNav() {
     label: string;
     icon: NavIcon;
     className?: string;
+    prefetch?: PrefetchPage;
   }> = [
     {
-      href: "/pending",
-      id: "navPending",
-      active: pathname.startsWith("/pending"),
-      label: text("Pending", "待处理"),
-      icon: InboxIcon,
+      href: "/tasks",
+      id: "navTasks",
+      active: pathname.startsWith("/tasks"),
+      label: t("nav.tasks"),
+      icon: CalendarDaysIcon,
+      prefetch: "tasks",
     },
     {
       href: "/agents",
@@ -161,6 +162,7 @@ export function SidebarPrimaryNav() {
       active: pathname.startsWith("/agents"),
       label: t("nav.agents"),
       icon: BotIcon,
+      prefetch: "agents",
     },
     {
       href: abilityHref,
@@ -172,6 +174,7 @@ export function SidebarPrimaryNav() {
         || pathname.startsWith("/programs"),
       label: t("nav.ability"),
       icon: CpuIcon,
+      prefetch: abilityHref.slice(1) as PrefetchPage,
     },
     {
       href: "/applications",
@@ -179,6 +182,7 @@ export function SidebarPrimaryNav() {
       active: pathname.startsWith("/applications"),
       label: text("Applications", "应用"),
       icon: BlocksIcon,
+      prefetch: "applications",
     },
     {
       href: "/chats",
@@ -190,13 +194,7 @@ export function SidebarPrimaryNav() {
         || pathname.startsWith("/history"),
       label: t("nav.history"),
       icon: HistoryIcon,
-    },
-    {
-      href: "/scheduler",
-      id: "navScheduler",
-      active: pathname.startsWith("/scheduler"),
-      label: t("nav.scheduler"),
-      icon: CalendarDaysIcon,
+      prefetch: "history",
     },
   ];
 
@@ -232,10 +230,11 @@ export function SidebarPrimaryNav() {
     </span>
   );
 
-  const pendingCount = pending.length > 0 ? (
-    <Badge className="ml-auto h-[18px] min-w-[18px] px-[6px] text-fs-2xs" aria-label={text(`${pending.length} waiting`, `${pending.length} 项待处理`)}>
-      {pending.length > 99 ? "99+" : pending.length}
-    </Badge>
+  // A quiet number: how many Inbox items need the user; nothing at zero.
+  const inboxCount = inbox.length > 0 ? (
+    <span className="ml-auto text-fs-xs text-text-muted tabular-nums" aria-label={text(`${inbox.length} need you`, `${inbox.length} 项等你处理`)}>
+      {inbox.length > 99 ? "99+" : inbox.length}
+    </span>
   ) : undefined;
 
   return (
@@ -244,7 +243,7 @@ export function SidebarPrimaryNav() {
         <SidebarNavLink
           key={item.id}
           {...item}
-          action={item.id === "navAbility" ? refreshAction : item.id === "navPending" ? pendingCount : undefined}
+          action={item.id === "navAbility" ? refreshAction : item.id === "navTasks" ? inboxCount : undefined}
         />
       ))}
     </div>

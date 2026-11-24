@@ -109,7 +109,7 @@ def _runs_in_powershell() -> bool:
     now, or the host shell an approved command leaves the sandbox for."""
     try:
         from openprogram.host._platform import command_shell
-        from openprogram.host.environments import current_environment
+        from openprogram.host.machines import current_environment
         profile = command_shell.resolve_shell(current_environment())
     except Exception:  # noqa: BLE001 - unknown is read as the riskier shell
         import sys
@@ -453,27 +453,13 @@ def parse_command(tool_name: str, args: dict) -> Optional[str]:
         p = args.get("path") or args.get("file_path")
         if p is not None:
             return _canon_path(p)
-    if low in {"computer_use_agent", "computer_use"}:
-        # One approval covers an application, not one click in it: the rule
-        # names the app the model addressed (``computer_use_agent(calculator)``),
-        # the VM endpoint (``computer_use_agent(vm:http://host:5000)``), or
-        # the user's own browser (``computer_use_agent(browser:chrome)``).
-        target = args.get("target", "app")
-        if target == "vm":
-            from openprogram.programs.tools.computer_use.computer_use_agent.targets import vm
-            return f"vm:{vm.url()}" if vm.url() else None
-        nested = args.get("args") if isinstance(args.get("args"), dict) else args
-        if target == "browser":
-            # The user's own Chrome or Edge is one grant for everything done
-            # in it, page scripts included; built-in Pages have no rule.
-            from openprogram.programs._host import services as _services
-            browser = _services.lookup("browser")
-            chosen = browser.browser_of(nested) if browser is not None else ""
-            return f"browser:{chosen}" if chosen else None
-        if target != "app":
-            return None
-        app = " ".join(str(nested.get("app") or "").split()).lower()
-        return app or None
+    if low == "computer_use":
+        # One approval covers a screen, not one click on it. The target's
+        # provider says what the call operates and the key a rule for it is
+        # written under (``window calculator``, ``browser chrome``, ``lab screen``);
+        # a call that operates nothing the user is asked about has none.
+        from openprogram.programs.tools.computer_use.computer_use import tool as screen
+        return screen.rule_key(args)
     try:
         return json.dumps(
             _normalize_json(args), ensure_ascii=False, sort_keys=True,
@@ -489,6 +475,9 @@ def exact_rule_for_call(tool_name: str, args: dict) -> PermissionRuleValue | Non
     if value is None:
         return None
     value = _split_readings(value)[0]
+    if tool_name.lower() == "computer_use" and (any(ch in value for ch in "*?[") or value.endswith(":*")):
+        # The matcher would read the name as a wildcard covering other screens; it is allowed once only.
+        return None
     if tool_name.lower() in _SHELL_TOOLS and value.startswith(_COMPLEX_SHELL_PREFIX):
         return None
     if value.startswith(_POWERSHELL_UNREAD_PREFIX):
@@ -628,9 +617,16 @@ def _match_one(pattern: str, value: str, *, allow: bool) -> bool:
     if pattern.endswith(":*"):
         prefix = pattern[:-2]
         candidate = _effective_shell_command(value, allow=allow)
-        if candidate is None:
+        if candidate is not None and (candidate == prefix or candidate.startswith(prefix + " ")):
+            return True
+        if allow:
             return False
-        return candidate == prefix or candidate.startswith(prefix + " ")
+        # A value that is not a command (``app grandma's notes``, ``app notes & co``)
+        # may not survive shell parsing or come back quoted; deny and ask also
+        # read it as words. This only widens them: a parsed command that failed
+        # starts with a marker no rule names.
+        text, wanted = value.casefold(), prefix.casefold()
+        return text == wanted or text.startswith(wanted + " ")
 
     def _cmp(pat: str, val: str) -> bool:
         # A host path can mix Git/POSIX slashes with native separators.

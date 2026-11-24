@@ -691,6 +691,33 @@ def test_a_signal_noted_while_the_run_stopped_leaves_once_its_files_are_written(
     assert left.value.code == 130
 
 
+def test_every_leave_at_once_stops_the_turns_commands_first(monkeypatch):
+    # A turn that has ended may still have a thread on its way to stop the
+    # command it ran; leaving at once ends that thread before it has.
+    order = []
+    monkeypatch.setattr(print_turn, "stop_commands", lambda run: order.append("commands"))
+
+    def left(code):
+        order.append("left")
+        raise _Left(code)
+
+    monkeypatch.setattr(print_stop, "leave", left)
+    run = print_turn.PrintRun(session_id="s", ended=print_turn.ENDED_CANCELLED)
+    print_turn.hold_signals()
+    print_stop._noted.set()
+    with pytest.raises(_Left):
+        print_turn.leave_stopped(run, 143)
+    assert order == ["commands", "left"], "a second signal noted while the run stopped"
+
+    del order[:]
+    print_stop._noted.clear()
+    print_turn.leave_stopped(run, 143)
+    assert order == []
+    with pytest.raises(_Left):
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+    assert order == ["commands", "left"], "a signal while the interpreter waits for its threads"
+
+
 def _interrupt_main():
     import _thread
     _thread.interrupt_main()

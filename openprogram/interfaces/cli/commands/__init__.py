@@ -7,7 +7,7 @@ what the commands are for:
 
     capabilities/   — Programs, skills, plugins, MCP servers
     conversations/  — chat, sessions, agents, sub-agents, executions, Jobs,
-                      permissions, environments
+                      permissions, machines
     services/       — Web server, ACP, cron, channels and channel setup
     maintenance/    — backup, diagnostics, doctor, logs, rescue, trash
     updates/        — upgrade, self-update, versions, development instance

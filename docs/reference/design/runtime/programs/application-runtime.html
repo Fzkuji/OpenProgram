@@ -96,7 +96,7 @@
 <tr><th scope="row">Order</th><td>Files, New chat, Browser and Terminal; built-in applications with a window; enabled, visible installed applications. Buttons show no model, port, runtime or path.</td></tr>
 <tr><th scope="row">Reopening</th><td>Same application and project reuses the open tab. Separate projects open independently with explicit data scopes.</td></tr>
 <tr><th scope="row">No active project</th><td>The saved binding is reused; an unbound project application asks once. An application never follows another chat tab's working directory.</td></tr>
-<tr><th scope="row">First opening</th><td>May show dependency preparation. Failure stays on the application page with the reason and Retry.</td></tr>
+<tr><th scope="row">First opening</th><td>May show dependency preparation. The page stays empty until its instance is read; a failed read is asked again quietly with backoff, and an instance read before draws at once.</td></tr>
 <tr><th scope="row">Closing</th><td>Closes only the view. Service-process exit and task interruption are reported separately.</td></tr>
 <tr><th scope="row">Creation</th><td>Starts in chat: the Agent writes the package and dependency declarations, builds and verifies it, then registers within that task's authorization. Only success adds a button; failure keeps source and errors for repair.</td></tr>
 </tbody>
@@ -135,6 +135,7 @@
 <li>Project-path changes update bindings, not instance identity. Runtime databases hold execution facts; application state references run IDs. <code translate="no">localStorage</code> caches disposable view preferences only.</li>
 <li>User data never lives in the source directory.</li>
 <li>Python environments: one per application and pinned dependency set, created on first use, never installing into the main worker. Listing reads manifests only and starts no process. A static application starts no Python. Published UI uses build artifacts: no dev server, no latest dependencies, no regeneration per click.</li>
+<li>Runners start ahead: opening a window, and every operation after it, keeps two runners per application version waiting with Python, the framework and the backend loaded, so an operation does not pay about a second of startup. Each still runs one operation; a stale version's runners are stopped, and an idle one exits when the worker goes away.</li>
 </ul>
 
 <h2 id="models">Models and business operations</h2>
@@ -147,6 +148,7 @@
 <tr><th scope="row">Questions</th><td><code translate="no">context.ask()</code> emits a question event; an answer binds run and request ID and applies only to the pending question. No second <code translate="no">ExecutionStatus</code>.</td></tr>
 <tr><th scope="row">Commit</th><td>Ordinary code validates model output before a transactional commit. "Saved" in natural language is not evidence.</td></tr>
 <tr><th scope="row">Retries</th><td>A request key dedupes submissions; reuse with different input is rejected. Non-idempotent external effects inspect existing records or ask the user; a network timeout never repeats execution.</td></tr>
+<tr><th scope="row">Conversations</th><td>With <code translate="no">chat</code> a window keeps ordinary conversations of its own, one per key, a draft ID adopted on its first message. The host draws the real composer over the iframe where the page asks and hides the right sidebar; the page draws messages from a feed the host posts. The page's note rides beside each message as the <code translate="no">application</code> attachment, stored on the user node. The agent works in the folder like any chat; nothing passes through the backend.</td></tr>
 </tbody>
 </table>
 

@@ -366,14 +366,24 @@ export class DocumentController {
       || this.richEditor?.getState?.().dirty || this.state.status === "dirty" || this.state.status === "saving");
   }
 
+  /** Edits the file does not hold yet: a draft, a native editor's change
+   *  not yet exported, or a save that failed. A save already on its way is
+   *  not one; closing waits for it and asks nothing. */
+  hasUnsavedChanges(): boolean {
+    return Boolean(this.state.draft || this.pending || this.richDirty
+      || this.richEditor?.getState?.().dirty
+      || this.state.status === "dirty" || this.state.status === "error" || this.state.status === "conflict");
+  }
+
   /** A close has begun: the document is on its way out and a new view of
    *  the same file gets a fresh controller instead. */
   isClosing(): boolean { return this.closeRequested; }
 
   canReplacePreview(): boolean {
-    // A native editing engine can have input still being edited before it
-    // emits a dirty notification. Keep that pane visible until explicit open.
-    return !this.hasLocalChanges() && this.richEditor?.getState?.().readonly !== false;
+    // A native editor is written only for changes it reported. Closing,
+    // refreshing or replacing it never exports what nobody changed: the
+    // engine's copy is its reading of the file, not the file.
+    return !this.hasLocalChanges();
   }
 
   async checkForUpdates(signal?: AbortSignal): Promise<void> {
@@ -395,10 +405,23 @@ export class DocumentController {
       : new URLSearchParams({ session_id: identity.sessionId, path: identity.path });
     const response = await this.fetcher(`/api/documents/stat?${params}`, { cache: "no-store", signal });
     if (!response.ok) throw new Error(`Unable to check file updates (${response.status}).`);
-    const result = await response.json();
+    const result = await response.json() as { version?: unknown };
     if (typeof result.version !== "string" || !result.version) throw new Error("File update status is unavailable.");
     if (signal?.aborted || this.getState().status === "closed" || this.state.snapshot !== before) return;
     this.setState({ externalChanged: result.version !== before.diskVersion });
+  }
+
+  /** Ask the Worker to announce changes to this file; returns the key its
+   *  `documents` change frames carry (interfaces/server/routes/files/document_changes.py). */
+  async follow(signal?: AbortSignal): Promise<string | null> {
+    const identity = this.identity;
+    const params = identity.kind === "project"
+      ? new URLSearchParams({ project_id: identity.projectId, path: identity.path })
+      : new URLSearchParams({ session_id: identity.sessionId, path: identity.path });
+    const response = await this.fetcher(`/api/documents/stat?${params}`, { cache: "no-store", signal });
+    if (!response.ok) throw new Error(`Unable to follow file updates (${response.status}).`);
+    const result = await response.json() as { watch?: unknown };
+    return typeof result.watch === "string" && result.watch ? result.watch : null;
   }
 
   /** Read disk again without publishing or discarding an editor's local state. */
@@ -411,12 +434,6 @@ export class DocumentController {
       this.setState({ restoring: true });
       this.richEditor?.setInputEnabled?.(false);
       try {
-        // Commit native input still being edited (for example a spreadsheet
-        // cell) before any engine replacement. Failed publication retains it.
-        if (this.richEditor?.getState?.().readonly === false) {
-          await this.flushRichEditor();
-          await this.drain(true);
-        }
         const disk = await this.readDisk();
         if (this.hasLocalChanges()) throw new Error("Your local changes were retained. Refresh again after saving.");
         await this.resetRichEditor();
@@ -488,7 +505,7 @@ export class DocumentController {
   private async flushRichEditor(): Promise<void> {
     this.clearTimers();
     if (this.richExport) await this.richExport.catch(() => undefined);
-    if (this.richEditor && !this.richLeaseRevoked && this.richGeneration === this.state.editorRevision && (this.richDirty || this.richEditor.getState?.().readonly === false)) {
+    if (this.richEditor && !this.richLeaseRevoked && this.richGeneration === this.state.editorRevision && this.richDirty) {
       if (!this.richEditor.save) throw new Error("The Office editor cannot export the dirty document.");
       await this.richEditor.save();
       await this.richEditor.flushPendingSaves();
@@ -535,7 +552,7 @@ export class DocumentController {
     if (cursor) params.set("cursor", cursor);
     const response = await this.fetcher(`/api/documents/history?${params}`);
     if (!response.ok) throw new Error("Unable to load document history.");
-    return response.json();
+    return await response.json() as DocumentHistoryPage;
   }
   async historyContent(version: string, side: "before" | "after" = "after"): Promise<Blob> {
     if (this.identity.kind !== "project") throw new Error("History is unavailable for this attachment.");

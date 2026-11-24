@@ -28,9 +28,10 @@ export async function sendWaitAnswer(q: PendingDecision, action: WaitAction, val
     try {
       const response = await fetch(`/api/questions?session_id=${encodeURIComponent(q.sessionId)}`, { signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error("Unable to check request");
-      const data = await response.json();
+      const data = await response.json() as { questions?: unknown };
       if (!Array.isArray(data.questions)) throw new Error("Invalid request list");
-      const current = data.questions.find((item: { id: string }) => item.id === q.id);
+      const questions = data.questions as Array<{ id: string; expected_version?: unknown; wait_generation?: unknown }>;
+      const current = questions.find((item) => item.id === q.id);
       if (!current) {
         save(command, "closed", text("This request has ended. This answer was not accepted.", "请求已结束，本次回答未被接受。"));
         onResolve(q.id);

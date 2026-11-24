@@ -9,8 +9,11 @@
  * options of its own: everything about it is set here.
  */
 import { platformKeys, useIsMacPlatform } from "@/lib/shortcut-keys";
+import { errorDetailText } from "@/lib/net/error-text";
 import { jsonFetch } from "@/lib/net/fetch-client";
-import { useCallback, useEffect, useState } from "react";
+import { refreshSettings, useSettingsData } from "@/lib/prefs/settings-cache";
+import { VOICE_STATUS_URL } from "@/lib/settings/settings-urls";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -41,35 +44,24 @@ interface VoiceStatus {
 export function VoiceSettings() {
   const { text } = useTranslation();
   const mac = useIsMacPlatform();
-  const [status, setStatus] = useState<VoiceStatus | null>(null);
-  const [model, setModel] = useState("");
+  // Kept across visits and read as Settings opens: the page shows at once.
+  const status = useSettingsData<VoiceStatus>(VOICE_STATUS_URL);
+  // The model field follows the kept value until it is edited.
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
+  const model = modelDraft ?? status?.model ?? "";
+  const setModel = setModelDraft;
   const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const response = await fetch("/api/voice/status");
-      if (!response.ok) throw new Error(String(response.status));
-      const next: VoiceStatus = await response.json();
-      setStatus(next);
-      setModel(next.model);
-    } catch (error) {
-      setMessage(text(`Could not load voice settings: ${error}`, `无法加载语音设置：${error}`));
-    }
-  }, [text]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   async function save(key: string, value: string) {
     setMessage("");
     try {
-      const result = await jsonFetch<{ error?: string }>("/api/settings", {
+      const result = await jsonFetch<{ error?: unknown }>("/api/settings", {
         method: "POST",
         body: JSON.stringify({ key, value }),
       });
-      if (result.error) throw new Error(result.error);
-      await load();
+      if (result.error) throw new Error(errorDetailText(result.error, key));
+      await refreshSettings(VOICE_STATUS_URL);
+      if (key === "voice.model") setModelDraft(null);
     } catch (error) {
       const reason = (error as Error).message;
       setMessage(text(`Save failed: ${reason}`, `保存失败：${reason}`));
@@ -99,7 +91,7 @@ export function VoiceSettings() {
     }
     return row.available
       ? text("API key set.", "已设置 API key。")
-      : text("No API key — add one in Settings → Providers.", "没有 API key，请在 设置 → 模型服务 里添加。");
+      : text("No API key — add one in Settings → Model services.", "没有 API key，请在 设置 → 模型服务 里添加。");
   };
 
   return (

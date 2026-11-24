@@ -44,7 +44,7 @@
 <tr><th scope="row">Windows 和 Linux App</th><td>带由同一 lock 构建的 seed</td></tr>
 <tr><th scope="row">发布还包含</th><td>校验和、开发者 wheel 和 sdist、<code translate="no">release-manifest.json</code></td></tr>
 <tr><th scope="row">完整入口没通过</th><td>产物直接缺席，绝不缩减</td></tr>
-<tr><th scope="row">本地刷新、自更新</th><td>用本地开发证书重新签名，不保留生产签名</td></tr>
+<tr><th scope="row">开发版 App、自更新</th><td>用本地开发证书重新签名，不保留生产签名</td></tr>
 </tbody>
 </table>
 
@@ -65,6 +65,7 @@
 <summary><code translate="no">verify-product-runtime.py</code> 检查什么</summary>
 <ul>
 <li>启动无头 Chromium 页面；产物只有在 <code translate="no">--allow-deferred-browser</code> 下才能把 <code translate="no">browser_probe</code> 记为 deferred。终端安装在缺少 Chromium 系统库的 Linux 上传这个参数，启动 Chromium 留到浏览器工具首次使用。</li>
+<li>每次启动都先要完整浏览器，所以 macOS 和 Windows 的运行时只带它一份；Linux 另带 headless shell，它需要的系统库更少，裸服务器上启动的就是它。</li>
 <li>构建时（<code translate="no">--write</code>、<code translate="no">--probe-only</code>）读取每个 Mach-O 和 ELF 文件的加载命令：从运行时和系统之外加载的库（例如 runner 上 Homebrew 的 OpenSSL），或要求比 <code translate="no">macosMinimum</code> 更新的 macOS 的文件，都让构建失败。它自己解析文件，不需要 <code translate="no">otool</code>。</li>
 <li>导入 channel 和 search 依赖，检查 Web 资源。</li>
 <li>对生成的 PDF 运行两条内置提取路径，探测 Rich 渲染。</li>
@@ -92,7 +93,7 @@
 <tr><th scope="row">复用的 base</th><td>Python 版本没变的 base 直接复制，再用 <code translate="no">uv pip sync</code> 对齐新的锁文件；它把依赖文件当位置参数，固定版本的 uv 在这里拒绝 <code translate="no">--requirements</code>，而 <code translate="no">uv pip install</code> 必须用它。组件测试用这个 uv 离线把两个脚本的装包步骤装进临时环境，CI 也安装这个 uv</td></tr>
 <tr><th scope="row">构建用的 profile</th><td>自更新构建有自己的 <code translate="no">HOME</code>、<code translate="no">USERPROFILE</code>、<code translate="no">LOCALAPPDATA</code> 和 <code translate="no">APPDATA</code>；缺了后两个，PowerShell 会把模块缓存写进工作树，下一次构建就以有未提交改动拒绝</td></tr>
 <tr><th scope="row">源码构建</th><td>只有 <code translate="no">product-runtime.json</code> 里 <code translate="no">sourceBuilds</code> 列出的包，各自链接所在构建线准备的静态库：Intel macOS 上的 cryptography（没有 x86_64 wheel；<code translate="no">prepare-macos-native-deps.sh</code> 用 vcpkg 为 macOS 13.5 构建静态 OpenSSL），以及 Windows on Arm 上的四个包。列出的包一旦有了 wheel，检查就失败</td></tr>
-<tr><th scope="row">最旧的 macOS</th><td>13.5，因为 Playwright 自带的 Node 需要它；App 的 <code translate="no">LSMinimumSystemVersion</code>（electron-builder 的 <code translate="no">minimumSystemVersion</code>）和安装页写的一样，终端安装程序拒绝更旧的 Mac 并说明去哪里更新。本地 App 刷新用这台机器自己的包就地组装运行时，所以传 <code translate="no">--this-machine</code>，原生文件按这台 Mac 的 macOS 检查；发布构建从不传它</td></tr>
+<tr><th scope="row">最旧的 macOS</th><td>13.5，因为 Playwright 自带的 Node 需要它；App 的 <code translate="no">LSMinimumSystemVersion</code>（electron-builder 的 <code translate="no">minimumSystemVersion</code>）和安装页写的一样，终端安装程序拒绝更旧的 Mac 并说明去哪里更新</td></tr>
 <tr><th scope="row">Intel macOS 与 torch</th><td>没有打过补丁的 torch wheel，所以 <code translate="no">embedding</code> extra 排除该平台</td></tr>
 <tr><th scope="row">架构命名</th><td>运行时归档用 <code translate="no">x86_64</code>，electron-builder 用 <code translate="no">x64</code>（<code translate="no">release-matrix.py</code>）</td></tr>
 <tr><th scope="row">运行时 manifest</th><td>格式化 JSON，shell 解析容忍空白</td></tr>
@@ -121,7 +122,6 @@
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">约定</th></tr></thead>
 <tbody>
 <tr><th scope="row">入口</th><td><code translate="no">npm --prefix apps/desktop run dist</code> 构建一个完整的临时 App，用打包运行时冒烟验证，只替换 <code translate="no">/Applications/OpenProgram.app</code></td></tr>
-<tr><th scope="row">刷新版本</th><td><code translate="no">scripts/local-instances/refresh-local-app.sh</code> 要求 bundle、运行时 manifest、Python 元数据、Python 源码和桌面源码版本一致，升级到更新的源码除外</td></tr>
 <tr><th scope="row">降级</th><td><code translate="no">install-app.sh</code> 在加锁前和对暂存副本各拒绝一次更旧的候选，都在停 worker 和改文件之前。数字段按任意精度十进制比较；没有覆盖开关，没有预发布排序。</td></tr>
 <tr><th scope="row">路径上是无效 App</th><td>保留并拒绝，绝不当作不存在</td></tr>
 <tr><th scope="row">激活失败</th><td>保留旧 App 的唯一副本；Launch Services 注册后失败时恢复并重新注册，保留原始错误</td></tr>

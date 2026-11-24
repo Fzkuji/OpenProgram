@@ -48,6 +48,8 @@ def write(rows: list[dict]) -> None:
         replace_file(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
+    from openprogram.host._platform.changes import signal
+    signal("applications")
 
 
 def update(mutate):

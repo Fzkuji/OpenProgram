@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { installLoader, STUBS } from "../_support/load.mjs";
 
-const state = globalThis.__rewind = { toasts: [], sent: [], store: null };
+const state = globalThis.__rewind = { toasts: [], sent: [], store: null, listeners: new Set() };
 installLoader({ stubs: {
   "@/lib/i18n": STUBS.i18n,
-  "@/lib/session-store": "const st=()=>globalThis.__rewind.store; export const useSessionStore=Object.assign(sel=>sel(st()),{getState:st});",
+  "@/lib/session-store": "const st=()=>globalThis.__rewind.store; export const useSessionStore=Object.assign(sel=>sel(st()),{getState:st,subscribe:l=>{globalThis.__rewind.listeners.add(l);return()=>globalThis.__rewind.listeners.delete(l);}});",
   "@/lib/format-utils/toast": "export const showToast=(m,o)=>globalThis.__rewind.toasts.push({m,o}); export const dismissToast=k=>globalThis.__rewind.dismissed.push(k);",
   "@/lib/files/files-shared": "export const absRawFileUrl=(p)=>'/raw'+p;",
   "@/lib/runtime-bridge/state": "export const runtimeState={};",
@@ -313,4 +313,26 @@ test("Rewind and retry waits for an empty composer and leaves files alone", asyn
   await actions.rewindAndRetry("S", "u1", "bad");
   assert.equal(posts[1].body.mode, "conversation");
   assert.equal(state.store.composerDrafts.S, "bad");
+});
+
+test("Stop it, then rewind tries again when the run moves, not on a timer", async () => {
+  answers["/api/chat/rewind_plan"] = plan({ has_changes: true, summary: { files: 1 } });
+  answers["/api/chat/rewind"] = { status: 409, data: { code: "branch_running", blocking: { execution_id: "e1", status_version: 3 } } };
+  await actions.requestRewind("S", "u1", "hello");
+  await actions.confirmRewind();
+  assert.equal(useRewindStore.getState().flow.blocking.execution_id, "e1");
+  const rewinds = () => posts.filter((p) => p.url === "/api/chat/rewind").length;
+  const before = rewinds();
+  answers["/api/chat/rewind"] = reply({ status: "committed" });
+  const done = actions.stopBlockingThenRewind();
+  assert.equal(state.sent.at(-1).execution_id, "e1", "the branch in the way is stopped");
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(rewinds(), before, "nothing is asked before the run moves");
+  const previous = state.store;
+  state.store = { ...previous, runningTasks: {} };
+  for (const listener of [...state.listeners]) listener(state.store, { ...previous, runningTasks: { S: { session_id: "S", execution_id: "e1" } } });
+  await done;
+  assert.equal(rewinds(), before + 1);
+  assert.equal(useRewindStore.getState().flow, null);
+  assert.equal(state.listeners.size, 0, "nothing is left listening");
 });

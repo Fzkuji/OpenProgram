@@ -13,6 +13,8 @@ build/
 .DS_Store
 
 # Local scratch / agent artifacts
+# A web test's bundle folder, left behind when the run is killed (tests/scratch-dir.mjs)
+apps/web/.*-test-*/
 tmp/
 
 # Full upstream clones kept locally for reference while designing new

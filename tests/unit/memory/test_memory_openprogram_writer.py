@@ -91,7 +91,7 @@ def test_openprogram_writer_preserves_structured_permanent_errors(
         )
 
     from openprogram.runtime.conversation.memory_agent import OpenProgramAgent
-    from openprogram.state.memory.agent_runtime import AgentExecutionError
+    from openprogram.state.memory.writer_agent import AgentExecutionError
 
     writer = OpenProgramAgent(stream_fn=denied)
     try:

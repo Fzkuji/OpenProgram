@@ -124,8 +124,25 @@ def unpack_extra(packed: str) -> str:
     return zlib.decompress(base64.b64decode(packed, validate=True)).decode("utf-8")
 
 
+def _without_trace(record: dict) -> dict:
+    """A ``node.patch`` record without the reply trace it sets."""
+    data = {key: value for key, value in record["data"].items() if key != "extra_zlib"}
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict) and "extra" in metadata:
+        data["metadata"] = {key: value for key, value in metadata.items() if key != "extra"}
+    return {**record, "data": data}
+
+
+def _sets_trace(record: dict) -> bool:
+    data = record.get("data")
+    if record.get("type") != "node.patch" or not isinstance(data, dict):
+        return False
+    metadata = data.get("metadata")
+    return "extra_zlib" in data or (isinstance(metadata, dict) and "extra" in metadata)
+
+
 def read_appended(path: Path, start: int = 0, *, containing: bytes | tuple[bytes, ...] | None = None,
-                  ) -> tuple[list[dict], int, bool]:
+                  replaced_traces: bool = True) -> tuple[list[dict], int, bool]:
     """Whole records in ``path`` after byte ``start``.
 
     Returns the records, the offset to continue from, and whether reading
@@ -134,28 +151,47 @@ def read_appended(path: Path, start: int = 0, *, containing: bytes | tuple[bytes
     undecoded, every line without those bytes (any of them, for a tuple).
     A ``node.patch`` keeps a compressed ``extra_zlib`` as it is stored
     (``unpack_extra``).
+
+    With ``replaced_traces`` false, a ``node.patch`` whose reply trace a
+    later line of this read sets again is handed back without it: a patch
+    that sets the trace replaces whatever came before, a long reply's log
+    holds hundreds of whole copies of one growing trace, and a fold reads
+    only the last. Folding the 830 MB log held 1.3 GB of them at once.
+
+    The file is gone through a line at a time: read whole and split, a log
+    of 830 MB took 2.5 GB to find its 900 lines of documents, and a Worker
+    start that read several at once peaked at 7.5 GB.
     """
+    markers = (containing,) if isinstance(containing, bytes) else containing
+    records: list[dict] = []
+    offset = start
+    damaged = False
+    traced: dict[str, int] = {}
     try:
         with open(filesystem_path(path), "rb") as handle:
             handle.seek(start)
-            content = handle.read()
+            for line in handle:
+                if not line.endswith(b"\n"):
+                    break
+                offset += len(line)
+                if damaged or (markers is not None and not any(marker in line for marker in markers)):
+                    continue
+                record = decode_line(line[:-1])
+                if record is None:
+                    _log.error("session log %s is damaged after byte %d; reading stops there",
+                               path, start)
+                    damaged = True  # the lines after it are passed over, as before
+                    continue
+                if not replaced_traces and _sets_trace(record):
+                    node_id = str(record["data"].get("id"))
+                    earlier = traced.get(node_id)
+                    if earlier is not None:
+                        records[earlier] = _without_trace(records[earlier])
+                    traced[node_id] = len(records)
+                records.append(record)
     except OSError:
         return [], start, False
-    end = content.rfind(b"\n")
-    if end < 0:
-        return [], start, False
-    markers = (containing,) if isinstance(containing, bytes) else containing
-    records: list[dict] = []
-    for line in content[:end].split(b"\n"):
-        if markers is not None and not any(marker in line for marker in markers):
-            continue
-        record = decode_line(line)
-        if record is None:
-            _log.error("session log %s is damaged after byte %d; reading stops there",
-                       path, start)
-            return records, start + end + 1, True
-        records.append(record)
-    return records, start + end + 1, False
+    return records, offset, damaged
 
 
 def read_log_file(path: Path, *, containing: bytes | None = None) -> list[dict]:
@@ -453,6 +489,23 @@ def read_records_checkpoint(directory: Path) -> Optional[tuple[dict, dict[str, _
     return None if found is None else (found[0], found[1])
 
 
+def write_records_checkpoint(directory: Path, offsets: dict[str, int], inodes: dict[str, int],
+                             damaged: set[str], files: dict, run_rows: list) -> bool:
+    """Record the state files and run rows read up to ``offsets``.
+
+    A fold writes this beside its own checkpoint, but only once a session
+    has megabytes of new lines; a reader of the documents alone writes it
+    after a long first read, so the next process starts where this one ended.
+    """
+    positions = _checkpoint_positions(directory, {
+        key: _LogPosition(offset=offset, inode=inodes.get(key, 0), damaged=key in damaged)
+        for key, offset in offsets.items()})
+    if positions is None:
+        return False
+    return bool(_write_checkpoint(directory, RECORDS_CHECKPOINT, {
+        "version": _CHECKPOINT_VERSION, "positions": positions, "files": files, "run_rows": run_rows}))
+
+
 def node_sort_key(payload: dict) -> tuple:
     return (int(payload.get("seq", -1)), str(payload.get("role") or "x")[:1],
             str(payload.get("id") or ""))
@@ -473,6 +526,9 @@ _meta_cache: "OrderedDict[str, tuple[tuple, dict]]" = OrderedDict()
 _meta_cache_lock = threading.Lock()
 # Told of each durable conversation write by this process, and nothing else.
 _record_observer: Optional[Any] = None
+#: A conversation's nodes or meta were written in this process, keyed by the
+#: session (``host/_platform/changes.py``).
+RECORDS_TOPIC = "session.records"
 _record_observer_pid: Optional[int] = None
 _foreign_change_observer: Optional[Any] = None
 _OBSERVED_RECORDS = {"node.put", "node.patch", "node.stream", "node.delete", "meta.patch"}
@@ -688,6 +744,12 @@ class SessionLog:
             finally:
                 os.close(descriptor)
         self._notify_observer(record_type, data, durable)
+        if record_type in _OBSERVED_RECORDS and (durable or record_type not in ("node.patch", "node.stream")):
+            # What waits on this conversation's nodes (a run's live
+            # Execution DAG) reads again; a reply's quiet streaming text is
+            # not announced.
+            from openprogram.host._platform import changes
+            changes.signal(RECORDS_TOPIC, self.path.name)
 
     def _notify_observer(self, record_type: str, data: Any, durable: bool) -> None:
         """Only enqueues, on the writer's thread. A forked child never reaches it."""
@@ -874,7 +936,8 @@ class SessionLog:
             seen += 1
             if position.damaged or info.st_size == position.offset:
                 continue
-            found, position.offset, position.damaged = read_appended(path, position.offset)
+            found, position.offset, position.damaged = read_appended(
+                path, position.offset, replaced_traces=False)
             records.extend(found)
         if seen < len(progress.positions):
             return None

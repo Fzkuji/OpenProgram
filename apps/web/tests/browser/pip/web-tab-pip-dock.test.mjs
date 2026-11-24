@@ -95,6 +95,7 @@ await build({
         const bounds = globalThis.webTabBoundsCalls;
         const removed = globalThis.webTabBoundsRemoved;
         export function buildTransferPayload() { return {}; }
+        export function wakeShownWebViews() {}
         export function desktopBridge() {
           return {
             mainMenu: window.openprogramDesktop?.mainMenu,
@@ -481,7 +482,7 @@ async function toggleFollowMenu(host, menu, expectedChecked) {
   }
   const item = menu.popups.at(-1).items.find(item => item.id.endsWith(":follow-page"));
   assert.ok(item);
-  assert.equal(item.label, "Automatically show the page the Agent is using");
+  assert.equal(item.label, "Automatically show what the Agent is using");
   assert.equal(item.checked, expectedChecked);
   assert.match(item.description, /When enabled.*When disabled/s);
   assert.equal(menu.popups.at(-1).width, 360);

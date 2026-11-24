@@ -10,6 +10,7 @@ import { useTranslation } from "@/lib/i18n";
 import { absFileReadUrl, absRawFileUrl } from "@/lib/files/files-shared";
 import { readPreviewBytes } from "@/lib/documents/read-preview-bytes";
 import { buildArchiveTree, fetchArchiveListing, formatBytes, type ArchiveListing, type ArchiveNode } from "@/lib/files/archive";
+import { isPermanent, retryDelay } from "@/lib/abilities/kept-read";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import styles from "./assistant-file-cards.module.css";
 
@@ -73,8 +74,8 @@ export function PdfFirstPage({ path, sessionId, onInfo }: { path: string; sessio
         if (abort.signal.aborted) return;
         setPdf(loaded);
         report.current({ pages: loaded.numPages });
-      } catch {
-        if (!abort.signal.aborted) setFailed(true);
+      } catch (error) {
+        if (!abort.signal.aborted) { console.warn("pdf card preview failed", { path, error }); setFailed(true); }
       }
     })();
     return () => { abort.abort(); void task?.destroy().catch(() => undefined); };
@@ -98,12 +99,13 @@ export function PdfFirstPage({ path, sessionId, onInfo }: { path: string; sessio
   }, [pdf, width]);
 
   return <div ref={host} className={styles.pdfPage}>
-    {failed ? <span className={styles.previewHint}>{text("Preview unavailable", "无法生成预览")}</span>
-      : <canvas ref={canvas} aria-label={text("First page", "第一页")} />}
+    {failed ? null : <canvas ref={canvas} aria-label={text("First page", "第一页")} />}
   </div>;
 }
 
 const PAGE_WIDTH = 1280;
+/** Pages whose preview was already asked for: the answer holds for the session. */
+const checkedPages = new Map<string, "ok" | "failed">();
 
 /** The page drawn in a 1280×720 desktop window and scaled into the card's 16:9 frame. The worker
  *  serves it under a ``sandbox allow-scripts`` policy, so its scripts run
@@ -118,18 +120,24 @@ export function HtmlThumbnail({ path, sessionId }: { path: string; sessionId: st
   const scale = width > 0 ? width / PAGE_WIDTH : 0;
   const src = `/api/file-page?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sessionId)}`;
   // The frame cannot report a refused or missing file, and would show
-  // the error body as the page; ask first and say so plainly instead.
-  const [state, setState] = useState<"checking" | "ok" | "failed">("checking");
+  // the error body as the page; ask first, and draw nothing when refused.
+  // A page already checked (the card drawn before) skips the question.
+  const [state, setState] = useState<"checking" | "ok" | "failed">(() => checkedPages.get(src) ?? "checking");
   useEffect(() => {
-    if (!near) return;
+    if (!near || checkedPages.has(src)) return;
     const abort = new AbortController();
     fetch(src, { signal: abort.signal })
-      .then(response => { void response.body?.cancel(); setState(response.ok ? "ok" : "failed"); })
-      .catch(() => { if (!abort.signal.aborted) setState("failed"); });
+      .then(response => {
+        void response.body?.cancel();
+        const result = response.ok ? "ok" : "failed";
+        checkedPages.set(src, result);
+        if (!response.ok) console.warn("page card preview refused", { path, status: response.status });
+        setState(result);
+      })
+      .catch(error => { if (!abort.signal.aborted) { console.warn("page card preview failed", { path, error }); setState("failed"); } });
     return () => abort.abort();
-  }, [near, src]);
+  }, [near, src, path]);
   return <div ref={host} className={styles.pageThumb}>
-    {state === "failed" && <span className={styles.previewHint}>{text("Preview unavailable", "无法生成预览")}</span>}
     {state === "ok" && scale > 0 && <iframe
       title={text("Page preview", "页面预览")}
       src={src}
@@ -143,42 +151,87 @@ export function HtmlThumbnail({ path, sessionId }: { path: string; sessionId: st
   </div>;
 }
 
+/** A Word, PowerPoint or Excel file's first page, drawn by the worker
+ *  (``/api/file-thumbnail``: macOS Quick Look, else the picture the
+ *  authoring app saved in the file) and cut to the same 16:9 frame as a
+ *  PDF. With no picture the card drops its preview for the name row. */
+export function OfficeFirstPage({ path, sessionId, onFail }: { path: string; sessionId: string; onFail(): void }) {
+  const { text } = useTranslation();
+  const host = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(host);
+  const src = `/api/file-thumbnail?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sessionId)}`;
+  return <div ref={host} className={styles.officePage}>
+    {near && <img src={src} alt={text("First page", "第一页")} onError={onFail} />}
+  </div>;
+}
+
 /** A reply re-mounts its cards when it settles (streaming → final), so
  *  a listing is fetched once per archive and shared, never aborted by a
  *  card going away; a failed read is forgotten so a later card retries. */
 const listings = new Map<string, Promise<ArchiveListing>>();
+/** Listings already read, so a card drawn again shows its rows on its first frame. */
+const readListings = new Map<string, ArchiveListing>();
 function sharedListing(path: string, sessionId: string): Promise<ArchiveListing> {
   const key = `${sessionId}\n${path}`;
   let pending = listings.get(key);
   if (!pending) {
     pending = fetchArchiveListing({ kind: "absolute", path, sessionId });
-    pending.catch(() => listings.delete(key));
+    pending.then(listing => { readListings.set(key, listing); }, () => listings.delete(key));
     listings.set(key, pending);
   }
   return pending;
 }
+
+/** The server refused the listing (HTTP 4xx: corrupt or encrypted, too
+ *  large, not an archive, gone): a fact about the file, not a load problem.
+ *  A network failure or a 5xx is asked again. */
+export function archiveListRefused(error: unknown): boolean {
+  const status = /^ARCHIVE_LIST_(\d+)$/.exec(error instanceof Error ? error.message : "")?.[1];
+  return isPermanent({ status: status ? Number(status) : undefined });
+}
+/** Archives the server refused to list, so a card drawn again says so at once. */
+const unreadableArchives = new Set<string>();
 
 /** The archive's first level, folders first, with a count of the rest. */
 export function ArchiveSummary({ path, sessionId, onInfo, onOpen }: { path: string; sessionId: string; onInfo(info: PreviewInfo): void; onOpen(): void }) {
   const { text } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
   const near = useNearViewport(host);
-  const [nodes, setNodes] = useState<ArchiveNode[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const key = `${sessionId}\n${path}`;
+  const [nodes, setNodes] = useState<ArchiveNode[] | null>(() => {
+    const held = readListings.get(key);
+    return held ? buildArchiveTree(held.entries) : null;
+  });
+  const [unreadable, setUnreadable] = useState(() => unreadableArchives.has(key));
   const report = useRef(onInfo); report.current = onInfo;
   useEffect(() => {
-    if (!near) return;
+    if (!near || unreadable) return;
     let live = true;
-    sharedListing(path, sessionId)
-      .then(listing => { if (live) { setNodes(buildArchiveTree(listing.entries)); report.current({ files: listing.total }); } })
-      .catch(() => { if (live) setFailed(true); });
-    return () => { live = false; };
-  }, [near, path, sessionId]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+    const read = () => {
+      sharedListing(path, sessionId)
+        .then(listing => { if (live) { setNodes(buildArchiveTree(listing.entries)); report.current({ files: listing.total }); } })
+        .catch(error => {
+          if (!live) return;
+          if (archiveListRefused(error)) {
+            console.warn("archive card listing refused", { path, error });
+            unreadableArchives.add(key);
+            setUnreadable(true);
+            return;
+          }
+          console.warn("archive card listing failed; reading again", { path, error });
+          timer = setTimeout(read, retryDelay(attempt++));
+        });
+    };
+    read();
+    return () => { live = false; if (timer) clearTimeout(timer); };
+  }, [near, path, sessionId, key, unreadable]);
   const shown = nodes?.slice(0, 6) ?? [];
   const rest = (nodes?.length ?? 0) - shown.length;
   return <div ref={host} className="grid px-[14px] pt-[8px] pb-[10px]">
-    {failed ? <span className={styles.previewHint}>{text("Couldn't read this archive.", "无法读取该压缩包。")}</span>
-      : !nodes ? <span className={styles.previewHint}>{text("Loading…", "加载中…")}</span>
+    {unreadable && !nodes ? <span className={styles.previewHint}>{text("Couldn't read this archive.", "无法读取该压缩包。")}</span>
+      : !nodes ? null
         : nodes.length === 0 ? <span className={styles.previewHint}>{text("Empty archive", "空压缩包")}</span>
           : <>
             {shown.map(node => <div key={node.path} className={styles.archiveRow}>
@@ -192,22 +245,31 @@ export function ArchiveSummary({ path, sessionId, onInfo, onOpen }: { path: stri
 }
 
 /** The opening lines of a text file. */
+/** Opening lines already read, by session and path: a card drawn again
+ *  (the reply settling, the conversation opened again) shows them at once
+ *  and refreshes them behind. */
+const textHeads = new Map<string, string[]>();
+
+interface FileReadReply { content?: unknown; binary?: unknown }
+
 export function TextHead({ path, sessionId }: { path: string; sessionId: string }) {
-  const { text } = useTranslation();
-  const host = useRef<HTMLElement>(null);
+  const host = useRef<HTMLPreElement>(null);
   const near = useNearViewport(host);
-  const [lines, setLines] = useState<string[] | null>(null);
-  const [done, setDone] = useState(false);
+  const key = `${sessionId}\n${path}`;
+  const [lines, setLines] = useState<string[] | null>(() => textHeads.get(key) ?? null);
   useEffect(() => {
     if (!near) return;
     const abort = new AbortController();
     fetch(absFileReadUrl(path, sessionId), { signal: abort.signal })
-      .then(response => response.ok ? response.json() as Promise<{ content?: string; binary?: boolean }> : null)
-      .then(body => setLines(body?.content !== undefined && !body.binary ? body.content.split("\n").slice(0, 10) : null))
-      .then(() => undefined, () => undefined)
-      .finally(() => { if (!abort.signal.aborted) setDone(true); });
+      .then(async response => (response.ok ? await response.json() as FileReadReply : null))
+      .then(body => {
+        if (typeof body?.content !== "string" || body.binary) return;
+        const head = body.content.split("\n").slice(0, 10);
+        textHeads.set(key, head);
+        setLines(head);
+      })
+      .catch(error => { if (!abort.signal.aborted) console.warn("text card preview failed", { path, error }); });
     return () => abort.abort();
-  }, [near, path, sessionId]);
-  if (done && lines === null) return <span ref={host as RefObject<HTMLSpanElement>} className={styles.previewHint}>{text("Preview unavailable", "无法生成预览")}</span>;
-  return <pre ref={host as RefObject<HTMLPreElement>} className={styles.textHead}>{lines?.join("\n") ?? ""}</pre>;
+  }, [near, path, sessionId, key]);
+  return <pre ref={host} className={styles.textHead}>{lines?.join("\n") ?? ""}</pre>;
 }

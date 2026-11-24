@@ -43,15 +43,13 @@ def _read_tts_cfg() -> dict[str, Any]:
 
 
 def _api_key(env_name: str) -> str | None:
-    """Env var first, config.json api_keys fallback."""
-    v = os.environ.get(env_name)
-    if v:
-        return v
+    """The key the variable name stands for, from the credential store
+    (``services.key_for_env_var``: the company's stored keys, then the variable)."""
+    from openprogram.models.auth.services import key_for_env_var
     try:
-        from openprogram.state.config import read_config
-        return (read_config().get("api_keys", {}) or {}).get(env_name)
+        return key_for_env_var(env_name) or None
     except Exception:
-        return None
+        return (os.environ.get(env_name) or "").strip() or None
 
 
 def _player_argv(path: str) -> list[str] | None:

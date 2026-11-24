@@ -18,7 +18,7 @@ const window = installDom();
 globalThis.HTMLFormElement = window.HTMLFormElement;
 
 const { createElement } = await import("react");
-const { ApplicationSection } = await import("@/components/settings/sections/general-section");
+const { ApplicationSection } = await import("@/components/settings/sections/application-section");
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -122,6 +122,22 @@ test("an available release shows its date and offers download and the release pa
     await flush();
   });
   assert.deepEqual(bridge.calls, ["check", "download", "openRelease"]);
+  await view.unmount();
+});
+
+test("a prepared update offers Restart to update instead of a download", async () => {
+  const bridge = installBridge(updateState({
+    status: "ready",
+    readyVersion: "1.5.0",
+    installsInPlace: true,
+    release: { status: "available", latestVersion: "1.5.0", publishedAt: "", releaseNotes: "" },
+  }), { install: async () => { bridge.calls.push("install"); return null; } });
+  const view = await mount();
+  assert.equal(status(view.container).textContent, "OpenProgram 1.5.0 is ready. Restart to update.");
+  assert.equal(button(view.container, "Download and open installer"), undefined);
+  assert.equal(button(view.container, "Download update"), undefined);
+  await view.act(async () => { button(view.container, "Restart to update").click(); await flush(); });
+  assert.deepEqual(bridge.calls, ["install"]);
   await view.unmount();
 });
 

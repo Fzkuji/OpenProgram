@@ -6,7 +6,7 @@ The composer ring (WS ``context_stats``) and the ``/context`` panel
 
 Covered here:
 - ``measured`` after a real request, ``estimated`` once the graph moves;
-- the calibration ratio a measured reading leaves behind;
+- the offset a measured reading leaves behind (added, never a ratio);
 - ``/context`` returning the same ``total_used`` the ring broadcast;
 - the four graph-change triggers each broadcasting a fresh estimate.
 """
@@ -69,45 +69,73 @@ def test_no_measurement_yields_estimated(fake_db):
     stats = cs.build_stats("s1")
     assert stats["basis"] == "estimated"
     assert stats["total_used"] == stats["estimated"] > 0
-    assert "calibration" not in stats
+    assert "offset" not in stats
 
 
-def test_measurement_yields_measured_plus_calibration(fake_db):
+def test_measurement_yields_measured(fake_db):
     stats = cs.build_stats("s1", measured_total=12345, window=200_000)
     assert stats["basis"] == "measured"
     assert stats["total_used"] == 12345
     assert stats["window"] == 200_000
     # The estimate is still computed so the drift is reportable.
     assert stats["estimated"] > 0
-    assert stats["calibration"] == pytest.approx(12345 / stats["estimated"], rel=1e-3)
 
 
-def test_calibration_pairs_provider_usage_with_dispatched_request(fake_db):
+def test_offset_pairs_provider_usage_with_dispatched_request(fake_db):
     measured = cs.build_stats(
-        "s1", measured_total=120_000, request_input_estimate=60_000,
+        "s1", measured_total=70_000, request_input_estimate=60_000,
     )
-    assert measured["calibration"] == 2.0
-    assert measured["calibration_source"] == "request"
-    after_compaction = cs.build_stats("s1", estimated_total=30_000, calibration=2.0)
+    assert measured["offset"] == 10_000
+    after_compaction = cs.build_stats("s1", estimated_total=30_000, offset=10_000,
+                                      window=200_000)
     assert after_compaction["basis"] == "estimated"
-    assert after_compaction["total_used"] == 60_000
+    assert after_compaction["total_used"] == 40_000
 
 
-def test_refresh_reuses_only_same_model_request_calibration(monkeypatch, session):
+@pytest.mark.parametrize("measured", [339_000, 150_000])
+def test_a_count_of_summed_passes_is_not_a_measurement(fake_db, measured):
+    """A Grok reply that searched the web twice reported 339k for a 109k
+    prompt in a 256k window. A count over the window, or over twice its
+    request's estimate, is not the conversation's size."""
+    stats = cs.build_stats("s1", measured_total=measured, window=256_000,
+                           request_input_estimate=60_000)
+    assert stats["basis"] == "estimated"
+    assert stats["total_used"] == stats["estimated"]
+
+
+def test_refresh_reuses_only_same_model_offset(monkeypatch, session):
     conv, sent = session
     conv["runtime"] = type("Runtime", (), {"model": "m1"})()
     conv["_last_context_stats"] = {
-        "basis": "measured", "total_used": 120_000,
-        "calibration": 2.0, "calibration_source": "request",
+        "basis": "measured", "total_used": 120_000, "offset": 500,
         "context_usage_version": 2,
         "provider": "anthropic", "model": "m1", "window": 200_000,
     }
     srv.refresh_context_stats("ctx-test")
-    assert sent[-1]["total_used"] == 2 * sent[-1]["estimated"]
+    assert sent[-1]["total_used"] == sent[-1]["estimated"] + 500
     assert srv.session_context_stats("ctx-test")["total_used"] == sent[-1]["total_used"]
     conv["model_override"] = "m2"
     srv.refresh_context_stats("ctx-test")
     assert sent[-1]["total_used"] == sent[-1]["estimated"]
+
+
+def test_refresh_never_reuses_an_old_ratio(monkeypatch, session):
+    """A record saved with a 3.95 ratio from summed passes kept the ring
+    red after the conversation was small: a ratio is never reused, and a
+    last measurement the window cannot hold is not shown."""
+    conv, sent = session
+    conv["runtime"] = type("Runtime", (), {"model": "m1"})()
+    monkeypatch.setattr(srv, "_conv_context_window", lambda *_a, **_k: 256_000)
+    conv["_last_context_stats"] = {
+        "basis": "measured", "total_used": 339_000,
+        "calibration": 3.95, "calibration_source": "request",
+        "context_usage_version": 2, "chat": {"context_tokens": 339_000},
+        "provider": "anthropic", "model": "m1", "window": 256_000,
+    }
+    srv.refresh_context_stats("ctx-test")
+    assert sent[-1]["total_used"] == sent[-1]["estimated"]
+    assert sent[-1]["chat"]["context_tokens"] == 0
+    assert "calibration" not in sent[-1]
 
 
 def test_websocket_usage_carries_paired_request_estimate(monkeypatch, session):
@@ -116,13 +144,12 @@ def test_websocket_usage_carries_paired_request_estimate(monkeypatch, session):
     conv["runtime"] = type("Runtime", (), {"model": "m1"})()
     monkeypatch.setattr(srv, "_save_session", lambda _sid: None)
     _record_context_usage("ctx-test", "msg", conv, {
-        "input_tokens": 120_000, "output_tokens": 10,
+        "input_tokens": 70_000, "output_tokens": 10,
         "request_input_estimate": 60_000,
     })
     assert sent[-1]["basis"] == "measured"
-    assert sent[-1]["total_used"] == 120_000
-    assert sent[-1]["calibration"] == 2.0
-    assert sent[-1]["calibration_source"] == "request"
+    assert sent[-1]["total_used"] == 70_000
+    assert sent[-1]["offset"] == 10_000
 
 
 def test_explicit_window_overrides_the_registry_lookup(fake_db):
@@ -151,7 +178,7 @@ def test_panel_reuses_the_measurement_while_the_graph_holds(session):
     conv["_last_context_stats"] = {
         "context_usage_version": 2,
         "window": 200_000, "total_used": 77_777,
-        "basis": "measured", "estimated": 60_000, "calibration": 1.3,
+        "basis": "measured", "estimated": 60_000, "offset": 17_777,
     }
     stats = srv.session_context_stats("ctx-test")
     assert stats["basis"] == "measured"
@@ -503,6 +530,26 @@ def test_a_stored_128k_window_is_replaced_by_the_real_one(monkeypatch, registry,
     assert stats["breakdown"]["window"] == 500_000
 
 
+@pytest.mark.parametrize("record", [
+    {"total_used": 308_549, "basis": "estimated", "calibration": 3.9467},
+    {"total_used": 338_995, "basis": "measured"},
+])
+def test_a_reopened_record_from_summed_passes_is_worked_out_again(monkeypatch, session, record):
+    """A conversation reopened with a record that scaled by a ratio, or that
+    measured more than its window, does not show it: the ring is worked
+    out again from the graph."""
+    from openprogram.interfaces.server.ws_actions.session.load import _context_stats_for_load
+    conv, _sent = session
+    monkeypatch.setattr(srv, "_conv_context_window", lambda *_a, **_k: 256_000)
+    conv["_last_context_stats"] = {"context_usage_version": 2, "type": "context_stats",
+                                   "window": 256_000, "estimated": 78_179, **record}
+    conv["_last_context_breakdown"] = {"messages": 63_400, "input_used": 78_179}
+    conv["_chat_usage"] = {"context_tokens": 338_995}
+    stats, refresh = _context_stats_for_load(conv)
+    assert stats == {} and refresh
+    assert "_chat_usage" not in conv
+
+
 def test_a_running_turn_counts_its_growth_as_conversation():
     breakdown = {"system_prompt": 100, "messages": 200, "tools_schema": 100,
                  "input_used": 400, "messages_detail": {
@@ -666,15 +713,48 @@ def test_a_branch_switch_drops_the_left_branchs_turn_model(monkeypatch, tmp_path
         store.close()
 
 
-def test_the_breakdown_states_the_compaction_in_effect_on_the_branch():
-    branch = [
-        {"id": "summary_1", "role": "llm", "compaction": True, "covers_ids": ["a", "b", "c"],
-         "summarised_count": 25, "tokens_before": 354_455, "tokens_after": 29_975,
-         "compacted_at": 1_700_000_000.0},
-        {"id": "u9", "role": "user", "content": "next"},
-    ]
-    assert cs._last_compaction(branch) == {
-        "covered": 25, "tokens_before": 354_455, "tokens_after": 29_975, "at": 1_700_000_000.0}
-    # An old summary without the stamped facts still says how much it covers.
-    assert cs._last_compaction([{"id": "s", "compaction": True, "covers_ids": ["a", "b"]}]) == {"covered": 2}
-    assert cs._last_compaction(branch[1:]) is None
+
+
+def test_breakdown_asked_at_the_same_time_is_computed_once(monkeypatch):
+    import threading
+    import types
+
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.context.token_accounting import session_stats
+
+    monkeypatch.setattr(
+        session_db, "default_db",
+        lambda: types.SimpleNamespace(get_session=lambda _sid: {"head_id": "n9"}))
+    started = threading.Event()
+    release = threading.Event()
+    computed = []
+
+    def slow(session_id, head_id=None, *, context_window=None):
+        computed.append(head_id)
+        started.set()
+        release.wait(5)
+        return {"total_tokens": 7, "categories": [{"key": "messages"}]}
+
+    monkeypatch.setattr(session_stats, "_compute_breakdown", slow)
+    answers = []
+    first = threading.Thread(
+        target=lambda: answers.append(session_stats.compute_breakdown("s1", "n9")))
+    first.start()
+    assert started.wait(5)
+    # One names the branch and one asks for the conversation's current one.
+    second = threading.Thread(
+        target=lambda: answers.append(session_stats.compute_breakdown("s1")))
+    second.start()
+    second.join(0.2)
+    assert second.is_alive()
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert computed == ["n9"]
+    assert answers[0] == answers[1]
+    assert answers[0] is not answers[1]
+    assert answers[0]["categories"] is not answers[1]["categories"]
+    # Nothing is kept: the next caller computes again.
+    session_stats.compute_breakdown("s1", "n9")
+    assert len(computed) == 2

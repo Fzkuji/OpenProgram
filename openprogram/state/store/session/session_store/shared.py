@@ -230,6 +230,26 @@ def _node_caller(payload_or_call) -> Optional[str]:
     return payload_or_call.get("caller") or None
 
 
+def opening_call(inside: str = "/state/store/session/") -> str:
+    """The product call outside the store (the path ``inside``) that is reading a session in.
+
+    A session read into memory stays until it is dropped, so a memory sample
+    says who brought each one: ``file.py:function`` of the nearest caller
+    and of the outermost one on this thread.
+    """
+    import sys
+
+    frame, calls = sys._getframe(1), []
+    while frame is not None:
+        name = frame.f_code.co_filename
+        if "openprogram" in name and inside not in name:
+            calls.append(f"{name.rsplit('/', 1)[-1]}:{frame.f_code.co_name}")
+        frame = frame.f_back
+    if not calls:
+        return "?"
+    return calls[0] if len(calls) == 1 else f"{calls[0]} < {calls[-1]}"
+
+
 _DEFAULT_CACHE_CAP = 256
 
 

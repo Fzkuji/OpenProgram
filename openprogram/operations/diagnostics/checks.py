@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from openprogram.operations.self_update.versions.layout import immutable_runtime
-from openprogram.state.paths import get_state_dir
+from openprogram.state import paths as state_paths
 
 
 def _check_python_version() -> tuple[bool, str, str]:
@@ -119,7 +119,7 @@ def _check_mcp() -> tuple[bool, str, str]:
 
 
 def _check_disk_cache() -> tuple[bool, str, str]:
-    state = get_state_dir()
+    state = state_paths.get_state_dir()
     sizes: dict[str, int] = {}
     for sub in ("skills", "plugins", "cache"):
         p = state / sub
@@ -333,7 +333,7 @@ def run_checks() -> list[dict]:
     checks: list[Callable[[], tuple[bool, str, str]]] = list(CHECKS)
     from openprogram.host._platform import environment
 
-    platform_rows = environment.platform_environment_advisories(get_state_dir())
+    platform_rows = environment.platform_environment_advisories(state_paths.get_state_dir())
     for fn in checks:
         try:
             ok, label, detail = fn()

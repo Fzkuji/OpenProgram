@@ -75,9 +75,7 @@ export function RewindPicker() {
             }
           }}
         >
-          {points === null ? (
-            <p className="px-1.5 py-1 text-fs-sm text-text-muted">{text("Loading…", "加载中…")}</p>
-          ) : points.length === 0 ? (
+          {points === null ? null : points.length === 0 ? (
             <p className="px-1.5 py-1 text-fs-sm italic text-text-muted">{text("Nothing to rewind to yet", "还没有可回退的消息")}</p>
           ) : points.map((point, index) => (
             <div

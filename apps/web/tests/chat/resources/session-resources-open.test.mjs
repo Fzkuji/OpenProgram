@@ -45,6 +45,9 @@ await build({
               ? globalThis.retryRestoreResult(bridge, tabId)
               : Promise.resolve();
           }
+          export function surfaceOriginForChat() { return undefined; }
+          export function surfaceRefForChat() { return null; }
+          export function wakeShownWebViews() {}
         ` };
       }
       return { contents: `export const useSessionResources = () => globalThis.resourceBackend || { rows: [], currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true };` };
@@ -430,7 +433,7 @@ test("resource type group uses a title-adjacent section chevron and keyboard-col
       tabId: currentPage.id, branchId: "br-a", branchName: "Research",
       controlState: "idle", generation: 1, sequence: 1,
     }, {
-      id: "assoc-b", sessionId: "a", scopeSessionId: "a", kind: "vm", title: "Other page",
+      id: "assoc-b", sessionId: "a", scopeSessionId: "a", kind: "machine", title: "Other page",
       target: otherPage.url, status: "open", source: "usage", sourceId: otherPage.id, resourceId: "page-b",
       tabId: otherPage.id, branchId: "br-b", branchName: "Preview live check",
       controlState: "idle", generation: 1, sequence: 1,
@@ -442,7 +445,7 @@ test("resource type group uses a title-adjacent section chevron and keyboard-col
   try {
     await act(async () => root.render(createElement(SessionResourcesPanel)));
     const currentBlock = host.querySelector('[data-resource-group="web"]');
-    const otherBlock = host.querySelector('[data-resource-group="vm"]');
+    const otherBlock = host.querySelector('[data-resource-group="machine"]');
     const current = currentBlock?.querySelector("[aria-expanded]");
     const other = otherBlock?.querySelector("[aria-expanded]");
     assert.equal(currentBlock.getAttribute("data-current"), null);
@@ -600,8 +603,8 @@ test("labels follow App language without remount; user titles stay verbatim", as
       tabId: page.id, branchId: "br-a", branchName: "研究分支", agentName: "main",
       controlState: "idle", generation: 1, sequence: 1,
     }, {
-      id: "assoc-vm", sessionId: "a", scopeSessionId: "a", kind: "vm", title: "Dev box",
-      target: "vm://dev", status: "running", source: "runtime", resourceId: "vm-1",
+      id: "assoc-lab", sessionId: "a", scopeSessionId: "a", kind: "machine", title: "Lab VM",
+      target: "http://192.168.64.2:5000", status: "in_use", source: "usage", resourceId: "lab-1",
       branchId: "br-a", branchName: "研究分支", agentName: "Research Agent",
       controlState: "idle", generation: 1, sequence: 1,
     }],
@@ -616,21 +619,21 @@ test("labels follow App language without remount; user titles stay verbatim", as
     assert.match(snapshot(), /Open/);
     assert.match(snapshot(), /Main agent/);
     assert.equal(
-      host.querySelector('[data-resource-kind="vm"] small').textContent,
-      "VM · Running · Research Agent",
+      host.querySelector('[data-resource-kind="machine"] small').textContent,
+      "Device · In use · Research Agent",
     );
     assert.ok(previewInConversationButton(host, "Google"));
     assert.match(snapshot(), /Google/);
     assert.doesNotMatch(snapshot(), /研究分支/);
     assert.match(snapshot(), /Research Agent/);
-    assert.doesNotMatch(snapshot(), /当前|网页|已打开|主 Agent|虚拟机/);
+    assert.doesNotMatch(snapshot(), /当前|网页|已打开|主 Agent|设备/);
 
     await act(async () => { setLocale("zh"); });
     assert.doesNotMatch(snapshot(), /当前/);
     assert.match(snapshot(), /网页/);
     assert.match(snapshot(), /已打开/);
     assert.match(snapshot(), /主 Agent/);
-    assert.match(snapshot(), /虚拟机/);
+    assert.match(snapshot(), /设备 · 使用中/);
     assert.equal(
       [...host.querySelectorAll("button")].some(b =>
         b.getAttribute("aria-label") === "在会话中预览: Google"),
@@ -647,8 +650,8 @@ test("labels follow App language without remount; user titles stay verbatim", as
     assert.match(snapshot(), /Open/);
     assert.match(snapshot(), /Main agent/);
     assert.equal(
-      host.querySelector('[data-resource-kind="vm"] small').textContent,
-      "VM · Running · Research Agent",
+      host.querySelector('[data-resource-kind="machine"] small').textContent,
+      "Device · In use · Research Agent",
     );
     assert.ok(previewInConversationButton(host, "Google"));
     assert.match(snapshot(), /Google/);
@@ -864,13 +867,13 @@ test("type groups retain sidebar actions and collapse state without using page o
   globalThis.resourceBackend = { rows: [
     { id: "type-web", sessionId: session.sessionId, scopeSessionId: session.sessionId, kind: "web", title: "Baidu title", target: page.url,
       status: "open", source: "browser", sourceId: page.id, tabId: page.id, branchName: "Open Baidu", branchId: "br-a" },
-    { id: "type-vm", sessionId: session.sessionId, kind: "vm", title: "Dev machine", target: "vm://dev",
-      status: "running", source: "usage", sourceId: "vm", branchName: "Open Baidu", branchId: "br-a" },
+    { id: "type-lab", sessionId: session.sessionId, kind: "machine", title: "Lab VM", target: "http://192.168.64.2:5000",
+      status: "in_use", source: "usage", sourceId: "lab", branchName: "Open Baidu", branchId: "br-a" },
   ], currentBranchId: "br-a", loaded: true };
   let { host, root } = mountPanel();
   try {
     await act(async () => root.render(createElement(SessionResourcesPanel)));
-    assert.deepEqual([...host.querySelectorAll('[data-resource-group]')].map(el => el.dataset.resourceGroup), ['web', 'vm']);
+    assert.deepEqual([...host.querySelectorAll('[data-resource-group]')].map(el => el.dataset.resourceGroup), ['web', 'machine']);
     // Groups with nothing in them are not listed, header included.
     assert.doesNotMatch(host.textContent, /Terminal|Application/);
     assert.equal(host.querySelector('[data-resource-group="web"] [aria-expanded]').textContent, 'Webpage');
@@ -880,7 +883,10 @@ test("type groups retain sidebar actions and collapse state without using page o
     assert.ok(host.querySelector('[aria-label="Close webpage: Baidu title"]'));
     await act(async () => previewInConversationButton(host, 'Baidu title').click());
     assert.equal(useWebTabPip.getState().tabId, page.id);
-    await act(async () => host.querySelector('[data-resource-kind="vm"] button').click());
+    // A machine row is a row like the others: its name, and a click shows its card.
+    assert.equal(host.querySelector('[data-resource-kind="machine"] button').getAttribute('title'), 'http://192.168.64.2:5000');
+    assert.match(host.querySelector('[data-resource-kind="machine"]').textContent, /Lab VM/);
+    await act(async () => host.querySelector('[data-resource-kind="machine"] button').click());
     assert.equal(useWebTabPip.getState().tabId, null);
     assert.equal(getPreviewPreference(session.sessionId, 'br-a').hidden, true);
     await act(async () => host.querySelector('[data-resource-group="web"] [aria-expanded]').dispatchEvent(keydown('Enter')));
@@ -889,7 +895,7 @@ test("type groups retain sidebar actions and collapse state without using page o
     ({ host, root } = mountPanel());
     await act(async () => root.render(createElement(SessionResourcesPanel)));
     assert.equal(host.querySelector('[data-resource-group="web"] [aria-expanded]').getAttribute('aria-expanded'), 'false');
-    assert.equal(host.querySelector('[data-resource-group="vm"] [aria-expanded]').getAttribute('aria-expanded'), 'true');
+    assert.equal(host.querySelector('[data-resource-group="machine"] [aria-expanded]').getAttribute('aria-expanded'), 'true');
   } finally {
     await act(async () => root.unmount()); host.remove();
     localStorage.removeItem('openprogram.resource-groups:type-group');

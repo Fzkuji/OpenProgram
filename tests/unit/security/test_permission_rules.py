@@ -986,12 +986,11 @@ def test_dispatcher_installs_gate_on_every_turn(tmp_path, monkeypatch):
                       history_override=[],
                       permission_rules=PermissionRules(deny=["bash"]))
     tools, probes = _tools_handed_to_agent_loop(req, ["bash", "read"])
-    # The screen tool stays listed (refused) when no Page is open, so the
-    # tools array never changes; the usable tools are the resolved ones.
+    # The screen tool joins the resolved ones while a target is set up on this host.
     usable = {name for name, tool in tools.items()
               if getattr(tool, "_unavailable_reason", None) is None}
-    assert usable == {"bash", "read"}
-    assert set(tools) - usable <= {"computer_use_agent"}
+    assert usable - {"computer_use"} == {"bash", "read"}
+    assert set(tools) == usable
 
     # An explicit deny still applies to an owner-delegated bypass turn.
     result = asyncio.run(tools["bash"].execute(
@@ -1073,7 +1072,7 @@ def test_legacy_workspace_mismatch_does_not_override_normal_permissions(owner, m
     from openprogram.runtime.permissions import session_facts
     monkeypatch.setattr(session_facts.facts(), "files_await_decision", lambda _sid: True, raising=False)
     for name, args in (("edit", {"file_path": "/tmp/a.py"}), ("bash", {"command": "git status"}),
-                       ("computer_use_agent", {"target": "browser"}), ("send_file", {"path": "/tmp/a.py"})):
+                       ("computer_use", {"target": "browser"}), ("send_file", {"path": "/tmp/a.py"})):
         tool, _ = _make_tool(name)
         assert permission_decision(tool, _owner_request("bypass"), args).outcome == "allow"
     tool, _ = _make_tool("edit")
@@ -1095,15 +1094,20 @@ def test_a_turn_no_one_can_answer_is_refused_and_never_asks(owner):
 
 
 def test_a_program_gets_its_pages_under_unrestricted(owner, monkeypatch):
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
     from openprogram.runtime.permissions import session_facts
     from openprogram.runtime.permissions.policy import permission_decision, surface_grant_applies
-    tool, _ran = _make_tool("computer_use_agent")
-    list_pages = {"target": "browser", "action": "tabs"}
+    from tests.support import screen_targets
+    screen_targets.install(monkeypatch, screen_targets.App(), screen_targets.Browser())
+    tool, _ran = _make_tool("computer_use")
+    # The probe the turn makes before it captures its Pages, from whichever target holds them.
+    list_pages = screen.page_surface_call()
+    assert list_pages is not None
     monkeypatch.setattr(type(session_facts.facts()), "browser_pages_available", lambda self, context: True)
 
     decision = permission_decision(tool, _owner_request("bypass"), list_pages)
     assert (decision.outcome, decision.code) == ("allow", "MODE_UNRESTRICTED")
-    assert surface_grant_applies("computer_use_agent", _owner_request("bypass"), list_pages)
+    assert surface_grant_applies("computer_use", _owner_request("bypass"), list_pages)
 
 
 def test_a_malformed_call_goes_back_to_the_model_without_a_card(owner, monkeypatch):

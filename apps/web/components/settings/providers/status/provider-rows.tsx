@@ -8,7 +8,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 
 import { ProviderIcon } from "../icons/provider-icon";
 import { companyIcon } from "./provider-card";
-import { bestHealth, companyGroups, compactQuota, dimmed, fmtCount, healthLabel, planLabel, sparkValues, spendView, wayShort, wayTitle } from "./model";
+import { bestHealth, chipTone, companyGroups, compactQuota, dimmed, fmtCount, healthLabel, planLabel, sparkValues, spendView, wayShort, wayTitle } from "./model";
 import { Bar, cx, FixButton, HealthChip, Sparkline } from "./parts";
 import styles from "./status.module.css";
 
@@ -54,7 +54,7 @@ export function ProviderRows({
           )}
         </td>
         <td>
-          {p.health.detail ? <HealthChip health={p.health} /> : (
+          {chipTone(p.health.state) === "ok" ? null : p.health.detail ? <HealthChip health={p.health} /> : (
             <HoverTip label={healthLabel(p.health, text)}><span className="block min-w-0"><HealthChip health={p.health} /></span></HoverTip>
           )}
         </td>
@@ -113,7 +113,7 @@ export function ProviderRows({
                   <span className="min-w-0 truncate">{group.label}</span>
                 </span>
               </td>
-              <td><HealthChip health={bestHealth(group.ways.map((p) => p.health))} /></td>
+              <td>{chipTone(bestHealth(group.ways.map((p) => p.health)).state) === "ok" ? null : <HealthChip health={bestHealth(group.ways.map((p) => p.health))} />}</td>
               {/* One empty cell per column, so the narrow pane hides the same ones. */}
               <td /><td /><td /><td className={styles.wide} /><td className={styles.wide} /><td />
             </tr>,

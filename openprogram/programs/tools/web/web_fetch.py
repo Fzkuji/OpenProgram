@@ -29,9 +29,7 @@ import re
 from html.parser import HTMLParser
 from typing import Any
 
-import httpx
 
-from openprogram.host.security.safe_http import safe_client
 from openprogram.host.security.url_policy import URLPolicyError, normalize_origin
 from openprogram.programs.tools.web._owner_fetch import owner_open
 from openprogram.programs._authoring.helpers import read_bool_param, read_int_param, read_string_param
@@ -227,6 +225,10 @@ def _fetch_with_cf_fallback(
     — being transparent is the right move when the spoof doesn't buy us
     anything anyway.
     """
+    # Imported at the first request: the HTTP client takes 0.06 s to import,
+    # and this module is loaded with the Programs by every command.
+    from openprogram.host.security.safe_http import safe_client
+
     client_context = safe_client("tool.web_fetch.owner") if owner_open() else safe_client("tool.web_fetch")
     with client_context as client:
         for ua in (CHROME_UA, HONEST_UA):
@@ -311,6 +313,8 @@ def execute(
     fmt_norm = (fmt or "markdown").lower()
     if fmt_norm not in ("markdown", "text", "html"):
         return f"Error: `format` must be one of markdown/text/html, got {fmt!r}."
+
+    import httpx
 
     try:
         final_url, content_type, body, size_truncated = _fetch_with_cf_fallback(

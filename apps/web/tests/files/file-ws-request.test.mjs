@@ -67,6 +67,13 @@ const {
   wsRequest,
 } = await import("../../lib/net/ws/ws-request.ts");
 const { fileResponseMatchesOwner } = await import("../../lib/files/files-shared.ts");
+const { dispatchChanged, dispatchReconnected } = await import("../../lib/net/ws/changes.ts");
+
+/** The Worker says the receipt of `key` changed. */
+const receiptChanged = async (key) => {
+  dispatchChanged("operation.receipts", [key]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+};
 
 after(() => resetWsMutationReconciliation());
 
@@ -296,7 +303,7 @@ test("aborting a request retains its key for a later durable replay", async () =
   assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
 });
 
-test("reconciliation polls a retained key without replaying write content", async () => {
+test("reconciliation asks for a retained key without replaying write content", async () => {
   const payload = { project_id: "project-reconcile", path: "pending.txt", content: "v1" };
   const key = idempotencyKeyFor("project_file_write", payload);
   const socket = new FakeSocket();
@@ -318,7 +325,7 @@ test("reconciliation polls a retained key without replaying write content", asyn
       operation_id: "op-reconcile",
     },
   }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   const terminalFrame = socket.sent.at(-1);
   assert.equal(terminalFrame.action, "project_file_operation_status");
   socket.emit("message", JSON.stringify({
@@ -358,7 +365,7 @@ test("status query errors retain the key until an identified terminal receipt", 
     },
   }));
   assert.equal(idempotencyKeyFor("project_file_write", payload), key);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   frame = socket.sent.at(-1);
   socket.emit("message", JSON.stringify({
     type: "project_file_operation_status_result",
@@ -396,7 +403,7 @@ test("reconciliation rejects a terminal receipt for another operation", async ()
       operation_id: "op-expected",
     },
   }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   const secondFrame = socket.sent.at(-1);
   socket.emit("message", JSON.stringify({
     type: "project_file_operation_status_result",
@@ -412,7 +419,7 @@ test("reconciliation rejects a terminal receipt for another operation", async ()
   }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(idempotencyKeyFor("project_file_write", payload), key);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   const thirdFrame = socket.sent.at(-1);
   socket.emit("message", JSON.stringify({
     type: "project_file_operation_status_result",
@@ -523,7 +530,7 @@ test("turn reconciliation uses its own receipt action and exact operation", asyn
       operation_id: "turn-op-1",
     },
   }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   const secondFrame = socket.sent.at(-1);
   socket.emit("message", JSON.stringify({
     type: "turn_operation_status_result",
@@ -563,7 +570,7 @@ test("turn unknown receipts remain retained until an identified terminal", async
       error_code: "RECEIPT_UNAVAILABLE",
     },
   }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await receiptChanged(key);
   assert.equal(idempotencyKeyFor("reapply_turn:session-turn-unknown", payload), key);
   const secondFrame = socket.sent.at(-1);
   socket.emit("message", JSON.stringify({
@@ -650,4 +657,55 @@ test("timeouts and wsListen unsubscribe release the shared listener", async () =
   socket.emit("message", JSON.stringify({ type: "progress", data: { n: 2 } }));
   assert.deepEqual(heard, [1]);
   assert.equal(socket.listeners.get("message").size, 0);
+});
+
+test("reconciliation asks again only when told: the key's receipt or a reconnect", async () => {
+  const payload = { project_id: "project-told", path: "pending.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  const answer = (status) => {
+    const frame = socket.sent.at(-1);
+    socket.emit("message", JSON.stringify({
+      type: "project_file_operation_status_result",
+      data: {
+        request_id: frame.request_id, action: "project_file_operation_status",
+        project_id: payload.project_id, operation_action: "project_file_write",
+        idempotency_key: key, status, operation_id: "op-told",
+      },
+    }));
+  };
+  reconcileWsMutation(key);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(socket.sent.length, 1, "asked once at once");
+  answer("in_progress");
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(socket.sent.length, 1, "nothing asks on a timer");
+  dispatchChanged("operation.receipts", ["another-key"]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(socket.sent.length, 1, "another key's receipt is not this one");
+  dispatchReconnected();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(socket.sent.length, 2, "a reconnect asks once");
+  answer("in_progress");
+  await receiptChanged(key);
+  assert.equal(socket.sent.length, 3, "the key's receipt asks once");
+  answer("ready");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("an in-progress write is sent again when its receipt changes, not on a timer", async () => {
+  const payload = { project_id: "project-held", path: "held.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  let sends = 0;
+  const request = wsMutationRequest(key, async () => {
+    sends += 1;
+    return sends === 1 ? { status: "in_progress", operation_id: "op-held" } : { status: "ready", operation_id: "op-held" };
+  }, { maxAttempts: 1, deadlineMs: 10_000, reconcile: false });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(sends, 1, "the held write waits to be told");
+  dispatchChanged("operation.receipts", [key]);
+  assert.equal((await request)?.status, "ready");
+  assert.equal(sends, 2);
 });

@@ -709,6 +709,23 @@ main.content:has(> article.doc) { padding-left: var(--s5); padding-right: var(--
 .doc svg .head-no { fill: var(--no); }
 .doc svg .tile { fill: var(--tint); }
 .doc svg .gate { fill: var(--bg); stroke: var(--acc); stroke-width: 2; }
+/* Four tones for a figure whose shapes are different kinds of thing
+   (a company, its ways, a key, a sign-in); the plain one is a table drawn in it. */
+.doc svg .tone-gray { fill: #f1efe8; stroke: #5f5e5a; stroke-width: .5; }
+.doc svg .tone-purple { fill: #eeedfe; stroke: #534ab7; stroke-width: .5; }
+.doc svg .tone-teal { fill: #e1f5ee; stroke: #0f6e56; stroke-width: .5; }
+.doc svg .tone-coral { fill: #faece7; stroke: #993c1d; stroke-width: .5; }
+.doc svg .tone-plain { fill: var(--bg); stroke: var(--line); stroke-width: .5; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .doc svg .tone-gray { fill: #2c2c2a; stroke: #888780; }
+  :root:not([data-theme="light"]) .doc svg .tone-purple { fill: #26215c; stroke: #7f77dd; }
+  :root:not([data-theme="light"]) .doc svg .tone-teal { fill: #04342c; stroke: #1d9e75; }
+  :root:not([data-theme="light"]) .doc svg .tone-coral { fill: #4a1b0c; stroke: #d85a30; }
+}
+:root[data-theme="dark"] .doc svg .tone-gray { fill: #2c2c2a; stroke: #888780; }
+:root[data-theme="dark"] .doc svg .tone-purple { fill: #26215c; stroke: #7f77dd; }
+:root[data-theme="dark"] .doc svg .tone-teal { fill: #04342c; stroke: #1d9e75; }
+:root[data-theme="dark"] .doc svg .tone-coral { fill: #4a1b0c; stroke: #d85a30; }
 /* HTML version of a sequence figure, for widths the SVG would have to shrink at. */
 .doc .flow { list-style: none; margin: 0; padding: 0; max-width: none; }
 .doc .flow strong { font-size: var(--fs-body); font-weight: var(--w-strong); }

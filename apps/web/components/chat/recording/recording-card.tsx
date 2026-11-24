@@ -8,8 +8,9 @@
  * message and expands into the step list with thumbnails. The block's
  * text is for the model and is never shown.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { isPermanent, retryDelay } from "@/lib/abilities/kept-read";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useTranslation } from "@/lib/i18n";
@@ -32,6 +33,44 @@ interface StepRow {
   type: string;
   text: string;
   image: string | null;
+}
+
+interface StepsReply { rows?: unknown }
+
+/** A recording's steps, read once per recording and kept: "gone" when the
+ *  worker no longer has it, "refused" for any other 4xx (nothing is drawn).
+ *  A read that fails otherwise is forgotten, so the next look asks again. */
+type Steps = StepRow[] | "gone" | "refused";
+const readSteps = new Map<string, Steps>();
+const pendingSteps = new Map<string, Promise<Steps | null>>();
+
+function isStepRow(row: unknown): row is StepRow {
+  if (!row || typeof row !== "object") return false;
+  const { t, type, text, image } = row as Record<string, unknown>;
+  return typeof t === "number" && typeof type === "string" && typeof text === "string"
+    && (image === null || typeof image === "string");
+}
+
+/** Start reading a recording's steps (on hover, before the click). */
+export function readRecordingSteps(id: string): Promise<Steps | null> {
+  const held = readSteps.get(id);
+  if (held) return Promise.resolve(held);
+  let pending = pendingSteps.get(id);
+  if (!pending) {
+    pending = fetch(`/api/recordings/${encodeURIComponent(id)}/steps`)
+      .then(async (response): Promise<Steps | null> => {
+        if (response.status === 404) return "gone";
+        if (isPermanent({ status: response.status })) return "refused";
+        if (!response.ok) throw new Error(String(response.status));
+        const body = await response.json() as StepsReply;
+        return Array.isArray(body.rows) ? body.rows.filter(isStepRow) : [];
+      })
+      .then((steps) => { if (steps) readSteps.set(id, steps); return steps; })
+      .catch((error: unknown) => { console.warn("recording steps read failed", { id, error }); return null; })
+      .finally(() => pendingSteps.delete(id));
+    pendingSteps.set(id, pending);
+  }
+  return pending;
 }
 
 function useMeta() {
@@ -81,26 +120,38 @@ export function RecordingCard({ info }: { info: RecordingInfo }) {
   const { text } = useTranslation();
   const meta = useMeta();
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<StepRow[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [steps, setSteps] = useState<Steps | null>(() => readSteps.get(info.id) ?? null);
   const [viewing, setViewing] = useState<string | null>(null);
 
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && rows === null) {
-      fetch(`/api/recordings/${encodeURIComponent(info.id)}/steps`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((body) => setRows(Array.isArray(body.rows) ? body.rows : []))
-        .catch(() => setFailed(true));
-    }
-  };
+  // While open, a read that failed is asked again, quietly, with backoff.
+  useEffect(() => {
+    if (!open || steps !== null) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = (attempt: number) => {
+      void readRecordingSteps(info.id).then((answer) => {
+        if (!live) return;
+        if (answer) setSteps(answer);
+        else timer = setTimeout(() => read(attempt + 1), retryDelay(attempt));
+      });
+    };
+    read(0);
+    return () => { live = false; if (timer) clearTimeout(timer); };
+  }, [open, steps, info.id]);
+
+  const rows = Array.isArray(steps) ? steps : null;
 
   const image = (name: string) => `/api/recordings/${encodeURIComponent(info.id)}/images/${encodeURIComponent(name)}`;
 
   return (
     <div className={styles.card} data-recording-id={info.id}>
-      <button type="button" className={styles.cardHead} aria-expanded={open} onClick={toggle}>
+      <button
+        type="button"
+        className={styles.cardHead}
+        aria-expanded={open}
+        onPointerEnter={() => { if (steps === null) void readRecordingSteps(info.id); }}
+        onClick={() => setOpen(!open)}
+      >
         <span className={styles.glyph}><RecordingGlyph /></span>
         <span className="min-w-0 flex-1">
           <span className={styles.cardTitle}>{text("Recorded demonstration", "录制的演示")}</span>
@@ -108,13 +159,10 @@ export function RecordingCard({ info }: { info: RecordingInfo }) {
         </span>
         <ChevronRight className={`${styles.chevron} ${open ? styles.chevronOpen : ""} size-4`} aria-hidden="true" />
       </button>
-      {open && failed ? (
+      {open && steps === "gone" ? (
         <div className={styles.note}>
           {text("The recording is no longer on this computer.", "这台电脑上已经没有这个录制了。")}
         </div>
-      ) : null}
-      {open && !failed && rows === null ? (
-        <div className={styles.note}>{text("Loading…", "加载中…")}</div>
       ) : null}
       {open && rows ? (
         <ol className={styles.steps}>

@@ -591,9 +591,13 @@ def test_registered_page_inventory_keeps_the_screen_tool_when_preview_is_unavail
 ):
     from types import SimpleNamespace
 
-    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_browser_tool
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
     from openprogram.interfaces.server.ws_actions import webtab
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
+    # The built-in browser is a target; which one is the providers' business.
+    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
     )
@@ -606,16 +610,16 @@ def test_registered_page_inventory_keeps_the_screen_tool_when_preview_is_unavail
     }
     tools = [SimpleNamespace(name="web_search")]
 
-    configured, enabled = _configure_browser_tool(tools, context)
+    configured, enabled = _configure_screen_tool(tools, context)
     names = [tool.name for tool in configured]
 
     assert enabled is True
-    assert "computer_use_agent" in names
+    assert "computer_use" in names
     assert "web_search" in names
     prompt = browser_prompt.render_for_model(
         context, browser_enabled=enabled,
     )
-    assert 'computer_use_agent(target="browser"): tabs lists the ones this conversation opened' in prompt
+    assert 'computer_use(type="browser"): list_tabs lists the ones this conversation opened' in prompt
     assert "navigate(url) moves the current tab" in prompt
 
 
@@ -625,9 +629,13 @@ def test_explicitly_disabled_surface_does_not_expose_registered_page_inventory(
 ):
     from types import SimpleNamespace
 
-    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_browser_tool
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
     from openprogram.interfaces.server.ws_actions import webtab
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
+    # The built-in browser is a target; which one is the providers' business.
+    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
     )
@@ -639,25 +647,30 @@ def test_explicitly_disabled_surface_does_not_expose_registered_page_inventory(
         }],
     }
 
-    configured, enabled = _configure_browser_tool(
+    configured, enabled = _configure_screen_tool(
         [SimpleNamespace(name="web_search")],
         context,
     )
 
+    # The screen tool follows its targets; the Pages it may not reach stay out of the turn.
     assert enabled is False
-    assert [tool.name for tool in configured] == ["web_search"]
+    assert [tool.name for tool in configured] == ["web_search", "computer_use"]
 
 
 
 def test_registered_page_inventory_does_not_override_tools_off(monkeypatch):
-    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_browser_tool
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
     from openprogram.interfaces.server.ws_actions import webtab
+    from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
+    # The built-in browser is a target; which one is the providers' business.
+    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
     )
 
-    configured, enabled = _configure_browser_tool([], None)
+    configured, enabled = _configure_screen_tool([], None)
 
     assert configured == []
     assert enabled is False

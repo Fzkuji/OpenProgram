@@ -16,12 +16,13 @@
 </table>
 
 <h2 id="shared-helper">Shared helper</h2>
-<p><code translate="no">optimisticAction({apply, settled, revert, onTimeoutMessage})</code> in <code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code>.</p>
+<p><code translate="no">optimisticAction({apply, settled, subscribe, revert, onTimeoutMessage})</code> in <code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Argument</th><th scope="col">Role</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">apply</code></th><td>Sets the 0ms state</td></tr>
 <tr><th scope="row"><code translate="no">settled()</code></th><td>True once real data supersedes it: message gone from the store, tree repopulated, <code translate="no">branch.active</code> flipped</td></tr>
+<tr><th scope="row"><code translate="no">subscribe</code></th><td>The store <code translate="no">settled()</code> reads; it is asked on each change of that store, never on a timer. One 10 s deadline is the only timer</td></tr>
 <tr><th scope="row"><code translate="no">revert</code></th><td>Runs with the toast on timeout while <code translate="no">settled()</code> is false</td></tr>
 </tbody>
 </table>

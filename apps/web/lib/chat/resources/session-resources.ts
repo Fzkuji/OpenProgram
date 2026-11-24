@@ -104,8 +104,11 @@ const PREF_STORAGE = "openprogram.resource-preview";
  *  than a web Page. Terminal targets match the terminal rows' ids. */
 export const NATIVE_WINDOW_TARGET = "native:";
 export const TERMINAL_TARGET = "terminal:";
+/** A built-in application instance the Agent used, by instance id. */
+export const APPLICATION_TARGET = "application:";
 const isAppTarget = (target: string | null | undefined) =>
-  !!target && (target.startsWith(NATIVE_WINDOW_TARGET) || target.startsWith(TERMINAL_TARGET));
+  !!target && (target.startsWith(NATIVE_WINDOW_TARGET) || target.startsWith(TERMINAL_TARGET)
+    || target.startsWith(APPLICATION_TARGET));
 
 const defaultPref = (): PreviewPreference => ({
   targetId: null, mode: "follow", hidden: false, expanded: false,
@@ -386,7 +389,10 @@ export function resourceIsUnavailable(row: SessionResource): boolean {
   return row.status === "closed" || row.status === "exited";
 }
 
-const RESOURCE_KIND_ORDER = ["web", "vm", "desktop", "terminal", "application", "docker", "remote", "other"];
+/** Panel order. A row's kind comes from what reported it: ``web`` for a Page,
+ *  ``desktop`` for what a call operates on this computer, ``machine`` for
+ *  what it operates on another machine. */
+const RESOURCE_KIND_ORDER = ["web", "desktop", "machine", "terminal", "application", "other"];
 
 /** The backend projects one Page once per branch that used it; the list shows
  *  the Page once, preferring the viewed branch's row, then the newest. */
@@ -719,6 +725,19 @@ export function recoverSessionResources(
   return request;
 }
 
+/** The conversations on screen: the ones whose resources are kept fresh.
+ *  A conversation that is not shown is read when it is opened, never ahead
+ *  of time: each read opens the whole conversation on the server. */
+let shownResourceSessions: ReadonlySet<string> = new Set();
+
+export function setShownResourceSessions(sessionIds: readonly string[]): void {
+  shownResourceSessions = new Set(sessionIds);
+}
+
+export function resourcesShownFor(sessionId: string): boolean {
+  return shownResourceSessions.has(sessionId);
+}
+
 async function readSessionResources(
   sessionId: string,
   get?: (url: string, init?: RequestInit) => Promise<unknown>,
@@ -741,6 +760,35 @@ async function readSessionResources(
     completeResourceSnapshot(sessionId, { ok: false });
     throw error;
   }
+}
+
+/** The web pages a conversation's Resources list shows, one per page, in
+ *  its order: what an `@` in that conversation can name. */
+export function resourcePages(
+  sessionId: string,
+  tabs: readonly CenterTab[],
+): { id: string; title: string; url: string; faviconUrl?: string }[] {
+  const view = sessionResourceView(sessionId);
+  const rows = sessionResourceRows(tabs, view.rows, sessionId);
+  const web = groupSessionResources(rows, view.currentBranchId).find(group => group.key === "web")?.rows ?? [];
+  return web.map(row => {
+    const tab = row.tabId ? tabs.find(item => item.id === row.tabId) : undefined;
+    return {
+      id: row.tabId || row.id,
+      title: resourceDisplayTitle(row, tab),
+      url: (tab?.kind === "web" ? tab.url : "") || row.target,
+      faviconUrl: tab?.kind === "web" ? tab.faviconUrl : undefined,
+    };
+  });
+}
+
+/** The same pages, read from the worker first when this window has not
+ *  loaded the conversation's resources yet. */
+export async function loadResourcePages(sessionId: string, tabs: () => readonly CenterTab[]) {
+  if (!useBrowserResourceStore.getState().snapshotComplete[sessionId]) {
+    await recoverSessionResources(sessionId).catch(() => undefined);
+  }
+  return resourcePages(sessionId, tabs());
 }
 
 export function beginResourceSnapshotClock(): number {
@@ -837,7 +885,7 @@ export function followCurrentBranch(sessionId: string, branchId: string | null):
   });
 }
 
-/** The Agent operated a native app window or a terminal: the preview
+/** The Agent operated a native app window, a terminal or an application: the preview
  *  follows it, the way it follows Pages, unless a pin holds it elsewhere. */
 export function followAppTarget(sessionId: string, target: string): void {
   const branchId = viewedBranchFor(sessionId);
@@ -855,7 +903,7 @@ export function followNativeWindow(sessionId: string, windowId: number): void {
   followAppTarget(sessionId, `${NATIVE_WINDOW_TARGET}${windowId}`);
 }
 
-/** The app window or terminal the preview shows for this branch, if any. */
+/** The app window, terminal or application the preview shows for this branch, if any. */
 export function appPreviewTarget(sessionId: string, branchId: string | null): string | null {
   const pref = getPreviewPreference(sessionId, branchId);
   if (pref.hidden) return null;

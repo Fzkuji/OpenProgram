@@ -13,14 +13,11 @@ import { wsRequest } from "@/lib/net/ws/ws-request";
  * Every change to a project or to a conversation's project is broadcast as
  * `projects_changed`, which fires `project-changed`: that drops every kept
  * answer, so a reader asking after it never gets a list from before the
- * change. A reconnect drops them too (a broadcast may have been missed),
- * and a kept answer expires after ANSWER_TTL_MS as a backstop.
+ * change. A reconnect drops them too (a broadcast may have been missed).
+ * Until then a kept answer stays, however old.
  */
-export const ANSWER_TTL_MS = 30_000;
-
 interface Entry {
   request: Promise<unknown>;
-  settledAt: number | null;
 }
 
 const answers = new Map<string, Entry>();
@@ -38,13 +35,10 @@ if (typeof window !== "undefined") {
 
 export function listSessionProjects<T extends { session_id?: string | null }>(
   sessionId: string | null | undefined,
-  now: () => number = () => Date.now(),
 ): Promise<T | null> {
   const key = sessionId || "";
   const kept = answers.get(key);
-  if (kept && (kept.settledAt === null || now() - kept.settledAt < ANSWER_TTL_MS)) {
-    return kept.request as Promise<T | null>;
-  }
+  if (kept) return kept.request as Promise<T | null>;
   const request = wsRequest<T>(
     "list_projects",
     { session_id: key },
@@ -54,7 +48,7 @@ export function listSessionProjects<T extends { session_id?: string | null }>(
     // echoes the request's session id (null for none).
     (data) => (data.session_id ?? null) === (key || null),
   );
-  const entry: Entry = { request, settledAt: null };
+  const entry: Entry = { request };
   answers.set(key, entry);
   request.then(
     (data) => {
@@ -63,7 +57,6 @@ export function listSessionProjects<T extends { session_id?: string | null }>(
       // reader asks again.
       const failed = !data || (data as { status?: string }).status === "error";
       if (failed) answers.delete(key);
-      else entry.settledAt = now();
     },
     () => {
       if (answers.get(key) === entry) answers.delete(key);

@@ -181,3 +181,27 @@ test("WebSocket dispatch boundary consumes current and legacy error frames", () 
   );
   assert.doesNotMatch(JSON.stringify({ toasts, logs }), /secret-/);
 });
+
+test("a read the page sent by itself fails quietly: logged, no toast", () => {
+  const { window } = parseHTML("<!doctype html><html><body></body></html>");
+  globalThis.window = window;
+  globalThis.CustomEvent = window.CustomEvent;
+  const toasts = [];
+  const warnings = [];
+  window.addEventListener("op:toast", (event) => toasts.push(event.detail));
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try {
+    for (const action of ["load_session", "list_branches", "get_run_state", "execution.replay", "mark_session_read"]) {
+      assert.equal(consumeCommandErrorFrame({
+        type: "operation_error",
+        data: { action, code: "handler_error", message: "secret-read" },
+      }, (en) => en), true);
+    }
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(toasts, []);
+  assert.equal(warnings.length, 5);
+  assert.doesNotMatch(JSON.stringify(warnings), /secret-/);
+});

@@ -116,6 +116,25 @@ export async function loadSubAgentTranscript(
   agentKey: string,
   source: { jobId?: string; headId?: string },
 ): Promise<string | null> {
+  return (await readSubAgentTranscript(sessionId, agentKey, source)).tip;
+}
+
+/** A reply refusing the request itself: asking again gets the same. Any
+ *  other error the reply names is the server failing to read the branch
+ *  this time (ws_actions/sub_agent.py), which a later read can get past. */
+export function subAgentReadRefused(error: string): boolean {
+  return /\brequired\b/.test(error);
+}
+
+/** The same read, saying how it went: an empty branch is `read` with no
+ *  tip; a request that got no reply (timeout, socket down) or a reply whose
+ *  read failed on the server is worth asking again (`retry`); a refused
+ *  request is neither: there is no transcript to show. */
+export async function readSubAgentTranscript(
+  sessionId: string,
+  agentKey: string,
+  source: { jobId?: string; headId?: string },
+): Promise<{ read: boolean; retry: boolean; tip: string | null }> {
   const data = await wsRequest<TranscriptReply>(
     "load_sub_agent_transcript",
     { session_id: sessionId, job_id: source.jobId ?? "", head_id: source.headId ?? "" },
@@ -123,9 +142,11 @@ export async function loadSubAgentTranscript(
     { requestId: true },
     8000,
   );
-  if (!data || data.error || !Array.isArray(data.turns)) return null;
+  if (!data) return { read: false, retry: true, tip: null };
+  if (data.error) return { read: false, retry: !subAgentReadRefused(data.error), tip: null };
+  if (!Array.isArray(data.turns)) return { read: false, retry: false, tip: null };
   const messages = rowsOfTurns(data.turns);
-  if (!messages.length) return null;
+  if (!messages.length) return { read: true, retry: false, tip: null };
   const tip = data.window?.head_id || null;
   const view = data.view ?? subAgentChatKey(sessionId, agentKey);
   viewSources.set(view, { sessionId, agentKey, source });
@@ -140,7 +161,7 @@ export async function loadSubAgentTranscript(
     .map((id) => held[id])
     .filter((message) => message !== undefined);
   applyReadToView(key, [...messages, ...newer]);
-  return tip;
+  return { read: true, retry: false, tip };
 }
 
 /** `[task from …]` / `[message from …]` receipt line that send_message puts

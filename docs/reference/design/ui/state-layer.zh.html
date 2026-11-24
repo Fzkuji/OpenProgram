@@ -19,7 +19,7 @@
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">lib/session-store/session-scope-registry.ts</code></th><td>store 工厂和模块级 <code translate="no">Map&lt;sid, store&gt;</code>。实例在面板卸载后保留；只有会话被删除时 <code translate="no">dropSessionStore</code> 才移除（<code translate="no">removeConversation</code>、<code translate="no">dropChatDraft</code>）。</td></tr>
-<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>、<code translate="no">useSessionScope(selector)</code>。没有 provider 时抛错：静默回退到聚焦会话正是要消除的 bug。</td></tr>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>、<code translate="no">useSessionScope(selector)</code>。没有 provider 时读到一个空的作用域（没有会话），并在控制台警告一次，从不回退到聚焦会话：那种回退正是要消除的 bug，一个放错位置的组件也不会拖垮整页。</td></tr>
 <tr><th scope="row">Provider</th><td><code translate="no">components/app-shell.tsx</code> 的 <code translate="no">FocusedComposer</code>（单会话输入框，聚焦的 chat key）和 <code translate="no">PeerSessionPane</code>（每个分栏面板）</td></tr>
 </tbody>
 </table>

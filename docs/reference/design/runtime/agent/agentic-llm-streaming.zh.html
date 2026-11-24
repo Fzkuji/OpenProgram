@@ -39,7 +39,7 @@
 <thead><tr><th scope="col">载体</th><th scope="col">内容</th><th scope="col">边界</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">execution_stream</code></th><td>单个 LLM 节点的尝试、内容块和文本。逐帧驱动。</td><td>绝不写入助手回复内容</td></tr>
-<tr><th scope="row"><code translate="no">tree_update</code></th><td>树结构、状态，以及来自检查点的 <code translate="no">stream_preview</code>。约 1.2 秒轮询一次。</td><td>终态是关键帧</td></tr>
+<tr><th scope="row"><code translate="no">tree_update</code></th><td>树结构、状态，以及来自检查点的 <code translate="no">stream_preview</code>。运行写入节点时发送，最多每秒一次。</td><td>终态是关键帧</td></tr>
 <tr><th scope="row"><code translate="no">Call.output</code></th><td>节点关闭时写入的最终输出</td><td>流状态只是预览，不是最终结果</td></tr>
 </tbody>
 </table>

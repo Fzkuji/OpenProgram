@@ -12,7 +12,7 @@
 <tr><th scope="row">Conversation</th><td>HEAD and all messages stay</td><td>Unchanged</td><td>The current branch moves back; its withdrawn suffix is recovery history, not another branch</td></tr>
 <tr><th scope="row">Branch</th><td>None created or moved</td><td>HEAD stays</td><td>The same branch identity and name stay; later messages extend its rewound head</td></tr>
 <tr><th scope="row">Conflict</th><td>Any path mismatch blocks the whole operation</td><td>No automatic reverse merge</td><td>Any unrecoverable item blocks it</td></tr>
-<tr><th scope="row">After</th><td>Revert transaction appended; card shows Reverted; Redo when preflight allows</td><td>Current branch Review folds the revert; Reapply when preflight allows</td><td>Original prompt prefilled; no workspace-alignment choice</td></tr>
+<tr><th scope="row">After</th><td>Revert transaction appended; card shows Reverted; Redo when preflight allows</td><td>Branch Review folds the revert; Reapply when preflight allows</td><td>Original prompt prefilled; no workspace-alignment choice</td></tr>
 </tbody>
 </table>
 <p class="note">Turn cards show the applicable Undo or Revert; user checkpoints open a Restore sheet. Redo and Reapply are new transactions, with no linear redo stack. The transcript offers no branching; Copy conversation is in the conversation's ⋯ menu.</p>
@@ -35,7 +35,7 @@
 <p>Branch identity is independent of its head message. When two rewinds converge at one checkpoint or ROOT, each ref retains its name and remains selectable by branch id. Undo marks belong to that identity. Selecting by head alone remains compatible for unambiguous legacy clients.</p>
 
 <h2 id="architecture">Sources of truth</h2>
-<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="Trusted file mutators (write, edit, apply_patch, validated adapters) produce mutation receipts into the mutation journal, which feeds This turn and Current branch Review. Git feeds Workspace Review. Generic Bash and external processes produce no receipt. The history planner reads the journal, the conversation DAG and Git, then writes a durable intent, applies a workspace transaction, and moves HEAD only for conversation modes.">
+<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="Trusted file mutators (write, edit, apply_patch, validated adapters) produce mutation receipts into the mutation journal, which feeds This turn and Branch Review. Git feeds Unstaged and Staged Review. Generic Bash and external processes produce no receipt. The history planner reads the journal, the conversation DAG and Git, then writes a durable intent, applies a workspace transaction, and moves HEAD only for conversation modes.">
   <defs><marker id="fm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="28">Trusted mutators</text>
   <text class="t-soft" x="0" y="50">write, edit, apply_patch,</text>
@@ -46,14 +46,14 @@
   <text class="t-soft" x="260" y="50">before/after digests, blobs</text>
   <line class="ln" x1="432" y1="23" x2="500" y2="23" marker-end="url(#fm-a)"/>
   <text class="t-big" x="512" y="28">Review</text>
-  <text class="t-soft" x="512" y="50">This turn, Current branch</text>
+  <text class="t-soft" x="512" y="50">This turn, Branch</text>
   <text class="t-no" x="0" y="112">Generic Bash, external writes</text>
   <text class="t-soft" x="0" y="132">no receipt, no turn Undo</text>
   <text class="t-big" x="260" y="112">Git workspace</text>
   <text class="t-soft" x="260" y="132">HEAD, index, worktree</text>
   <line class="ln" x1="432" y1="107" x2="500" y2="107" marker-end="url(#fm-a)"/>
   <text class="t-big" x="512" y="112">Review</text>
-  <text class="t-soft" x="512" y="132">Workspace</text>
+  <text class="t-soft" x="512" y="132">Unstaged, Staged</text>
   <text class="t-big" x="0" y="196">Conversation DAG</text>
   <text class="t-soft" x="0" y="216">nodes, HEAD, branches</text>
   <text class="t-big" x="260" y="196">History planner</text>
@@ -67,8 +67,8 @@
 </svg>
 <ol class="flow fig-narrow">
   <li><strong>Trusted mutators</strong><small>write, edit, apply_patch, validated adapters</small><p class="refused">Generic Bash, external writes: no receipt, no turn Undo</p></li>
-  <li><strong>Mutation journal</strong><small>feeds This turn and Current branch Review</small></li>
-  <li><strong>Git workspace</strong><small>feeds Workspace Review</small></li>
+  <li><strong>Mutation journal</strong><small>feeds This turn and Branch Review</small></li>
+  <li><strong>Git workspace</strong><small>feeds Unstaged and Staged Review</small></li>
   <li><strong>History planner</strong><small>reads all three, with the conversation DAG; only the journal authorizes recovery</small></li>
   <li class="flow-end"><strong>Durable intent</strong><small>lock, apply, verify, then HEAD if needed</small></li>
 </ol>
@@ -201,7 +201,7 @@
 <tr><th scope="row">After install</th><td>The current worker serves it without restart and the document opens. Closing the document stops its requests; a requested install may finish.</td></tr>
 <tr><th scope="row">Older packs</th><td>Profile resources stay usable; App-bundled resources are no longer selected. Development staging is a standalone command that ordinary builds ignore.</td></tr>
 <tr><th scope="row">Isolation</th><td>Separate origin, resource-tree GET and HEAD only; no main API, authentication or WebSocket. Both pages validate origin, instance, request. Macros off. Remote deployments without a separate origin disable editing.</td></tr>
-<tr><th scope="row">Loading</th><td>Full-size surface under a centered, theme-aware overlay separating “loading resources” from “opening the document”. No simulated percentage. Errors replace the status with Retry.</td></tr>
+<tr><th scope="row">Loading</th><td>Full-size surface; nothing is drawn over it while resources load and the document opens. Only an install the user asked for shows a centered, theme-aware overlay with its progress, no simulated percentage. A startup error shows with Retry.</td></tr>
 <tr><th scope="row">Teardown</th><td>Pinned mount and activate API, so closing destroys a pending host. An AbortSignal cancels availability and activation under a bounded deadline. Failed instances never attach to the controller.</td></tr>
 <tr><th scope="row">Not provided</th><td>Generic extension registry, automatic updates, uninstall controls, third-party upload</td></tr>
 </tbody>
@@ -266,7 +266,10 @@
 <tr><th scope="row">Retention</th><td>Human project edits belong to projects, model records to sessions. Aggregate indexes reference versions without copies. Archived sessions stay readable. Permanent deletion removes owned versions and caches must not redisplay them; Memory sources show “Original session deleted” or lose links. Project files and human history survive chat deletion. Moved projects recover by current location; offline access is read-only. Legacy history backfills in bounded batches; unverifiable ownership is unavailable.</td></tr>
 <tr><th scope="row">Autosave</th><td>Editor undo handles immediate changes. Drafts persist first; files publish after a short coalescing window, never waiting for a history period. Each publication validates the read revision; retries are idempotent; late responses cannot overwrite newer drafts. Failures keep drafts with a retryable error and do not close tabs.</td></tr>
 <tr><th scope="row">History period</th><td>Continuous editing about five minutes apart. Switching documents, ending editing or recovery also closes a period. Restart reads records, never current files.</td></tr>
-<tr><th scope="row">Rich editors</th><td>Independent of tabs: views hide while exporting engines live, and engines release only after the newest content reaches durable drafts. Office iframes survive React remounts and DOM moves. Close, rename and recovery await final export; failure keeps editor and draft. Preview and edit share one instance; history instances cannot write. Rename disables editing and reopens the new path after success.</td></tr>
+<tr><th scope="row">Rich editors</th><td>Independent of tabs: views hide while exporting engines live, and engines release only after the newest content reaches durable drafts. Office iframes survive React remounts and DOM moves. Rename and recovery await final export; failure keeps editor and draft. Preview and edit share one instance; history instances cannot write. Rename disables editing and reopens the new path after success.</td></tr>
+<tr><th scope="row">Closing</th><td>Never waits: the tab goes at once and the pane stays mounted out of sight until the export is saved. A native editor is exported only for changes it reported: closing, refreshing or replacing one nobody changed never writes the file. Edits not yet exported are asked about first: Save, Don't Save or Cancel.</td></tr>
+<tr><th scope="row">Incomplete reads</th><td>An engine that reads a file with slides or sheets missing would, on export, write back only what it kept. So a writable PPTX or XLSX editor is not bound to the document until one export, made as it opens and never kept, lists as many slides or sheets as the file (<code translate="no">apps/web/lib/documents/office-fidelity.ts</code>). One that lists fewer is not opened: an error names both counts and the file is left as it is.</td></tr>
+<tr><th scope="row">Measured</th><td>ONLYOFFICE read a 10-slide deck written by python-pptx as 0 slides and, on close, replaced the file with an empty one</td></tr>
 </tbody>
 </table>
 </details>
@@ -297,13 +300,14 @@
 </table>
 </details>
 
-<h3 id="review-scopes">Three Review scopes</h3>
+<h3 id="review-scopes">Four Review scopes</h3>
 <table class="stack">
 <thead><tr><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contains</th><th scope="col">Recovery</th></tr></thead>
 <tbody>
 <tr><th scope="row">This turn</th><td>Committed change sets of an origin turn</td><td>Parent's change set plus owned children, each with its own producer turn, deduplicated, actors shown</td><td>Undo or Revert: exact receipts across the closure, terminal actors, matching digests</td></tr>
-<tr><th scope="row">Current branch</th><td>Active-lineage journal projection</td><td>All turns and explicit revert, rewind, reapply; no siblings or external writes</td><td>From a specific turn or checkpoint; no one-click branch Undo</td></tr>
-<tr><th scope="row">Workspace</th><td>Git diff plus <code translate="no">git ls-files --others --exclude-standard</code></td><td>Uncommitted changes, honouring <code translate="no">.gitignore</code>; Unstaged, Staged, Branch, Commit</td><td>No turn Undo. Git Discard is a separate entry. Non-Git: unavailable.</td></tr>
+<tr><th scope="row">Unstaged</th><td>Git working tree against the index, plus <code translate="no">git ls-files --others --exclude-standard</code></td><td>Changes not yet staged, honouring <code translate="no">.gitignore</code></td><td>No turn Undo; hunk Revert; Stage. Non-Git: unavailable.</td></tr>
+<tr><th scope="row">Staged</th><td>Git index against HEAD</td><td>Changes staged for the next commit</td><td>No turn Undo; Unstage. Non-Git: unavailable.</td></tr>
+<tr><th scope="row">Branch</th><td>Active-lineage journal projection</td><td>All turns and explicit revert, rewind, reapply; no siblings or external writes</td><td>From a specific turn or checkpoint; no one-click branch Undo</td></tr>
 </tbody>
 </table>
 
@@ -398,10 +402,10 @@
 <tr><th scope="row">Symlink, hardlink, special file</th><td class="deny">Not followed or overwritten; path and reason shown</td></tr>
 <tr><th scope="row">Blobs garbage-collected</th><td class="review">Review readable, code restore off</td></tr>
 <tr><th scope="row">Large file, no blob</th><td class="review">Path and size exact; line counts unknown; no Undo</td></tr>
-<tr><th scope="row">Non-Git workspace</th><td class="review">Journal scopes work; Workspace unavailable</td></tr>
+<tr><th scope="row">Non-Git workspace</th><td class="review">Journal scopes work; Unstaged and Staged unavailable</td></tr>
 <tr><th scope="row">Reapply</th><td class="review">Needs post-revert digest, no later same-lineage mutation, after blobs</td></tr>
 <tr><th scope="row">Crash during apply</th><td class="review">Rolled back, or <code translate="no">recovery_required</code> if rollback would destroy external writes</td></tr>
-<tr><th scope="row">Exact edit to ignored or authorized outside path</th><td class="run">Journaled, Undo works, not in Workspace</td></tr>
+<tr><th scope="row">Exact edit to ignored or authorized outside path</th><td class="run">Journaled, Undo works, not in Unstaged</td></tr>
 <tr><th scope="row">Ignored background log growth</th><td class="run">Excluded by design</td></tr>
 <tr><th scope="row">Databases, APIs, deploys, installs, Git index, processes, network, unrecorded Bash</th><td class="ask">Outside Restore; confirmation lists possible repeated effects</td></tr>
 </tbody>
@@ -414,7 +418,7 @@
 <tr><th scope="row">Assistant turn card</th><td>File count, net additions and deletions including zero, first three files, about 40 px header, 19 px <code translate="no">FeatherIcon</code>, 2.5 px two-colour proportion bar. Basenames emphasized. At 420 px or less: “N files”.</td><td>Latest: Undo, then Redo. Historical: Revert, then Reapply. Every turn: Review. Header shows executable actions; unavailable and blocked explanations in the footer.</td><td>Header chips, disabled badges, product branding</td></tr>
 <tr><th scope="row">User message</th><td>Restore checkpoint</td><td>Impact sheet, named boundary, default code and conversation</td><td>Restore on click</td></tr>
 <tr><th scope="row">Conversation ⋯ menu</th><td>Copy conversation</td><td>History only; files stay</td><td>Implicit restore</td></tr>
-<tr><th scope="row">Changes tab</th><td>Three scopes; file list and single-file diff; source labels; counts over the full filtered result</td><td>Unified or side-by-side, line comments, Open file, Reveal. A scope or filter change clears cursor, selection and diff.</td><td>Turn Undo in Workspace; client-only filtering</td></tr>
+<tr><th scope="row">Changes tab</th><td>Four scopes; file list and single-file diff; source labels; counts over the full filtered result</td><td>Unified or side-by-side, line comments, Open file, Reveal. A scope or filter change clears cursor, selection and diff.</td><td>Turn Undo in Workspace; client-only filtering</td></tr>
 <tr><th scope="row">Impact sheet</th><td>Prompt, turn and file counts, branch result, mode, conflicts</td><td>Confirm; cancel has no effect</td><td>Force while blocked</td></tr>
 <tr><th scope="row">Branch switch</th><td>Conversation changes; files stay</td><td>Continue talking and working on current files</td><td>File-alignment prompts or tool restrictions caused by branch history</td></tr>
 </tbody>

@@ -67,9 +67,11 @@
 <thead><tr><th scope="col">来源</th><th scope="col">状态</th><th scope="col">响应结构依据</th></tr></thead>
 <tbody>
 <tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>开启；保留剩余金额，而不只是有或没有</td><td>OpenRouter 文档、Hermes</td></tr>
-<tr><th scope="row">Codex 用量</th><td>验证前关闭</td><td>Oh My Pi、codex-rs</td></tr>
+<tr><th scope="row">Codex 用量</th><td>开启；每周和 5 小时窗口以及 credits</td><td>Oh My Pi、codex-rs；真实响应</td></tr>
+<tr><th scope="row">DeepSeek <code translate="no">/user/balance</code></th><td>开启；按账户自己的币种显示余额，账户付不起一次调用时算用尽</td><td>真实响应</td></tr>
+<tr><th scope="row">MiniMax Token Plan、OpenCode Go</th><td>开启；套餐的各个窗口。套餐接口返回 401 不给密钥打任何标记</td><td>Oh My Pi；真实响应</td></tr>
 <tr><th scope="row">Z.ai</th><td>验证前关闭</td><td>Oh My Pi、ZCode</td></tr>
-<tr><th scope="row">MiniMax、OpenCode Go、GitHub Copilot</th><td>验证前关闭</td><td>Oh My Pi</td></tr>
+<tr><th scope="row">GitHub Copilot</th><td>验证前关闭</td><td>Oh My Pi</td></tr>
 </tbody>
 </table>
 
@@ -136,7 +138,7 @@
 <h2 id="implementation-status">实现状态</h2>
 <ul>
 <li>还没有网页界面读取状态路由；会读取它的页面见<a href="provider-management.zh.html">供应商管理</a>。</li>
-<li>没有 Kimi Coding（响应结构不稳定）、DeepSeek 或 Moonshot 余额、OpenRouter <code translate="no">/credits</code>（没有同类框架记录其响应）的读取器。</li>
-<li>上面未验证的读取器处于关闭。</li>
+<li>没有 Kimi Coding（响应结构不稳定）、Moonshot 余额、OpenRouter <code translate="no">/credits</code>（没有同类框架记录其响应）的读取器。Anthropic、OpenAI、Google、Perplexity 和 Xiaomi 的 API 密钥没有余额接口，卡片显示它们 30 天的花费。</li>
+<li>Z.ai 和 GitHub Copilot 的读取器关闭：还没见过真实响应。</li>
 <li>未做：REPL <code translate="no">/status</code>。顶层 <code translate="no">openprogram status</code> 别名做不了：这个名字属于后台服务。</li>
 </ul>

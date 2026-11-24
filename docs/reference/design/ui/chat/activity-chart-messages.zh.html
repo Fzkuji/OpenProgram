@@ -1,0 +1,62 @@
+<title>工作图上的消息</title>
+<meta name="description" content="活动面板工作图上的消息块在每种状态下写什么、什么时候带按钮、新东西怎么出现。">
+<h1>工作图上的消息</h1>
+<p><a href="activity-panel.zh.html#task-chart">工作图</a>上的消息块最多三行：任务标题、读者输入的内容、现在的状态。进行中写现在在做什么、做了多久；结束后写用时和做了什么。</p>
+
+<h2 id="states">最后一行</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">最后一行</th></tr></thead>
+<tbody>
+<tr><th scope="row">在跑一个调用</th><td>“Running xelatex pres.tex · 3m 12s”：最新一个还在跑的调用，从正在流式输出的回复里读；命令取第一段不是 <code translate="no">cd</code>、<code translate="no">export</code> 的部分，去掉选项和 <code translate="no">&amp;&amp;</code> 之后的内容；别的工具用这一步自己的说法，比如“Read notes.md”</td></tr>
+<tr><th scope="row">子代理在跑</th><td>“Running 2 sub-agents · 3m 12s”</td></tr>
+<tr><th scope="row">没有调用在跑</th><td>“Thinking · 3m 12s”“Writing the reply · 3m 40s”“Retrying (2/3) · 1m 5s”：从对话里正在流式生成的那份回复读出。图表没有这份回复时写“Working”。</td></tr>
+<tr><th scope="row">还没开始、正在停</th><td>“Queued”，不计时；“Stopping…”“Pausing…”</td></tr>
+<tr><th scope="row">等读者</th><td>“Waiting for your answer · 2m”“Waiting for approval · 2m”，从它最后一个事件算起。第二行换成它问的问题，加引号。</td></tr>
+<tr><th scope="row">已暂停</th><td>“Paused · 3m 12s”，是它做了多久</td></tr>
+<tr><th scope="row">完成</th><td>“2m 42s · 4 commands, 2 edits”；有命令、修改或子代理失败时加“, 1 failed”，用亮色。读文件不计数。</td></tr>
+<tr><th scope="row">其他结束方式</th><td>“Failed · 41s”，第二行是报错；“Stopped by you · 44s”；“Interrupted · 12s”；定时检查的 Nothing new、Skipped、Missed、Check failed</td></tr>
+</tbody>
+</table>
+<ul>
+<li>不会把上一步做过的事写得像正在做。</li>
+<li>进行中、等读者或已暂停时，块上的 agent 图标一明一暗。</li>
+<li>话题汇总它的消息：“Waiting for you · 2 messages”“Running · 2 messages”“Paused · 2 messages”，否则只写条数。</li>
+</ul>
+
+<h2 id="buttons">一个按钮，只在需要读者时</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">运行</th><th scope="col">块上</th></tr></thead>
+<tbody>
+<tr><th scope="row">等回答或授权</th><td>Answer 或 Review：转到输入框上方的卡片</td></tr>
+<tr><th scope="row">已暂停</th><td>Continue</td></tr>
+<tr><th scope="row">进行中</th><td>没有。用输入框停止（停止键或 Esc）；运行时打的字会补充进去。</td></tr>
+</tbody>
+</table>
+<p class="note">为什么。我们看过的同类产品都不把运行控制放在列表项上，用现在时写正在做的那一件事；没有一家像我们原来的“Running Ran · 4 commands”那样混用时态。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">产品</th><th scope="col">控制放在哪</th><th scope="col">状态怎么写</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex 桌面版</th><td>输入框上一个按钮：Stop、Steer 或 Queue</td><td>“Working for 1m 5s”“Worked for 2m 3s”“You stopped after 12s”；列表项上显示 Needs input、Needs approval</td></tr>
+<tr><th scope="row">Claude 桌面版</th><td>输入框上的停止</td><td>“Thinking…”“Running a command”“Waiting for your answer”</td></tr>
+<tr><th scope="row">Codex CLI、OpenCode、Pi</th><td>Esc</td><td>“Working”“Thinking…”“Retrying (2/3)”</td></tr>
+<tr><th scope="row">Cline</th><td>等待时一对回答按钮，生成时 Cancel</td><td>“Thinking...”“Running”</td></tr>
+</tbody>
+</table>
+<p>我们照最接近的 Codex 桌面版做；保留 Continue，因为暂停的运行在输入框里没有对应的控件。</p>
+
+<h2 id="no-stand-ins">不放占位</h2>
+<ul>
+<li>消息有了任务才有标题行；在此之前只显示输入的内容。</li>
+<li>没人发起的运行，说了话之后才有标题。</li>
+<li>还没归入话题的消息，话题块什么都不画：只占位置，没有名字，不能点。这一列顶上的路径也是空的。</li>
+<li>所有话题都还没有名字时，图表直接从消息那一列开始，也退不回空的话题列；话题有了名字，退回的入口才出现。</li>
+<li>输入的内容取第一行有字母或数字的，所以贴进来的邮件开头那条 ______ 分隔线会被跳过。</li>
+</ul>
+
+<h2 id="arrives">新出现的东西</h2>
+<ul>
+<li>每次图表更新，移动了的块从原来的位置滑过去，用慢档（240 ms）和 <code translate="no">--ease-standard</code>。</li>
+<li>之前没有的块淡入：刚开始的消息、刚有名字的话题。</li>
+<li>已画出的块上新出现标题时，标题淡入，下面几行往下让出位置，块同时变高。</li>
+</ul>
+<p>源码：<code translate="no">running/agent-chart/agent-chart-model.ts</code> 里的 <code translate="no">messageLine</code>、<code translate="no">doingNow</code>、<code translate="no">messageWords</code>；<code translate="no">agent-chart.tsx</code> 里的 <code translate="no">RunActions</code>、<code translate="no">useChartOptions</code>、<code translate="no">place</code>。</p>

@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { FileTextIcon } from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 import { FileTabPane } from "./file-tab-pane";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { useHeldFilePanes } from "@/lib/tabs/panes/held-file-panes";
 import styles from "./persistent-file-panes.module.css";
 
 type FilePaneTab = { id: string; kind: string; projectId?: string; path?: string; readOnly?: boolean; fileSessionId?: string; previewOwnerSessionId?: string };
@@ -14,7 +15,16 @@ function documentKey(tab: FilePaneTab): string | null {
     : tab.projectId ? `project:${tab.projectId}:${tab.path}` : null;
 }
 
-export function PersistentFilePanes({ tabs, activeFileIds, layouts }: { tabs: FilePaneTab[]; activeFileIds: Set<string>; layouts: Map<string, { className: string; style?: CSSProperties }> }) {
+export function PersistentFilePanes({ tabs: openTabs, activeFileIds, layouts }: { tabs: FilePaneTab[]; activeFileIds: Set<string>; layouts: Map<string, { className: string; style?: CSSProperties }> }) {
+  // A closed tab's pane stays mounted until its document is saved, unless
+  // the document is open again in a tab of its own.
+  const heldPanes = useHeldFilePanes();
+  const tabs = useMemo(() => {
+    const open = new Set(openTabs.map(documentKey));
+    const kept = heldPanes.filter(entry => !open.has(documentKey(entry.tab)));
+    return kept.length ? [...openTabs, ...kept.map(entry => entry.tab)] : openTabs;
+  }, [openTabs, heldPanes]);
+  const leaving = new Map(heldPanes.flatMap(entry => entry.frame && !openTabs.some(tab => tab.id === entry.tab.id) ? [[entry.tab.id, entry.frame] as const] : []));
   const requests = useCenterTabs(state => state.fileSectionRequests);
   const consume = useCenterTabs(state => state.consumeFileSection);
   const [visited, setVisited] = useState<string[]>([]);
@@ -51,7 +61,8 @@ export function PersistentFilePanes({ tabs, activeFileIds, layouts }: { tabs: Fi
     // One physical editor per document identity, retained when its tab alias
     // changes. A second native engine cannot acquire the same revision lease.
     return <div key={key} style={{ display: "contents" }}>
-      <div data-file-pane-id={tab.id} data-page-surface="" className={layouts.get(tab.id)?.className} style={pane(tab.id, active.length > 0)}>
+      <div {...(leaving.has(tab.id) ? { "data-file-pane-leaving": tab.id } : { "data-file-pane-id": tab.id })} data-page-surface="" className={leaving.has(tab.id) ? "center-canvas-content" : layouts.get(tab.id)?.className}
+        style={leaving.has(tab.id) ? { position: "absolute", ...leaving.get(tab.id), minWidth: 0, minHeight: 0, overflow: "hidden", borderRadius: 16, display: "flex", flexDirection: "column", pointerEvents: "none" } : pane(tab.id, active.length > 0)}>
         <FileTabPane projectId={tab.projectId || ""} path={tab.path} sessionId={tab.fileSessionId} readOnly={tab.readOnly} previewSessionId={tab.previewOwnerSessionId} sectionNavigation={requests[tab.id] ? { request: requests[tab.id], consume: sequence => consume(tab.id, sequence) } : undefined} />
       </div>
       {active.filter(alias => alias.id !== tab.id).map(alias => <div key={alias.id} data-file-pane-id={alias.id} data-page-surface="" className={layouts.get(alias.id)?.className} style={pane(alias.id, true)}>

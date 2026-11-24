@@ -34,7 +34,7 @@ def test_panes_lists_what_the_window_shows(app):
     sent, replies = app
     replies.append({"ok": True, "panes": [{"id": "t1", "kind": "conversation", "title": "Plan",
                                            "width": 800, "height": 600}]})
-    result = video.run("panes", {}, "s1")
+    result = video.run("list_panes", {}, "s1")
     assert sent == [{"op": "record_panes", "session_id": "s1"}]
     assert result["ok"] and "- t1: conversation · Plan · 800×600" in result["done"]
 
@@ -75,7 +75,7 @@ def test_failures_are_results_the_agent_can_act_on(app):
     assert sent == [], "nothing is asked of the App for a call that is wrong by itself"
 
     # No window answered.
-    assert video.run("panes", {}, "s1")["reason_code"] == "desktop_app_unavailable"
+    assert video.run("list_panes", {}, "s1")["reason_code"] == "desktop_app_unavailable"
 
     replies.append({"ok": False, "reason_code": "unknown_pane", "error": 'no pane "x" is on screen',
                     "panes": [{"id": "t1", "kind": "file", "title": "a.md", "width": 10, "height": 20}]})

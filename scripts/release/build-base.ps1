@@ -53,7 +53,8 @@ function Install-Browsers {
     $PreviousBrowserPath = $env:PLAYWRIGHT_BROWSERS_PATH
     $env:PLAYWRIGHT_BROWSERS_PATH = $Browsers
     try {
-        Invoke-Native $Python -m playwright install chromium
+        # Every launch asks for the full browser first; the headless shell would ship unused.
+        Invoke-Native $Python -m playwright install chromium --no-shell
     } finally {
         [Environment]::SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", $PreviousBrowserPath, "Process")
     }

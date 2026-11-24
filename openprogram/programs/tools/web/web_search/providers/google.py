@@ -10,7 +10,8 @@ Docs: https://developers.google.com/custom-search/v1/overview
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key, setting
+
 from dataclasses import dataclass
 
 from .._http import get_json
@@ -31,12 +32,11 @@ class GoogleProvider:
     requires_env: tuple = ("GOOGLE_PSE_API_KEY", "GOOGLE_PSE_CX")
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("GOOGLE_PSE_API_KEY")
-                    and os.environ.get("GOOGLE_PSE_CX"))
+        return bool(service_key("google-pse") and setting("GOOGLE_PSE_CX"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("GOOGLE_PSE_API_KEY", "")
-        cx = os.environ.get("GOOGLE_PSE_CX", "")
+        key = service_key("google-pse")
+        cx = setting("GOOGLE_PSE_CX")
         if not key or not cx:
             raise RuntimeError("GOOGLE_PSE_API_KEY + GOOGLE_PSE_CX not set")
         # PSE's `num` is 1-10 per page; for >10 we'd need pagination

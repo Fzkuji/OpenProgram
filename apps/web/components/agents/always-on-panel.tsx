@@ -8,7 +8,9 @@
 // are in that conversation's Activity panel.
 
 import { useEffect, useState } from "react";
+import { isAbort, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
 import { useQuery } from "@tanstack/react-query";
+import { PICKER_QUERY_KEY } from "@/lib/models/provider-state";
 import { api } from "@/lib/net/api";
 import {
   ALL_WAKE_DAYS, ALWAYS_ON_CHANNELS_MAX, channelChoices, dailyBudgetText, dailyBudgetValid, fetchAlwaysOn, parseDailyBudget, QUIET_HOURS_DEFAULT,
@@ -35,7 +37,10 @@ export function AlwaysOnPanel({ draft, update, text }: Props) {
   function patchNotify(kind: AlwaysOnReportKind, rule: Partial<AlwaysOnNotifyRule>) {
     patch({ notify: { ...config.notify, [kind]: { ...config.notify[kind], ...rule } } });
   }
-  const { data: models } = useQuery({ queryKey: ["models-enabled"], queryFn: api.listEnabledModels });
+  const { data: models } = useQuery({
+    // The picker's read of the same address: one request serves both.
+    queryKey: PICKER_QUERY_KEY, queryFn: api.listPickerModels, select: (picker) => picker.models,
+  });
   // The budget is typed as text so a half-typed amount ("0.") stays in the box.
   const [budget, setBudget] = useState(config.daily_budget_usd === null ? "" : String(config.daily_budget_usd));
   useEffect(() => {
@@ -51,14 +56,16 @@ export function AlwaysOnPanel({ draft, update, text }: Props) {
     ...(models ?? []).map((model) => ({ value: `${model.provider}/${model.id}`, label: `${model.name} · ${model.providerLabel || model.provider}` })),
   ];
 
+  // The kept channel list at once, read again behind it; a failed read is
+  // tried again quietly (an empty list then would be untrue).
   useEffect(() => {
-    let active = true;
     const controller = new AbortController();
-    fetchAlwaysOn(draft.id, controller.signal)
-      .then((data) => { if (active) setInfo(data); })
-      .catch(() => { if (active) setInfo({ agent_id: draft.id, config, channel_targets: [] }); });
-    return () => { active = false; controller.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the channel list follows the Agent, not the draft
+    const key = `agents:always-on:${draft.id}`;
+    setInfo(lastKept<AlwaysOnAgentInfo>(key) ?? null);
+    readUntilAnswered(key, () => fetchAlwaysOn(draft.id), controller.signal)
+      .then(setInfo)
+      .catch((cause) => { if (!isAbort(cause)) console.warn("[agents] always-on read failed", cause); });
+    return () => controller.abort();
   }, [draft.id, draft.revision]);
 
   const choices = channelChoices(config.channels, info?.channel_targets ?? []);
@@ -111,7 +118,7 @@ export function AlwaysOnPanel({ draft, update, text }: Props) {
         {choices.length ? choices.map((target) => {
           const picked = config.channels.some((item) => sameChannelTarget(item, target));
           return <label className={styles.memorySpace} key={`${target.channel}:${target.account_id}:${target.peer_id}`}><Checkbox checked={picked} disabled={!picked && config.channels.length >= ALWAYS_ON_CHANNELS_MAX} onCheckedChange={(checked) => patch({ channels: toggleChannelTarget(config.channels, target, (checked === true)) })} /><span><strong>{targetLabel(target, text)}</strong><small>{text(`Account ${target.account_id}`, `账号 ${target.account_id}`)}</small></span></label>;
-        }) : <p className={styles.note}>{info ? text("No channel conversations yet. Bind this Agent to a channel contact or talk to it on a channel, then pick the conversation here.", "还没有渠道会话。把此 Agent 绑定到某个渠道联系人，或在渠道上和它聊过之后，就能在这里选择。") : text("Loading channel conversations…", "正在加载渠道会话…")}</p>}
+        }) : info ? <p className={styles.note}>{text("No channel conversations yet. Bind this Agent to a channel contact or talk to it on a channel, then pick the conversation here.", "还没有渠道会话。把此 Agent 绑定到某个渠道联系人，或在渠道上和它聊过之后，就能在这里选择。")}</p> : null}
         <p className={styles.note}>{text("Reports always appear in the App, in the conversation that made them. Picked channel conversations also get each report whose kind has Channels on under Notify me.", "报告总会出现在 App 中产生它的会话里；选中的渠道会话还会收到在“通知我”里勾选了渠道的那几类报告。")}</p>
       </fieldset>
     </fieldset>

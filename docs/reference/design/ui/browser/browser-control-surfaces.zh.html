@@ -31,8 +31,17 @@
 <tbody>
 <tr><th scope="row">打开页面</th><td>在标签页打开</td></tr>
 <tr><th scope="row">关闭预览（X）</th><td>隐藏；页面和会话资源保留，资源列表可重开</td></tr>
-<tr><th scope="row">更多 → 自动显示 Agent 正在使用的页面</th><td>勾选时跟随 Agent 的页面，不勾选保持当前页面。不是置顶；不影响执行。原生和 Web 菜单一致。</td></tr>
+<tr><th scope="row">更多 → 自动显示 Agent 正在操作的内容</th><td>勾选时跟随 Agent 的页面，不勾选保持当前页面。不是置顶；不影响执行。原生和 Web 菜单一致。</td></tr>
 <tr><th scope="row">没有</th><td>固定、放大或缩小按钮。保留拖动和八向缩放；旧的放大几何保持兼容。</td></tr>
+</tbody>
+</table>
+<h2 id="resources-ownership">资源列表保留什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类型</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话自己打开的页面</th><td>属于这个对话，关闭之前一直列出。</td></tr>
+<tr><th scope="row">已关闭的页面</th><td>从列表消失，它的标签页也一起移除；在标签栏或画布上的除外。</td></tr>
+<tr><th scope="row">其他应用的窗口</th><td>是公用的，只在 Agent 操作时列出，每次调用结束就释放。</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

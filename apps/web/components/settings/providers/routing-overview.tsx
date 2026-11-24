@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Overview pane of Settings → LLM Providers: every session (and its
+ * Routing pane of Settings → Model services: every session (and its
  * branches, sub-agents and child sessions) that is talking to a model right
  * now or did so inside the chosen window, wired to the models it uses.
  *
@@ -21,6 +21,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "@/lib/i18n";
+import { useChanged } from "@/lib/net/ws/changes";
+import { useNow, whenChanges } from "@/lib/clock/use-now";
+import { useSessionStore } from "@/lib/session-store";
 import { openSession } from "@/lib/tabs/navigation/open-session";
 
 import { ProviderIcon } from "./icons/provider-icon";
@@ -81,13 +84,22 @@ interface Overview {
   idle_sessions: number;
   accounts: Record<string, Account[]>;
   events: RouteEvent[];
-  // Some sessions were still being opened on the server; ask again soon.
+  // Some sessions were still being opened on the server; the Worker says
+  // `routing` changed once they are.
   partial?: boolean;
+  /** Seconds until the overview changes with time alone (a lane stops
+   *  counting as live, a cooldown ends); null when nothing waits on it. */
+  recheck_in?: number | null;
   stats: { requests: number; reroutes: number };
+  /** This window's clock when it was read (seconds); not from the server. */
+  read_at?: number;
 }
 
 const WINDOWS = { live: 1800, day: 86400, week: 7 * 86400 } as const;
 type WindowKey = keyof typeof WINDOWS;
+
+/** The last overview of each window, kept for the visit. */
+const keptOverviews = new Map<WindowKey, Overview>();
 
 const modelKey = (provider: string, model: string) => `${provider}\u0000${model}`;
 const laneKey = (session: string, lane: string) => `${session}\u0000${lane}`;
@@ -113,38 +125,83 @@ export function RoutingOverview({
 }) {
   const { text } = useTranslation();
   const [windowKey, setWindowKey] = useState<WindowKey>("live");
-  const [data, setData] = useState<Overview | null>(null);
+  // The last overview of each window is kept for the visit: coming back to
+  // Routing, or to a window seen before, shows it at once.
+  const [data, setData] = useState<Overview | null>(() => keptOverviews.get("live") ?? null);
   // The window the shown data belongs to; differs from windowKey while a
   // switch is loading, so the old numbers are dimmed instead of passing for
   // the new window.
-  const [dataKey, setDataKey] = useState<WindowKey | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [dataKey, setDataKey] = useState<WindowKey | null>(() => (keptOverviews.has("live") ? "live" : null));
   const [hover, setHover] = useState<string | null>(null);
 
+  // Read when told, never on a timer: the Worker's `routing` frame (a call
+  // or a failover recorded, a credential changed, a session opened), a turn
+  // beginning or ending, and the moment `recheck_in` names, when time alone
+  // changes what is shown. A failed read is tried again, backing off.
+  const loadRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
+    const kept = keptOverviews.get(windowKey);
+    if (kept) { setData(kept); setDataKey(windowKey); }
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
     // A switch drops the previous window's request instead of letting it
     // finish behind the new one.
     const controller = new AbortController();
+    let held = false;
     const load = async () => {
-      let partial = false;
-      if (document.visibilityState === "visible") {
-        try {
-          const res = await fetch(`/api/routing/overview?window=${WINDOWS[windowKey]}`, { signal: controller.signal });
-          if (!res.ok) throw new Error(String(res.status));
-          const next = (await res.json()) as Overview;
-          partial = !!next.partial;
-          if (!stopped) { setData(next); setDataKey(windowKey); setFailed(false); }
-        } catch {
-          if (!stopped) setFailed(true);
-        }
+      if (stopped) return;
+      clearTimeout(timer);
+      timer = undefined;
+      // A hidden window reads once it shows.
+      if (document.visibilityState === "hidden") { held = true; return; }
+      try {
+        const res = await fetch(`/api/routing/overview?window=${WINDOWS[windowKey]}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(String(res.status));
+        const next = { ...((await res.json()) as Overview), read_at: Date.now() / 1000 };
+        failures = 0;
+        keptOverviews.set(windowKey, next);
+        if (stopped) return;
+        setData(next); setDataKey(windowKey);
+        if (typeof next.recheck_in === "number") timer = setTimeout(() => { void load(); }, (next.recheck_in + 0.5) * 1000);
+      } catch (error) {
+        // The last overview stays; it is asked for again, backing off.
+        if (stopped) return;
+        failures += 1;
+        console.warn("Routing overview could not be read; trying again quietly", error);
+        timer = setTimeout(() => { void load(); }, Math.min(2000 * 2 ** failures, 60_000));
       }
-      if (!stopped) timer = setTimeout(load, partial ? 2000 : windowKey === "live" ? 4000 : 15000);
     };
+    const shown = () => { if (held && document.visibilityState !== "hidden") { held = false; void load(); } };
+    document.addEventListener("visibilitychange", shown);
+    loadRef.current = load;
     void load();
-    return () => { stopped = true; clearTimeout(timer); controller.abort(); };
+    return () => {
+      stopped = true; loadRef.current = async () => {}; clearTimeout(timer); controller.abort();
+      document.removeEventListener("visibilitychange", shown);
+    };
   }, [windowKey]);
+  useChanged("routing", () => loadRef.current());
+  const runningKey = useSessionStore((state) => Object.keys(state.runningTasks).sort().join(","));
+  const firstRunning = useRef(true);
+  useEffect(() => {
+    if (firstRunning.current) { firstRunning.current = false; return; }
+    void loadRef.current();
+  }, [runningKey]);
+  // "3 min ago" is drawn from the server's time at the read plus what this
+  // window's clock has run since, renewed when one of the shown times would
+  // read differently; the clock reads nothing.
+  const agoAnchors = useMemo(() => {
+    if (!data) return [];
+    // A server time `ts` on this window's clock, in milliseconds.
+    const local = (ts: number) => (ts - data.now + (data.read_at ?? data.now)) * 1000;
+    const times = new Set<number>();
+    for (const s of data.sessions) for (const lane of s.lanes) if (!lane.live) times.add(local(lane.updated_at));
+    for (const e of data.events) times.add(local(e.ts));
+    return [...times];
+  }, [data]);
+  const clock = useNow(AGO_CADENCE, agoAnchors) / 1000;
+  const shownNow = data ? data.now + Math.max(0, clock - (data.read_at ?? clock)) : 0;
 
   const labels = useMemo(() => new Map(providers.map((p) => [p.id, p.label])), [providers]);
 
@@ -270,12 +327,10 @@ export function RoutingOverview({
         <Stat value={sessions.filter((s) => s.lanes.some((l) => l.live)).length} label={() => text("answering", "个在回答")} accent />
         <Stat value={data?.stats.requests ?? 0} label={(n) => text(n === 1 ? "model call" : "model calls", "次模型调用")} />
         <Stat value={data?.stats.reroutes ?? 0} label={(n) => text(n === 1 ? "model switch" : "model switches", "次改道")} warn={(data?.stats.reroutes ?? 0) > 0} />
-        <span className={styles.statsWindow}>{pending ? text("Loading…", "加载中…") : windowLabel}</span>
+        <span className={styles.statsWindow}>{windowLabel}</span>
       </div>}
 
-      {failed && !data ? (
-        <div className={styles.empty}>{text("Couldn't load the overview. Retrying…", "总览加载失败，正在重试…")}</div>
-      ) : data && sessions.length === 0 ? (
+      {data && sessions.length === 0 ? (
         <div className={styles.empty}>
           {text(`No session called a model in the ${windowLabel}.`, `${windowLabel}没有会话调用过模型。`)}
         </div>
@@ -336,7 +391,7 @@ export function RoutingOverview({
                         {lane.live ? (
                           <><span className={styles.pulse} aria-hidden />{text("Answering", "回答中")}</>
                         ) : (
-                          ago(data!.now, lane.updated_at, text)
+                          ago(shownNow, lane.updated_at, text)
                         )}
                       </span>
                     </div>
@@ -380,7 +435,7 @@ export function RoutingOverview({
                       <span className={styles.modelName}>{m.model || text("Unknown model", "未知模型")}</span>
                       <span className={styles.modelState}>
                         {failure
-                          ? `${reasonLabel(failure.reason, text)} · ${ago(data!.now, failure.ts, text)}`
+                          ? `${reasonLabel(failure.reason, text)} · ${ago(shownNow, failure.ts, text)}`
                           : m.live
                             ? text(`${m.live} answering`, `${m.live} 个在回答`)
                             : text(`${m.lanes} in use`, `${m.lanes} 处在用`)}
@@ -407,7 +462,7 @@ export function RoutingOverview({
                 <span className={styles.arrow}>→</span>
                 {`${labels.get(e.to_provider) || e.to_provider} ${e.to_model}`}
               </span>
-              <span className={styles.switchTime}>{ago(data!.now, e.ts, text)}</span>
+              <span className={styles.switchTime}>{ago(shownNow, e.ts, text)}</span>
             </div>
           ))}
         </div>
@@ -465,6 +520,9 @@ function reasonLabel(reason: string, text: Text): string {
     default: return reason;
   }
 }
+
+/** When `ago` of a time next reads differently. */
+const AGO_CADENCE = whenChanges(elapsed => ago(elapsed / 1000, 0, en => en));
 
 function ago(now: number, ts: number, text: Text): string {
   const s = Math.max(0, Math.round(now - ts));

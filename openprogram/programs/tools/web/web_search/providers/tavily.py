@@ -9,7 +9,8 @@ Docs: https://docs.tavily.com/docs/rest-api/api-reference
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 from dataclasses import dataclass
 
 from .._http import post_json
@@ -27,10 +28,10 @@ class TavilyProvider:
     requires_env: tuple = ("TAVILY_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("TAVILY_API_KEY"))
+        return bool(service_key("tavily"))
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        key = os.environ.get("TAVILY_API_KEY", "")
+        key = service_key("tavily")
         if not key:
             raise RuntimeError("TAVILY_API_KEY not set")
         payload = {

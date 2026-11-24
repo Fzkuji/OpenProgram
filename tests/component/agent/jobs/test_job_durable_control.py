@@ -357,7 +357,7 @@ def test_resource_shortage_accepts_continue_and_exposes_queue_wait(durable_job):
 
 
 def test_second_continue_for_same_paused_version_is_rejected_without_claim_intent(
-    durable_job, monkeypatch,
+    durable_job, monkeypatch, request,
 ):
     """Only one continuation command may reserve a paused execution version."""
     runner, _ledger, execution_store, _db = durable_job
@@ -372,11 +372,12 @@ def test_second_continue_for_same_paused_version_is_rejected_without_claim_inten
     assert paused is not None and paused.status.value == "paused"
 
     # Keep the accepted continuation in its durable pre-activation state so
-    # the second public request observes the exact same paused version.  The
-    # dispatcher also polls every 500 ms, so disabling only its wake signal
-    # still permits it to reconcile the claim between these two requests.
+    # the second public request observes the exact same paused version: the
+    # dispatcher sleeps until its wake is set, so nothing claims it between
+    # the two requests. The wake works again before the runner shuts down.
     monkeypatch.setattr(runner._resource_saga, "reconcile", lambda: 0)
     monkeypatch.setattr(runner._dispatch_wake, "set", lambda: None)
+    request.addfinalizer(lambda: vars(runner._dispatch_wake).pop("set", None))
     _run_runtime_action("execution.continue", ws, {
         "type": "execution.command", "action": "execution.continue",
         "command_id": "cmd-first-continue", "execution_id": job_id,
@@ -431,9 +432,11 @@ def test_resource_claim_and_release_pairs_are_atomic_and_idempotent(durable_job)
     assert sum(intent["kind"] == "resource.release.intent" for intent in intents) == 1
 
 
-def test_resource_saga_repairs_a_legacy_one_sided_release_intent(durable_job):
+def test_resource_saga_repairs_a_legacy_one_sided_release_intent(durable_job, monkeypatch):
     """Startup reconciliation completes a pair left by an interrupted writer."""
     runner, _ledger, execution_store, _db = durable_job
+    # The background pass must not repair the pair before the test looks at it.
+    monkeypatch.setattr(runner, "_reconcile_resources", lambda: None)
     job_id, _execution_record = _execution(runner, execution_store)
     job = runner._canonical_job(job_id)
     assert job is not None and job.admission_id
@@ -463,6 +466,9 @@ def test_restart_requeues_claimed_resume_before_attempt_without_error_projection
 ):
     """An expired resource claim cannot turn a paused canonical Job into errored."""
     runner, ledger, execution_store, _db = durable_job
+    # The claim below is the test's own; the dispatcher, woken by every
+    # run-table commit, would race it for the job. Its only worker is held.
+    assert runner._executor_slots.acquire(timeout=30)
     job_id, execution = _execution(runner, execution_store)
     actor = {"authority_tier": "owner", "surface": "test"}
     asyncio.run(runner._execution_control.request_pause(

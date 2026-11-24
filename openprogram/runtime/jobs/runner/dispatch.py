@@ -177,7 +177,11 @@ class DispatchOperations:
     def _dispatch_loop(self) -> None:
         """Submit only durably claimed jobs to the executor."""
         while not self._shutdown_event.is_set():
-            self._dispatch_wake.wait(0.5)
+            # Woken by every change that can let a claim succeed: a run-table
+            # commit by another thread (an admission, a finished job, a
+            # resource intent) or a self-update file (the maintenance
+            # marker). The long wait is only a safety net.
+            self._dispatch_wake.wait(shared._DISPATCH_RESYNC_SECS)
             self._dispatch_wake.clear()
             # A continue/step command writes its intent before capacity is
             # claimed.  Reconcile that hand-off before selecting the next
@@ -333,6 +337,7 @@ class DispatchOperations:
                             "context": shared.contextvars.copy_context(),
                         }
                         self._jobs[claim.job_id] = entry
+                        self._budget_wake.set()
                     else:
                         cancel_ev = entry["event"]
                         done_ev = self._done_events[claim.job_id]

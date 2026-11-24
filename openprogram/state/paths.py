@@ -137,7 +137,11 @@ def _account_home() -> Optional[str]:
         home = None
     if home:
         home = os.path.realpath(home)
-    _account_home_cache.append(home)
+        # Only an answer is kept. A lookup that failed once (the account
+        # database unreadable for a moment) is asked again; kept, it left
+        # the process without its account home for good, and with it the
+        # check that keeps a test out of the real state folder.
+        _account_home_cache.append(home)
     return home
 
 

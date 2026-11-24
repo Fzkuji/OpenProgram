@@ -63,6 +63,11 @@ interface UnifiedCommand {
 const ANIM_MS = 380;
 
 /** What the submitting composer supplies: its run state and send paths. */
+/** GET /api/commands and the older /api/plugins/commands. */
+interface CommandsReply<C> { commands?: C[] }
+/** POST /api/commands/invoke. */
+interface CommandInvokeReply { ok?: boolean; kind?: string; rendered?: unknown }
+
 type Submitter = Pick<SlashContext, "busy" | "sendChat" | "sendCommand">;
 
 interface UseSlashMenuArgs {
@@ -124,7 +129,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
   useEffect(() => {
     if (skills.length === 0) fetchSkills();
     fetch("/api/commands")
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => (r.ok ? await r.json() as CommandsReply<UnifiedCommand> : null))
       .then((d) => {
         if (d && Array.isArray(d.commands)) {
           setUnifiedCommands(d.commands);
@@ -136,7 +141,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
         if (hit) return;
         // Fallback: pre-Phase-1 backend.
         fetch("/api/plugins/commands")
-          .then((r) => (r.ok ? r.json() : null))
+          .then(async (r) => (r.ok ? await r.json() as CommandsReply<PluginCommand> : null))
           .then((d) => {
             if (d && Array.isArray(d.commands)) setPluginCommands(d.commands);
           })
@@ -197,6 +202,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
       .filter((s) => s.enabled)
       .map<SlashCommand>((s) => ({
         name: "/" + s.name,
+        source: "skill",
         description: s.description || `Activate the ${s.name} skill`,
         run(rest, { setInput }) {
           const trail = rest ? " " + rest : " ";
@@ -216,6 +222,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
       .filter((c) => c.user_invocable !== false && !c.hidden)
       .map<SlashCommand>((c) => ({
         name: c.name.startsWith("/") ? c.name : "/" + c.name,
+        source: c.source,
         description:
           c.description || `${c.source_label || c.source} command`,
         args: c.argument_hint || undefined,
@@ -233,10 +240,10 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, session_id: sessionId }),
           })
-            .then((r) => (r.ok ? r.json() : null))
+            .then(async (r) => (r.ok ? await r.json() as CommandInvokeReply : null))
             .then((res) => {
               if (res && res.ok && res.kind === "prompt") {
-                setInput(res.rendered || "", true);
+                setInput(typeof res.rendered === "string" ? res.rendered : "", true);
               } else {
                 // Render-time failure — drop the raw text so the user
                 // can see what they typed and edit instead of losing it.
@@ -253,6 +260,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
   const pluginSlashCommands = useMemo<SlashCommand[]>(() => {
     return pluginCommands.map<SlashCommand>((c) => ({
       name: c.name.startsWith("/") ? c.name : "/" + c.name,
+      source: "plugin",
       description: c.description || `Plugin command from ${c.plugin}`,
       run(rest, { setInput }) {
         const trail = rest ? " " + rest : " ";

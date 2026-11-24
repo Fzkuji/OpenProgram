@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { cachedFetch, invalidate, readCachedSettings } from "@/lib/prefs/settings-cache";
+import { cachedFetch, refreshSettings, setCachedSettings, useSettingsData } from "@/lib/prefs/settings-cache";
+import { PROVIDER_STATUS_URL } from "@/lib/settings/settings-urls";
 import { CREDENTIALS_CHANGED } from "../detail/credential-model";
 import type {
   ProviderQuotaFrame,
@@ -10,7 +11,7 @@ import type {
   ProviderStatusPayload,
 } from "@/lib/settings/provider-status.generated";
 
-export const STATUS_URL = "/api/providers/status";
+export const STATUS_URL = PROVIDER_STATUS_URL;
 
 /** The window event a `provider_quota` WebSocket frame becomes
  *  (lib/net/ws/use-ws.ts): one key's new quota, applied in place. */
@@ -25,10 +26,20 @@ export function applyQuotaFrame(payload: ProviderStatusPayload, frame: ProviderQ
   const providers = payload.providers.map((p) => {
     if (p.id !== frame.provider) return p;
     const current = p.quota?.account ?? null;
-    if (current && frame.account && current !== frame.account) return p;
+    // The credential's own row takes its new limits whichever key is in use.
+    const keys = p.keys.map((k) => (k.credential_id === frame.account
+      ? { ...k, quota: { ...k.quota, kind: frame.kind, account: frame.account, fetched_at: frame.fetched_at, stale: frame.stale, limits: frame.limits } }
+      : k));
+    const own = keys.some((k, i) => k !== p.keys[i]);
+    if (current && frame.account && current !== frame.account) {
+      if (!own) return p;
+      changed = true;
+      return { ...p, keys } as ProviderStatus;
+    }
     changed = true;
     return {
       ...p,
+      keys,
       quota: {
         ...(p.quota ?? { read_error: null, read_at: null }),
         kind: frame.kind,
@@ -42,34 +53,25 @@ export function applyQuotaFrame(payload: ProviderStatusPayload, frame: ProviderQ
   return changed ? { ...payload, providers } : payload;
 }
 
-/** The status of every connected provider: read once (cached 30 s for the
- *  next visit), kept current by quota frames, re-read when providers,
- *  models or a provider's credentials change (a burst of changes is read
- *  once), and read fresh from every quota endpoint by Refresh. */
+/** The status of every connected provider: kept for the visit and read as
+ *  Settings opens (a revisit shows the last answer at once and reads again
+ *  behind it), kept current by quota frames, re-read when providers, models
+ *  or a provider's credentials change (a burst of changes is read once), and
+ *  read fresh from every quota endpoint by Refresh. A read that fails keeps
+ *  the last answer and is retried quietly. */
 export function useProviderStatus() {
-  const [payload, setPayload] = useState<ProviderStatusPayload | null>(
-    () => readCachedSettings<ProviderStatusPayload>(STATUS_URL) ?? null,
-  );
-  const [error, setError] = useState<string | null>(null);
+  const payload = useSettingsData<ProviderStatusPayload>(STATUS_URL) ?? null;
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (fresh = false) => {
-    if (fresh) invalidate(STATUS_URL);
-    try {
-      setPayload(await cachedFetch<ProviderStatusPayload>(STATUS_URL));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : String(err));
-    }
+    await (fresh ? refreshSettings(STATUS_URL) : cachedFetch(STATUS_URL).catch(() => {}));
   }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     const onQuota = (event: Event) => {
       const frame = (event as CustomEvent<ProviderQuotaFrame>).detail;
       if (!frame?.provider) return;
-      setPayload((prev) => (prev ? applyQuotaFrame(prev, frame) : prev));
+      setCachedSettings<ProviderStatusPayload>(STATUS_URL, (prev) => (prev ? applyQuotaFrame(prev, frame) : prev));
     };
     let timer: ReturnType<typeof setTimeout> | null = null;
     const onChanged = () => {
@@ -95,12 +97,10 @@ export function useProviderStatus() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
       });
       if (!r.ok) throw new Error(String(r.status));
-      const next = (await r.json()) as ProviderStatusPayload;
-      invalidate(STATUS_URL);
-      setPayload(next);
-      setError(null);
+      setCachedSettings(STATUS_URL, (await r.json()) as ProviderStatusPayload);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : String(err));
+      // The cards keep what they showed; their own read times say how old it is.
+      console.warn("Providers: refreshing every status failed", err);
     } finally {
       setRefreshing(false);
     }
@@ -113,17 +113,18 @@ export function useProviderStatus() {
       const r = await fetch(`/api/providers/${encodeURIComponent(id)}/refresh`, { method: "POST" });
       if (!r.ok) return;
       const next = (await r.json()) as ProviderStatus;
-      invalidate(STATUS_URL);
-      setPayload((prev) => prev ? {
+      setCachedSettings<ProviderStatusPayload>(STATUS_URL, (prev) => prev ? {
         ...prev,
         providers: prev.providers.some((p) => p.id === id)
           ? prev.providers.map((p) => (p.id === id ? next : p))
           : [...prev.providers, next],
       } : prev);
+    } catch (err) {
+      console.warn(`Providers: refreshing ${id} failed`, err);
     } finally {
       setRefreshing(false);
     }
   }, []);
 
-  return { payload, error, refreshing, reload: load, refresh, refreshOne };
+  return { payload, refreshing, reload: load, refresh, refreshOne };
 }

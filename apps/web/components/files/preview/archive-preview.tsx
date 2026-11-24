@@ -16,26 +16,50 @@ import styles from "./archive-preview.module.css";
 
 type Member = { path: string; blob?: Blob; snapshot?: FileReadResult; error?: string };
 
+/** Listings already read, so an archive opened again draws its tree at once. */
+const listingsRead = new Map<string, ArchiveListing>();
+
+/** A refusal the server gave about the file itself (damaged, encrypted, too
+ *  large) rather than a request that did not get through. */
+function refusedByServer(error: unknown): boolean {
+  return error instanceof Error && /^ARCHIVE_LIST_4\d\d$/.test(error.message);
+}
+
 export function ArchivePreview({ source }: { source: ArchiveSource }) {
   const { text } = useTranslation();
-  const [listing, setListing] = useState<ArchiveListing | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [member, setMember] = useState<Member | null>(null);
   const key = source.kind === "absolute" ? `${source.path}\n${source.sessionId ?? ""}` : `${source.projectId}\n${source.path}`;
+  const [listing, setListing] = useState<ArchiveListing | null>(() => listingsRead.get(key) ?? null);
+  const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(() => {
+    const held = listingsRead.get(key);
+    const top = held ? buildArchiveTree(held.entries) : [];
+    return top.length === 1 && top[0].dir ? new Set([top[0].path]) : new Set();
+  });
+  const [member, setMember] = useState<Member | null>(null);
 
   useEffect(() => {
     const abort = new AbortController();
-    setListing(null); setFailed(false); setMember(null);
-    fetchArchiveListing(source, abort.signal)
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    setListing(listingsRead.get(key) ?? null); setFailed(false); setMember(null);
+    const read = () => fetchArchiveListing(source, abort.signal)
       .then(result => {
+        const first = !listingsRead.has(key);
+        listingsRead.set(key, result);
         setListing(result);
         // A single top folder is opened, so the first view shows files.
         const top = buildArchiveTree(result.entries);
-        if (top.length === 1 && top[0].dir) setOpen(new Set([top[0].path]));
+        if (first && top.length === 1 && top[0].dir) setOpen(new Set([top[0].path]));
       })
-      .catch(() => { if (!abort.signal.aborted) setFailed(true); });
-    return () => abort.abort();
+      .catch((error: unknown) => {
+        if (abort.signal.aborted) return;
+        if (refusedByServer(error)) { setFailed(true); return; }
+        // The request did not get through: ask again, quietly, with backoff.
+        console.warn("archive listing read failed; reading again", { key, error });
+        timer = setTimeout(() => void read(), Math.min(30_000, 1000 * 2 ** failures++));
+      });
+    void read();
+    return () => { abort.abort(); clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the source's identity.
   }, [key]);
 
@@ -80,7 +104,7 @@ export function ArchivePreview({ source }: { source: ArchiveSource }) {
   }
 
   if (failed) return <div className={styles.hint}>{text("Couldn't read this archive. It may be damaged, encrypted, or too large.", "无法读取该压缩包。文件可能已损坏、已加密或过大。")}</div>;
-  if (!listing) return <div className={styles.hint}>{text("Loading…", "加载中…")}</div>;
+  if (!listing) return <div className={styles.hint} />;
   return <div className="grid h-full min-h-0 grid-cols-[minmax(220px,320px)_minmax(0,1fr)] @max-[560px]:grid-cols-1 @max-[560px]:grid-rows-[minmax(160px,40%)_1fr]">
     <nav className={styles.tree} aria-label={text("Archive contents", "压缩包内容")}>
       <div className={styles.summary}>
@@ -92,7 +116,7 @@ export function ArchivePreview({ source }: { source: ArchiveSource }) {
     <section className="flex min-h-0 min-w-0 flex-col overflow-auto" aria-live="polite">
       {!member ? <div className={styles.hint}>{text("Choose a file to preview it.", "选择一个文件进行预览。")}</div>
         : member.error ? <div className={styles.hint}>{member.error}</div>
-          : !member.snapshot ? <div className={styles.hint}>{text("Loading…", "加载中…")}</div>
+          : !member.snapshot ? <div className={styles.hint} />
             : <FileViewer key={member.path} projectId="" path={member.path} inArchive
               sourceBlob={member.blob} snapshot={member.snapshot} mdRendered />}
     </section>

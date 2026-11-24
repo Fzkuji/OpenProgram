@@ -23,12 +23,12 @@
 <table class="stack">
 <thead><tr><th scope="col">服务</th><th scope="col">默认模型</th><th scope="col">需要</th><th scope="col">音频</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">gpt-4o-mini-transcribe</code></td><td>设置 → Provider 里的 OpenAI 密钥</td><td>每句发送给 OpenAI</td></tr>
-<tr><th scope="row"><code translate="no">groq</code></th><td><code translate="no">whisper-large-v3-turbo</code></td><td>设置 → Provider 里的 Groq 密钥</td><td>每句发送给 Groq</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">gpt-4o-mini-transcribe</code></td><td>设置 → 模型服务 里的 OpenAI 密钥</td><td>每句发送给 OpenAI</td></tr>
+<tr><th scope="row"><code translate="no">groq</code></th><td><code translate="no">whisper-large-v3-turbo</code></td><td>设置 → 模型服务 里的 Groq 密钥</td><td>每句发送给 Groq</td></tr>
 <tr><th scope="row"><code translate="no">local</code></th><td><code translate="no">large-v3-turbo-q5_0</code>，约 570 MB，首次使用时下载到状态目录</td><td><code translate="no">brew install whisper-cpp</code>（<a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a>）</td><td>留在本机。Apple 芯片上每句一到两秒。</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">auto</code> 的顺序：已下载模型的本地服务、OpenAI、Groq、需首次下载的本地服务。页面显示正在使用的服务和本机可用的服务。<a href="../capabilities/computer-use.html#recording-sound"><code translate="no">computer_use_agent</code></a> 录下的声音也由同一服务转写。</p>
+<p class="note"><code translate="no">auto</code> 的顺序：已下载模型的本地服务、OpenAI、Groq、需首次下载的本地服务。页面显示正在使用的服务和本机可用的服务。<a href="../capabilities/computer-use.html#recording-sound"><code translate="no">computer_use</code></a> 录下的声音也由同一服务转写。</p>
 <h2>限制</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">限制</th><th scope="col">值</th></tr></thead>

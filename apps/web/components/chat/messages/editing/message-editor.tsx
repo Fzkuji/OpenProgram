@@ -21,6 +21,7 @@ import { AttachmentStrip } from "../../composer/attach/strip/attachment-strip";
 import { readImageFile, type PendingImage } from "../../composer/attach/image/image-attach";
 import { AttachmentChips, parseAttachments } from "../attachments/user-attachments";
 import styles from "./message-editor.module.css";
+import { errorDetailText } from "@/lib/net/error-text";
 
 export function MessageEditor({ msg, sessionId, onDone }: {
   msg: ChatMsg; sessionId: string | null; onDone: () => void;
@@ -68,8 +69,8 @@ export function MessageEditor({ msg, sessionId, onDone }: {
         body: JSON.stringify({ session_id: sessionId, msg_id: msg.id, content,
           attachments: [...envelope.imagesPayload, ...envelope.docsPayload] }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || response.statusText);
+      const result = await response.json() as { error?: unknown; detail?: unknown };
+      if (!response.ok) throw new Error(errorDetailText(result.error ?? result.detail, response.statusText));
       if (useSessionStore.getState().currentSessionId === sessionId) setRunActive(true);
       const socket = getSocket();
       if (socket?.readyState === WebSocket.OPEN) requestSessionLoad({ action: "load_session", session_id: sessionId }, true);

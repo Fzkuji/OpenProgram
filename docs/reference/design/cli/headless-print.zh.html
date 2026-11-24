@@ -126,7 +126,7 @@
 <tbody>
 <tr><td>Harbor 适配器删掉错误文本匹配；它先按 <code translate="no">error_kind</code>、再按 <code translate="no">error_reason</code> 判断，两者都定不了才读文本，直到一次 Harbor 试验表明两种判法一致</td><td>等一次试验</td></tr>
 <tr><td><code translate="no">stream-json</code> 实时转发历史协议 3（过程更新和它的缺口恢复）；现在实时写 <code translate="no">init</code> 和部分文本，存储里的事件在结束时写出</td><td>未实现</td></tr>
-<tr><td>两个实例都声明这些能力之后，删掉 CLI 的兜底（从回复文字解析、按过期版本补发）</td><td>等一次晋升</td></tr>
+<tr><td>两个实例都声明这些能力之后，删掉 CLI 的兜底（从回复文字解析、按过期版本补发）</td><td>等带上它们的发布版</td></tr>
 <tr><td>Worker 上的轮次记为 <code translate="no">source</code> <code translate="no">cli</code>；在 Web UI 能同样显示和停止这类轮次之前，它仍是前台来源</td><td>未实现</td></tr>
 <tr><td>在 Worker 上 <code translate="no">--at</code> 到分支中间的消息；现在改在本进程里跑并给出提示</td><td>未实现</td></tr>
 <tr><td>本进程运行遇到另一个进程正在同一分支上跑时给出 <code translate="no">branch_busy</code></td><td>未实现</td></tr>

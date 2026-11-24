@@ -1,11 +1,8 @@
 "use client";
 
-/** The rows under an agent in the Activity overview: one per helper it
- *  started (avatar, name, status badge, what its subtree cost), one per
- *  message it sent that is still unanswered, and the fold that holds the
- *  helpers that finished. */
-import type { KeyboardEvent } from "react";
-import { ChevronRight } from "lucide-react";
+/** An agent as a row in Activity: a helper a scheduled run started (avatar,
+ *  name, status badge, what its subtree cost), or a message the conversation
+ *  sent that is still unanswered. */
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HoverTip } from "@/components/ui/tooltip";
@@ -57,16 +54,6 @@ export function usageTip(facts: { usage: { tokens?: number | null; tool_calls?: 
   ].filter(Boolean).join(" · ");
 }
 
-/** Left on a row folds the group it sits in; the agent's own row takes the
- *  focus, so Right opens it again from where the reader is. */
-function foldOnLeft(onFold: (() => void) | undefined) {
-  return (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" || !onFold || event.altKey || event.metaKey || event.ctrlKey) return;
-    event.preventDefault();
-    onFold();
-  };
-}
-
 export interface RosterRowProps {
   name: string;
   status: RosterStatus;
@@ -79,12 +66,11 @@ export interface RosterRowProps {
   /** A message sent to another agent: "→ Name". */
   outgoing?: boolean;
   onOpen: () => void;
-  onFold?: () => void;
 }
 
-export function RosterRow({ name, status, indent, cost = null, tip = "", outgoing = false, onOpen, onFold, text }: RosterRowProps & { text: Text }) {
+export function RosterRow({ name, status, indent, cost = null, tip = "", outgoing = false, onOpen, text }: RosterRowProps & { text: Text }) {
   const row = <Button variant="ghost" className={styles.agentRow} style={{ ["--indent" as string]: `${indent}px` }}
-    data-outgoing={outgoing ? "1" : undefined} data-roster-row="" onClick={onOpen} onKeyDown={foldOnLeft(onFold)}
+    data-outgoing={outgoing ? "1" : undefined} data-roster-row="" onClick={onOpen}
     aria-label={outgoing ? `${text(`Message sent to ${name}`, `发给 ${name} 的消息`)}, ${rosterBadgeWords(status, text)}` : undefined}>
     <AgentGlyph shape={subAgentShape(name)} />
     {/* One line that gives up the cost first: when name, badge and cost do
@@ -100,16 +86,4 @@ export function RosterRow({ name, status, indent, cost = null, tip = "", outgoin
   // The cost is on the tip too, since a narrow panel drops it from the row.
   const label = [cost !== null ? fmtUsd(cost) : "", tip].filter(Boolean).join(" · ");
   return label ? <HoverTip label={label} side="left">{row}</HoverTip> : row;
-}
-
-/** The quiet last row: how many helpers finished (or, with `label`, how
- *  many branches are at rest). It opens in place. */
-export function FinishedRow({ count, open, indent, onToggle, onFold, label, text }: {
-  count: number; open: boolean; indent: number; onToggle: () => void; onFold?: () => void; label?: string; text: Text;
-}) {
-  return <Button variant="ghost" className={styles.agentRow} style={{ ["--indent" as string]: `${indent}px` }}
-    data-finished="" data-roster-row="" aria-expanded={open} onClick={onToggle} onKeyDown={foldOnLeft(onFold)}>
-    <span className={styles.finishedChevron} aria-hidden="true"><ChevronRight size={14} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform var(--motion-medium) var(--ease-standard)" }} /></span>
-    <span className={styles.finishedLabel}>{label ?? text(`${count} finished`, `${count} 个已完成`)}</span>
-  </Button>;
 }

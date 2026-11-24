@@ -10,7 +10,7 @@ import { copyText } from "@/lib/clipboard";
 import { highlightEscapedCode } from "@/lib/chat/markdown/code-highlight";
 import { Marked } from "marked";
 import { renderMd, sanitizeHtml } from "@/lib/runtime-bridge/dom/markdown-render";
-import { cjkEmphasis } from "@/lib/markdown/cjk-emphasis";
+import { proseMarkdown } from "@/lib/markdown/prose";
 import {
   A2UI_LANG,
   A2UI_PARTIAL_LANG,
@@ -33,7 +33,7 @@ export function renderMarkdown(src: string, { cache = true }: { cache?: boolean 
 
 /** Text inside an A2UI surface is model-written markdown with no raw
  *  HTML: tags show as text, and the result is sanitized like any bubble. */
-const a2uiMarked = new Marked(cjkEmphasis, {
+const a2uiMarked = new Marked(...proseMarkdown, {
   breaks: true,
   renderer: {
     html(token) {
@@ -71,7 +71,7 @@ function withA2ui(html: string): string {
  *  it is shown as text (not parsed) and the result is sanitized like any
  *  other rendered markdown. Formulas stay literal; this path is for prose,
  *  lists and code. */
-const userMarked = new Marked(cjkEmphasis, {
+const userMarked = new Marked(...proseMarkdown, {
   breaks: true,
   renderer: {
     html(token) {

@@ -1,0 +1,83 @@
+<title>Worker 内存</title>
+<meta name="description" content="Worker 在内存里保留什么、各部分何时释放，以及如何查看运行中的 Worker 占用了什么。">
+<meta name="covers" content="openprogram/interfaces/server/server_runtime/memory_sample.py openprogram/interfaces/server/server_runtime/thread_sample.py openprogram/state/store/session/session_store/service.py openprogram/state/store/session/files/session_state_file.py openprogram/runtime/execution/projections/dag.py openprogram/models/providers/catalog/sources/models_dev.py openprogram/programs/applications/browser/pages.py openprogram/state/store/session/files/tool_output_gc.py openprogram/runtime/context/token_accounting/tokens.py openprogram/models/auth/login/login_method_registry.py openprogram/state/config.py openprogram/runtime/context/token_accounting/session_stats.py openprogram/extensions/skills/loader.py openprogram/extensions/skills/watcher.py openprogram/operations/self_update/store.py openprogram/programs/_host/watcher.py">
+<h1>Worker 内存</h1>
+
+<p>Worker 只保留正在被使用的内容。下面每一项在再次需要时都从文件重新读入，释放不丢任何东西。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">内存中保留</th><th scope="col">大小</th><th scope="col">释放时机</th></tr></thead>
+<tbody>
+<tr><th scope="row">整个读入的对话（<code translate="no">SessionStore._sessions</code>）</th><td>每个 2–38 MB</td><td>最后一次被访问 30 分钟后（<code translate="no">release_idle</code>），或保留数达到 256 时</td></tr>
+<tr><th scope="row">随会话文档一起读入的运行记录（<code translate="no">session_state_file</code>）</th><td>640 个对话共 60 MB</td><td>最后一次被读取 10 分钟后（<code translate="no">release_idle_run_rows</code>）；文档保留</td></tr>
+<tr><th scope="row">会话的运行状态表（<code translate="no">RunTables</code>）</th><td>每个最多 5 MB</td><td>会话最后一次变化或被查询一小时后，且其中没有未完成的工作；启动时因为跑过 Job 而读入的会话，没有未完成的工作就立刻释放</td></tr>
+<tr><th scope="row">models.dev 模型目录</th><td>7 MB</td><td>不释放；只保留会被读取的字段，相同的值共用一份。磁盘上的文件保持完整</td></tr>
+</tbody>
+</table>
+
+<p>释放由 Job runner 的对账循环（<code translate="no">_reconcile_loop</code>）执行，至少每分钟一次（<a href="change-notification.zh.html">变化通知</a>）。</p>
+
+<h2 id="restart">重启对账</h2>
+
+<p><code translate="no">reconcile_interrupted_runs</code> 标记上一个 Worker 退出时还在运行的工作。它要把对话整个读入，所以只读可能留有这类工作的对话：</p>
+
+<ul>
+<li>自上一次完成的对账开始后日志有写入的对话：每个节点、运行记录和 Goal 状态都是会话日志里的一行；</li>
+<li>上一次对账结束时仍有运行、等待或挂接的 Job 未结束，或当时无法加锁的对话；</li>
+<li>带有未完成运行标记，或会话行状态为运行中的对话。</li>
+</ul>
+
+<p>对账完成后把开始时间和仍未结束的对话记入 <code translate="no">projects/.restart-reconciled.json</code>。没有这个文件时读取全部对话。每个读入的对话在轮到它的那一步结束后离开内存（<code translate="no">passing_through</code>）。</p>
+
+<h2 id="repeated">反复发生的读取</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">读取</th><th scope="col">时机</th><th scope="col">如何保持轻量</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话的资源列表</th><td>对话出现在屏幕上时，以及它每次有变化时</td><td>分支投影直接读存储里的节点，不再逐个复制；一次投影同时给出各行和当前分支；资源表只读这个对话的页面：1,600 个节点的对话 25 毫秒，此前 330 毫秒。控制状态只对在线的网页更新，对话的执行范围每次读取只算一次：120 个网页时 5 毫秒</td></tr>
+<tr><th scope="row">对话消息的 token 计数</th><td>每次打开、每轮对话、每次压缩检查</td><td>按文本的长度和哈希记住计数，不保留文本；长对话打开后的上下文占用计算是 0.2 秒，此前 0.5 秒</td></tr>
+<tr><th scope="row">一个对话的上下文明细</th><td>打开对话时同时三次：面板两次，圆环一次</td><td>同一时刻问同一分支的调用共用一次计算，各拿一份副本；算完不保留。三次同时只花一次的时间（已读入的长对话 0.08 秒，原来 0.25 秒）。读的是存储自己的节点，不逐个复制：3,300 个节点的对话 0.12 秒，原来 0.17 秒</td></tr>
+<tr><th scope="row">保留的网页标签所属对话的资源</th><td>App 重新连上后一次</td><td>只预读屏幕上的对话；地址由原生页面报告过的标签按那个地址恢复，它的对话等打开时再读。全部 22 个都读时，重启后头 13 秒占用 Worker 3.8 秒，每个对话都被整个打开</td></tr>
+<tr><th scope="row">models.dev 目录的刷新</th><td>磁盘上的副本超过一小时</td><td>进程启动头 20 秒内要做的刷新推迟到 20 秒后：下载、解析、重写 7 MB 要占解释器 0.3 秒，正好和首屏同时；首屏本来就用磁盘上的副本</td></tr>
+<tr><th scope="row">一个窗口的网页记录</th><td>App 每次重新登记窗口时，也就是每次重启后</td><td>整个窗口的网页在一个事务里标记，不再每页一个；存储的表每个进程只准备一次，不再每次调用都准备；提交只在检查点同步磁盘。99 个网页的窗口原来让一个线程在头 30 秒里占 10 秒</td></tr>
+<tr><th scope="row">每个程序包和已启用应用的文件戳</th><td>程序包或应用下的文件有变化时，由程序目录监视线程做</td><td>直接从目录列表读文件，每个文件一次 <code translate="no">stat</code>、用普通字符串，不再每个文件建路径对象并 <code translate="no">stat</code> 两次：一遍 5 毫秒，原来 80 毫秒。这一遍原来是空闲 Worker 里最大的处理器占用</td></tr>
+<tr><th scope="row">自更新记录</th><td>任务对账线程每一遍三次</td><td>已结束的更新只在它的三个文件之一换了文件或有改动时才重新解析；它的重启记录里没有要继续的内容后，不加锁直接跳过。17 个已结束的更新原来每 30 秒占 0.5 秒</td></tr>
+<tr><th scope="row">技能文件夹</th><td>技能目录下来了文件事件时，由技能监视线程做</td><td>只在某个目录或某个 <code translate="no">SKILL.md</code> 的时间或大小变了才重新遍历：一遍 0.1 毫秒，原来两个技能带着 12,000 个其他文件要 12 毫秒</td></tr>
+<tr><th scope="row">每个用户程序包的 Git 状态</th><td>Worker 启动时，以及程序包变化时</td><td>各起一个进程同时问：五个包 20 毫秒，原来一个接一个要 70 毫秒</td></tr>
+<tr><th scope="row">技能列表</th><td>每轮对话、每次上下文明细、每次技能请求</td><td>只有来源里某个目录或 <code translate="no">SKILL.md</code> 自上次遍历后变了才重新遍历：0.1 毫秒，原来 370 个目录、两个技能要 12 毫秒</td></tr>
+<tr><th scope="row">提供方属于哪家公司</th><td>每查一条已存凭据一次，一次模型列表里几十次</td><td>规整后的目录保留到目录变化为止，配置文件只在字节变化时重新解析：可用模型列表 16 毫秒，此前 62 毫秒</td></tr>
+<tr><th scope="row">分词器词表</th><td>每个 Worker 一次</td><td>在启动旁边读入（0.3 秒），不落在打开的第一个对话里</td></tr>
+<tr><th scope="row">工具输出清理</th><td>启动十分钟后一次，之后每天一次</td><td>记录文件按字节扫描，每次一兆字节：扫描 900 MB 日志时峰值 150 MB，此前把每个文件整个读成文本，峰值 2.7 GB</td></tr>
+</tbody>
+</table>
+
+<p>Worker 日志会写出每个耗时 50 毫秒以上的启动步骤（<code translate="no">[startup] … took N ms</code>）；请求要等这些步骤完成。</p>
+<p>在 <code translate="no">logs/sample-threads</code> 放一个空文件就是请求一次线程采样：Worker 用半分钟记下每个线程所在的调用，把这些调用和每个线程用掉的处理器时间写进 <code translate="no">logs/thread-sample.txt</code>。</p>
+<p>线程停在某个调用上可能只是在等，处理器时间才说明它是否在干活。Worker 启动前留下的请求会在启动时就采。</p>
+
+<h2 id="sample">查看 Worker 占用了什么</h2>
+
+<p>在状态目录下创建 <code translate="no">logs/sample-memory</code>。Worker 在一秒内写出 <code translate="no">logs/memory-sample.txt</code> 并删除请求文件。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">进程大小</th><td>Worker 的常驻内存</td></tr>
+<tr><th scope="row">按类型</th><td>每种对象类型的数量和字节数</td></tr>
+<tr><th scope="row">按持有者</th><td>每个模块级名字能到达的内容，单独测量</td></tr>
+<tr><th scope="row">内存中的会话</th><td>缓存的对话，按最初读入它的调用分组</td></tr>
+<tr><th scope="row">内存中的运行状态表</th><td>已加载运行状态表的会话，按最初读入它的调用分组</td></tr>
+<tr><th scope="row">大字符串</th><td>50,000 字符以上的字符串，按持有它的对象链分组；不输出内容</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>这个设计依据的测量</summary>
+<ul>
+<li>重启对账读入全部 640 个对话并留在缓存里：45 秒后 106 个对话占 260 MB，Worker 停在 950 MB 左右。即使每个读完就释放，读入过程也让它在最初几秒升到 700 MB。</li>
+<li>模型目录解析后占 26 MB；10,021 个模型重复的是几百个不同的值。</li>
+<li>640 个对话、App 里开着 15 个时，Worker 启动 45 秒后占 130 MB，此前是 950 MB；峰值 420 MB，此前 1.8 GB。剩下的是打开着的对话：App 读取每个对话的资源列表，这会读入对话和它的运行状态表。</li>
+<li>对账读取全部对话期间，页面的首批请求要几秒（资源列表 3.9 秒，可用模型 3.3 秒）；只读有变动的对话后，同样的请求是 60–170 毫秒。</li>
+<li>每读完一个对话强制回收一次并不降低峰值（106 个对话 351 MB 对 366 MB），所以改为少读对话。</li>
+</ul>
+</details>

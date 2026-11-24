@@ -13,6 +13,7 @@ which open tabs receive as ``provider.credentials.changed``.
 """
 from __future__ import annotations
 
+
 import logging
 import time
 from typing import Any, Optional
@@ -342,8 +343,9 @@ def edit(provider: str, cid: str, *, label: Optional[str] = None,
 
 
 def remove(provider: str, cid: str) -> None:
-    """Remove a stored credential. An environment variable's row is removed
-    by unsetting the variable, so it is refused with that variable's name."""
+    """Remove a stored credential; a company key leaves every way of the
+    company at once. An environment variable's row is removed by unsetting
+    the variable, so it is refused with that variable's name."""
     from openprogram.models.usage.quota import forget_accounts
     from .store import get_store
     cred = _find(provider, cid)
@@ -358,7 +360,9 @@ def remove(provider: str, cid: str) -> None:
 
 
 def check(provider: str, cid: str) -> dict:
-    """Check a credential now and record the outcome; returns ``{"credential", "check"}``."""
+    """Check a credential now and record the outcome on this way's row;
+    returns ``{"credential", "check"}``. A company key refused here stays the
+    company's: it is marked on this way only."""
     from openprogram.models.listing.credentials import check_credential
     from openprogram.models.listing.key_check import check_of
     from .store import get_store

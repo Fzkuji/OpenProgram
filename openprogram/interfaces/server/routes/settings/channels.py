@@ -33,12 +33,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 
-# A heartbeat older than this many seconds counts as "stale" (red).
-# 30s gives the 5s watcher tick plenty of slack while still catching
-# real adapter crashes / hangs reasonably quickly in the UI.
-_STALE_AFTER_SEC = 30.0
-
-
 class AddAccountRequest(BaseModel):
     channel: str
     account_id: str
@@ -78,7 +72,26 @@ def _require_local_request(request: Request) -> None:
         )
 
 
+def _account_key(path) -> str | None:
+    """``<channel>:<account>`` for a file under ``<state>/channels``."""
+    parts = path.parts
+    try:
+        at = len(parts) - 1 - parts[::-1].index("accounts")
+    except ValueError:
+        return None
+    if at < 1 or at + 1 >= len(parts):
+        return None
+    return f"{parts[at - 1]}:{parts[at + 1]}"
+
+
 def register(app: FastAPI) -> None:
+    # Accounts the CLI adds, enables or signs in change the status too.
+    from openprogram.interfaces.channels import _heartbeats  # noqa: F401 - publishes ``channels``
+    from openprogram.host._platform import changes
+    from openprogram.state.paths import get_state_dir
+    changes.watch(get_state_dir() / "channels", "channels", recursive=True,
+                  names={"account.json", "credentials.json"}, key=_account_key)
+
     # ----- health (heartbeat badge) -----------------------------------------
     @app.get("/api/channels/{platform}/{account_id}/status")
     def channel_status(platform: str, account_id: str):
@@ -86,16 +99,17 @@ def register(app: FastAPI) -> None:
         from openprogram.interfaces.channels._heartbeats import (
             get_last_seen,
             get_stop,
-            is_retrying,
+            retry_remaining,
         )
 
-        def not_running(state: str) -> JSONResponse:
+        def not_running(state: str, **extra) -> JSONResponse:
             return JSONResponse(
                 content={
                     "alive": False,
                     "state": state,
                     "last_seen_at": None,
                     "age_seconds": None,
+                    **extra,
                 }
             )
 
@@ -107,22 +121,23 @@ def register(app: FastAPI) -> None:
         stop_reason = get_stop(platform, account_id)
         if stop_reason is not None:
             return not_running(stop_reason)
-        if is_retrying(platform, account_id):
-            return not_running("reconnecting")
+        left = retry_remaining(platform, account_id)
+        if left is not None:
+            # The mark runs out on its own; the window reads again then.
+            return not_running("reconnecting", recheck_in=round(left, 1))
         last = get_last_seen(platform, account_id)
-        now = time.time()
         if last is None:
             # Usable account with no thread yet: the worker starts it
             # on its next sync, or the worker is not running.
             return not_running("unknown")
-        age = now - last
-        alive = age < _STALE_AFTER_SEC
+        # The mark is set when the adapter thread starts and cleared when it
+        # ends (the thread says so), so a mark present is a live adapter.
         return JSONResponse(
             content={
-                "alive": alive,
-                "state": "alive" if alive else "stale",
+                "alive": True,
+                "state": "alive",
                 "last_seen_at": last,
-                "age_seconds": age,
+                "age_seconds": time.time() - last,
             }
         )
 

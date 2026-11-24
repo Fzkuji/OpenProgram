@@ -5,6 +5,10 @@ import { SearchInput } from "@/components/ui/search-input";
 import { groupTools, TOOL_GROUPS, type ToolInfo } from "./tool-groups";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { isAbort, lastKept, readUntilAnswered } from "@/lib/abilities/kept-read";
+import { MCP_SERVERS_KEY, readMcpServers } from "@/components/mcp/mcp-reads";
+
+const SKILLS_KEY = "/api/skills";
 import { AgentButton } from "./agent-controls";
 import { Button } from "@/components/ui/button";
 import { policyMode, selectedProgramNames, type Agent, type Text, type ToolPolicy } from "./agent-types";
@@ -15,52 +19,70 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 type Kind = "programs" | "skills" | "mcp";
 type Item = { name: string; description: string; group: string; available: boolean };
+type ProgramsCatalog = {
+  programs: Array<{ name: string; description?: string; category?: string }>;
+  tools: ToolInfo[];
+  profiles: Record<string, string[]>;
+};
+type SkillEntry = { name: string; description?: string; category?: string; enabled?: boolean };
+type ServerEntry = { name: string; status?: string; connected?: boolean; enabled?: boolean };
+type Raw = ProgramsCatalog | SkillEntry[] | ServerEntry[];
+
+// The skills and MCP reads are the ones their own pages keep, so either
+// page's list serves this panel at once.
+const CATALOG_KEYS: Record<Kind, string> = { programs: "agents:programs-catalog", skills: SKILLS_KEY, mcp: MCP_SERVERS_KEY };
+
+async function readCatalog(kind: Kind): Promise<Raw> {
+  if (kind === "programs") {
+    const [programs, tools, profiles] = await Promise.all([
+      jsonFetch<ProgramsCatalog["programs"]>("/api/programs"),
+      jsonFetch<ToolInfo[]>("/api/tools"),
+      jsonFetch<{ profiles?: Record<string, string[]> }>("/api/tool-profiles"),
+    ]);
+    return { programs: Array.isArray(programs) ? programs : [], tools: Array.isArray(tools) ? tools : [], profiles: profiles.profiles || {} };
+  }
+  if (kind === "skills") {
+    const skills = await jsonFetch<SkillEntry[]>(SKILLS_KEY);
+    return Array.isArray(skills) ? skills : [];
+  }
+  return await readMcpServers() as ServerEntry[];
+}
+
 export function CapabilityPanel({ kind, draft, update, text }: { kind: Kind; draft: Agent; update: (patch: Partial<Agent>) => void; text: Text }) {
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
-  const [catalog, setCatalog] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  // The kept catalog at once; read again when the panel shows, so the
+  // dialog usually opens on a list that is already here. Null until then.
+  const [raw, setRaw] = useState<Raw | null>(() => lastKept<Raw>(CATALOG_KEYS[kind]) ?? null);
   const [search, setSearch] = useState("");
-  const [attempt, setAttempt] = useState(0);
-  const [presets, setPresets] = useState<Record<string, string[]>>({});
-  // Translation changes need not restart an in-flight catalog request.
-  const textRef = useRef(text); textRef.current = text;
   const noun = kind === "programs" ? "Programs" : kind === "skills" ? "Skills" : "MCP";
   // Chinese UI uses the same nouns as the Abilities hub tabs (程序 / 技能).
   const nounZh = kind === "programs" ? "程序" : kind === "skills" ? "技能" : "MCP";
   const mode = kind === "programs" ? draft.tools.mode === "automatic" ? "all" : draft.tools.mode : policyMode(draft[kind]);
   useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController(); let active = true;
-    const options = { signal: controller.signal }; const tr = textRef.current;
-    setLoading(true); setError(""); setCatalog([]);
-    void (async () => {
-      if (kind === "programs") {
-        const [programs, tools, profiles] = await Promise.all([
-          jsonFetch<Array<{ name: string; description?: string; category?: string }>>("/api/programs", options),
-          jsonFetch<ToolInfo[]>("/api/tools", options),
-          jsonFetch<{ profiles: Record<string, string[]> }>("/api/tool-profiles", options),
-        ]);
-        if (!active) return;
-        setPresets(profiles.profiles || {});
-        const labels = new Map<string, string>(TOOL_GROUPS.map(([id, en, zh]) => [id, tr(en, zh)]));
-        setCatalog([
-          ...groupTools(tools.filter((tool) => tool.source !== "mcp")).flatMap((group) => group.items.map((tool) => ({ name: tool.name, description: tool.description || "", group: `${tr("Tools", "工具")} · ${labels.get(group.name) || group.name}`, available: !tool.disabled }))),
-          ...groupTools(tools.filter((tool) => tool.source === "mcp"), "server").flatMap((group) => group.items.map((tool) => ({ name: tool.name, description: tool.description || "", group: `${tr("Connected Services", "已连接服务")} · ${group.name}`, available: !tool.disabled }))),
-          ...programs.map((program) => ({ name: program.name, description: program.description || "", group: program.category === "application" ? tr("Applications", "应用") : tr("Tools", "工具"), available: true })),
-        ]);
-      } else if (kind === "skills") {
-        const skills = await jsonFetch<Array<{ name: string; description?: string; category?: string; enabled?: boolean }>>("/api/skills", options);
-        if (active) setCatalog(skills.map((item) => ({ name: item.name, description: item.description || "", group: item.category || tr("Uncategorized", "未分类"), available: item.enabled !== false })));
-      } else {
-        const data = await jsonFetch<{ servers: Array<{ name: string; status?: string; connected?: boolean; enabled?: boolean }> }>("/api/mcp/servers", options);
-        if (active) setCatalog(data.servers.map((item) => ({ name: item.name, description: item.status || "", group: tr("Connected Services", "已连接服务"), available: item.connected !== false && item.enabled !== false })));
-      }
-    })().catch((cause) => { if (active && cause.name !== "AbortError") setError(String(cause.message || cause)); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; controller.abort(); };
-  }, [open, kind, attempt]);
+    const controller = new AbortController();
+    setRaw(lastKept<Raw>(CATALOG_KEYS[kind]) ?? null);
+    readUntilAnswered(CATALOG_KEYS[kind], () => readCatalog(kind), controller.signal)
+      .then(setRaw)
+      .catch((cause) => { if (!isAbort(cause)) console.warn(`[agents] ${kind} catalog read failed`, cause); });
+    return () => controller.abort();
+  }, [kind, open]);
+  const presets = useMemo<Record<string, string[]>>(() => kind === "programs" && raw && !Array.isArray(raw) ? raw.profiles : {}, [kind, raw]);
+  const catalog = useMemo<Item[]>(() => {
+    if (!raw) return [];
+    if (kind === "programs" && !Array.isArray(raw)) {
+      const labels = new Map<string, string>(TOOL_GROUPS.map(([id, en, zh]) => [id, text(en, zh)]));
+      return [
+        ...groupTools(raw.tools.filter((tool) => tool.source !== "mcp")).flatMap((group) => group.items.map((tool) => ({ name: tool.name, description: tool.description || "", group: `${text("Tools", "工具")} · ${labels.get(group.name) || group.name}`, available: !tool.disabled }))),
+        ...groupTools(raw.tools.filter((tool) => tool.source === "mcp"), "server").flatMap((group) => group.items.map((tool) => ({ name: tool.name, description: tool.description || "", group: `${text("Connected Services", "已连接服务")} · ${group.name}`, available: !tool.disabled }))),
+        ...raw.programs.map((program) => ({ name: program.name, description: program.description || "", group: program.category === "application" ? text("Applications", "应用") : text("Tools", "工具"), available: true })),
+      ];
+    }
+    if (!Array.isArray(raw)) return [];
+    if (kind === "skills") return (raw as SkillEntry[]).map((item) => ({ name: item.name, description: item.description || "", group: item.category || text("Uncategorized", "未分类"), available: item.enabled !== false }));
+    return (raw as ServerEntry[]).map((item) => ({ name: item.name, description: item.status || "", group: text("Connected Services", "已连接服务"), available: item.connected !== false && item.enabled !== false }));
+  }, [kind, raw, text]);
+  const loading = raw === null;
   const selected = useMemo(() => {
     const names = mode === "all" ? catalog.filter((item) => item.available).map((item) => item.name)
       : mode === "none" ? [] : kind === "programs" ? selectedProgramNames(draft.tools, presets) : draft[kind].allowed;
@@ -106,7 +128,7 @@ export function CapabilityPanel({ kind, draft, update, text }: { kind: Kind; dra
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className={styles.catalogDialog} onCloseAutoFocus={(event) => { event.preventDefault(); if (opener.current?.isConnected) opener.current.focus(); }}><DialogHeader><DialogTitle>{text(`Manage ${noun}`, `管理${nounZh}`)}</DialogTitle><DialogDescription>{text("Changes remain in this Agent's draft. Removing every selection disables the capability.", "修改保留在此 Agent 的草稿中。取消全部选择会关闭该能力。")}</DialogDescription></DialogHeader>
       <SearchInput aria-label={text(`Search ${noun}`, `搜索${nounZh}`)} value={search} onChange={setSearch} placeholder={text(`Search ${noun}…`, `搜索${nounZh}…`)} />
       {kind === "programs" && Object.keys(presets).length ? <label className={styles.presetField}>{text("Access preset", "访问预设")}<SimpleSelect label={text("Access preset", "访问预设")} className="w-full" value={draft.tools.preset || ""} onValueChange={(value) => { if (value) updateTools({ mode: "selected", preset: value }); }} options={[{ value: "", label: text("Custom selection", "自定义选择") }, ...Object.keys(presets).map((name) => ({ value: name, label: name }))]} /></label> : null}
-      <div className={styles.catalogBody}>{loading ? <p className={styles.catalogState} role="status">{text("Loading catalog…", "正在加载目录…")}</p> : error ? <div className={styles.catalogState} role="alert">{error}<AgentButton onClick={() => setAttempt((value) => value + 1)}>{text("Retry", "重试")}</AgentButton></div> : !groups.length ? <p className={styles.catalogState}>{text("No matching entries", "没有匹配项")}</p> : groups.map(([group, items]) => <section className={styles.catalogGroup} key={group}><h4>{group}<span>{items.length}</span></h4>{items.map((item) => <div className={styles.catalogRow} key={`${group}:${item.name}`}><label><Checkbox checked={selected.includes(item.name)} onCheckedChange={() => toggle(item.name)} /><span><strong>{item.name}</strong><small>{item.description || text("No description", "暂无描述")}</small></span></label><span className={item.available ? styles.available : styles.missing}>{item.available ? text("Available", "可用") : text("Missing", "缺失")}</span>{kind === "mcp" && selected.includes(item.name) ? <Button type="button" variant="elevated" size="xs" className="max-[680px]:col-span-full max-[680px]:justify-self-start" aria-pressed={draft.mcp.required.includes(item.name)} onClick={() => required(item.name)}>{draft.mcp.required.includes(item.name) ? text("Required", "必需") : text("Optional", "可选")}</Button> : null}</div>)}</section>)}</div>
+      <div className={styles.catalogBody}>{loading ? null : !groups.length ? <p className={styles.catalogState}>{text("No matching entries", "没有匹配项")}</p> : groups.map(([group, items]) => <section className={styles.catalogGroup} key={group}><h4>{group}<span>{items.length}</span></h4>{items.map((item) => <div className={styles.catalogRow} key={`${group}:${item.name}`}><label><Checkbox checked={selected.includes(item.name)} onCheckedChange={() => toggle(item.name)} /><span><strong>{item.name}</strong><small>{item.description || text("No description", "暂无描述")}</small></span></label><span className={item.available ? styles.available : styles.missing}>{item.available ? text("Available", "可用") : text("Missing", "缺失")}</span>{kind === "mcp" && selected.includes(item.name) ? <Button type="button" variant="elevated" size="xs" className="max-[680px]:col-span-full max-[680px]:justify-self-start" aria-pressed={draft.mcp.required.includes(item.name)} onClick={() => required(item.name)}>{draft.mcp.required.includes(item.name) ? text("Required", "必需") : text("Optional", "可选")}</Button> : null}</div>)}</section>)}</div>
       <DialogFooter><AgentButton onClick={() => setOpen(false)}>{text("Done", "完成")}</AgentButton></DialogFooter>
     </DialogContent></Dialog>
   </>;

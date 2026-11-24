@@ -12,9 +12,13 @@ one".
 Shape:
   POST /api/providers/{name}/login/start   {method?, label?, api_key?}
       -> {session, method}; spawns the login coroutine in the background.
-  GET  /api/providers/{name}/login/poll?session=&cursor=
-      -> {events[], cursor, waiting, prompt, done, ok, error, name, label}
-         (``name`` the id of the credential the sign-in added or renewed)
+  GET  /api/providers/{name}/login/poll?session=&cursor=&version=&wait=
+      -> {events[], cursor, version, waiting, prompt, done, ok, error, name, label}
+         (``name`` the id of the credential the sign-in added or renewed).
+         With ``wait`` (seconds, at most 25) and the ``version`` last read,
+         the answer is held until the session changes or the wait ends, so
+         a window is told the outcome as it happens instead of asking on a
+         timer.
   POST /api/providers/{name}/login/submit  {session, value}
       -> {ok}; resolves the driver's pending prompt with `value`.
 
@@ -42,6 +46,7 @@ _log = logging.getLogger(__name__)
 _SESSIONS: dict[str, "_LoginSession"] = {}
 _SESSION_TTL = 600.0   # abandoned (never-finished) sessions reaped after 10 min
 _DONE_GRACE = 60.0     # finished sessions kept this long so late polls read them
+_MAX_WAIT = 25.0       # longest a poll is held for a change
 
 
 class _LoginSession:
@@ -57,6 +62,27 @@ class _LoginSession:
         self.task: asyncio.Task | None = None
         self.started_at: float = time.time()
         self.done_at: float | None = None
+        #: Moves with every change a poll reports; a held poll waits for it.
+        self.version: int = 0
+        self._changed: asyncio.Event | None = None
+
+    def touch(self) -> None:
+        """Something a poll reports changed: release the polls held for it."""
+        self.version += 1
+        changed, self._changed = self._changed, None
+        if changed is not None:
+            changed.set()
+
+    async def changed_since(self, version: int, timeout: float) -> None:
+        """Return once the session moved past ``version``, or after ``timeout``."""
+        if self.version != version or self.done or timeout <= 0:
+            return
+        if self._changed is None:
+            self._changed = asyncio.Event()
+        try:
+            await asyncio.wait_for(self._changed.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass
 
 
 class _RemoteLoginUi:
@@ -67,25 +93,30 @@ class _RemoteLoginUi:
 
     async def open_url(self, url: str) -> None:
         self._s.events.append({"type": "open_url", "url": url})
+        self._s.touch()
 
     async def show_progress(self, message: str) -> None:
         self._s.events.append({"type": "progress", "message": message})
+        self._s.touch()
 
     async def show_code(self, user_code: str, verification_uri: str) -> None:
         self._s.events.append(
             {"type": "code", "user_code": user_code, "verification_uri": verification_uri}
         )
+        self._s.touch()
 
     async def prompt(self, message: str, *, secret: bool = False) -> str:
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._s.pending = {"message": message, "secret": secret, "future": fut}
         self._s.events.append({"type": "prompt", "message": message, "secret": secret})
+        self._s.touch()
         try:
             # Bound the wait so an abandoned prompt (tab closed, never submitted)
             # self-terminates instead of awaiting a future that never resolves.
             return await asyncio.wait_for(fut, timeout=_SESSION_TTL)
         finally:
             self._s.pending = None
+            self._s.touch()
 
 
 def _has_credentials(provider: str) -> bool:
@@ -218,6 +249,7 @@ def register(app):
                 sess.ok = True
                 sess.done = True
                 sess.done_at = time.time()
+                sess.touch()
                 # Subscription catalogues are account-specific and evolve.
                 # Report login success before this network request so a slow
                 # catalogue cannot leave the login UI spinning. The refresh
@@ -243,21 +275,30 @@ def register(app):
                 if not sess.done:
                     sess.done = True
                     sess.done_at = time.time()
+                    sess.touch()
 
         sess.task = asyncio.create_task(_drive())
         return JSONResponse(content={"session": sid, "method": method})
 
     @app.get("/api/providers/{name}/login/poll")
-    async def login_poll(name: str, session: str = "", cursor: int = 0):
+    async def login_poll(name: str, session: str = "", cursor: int = 0,
+                         version: int | None = None, wait: float = 0.0):
         _reap()
         sess = _SESSIONS.get(session)
         if not sess:
             return JSONResponse(content={"error": "no such login session"}, status_code=404)
+        if version is not None and cursor >= len(sess.events):
+            # Held until the session changes: the outcome reaches the window
+            # as it happens. A cancel or reap while held answers 404 below.
+            await sess.changed_since(version, min(max(0.0, wait), _MAX_WAIT))
+            if _SESSIONS.get(session) is not sess:
+                return JSONResponse(content={"error": "no such login session"}, status_code=404)
         # Idempotent read — never pop here; `done` is sticky and a final/
         # concurrent poll must still read the terminal result. _reap cleans up.
         return JSONResponse(content={
             "events": sess.events[cursor:],
             "cursor": len(sess.events),
+            "version": sess.version,
             "waiting": bool(sess.pending),
             "prompt": (
                 {"message": sess.pending["message"], "secret": sess.pending["secret"]}
@@ -291,4 +332,6 @@ def register(app):
         sess = _SESSIONS.pop(sid, None)
         if sess and sess.task and not sess.task.done():
             sess.task.cancel()
+        if sess:
+            sess.touch()
         return JSONResponse(content={"ok": True})

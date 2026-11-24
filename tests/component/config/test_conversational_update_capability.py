@@ -24,7 +24,7 @@ def test_the_macos_limit_lives_inside_the_packaged_app_backend(monkeypatch):
     with pytest.raises(backend.BackendUnavailable, match="No update request was created") as refusal:
         backend.require_host(backend.LEGACY_APP)
     assert "openprogram upgrade" in str(refusal.value)
-    backend.require_host(backend.DEV_STABLE)
+    backend.require_host(backend.DEV_DEPLOY)
     backend.require_host(backend.CHECKOUT)
 
 

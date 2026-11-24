@@ -23,8 +23,18 @@ import time
 _log = logging.getLogger(__name__)
 
 
+#: Where the operating system cannot hold a member until it exits (a Linux
+#: kernel before pidfds), the group is listed again after this long.
+FALLBACK_LOOK_SECONDS = 0.1
+
+
 def _other_members(proc_root="/proc", session=False):
-    """Whether a live process other than this leader is still in its group.
+    """Whether a live process other than this leader is still in its group."""
+    return bool(_members(proc_root, session))
+
+
+def _members(proc_root="/proc", session=False):
+    """The live processes other than this leader still in its group.
 
     With ``session`` the scope is this leader's session instead: it also
     counts processes that moved to a group of their own (a job started under
@@ -34,13 +44,14 @@ def _other_members(proc_root="/proc", session=False):
     if os.path.isdir(os.path.join(proc_root, "self")):
         # Linux: the kernel's table, so an image without ps (slim Debian,
         # Alpine without procps) still runs commands.
-        return _other_members_from_proc(proc_root, session)
+        return _members_from_proc(proc_root, session)
     # ps itself runs in our group; exclude it after collecting its snapshot.
     inspector = subprocess.Popen(["ps", "-axo", "pid=,pgid=,stat="],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     output, _ = inspector.communicate(timeout=3)
     if inspector.returncode:
         raise RuntimeError("process group inspection failed")
+    members = []
     for line in output.splitlines():
         fields = line.split()
         if len(fields) < 3 or fields[2].startswith("Z"):
@@ -52,16 +63,17 @@ def _other_members(proc_root="/proc", session=False):
             # macOS ps shows no session id; ask the kernel per process.
             try:
                 if os.getsid(pid) == os.getpid():
-                    return True
+                    members.append(pid)
             except OSError:
                 pass  # exited since the snapshot
         elif int(fields[1]) == os.getpid():
-            return True
-    return False
+            members.append(pid)
+    return members
 
 
-def _other_members_from_proc(proc_root, session=False):
+def _members_from_proc(proc_root, session=False):
     me = os.getpid()
+    members = []
     for name in os.listdir(proc_root):
         if not name.isdigit() or int(name) == me:
             continue
@@ -74,8 +86,105 @@ def _other_members_from_proc(proc_root, session=False):
             continue  # exited between the listing and the read
         column = 3 if session else 2
         if len(fields) > column and fields[column] == str(me).encode() and fields[0] not in (b"Z", b"X"):
+            members.append(int(name))
+    return members
+
+
+def _hold(pids):
+    """Ask the operating system to tell when each of ``pids`` exits.
+
+    Returns ``(wait, held)``: ``wait(timeout)`` blocks until a held process
+    exits or ``timeout`` passes (``None``: no limit) and returns the pids
+    that exited; ``held`` are the pids still running when held. ``wait`` is
+    ``None`` where nothing can be held here (no kqueue, no pidfd).
+    """
+    import select
+
+    if hasattr(select, "kqueue") and hasattr(select, "KQ_FILTER_PROC"):
+        queue = select.kqueue()
+        held = set()
+        for pid in pids:
+            try:
+                queue.control([select.kevent(pid, select.KQ_FILTER_PROC,
+                                             select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                             select.KQ_NOTE_EXIT)], 0)
+                held.add(pid)
+            except ProcessLookupError:
+                pass  # already gone
+            except OSError:
+                queue.close()
+                return None, set(pids)
+
+        def wait(timeout):
+            return {event.ident for event in queue.control(None, 64, timeout)}
+
+        wait.close = queue.close
+        return wait, held
+    if hasattr(os, "pidfd_open"):
+        poller = select.poll()
+        fds = {}
+        for pid in pids:
+            try:
+                fd = os.pidfd_open(pid)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                for fd in fds:
+                    os.close(fd)
+                return None, set(pids)
+            fds[fd] = pid
+            poller.register(fd, select.POLLIN)
+
+        def wait(timeout):
+            ended = set()
+            for fd, _mask in poller.poll(None if timeout is None else timeout * 1000):
+                ended.add(fds.pop(fd))
+                poller.unregister(fd)
+                os.close(fd)
+            return ended
+
+        def close():
+            for fd in fds:
+                os.close(fd)
+
+        wait.close = close
+        return wait, set(fds.values())
+    return None, set(pids)
+
+
+def _wait_until_alone(session=False, deadline=None, *, members=None, hold=None):
+    """Block until no other process is left in this leader's group (its
+    session with ``session``), or ``deadline`` (``time.monotonic()``) passes;
+    whether it is alone.
+
+    The members are listed, each is held by the operating system (kqueue
+    ``NOTE_EXIT``, a pidfd), the list is read once more so a pid that ended
+    and was reused before it was held is not waited on, and the wait lasts
+    until every held one has exited. Then the group is listed again: a
+    member may have started another before it ended.
+    """
+    members = members or (lambda: _members(session=session))
+    hold = hold or _hold
+    while True:
+        pids = members()
+        if not pids:
             return True
-    return False
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
+        wait, held = hold(pids)
+        if wait is None:
+            time.sleep(FALLBACK_LOOK_SECONDS if deadline is None
+                       else min(FALLBACK_LOOK_SECONDS, max(0.0, deadline - time.monotonic())))
+            continue
+        try:
+            held &= set(members())
+            while held:
+                timeout = None if deadline is None else deadline - time.monotonic()
+                if timeout is not None and timeout <= 0:
+                    return False
+                held -= wait(timeout)
+        finally:
+            wait.close()
 
 
 def _write_all(target, chunk):
@@ -178,15 +287,12 @@ def main():
         else:
             proc = subprocess.Popen(**launch, stdin=subprocess.DEVNULL)
         code = proc.wait()
-        while _other_members():
-            time.sleep(0.1)
+        _wait_until_alone()
         if output is not None:
             # A job in another group of this session (``set -m``, setpgid)
             # still holds the terminal and may write; the pump keeps reading
             # while one is alive, up to the bound the output always had.
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline and _other_members(session=True):
-                time.sleep(0.1)
+            _wait_until_alone(session=True, deadline=time.monotonic() + 2)
             # Nothing is left to write: the pump drains the queue and stops.
             os.close(group_gone)
             output.join(timeout=2)

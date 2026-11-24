@@ -479,6 +479,10 @@
     "en": "Application target",
     "zh": "应用目标"
   },
+  "reference/design/integrations/computer-use/machines-and-targets.html": {
+    "en": "Machines and targets",
+    "zh": "机器与目标"
+  },
   "reference/design/integrations/computer-use/macos.html": {
     "en": "macOS delivery",
     "zh": "macOS 投递"
@@ -638,6 +642,10 @@
   "reference/design/providers/auth/credential-file-hardening.html": {
     "en": "File credentials",
     "zh": "文件凭据"
+  },
+  "reference/design/providers/auth/credential-model.html": {
+    "en": "Credential model",
+    "zh": "凭据模型"
   },
   "reference/design/providers/auth/credential-status-redesign.html": {
     "en": "Credential status",

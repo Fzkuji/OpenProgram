@@ -1,15 +1,40 @@
-"""Claude Code MCP tools for transactional memory edits."""
+"""The writer's tools for transactional memory edits."""
 
 from __future__ import annotations
 
 import glob as _glob
 import re
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from . import filing
 from .guidance import repair_guidance
 from .workspace import MemoryWorkspace
+
+@dataclass(frozen=True)
+class ManagedTool:
+    """One tool the writer may call: its JSON Schema and its handler.
+
+    The handler takes the call's arguments and returns
+    ``{"content": [{"type": "text", "text": ...}], "is_error": bool}``.
+    """
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+def tool(name: str, description: str, input_schema: dict[str, Any]):
+    """Declare the function below as the handler of a :class:`ManagedTool`."""
+
+    def declare(handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]) -> ManagedTool:
+        return ManagedTool(name, description, input_schema, handler)
+
+    return declare
+
 
 MOVE_DESCRIPTION = (
     "File Topic notes into folders: move each `from` path to its `to` path, "
@@ -46,10 +71,6 @@ def management_tools(
     workspace: MemoryWorkspace,
     audit: list[dict[str, Any]],
 ) -> list[Any]:
-    # Imported here so reading memory does not require the agent SDK:
-    # only a run that actually writes needs it.
-    from claude_agent_sdk import tool
-
     def _guidance(command: str, output: str) -> str:
         """What to do about a failure, appended to the raw error.
 

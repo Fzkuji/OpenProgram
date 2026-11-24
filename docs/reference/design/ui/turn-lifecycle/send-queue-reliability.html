@@ -47,7 +47,7 @@
 <tr><th scope="row">Command carries</th><td>Only message, exact execution identity, version, idempotency key. No permissions, models, tools or program changes</td></tr>
 <tr><th scope="row">Before posting</th><td>The client keeps the immutable envelope</td></tr>
 <tr><th scope="row">Lost acknowledgement</th><td>Delivery unconfirmed: row stays visible, normal drain cannot resend, confirmation retries reuse the envelope</td></tr>
-<tr><th scope="row">Confirmation timer</th><td>One per row; 1.5 s, backing off to 30 s after transport failures. A definitive receipt clears it</td></tr>
+<tr><th scope="row">Confirmation</th><td>One per row, asked again when its execution changes (<code translate="no">op:execution-update</code>), the session's run slot changes or the socket reopens; only a transport failure waits on a timer, doubling to 30 s. A definitive receipt clears it</td></tr>
 <tr><th scope="row">Stale-version rejection</th><td>One new envelope against a fresh snapshot of the same execution</td></tr>
 <tr><th scope="row">Target</th><td>Bound when the user asks. A version retry refreshes the version and cannot select a replacement execution</td></tr>
 <tr><th scope="row">Unsupported or ended</th><td>Entry stays queued; idle reconciliation drains normal follow-ups FIFO. At execution end undelivered steering is rejected, and rows can resume queuing</td></tr>

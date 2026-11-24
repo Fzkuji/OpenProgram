@@ -4,10 +4,10 @@
 <p>会话 DAG 按运行时发言身份隐藏内部检查提示及其回复、调用子树，旧记录同样适用。正式报告和普通用户消息继续显示；原始执行记录保留。</p>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="调度器每 30 秒检查一次，唤醒到期的对话。一次唤醒最多做一件事：在主链启动常驻 Goal，或在隐藏的侧分支上用只读工具运行检查。检查有内容时调用 always_on_report，在主链追加消息、设置未读圆点，并按汇报类型发到桌面和渠道。检查没有内容时不在对话中留痕。">
+<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="调度器睡到最早的到期唤醒，或在日程、Agent 设置变化时醒来，唤醒到期的对话。一次唤醒最多做一件事：在主链启动常驻 Goal，或在隐藏的侧分支上用只读工具运行检查。检查有内容时调用 always_on_report，在主链追加消息、设置未读圆点，并按汇报类型发到桌面和渠道。检查没有内容时不在对话中留痕。">
   <defs><marker id="ao-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="40">调度器</text>
-  <text class="t-soft" x="0" y="66">每 30 秒</text>
+  <text class="t-soft" x="0" y="66">到下次唤醒</text>
   <line class="ln" x1="112" y1="33" x2="166" y2="33" marker-end="url(#ao-a)"/>
   <text class="t-big" x="178" y="40">唤醒</text>
   <text class="t-soft" x="178" y="66">最多做一件事</text>
@@ -25,7 +25,7 @@
   <text class="t-soft" x="539" y="196">桌面、渠道</text>
 </svg>
 <ol class="flow fig-narrow">
-  <li><strong>调度器</strong><small>每 30 秒</small></li>
+  <li><strong>调度器</strong><small>到下次唤醒</small></li>
   <li><strong>唤醒</strong><small>最多做一件事</small></li>
   <li><strong>Goal</strong><small>主链，普通工具</small><small>或</small><strong>检查</strong><small>隐藏的侧分支，只读工具</small><small>没话说：不留痕</small></li>
   <li class="flow-end"><strong>汇报</strong><small>消息、未读圆点、桌面、渠道</small></li>
@@ -213,7 +213,7 @@
 <tr><th scope="row">上一次运行还没结束</th><td>记录为 <code translate="no">skipped</code>：不影响失败计数，连续跳过共用一行。Webhook 返回 409 <code translate="no">previous_run_active</code>；监视把这次变化留给下一次检查。执行存储里未结束的运行，只要进程还在或处于暂停，也算，所以 Worker 重启后保护依然有效，子进程死掉也不会挡住之后的触发</td></tr>
 <tr><th scope="row">会话已归档</th><td>不启动轮次，也不动任务分支。记录为 <code translate="no">skipped</code>，这次触发算用掉。唤醒提醒只发通知，不启动轮次</td></tr>
 <tr><th scope="row">单次任务</th><td>只触发一次。改了时间就清除触发记录，到新时间再触发。进程死掉时留下的 <code translate="no">starting</code> 认领，在下一次检查时触发</td></tr>
-<tr><th scope="row">其他回复</th><td><code translate="no">report_scheduled()</code>：接在 head 后面的主链消息，对话里只有任务分支时作为第一条从 ROOT 开始；未读圆点、通知、<code translate="no">notify.finding.channels</code> 开启时发往聊天绑定的渠道，不发往选中的渠道；不进待处理收件箱</td></tr>
+<tr><th scope="row">其他回复</th><td><code translate="no">report_scheduled()</code>：接在 head 后面的主链消息，对话里只有任务分支时作为第一条从 ROOT 开始；未读圆点、通知、<code translate="no">notify.finding.channels</code> 开启时发往聊天绑定的渠道，不发往选中的渠道；在<a href="#pending-inbox">收件箱</a>里留一条标明任务的条目，直到打开该对话</td></tr>
 <tr><th scope="row">运行结束</th><td><code translate="no">runtime/scheduler/run_finish.py</code>。只有执行进入终态才算结束：暂停、副作用待核对、版本切换期间被保存的轮次都不记录、不发消息。一次执行只算一次。</td></tr>
 <tr><th scope="row">由谁收尾</th><td>轮次自己的进程、重启后接着跑的 Worker、接手比旧 Worker 活得久的运行的下一个 Worker（<code translate="no">run-endings/</code>）、保存轮次的重放，都走同一个收尾</td></tr>
 <tr><th scope="row">重启无法继续</th><td>记为失败。调用方在等待的子 Job，上面已没有运行时同样结束，记为出错的 Job；父运行还活着时，子运行不会被父运行挡住。</td></tr>
@@ -349,11 +349,13 @@
 </tbody>
 </table>
 
-<h3 id="pending-inbox">待处理收件箱</h3>
+<h3 id="pending-inbox">收件箱</h3>
 <dl class="pairs">
-<dt>来源</dt><dd><code translate="no">always_on/pending.py</code>：已启用或有常驻状态的 Agent 的每个对话，关闭后不清空（每 Agent 500 个），各取最近 20 条汇报</dd>
+<dt>来源</dt><dd><code translate="no">always_on/pending.py</code>：已启用或有常驻状态的 Agent 的每个对话，关闭后不清空（每 Agent 500 个），再加上定时任务汇报进去的每个对话；各取最近 20 条汇报</dd>
+<dt>定时结果</dt><dd>带 <code translate="no">task_id</code> 的汇报和发现一样算新消息；条目带 <code translate="no">task_id</code> 和任务标题，收件箱用日历图标代替 Agent 头像</dd>
+<dt>显示位置</dt><dd><a href="../scheduler/tasks-page.zh.html">任务页</a>的收件箱标签、侧栏任务一行的数字、每个运行记录面板顶部的<strong>等你处理</strong></dd>
 <dt>顺序</dt><dd>由新到旧；超过七天不再列出</dd>
-<dt>刷新</dt><dd>答复不发帧：客户端每 30 秒和聚焦时重读</dd>
+<dt>刷新</dt><dd>客户端在聚焦时和收到 <code translate="no">inbox</code> 变化时重读；汇报写入或被看过、有人在对话里发言时发出该信号（<a href="reliability/change-notification.html">变化通知</a>）</dd>
 </dl>
 
 <h3 id="report-preferences">汇报偏好</h3>
@@ -473,9 +475,9 @@
 <thead class="sr"><tr><th scope="col">界面</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row">Agents → 常驻标签页</th><td>配置、渠道目标</td></tr>
-<tr><th scope="row">活动行</th><td>没有单独分组。当前主 Agent 行多一条<strong>常驻</strong>：正在做什么、下次唤醒（安静时段有标记；自设时带原因）。</td></tr>
+<tr><th scope="row">活动行</th><td>没有单独分组。工作图的第一行是下次唤醒：先写巡检被中断或预算用完，然后是安静时段和间隔。第一次运行之前，主 Agent 那一行多一条<strong>常驻</strong>。</td></tr>
 <tr><th scope="row">活动页</th><td>常驻目标、当前 Goal、唤醒日、安静时段、上次唤醒的结果和成本（中断时带错误和重试）、今日花费、偏好、带类型和投递的汇报、立即唤醒</td></tr>
-<tr><th scope="row">待处理</th><td>侧栏一行带数量，打开决策和消息页面。每个活动面板顶部的<strong>等你处理</strong>列出相同内容。</td></tr>
+<tr><th scope="row">任务 → 收件箱</th><td>侧栏的任务一行显示数量；这个标签列出决定和新消息（<a href="../scheduler/tasks-page.zh.html">任务页</a>）。每个活动面板顶部的<strong>等你处理</strong>列出相同内容。</td></tr>
 <tr><th scope="row">WebSocket</th><td><code translate="no">always_on_report</code>、<code translate="no">always_on_update</code>、<code translate="no">transcript_update</code>，都带 <code translate="no">session_id</code></td></tr>
 <tr><th scope="row">Python</th><td><code translate="no">openprogram.runtime.conversation.always_on</code>：<code translate="no">wake()</code>、<code translate="no">status()</code>、<code translate="no">report()</code>、<code translate="no">join()</code>、<code translate="no">schedule_wake()</code>、<code translate="no">add_preference()</code>、<code translate="no">remove_preference()</code>、<code translate="no">agent_for_session()</code>、<code translate="no">channel_targets()</code>；<code translate="no">always_on.handoff_migration.migrate()</code>；<code translate="no">always_on.schedule.is_quiet()</code>、<code translate="no">next_allowed()</code></td></tr>
 </tbody>
@@ -485,7 +487,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">接口</th><th scope="col">效果</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">GET /api/always-on/pending</code></th><td><code translate="no">{items}</code>：对话、Agent、类型、标题、正文、时间</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/always-on/pending</code></th><td><code translate="no">{items}</code>：对话、Agent、类型、标题、正文、时间；定时任务的结果另有 <code translate="no">task_id</code> 和 <code translate="no">task_title</code></td></tr>
 <tr><th scope="row"><code translate="no">GET /api/agents/{id}/always-on</code></th><td>已存配置和 <code translate="no">channel_targets</code></td></tr>
 <tr><th scope="row"><code translate="no">PATCH /api/agents/{id}</code></th><td>像其他分区一样接受 <code translate="no">always_on</code></td></tr>
 <tr><th scope="row"><code translate="no">GET /api/sessions/{id}/work</code></th><td>状态和汇报，以及未完成事项和定时任务</td></tr>
@@ -519,7 +521,7 @@
 <tr><th scope="row">Claude Code</th><td>云端按计划运行的 Routines；没有常驻目标</td><td>Routines 列表</td></tr>
 <tr><th scope="row">Codex</th><td>持久模式：休眠前写下目标、状态、完成条件和下次检查。Automations 运行本地定时任务。</td><td>列表；无日历</td></tr>
 <tr><th scope="row">DeepSeek Harness</th><td>定时任务插件（实验）：延迟、时刻、一分钟以上间隔、每天、每周或带 IANA 时区的 cron；投递回原对话；仅在应用打开时运行；不能暂停。没有常驻目标或后台 Agent。</td><td>带投递记录的任务页；无日历</td></tr>
-<tr><th scope="row">OpenProgram</th><td>每对话一个常驻目标，渠道，安静时段</td><td>定时任务页：列表和日历（月、周、日、议程），用 Schedule-X</td></tr>
+<tr><th scope="row">OpenProgram</th><td>每对话一个常驻目标，渠道，安静时段</td><td>任务页：要你处理的收件箱，旁边是定时任务的列表和日历（月、周、日、议程），用 Schedule-X</td></tr>
 </tbody>
 </table>
 <dl class="pairs">
@@ -563,7 +565,7 @@
 <tr><th scope="row">自动 Goal 的来源</th><td>检查、交接或定时，由说话者决定；常驻 Goal 保留自己的来源；用户 Goal 为空</td><td>停止、预算和 Goal 启动器都需要区分它们</td></tr>
 <tr><th scope="row">重启后未发布的汇报</th><td>每次 Worker 启动时发布一次，只发一小时内的</td><td>重启不能延长原有等待；更早的汇报留在活动页</td></tr>
 <tr><th scope="row">卡在发送中的投递</th><td>一小时内重发；更早的标记为失败，原因是被重启中断</td><td>避免首次扫描时大量重发</td></tr>
-<tr><th scope="row">定时补跑</th><td>已实现；无凭据演练通过后再晋升</td><td>有下界时间戳限制，错过记录一起交付</td></tr>
+<tr><th scope="row">定时补跑</th><td>已实现；无凭据演练通过后再部署</td><td>有下界时间戳限制，错过记录一起交付</td></tr>
 <tr><th scope="row">运行中收到 Webhook</th><td>返回 409 <code translate="no">previous_run_active</code>；监视哈希在启动后才写入</td><td>调用方可以重试，监视在下次轮询时再次触发</td></tr>
 <tr><th scope="row">聊天应用里的停止</th><td><code translate="no">/stop</code> 通过执行存储取消会话的根执行，不经过会话锁</td><td>渠道轮次进入会话图之前只存在于执行存储中</td></tr>
 </tbody>
@@ -579,7 +581,7 @@
 <tr><th scope="row">身份和团队</th><td>持久的交接链；汇报是普通消息；常驻是 Agent 的设置</td><td>Maus 的祖先拒绝；来自 <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/osa/dm.py">OSA direct messages</a> 的欠回复传递；来自 <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/osa/templates.py">OSA templates</a> 的原子模板安装；来自 <a href="https://docs.x.ai/grok-bot/chat-and-collaboration">Grok chat</a> 的交接消息留在 Bot 自己的对话，只用于投递轮次</td><td><code translate="no">automation</code> 标记；目标无法回答时的失败说明</td></tr>
 <tr><th scope="row">工具、权限和安全</th><td>检查中永远没有等待的卡片；按名称固定的列表，不含 MCP 和 bash；一次性的 <code translate="no">hold_outbound</code>，默认关闭；身份关卡不能被模式放宽</td><td>来自 <a href="https://github.com/milind-soni/OpenMausBot/blob/HEAD/server/peer-provenance.ts">Maus provenance</a> 的只有人写的那一行才算请求；Maus 对以往输出加围栏；来自 <a href="https://github.com/kadaliao/open-super-agent/blob/HEAD/SECURITY.md">OSA security</a> 的私有地址拦截，只用于检查</td><td>只在读到的文字进入全权限轮次的边界设关卡，并和该边界一起交付；自动 Goal 从 Agent 每日预算扣费；没有窗口的轮次打开自己的浏览器标签页</td></tr>
 <tr><th scope="row">渠道</th><td>未送达在 App 中报告；文件通过有记录的工具调用发送</td><td>OSA 感知代码围栏的拆分；OSA 对 401、404、409 的处理；<code translate="no">/stop</code> 和 <code translate="no">/help</code></td><td>只对连接失败重试；持久状态只用现有汇报行；通过聊天应用触达手机，不做原生 App</td></tr>
-<tr><th scope="row">产品界面</th><td>可见可删的偏好；每次检查的成本；隐藏的检查</td><td>来自 Maus 的说明停止后保留什么、在哪里运行；来自 OSA 的教学式开场</td><td>同一条停止规则；承诺要么兑现要么拒绝</td></tr>
+<tr><th scope="row">产品界面</th><td>可见可删的偏好；每次检查的成本；隐藏的检查</td><td>来自 Maus 的说明停止后保留什么、在哪里运行</td><td>同一条停止规则；承诺要么兑现要么拒绝</td></tr>
 <tr><th scope="row">聊天形态</th><td>稳定的气泡规则，上限 4 个；修复 <code translate="no">--reply-gap</code>；汇报说明</td><td>不借鉴；显式发送工具、假节奏、Maus 表格卡片和 OpenDots 带标签的假用户气泡都已否决</td><td>带明确聊天轮次信号的消息指南；面向聊天应用的 <code translate="no">flatten_tables</code></td></tr>
 </tbody>
 </table>
@@ -591,7 +593,7 @@
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col">含义</th></tr></thead>
 <tbody>
 <tr><th scope="row">范围</th><td>一个 worktree、一个 Agent、一次合入；只跑受影响的测试；行为变化时同步更新两种语言的文档</td></tr>
-<tr><th scope="row">发布</th><td>部署到开发版，立即晋升，在稳定版验证，归档测试对话。检查项写明演练或杀进程恢复的批次先做完，通过后才晋升</td></tr>
+<tr><th scope="row">发布</th><td>部署到开发版，在开发版验证，归档测试对话。检查项写明演练或杀进程恢复的批次先做完，通过后才部署。稳定版随下一个正式发布版得到它</td></tr>
 <tr><th scope="row">演练</th><td>在空环境下，用不含 <code translate="no">auth/</code>、密钥、<code translate="no">executions.db</code>、<code translate="no">channels/</code>、<code translate="no">mcp_tokens/</code> 和 <code translate="no">mcp_servers.json</code> 的数据副本启动 Worker 并驱动 tick 路径，不增加端口或 profile；断言没有渠道适配器启动</td></tr>
 <tr><th scope="row">对比</th><td>写代码前先给新旧对比页并得到同意，每波一页；任何行为变化都需要，不只是可见变化；示意图保持真实外观</td></tr>
 <tr><th scope="row">同类项目</th><td>借鉴之前先拉取该克隆，读最新提交里的对应文件</td></tr>
@@ -947,7 +949,7 @@
 <tr><th scope="row">63</th><td>活动页的存活行</td><td>示意图和对比</td><td>在 55 之后</td><td>已实现</td></tr>
 <tr><th scope="row">56</th><td>在认领、意图、汇报行、投递处的崩溃矩阵</td><td>矩阵本身</td><td>在 2 之后</td><td>已实现</td></tr>
 <tr><th scope="row">57</th><td>每周例行：只读报告、检查、同类项目基线、真实冒烟测试</td><td>第一份周一报告</td><td>无</td><td>已构建；周一任务在稳定版上创建</td></tr>
-<tr><th scope="row">60</th><td>空对话开场</td><td>示意图和对比</td><td>无</td><td>已构建；待查看常驻 Agent 的空会话</td></tr>
+<tr><th scope="row">60</th><td>空对话开场：用字符拼出一次 ALWAYS-ON，没有可点的文字</td><td>示意图和对比</td><td>无</td><td>已构建</td></tr>
 <tr><th scope="row">61</th><td>用平实的话显示连接状态</td><td>示意图和对比</td><td>无</td><td>已实现；待看一眼频道设置页</td></tr>
 </tbody>
 </table>

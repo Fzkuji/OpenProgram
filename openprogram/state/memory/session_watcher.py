@@ -1,8 +1,11 @@
 """Session watcher — forces a memory write when a conversation goes idle.
 
-Polls the session DB every ``poll_interval`` seconds. For any session
-whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
-already handled, hands the message list to the memory backend's
+Reads the session list when the next conversation it knows of goes idle
+or its retry comes due, and at most ``poll_interval`` seconds apart (a
+conversation written since the last pass goes idle no sooner than
+``idle_minutes`` later, so it is seen in time). For any session whose
+``updated_at`` exceeds ``idle_minutes`` and which we haven't already
+handled, hands the message list to the memory backend's
 ``write(..., force=True)``, which runs the writer over whatever the
 per-turn path left behind.
 
@@ -51,7 +54,7 @@ from openprogram.host._platform.filesystem import replace_file
 logger = logging.getLogger(__name__)
 
 DEFAULT_IDLE_MINUTES = 30
-DEFAULT_POLL_INTERVAL = 300  # seconds — 5 min
+DEFAULT_POLL_INTERVAL = 300  # seconds — 5 min, the longest wait between passes
 
 STATE_FILE = "ingest-state.json"
 STATE_VERSION = 1
@@ -537,7 +540,7 @@ def start_idle_session_watcher(
                 _scan(idle_minutes)
             except Exception as e:  # noqa: BLE001
                 logger.debug("session-end scan failed: %s", e)
-            time.sleep(poll_interval)
+            time.sleep(_wait_after_scan(poll_interval))
 
     t = threading.Thread(target=_loop, name="memory-session-end", daemon=True)
     t.start()
@@ -579,6 +582,20 @@ def startup_pass(roots: list[Path] | None = None) -> None:
             logger.debug("memory: startup pass skipped %s: %s", root, exc)
 
 
+#: When the last pass found something it will have to do: the earliest
+#: idle deadline or retry of a conversation it passed over (``time.time()``).
+_next_due: float | None = None
+
+
+def _wait_after_scan(poll_interval: float) -> float:
+    """Seconds to sleep after a pass: until the next known deadline, at
+    most ``poll_interval``."""
+    due = _next_due
+    if due is None:
+        return poll_interval
+    return min(float(poll_interval), max(1.0, due - time.time() + 1.0))
+
+
 def _scan(idle_minutes: int) -> int:
     """One pass. Returns number of sessions processed."""
     try:
@@ -591,8 +608,10 @@ def _scan(idle_minutes: int) -> int:
 
 
 def _scan_locked(db: Any, idle_minutes: int) -> int:
+    global _next_due
     now = time.time()
     cutoff = now - idle_minutes * 60
+    due: list[float] = []
     state = load_state()
     processed = state["processed"]
     retries = state["sessions"]
@@ -616,7 +635,8 @@ def _scan_locked(db: Any, idle_minutes: int) -> int:
         if not sid or updated_at == 0:
             continue
         if updated_at > cutoff:
-            # Still active; skip.
+            # Still active; skip until it goes idle.
+            due.append(updated_at + idle_minutes * 60)
             continue
         if processed.get(sid) == updated_at:
             # Already processed at this exact updated_at.
@@ -624,6 +644,8 @@ def _scan_locked(db: Any, idle_minutes: int) -> int:
         entry = retries.get(sid)
         if not _due(entry, updated_at, now):
             # Waiting out its backoff, or stopped until it changes.
+            if entry is not None and not entry.get("stopped"):
+                due.append(float(entry["next_at"]))
             continue
         target = _target_root(sid)
         if str(target) in state["workspaces"]:
@@ -657,6 +679,8 @@ def _scan_locked(db: Any, idle_minutes: int) -> int:
         elif left.retryable:
             retry = _retry_after(entry, left, updated_at, time.time(), target)
             retries[sid] = retry
+            if not retry["stopped"]:
+                due.append(float(retry["next_at"]))
         else:
             retries.pop(sid, None)
         # 事件层 tap：空闲会话写入记忆的起止（B 类）。懒 import 防循环。
@@ -706,6 +730,7 @@ def _scan_locked(db: Any, idle_minutes: int) -> int:
         # already happened.
         processed[sid] = updated_at
         _save_state(state)
+    _next_due = min(due, default=None)
     return n_done
 
 

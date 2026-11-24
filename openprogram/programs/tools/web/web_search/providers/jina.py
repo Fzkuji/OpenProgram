@@ -14,7 +14,8 @@ Docs: https://jina.ai/reader/#apiform — search docs are on the same page.
 
 from __future__ import annotations
 
-import os
+from openprogram.models.auth.services import service_key
+
 import urllib.parse
 from dataclasses import dataclass
 
@@ -33,7 +34,7 @@ class JinaProvider:
     requires_env: tuple = ("JINA_API_KEY",)
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("JINA_API_KEY", "").strip())
+        return bool(service_key("jina").strip())
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
         # ``s.jina.ai`` takes the query as the URL path. JSON response
@@ -46,7 +47,7 @@ class JinaProvider:
             # list (web_fetch handles content if the agent wants it).
             "X-Respond-With": "no-content",
         }
-        key = os.environ.get("JINA_API_KEY")
+        key = service_key("jina")
         if not key or not key.strip():
             raise RuntimeError("JINA_API_KEY not set")
         headers["Authorization"] = f"Bearer {key}"

@@ -72,7 +72,7 @@ def lookup_tool(monkeypatch: pytest.MonkeyPatch):
                                                                   "limit": {"type": "integer"}}},
                      execute=execute)
     from openprogram.runtime.conversation.turn_runtime import loop_runner
-    monkeypatch.setattr(loop_runner, "_configure_browser_tool",
+    monkeypatch.setattr(loop_runner, "_configure_screen_tool",
                         lambda *_args, **_kwargs: ([tool], False))
     return tool
 

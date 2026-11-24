@@ -191,6 +191,17 @@ def _fork_user_turn_and_run(
         _srv._release_run_reservation(session_id, new_msg_id)
         return {"__error__": (f"retry persistence failed: {type(exc).__name__}: {exc}", 500)}
 
+    if plan.replaces:
+        # The turn being retried left only an error. The new turn is written
+        # and selected, so the failed one goes: a branch per failed attempt
+        # is nothing to go back to.
+        try:
+            _db_for_retry().delete_branch_tail(session_id, str(src_user.get("id")))
+            _srv._invalidate_messages(session_id)
+        except Exception:
+            _log.warning("could not remove the failed turn %s a retry replaced",
+                         src_user.get("id"), exc_info=True)
+
     with _srv._running_tasks_lock:
         task = _srv._running_tasks.get(session_id)
         if task and task.get("msg_id") == new_msg_id:
@@ -277,9 +288,10 @@ def _fork_user_turn_and_run(
 async def post_chat_retry(body: dict = None):
     """Retry the user turn at or above ``msg_id``.
 
-    Non-destructive: forks a sibling user message with the SAME content,
-    runs it, sets HEAD to the new turn. Old turn + assistant subtree
-    stay in the DAG, reachable via ``< N / M >``.
+    Forks a sibling user message with the SAME content, runs it, sets
+    HEAD to the new turn. Old turn + assistant subtree stay in the DAG,
+    reachable via ``< N / M >``, unless the old reply is only an error:
+    then the new turn takes its place (``branch_fork.plan_fork``).
     """
     if body is None:
         return JSONResponse(content={"error": "no body"}, status_code=400)

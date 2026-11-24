@@ -456,8 +456,8 @@ _SPECS = (
     _api("webui.model_listing.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("webui.model_listing.configured", URLTrustClass.CONFIGURED_SERVICE),
     _api("runtime.local_probe", URLTrustClass.CONFIGURED_SERVICE),
-    # computer_use_agent target "vm": the OSWorld server at computer_use.vm_url.
-    replace(_api("computer_use.vm", URLTrustClass.CONFIGURED_SERVICE),
+    # computer_use on a machine whose screen kind is "osworld": the OSWorld server at its address.
+    replace(_api("computer_use.osworld", URLTrustClass.CONFIGURED_SERVICE),
             accepted_mime_prefixes=("image/", "application/", "text/")),
 )
 

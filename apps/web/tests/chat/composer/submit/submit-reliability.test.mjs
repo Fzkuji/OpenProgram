@@ -95,7 +95,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {} };
 globalThis.WebSocket = { OPEN: 1 };
 const { useChatSubmit, stopSession } = await import("../../../../components/chat/composer/submit/use-chat-submit.ts");
 const { sendChatMessage } = await import("../../../../components/chat/composer/submit/send-chat-message.ts");
-const { useSendQueue, queueFor, reconcileAfterSessionLoad, recheckRunState, releaseStopHold, stopPending } = await import("../../../../lib/chat/send/send-queue.ts");
+const { useSendQueue, queueFor, reconcileAfterSessionLoad, recheckRunState, runStateMayHaveChanged, releaseStopHold, stopPending } = await import("../../../../lib/chat/send/send-queue.ts");
 const { pasteStore, placeholderToken } = await import("../../../../components/chat/composer/paste/paste-store.ts");
 const pending = await import("../../../../lib/chat/send/pending-user-text.ts");
 
@@ -654,15 +654,23 @@ test("a clear before the previous send's ACK leaves the next queued message wait
   assert.equal(queueFor(sid).length, 0);
 });
 
-test("an active run reported without ids is asked again, so a finished turn cannot stay busy", async t => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("an active run reported without ids is asked again, so a finished turn cannot stay busy", async () => {
   reconcileAfterSessionLoad("A", true, null);
   assert.deepEqual(host.sessions.runningTasks.A, { session_id: "A", msg_id: "" });
-  // The session store asks for this on every write of a slot without ids.
+  // The session store asks for this on every write of a slot without ids;
+  // the writes of one turn of the event loop make one ask, at once.
   recheckRunState("A");
-  t.mock.timers.tick(1500);
+  recheckRunState("A");
   await nextTurn(); await nextTurn();
   assert.deepEqual(host.frames, [{ action: "get_run_state", session_id: "A" }]);
+  // An answer that is itself a slot without ids is not asked about again.
+  recheckRunState("A");
+  await nextTurn(); await nextTurn();
+  assert.equal(host.frames.length, 1, "no loop of asks");
+  // A running_task_clear the slot could not match asks once more.
+  runStateMayHaveChanged("A");
+  await nextTurn(); await nextTurn();
+  assert.equal(host.frames.length, 2);
   // The reply names the session idle: the slot clears.
   reconcileAfterSessionLoad("A", false, null);
   assert.equal(host.sessions.runningTasks.A, undefined);
@@ -670,7 +678,6 @@ test("an active run reported without ids is asked again, so a finished turn cann
   host.frames.length = 0;
   reconcileAfterSessionLoad("B", true, { msg_id: "user-B", execution_id: "exec-B" });
   recheckRunState("B");
-  t.mock.timers.tick(1500);
   await nextTurn(); await nextTurn();
   assert.deepEqual(host.frames, []);
 });
@@ -833,6 +840,38 @@ test("after Stop the queue waits until the server has released the turn", async 
   await nextTurn(); await nextTurn();
   assert.equal(stopPending("A"), false);
   assert.deepEqual(host.frames.map(frame => frame.text), ["after stop"]);
+});
+
+test("a Stop's hold asks nothing on a timer: the server's clear lets it go, a reconnect asks once", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  running();
+  await composer("after stop").submit();
+  stopSession("A", () => true);
+  for (let second = 0; second < 30; second++) { t.mock.timers.tick(1000); await nextTurn(); }
+  assert.equal(host.frames.filter(frame => frame.action === "get_run_state").length, 0, "nothing is asked while the turn unwinds");
+  assert.equal(stopPending("A"), true);
+  // The socket came back: whatever was broadcast meanwhile is asked for once.
+  const previous = { ...host.sessions, wsStatus: "connecting" };
+  host.sessions.wsStatus = "open";
+  for (const listener of [...host.storeListeners]) listener(host.sessions, previous);
+  await nextTurn(); await nextTurn();
+  assert.deepEqual(host.frames.filter(frame => frame.action === "get_run_state"), [{ action: "get_run_state", session_id: "A" }]);
+  // The server's running_task_clear reaches releaseStopHold.
+  releaseStopHold("A");
+  await nextTurn(); await nextTurn();
+  assert.equal(stopPending("A"), false);
+  assert.deepEqual(host.frames.filter(frame => frame.text).map(frame => frame.text), ["after stop"]);
+  delete host.sessions.wsStatus;
+});
+
+test("a Stop's hold lets the queue go when no answer ever comes", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  running();
+  await composer("after stop").submit();
+  stopSession("A", () => true);
+  t.mock.timers.tick(35_000);
+  await nextTurn(); await nextTurn();
+  assert.equal(stopPending("A"), false);
 });
 
 test("a Stop on a turn known by id but not by version cancels at once", async () => {

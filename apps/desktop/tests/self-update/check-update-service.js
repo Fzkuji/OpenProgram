@@ -23,6 +23,9 @@ const {
   validateUpdateUrl,
   writeAll,
 } = require("../../main/self-update/update-service");
+const { MAC_SWAP_SCRIPT } = require("../../main/self-update/app-replace");
+const { spawnSync } = require("node:child_process");
+const crypto = require("node:crypto");
 
 assert.equal(compareVersions("0.6.7", "0.6.6"), 1);
 assert.equal(compareVersions("0.6.6", "0.6.6"), 0);
@@ -647,6 +650,76 @@ function checkAssetNames() {
     ["OpenProgram-1.2.3-win-arm64.exe", "OpenProgram-1.2.3-win-arm64-unsigned.exe"]);
   assert.deepEqual(desktopAssetNames("1.2.3", "darwin", "arm64"),
     ["OpenProgram-1.2.3-mac-arm64.dmg", "OpenProgram-1.2.3-mac-arm64-unsigned.dmg"]);
+  assert.deepEqual(desktopAssetNames("1.2.3", "darwin", "arm64", { inPlace: true }), [
+    "OpenProgram-1.2.3-mac-arm64.zip", "OpenProgram-1.2.3-mac-arm64.dmg", "OpenProgram-1.2.3-mac-arm64-unsigned.dmg",
+  ], "a Mac that replaces itself takes the .zip first");
+}
+
+/**
+ * An App that replaces itself downloads and prepares a new release on its
+ * own, offers the restart, keeps the offer across a later check, and an
+ * install hands the prepared file over.
+ */
+async function checkInPlace(directory) {
+  const bytes = Buffer.from("the new App");
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const zip = "OpenProgram-1.1.0-mac-x64.zip";
+  const dmg = "OpenProgram-1.1.0-mac-x64.dmg";
+  const files = releaseWith("1.1.0", [zip, dmg]);
+  for (const item of files.release.assets) if (item.name !== "release-manifest.json") item.size = bytes.length;
+  for (const item of files.manifest.files) Object.assign(item, { bytes: bytes.length, sha256 });
+  const standIn = githubStandIn(files);
+  const fetchImpl = async (requestUrl, options) => (
+    requestUrl.endsWith(zip) ? new Response(bytes) : standIn.fetchImpl(requestUrl, options)
+  );
+  const prepared = [];
+  const installed = [];
+  const inPlace = {
+    kind: "app-archive",
+    downloadPath: (name) => path.join(directory, "in-place", name),
+    prepare: async (file, release) => { prepared.push([fs.readFileSync(file, "utf8"), release.latestVersion]); },
+    install: async (file) => { installed.push(file); return ""; },
+  };
+  const service = serviceIn(directory, { platform: "darwin", fetchImpl, inPlace });
+  const checked = await service.check({ force: true });
+  assert.equal(checked.release.artifactKind, "app-archive");
+  assert.equal(checked.installsInPlace, true);
+  await service.downloadPromise;
+  const ready = service.getState();
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.readyVersion, "1.1.0");
+  assert.deepEqual(prepared, [["the new App", "1.1.0"]]);
+
+  const again = await service.check({ force: true });
+  assert.equal(again.status, "ready", "a later check of the same release keeps the restart offer");
+  assert.equal(service.downloadPromise, null, "and does not fetch it again");
+
+  await service.install();
+  assert.deepEqual(installed, [path.join(directory, "in-place", zip)]);
+
+  // An App that cannot replace itself keeps the disk image and asks first.
+  const manual = serviceIn(directory, { platform: "darwin", fetchImpl });
+  const offered = await manual.check({ force: true });
+  assert.equal(offered.release.artifactKind, "dmg");
+  assert.equal(offered.installsInPlace, false);
+  assert.equal(manual.downloadPromise, null);
+  await assert.rejects(manual.install(), /no prepared update/);
+}
+
+/** The swap waits for the App to exit, puts the new bundle in place and drops the old one. */
+function checkMacSwap(directory) {
+  const root = path.join(directory, "swap");
+  const app = path.join(root, "OpenProgram.app");
+  const staged = path.join(root, "staged", "OpenProgram.app");
+  fs.mkdirSync(path.join(app, "Contents"), { recursive: true });
+  fs.mkdirSync(path.join(staged, "Contents"), { recursive: true });
+  fs.writeFileSync(path.join(app, "Contents", "version"), "old");
+  fs.writeFileSync(path.join(staged, "Contents", "version"), "new");
+  const result = spawnSync("/bin/sh", ["-c", MAC_SWAP_SCRIPT, "swap", "999999", app, staged, "true"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(app, "Contents", "version"), "utf8"), "new");
+  assert.equal(fs.existsSync(staged), false);
+  assert.deepEqual(fs.readdirSync(root).sort(), ["OpenProgram.app", "staged"]);
 }
 
 function releaseWith(version, names) {
@@ -806,6 +879,8 @@ async function checkPlatformsAndFallbacks() {
     await checkUpdateSource(directory, linuxFiles);
     await checkVersionStore(directory);
     await checkResume(directory);
+    await checkInPlace(directory);
+    checkMacSwap(directory);
     checkChromiumPath();
     await checkChromiumRequest();
   } finally {

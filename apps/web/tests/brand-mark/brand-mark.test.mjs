@@ -200,7 +200,7 @@ describe("one drawer", () => {
     ["components/chats/chats-page.tsx", ["<ChannelLogo channel={conv.channel} size={16} />"]],
     ["components/settings/providers/routing-overview.tsx", ["<ProviderIcon id={g.provider} size={16} />"]],
     ["components/settings/providers/detail.tsx", ["<ProviderIcon id={provider.id} size={32} />"]],
-    ["components/settings/providers/status/provider-card.tsx", ["<ProviderIcon id={p.id} size={28} />", "<ProviderIcon id={companyIcon(group)} size={28} />"]],
+    ["components/settings/providers/status/provider-card.tsx", ["<ProviderIcon id={companyIcon(group)} size={20} />"]],
     ["components/settings/providers/status/provider-rows.tsx", ["<ProviderIcon id={p.id} size={20} />", "<ProviderIcon id={companyIcon(group)} size={20} />"]],
     ["components/settings/providers/add/add-provider-dialog.tsx", ["<ProviderIcon id={choice.id} size={28} />", "<ProviderIcon id={step.choice.id} size={28} />"]],
     ["components/settings/providers/add/pick.tsx", ["<ProviderIcon id={icon} size={20} />", "<ProviderIcon id={p.id} size={20} />", '<ProviderIcon id={c.id} size={40} plate="brand" />', '<ProviderIcon id={row.id} size={40} plate="brand" />']],

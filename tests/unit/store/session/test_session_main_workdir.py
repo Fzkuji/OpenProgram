@@ -39,7 +39,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     state = tmp_path / "state"
     state.mkdir()
-    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: str(state))
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     return db
 
 

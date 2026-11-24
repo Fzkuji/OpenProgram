@@ -96,7 +96,7 @@
 <li>openclaw 的记忆插件占默认插槽；工具描述要求必须先召回，并要求把 <code translate="no">disabled=true</code> 告诉用户。检索失败返回 <code translate="no">disabled</code>、<code translate="no">unavailable</code>、警告和建议操作。启动模板声明空工作区是正常的。</li>
 <li>hermes 没有 list 动作，每次写入都返回完整列表。</li>
 <li>codex-cli 有 List、Read、Search、AddAdHocNote，受 <code translate="no">Feature::MemoryTool</code>（关）和 <code translate="no">memories.dedicated_tools</code> 控制。</li>
-<li>OpenProgram 的记忆写入器用 <code translate="no">setting_sources=[]</code> 运行 Claude Code SDK，宿主的 <code translate="no">CLAUDE.md</code> 进不去（<code translate="no">state/memory/agent_runtime/claude_code.py</code>）。读记忆的智能体没有对应的说明。</li>
+<li>OpenProgram 的记忆写入器是一个独立会话，只带自己的系统提示和记忆工具，宿主的 <code translate="no">CLAUDE.md</code> 进不去（<code translate="no">runtime/conversation/memory_agent.py</code>）。读记忆的智能体没有对应的说明。</li>
 </ul>
 </details>
 
