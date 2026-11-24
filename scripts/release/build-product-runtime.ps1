@@ -180,6 +180,8 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot "apps\cli\dist\index-standalone.cjs"
     -Destination (Join-Path $RuntimeRoot "assets\tui\index.cjs") -Force
 Copy-Item -LiteralPath $ProductConfig -Destination (Join-Path $RuntimeRoot "product-runtime.json") -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot "uv.lock") -Destination (Join-Path $RuntimeRoot "product-uv.lock") -Force
+# The embedded Tailscale sidecar behind "Open from anywhere".
+Invoke-Native $PythonBin -I (Join-Path $PSScriptRoot "build-tailnet.py") --install $RuntimeRoot
 $Verifier = Join-Path $RuntimeRoot "bin\verify-product-runtime.py"
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "verify-product-runtime.py") -Destination $Verifier -Force
 

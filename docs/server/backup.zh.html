@@ -53,7 +53,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">plugin-options/</code>、profile 的 AuthStore 和 <code translate="no">.env</code> 文件、Channel 的 <code translate="no">channels/*/credentials.json</code></th><td class="deny">排除</td><td class="ask">归档，明文</td></tr>
 <tr><th scope="row"><code translate="no">config.json[api_keys]</code>；MCP 的 env、header、bearer token 和 OAuth client secret 字段</th><td class="review">移除，文件其余部分保留</td><td class="ask">归档，明文</td></tr>
-<tr><th scope="row">Web 运行时 token、待配对的 Channel 配对码</th><td class="deny">排除</td><td class="deny">排除</td></tr>
+<tr><th scope="row">Web 运行时 token、待配对的 Channel 配对码、<code translate="no">tailnet/</code> 里的 Tailscale 节点密钥</th><td class="deny">排除</td><td class="deny">排除</td></tr>
 </tbody>
 </table>
 <p class="note">含凭据的归档要像凭据本身一样保管。换机器时重新登录通常更安全。<code translate="no">backup-manifest.json</code> 只记录实际包含、脱敏或排除的类别，以及 <code translate="no">credential_policy</code> 下的永不备份规则，不含密钥值。</p>

@@ -93,17 +93,28 @@
 <thead><tr><th scope="col"></th><th scope="col">How</th><th scope="col">Applies</th></tr></thead>
 <tbody>
 <tr><th scope="row">Same Wi-Fi</th><td>A second listener, in the Worker's process and on the same app, bound to this computer's private network address, whose Origin the running server then answers; <code translate="no">web.lan</code> keeps the choice (<code translate="no">interfaces/server/lan_listener.py</code>). The address is the route's interface, or the addresses this computer's own name resolves to when a proxy tunnel holds the route; only 10/8, 172.16/12 and 192.168/16 count. A new network moves the listener on the next read</td><td>At once; the main bind stays loopback</td></tr>
-<tr><th scope="row">Tailscale</th><td>Runs <code translate="no">tailscale serve --bg --https=443</code> to the Worker's loopback port and adds <code translate="no">https://&lt;name&gt;.ts.net</code> to the configured and the running Origins. Serve passes the Host it was dialled at and <code translate="no">X-Forwarded-Proto: https</code>, which the owner-auth check already believes from a loopback peer</td><td>At once; the bind stays loopback</td></tr>
+<tr><th scope="row">Anywhere</th><td><code translate="no">openprogram-tailnet</code> in the runtime's <code translate="no">bin/</code> (Go, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>) embeds Tailscale through <code translate="no">tsnet</code> and listens with Tailscale Funnel on <code translate="no">https://&lt;name&gt;.&lt;tailnet&gt;.ts.net</code>, a public address with a real certificate. It proxies every request, WebSockets included, to the Worker's loopback port, keeping the Host and setting <code translate="no">X-Forwarded-Proto: https</code>, which owner auth believes from a loopback peer. <code translate="no">web.anywhere</code> keeps the switch</td><td>At once; the bind stays loopback</td></tr>
 </tbody>
 </table>
+<p>The Worker runs the sidecar as a child, with this profile's Tailscale identity in <code translate="no">&lt;state&gt;/tailnet</code>, and reads its JSON state lines:</p>
+<ul>
+<li><code translate="no">starting</code></li>
+<li><code translate="no">needs_login</code>, with Tailscale's sign-in link</li>
+<li><code translate="no">needs_funnel</code>, with the admin link that turns on HTTPS and Funnel</li>
+<li><code translate="no">running</code>, with the address, which the running server answers only while it lasts</li>
+<li><code translate="no">error</code>, with what went wrong</li>
+</ul>
 <p>A pairing link names every address: the first with <code translate="no">#pair=&lt;code&gt;</code>, each other as <code translate="no">&amp;via=&lt;origin&gt;</code>. A browser ignores the rest; another OpenProgram keeps them all and tries them in order on every connection, as T3 Code tries each of a machine's routes.</p>
-<p>Peers: OpenClaw and T3 Code both recommend Tailscale for reaching a computer from elsewhere; Claude Code and Codex relay through their own servers, which OpenProgram has none of.</p>
+<p>Nothing is installed for it. The owner switches it on and signs in to Tailscale once in a browser (a free personal tailnet is enough), and turns on HTTPS and Funnel once if the tailnet has not.</p>
+<p>A phone needs no app: it opens the address in its browser. Reaching the address is not signing in; a device still pairs with a one-time code, as on Same Wi-Fi.</p>
+<p>Peers: Claude Code Remote Control and Codex remote control relay through their own servers, so a phone reaches the computer through the vendor. OpenProgram has no server to relay through, so it embeds <code translate="no">tsnet</code> instead.</p>
+<p>OpenClaw and T3 Code also reach a computer from elsewhere through Tailscale, but ask the owner to install it.</p>
 
 <h2 id="status">Implementation status</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td>Pairing and device credentials, the pairing and device routes, <code translate="no">openprogram web pair</code> and <code translate="no">openprogram web devices</code>. The <code translate="no">openprogram</code> connection kind (<code translate="no">host/machines/peer.py</code>), B's connection to A, merged lists, forwarding by conversation and new conversations on A (<code translate="no">interfaces/server/remote_machines/</code>). Settings → Devices with Add device, the paired phones in the list and both ways in (<code translate="no">/api/auth/remote-access</code>), the WeChat QR code</td></tr>
+<tr><th scope="row">Implemented</th><td>Pairing and device credentials, the pairing and device routes, <code translate="no">openprogram web pair</code> and <code translate="no">openprogram web devices</code>. The <code translate="no">openprogram</code> connection kind (<code translate="no">host/machines/peer.py</code>), B's connection to A, merged lists, forwarding by conversation and new conversations on A (<code translate="no">interfaces/server/remote_machines/</code>). Settings → Devices with Add device, the paired phones in the list and both ways in (<code translate="no">/api/auth/remote-access</code>), the embedded Tailscale sidecar built for macOS, Linux and Windows, the WeChat QR code</td></tr>
 <tr><th scope="row">Not started</th><td>Files, @ search and terminal: their WebSocket requests that name the conversation are forwarded like any other, but the HTTP routes still read B's own disk. The phone app (a PWA, then a native shell with push)</td></tr>
 </tbody>
 </table>

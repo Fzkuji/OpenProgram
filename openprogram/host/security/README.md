@@ -7,7 +7,7 @@
 - **`backend_endpoint.py`** — Reaching the active Web backend from a client process
 - **`credential_mask.py`** — The one masked shape every surface shows for a stored credential
 - **`identity_header.py`** — Normalize identity values from external platforms before they enter runtime-controlled headers
-- **`remote_access.py`** — Where other devices reach this computer's OpenProgram: the local network and Tailscale
+- **`remote_access.py`** — Where other devices reach this computer's OpenProgram: the local network and anywhere
 - **`runtime_http_audit.py`** — Shared Runtime HTTP denial audit and fail-closed source inventory
 - **`safe_http.py`** — Consumer declarations and peer-constrained Runtime HTTP clients
 - **`url_policy.py`** — Pure URL normalization and address policy for Runtime-owned HTTP

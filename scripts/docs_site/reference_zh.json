@@ -243,6 +243,7 @@
   "Plugin name to enable": "要启用的插件名",
   "Plugin name to uninstall": "要卸载的插件名",
   "Ports": "端口",
+  "Publish this OpenProgram at a public https://<name>.ts.net address through the Tailscale built into OpenProgram, so other devices reach it from any network with no app. Every device still pairs with a one-time code. Settings → Devices switches it at once; set here, it applies on the next start.": "通过 OpenProgram 内置的 Tailscale，在公开的 https://<name>.ts.net 地址上发布这个 OpenProgram，其他设备在任何网络下都能打开，无需安装应用。每台设备仍要用一次性配对码配对。在 设置 → 设备 中切换会立即生效；在这里设置则下次启动时生效。",
   "Print absolute path to a log": "打印日志的绝对路径",
   "Print an authenticated browser bootstrap URL for the active Web server": "打印当前网页服务器的认证启动 URL",
   "Print human-readable summary instead of JSON": "输出可读摘要而非 JSON",

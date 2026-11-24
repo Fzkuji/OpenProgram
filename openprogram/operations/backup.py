@@ -109,6 +109,7 @@ REGENERATED: tuple[str, ...] = (
     "worker.lock", "worker.log", "worker.pid", "worker.port", "worker.stop",
     "worker-service.cmd",
     "web-port",  # the free port this machine had at the first start; chosen again
+    "tailnet",  # this computer's Tailscale node key; another computer signs in as itself
     ".restore.lock", ".restore-journal.d", ".restore-journal.json", ".write-test",
 )
 

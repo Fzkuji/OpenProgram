@@ -16,7 +16,9 @@ from openprogram.interfaces.cli import worker_client
 _NO_REMOTE_ORIGIN = """\
 This Web server only listens on this computer, so another device cannot open it.
 Make it reachable first, then pair again:
-  - same network or VPN (Tailscale): set web.host and web.allowed_origins,
+  - from anywhere: switch on Settings → Devices → Anywhere
+    (or  openprogram config set web.anywhere true  and restart)
+  - same network or VPN: set web.host and web.allowed_origins,
     for example  openprogram config set web.host 0.0.0.0
   - your own HTTPS proxy: add its Origin to web.allowed_origins
 Then restart:  openprogram worker restart

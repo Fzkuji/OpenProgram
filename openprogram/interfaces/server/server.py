@@ -1057,6 +1057,12 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         port=port,
         allowed_origins=_web_cfg["allowed_origins"],
     )
+    # "Open from anywhere" left on: its sidecar comes back with the Worker.
+    from openprogram.host.security import remote_access as _remote_access
+    try:
+        _remote_access.start_anywhere_if_configured(port, _owner_auth_state.allow_origins)
+    except Exception:
+        logger.warning("could not start the anywhere sidecar", exc_info=True)
 
     # No conversation is read at start-up: each is read when first asked
     # for (``_get_or_create_session``), so opening one never waits behind a
@@ -1120,6 +1126,8 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
                 _loop.run_until_complete(_loop.shutdown_asyncgens())
                 _loop.close()
             _uvicorn_server = None
+            from openprogram.host.security.remote_access import anywhere as _anywhere
+            _anywhere.stop()
             if _owner_auth_state is not None:
                 _owner_auth_state.close()
 

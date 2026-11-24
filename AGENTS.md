@@ -13,11 +13,11 @@
 | 代码 | GitHub 上最新的正式 Release | `dev` 上部署过去的提交 |
 | 运行 | `/Applications/OpenProgram.app`，端口 `18100` | `/Applications/OpenProgram Dev.app`，端口 `18200`，运行时在 `~/.openprogram-dev/runtime` |
 | 数据 | `~/.openprogram` | `~/.openprogram-dev`（`dev` profile） |
-| 怎么更新 | 只靠 App 自己的更新：后台下载，侧边栏出现 NEW，点“重启以更新” | 提交后运行 `openprogram dev deploy` |
+| 怎么更新 | 只靠 App 自己的更新：后台下载，侧边栏出现 NEW，点“重启以更新” | 提交后运行 `.venv/bin/openprogram dev deploy` |
 
 - 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。现在机器上的稳定版还是本地构建的，等下一个正式版（1.5.0）发布后用它的 DMG 覆盖安装一次完成切换；切换前不动它，也不要装比它旧的正式版（旧代码读不了新代码写过的数据）。
-- 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；可以在稳定版的对话里运行。改动做完就停在开发版，不再往稳定版推。
-- 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/local-instances/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
+- 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `.venv/bin/openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；可以在稳定版的对话里运行。改动做完就停在开发版，不再往稳定版推。
+- 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/local-instances/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`.venv/bin/openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
 - 禁止在 `post-commit` 中自动刷新开发版；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
 - 本地只保留这两份可见 App；更新时覆盖现有内容，不创建按 commit 命名的 App 副本。
 - CLI 的 profile 功能属于产品能力；本仓库的本地运行只用默认 profile（稳定版）和 `dev` profile（开发版），不再起其他 profile 或端口。

@@ -100,6 +100,8 @@ requirements="$work_dir/requirements.txt"
 # Packages this runtime no longer ships; an earlier refresh may have installed them.
 "$uv_bin" pip uninstall --python "$py" --break-system-packages \
   gui-agent-harness research-agent-harness claude-agent-sdk >/dev/null 2>&1 || true
+# The embedded Tailscale sidecar behind "Open from anywhere".
+"$py" -I "$repo_root/scripts/release/build-tailnet.py" --optional --install "$runtime"
 stamp "runtime installed"
 
 # The worker runs as its own named macOS application ("OpenProgram Dev"), so

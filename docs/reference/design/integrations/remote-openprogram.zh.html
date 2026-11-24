@@ -93,17 +93,28 @@
 <thead><tr><th scope="col"></th><th scope="col">做法</th><th scope="col">生效</th></tr></thead>
 <tbody>
 <tr><th scope="row">同一 Wi-Fi</th><td>在 Worker 进程里、用同一个应用再开一个监听，绑定这台电脑的私有网络地址，运行中的服务器随之接受这个地址的 Origin；<code translate="no">web.lan</code> 记住这个选择（<code translate="no">interfaces/server/lan_listener.py</code>）。地址取路由所走的网卡；代理隧道占着路由时，改取这台电脑自己的名字在本地解析出的地址；只算 10/8、172.16/12 和 192.168/16。换了网络，下次读取时监听会跟着换地址</td><td>立即；主监听仍是回环</td></tr>
-<tr><th scope="row">Tailscale</th><td>运行 <code translate="no">tailscale serve --bg --https=443</code> 指向 Worker 的回环端口，并把 <code translate="no">https://&lt;名字&gt;.ts.net</code> 加进配置和正在运行的 Origin。Serve 会传递被访问时的 Host 和 <code translate="no">X-Forwarded-Proto: https</code>，所有者认证本来就信任来自回环地址的这一头</td><td>立即；监听地址仍是回环</td></tr>
+<tr><th scope="row">任何地方</th><td>运行时 <code translate="no">bin/</code> 里的 <code translate="no">openprogram-tailnet</code>（Go，<a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>）通过 <code translate="no">tsnet</code> 内嵌 Tailscale，用 Tailscale Funnel 在 <code translate="no">https://&lt;名字&gt;.&lt;tailnet&gt;.ts.net</code> 上监听，这是带正式证书的公开地址。它把每个请求（包括 WebSocket）代理到 Worker 的回环端口，保留 Host 并设置 <code translate="no">X-Forwarded-Proto: https</code>，所有者认证信任来自回环地址的这一头。<code translate="no">web.anywhere</code> 记住开关</td><td>立即；监听地址仍是回环</td></tr>
 </tbody>
 </table>
+<p>Worker 把它作为子进程运行，这个 profile 的 Tailscale 身份放在 <code translate="no">&lt;state&gt;/tailnet</code>，并逐行读取 JSON 状态：</p>
+<ul>
+<li><code translate="no">starting</code></li>
+<li><code translate="no">needs_login</code>，带 Tailscale 登录链接</li>
+<li><code translate="no">needs_funnel</code>，带开启 HTTPS 和 Funnel 的管理后台链接</li>
+<li><code translate="no">running</code>，带地址；只在此期间运行中的服务器接受这个地址</li>
+<li><code translate="no">error</code>，带出错原因</li>
+</ul>
 <p>配对链接列出所有地址：第一个带 <code translate="no">#pair=&lt;配对码&gt;</code>，其余每个写成 <code translate="no">&amp;via=&lt;origin&gt;</code>。浏览器忽略其余地址；另一台 OpenProgram 全部保存，每次连接都依次尝试，就像 T3 Code 依次尝试一台机器的各条路由。</p>
-<p>同类做法：OpenClaw 和 T3 Code 都推荐用 Tailscale 从别处连到电脑；Claude Code 和 Codex 经它们自己的服务器中转，而 OpenProgram 没有服务器。</p>
+<p>不需要安装任何东西。所有者打开开关，在浏览器里登录一次 Tailscale（免费的个人 tailnet 就够），如果 tailnet 还没开 HTTPS 和 Funnel，再开一次。</p>
+<p>手机不需要应用，用浏览器打开地址即可。能访问地址不等于能登录；和同一 Wi-Fi 一样，每台设备仍要用一次性配对码配对。</p>
+<p>同类做法：Claude Code Remote Control 和 Codex remote control 经它们自己的服务器中转，手机通过厂商连到电脑。OpenProgram 没有可中转的服务器，所以内嵌 <code translate="no">tsnet</code>。</p>
+<p>OpenClaw 和 T3 Code 也借 Tailscale 从别处连到电脑，但要所有者自己安装它。</p>
 
 <h2 id="status">实现状态</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>配对和设备凭据、配对与设备路由、<code translate="no">openprogram web pair</code> 和 <code translate="no">openprogram web devices</code>。<code translate="no">openprogram</code> 连接类型（<code translate="no">host/machines/peer.py</code>）、B 到 A 的连接、合并列表、按对话转发、在 A 上新建对话（<code translate="no">interfaces/server/remote_machines/</code>）。设置 → 设备，包括添加设备、列表里的已配对手机和两种连接方式（<code translate="no">/api/auth/remote-access</code>）、微信二维码</td></tr>
+<tr><th scope="row">已实现</th><td>配对和设备凭据、配对与设备路由、<code translate="no">openprogram web pair</code> 和 <code translate="no">openprogram web devices</code>。<code translate="no">openprogram</code> 连接类型（<code translate="no">host/machines/peer.py</code>）、B 到 A 的连接、合并列表、按对话转发、在 A 上新建对话（<code translate="no">interfaces/server/remote_machines/</code>）。设置 → 设备，包括添加设备、列表里的已配对手机和两种连接方式（<code translate="no">/api/auth/remote-access</code>）、为 macOS、Linux 和 Windows 构建的内嵌 Tailscale 子进程、微信二维码</td></tr>
 <tr><th scope="row">未开始</th><td>文件、@ 搜索和终端：指明对话的 WebSocket 请求会像其他请求一样转发，但 HTTP 路由仍读 B 自己的磁盘。手机应用（先 PWA，再带推送的原生外壳）</td></tr>
 </tbody>
 </table>

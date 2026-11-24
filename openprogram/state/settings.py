@@ -609,6 +609,17 @@ SETTINGS: list[SettingSpec] = [
              "allowlist, not a CORS list for cross-origin frontends.",
     ),
     SettingSpec(
+        key="web.anywhere", path=("web", "anywhere"), group="Ports",
+        label="Open from anywhere", widget="toggle",
+        apply=APPLY_NEXT_START, default=False,
+        help="Publish this OpenProgram at a public https://<name>.ts.net "
+             "address through the Tailscale built into OpenProgram, so "
+             "other devices reach it from any network with no app. Every "
+             "device still pairs with a one-time code. Settings → Devices "
+             "switches it at once; set here, it applies on the next "
+             "start.",
+    ),
+    SettingSpec(
         key="mcp_server.exposed_tools",
         path=("mcp_server", "exposed_tools"),
         group="MCP server",

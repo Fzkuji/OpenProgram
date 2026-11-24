@@ -114,6 +114,8 @@ cp "$uv_bin" "$runtime_root/bin/uv"
 cp "$(command -v node)" "$runtime_root/bin/node"
 cp "$repo_root/apps/cli/dist/index-standalone.cjs" \
   "$runtime_root/assets/tui/index.cjs"
+# The embedded Tailscale sidecar behind "Open from anywhere".
+"$python_bin" -I "$repo_root/scripts/release/build-tailnet.py" --install "$runtime_root"
 cp "$product_config" "$runtime_root/product-runtime.json"
 cp "$repo_root/uv.lock" "$runtime_root/product-uv.lock"
 cp "$repo_root/scripts/release/verify-product-runtime.py" \

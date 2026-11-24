@@ -169,7 +169,7 @@ class OwnerAuthState:
     def allow_origins(self, added: Iterable[str] = (), removed: Iterable[str] = ()) -> None:
         """Change the Origins this running server answers, without a restart.
 
-        Remote access through a same-host proxy (Tailscale Serve) adds its
+        Remote access through a same-host proxy (the embedded Tailscale Funnel) adds its
         address here as it is switched on; the bind address itself only
         changes on the next start.
         """

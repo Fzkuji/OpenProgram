@@ -8,10 +8,10 @@ lists them and forwards what is done to them
 
 A pairing link is what the other computer's Settings → Devices → Add device shows:
 ``http://192.168.1.20:18100/#pair=<code>``, with ``&via=<origin>`` once for
-each other address it answers at (its Tailscale name, say). The first
+each other address it answers at (its public ts.net address, say). The first
 address that answers redeems the code, and every address is kept: each
 connection tries them in order, so a laptop that leaves the home network
-reaches the same computer over Tailscale.
+reaches the same computer at that address.
 
 Design: docs/reference/design/integrations/remote-openprogram.html
 """
