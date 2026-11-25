@@ -164,15 +164,26 @@ def read_records(db: Any, session_id: str, provider: str) -> dict:
     return dict(records) if isinstance(records, dict) else {}
 
 
+#: How many of a thread's turn ids a record keeps as written by an engine.
+_OWN_TURNS_KEPT = 1000
+
+
 def write_record(db: Any, session_id: str, provider: str, key: str, record: dict) -> None:
     """Keep one branch's thread record (thread id, last message seen)."""
     def update(current: dict) -> dict:
         threads = dict(current or {})
         records = dict(threads.get(provider) or {})
         old = dict(records.get(key) or {})
+        if "thread_id" in record and old.get("thread_id") not in (None, record["thread_id"]):
+            old = {}  # another thread now: nothing of the last one's record is this one's
         # The engine went on here: the thread now holds this branch's turns, so
         # another branch forks it instead of taking it as the app's shared one.
-        records[key] = {**old, **record, **({"shared": False} if old.get("shared") else {})}
+        merged = {**old, **record, **({"shared": False} if old.get("shared") else {})}
+        if isinstance(record.get("own_turns"), list):
+            # Two turns may keep ids at once: each adds its own to what is there now.
+            kept = list(old.get("own_turns") or [])
+            merged["own_turns"] = (kept + [t for t in record["own_turns"] if t not in kept])[-_OWN_TURNS_KEPT:]
+        records[key] = merged
         threads[provider] = records
         return threads
 

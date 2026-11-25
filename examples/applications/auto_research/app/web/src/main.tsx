@@ -1,6 +1,7 @@
 import "./app.css";
 import { createRoot } from "react-dom/client";
 import { ToastHost } from "@/components/ui/toast-host";
+import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { App } from "./App";
 
 // The kit's themes key on data-theme; the sandboxed page follows the system's light or dark.
@@ -13,4 +14,4 @@ const theme = () => {
 theme();
 dark.addEventListener("change", theme);
 
-createRoot(document.getElementById("root")!).render(<><App /><ToastHost /></>);
+createRoot(document.getElementById("root")!).render(<><App /><ToastHost /><ConfirmDialogHost /></>);

@@ -198,12 +198,22 @@ def test_full_access_allows_without_asking(dsh):
 
 
 def test_stop_cancels_the_prompt_and_keeps_what_came(dsh):
+    from openprogram.runtime.harnesses.deepseek.engine import DeepSeekHarnessEngine
     cancel = threading.Event()
+    stopped: list[float] = []
     dsh.script([[_chunk("agent_message_chunk", "a", "partial"), {"wait_cancel": True}]])
-    threading.Timer(0.5, cancel.set).start()
-    started = time.monotonic()
-    (text, _, _), _, _ = _run(_request(), cancel=cancel)
-    assert text == "partial" and time.monotonic() - started < 5
+
+    def on_event(frame):
+        # Stop once the answer has begun, however long the agent took to start.
+        if not cancel.is_set() and "partial" in json.dumps(frame):
+            stopped.append(time.monotonic())
+            cancel.set()
+
+    req = _request()
+    text, _, _ = DeepSeekHarnessEngine().run_turn(
+        req=req, history=[], on_event=on_event, cancel_event=cancel,
+        assistant_msg_id=f"{req.user_msg_id}_reply", ordered_blocks_out=[], execution_context=None)
+    assert text == "partial" and time.monotonic() - stopped[0] < 5
     assert dsh.log("in", "session/cancel")
 
 

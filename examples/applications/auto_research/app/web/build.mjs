@@ -58,6 +58,7 @@ const css = `@import "tailwindcss";
 @import "./styles/base/document.css";
 @import "./styles/base/focus.css";
 @import "./styles/base/scrollbar.css";
+@import "./styles/base/list-row.css";
 @import "./styles/chat/composer/top-bar-chips.css";
 @source "${join(web, "components/ui")}";
 @source "${join(here, "src")}";

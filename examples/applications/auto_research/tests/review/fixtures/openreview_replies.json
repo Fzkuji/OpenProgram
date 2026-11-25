@@ -1,0 +1,362 @@
+{
+ "notes": [
+  {
+   "id": "r1",
+   "forum": "acc1",
+   "replyto": "acc1",
+   "number": 11,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission11/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission11/Reviewer_xr1"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Summary of acc1 review one. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. "
+    },
+    "rating": {
+     "value": 8
+    },
+    "confidence": {
+     "value": 4
+    },
+    "soundness": {
+     "value": 3
+    },
+    "presentation": {
+     "value": 3
+    },
+    "contribution": {
+     "value": 3
+    },
+    "strengths": {
+     "value": "Strengths of acc1 review one."
+    },
+    "weaknesses": {
+     "value": "Weaknesses of acc1 review one."
+    },
+    "questions": {
+     "value": "Why?"
+    },
+    "code_of_conduct": {
+     "value": "Yes"
+    }
+   }
+  },
+  {
+   "id": "r2",
+   "forum": "acc1",
+   "replyto": "acc1",
+   "number": 11,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission11/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission11/Reviewer_xr2"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Summary of acc1 review two. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. "
+    },
+    "rating": {
+     "value": "6: marginally above the acceptance threshold"
+    },
+    "confidence": {
+     "value": "3: You are fairly confident in your assessment."
+    },
+    "soundness": {
+     "value": 3
+    },
+    "presentation": {
+     "value": 3
+    },
+    "contribution": {
+     "value": 3
+    },
+    "strengths": {
+     "value": "Strengths of acc1 review two."
+    },
+    "weaknesses": {
+     "value": "Weaknesses of acc1 review two."
+    },
+    "questions": {
+     "value": "Why?"
+    },
+    "code_of_conduct": {
+     "value": "Yes"
+    }
+   }
+  },
+  {
+   "id": "c1",
+   "forum": "acc1",
+   "replyto": "acc1",
+   "number": 11,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission11/-/Official_Comment"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission11/Reviewer_xc1"
+   ],
+   "version": 2,
+   "content": {
+    "comment": {
+     "value": "Thanks for the rebuttal."
+    }
+   }
+  },
+  {
+   "id": "r3",
+   "forum": "rej1",
+   "replyto": "rej1",
+   "number": 12,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission12/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission12/Reviewer_xr3"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Summary of rej1 review one. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. "
+    },
+    "rating": {
+     "value": 3
+    },
+    "confidence": {
+     "value": 4
+    },
+    "soundness": {
+     "value": 3
+    },
+    "presentation": {
+     "value": 3
+    },
+    "contribution": {
+     "value": 3
+    },
+    "strengths": {
+     "value": "Strengths of rej1 review one."
+    },
+    "weaknesses": {
+     "value": "Weaknesses of rej1 review one."
+    },
+    "questions": {
+     "value": "Why?"
+    },
+    "code_of_conduct": {
+     "value": "Yes"
+    }
+   }
+  },
+  {
+   "id": "r4",
+   "forum": "rej1",
+   "replyto": "rej1",
+   "number": 12,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission12/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission12/Reviewer_xr4"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Summary of rej1 review two. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. "
+    },
+    "rating": {
+     "value": 5
+    },
+    "confidence": {
+     "value": 3
+    },
+    "soundness": {
+     "value": 3
+    },
+    "presentation": {
+     "value": 3
+    },
+    "contribution": {
+     "value": 3
+    },
+    "strengths": {
+     "value": "Strengths of rej1 review two."
+    },
+    "weaknesses": {
+     "value": "Weaknesses of rej1 review two."
+    },
+    "questions": {
+     "value": "Why?"
+    },
+    "code_of_conduct": {
+     "value": "Yes"
+    }
+   }
+  },
+  {
+   "id": "r5",
+   "forum": "wd1",
+   "replyto": "wd1",
+   "number": 13,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission13/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission13/Reviewer_xr5"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Summary of withdrawn. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. Long text. "
+    },
+    "rating": {
+     "value": 1
+    },
+    "confidence": {
+     "value": 5
+    },
+    "soundness": {
+     "value": 3
+    },
+    "presentation": {
+     "value": 3
+    },
+    "contribution": {
+     "value": 3
+    },
+    "strengths": {
+     "value": "Strengths of withdrawn."
+    },
+    "weaknesses": {
+     "value": "Weaknesses of withdrawn."
+    },
+    "questions": {
+     "value": "Why?"
+    },
+    "code_of_conduct": {
+     "value": "Yes"
+    }
+   }
+  },
+  {
+   "id": "r6",
+   "forum": "rej2",
+   "replyto": "rej2",
+   "number": 15,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission15/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission15/Reviewer_xr6"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "Combined form."
+    },
+    "overall_recommendation": {
+     "value": 4
+    },
+    "confidence": {
+     "value": 2
+    },
+    "strengths_and_weaknesses": {
+     "value": "Both in one field."
+    }
+   }
+  },
+  {
+   "id": "r7",
+   "forum": "rej2",
+   "replyto": "rej2",
+   "number": 15,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission15/-/Official_Review"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission15/Reviewer_xr7"
+   ],
+   "version": 2,
+   "content": {
+    "summary": {
+     "value": "No rating given."
+    }
+   }
+  },
+  {
+   "id": "d1",
+   "forum": "rej2",
+   "replyto": "rej2",
+   "number": 15,
+   "cdate": 1730000000000,
+   "invitations": [
+    "ICLR.cc/2025/Conference/Submission15/-/Decision"
+   ],
+   "domain": "ICLR.cc/2025/Conference",
+   "readers": [
+    "everyone"
+   ],
+   "signatures": [
+    "ICLR.cc/2025/Conference/Submission15/Reviewer_xd1"
+   ],
+   "version": 2,
+   "content": {
+    "title": {
+     "value": "Paper Decision"
+    },
+    "decision": {
+     "value": "Reject"
+    },
+    "comment": {
+     "value": "Not this time."
+    }
+   }
+  }
+ ],
+ "count": 9
+}

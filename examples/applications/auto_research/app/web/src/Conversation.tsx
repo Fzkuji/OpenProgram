@@ -12,11 +12,13 @@ export interface Conversation {
   composerHeight: number;
   slot: React.RefObject<HTMLDivElement | null>;
   reveal(): void;
+  /** Send a message as the author's own, after a reply that is running. */
+  send(text: string): Promise<void>;
 }
 
-/** Opens the conversation kept under `key`, working in `folder`, and keeps telling
- *  it what the next message is about (`note`). */
-export function useConversation(key: string, folder: string, note: string, onReplyEnded: () => void): Conversation {
+/** Opens the conversation kept under `key`, working in `folder`, keeps telling
+ *  it what the next message is about (`note`) and puts `hint` in the empty composer. */
+export function useConversation(key: string, folder: string, note: string, hint: string, onReplyEnded: () => void): Conversation {
   const app = window.openprogramApp;
   const [feed, setFeed] = useState<ChatFeed | null>(null);
   const [composerHeight, setComposerHeight] = useState(132);
@@ -50,6 +52,10 @@ export function useConversation(key: string, folder: string, note: string, onRep
     if (sessionId) app.chat.note(note).catch(console.error);
   }, [app, sessionId, note]);
 
+  useEffect(() => {
+    if (sessionId) app.chat.hint(hint).catch(console.error);
+  }, [app, sessionId, hint]);
+
   // The composer goes where the slot is: across its width, its bottom on the slot's bottom.
   useLayoutEffect(() => {
     const element = slot.current;
@@ -71,7 +77,10 @@ export function useConversation(key: string, folder: string, note: string, onRep
 
   useEffect(() => () => { app.chat.place(null).catch(() => {}); }, [app]);
 
-  return { feed, composerHeight, slot, reveal: () => { app.chat.reveal().catch(console.error); } };
+  return {
+    feed, composerHeight, slot, reveal: () => { app.chat.reveal().catch(console.error); },
+    send: async (text) => { if (sessionId) await app.chat.send(text); },
+  };
 }
 
 const TOOL_WORDS: Record<string, string> = {
@@ -112,7 +121,7 @@ function Steps({ message, running }: { message: ChatMessage; running: boolean })
   );
 }
 
-export function Messages({ feed, empty }: { feed: ChatFeed | null; empty: string }) {
+export function Messages({ feed }: { feed: ChatFeed | null }) {
   const [all, setAll] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const messages = feed?.messages || [];
@@ -122,7 +131,7 @@ export function Messages({ feed, empty }: { feed: ChatFeed | null; empty: string
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [shown.length, lastText, all]);
 
   if (!feed) return null;
-  if (!messages.length) return <p className="py-1 text-[13px] text-text-muted">{empty}</p>;
+  if (!messages.length) return null;
   return (
     <div className="flex flex-col gap-3">
       {from > 0 ? (

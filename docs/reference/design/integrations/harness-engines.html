@@ -60,7 +60,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Chip</th><th scope="col">OpenProgram</th><th scope="col">Codex</th></tr></thead>
 <tbody>
-<tr><th scope="row">Harness</th><td>Default</td><td>Shown with its version; greyed with Not Installed or Not Signed In on the conversation's machine</td></tr>
+<tr><th scope="row">Harness</th><td>Default</td><td>Shown with its version; greyed with Not Installed, Would Not Start, Not Signed In or No Models on the conversation's machine, as the server refuses it. The listing is read again when the server says a harness was read</td></tr>
 <tr><th scope="row">Model</th><td>Unchanged</td><td>Codex's own models; when a newer Codex is out, the models only it lists (dimmed) and <strong>Update Codex</strong>; then <strong>Through OpenProgram</strong> with the provider rows (<code translate="no">openprogram:&lt;provider&gt;/&lt;model&gt;</code>)</td></tr>
 <tr><th scope="row">Effort</th><td>Unchanged</td><td>The model's <code translate="no">supportedReasoningEfforts</code></td></tr>
 <tr><th scope="row">Agent</th><td>Unchanged</td><td>Default, the <code translate="no">[profiles.*]</code> of Codex's config, and personalities where the model supports them</td></tr>
@@ -70,6 +70,10 @@
 <dl class="pairs">
 <dt>Claude Code</dt><dd>Model lists its own aliases; a full id from a synced transcript shows as its alias. No Through OpenProgram. Agent lists Default and its named agents. Permission offers Bypass permissions, Auto, Accept edits, Ask and Plan; approving its plan puts the menu back on the mode before Plan, as OpenProgram's own plan mode does.</dd>
 <dt>DeepSeek Harness</dt><dd>Model lists its session's models without the provider prefix. No Through OpenProgram. Permission offers Full access and Ask.</dd>
+<dt>Effort</dt><dd>A harness model that lists no effort levels shows no effort control and is sent none. Before the harness is first read, the control waits; the reading refreshes every conversation's settings. Codex and DeepSeek Harness keep an effort with the thread, so Auto sends the model's default level; Codex's Default agent likewise sends the personality its <code translate="no">config.toml</code> sets.</dd>
+<dt>Options</dt><dd>Web search and Sandbox are not offered, and the Options tip names only files: the agent searches and runs commands its own way. With Unattended on, a question the agent asks is answered that no one is there.</dd>
+<dt>Chips</dt><dd>The Agent chip carries the Agent icon; the harness's mark stays on the Harness chip. It names only a choice the model takes, and Default and Codex's personalities in the interface language. On a phone, the conversation's settings sheet has a Harness row.</dd>
+<dt>Cards</dt><dd>Claude Code's tools show under the names OpenProgram's own take the same arguments under: <code translate="no">Bash</code> as a command, <code translate="no">Edit</code> as an edit, <code translate="no">TodoWrite</code> as a checklist. Approving its plan shows the plan as written.</dd>
 </dl>
 <p>The harness is a run setting of the branch beside model, effort and permission. Switching to Codex takes its default model and agent and remembers the OpenProgram model and effort; switching back restores them.</p>
 
@@ -83,7 +87,7 @@
 <tr><th scope="row"><code translate="no">webSearch</code>, <code translate="no">mcpToolCall</code></td><td>Provider-run <code translate="no">web_search</code>; <code translate="no">mcp__&lt;server&gt;__&lt;tool&gt;</code></td></tr>
 <tr><th scope="row"><code translate="no">turn/plan/updated</code></td><td><code translate="no">todo_write</code> checklist</td></tr>
 <tr><th scope="row"><code translate="no">thread/tokenUsage/updated</code></td><td>Context meter; not added to Token Usage, since the Third-Party Harnesses page already counts Codex's calls from its own files</td></tr>
-<tr><th scope="row">Approval requests</th><td>A live wait shown as the usual question card; Allow → <code translate="no">accept</code>, for the chat → <code translate="no">acceptForSession</code>, Deny → <code translate="no">decline</code>. Requests with no card are declined, so a turn never hangs</td></tr>
+<tr><th scope="row">Approval requests</th><td>A live wait shown as the usual question card; Allow → <code translate="no">accept</code>, for the chat → <code translate="no">acceptForSession</code>, Deny → <code translate="no">decline</code>. A request for more access (network, folders) is asked the same way; Codex's own questions go on the question card and answer by question id. Requests with no card are declined, so a turn never hangs</td></tr>
 <tr><th scope="row">Stop, steering</th><td><code translate="no">turn/interrupt</code> (queued if the turn id is not known yet); steers taken from the execution and sent with <code translate="no">turn/steer</code></td></tr>
 </tbody>
 </table>
@@ -96,7 +100,7 @@
 <dt>Folder</dt><dd>Each <code translate="no">turn/start</code> carries the conversation's current folder.</dd>
 <dt>Branch</dt><dd>Each branch keeps its own Codex thread and the id of the last message it saw.</dd>
 <dt>Handoff</dt><dd>When a thread starts on a conversation with history, or resumes after turns it did not run, it first gets those turns as a budgeted transcript, newest kept. Switching back to OpenProgram needs nothing: Codex's turns are stored as ordinary messages and tool calls.</dd>
-<dt>Crash</dt><dd>A process that exits fails the running turn; the next turn starts a process and resumes the thread.</dd>
+<dt>Crash</dt><dd>A process that exits fails the running turn; the next turn starts a process and resumes the thread. A second turn while one runs gets a process of its own, closed when it ends; the kept process then reloads the thread before its next turn.</dd>
 </dl>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Keeping it current</th><th scope="col">How</th></tr></thead>
@@ -141,7 +145,7 @@
 <tr><th scope="row">Models, agents</th><td>Manifest plus <code translate="no">initialize</code></td><td><code translate="no">supportedModels()</code> plus manifest</td><td>Not applicable</td><td>The <code translate="no">initialize</code> answer, which runs no turn: models, their efforts, and agents for the Agent chip (<code translate="no">--agent</code>)</td></tr>
 <tr><th scope="row">Thinking</th><td>Adaptive, summarised</td><td>Adaptive, summarised</td><td>Not applicable</td><td>The same</td></tr>
 <tr><th scope="row">Session</th><td><code translate="no">sessionId</code>, <code translate="no">resume</code>, fork at a message</td><td>Same; fork only for rewind</td><td><code translate="no">claude --resume</code> in a terminal</td><td><code translate="no">--session-id</code>, <code translate="no">--resume</code> from the session's folder; a new branch forks with <code translate="no">--fork-session</code> and gets the handoff</td></tr>
-<tr><th scope="row">Permission prompt</th><td>Once, for the session, deny, cancel</td><td>Same</td><td>Not applicable</td><td>The same as live waits; for the session adds Claude Code's own suggestions</td></tr>
+<tr><th scope="row">Permission prompt</th><td>Once, for the session, deny, cancel</td><td>Same</td><td>Not applicable</td><td>The same as live waits; for the session adds Claude Code's own suggestions. Its questions (<code translate="no">AskUserQuestion</code>) show on OpenProgram's question card, and the answers go back as the tool's <code translate="no">answers</code></td></tr>
 <tr><th scope="row">Stop, steering</th><td><code translate="no">interrupt</code>, 10 s, then force; <code translate="no">priority: next</code></td><td>Same</td><td>Not applicable</td><td>T3's</td></tr>
 <tr><th scope="row">Stream</th><td>Partial deltas, snapshots fill gaps; subagents apart</td><td>Same</td><td>Not applicable</td><td>Partial deltas, snapshots for what did not stream; a subagent's steps stay in its tool card</td></tr>
 <tr><th scope="row">Outside turns</th><td>Restart a live process the transcript moved past</td><td>Manual reload</td><td>Re-reads changed files</td><td>T3's restart, after the app sync wrote them</td></tr>
@@ -149,10 +153,14 @@
 </table>
 <dl class="pairs">
 <dt>App threads</dt><dd>Once an engine went on in an app's thread on one branch, the app's record of it is neither resumed nor forked by another branch; that branch starts a session with the handoff.</dd>
-<dt>Two turns at once</dt><dd>A branch's process runs one turn. A second turn on the same branch gets a process of its own, closed when it ends.</dd>
+<dt>Two turns at once</dt><dd>A branch's process runs one turn. A second turn on the same branch gets a process of its own, closed when it ends; the kept process then resumes the session again.</dd>
+<dt>Images</dt><dd>Attached images go in with the message as image blocks.</dd>
+<dt>Lost session</dt><dd>When Claude Code says it has no such session, the turn starts a new one with the handoff, and later turns go on in it once it begins. Any other failure keeps the old session's record.</dd>
 <dt>Steering</dt><dd>A message sent mid-turn may be answered as a turn of its own, and the turn waits for that one's result. A process that took steering is not reused, so nothing queued in it reaches a later turn.</dd>
 <dt>Effort</dt><dd>No request unsets an effort, so going back to Claude Code's own default starts another process. A model change sets the effort again.</dd>
 <dt>Written turns</dt><dd>The person's message goes in with a uuid of its own. That uuid and the record uuids a turn writes are kept while it runs and when it fails, so the app sync never copies them back, even after a Stop. Claude Code's interruption note is not a message.</dd>
+<dt>Unanswered messages</dt><dd>A DeepSeek Harness message stopped before any answer has no id. The sync skips such a message when the conversation here already shows it. An app's last unanswered message waits a minute for an answer, then is written as stopped.</dd>
+<dt>Earlier readings</dt><dd>When an earlier reading counted turns this one does not, the sync finds the newest turn it wrote that the app still has and numbers new turns after it.</dd>
 <dt>A process that ended</dt><dd>A kept process that ended between turns is replaced, and the turn is sent to the new one.</dd>
 </dl>
 
@@ -169,6 +177,7 @@
 <tr><th scope="row">Sidebar</th><td>The status dot and a channel's logo stay as they are; the agent's own colour logo at the row's end says the conversation runs in that agent now, and it gives way to the ⋯ button on hover. A hover card names the model and agent, the project, the time and the app a synced conversation is also in. OpenProgram's own conversations have no mark</td><td>T3 Code's provider mark</td></tr>
 <tr><th scope="row">The Claude app and DeepSeek Harness</th><td>Their conversations come in the same way (<code translate="no">app_sync.py</code>): the Claude app's Code tab list (<code translate="no">claude-code-sessions/**/local_*.json</code>, each naming a Claude Code transcript) and DeepSeek Harness's workspaces (<code translate="no">~/.dsh</code>, a zstd event log per conversation), archived ones left out. Conversations started with <code translate="no">claude</code> in a terminal come in too; those run through the SDK or <code translate="no">claude -p</code> stay out, as Codex's <code translate="no">exec</code> threads do. Each continues in its own session on its agent's engine</td><td>Paseo's import</td></tr>
 <tr><th scope="row">Kept apart</th><td>A session an engine started or forked here is not imported as another conversation. A session with an engine turn running is read once the turn ends, and one still being written once it rests a few seconds. A rewind in the app leaves what is here unchanged. The app's later title replaces the first one unless the conversation was renamed here</td><td>Codex's own-turn ids</td></tr>
+<tr><th scope="row">Where app turns go</th><td>Turns made in the DeepSeek Harness app in a session its engine started here go to the conversation that holds it; a Claude Code fork, which starts with copies of turns already here, is not read. When another branch is shown, they follow the thread's own branch and the shown one stays</td><td>Codex's started-here threads</td></tr>
 <tr><th scope="row">History page</th><td>Mixed with OpenProgram's chats, the same mark on each row, and a Source filter that appears once another agent has conversations here</td><td>T3 Code</td></tr>
 </tbody>
 </table>

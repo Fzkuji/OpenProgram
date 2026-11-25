@@ -8,9 +8,7 @@ import { wsRequest } from "@/lib/net/ws/ws-request";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import type { Harness } from "./harnesses";
 
-export function harnessQueryKey(sessionId: string | null): readonly unknown[] {
-  return ["harnesses", sessionId ?? ""] as const;
-}
+export { harnessQueryKey } from "./harnesses";
 
 /** The harnesses on the machine `sessionId` runs on (this computer without one). */
 export async function listHarnesses(sessionId: string | null): Promise<Harness[]> {

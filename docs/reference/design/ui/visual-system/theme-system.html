@@ -34,6 +34,7 @@
 <tr><th scope="row">Vivid</th><td><code translate="no">vivid</code><br><code translate="no">vivid-light</code></td><td colspan="2"><code translate="no">oklch</code> tones of <code translate="no">--tabrow-seed</code></td><td>Follows the tab-strip colour</td></tr>
 </tbody>
 </table>
+<p class="note">Neutral is the default pack, with the mode following the system. Beige was the default before; the first run stored that default like a pick, so a stored beige from before schema 4 moves to Neutral once.</p>
 <p class="note">Vivid has Beige's panel layout. The strip colour is its own setting from Chrome's colour set, a pale tone of it in light mode. <code translate="no">custom</code> and <code translate="no">custom-light</code> remain as fallback ids and CSS files for old snippets, not as cards; <code translate="no">custom-light.css</code> matches beige-light.</p>
 <p class="note">Vivid's default seed (<code translate="no">#3d475c</code>) is in <code translate="no">themes/fallback.css</code>, so an application frame that loads only the themes still gets Vivid's colours.</p>
 
@@ -119,4 +120,4 @@
 </table>
 
 <h2 id="status">Implementation status</h2>
-<p>Implemented: Mode × theme pack × accent × overlay, with <code translate="no">THEME_STYLE_PAIRS</code> as the light and dark matrix. Stored <code translate="no">custom</code> and <code translate="no">custom-light</code> migrate to beige, and saved CSS turns the overlay on. Composer, provider icons and DAG use role tokens only. Desktop first-paint details: <a href="unification-work.html#desktop-chrome">Desktop chrome</a>.</p>
+<p>Implemented: Mode × theme pack × accent × overlay, with <code translate="no">THEME_STYLE_PAIRS</code> as the light and dark matrix. Stored <code translate="no">custom</code> and <code translate="no">custom-light</code> migrate to Neutral, and saved CSS turns the overlay on. Composer, provider icons and DAG use role tokens only. Desktop first-paint details: <a href="unification-work.html#desktop-chrome">Desktop chrome</a>.</p>

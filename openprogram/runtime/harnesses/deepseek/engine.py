@@ -290,10 +290,20 @@ class DshTurn:
                 options = setting("model", client.option_value(model))
         # The model's own effort levels, read after it is chosen.
         _, efforts, _ = client.read_options(options)
-        effort = dsh_effort(getattr(self.req, "thinking_effort", None), efforts)
+        # A model with no effort levels takes none; Auto asks for the model's own again,
+        # since an effort set earlier stays with the session.
+        effort = (dsh_effort(getattr(self.req, "thinking_effort", None), efforts)
+                  or self._default_effort()) if efforts else None
         if effort and current(options).get("reasoning_effort") != effort:
             options = setting("reasoning_effort", effort)
         server.__dict__.setdefault("options", {})[self.session_id] = options
+
+    def _default_effort(self) -> Optional[str]:
+        try:
+            from openprogram.runtime.harnesses.models import harness_model
+            return (harness_model(PROVIDER, self.model_id or "default") or {}).get("default_effort")
+        except Exception:  # noqa: BLE001 - the session keeps its effort
+            return None
 
     def _prompt_text(self, note: Optional[str]) -> str:
         text = self.req.user_text or ""

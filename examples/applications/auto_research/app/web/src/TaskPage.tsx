@@ -1,6 +1,6 @@
 // One task: its state and check on top, its files, and the conversation that does its work.
 import { useEffect, useState } from "react";
-import { ChevronRight, Lock, Play, SlidersHorizontal, Square } from "lucide-react";
+import { Check, ChevronRight, Lock, PenLine, Play, SlidersHorizontal, Square, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,14 +11,24 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HoverTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useApp, type Job } from "./App";
-import { Desk } from "./Desk";
-import { PHASES, RESULT, SHOWN, ago, shown, stageLabel, type Overview, type Task } from "./model";
-import { StateIcon } from "./Workspace";
+import { ResultCard } from "./Results";
+import { Desk, GO_AHEAD, useSend } from "./Desk";
+import { PHASES, RESULT, SHOWN, STAND, ago, readingOf, shown, stageLabel, type Overview, type Task } from "./model";
+import { op } from "./api";
+import { showToast } from "@/lib/format-utils/toast";
 
-interface Form { whole: boolean; section: string; baseline: string; scope: string; phases: string[]; direction: string; reader_level: string; purpose: string; our_work: string; preset: string; reviewer_model: string }
+/** The paper's kind of work and claim, for an agent's note. */
+export function kindLine(view: Overview) {
+  const kind = view.kinds.find((k) => k.id === view.brief.kind);
+  return kind ? `The paper is ${kind.id} work (${kind.about})${view.brief.claim ? `; its main claim: ${view.brief.claim}` : ""}. See workflow/project.md.` : "";
+}
+import { DOT_LABEL, ProgressDot, StateIcon } from "./Workspace";
+import { explain } from "./App";
+
+interface Form { whole: boolean; section: string; baseline: string; scope: string; phases: string[]; direction: string; reader_level: string; purpose: string; our_work: string; preset: string; reviewer_model: string; reviewers: string; min_shared: string; other_projects: string; question: string; runs: string; data: string; own_papers: string; media_kind: string; minutes: string; rounds: string; population: string; calibration: string; rerun: string; tolerance: string; host: string; remote_command: string; scheduler: string; include: string; anonymize: string; target_venue: string; write_venue: string; arxiv_id: string; publish: string; funder: string; stats_mode: string; alpha: string; budget: string; components: string; queries: string; since: string; text_field: string; ngram: string; sample: string; infini_index: string; work: string; code_dir: string; audio: string; count: string; agenda: string; members: string; space: string; trials: string; seconds: string; language: string; venue: string; exclude: string; theorem: string; attempts: string; codebook: string; power: string; effect: string; by_dataset: string; call: string; kinds: string; outputs: string; criteria: string; raters: string; responses: string; works: string; screeners: string; author: string }
 const forms = new Map<string, Form>();
-const formOf = (name: string): Form => forms.get(name) || { whole: true, section: "", baseline: "HEAD", scope: "changes", phases: [], direction: "", reader_level: "", purpose: "", our_work: "", preset: "", reviewer_model: "" };
-const LABELS: Record<string, string> = { direction: "方向", reader_level: "读者水平", purpose: "用途", our_work: "我们的工作", preset: "预设", reviewer_model: "评审模型" };
+const formOf = (name: string): Form => forms.get(name) || { whole: true, section: "", baseline: "HEAD", scope: "changes", phases: [], direction: "", reader_level: "", purpose: "", our_work: "", preset: "", reviewer_model: "", reviewers: "", min_shared: "", other_projects: "", question: "", runs: "", data: "", own_papers: "", media_kind: "", minutes: "", rounds: "", population: "", calibration: "", rerun: "", tolerance: "", host: "", remote_command: "", scheduler: "", include: "", anonymize: "", target_venue: "", write_venue: "", arxiv_id: "", publish: "", funder: "", stats_mode: "", alpha: "", budget: "", components: "", queries: "", since: "", text_field: "", ngram: "", sample: "", infini_index: "", work: "", code_dir: "", audio: "", count: "", agenda: "", members: "", space: "", trials: "", seconds: "", language: "", venue: "", exclude: "", theorem: "", attempts: "", codebook: "", power: "", effect: "", by_dataset: "", call: "", kinds: "", outputs: "", criteria: "", raters: "", responses: "", works: "", screeners: "", author: "" };
+const LABELS: Record<string, string> = { direction: "方向", reader_level: "读者水平", purpose: "用途", our_work: "我们的工作", preset: "预设", reviewer_model: "评审模型", reviewers: "审稿人数（1–5，默认 3）", min_shared: "至少被几篇参考文献共同引用（默认 3）", other_projects: "其他项目文件夹（逗号分隔）", question: "要回答的问题", runs: "独立分析次数（2–7，默认 3）", data: "数据文件（逗号分隔）", own_papers: "你以前的论文（文件或文件夹，逗号分隔）", media_kind: "podcast 或 video（默认 podcast）", minutes: "大约几分钟（默认 5）", rounds: "轮数（想法进化默认 0，组会默认 2）", population: "最多保留几个想法（默认同数量）", calibration: "openreview 或 off（默认 openreview）", rerun: "重跑哪些：best、all 或提交号（默认 best）", tolerance: "容差，如 1% 或 0.002", host: "ssh 主机", remote_command: "命令（默认 experiment.md 的 Command）", scheduler: "ssh 或 slurm（默认 ssh）", include: "要打包的文件（通配符，逗号分隔）", anonymize: "list 或 replace（默认 list）", target_venue: "目标会议，如 neurips、acl、cvpr", write_venue: "yes 时写入新的 venue.md", arxiv_id: "论文自己的 arXiv 号", publish: "yes 时复制到 docs/", funder: "资助机构（申请书：nsf、nih_r01、erc、nsfc、nsfc_youth、generic；检索：us、eu 或机构名）", stats_mode: "tests 或 popper（默认 tests）", alpha: "显著性水平（默认 0.05）", budget: "检验几个假设（默认 12）", components: "要消融的部分（name=file:行-行 或函数名，逗号分隔）", queries: "查询词（分号分隔，默认从项目读）", since: "从哪一年开始（选题趋势默认 2016，更强基线默认三年前）", text_field: "测试数据的文本列（默认自动找）", ngram: "窗口长度（默认 13）", sample: "抽查几条（默认 200）", infini_index: "infini-gram 索引（默认 v4_rpj_llama_s4）", work: "已发表论文的 DOI、arXiv 号或 OpenAlex id", code_dir: "代码仓库路径（默认项目本身）", audio: "yes 时生成练习用的问题录音", count: "个数（想法默认 6，审读人默认 5，基金项目和更强基线默认 10）", agenda: "议题", members: "专家角色（逗号分隔，默认自动选）", space: "搜索范围，如 lr=1e-4..1e-1 log; batch=16,32,64", trials: "试验次数（默认 12）", seconds: "总时长秒数（默认 300）", language: "目标语言（默认 zh）", venue: "会议或期刊（默认读 venue.md）", exclude: "排除的人（姓名或 OpenAlex id，逗号分隔）", theorem: "要证明的定理（默认全部 sorry）", attempts: "每个定理尝试轮数（默认 4）", codebook: "编码表文件（默认 workflow/codebook.md）", power: "目标功效（默认 0.8）", effect: "要检测的最小差值，如 0.002 或 5%（默认用主张里的差值）", by_dataset: "yes 时同一数据集的文献也算一组", call: "资助项目的网址或文件", kinds: "声明种类：availability、credit、interests、funding、ethics（默认按会议要求）", outputs: "系统输出文件（JSONL 或 CSV）", criteria: "评分标准（逗号分隔，默认从主张起草）", raters: "评分者人数（默认按试评估算）", responses: "问卷答案文件（逗号分隔或文件夹）", works: "候选文献（arXiv 号、DOI、PDF 或 .bib，默认项目文献）", screeners: "筛选员（2 或 3，或 2–3 个模型名）", author: "作者（姓名、ORCID、OpenAlex 或 DBLP 编号，默认第一作者）" };
 
 function inputsOf(task: Task, f: Form) {
   const out: Record<string, string> = {};
@@ -34,17 +44,23 @@ function inputsOf(task: Task, f: Form) {
 /** What the agent is told beside each message of this task's conversation. */
 export function taskNote(view: Overview, task: Task, job: Job | null) {
   const last = task.last_runs[0];
+  const reading = readingOf(view, task.name);
   const lines = [
     `The author is talking to you from the Auto Research app, on one task of their research paper project. Keep to this task unless they ask otherwise.`,
     `Project folder: ${view.project} (Git repository, ${view.branch} at ${view.head}${view.dirty.length ? `, ${view.dirty.length} uncommitted changes` : ""}).`,
     `Task: ${task.title} (${task.name}), ${PHASES.find(([p]) => p === task.phase)?.[1] || task.phase} phase.`,
+    kindLine(view),
+    reading ? `Where it stands (workflow/progress.json): ${STAND[reading.state]}${reading.approval ? ", waiting for the author's approval" : ""}. ${reading.evidence}${reading.missing ? ` Missing: ${reading.missing}` : ""}` : "",
     task.artifacts.length ? `Its files: ${task.artifacts.join(", ")}.` : task.workflow ? `It has no files of its own; its check runs the ${task.workflow} workflow.` : "",
     task.done ? `Done when: ${task.done}` : "",
     task.next ? `Next step the check gives: ${task.next}` : "",
     `State: ${SHOWN[shown(task)]}${last ? `; last check ${RESULT[last.status] || last.status} ${ago(last.at)}${last.report ? `, report at ${last.report}` : ""}` : "; never checked"}${job && !job.done && job.task === task.name ? "; a check is running now" : ""}.`,
     task.problems.length ? `What the last check found:\n${task.problems.slice(0, 20).map((p) => `- ${p}`).join("\n")}` : "",
     view.paper_pdf ? `The built paper: ${view.paper_pdf}.` : "",
-    `Change the project's files directly when the author asks for changes, and say which files you changed. Never write "Approved: yes" yourself: approval is the author's. Never invent data, numbers, results or references. The author runs the task's check from the app's 运行检查 button.`,
+    task.brief ? `How this task is done: ${task.brief}` : "",
+    `This page's agent works on this task only: change ${task.artifacts.length ? task.artifacts.join(", ") : "what the task's check reads"}${task.phase === "writing" ? " and the paper's source" : ""}. When the author asks for work that belongs to another task (running experiments from a writing page, say), do not do it here: name that task's page, and offer to leave only a placeholder here.`,
+    `Before a change of more than a few lines, list what you will change and what you will not (with the reason, such as a claim that is not approved), end with the line 「等你确认：${GO_AHEAD}」 and wait; when the author answers ${GO_AHEAD}, make exactly those changes and say which files you changed.`,
+    `Never write "Approved: yes" yourself: approval is the author's, from the app. Never invent data, numbers, results or references.${task.workflow ? " The author runs the task's check from the app." : " The app runs the task's check after each of your replies."}`,
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -88,13 +104,48 @@ export function TaskPage({ name }: { name: string }) {
   const formInputs = task.inputs.filter((n) => n !== "draft_dir");
   const helper = task.blocked_by ? view.tasks.find((t) => t.name !== task.name && !t.workflow && t.gates.length === 1 && t.gates[0] === task.blocked_by) : undefined;
   const run = () => { if (missing.length || needsSection) { setSettings(true); return; } check(task, inputs); };
+  const reading = readingOf(view, task.name);
+  // Only the author's approval is missing: the check's problems all say so.
+  const onlyApproval = !!task.approves && task.problems.length > 0 && task.problems.every((p) => p.includes("not approved"));
+  const fixable = task.problems.filter((p) => !p.includes("not approved"));
+  const begun = task.state !== "not_started" && !(reading?.state === "todo" && !task.last_runs.length);
+  // A task with a check shows its newest run as a result card, which carries the fix.
+  const carded = !!task.workflow && !!last?.report;
+  const action: Action = mine ? null
+    : onlyApproval ? "approve"
+      : fixable.length && (state === "fail" || state === "blocked") && !carded ? "fix"
+        : task.workflow && !task.last_runs.length ? "run"
+          : !begun ? "draft" : null;
+  const approve = async () => {
+    if (task.approves.includes("{section}") && !f.section) { setSettings(true); return; }
+    try { await op("approve", { task: task.name, section: f.section }); showToast("已批准"); check(task, inputs); }
+    catch (e) { showToast(explain((e as Error).message), { tone: "error" }); }
+  };
+  const prereg = task.name === "experiment_plan" ? view.preregistration : undefined;
+  const lockPlan = async () => {
+    try { await op("preregister", {}); showToast("计划已锁定"); check(task, inputs); }
+    catch (e) { showToast(explain((e as Error).message), { tone: "error" }); }
+  };
+  const [campaignState, setCampaignState] = useState<{ state: string; approved: boolean; spent: number; budget: number; steps: number } | null>(null);
+  useEffect(() => {
+    if (task.name !== "campaign") return;
+    op("campaign", { action: "state" }).then((s) => setCampaignState(s as never)).catch(() => setCampaignState(null));
+  }, [task.name, task.problems.length]);
+  const campaignAction = async (action: "start" | "stop") => {
+    try { setCampaignState(await op("campaign", { action }) as never); showToast(action === "start" ? "已开始" : "已停止"); check(task, inputs); }
+    catch (e) { showToast(explain((e as Error).message), { tone: "error" }); }
+  };
+  // A task of checks only is checked again whenever its agent finishes a reply.
+  const recheck = () => { if (!task.workflow && !(job && !job.done) && !missing.length && !needsSection) check(task, inputs); };
 
   const header = (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-xl font-semibold text-text-bright">{task.title}</h1>
         <span className="flex items-center gap-1.5 text-[13px] text-text-muted">
-          <StateIcon state={state} className="size-3.5" />{SHOWN[state]}
+          {reading && !(last && last.at > ("tasks" in view.progress ? view.progress.at : "")) ? (
+            <><ProgressDot dot={reading.approval || onlyApproval ? "wait" : reading.state} className="size-3.5" />{reading.approval || onlyApproval ? DOT_LABEL.wait : STAND[reading.state]}</>
+          ) : <><StateIcon state={state} className="size-3.5" />{onlyApproval ? DOT_LABEL.wait : SHOWN[state]}</>}
           {last ? <>，上次检查{ago(last.at)}</> : null}
         </span>
         <span className="flex-1" />
@@ -115,7 +166,7 @@ export function TaskPage({ name }: { name: string }) {
                     </Field>
                   ) : (
                     <Field label="范围">
-                      <ToggleGroup type="single" variant="outline" size="sm" value={f.whole ? "whole" : "section"} onValueChange={(v) => v && set({ whole: v === "whole" })} className="self-start">
+                      <ToggleGroup type="single" variant="segmented" size="sm" value={f.whole ? "whole" : "section"} onValueChange={(v) => v && set({ whole: v === "whole" })} className="self-start">
                         <ToggleGroupItem value="whole">整篇论文</ToggleGroupItem>
                         <ToggleGroupItem value="section">一个章节</ToggleGroupItem>
                       </ToggleGroup>
@@ -131,7 +182,7 @@ export function TaskPage({ name }: { name: string }) {
                   {task.inputs.includes("baseline") ? <Field label="对比基线"><Input value={f.baseline} onChange={(e) => set({ baseline: e.target.value })} className="font-mono" /></Field> : null}
                   {task.inputs.includes("scope") ? (
                     <Field label="检查范围">
-                      <ToggleGroup type="single" variant="outline" size="sm" value={f.scope} onValueChange={(v) => v && set({ scope: v })} className="self-start">
+                      <ToggleGroup type="single" variant="segmented" size="sm" value={f.scope} onValueChange={(v) => v && set({ scope: v })} className="self-start">
                         <ToggleGroupItem value="changes">只查改动</ToggleGroupItem><ToggleGroupItem value="paper">全部段落</ToggleGroupItem>
                       </ToggleGroup>
                     </Field>
@@ -150,18 +201,47 @@ export function TaskPage({ name }: { name: string }) {
                 </PopoverContent>
               </Popover>
             ) : null}
+            {task.name === "campaign" && campaignState?.approved ? (
+              campaignState?.state === "running"
+                ? <Button size="sm" variant="ghost" onClick={() => campaignAction("stop")}><Square />停止</Button>
+                : <Button size="sm" onClick={() => campaignAction("start")}><Play />开始无人值守</Button>
+            ) : null}
+            {prereg ? (
+              <HoverTip label={prereg.locked ? "按现在的计划重新锁定；之前的锁定留在记录里，改过什么仍看得到" : "在看到结果之前锁定实验计划；之后改动计划会被标出来"}>
+                <Button size="sm" variant="ghost" onClick={lockPlan}><Lock />{prereg.locked ? "重新锁定" : "锁定计划"}</Button>
+              </HoverTip>
+            ) : null}
             <HoverTip label={busy ? `「${job!.title}」还在检查` : "按这个任务的标准检查项目"}>
-              <Button size="sm" variant="outline" disabled={busy} onClick={run}><Play />运行检查</Button>
+              <Button size="sm" variant={action === "run" ? "default" : "ghost"} disabled={busy} onClick={run}><Play />{action === "run" ? "开始" : "运行检查"}</Button>
             </HoverTip>
+            {action && action !== "run" ? <PrimaryAction action={action} task={task} problems={fixable} onApprove={approve} /> : null}
           </div>
         )}
       </div>
-      {task.done ? <p className="line-clamp-2 text-[13px] leading-5 text-text-muted">通过的条件：{task.done}</p> : null}
+      {task.goal ? <p className="line-clamp-2 text-[13px] leading-5 text-text-muted">通过的条件：{task.goal}</p> : null}
+      {task.name === "campaign" && campaignState ? (
+        <p className="text-xs text-text-muted">
+          {campaignState.state === "running" ? "运行中" : "没在运行"} · 已跑 {campaignState.steps} 步 · 花费 ${(campaignState.spent || 0).toFixed(2)} / ${campaignState.budget || 0}
+        </p>
+      ) : null}
+      {task.name === "claim_support" && Object.keys(view.consensus || {}).length ? (
+        <p className="text-xs text-text-muted">
+          {Object.entries(view.consensus).map(([c, m]) => `${c}：支持 ${m.supports} · 反驳 ${m.contradicts} · 相关 ${m.related}`).join("　")}
+        </p>
+      ) : null}
+      {prereg?.locked ? (
+        <p className="text-xs text-text-muted">
+          计划 {ago(prereg.at || "")}锁定{prereg.changed.length ? `，之后改了 ${prereg.changed.length} 项` : ""}{prereg.exploratory.length ? `，另加 ${prereg.exploratory.length} 项探索性实验` : ""}
+        </p>
+      ) : null}
+      <p className="truncate text-xs text-text-muted">
+        这一页的 agent：{PHASES.find(([p]) => p === task.phase)?.[1]} · 只改 {task.artifacts.length ? task.artifacts.map((a) => a.replace(/^workflow\//, "")).join("、") : "这个任务检查的文件"}{task.phase === "writing" ? " 和论文源文件" : ""}
+      </p>
     </div>
   );
 
   const problems = task.problems;
-  const notice = (state === "fail" || state === "blocked") && (problems.length || task.next) ? (
+  const notice = carded ? <ResultCard task={task} fixable={fixable} /> : !onlyApproval && (state === "fail" || state === "blocked") && (problems.length || task.next) ? (
     <div className={cn("shrink-0 rounded-xl border px-4 py-3 text-[13px]",
       state === "blocked" ? "border-[color-mix(in_oklab,var(--accent-orange)_40%,transparent)] bg-[color-mix(in_oklab,var(--accent-orange)_7%,transparent)]"
         : "border-[color-mix(in_oklab,var(--accent-red)_35%,transparent)] bg-[color-mix(in_oklab,var(--accent-red)_6%,transparent)]")}>
@@ -172,7 +252,14 @@ export function TaskPage({ name }: { name: string }) {
         {problems.length > 3 ? <button type="button" className="text-xs font-normal text-text-muted hover:text-text-bright" onClick={() => setAllProblems(!allProblems)}>{allProblems ? "收起" : `全部 ${problems.length} 条`}</button> : null}
       </div>
       <ul className={cn("list-disc pl-5 text-text-primary", allProblems && "max-h-40 overflow-y-auto")}>
-        {(allProblems ? problems : problems.slice(0, 3)).map((p, i) => <li key={i} className={allProblems ? "" : "truncate"}>{p}</li>)}
+        {(allProblems ? problems : problems.slice(0, 3)).map((p, i) => (
+          <li key={i} className="group">
+            <span className="flex items-center gap-2">
+              <span className={cn("min-w-0 flex-1", !allProblems && "truncate")}>{p}</span>
+              {p.includes("not approved") ? null : <FixOne problem={p} />}
+            </span>
+          </li>
+        ))}
       </ul>
       {state === "blocked" && task.next ? <p className="mt-1 text-text-muted">{task.next}</p> : null}
       {helper ? <Button variant="link" size="xs" className="mt-1 h-auto px-0" onClick={() => go({ page: "task", task: helper.name })}>去「{helper.title}」<ChevronRight /></Button> : null}
@@ -180,8 +267,35 @@ export function TaskPage({ name }: { name: string }) {
   ) : null;
 
   return (
-    <Desk scope={task.name} phase={task.phase} header={header} notice={notice}
+    <Desk scope={task.name} phase={task.phase} header={header} notice={notice} onReplyEnded={recheck}
       note={taskNote(view, task, job)}
-      empty={`在下面说要求：agent 在这个项目文件夹里干活，知道「${task.title}」要交付什么、上次检查哪里没过。`} />
+      hint={`对「${task.title}」有什么要求，在这里说`} />
+  );
+}
+
+type Action = "draft" | "fix" | "approve" | "run" | null;
+
+/** The one thing to do next on this page, by the task's state. */
+function PrimaryAction({ action, task, problems, onApprove }: { action: Exclude<Action, null | "run">; task: Task; problems: string[]; onApprove(): void }) {
+  const send = useSend();
+  if (action === "approve") return <Button size="sm" onClick={onApprove}><Check />批准</Button>;
+  if (action === "fix") {
+    return (
+      <Button size="sm" onClick={() => send(`把上次检查的 ${problems.length} 处问题修掉：\n${problems.slice(0, 30).map((p) => `- ${p}`).join("\n")}`)}>
+        <Wrench />修复 {problems.length} 处
+      </Button>
+    );
+  }
+  return (
+    <Button size="sm" onClick={() => send(`起草「${task.title}」：${task.goal}`)}>
+      <PenLine />让 agent 起草
+    </Button>
+  );
+}
+
+function FixOne({ problem }: { problem: string }) {
+  const send = useSend();
+  return (
+    <Button variant="ghost" size="xs" className="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => send(`修这一处：${problem}`)}>修复</Button>
   );
 }

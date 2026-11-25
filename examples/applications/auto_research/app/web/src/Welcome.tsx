@@ -110,7 +110,7 @@ export function Welcome({ error, onDismiss }: { error: string; onDismiss(): void
           ) : (
             <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-border px-5 py-8 text-sm text-text-muted">
               还没有打开过项目。打开论文所在的文件夹，它会出现在这里。
-              <Button variant="outline" onClick={openFolder}><FolderOpen />打开文件夹…</Button>
+              <Button variant="elevated" onClick={openFolder}><FolderOpen />打开文件夹…</Button>
             </div>
           )}
         </div>

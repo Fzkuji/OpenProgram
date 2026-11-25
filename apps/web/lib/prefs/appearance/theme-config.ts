@@ -23,7 +23,7 @@ export const THEME_MODES = ["auto", "dark", "light"] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
 export type ResolvedThemeMode = Exclude<ThemeMode, "auto">;
 
-export const DEFAULT_THEME_STYLE: ThemeStyle = "beige";
+export const DEFAULT_THEME_STYLE: ThemeStyle = "neutral";
 export const DEFAULT_THEME_MODE: ThemeMode = "auto";
 
 export const THEME_STYLE_PAIRS: Record<
@@ -79,7 +79,7 @@ export const TABROW_COLOR_PRESETS = [
 export const DEFAULT_TABROW_COLOR = "#3d475c";
 
 export const LEGACY_THEME_PREFERENCES = {
-  auto: { style: "beige", mode: "auto" },
+  auto: { style: "neutral", mode: "auto" },
   "beige-dark": { style: "beige", mode: "dark" },
   "beige-light": { style: "beige", mode: "light" },
   dark: { style: "neutral", mode: "dark" },
@@ -88,8 +88,8 @@ export const LEGACY_THEME_PREFERENCES = {
   "aurora-light": { style: "aurora", mode: "light" },
   vivid: { style: "vivid", mode: "dark" },
   "vivid-light": { style: "vivid", mode: "light" },
-  custom: { style: "beige", mode: "dark" },
-  "custom-light": { style: "beige", mode: "light" },
+  custom: { style: "neutral", mode: "dark" },
+  "custom-light": { style: "neutral", mode: "light" },
 } as const satisfies Record<string, { style: ThemeStyle; mode: ThemeMode }>;
 
 export function isThemeId(value: string | null | undefined): value is ThemeId {
@@ -178,7 +178,7 @@ export function legacyThemePreference(
   schemaVersion = "2",
 ): { style: ThemeStyle; mode: ThemeMode } {
   if (schemaVersion !== "2" && (value === "dark" || value === "light")) {
-    return { style: "beige", mode: value };
+    return { style: "neutral", mode: value };
   }
   const preference = value && value in LEGACY_THEME_PREFERENCES
     ? LEGACY_THEME_PREFERENCES[value as keyof typeof LEGACY_THEME_PREFERENCES]
@@ -205,8 +205,8 @@ export type MigratedAppearancePreferences = {
 };
 
 /**
- * Schema 3 stays mode × style. Stored `custom` / `custom-light` become
- * beige, and any saved CSS turns the overlay on.
+ * Schema 4 stays mode × style. Stored `custom` / `custom-light` become
+ * the default style, and any saved CSS turns the overlay on.
  */
 export function migrateAppearancePreferences(
   input: AppearancePreferenceBag,

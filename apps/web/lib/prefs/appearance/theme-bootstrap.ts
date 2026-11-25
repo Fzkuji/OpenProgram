@@ -66,16 +66,19 @@ var storedStyle = themeStorageGet('agentic_theme_style');
 var wasCustom = storedStyle === 'custom' || old === 'custom' || old === 'custom-light';
 var migrated = LEGACY[old] || LEGACY.auto;
 if (priorSchema !== '2' && (old === 'dark' || old === 'light')) {
-  migrated = { style: 'beige', mode: old };
+  migrated = { style: 'neutral', mode: old };
 }
-if (wasCustom) migrated = { style: 'beige', mode: migrated.mode || 'dark' };
+if (wasCustom) migrated = { style: 'neutral', mode: migrated.mode || 'dark' };
+// Schema 4: the default style is neutral, not beige; a beige the first
+// run stored as the default cannot be told from a pick, so it moves once.
+if (priorSchema !== '4' && storedStyle === 'beige') themeStorageSet('agentic_theme_style', 'neutral');
 if (!STYLES.includes(themeStorageGet('agentic_theme_style'))) {
   themeStorageSet('agentic_theme_style', migrated.style);
 }
 if (!MODES.includes(themeStorageGet('agentic_theme_mode'))) {
   themeStorageSet('agentic_theme_mode', migrated.mode);
 }
-themeStorageSet('agentic_theme_schema', '3');
+themeStorageSet('agentic_theme_schema', '4');
 var savedCss = themeStorageGet('agentic_custom_css') || '';
 var enabled = themeStorageGet('agentic_custom_css_enabled');
 if (enabled !== '0' && enabled !== '1') {
@@ -85,7 +88,7 @@ if (storedStyle === 'custom' && savedCss.trim()) enabled = '1';
 themeStorageSet('agentic_custom_css_enabled', enabled);
 function readStyle() {
   var value = themeStorageGet('agentic_theme_style');
-  return STYLES.includes(value) ? value : 'beige';
+  return STYLES.includes(value) ? value : 'neutral';
 }
 function readMode() {
   var value = themeStorageGet('agentic_theme_mode');

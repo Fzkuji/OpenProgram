@@ -8,11 +8,11 @@
  * says a conversation waits for the user.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 
-import { SolarIcon } from "@/components/solar-icons";
+import { BellIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 import { useTranslation } from "@/lib/i18n";
@@ -39,6 +39,7 @@ export function ActivityBell() {
   const on = useRecentsView().activity;
   const waiting = useSessionStore((s) => anyNeedsInput(s.conversations as Record<string, LegacyConv>));
   const label = text("Activity", "动态");
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <button
       type="button"
@@ -50,9 +51,11 @@ export function ActivityBell() {
         event.stopPropagation();
         toggleActivityView();
       }}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
       className={BUTTON + (on ? " bg-bg-hover text-text-secondary" : " text-text-muted")}
     >
-      <SolarIcon name="bell" size={18} aria-hidden="true" />
+      <BellIcon ref={iconRef} size={20} aria-hidden="true" />
       {waiting ? (
         <span
           aria-hidden="true"

@@ -21,6 +21,7 @@ struct OpenProgramApp: App {
 struct RootView: View {
     @EnvironmentObject private var store: ComputerStore
     @State private var showComputers = false
+    @State private var adding = false
 
     var body: some View {
         Group {
@@ -28,20 +29,24 @@ struct RootView: View {
                 // The UI shows at once; until an address answers it aims at the
                 // likeliest one, and moves when another answers.
                 let origin = store.address ?? ComputerStore.ordered(computer.addresses).first ?? ""
-                WebShell(computer: computer, origin: origin, token: token) { action in
+                WebShell(computer: computer, computers: store.computers, origin: origin, token: token) { action, detail in
                     switch action {
                     case "signedOut": store.forget(computer.id)
                     case "computers": showComputers = true
+                    case "addComputer": adding = true
+                    case "selectComputer":
+                        if let id = detail["id"] as? String, id != computer.id { store.select(id) }
                     default: break
                     }
                 }
-                .id("\(computer.id)|\(origin)")
+                .id(computer.id)
                 .ignoresSafeArea()
             } else {
                 PairView()
             }
         }
         .sheet(isPresented: $showComputers) { ComputersView() }
+        .sheet(isPresented: $adding) { PairView(inSheet: true) }
     }
 }
 

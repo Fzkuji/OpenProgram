@@ -97,7 +97,7 @@ function pick(args: Args, ...keys: string[]): string | undefined {
 }
 
 function filePath(args: Args): string | undefined {
-  return pick(args, "file_path", "path", "filename", "file");
+  return pick(args, "file_path", "path", "filename", "file", "notebook_path");
 }
 
 export function basename(path: string): string {

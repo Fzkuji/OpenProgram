@@ -60,6 +60,18 @@ def _tip(records: list[dict], fallback: Optional[str]) -> Optional[str]:
     return max(seen, key=lambda r: float(r.get("at") or 0))["seen"]
 
 
+def _after(store, session_id: str, row: dict, tip: Optional[str]) -> tuple[str, bool]:
+    """Where the app's new turns go, and whether they become what the conversation shows:
+    after the head when the thread's last turn here is on its branch (it went on here, or
+    not at all); after that turn, leaving the head where it is, when another branch is shown."""
+    head = row.get("head_id")
+    if not head or not tip or head == tip:
+        return head or tip or "ROOT", True
+    if any(m.get("id") == tip for m in store.get_branch(session_id, head)):
+        return head, True
+    return tip, False
+
+
 def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str], new_tip: str,
                    *, provider: str = HARNESS_PROVIDER) -> None:
     """Point the thread's records at ``new_tip``: each that was at the old tip, or the shared one."""
@@ -72,8 +84,15 @@ def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str
                 records[key] = {**record, "seen": new_tip, "at": time.time(), "synced_at": time.time()}
                 moved = True
         if not moved:
-            records[SHARED_KEY] = {**dict(records.get(SHARED_KEY) or {}), "thread_id": thread_id,
-                                   "seen": new_tip, "shared": True, "at": time.time(), "synced_at": time.time()}
+            old = records.get(SHARED_KEY)
+            key = SHARED_KEY
+            if isinstance(old, dict) and old.get("thread_id") not in (None, thread_id):
+                # The main branch runs another thread: this one's record stands beside it.
+                key = f"shared:{thread_id}"
+                old = records.get(key)
+            records[key] = {**(old if isinstance(old, dict) and old.get("thread_id") == thread_id else {}),
+                            "thread_id": thread_id, "seen": new_tip, "shared": True,
+                            "at": time.time(), "synced_at": time.time()}
         threads[provider] = records
         return threads
 
@@ -138,7 +157,7 @@ def _create(store, thread: codex_threads.Thread, session: ExternalSession, agent
 
 
 def _append(store, session_id: str, thread: codex_threads.Thread, session: ExternalSession,
-            entry: dict) -> int:
+            entry: dict, since: int = 0) -> int:
     """Write the turns made outside OpenProgram since the last sync; how many."""
     row = store.get_session(session_id) or {}
     records = thread_records(row, thread.id)
@@ -147,19 +166,26 @@ def _append(store, session_id: str, thread: codex_threads.Thread, session: Exter
     tip = _tip(records, entry.get("last_node_id"))
     prefix = node_prefix(CODEX, thread.id)
     indices = [i for i in range(done, len(session.turns)) if session.turns[i].turn_id not in own]
-    # The last turn written may still have been running in Codex then.
+    # After what the conversation shows now: when it moved to OpenProgram
+    # and went on there, the app's new turns follow those.
+    after, shown = _after(store, session_id, row, tip)
+    # The last turn written may still have been running in Codex then; when another
+    # branch is shown, the thread's tip is its own last turn, rewritten in place.
     if (0 < done <= len(session.turns) and tip == reply_id(prefix, done - 1)
-            and row.get("head_id") in (tip, None)):
+            and (row.get("head_id") in (tip, None) or not shown)):
         indices.insert(0, done - 1)
     if not indices:
         return 0
-    # After what the conversation shows now: when it moved to OpenProgram
-    # and went on there, the app's new turns follow those.
-    head = row.get("head_id") or tip or "ROOT"
-    last = write_turns(store, session_id, session, indices=indices, predecessor=head)
+    from .engine_turns import Busy, unchanged
+    # Written only if no engine turn started since the reading: its turn ids are not kept yet.
+    with unchanged((HARNESS_PROVIDER, thread.id), since) as still:
+        if not still:
+            raise Busy()
+        last = write_turns(store, session_id, session, indices=indices, predecessor=after)
     if not last:
         return 0
-    store.set_head(session_id, last)
+    if shown:
+        store.set_head(session_id, last)
     if last != tip:
         _write_records(store, session_id, thread.id, tip, last)
     store.update_session(session_id, updated_at=thread.updated_at or time.time())
@@ -199,6 +225,12 @@ def sync(*, home: Optional[Path] = None, store=None, ledger_root: Optional[Path]
                 continue
             if entry.get("empty") and thread.updated_at <= seen_at + 0.5:
                 continue
+            from .engine_turns import Busy, is_running, started
+            since = started((HARNESS_PROVIDER, thread.id))
+            if is_running((HARNESS_PROVIDER, thread.id)):
+                # An engine turn here is writing it: read once that turn ends and records its ids.
+                results.append({"thread_id": thread.id, "status": "deferred"})
+                continue
             try:
                 session = _parse(thread)
                 if not any(t.blocks for t in session.turns):
@@ -224,9 +256,16 @@ def sync(*, home: Optional[Path] = None, store=None, ledger_root: Optional[Path]
                     if not entry.get("linked"):
                         row = store.get_session(session_id) or {}
                         _link(store, session_id, thread, _tip([], entry.get("last_node_id")) or row.get("head_id") or "ROOT")
-                    added = _append(store, session_id, thread, session, entry)
+                    try:
+                        added = _append(store, session_id, thread, session, entry, since)
+                    except Busy:
+                        # An engine turn started in it since it was read: read it again after.
+                        results.append({"thread_id": thread.id, "status": "deferred"})
+                        continue
                     status = "appended" if added else "unchanged"
-                head = (store.get_session(session_id) or {}).get("head_id")
+                now = store.get_session(session_id) or {}
+                # The thread's last turn here (not the head, when another branch is shown).
+                head = _tip(thread_records(now, thread.id), now.get("head_id"))
                 ledger.put(CODEX, thread.id, {
                     "session_id": session_id, "linked": True, "path": str(thread.path),
                     "turns": len(session.turns), "last_node_id": head,
@@ -278,6 +317,8 @@ async def run_sync(stop, notify, *, home: Optional[Path] = None) -> None:
                 results = await asyncio.to_thread(sync, home=home)
                 if any(r.get("status") in ("created", "appended") for r in results):
                     notify()
+                if any(r.get("status") == "deferred" for r in results):
+                    seen = ()  # a thread left while its engine turn ran is read on the next poll
             except Exception:  # noqa: BLE001 - the next change tries again
                 _log.warning("Codex conversations not synced", exc_info=True)
         try:

@@ -1,9 +1,9 @@
 {
   "id": "local.auto-research",
   "title": "Auto Research",
-  "description": "Your paper's research tasks, each with its own conversation: the agent works in the paper's folder and knows what the task needs; the task's files, figures and PDF show above it.",
+  "description": "Your paper's research tasks by kind of work — from the literature watch and experiment loop to the rebuttal — each with its own conversation: the agent works in the paper's folder and knows what the task needs; its files, figures and PDF show above it.",
   "icon": "telescope",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "scope": "project",
   "dataSchema": 1,
   "ui": {
@@ -20,7 +20,9 @@
     "kind": "python",
     "entry": "backend:operations",
     "dependencies": [
-      "pymupdf==1.28.2"
+      "pymupdf==1.28.2",
+      "pillow==11.3.0",
+      "optuna==4.5.0"
     ]
   },
   "operations": {
@@ -197,6 +199,593 @@
       "output": {
         "type": "object"
       }
+    },
+    "suggest_kind": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Read the paper and suggest what kind of work it is (method, analysis, survey, benchmark or position), with the reason and the paper's main claim."
+    },
+    "set_brief": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "method",
+              "analysis",
+              "survey",
+              "benchmark",
+              "position"
+            ]
+          },
+          "claim": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Set the paper's kind of work and/or its one-sentence claim in workflow/project.md; the kind decides which tasks are listed."
+    },
+    "scan": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Read the paper folder and sort every task of the paper's kind into done, doing or todo, with what was seen and what is missing; kept in workflow/progress.json for the author to confirm."
+    },
+    "set_progress": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "doing",
+              "todo"
+            ]
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Correct one task's state in the reading, or confirm the whole reading."
+    },
+    "approve": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "preregister": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Lock the experiment plan before the results are in; an earlier lock stays in the history with the reason it was replaced."
+    },
+    "import_library": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "required": [
+          "bib_path"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "bib_path": {
+            "type": "string",
+            "description": "A .bib or CSL-JSON export of the author's Zotero, Mendeley or other library"
+          },
+          "target": {
+            "type": "string",
+            "description": "The .bib file to merge into; empty is the paper's first bibliography"
+          }
+        }
+      },
+      "description": "Merge the author's exported library into the paper's bibliography: entries not already there (by DOI, arXiv id or title) are added; nothing is removed."
+    },
+    "apply_edit": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "required": [
+          "edit"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "edit": {
+            "type": "object",
+            "description": "One edit from a run's edits.json (file, quote, replacement; kind create writes a missing workflow/ file)"
+          },
+          "root": {
+            "type": "string",
+            "description": "edits.json's root when the run checked a draft copy"
+          }
+        }
+      },
+      "description": "Apply one accepted proofreading edit: the quote is replaced only when it occurs exactly once in its .tex file."
+    },
+    "campaign": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "state",
+              "start",
+              "stop"
+            ]
+          }
+        }
+      },
+      "description": "The unattended campaign of workflow/campaign.md: its state, or the author starting or stopping it."
+    },
+    "import_tracking": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "A W&B or MLflow runs CSV, an mlruns/ folder, or wandb:entity/project"
+          }
+        }
+      },
+      "description": "Append runs logged in W&B or MLflow to results.tsv, skipping runs already imported."
+    },
+    "import_annotations": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "zotero (the local API of Zotero 7) or an exported annotations file"
+          }
+        }
+      },
+      "description": "Read the author's highlights and notes into workflow/annotations.csv, matched to .bib keys, with candidate claim_support rows."
+    },
+    "croissant_draft": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Draft workflow/croissant.json from datasheet.md and the dataset files, TODO where unknown; never overwrites."
+    },
+    "lean_draft": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "description": "The theorem's \\\\label, e.g. thm:main"
+          }
+        }
+      },
+      "description": "Write a Lean 4 statement of one theorem into workflow/lean/, its proof sorry."
+    },
+    "notes_ingest": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string",
+            "description": "The folder of notes inside the project; empty is workflow/notes"
+          }
+        }
+      },
+      "description": "Read the author's notes, slides (.pptx), sheets (.xlsx), documents and PDFs into workflow/world.json as unapproved entries with quotes; 研究地图 lists them for the author to accept."
+    },
+    "result": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "task"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "The newest run of a task with what is left to do about it (edits, questions, files to place), and its earlier runs."
+    },
+    "pending": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Every task whose newest run asks something of the author, and the project's uncommitted changes."
+    },
+    "apply_edits": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "task",
+          "run",
+          "ids"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Apply edits of a run's edits.json that the author accepted."
+    },
+    "reject_edits": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "run",
+          "ids"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Set aside edits of a run that the author declined."
+    },
+    "place_file": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "task",
+          "run",
+          "name"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Copy a file a run made to its place in the project."
+    },
+    "set_aside": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "run"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Mark a run's result as handled, or not."
+    },
+    "answer": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "option": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "task",
+          "run",
+          "question",
+          "option"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "The author's answer to one question of a run."
+    },
+    "changes": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "The project's uncommitted changes, where each came from, and a commit message for them."
+    },
+    "diff": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "One file's uncommitted change as a unified diff."
+    },
+    "revert": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "paths"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Undo the uncommitted change of these files."
+    },
+    "commit": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "paths"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Commit exactly these files."
+    },
+    "reveal": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "show": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ]
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Open a project file with its app, or show it in the file manager."
     }
   }
 }

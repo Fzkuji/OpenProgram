@@ -51,6 +51,7 @@ import { harnessQueryKey, listHarnesses } from "@/lib/models/harness-listing";
 import { cn } from "@/lib/utils";
 
 import { useBoundChat } from "../bound-chat";
+import { BotIcon } from "@/components/animated-icons";
 import { AgentMark } from "../chips/model-mark";
 
 /** OpenProgram's own engine's glyph. */
@@ -116,29 +117,9 @@ function HarnessMark({ harness }: { harness: string | null }) {
 
 export function HarnessBadge({ id }: { id: string }) {
   const { text } = useTranslation();
-  const { sessionId, chatKey } = useBoundChat();
   const [open, setOpen] = useExclusiveOpen();
   const state = useHarness(open);
-  const label = state.harness ? state.entry?.label ?? harnessLabel(state.harness) : "OpenProgram";
-
-  async function pick(target: string, entry?: Harness) {
-    setOpen(false);
-    if ((state.harness ?? OPENPROGRAM_HARNESS) === target) return;
-    try {
-      const sid = await ensureChatSession(sessionId, chatKey);
-      if (!sid) return;
-      await switchSessionHarness(sid, target, defaultModel(entry)?.id);
-    } catch (e) {
-      showToast(text("Could not switch harness: ", "切换 Harness 失败：") + String(e), { tone: "error" });
-    }
-  }
-
-  const reason = (h: Harness) => {
-    const why = unavailable(h);
-    return why === "not_installed" ? text("Not installed", "未安装")
-      : why === "not_signed_in" ? text("Not signed in", "未登录")
-        : h.version;
-  };
+  const label = harnessName(state);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
@@ -167,6 +148,45 @@ export function HarnessBadge({ id }: { id: string }) {
         className={cn(MENU_PANEL, "text-text-primary")}
       >
         <div className={GROUP_LABEL}>{text("Harness", "Harness")}</div>
+        <HarnessRows state={state} onPicked={() => setOpen(false)} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The harness a conversation runs on, as its chip and the phone's row name it. */
+export function harnessName(state: HarnessState): string {
+  return state.harness ? state.entry?.label ?? harnessLabel(state.harness) : "OpenProgram";
+}
+
+/** OpenProgram and each outside agent: the Harness chip's menu and the phone's Harness row. */
+export function HarnessRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+  const { text } = useTranslation();
+  const { sessionId, chatKey } = useBoundChat();
+
+  async function pick(target: string, entry?: Harness) {
+    onPicked();
+    if ((state.harness ?? OPENPROGRAM_HARNESS) === target) return;
+    try {
+      const sid = await ensureChatSession(sessionId, chatKey);
+      if (!sid) return;
+      await switchSessionHarness(sid, target, defaultModel(entry)?.id);
+    } catch (e) {
+      showToast(text("Could not switch harness: ", "切换 Harness 失败：") + String(e), { tone: "error" });
+    }
+  }
+
+  const reason = (h: Harness) => {
+    const why = unavailable(h);
+    return why === "not_installed" ? text("Not installed", "未安装")
+      : why === "not_started" ? text("Would not start", "无法启动")
+      : why === "not_signed_in" ? text("Not signed in", "未登录")
+      : why === "no_models" ? text("No models", "没有模型")
+        : h.version;
+  };
+
+  return (
+    <>
         <DropdownMenuItem onSelect={() => void pick(OPENPROGRAM_HARNESS)} className={cn(itemCls(false), MENU_ITEM_STATES)}>
           <MenuRow glyph={OPENPROGRAM_GLYPH} label="OpenProgram" checked={!state.harness} />
         </DropdownMenuItem>
@@ -181,8 +201,7 @@ export function HarnessBadge({ id }: { id: string }) {
             <MenuRow icon={<AgentMark harness={h.id} />} label={h.label} trail={reason(h) || undefined} checked={state.harness === h.id} />
           </DropdownMenuItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    </>
   );
 }
 
@@ -210,9 +229,11 @@ export function HarnessAgentBadge({ id, state }: { id: string; state: HarnessSta
           <button
             type="button"
             id={id}
+            // Until the harness is read it has no choices to list.
+            disabled={!state.entry}
             className={cn(buttonVariants({ variant: "elevated", size: "sm" })) + " runtime-badge agent-badge"}
           >
-            <AgentMark harness={state.harness} />
+            <BotIcon size={16} className="shrink-0" />
             {label ? <span className="badge-details">{label}</span> : null}
           </button>
         </DropdownMenuTrigger>
@@ -232,8 +253,22 @@ export function HarnessAgentBadge({ id, state }: { id: string; state: HarnessSta
 
 /** The harness agent a conversation runs with, as its chip and the phone's row name it. */
 export function harnessAgentLabel(state: HarnessState, text: (en: string, zh: string) => string): string {
-  const current = state.entry?.agents.find((a) => a.id === (state.agent ?? "default"));
-  return current?.label ?? (state.entry ? text("Default", "默认") : "");
+  // Only a choice the model takes: a personality left from another model no longer applies.
+  const current = agentChoices(state.entry, state.model).find((a) => a.id === (state.agent ?? "default"));
+  return current ? agentRowLabel(current, text) : state.entry ? text("Default", "默认") : "";
+}
+
+/** The harness's built-in choices in the interface language; profiles and named agents keep their names. */
+const BUILT_IN_LABELS: Record<string, [string, string]> = {
+  default: ["Default", "默认"],
+  "personality:pragmatic": ["Pragmatic", "务实"],
+  "personality:friendly": ["Friendly", "友好"],
+  "personality:none": ["Plain", "朴素"],
+};
+
+function agentRowLabel(a: { id: string; label: string }, text: (en: string, zh: string) => string): string {
+  const pair = BUILT_IN_LABELS[a.id];
+  return pair ? text(pair[0], pair[1]) : a.label;
 }
 
 /** A harness's agent choices, grouped by kind: the Agent chip's menu and the phone's Agent row. */
@@ -258,9 +293,9 @@ export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onP
   const groups: { title: string | null; kind: string }[] = [
     // Beside Claude Code's named agents, its default needs no heading of its own.
     { title: named ? null : text("Agent", "Agent"), kind: "default" },
-    { title: text("Profiles", "Profiles"), kind: "profile" },
+    { title: text("Profiles", "配置"), kind: "profile" },
     { title: text("Personality", "性格"), kind: "personality" },
-    { title: text("Agents", "Agents"), kind: "agent" },
+    { title: text("Agents", "智能体"), kind: "agent" },
   ];
   const shown = groups.filter((g) => choices.some((a) => a.kind === g.kind));
   return (
@@ -271,7 +306,7 @@ export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onP
           {group.title ? <div className={GROUP_LABEL}>{group.title}</div> : null}
           {choices.filter((a) => a.kind === group.kind).map((a) => (
             <DropdownMenuItem key={a.id} onSelect={() => void pick(a.id)} className={cn(itemCls(false), MENU_ITEM_STATES)}>
-              <MenuRow label={a.label} checked={a.id === currentId} />
+              <MenuRow label={agentRowLabel(a, text)} checked={a.id === currentId} />
             </DropdownMenuItem>
           ))}
         </div>

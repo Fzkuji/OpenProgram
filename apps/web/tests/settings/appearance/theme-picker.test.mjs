@@ -45,6 +45,7 @@ const byLabel = (container, label) => container.querySelector(`[aria-label="${la
 const buttonNamed = (container, text) => [...container.querySelectorAll("button")].find((b) => b.textContent === text);
 
 test("the theme picker previews, applies and resets the appearance", async () => {
+  localStorage.setItem("agentic_theme_schema", "4");
   localStorage.setItem("agentic_theme_style", "beige");
   localStorage.setItem("agentic_theme_mode", "dark");
   const view = await render(h(AppearanceSection));

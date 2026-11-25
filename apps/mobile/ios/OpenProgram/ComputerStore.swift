@@ -52,6 +52,7 @@ final class ComputerStore: ObservableObject {
             computers = saved
         }
         currentID = defaults.string(forKey: "current.v1") ?? computers.first?.id
+        address = currentID.flatMap { defaults.string(forKey: "address.v1." + $0) }
         monitor.pathUpdateHandler = { [weak self] _ in
             Task { @MainActor in self?.connect() }
         }
@@ -130,7 +131,7 @@ final class ComputerStore: ObservableObject {
 
     func select(_ id: String) {
         currentID = id
-        address = nil
+        address = defaults.string(forKey: "address.v1." + id)
         save()
         connect()
     }
@@ -166,6 +167,8 @@ final class ComputerStore: ObservableObject {
                 switch await Self.firstAnswering(computer.addresses, token: token) {
                 case .answered(let origin):
                     if self?.address != origin { self?.address = origin }
+                    // The next start begins here instead of trying each address again.
+                    self?.defaults.set(origin, forKey: "address.v1." + computer.id)
                     return
                 case .revoked:
                     self?.forget(computer.id)
@@ -179,27 +182,63 @@ final class ComputerStore: ObservableObject {
 
     private enum Probe { case answered(String), revoked, none }
 
+    /// Every address is asked at once and the first answer wins, so an
+    /// address that does not answer (home Wi-Fi while out) costs nothing.
+    /// A local answer arriving within a moment of a remote one still wins:
+    /// it is the faster path for every request after.
     private static func firstAnswering(_ addresses: [String], token: String) async -> Probe {
-        for origin in ordered(addresses) {
-            var request = URLRequest(url: URL(string: origin + "/api/auth/session")!,
-                                     timeoutInterval: isLocal(origin) ? 2 : 10)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            guard let (_, response) = try? await session.data(for: request),
-                  let status = (response as? HTTPURLResponse)?.statusCode else { continue }
-            if status == 204 { return .answered(origin) }
-            if status == 401 { return .revoked }
+        await withTaskGroup(of: (String, Probe).self) { group in
+            for origin in ordered(addresses) {
+                group.addTask {
+                    var request = URLRequest(url: URL(string: origin + "/api/auth/session")!,
+                                             timeoutInterval: isLocal(origin) ? 3 : 10)
+                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    guard let (_, response) = try? await session.data(for: request),
+                          let status = (response as? HTTPURLResponse)?.statusCode else { return (origin, .none) }
+                    if status == 204 { return (origin, .answered(origin)) }
+                    if status == 401 { return (origin, .revoked) }
+                    return (origin, .none)
+                }
+            }
+            var remote: Probe?
+            var refused = false
+            while let (origin, result) = await group.next() {
+                switch result {
+                case .revoked:
+                    // Another address may reach a different instance; only
+                    // a refusal with no address answering means revoked.
+                    refused = true
+                case .answered where isLocal(origin):
+                    group.cancelAll()
+                    return result
+                case .answered:
+                    if remote == nil {
+                        remote = result
+                        // The empty origin marks this timer's end.
+                        group.addTask {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            return ("", .none)
+                        }
+                    }
+                case .none:
+                    if origin.isEmpty, remote != nil {
+                        group.cancelAll()
+                        return remote!
+                    }
+                }
+            }
+            return remote ?? (refused ? .revoked : .none)
         }
-        return .none
     }
 
     /// Plain-HTTP addresses (Same Wi-Fi) before the https ones (Anywhere).
-    static func ordered(_ addresses: [String]) -> [String] {
+    nonisolated static func ordered(_ addresses: [String]) -> [String] {
         addresses.filter(isLocal) + addresses.filter { !isLocal($0) }
     }
 
-    static func isLocal(_ origin: String) -> Bool { origin.hasPrefix("http://") }
+    nonisolated static func isLocal(_ origin: String) -> Bool { origin.hasPrefix("http://") }
 
-    static let session: URLSession = {
+    nonisolated static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpCookieAcceptPolicy = .never
         config.httpShouldSetCookies = false

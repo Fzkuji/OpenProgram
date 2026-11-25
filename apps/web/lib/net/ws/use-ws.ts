@@ -1,5 +1,6 @@
 "use client";
 import { callMobile, mobileBridge } from "@/lib/mobile/bridge";
+import { cachedSessionList } from "@/lib/mobile/session-list-cache";
 import { dispatchChanged, dispatchReconnected } from "@/lib/net/ws/changes";
 import { sameSettingsBranch } from "@/lib/session-store/branch-settings";
 import { requestSessionLoad, acceptSessionLoad, failSessionLoad, disposeSessionLoads } from "@/lib/runtime-bridge/session/session-load";
@@ -119,6 +120,11 @@ export function useWS(): void {
     let stopped = false;
     let authNoticeShown = false;
     let connectGeneration = 0;
+    // The last time the socket heard anything, and whether the next close
+    // reconnects at once (a socket found dead on wake) or after the pause.
+    let heardAt = 0;
+    let reconnectNow = false;
+    let wakeCheck: ReturnType<typeof setTimeout> | undefined;
     let historyDeadline: ReturnType<typeof setTimeout> | undefined;
     let recovery: ReturnType<typeof createExecutionRecovery> | undefined;
 
@@ -521,6 +527,8 @@ export function useWS(): void {
           // toggles broadcast this event) — drop the query cache so every
           // tab's model picker refetches, not just the settings tab.
           getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
+          // A harness read since (installed, signed in, its models) reaches its menus.
+          getQueryClient()?.invalidateQueries({ queryKey: ["harnesses"] });
           return true;
         }
         case "provider_quota": {
@@ -1147,6 +1155,7 @@ export function useWS(): void {
 
       socket.onmessage = (e) => {
         if (socket !== connection || stopped) return;
+        heardAt = Date.now();
         try {
           const msg = JSON.parse(e.data) as {
             type?: string;
@@ -1178,7 +1187,8 @@ export function useWS(): void {
         clearTimeout(historyDeadline);
         updateStatus("disconnected");
         window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: false } }));
-        if (!stopped) reconnectTimer = setTimeout(connect, 2000);
+        if (!stopped) reconnectTimer = setTimeout(connect, reconnectNow ? 0 : 2000);
+        reconnectNow = false;
       };
 
       socket.onerror = () => connection.close();
@@ -1192,6 +1202,9 @@ export function useWS(): void {
       }
       if (stopped) return;
       initChatPage();
+      // The phone app shows the list it kept until the computer's arrives.
+      const kept = cachedSessionList<never>();
+      if (kept && Object.keys(runtimeState.conversations).length === 0) handleSessionsList(kept);
       connect();
     }
     start();
@@ -1200,10 +1213,55 @@ export function useWS(): void {
       if (socket && socket.readyState === WebSocket.OPEN) socket.send("ping");
     }, 30000);
 
+    // A phone suspends the page in the background and the socket dies
+    // without a close, so coming back would wait for the next keepalive.
+    // On return (and when the app finds another address) a socket that is
+    // not open reconnects at once, and an open one must answer a ping
+    // within 2s or is closed and replaced.
+    // A dead connection's close can take a minute to report: its close
+    // handling runs now, and the next socket opens at once.
+    const drop = (dead: WebSocket) => {
+      const closed = dead.onclose;
+      dead.onclose = null;
+      reconnectNow = true;
+      try { dead.close(); } catch { /* already closed */ }
+      closed?.call(dead, new CloseEvent("close"));
+    };
+    const wake = () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      const mobile = mobileBridge();
+      const moved = !!(mobile && socket && socket.url !== mobile.socket.url);
+      if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        connect();
+        return;
+      }
+      if (socket.readyState !== WebSocket.OPEN && !moved) return;
+      const probed = socket;
+      if (moved) {
+        drop(probed);
+        return;
+      }
+      const sent = Date.now();
+      try { probed.send("ping"); } catch { /* closing already */ }
+      clearTimeout(wakeCheck);
+      wakeCheck = setTimeout(() => {
+        if (socket === probed && heardAt < sent) drop(probed);
+      }, 2000);
+    };
+    document.addEventListener?.("visibilitychange", wake);
+    window.addEventListener?.("online", wake);
+    window.addEventListener?.("openprogram-mobile-address", wake);
+
     return () => {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(keepalive);
+      clearTimeout(wakeCheck);
+      document.removeEventListener?.("visibilitychange", wake);
+      window.removeEventListener?.("online", wake);
+      window.removeEventListener?.("openprogram-mobile-address", wake);
       recovery?.dispose();
       clearTimeout(historyDeadline);
       if (socket) {

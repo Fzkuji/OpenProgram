@@ -27,6 +27,10 @@ export function approvalDisplayText(
     // (permissions/approvals/approval.py); the card says it in the reader's language.
     const worded = tool && prompt === `允许执行 ${tool}？`
       ? text(COMMAND_TOOLS.includes(tool) ? "Run this command?" : `Run ${tool}?`, prompt)
+      // An outside agent's plan (Claude Code's ExitPlanMode), approved as written.
+      : prompt === "批准这个计划？" ? text("Approve this plan?", prompt)
+      // Codex asking for more than its sandbox gives (network, folders).
+      : prompt === "允许额外权限？" ? text("Allow more access?", prompt)
       : prompt;
     return { prompt: worded, summary: detail ?? "" };
   }

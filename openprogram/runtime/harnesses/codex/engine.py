@@ -60,6 +60,10 @@ def permission_settings(mode: Optional[str]) -> dict:
             "approvalsReviewer": reviewer or "user"}
 
 
+#: The efforts every Codex model takes, for a turn sent before Codex was read.
+_COMMON_EFFORTS = ("low", "medium", "high")
+
+
 def codex_effort(effort: Optional[str], supported: Optional[list[str]] = None) -> Optional[str]:
     """The Codex reasoning effort for OpenProgram's ``effort``; None keeps the model's default."""
     if not effort:
@@ -68,8 +72,11 @@ def codex_effort(effort: Optional[str], supported: Optional[list[str]] = None) -
     value = _EFFORT_ALIASES.get(value, value)
     if value is None:
         return None
+    if supported is None:
+        # Codex not read yet: the levels every Codex model takes, so none is refused.
+        supported = list(_COMMON_EFFORTS)
     if not supported:
-        return value
+        return None  # a model with no effort levels takes none
     if value in supported:
         return value
     order = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
@@ -143,6 +150,10 @@ class CodexTurn:
         self.messages: "queue.Queue[dict]" = queue.Queue()
         self.thread_id: Optional[str] = None
         self.turn_id: Optional[str] = None
+        #: Every Codex turn this one started (a steer that became a followup starts another).
+        self.turn_ids: list[str] = []
+        #: The thread this turn writes into while it runs, for the app sync to wait on.
+        self.marked: Optional[tuple[str, str]] = None
         self.items: dict[str, dict] = {}
         self.open_cards: dict[str, dict] = {}
         self.streamed: set[str] = set()
@@ -304,24 +315,47 @@ class CodexTurn:
             return None
 
     def _supported_efforts(self) -> Optional[list[str]]:
+        if str(self.model_id or "").startswith(GATEWAY_PREFIX):
+            # An OpenProgram model run through Codex: the gateway maps every level for it.
+            # (Ultra, which no OpenProgram model has, goes as Max: the gateway takes it down from there.)
+            return ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
         model = self._listed_model()
         return list(model.get("efforts") or []) if model else None
+
+    def _default_effort(self) -> Optional[str]:
+        """The model's own effort, sent for Auto so one set earlier on the thread does not stay."""
+        model = str(self.model_id or "")
+        if model.startswith(GATEWAY_PREFIX):
+            provider, _, inner = model[len(GATEWAY_PREFIX):].partition("/")
+            try:
+                from openprogram.interfaces.server.thinking_effort import get_thinking_config_for_model
+                default = get_thinking_config_for_model(provider, inner).get("default")
+            except Exception:  # noqa: BLE001 - the gateway then uses the model's default
+                default = None
+            return codex_effort(default, self._supported_efforts()) if default else None
+        listed = self._listed_model()
+        if listed is None and model.strip().lower() in _MODEL_DEFAULTS:
+            from openprogram.runtime.harnesses.models import cached_harness
+            listed = next((m for m in (cached_harness(PROVIDER) or {}).get("models") or [] if m.get("default")), None)
+        if listed is None:
+            return "medium"  # Codex not read yet: its usual default, which every model takes
+        return listed.get("default_effort") if listed.get("efforts") else None
 
     def _agent(self) -> tuple[list[str], dict]:
         """The branch's Codex agent choice: launch arguments (a profile) and
         thread/turn parameters (a personality, for a model that takes one)."""
         from openprogram.runtime.harnesses import branch_setting
         choice = branch_setting(self.req, "harness_agent")
-        if not isinstance(choice, str) or ":" not in choice:
-            return [], {}
-        kind, _, value = choice.partition(":")
+        kind, _, value = choice.partition(":") if isinstance(choice, str) else ("", "", "")
         if kind == "profile" and value:
             return ["-c", f"profile={json.dumps(value)}"], {}
+        listed = self._listed_model()
+        if listed is None or not listed.get("personality"):
+            return [], {}
         if kind == "personality" and value:
-            listed = self._listed_model()
-            if listed is not None and listed.get("personality"):
-                return [], {"personality": value}
-        return [], {}
+            return [], {"personality": value}
+        # A personality stays with the thread: Default asks for Codex's own again.
+        return [], {"personality": _configured_personality()}
 
     def _thread(self, server: AppServer, fresh: bool, model: Optional[str], cwd: str,
                 settings: dict) -> Optional[str]:
@@ -396,8 +430,9 @@ class CodexTurn:
             entries.append({"type": "text", "text": note})
         entries.append({"type": "text", "text": text})
         for attachment in self.req.attachments or []:
-            if isinstance(attachment, dict) and attachment.get("type") == "image" and attachment.get("path"):
-                entries.append({"type": "localImage", "path": str(attachment["path"])})
+            path = _image_file(attachment, self.req.session_id)
+            if path:
+                entries.append({"type": "localImage", "path": path})
         return entries
 
     # -- the turn ---------------------------------------------------------
@@ -414,7 +449,12 @@ class CodexTurn:
             cwd = self._cwd()
             settings = permission_settings(getattr(self.req, "permission_mode", None))
             note = self._thread(server, fresh, model, cwd, {**settings, "extra": agent_params})
-            effort = codex_effort(getattr(self.req, "thinking_effort", None), self._supported_efforts())
+            # The app sync leaves the thread alone while this turn writes into it.
+            self.marked = (PROVIDER, str(self.thread_id))
+            handoff.enter_running(self.marked)
+            # An effort stays with the thread: Auto asks for the model's own again.
+            effort = codex_effort(getattr(self.req, "thinking_effort", None), self._supported_efforts()) \
+                or self._default_effort()
             inputs = self._input(note)
             while True:
                 params = {"threadId": self.thread_id, "input": inputs, "cwd": cwd,
@@ -430,6 +470,7 @@ class CodexTurn:
                     break
                 answer = server.request("turn/start", params)
                 self.turn_id = self.turn_id or ((answer or {}).get("turn") or {}).get("id")
+                self._note_turn()
                 completed = self._drain()
                 if completed is None:  # stopped
                     break
@@ -458,26 +499,32 @@ class CodexTurn:
                 pool().discard(self.pool_key, server)
             else:
                 pool().release(self.pool_key, server)
-            # A failed turn leaves no reply the thread saw; the next one tells it.
-            if finished:
-                self._remember_seen()
+            # The turns it started are the thread's, though it failed; a failed turn
+            # leaves no reply the thread saw, so the next one tells it.
+            self._remember_seen(finished)
+            if self.marked:
+                handoff.leave_running(self.marked)
         from openprogram.state.reply_text import reply_text
         return reply_text(self.blocks).strip(), self.usage, self.tool_calls
 
-    def _remember_seen(self) -> None:
-        if not self.thread_id:
+    def _note_turn(self) -> None:
+        if self.turn_id and self.turn_id not in self.turn_ids:
+            self.turn_ids.append(self.turn_id)
+
+    def _remember_seen(self, finished: bool = True) -> None:
+        if not self.thread_id or not (finished or self.turn_ids):
             return
         try:
             from openprogram.runtime.context.session_db import default_db
             db = default_db()
             key = handoff.branch_key(self.req)
             own = list((handoff.read_records(db, self.req.session_id, PROVIDER).get(key) or {}).get("own_turns") or [])
-            if self.turn_id and self.turn_id not in own:
-                own = (own + [self.turn_id])[-_OWN_TURNS_KEPT:]
-            handoff.write_record(db, self.req.session_id, PROVIDER, key,
-                                 {"thread_id": self.thread_id, "seen": self.assistant_msg_id, "at": time.time(),
-                                  "own_turns": own,
-                                  **({"last_turn_id": self.turn_id} if self.turn_id else {})})
+            own = (own + [t for t in self.turn_ids if t not in own])[-_OWN_TURNS_KEPT:]
+            values: dict = {"thread_id": self.thread_id, "own_turns": own}
+            if finished:
+                values.update({"seen": self.assistant_msg_id, "at": time.time(),
+                               **({"last_turn_id": self.turn_id} if self.turn_id else {})})
+            handoff.write_record(db, self.req.session_id, PROVIDER, key, values)
         except Exception:  # noqa: BLE001 - the next turn hands off what it cannot tell
             _log.warning("Codex thread record not kept for %s", self.req.session_id, exc_info=True)
 
@@ -539,6 +586,7 @@ class CodexTurn:
             return None
         if method == "turn/started":
             self.turn_id = self.turn_id or (params.get("turn") or {}).get("id")
+            self._note_turn()
         elif method == "item/agentMessage/delta":
             self._text_delta(str(params.get("itemId") or ""), str(params.get("delta") or ""))
         elif method in ("item/reasoning/summaryTextDelta", "item/reasoning/textDelta"):
@@ -607,6 +655,12 @@ class CodexTurn:
         from openprogram.runtime.permissions.approvals.live import ask_live_approval, live_owner_from
 
         owner = live_owner_from(self.execution_context, self.req.session_id, "codex")
+        if method == "item/tool/requestUserInput":
+            self._ask_questions(owner, message["id"], params)
+            return
+        if method == "item/permissions/requestApproval":
+            self._ask_permissions(owner, message["id"], params)
+            return
         if owner is None:
             self.server.respond(message["id"], {"decision": "decline"})
             return
@@ -639,6 +693,55 @@ class CodexTurn:
         else:
             answer = "cancel"
         self.server.respond(message["id"], {"decision": answer})
+
+    def _ask_questions(self, owner, request_id: Any, params: dict) -> None:
+        """Codex's questions on OpenProgram's question card; answers go back by question id."""
+        from openprogram.runtime.permissions.approvals.live import ask_live_questions
+        from openprogram.runtime.permissions.attended import stepped_away
+        assert self.server is not None
+        # A secret (a token, a password) is never put on a card that keeps its answer.
+        asked = [q for q in params.get("questions") or []
+                 if isinstance(q, dict) and q.get("id") and q.get("question") and not q.get("isSecret")]
+        if owner is None or not asked or stepped_away(self.req.session_id):
+            self.server.respond(request_id, {"answers": {}})  # no one to ask: Codex goes on without
+            return
+        cards = [{
+            "prompt": "\n".join([str(q["question"]), *(f"  • {o['label']}: {o['description']}"
+                                                       for o in q.get("options") or []
+                                                       if isinstance(o, dict) and o.get("label") and o.get("description"))]),
+            "question_title": str(q.get("header") or q["question"]),
+            "options": [str(o["label"]) for o in q.get("options") or [] if isinstance(o, dict) and o.get("label")],
+            "multi": False, "allow_custom": bool(q.get("isOther")) or not q.get("options"),
+        } for q in asked]
+        reply = ask_live_questions(owner, cards, publish=self.on_event, cancel_event=self.cancel_event)
+        answers: dict = {}
+        if reply.outcome == "answered":
+            for q, a in zip(asked, reply.value):
+                picked = [str(x) for x in a] if isinstance(a, list) else [str(a)]
+                answers[str(q["id"])] = {"answers": [p for p in picked if p]}
+        elif reply.outcome == "declined" and reply.value:
+            answers[str(asked[0]["id"])] = {"answers": [str(reply.value)]}  # what the person wrote instead
+        self.server.respond(request_id, {"answers": answers})
+
+    def _ask_permissions(self, owner, request_id: Any, params: dict) -> None:
+        """More access than the sandbox gives (network, folders): asked like any approval."""
+        from openprogram.runtime.permissions.approvals.live import ask_live_approval
+        assert self.server is not None
+        wanted = {k: v for k, v in (params.get("permissions") or {}).items() if v}
+        refused = {"permissions": {}, "scope": "turn"}
+        if owner is None or not wanted:
+            self.server.respond(request_id, refused)
+            return
+        decision = ask_live_approval(
+            owner, tool="permissions", arguments=wanted, prompt="允许额外权限？",
+            detail=str(params.get("reason") or ""), allowed_scopes=("once", "session"), risk_level="high",
+            publish=self.on_event, cancel_event=self.cancel_event,
+        )
+        if decision.allowed:
+            self.server.respond(request_id, {"permissions": wanted,
+                                             "scope": "session" if decision.scope in ("session", "always") else "turn"})
+        else:
+            self.server.respond(request_id, refused)
 
     # -- steering ---------------------------------------------------------
 
@@ -693,7 +796,43 @@ class CodexTurn:
 
 
 #: Codex's requests this engine answers itself; the rest get the client's default answer.
-_ANSWERED_REQUESTS = frozenset({"item/commandExecution/requestApproval", "item/fileChange/requestApproval"})
+_ANSWERED_REQUESTS = frozenset({"item/commandExecution/requestApproval", "item/fileChange/requestApproval",
+                                "item/permissions/requestApproval", "item/tool/requestUserInput"})
+
+
+def _image_file(attachment: Any, session_id: str) -> Optional[str]:
+    """A local file Codex reads an attached image from: its own, or its data kept in the
+    session's private folder (as a steer's images are)."""
+    if not (isinstance(attachment, dict) and attachment.get("type") == "image"):
+        return None
+    if attachment.get("path"):
+        return str(attachment["path"])
+    data = attachment.get("data")
+    if not isinstance(data, str) or not data:
+        return None
+    import base64
+    import hashlib
+    import mimetypes
+    import os
+    from pathlib import Path
+    try:
+        from openprogram.host._platform.filesystem import restrict_to_user
+        from openprogram.runtime.context.session_db import default_db
+        raw = base64.b64decode(data)
+        suffix = mimetypes.guess_extension(str(attachment.get("media_type") or "image/png").partition(";")[0]) or ".png"
+        folder = Path(default_db()._session_dir(session_id)) / "codex-images"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{hashlib.sha256(raw).hexdigest()}{suffix}"
+        if not path.is_file():
+            # Written whole, then moved in: a half-written file is never read as the image.
+            partial = folder / f".{path.name}.{os.getpid()}.{id(raw)}"
+            partial.write_bytes(raw)
+            restrict_to_user(partial)
+            partial.replace(path)
+        return str(path)
+    except (ValueError, OSError):
+        _log.warning("attached image not kept for Codex", exc_info=True)
+        return None
 
 
 def _synced_since(records: dict, thread_id: str, since: float) -> bool:
@@ -721,6 +860,17 @@ def _match_provider(thread_id: Optional[str], model: Optional[str]) -> None:
             codex_threads.move_provider(home, _configured_provider(home), thread_ids=[thread_id])
     except Exception:  # noqa: BLE001 - an unmoved thread starts a new one with the handoff
         _log.info("Codex thread %s kept on its provider", thread_id, exc_info=True)
+
+
+def _configured_personality() -> str:
+    """The personality Codex's config.toml sets, else Codex's default."""
+    try:
+        import tomllib
+        from openprogram.state.store.session.external_import import codex
+        value = tomllib.loads((codex.default_home() / "config.toml").read_text(encoding="utf-8")).get("personality")
+    except Exception:  # noqa: BLE001
+        value = None
+    return value if isinstance(value, str) and value else "pragmatic"
 
 
 def _configured_provider(home) -> str:

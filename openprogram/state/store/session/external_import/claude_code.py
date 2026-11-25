@@ -208,7 +208,23 @@ def _active_chain(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 #: What Claude Code writes as a user record when a Stop interrupts it.
-_INTERRUPTED = "[Request interrupted by user"
+#: Claude Code's tools by the names OpenProgram's own take the same arguments under,
+#: so a card reads as OpenProgram's would (a command, an edit, a checklist).
+TOOL_NAMES = {
+    "Bash": "bash", "Read": "read", "Write": "write", "Edit": "edit", "MultiEdit": "edit",
+    "NotebookEdit": "edit", "Grep": "grep", "Glob": "glob", "LS": "list", "TodoWrite": "todo_write",
+    "Task": "task", "Agent": "agent", "WebFetch": "web_fetch", "WebSearch": "web_search",
+    "AskUserQuestion": "ask_user_question", "ExitPlanMode": "exit_plan_mode",
+    "EnterPlanMode": "enter_plan_mode", "Skill": "skill",
+}
+
+
+def tool_name(name: str) -> str:
+    """A Claude Code tool by OpenProgram's name for it, else its own."""
+    return TOOL_NAMES.get(name, name)
+
+
+INTERRUPTED = "[Request interrupted by user"
 
 
 def parse(path: Path) -> ExternalSession:
@@ -240,7 +256,7 @@ def parse(path: Path) -> ExternalSession:
                             tool.result = _result_text(block.get("content"))
                             tool.is_error = bool(block.get("is_error"))
             text = _user_text(content)
-            if text.startswith(_INTERRUPTED):
+            if text.startswith(INTERRUPTED):
                 # Claude Code's note that a Stop ended the turn: not a message of the person's.
                 if turn is not None and ts:
                     turn.ended_at = ts
@@ -276,7 +292,7 @@ def parse(path: Path) -> ExternalSession:
             elif kind == "tool_use":
                 tool = ToolBlock(
                     call_id=str(block.get("id") or f"tool{len(turn.blocks)}"),
-                    name=str(block.get("name") or "tool"),
+                    name=tool_name(str(block.get("name") or "tool")),
                     arguments=block.get("input") if block.get("input") is not None else {},
                     timestamp=ts,
                 )

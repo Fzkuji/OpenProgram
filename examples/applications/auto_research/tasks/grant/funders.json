@@ -1,0 +1,163 @@
+{
+  "_doc": "Funder facts for grant_proposal: sections, length limits, language, required elements, budget categories and the official guides. Limits follow each funder's guide at the time of writing; check them against the current call before submitting. limit.unit is chars (every character, spaces included), words, zh_chars (a CJK character or punctuation mark counts 1, a run of Latin letters or digits counts 1) or pages (about 500 English words or 800 Chinese characters per page). A require item is matched as a regex against the section's headings (heading) or its whole text (text); level error fails the draft, note only reports. aims_named: every aim's label must appear in the section, at that level.",
+  "nsf": {
+    "name": "NSF (U.S. National Science Foundation), standard research proposal",
+    "aliases": ["nsf"],
+    "language": "en",
+    "duration_months": 36,
+    "aims": {"min": 2, "max": 4, "label": "Aim {n}"},
+    "sections": [
+      {"id": "project_summary", "title": "Project Summary", "limit": {"value": 4600, "unit": "chars"},
+       "guidance": "Third person, three statements under the headings Overview, Intellectual Merit and Broader Impacts. Overview: what the project will do and its aims. Intellectual Merit: how it advances knowledge. Broader Impacts: how it benefits society.",
+       "require": [
+         {"what": "Overview heading", "heading": "^Overview$", "level": "error"},
+         {"what": "Intellectual Merit heading", "heading": "^Intellectual Merit$", "level": "error"},
+         {"what": "Broader Impacts heading", "heading": "^Broader Impacts$", "level": "error"}]},
+      {"id": "project_description", "title": "Project Description", "limit": {"value": 15, "unit": "pages"},
+       "guidance": "Objectives and their significance, relation to the state of knowledge, the preliminary results, the research plan aim by aim, evaluation, and a separate section labeled Broader Impacts. If a PI had NSF support in the past five years, Results from Prior NSF Support (the author fills it in).",
+       "aims_named": "error",
+       "require": [
+         {"what": "Intellectual Merit discussed", "text": "(?i)intellectual merit", "level": "error"},
+         {"what": "Broader Impacts heading (a separate section is required)", "heading": "^Broader Impacts", "level": "error"}]},
+      {"id": "data_management_plan", "title": "Data Management and Sharing Plan", "limit": {"value": 2, "unit": "pages"},
+       "guidance": "The data, code and other products the project will produce; formats and standards; access and sharing; re-use and redistribution; archiving and preservation.",
+       "require": [
+         {"what": "how data will be shared or accessed", "text": "(?i)shar|access", "level": "error"},
+         {"what": "archiving and preservation", "text": "(?i)archiv|preserv", "level": "note"}]}
+    ],
+    "budget": ["Senior personnel", "Other personnel", "Fringe benefits", "Equipment", "Travel", "Participant support costs", "Other direct costs", "Indirect costs"],
+    "guides": [
+      "https://www.nsf.gov/policies/pappg",
+      "https://www.nsf.gov/policies/pappg/24-1/ch-2-proposal-preparation"]
+  },
+  "nih_r01": {
+    "name": "NIH R01 Research Project Grant",
+    "aliases": ["nih", "r01", "nih_r01"],
+    "language": "en",
+    "duration_months": 60,
+    "aims": {"min": 2, "max": 4, "label": "Aim {n}"},
+    "sections": [
+      {"id": "specific_aims", "title": "Specific Aims", "limit": {"value": 1, "unit": "pages"},
+       "guidance": "One page: the problem and the gap, the long-term goal and the objective of this application, the central hypothesis and the preliminary data that support it, then each aim as 'Aim n: ...' with its hypothesis and approach in two or three sentences, and the expected outcome and impact.",
+       "aims_named": "error",
+       "require": [
+         {"what": "a central hypothesis", "text": "(?i)hypothes", "level": "note"}]},
+      {"id": "research_strategy", "title": "Research Strategy", "limit": {"value": 12, "unit": "pages"},
+       "guidance": "Three parts under the headings Significance, Innovation and Approach. Approach goes aim by aim: rationale, preliminary results, experimental design, expected outcomes, potential problems and alternative strategies, and benchmarks for success.",
+       "aims_named": "error",
+       "require": [
+         {"what": "Significance heading", "heading": "^Significance", "level": "error"},
+         {"what": "Innovation heading", "heading": "^Innovation", "level": "error"},
+         {"what": "Approach heading", "heading": "^Approach", "level": "error"},
+         {"what": "potential problems and alternative strategies", "text": "(?i)alternative", "level": "note"}]}
+    ],
+    "budget": ["Senior/key personnel", "Other personnel", "Equipment", "Travel", "Trainee costs", "Other direct costs", "Consortium/contractual costs", "Facilities and administrative costs"],
+    "guides": [
+      "https://grants.nih.gov/grants/how-to-apply-application-guide/format-and-write/write-your-application.htm",
+      "https://grants.nih.gov/grants/how-to-apply-application-guide/format-and-write/page-limits.htm"]
+  },
+  "erc": {
+    "name": "ERC Frontier Research Grant (Starting / Consolidator / Advanced)",
+    "aliases": ["erc", "erc_stg", "erc_cog", "erc_adg"],
+    "language": "en",
+    "duration_months": 60,
+    "aims": {"min": 2, "max": 4, "label": "Objective {n}"},
+    "sections": [
+      {"id": "b1_extended_synopsis", "title": "Part B1: Extended Synopsis", "limit": {"value": 5, "unit": "pages"},
+       "guidance": "A concise presentation of the scientific proposal that the panel reads in step 1: the ground-breaking nature and potential impact, the objectives, and the feasibility of the approach, with key references.",
+       "aims_named": "error",
+       "require": [
+         {"what": "ground-breaking nature or beyond the state of the art", "text": "(?i)ground-?breaking|beyond the state[- ]of[- ]the[- ]art", "level": "note"}]},
+      {"id": "b2_scientific_proposal", "title": "Part B2: Scientific Proposal", "limit": {"value": 14, "unit": "pages"},
+       "guidance": "Two parts under the headings 'State-of-the-art and objectives' and 'Methodology': the objectives against the state of the art, why they are ambitious, and the methodology objective by objective, including high-risk/high-gain parts and how risks are handled.",
+       "aims_named": "error",
+       "require": [
+         {"what": "State-of-the-art and objectives heading", "heading": "(?i)state[- ]of[- ]the[- ]art", "level": "error"},
+         {"what": "Methodology heading", "heading": "(?i)^methodology", "level": "error"},
+         {"what": "high-risk / high-gain and risk handling", "text": "(?i)risk", "level": "note"}]}
+    ],
+    "budget": ["Personnel (PI, senior staff, postdocs, students)", "Subcontracting", "Purchase costs: travel and subsistence", "Purchase costs: equipment", "Purchase costs: other goods, works and services", "Other cost categories", "Indirect costs (flat rate 25%)"],
+    "guides": [
+      "https://erc.europa.eu/apply-grant/starting-grant",
+      "https://erc.europa.eu/manage-your-project/documents-erc-applicants-and-grantees"]
+  },
+  "nsfc": {
+    "name": "国家自然科学基金面上项目",
+    "aliases": ["nsfc", "nsfc_general", "面上", "面上项目"],
+    "language": "zh",
+    "duration_months": 48,
+    "aims": {"min": 2, "max": 4, "label": "研究内容{n}"},
+    "sections": [
+      {"id": "abstract", "title": "摘要", "limit": {"value": 400, "unit": "zh_chars"},
+       "guidance": "一段话：研究对象和意义、拟解决的关键科学问题、研究内容和方法、预期成果。不写参考文献。",
+       "require": []},
+      {"id": "rationale", "title": "（一）立项依据与研究内容 1. 项目的立项依据", "limit": null,
+       "guidance": "研究意义，国内外研究现状及发展动态分析，结合科学研究发展趋势论述科学意义；引用文献用给定的键，文末由程序附主要参考文献目录。",
+       "require": [
+         {"what": "研究意义", "text": "意义", "level": "error"},
+         {"what": "国内外研究现状", "text": "现状|进展", "level": "error"}]},
+      {"id": "content_goals_questions", "title": "2. 研究内容、研究目标及拟解决的关键科学问题", "limit": null,
+       "guidance": "分三个小标题：研究内容（逐项写出，每项以“研究内容n”开头）、研究目标、拟解决的关键科学问题。",
+       "aims_named": "error",
+       "require": [
+         {"what": "研究内容小标题", "heading": "研究内容", "level": "error"},
+         {"what": "研究目标小标题", "heading": "研究目标", "level": "error"},
+         {"what": "拟解决的关键科学问题小标题", "heading": "关键科学问题", "level": "error"}]},
+      {"id": "plan_feasibility", "title": "3. 拟采取的研究方案及可行性分析", "limit": null,
+       "guidance": "研究方法、技术路线、实验手段、关键技术，逐个研究内容展开；然后是可行性分析，说明前期结果怎样支持可行性。",
+       "aims_named": "note",
+       "require": [
+         {"what": "技术路线或研究方案", "text": "技术路线|研究方案|研究方法", "level": "error"},
+         {"what": "可行性分析小标题", "heading": "可行性", "level": "error"}]},
+      {"id": "innovation", "title": "4. 本项目的特色与创新之处", "limit": null,
+       "guidance": "两到四条，每条说清楚与已有工作相比新在哪里。",
+       "require": [{"what": "创新之处", "text": "创新|特色", "level": "error"}]},
+      {"id": "annual_plan", "title": "5. 年度研究计划及预期研究结果", "limit": null,
+       "guidance": "按年度（第1年、第2年……）写计划，与时间表一致；然后写预期研究结果，不写具体论文数量以外无据可查的数字。",
+       "require": [
+         {"what": "年度计划", "text": "第\\s*1\\s*年|第一年", "level": "error"},
+         {"what": "预期研究结果", "text": "预期", "level": "error"}]},
+      {"id": "foundation", "title": "（二）研究基础与工作条件 1. 研究基础", "limit": null,
+       "guidance": "与本项目相关的前期研究工作积累和已取得的研究工作成绩，用项目文件里的结果和数字。",
+       "require": [{"what": "前期工作", "text": "前期|已有|已经", "level": "error"}]}
+    ],
+    "budget": ["设备费", "业务费", "劳务费", "间接费用"],
+    "guides": [
+      "https://www.nsfc.gov.cn/publish/portal0/tab1564/",
+      "https://grants.nsfc.gov.cn/"]
+  },
+  "nsfc_youth": {
+    "extends": "nsfc",
+    "name": "国家自然科学基金青年科学基金项目",
+    "aliases": ["nsfc_youth", "青年", "青年基金", "青年科学基金"],
+    "duration_months": 36
+  },
+  "generic": {
+    "name": "Generic research proposal",
+    "aliases": ["generic", "default"],
+    "language": "en",
+    "duration_months": 36,
+    "aims": {"min": 2, "max": 4, "label": "Aim {n}"},
+    "sections": [
+      {"id": "summary", "title": "Summary", "limit": {"value": 300, "unit": "words"},
+       "guidance": "The problem, the gap, the aims and the expected outcome in one paragraph.",
+       "require": []},
+      {"id": "specific_aims", "title": "Aims", "limit": {"value": 1, "unit": "pages"},
+       "guidance": "The goal and the gap, then each aim as 'Aim n: ...' with what it will establish.",
+       "aims_named": "error",
+       "require": []},
+      {"id": "background", "title": "Background and Significance", "limit": null,
+       "guidance": "The state of the field with citations, the gap, and why closing it matters.",
+       "require": []},
+      {"id": "approach", "title": "Preliminary Results and Approach", "limit": null,
+       "guidance": "The preliminary results first, then the plan aim by aim, with risks and alternatives.",
+       "aims_named": "note",
+       "require": [{"what": "risks or alternatives", "text": "(?i)risk|alternative", "level": "note"}]},
+      {"id": "outcomes", "title": "Expected Outcomes and Impact", "limit": null,
+       "guidance": "What each aim will deliver and who benefits.",
+       "require": []}
+    ],
+    "budget": ["Personnel", "Equipment", "Travel", "Other direct costs", "Indirect costs"],
+    "guides": []
+  }
+}

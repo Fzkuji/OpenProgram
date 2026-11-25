@@ -21,7 +21,7 @@ from openprogram.models.providers.structured_output import JsonSchemaOutput
 
 from auto_research.trail import Trail
 
-from . import fulltext, presets, render, replies, search
+from . import coverage, fulltext, presets, render, replies, search
 
 RULES = Path(__file__).parent / "rules"
 PURPOSES = ("survey", "related_work", "scouting")
@@ -152,6 +152,8 @@ def research_survey(direction: str, reader_level: str = "", purpose: str = "surv
         gaps = {"mapping": [], "gaps": []}
 
     papers = pool.kept(lines)
+    covered = coverage.estimate([p for p in papers if p["decision"] in ("core", "adjacent")])
+    trail.step("coverage", **covered)
     trail.step("corpus", **{k: sum(p["decision"] == k for p in papers) for k in ("core", "adjacent", "survey")},
                per_line={l["id"]: sum(p["line"] == l["id"] for p in papers) for l in lines})
 
@@ -227,7 +229,7 @@ def research_survey(direction: str, reader_level: str = "", purpose: str = "surv
               "notes": notes, "chapters": chapters, "overview": overview, "trends": trends, "counts": counts,
               "directions": directions, "baseline": {"surveys": surveys, **gaps}, "related_work": related,
               "retrieval": {"queries": queries, "receipts": receipts, "candidates": len(pool.all),
-                            "unavailable": sorted(search.UNAVAILABLE)}}
+                            "unavailable": sorted(search.UNAVAILABLE), "coverage": covered}}
     return finish(out, survey, pool, least, trail)
 
 
@@ -626,8 +628,23 @@ def number(value: str, name: str, default: int) -> int:
     return int(value)
 
 
+def flow(survey: dict, pool: Pool) -> dict:
+    """The screening flow in the counts a PRISMA 2020 diagram reports: records returned,
+    after removing duplicates, screened, excluded, not screened, included by decision,
+    and read in full."""
+    returned = sum(n for per in survey["retrieval"]["receipts"].values() for n in per.values())
+    decided = [c for c in pool.all if c.get("decision")]
+    papers = survey["papers"]
+    return {"returned": returned, "unique": len(pool.all), "screened": len(decided),
+            "excluded": sum(c["decision"] == "exclude" for c in decided),
+            "not_screened": len(pool.all) - len(decided),
+            "included": {k: sum(p["decision"] == k for p in papers) for k in ("core", "adjacent", "survey")},
+            "read_full": sum(p.get("read_level") == "full" for p in papers)}
+
+
 def finish(out: Path, survey: dict, pool: Pool, least: int, trail: Trail) -> str:
     out.mkdir(parents=True, exist_ok=True)
+    survey["retrieval"]["flow"] = flow(survey, pool)
     core = sum(p["decision"] == "core" for p in survey["papers"])
     issues = [dict(i, chapter=c["line"]) for c in survey["chapters"] for i in c["issues"]]
     notes = []
@@ -635,6 +652,8 @@ def finish(out: Path, survey: dict, pool: Pool, least: int, trail: Trail) -> str
         notes.append(f"only {core} core papers, fewer than min_papers={least}")
     if issues:
         notes.append(f"{len(issues)} audit issues remain after one rewrite")
+    if coverage.note(survey["retrieval"]["coverage"]):
+        notes.append(coverage.note(survey["retrieval"]["coverage"]))
     if survey["retrieval"]["unavailable"]:
         notes.append("sources that failed: " + ", ".join(survey["retrieval"]["unavailable"]))
     status = "FAIL" if core < least else "PASS_WITH_NOTES" if notes else "PASS"

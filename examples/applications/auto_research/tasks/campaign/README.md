@@ -1,0 +1,25 @@
+# campaign task
+
+The `campaign` task of auto_research (`tasks/campaign/`). It keeps a research project working unattended for hours or weeks: one recurring scheduled task that, every few hours, runs the Auto Research tasks the author chose and then lets an agent do the work the author agreed to, until the budget is spent or the last day has passed. Learned from Kosmos and Edison (multi-hour unattended runs), DeepScientist (a month-long loop) and Agent Laboratory's autonomous mode.
+
+| Item | Contract |
+| --- | --- |
+| Purpose | Run the project unattended within a budget and a date the author approved, and leave a line for every step in a log the author reads. |
+| Spec | `workflow/campaign.md`, copied from `templates/campaign.md` when missing. Fields: `Goal`, `Tasks` (comma-separated task names of `registry.TASKS`, run in order each step), `Agent work` (what the unattended agent may do after them), `Every` (five-field cron), `Budget` (USD, counted from the start), `Until` (last day, `YYYY-MM-DD`; empty runs until the budget is spent), `Approved` (`yes` only after the author agrees). |
+| Step | `campaign_step(paper_dir: str) -> str`, plain code. `REFUSED` while the spec is not approved, names no task and no agent work, names an unknown task or `campaign` itself, or has no positive budget. `STOPPED` once the spend since the start reaches `Budget` (checked before and after the tasks) or the day is past `Until`: the campaign is marked stopped and its scheduled task disabled. Otherwise runs each task through `auto_research(paper_dir, task=...)`; an exception stays with its task (`ERROR`) and the others still run. Returns JSON `{status, ran, spent, budget, stop_reason, next}`, where `ran` is `[{task, status, report?, error?}]` and `status` is `RAN`, `STOPPED` or `REFUSED`. |
+| Spend | `ledger.spend(paper)["cost"]` now minus `spend_at_start` in `workflow/campaign.json`; spend before the campaign does not count. A step run before `start_campaign` records the start itself. |
+| Start | `start_campaign(paper_dir: str) -> dict`: refuses as the step does, and when `Every` is not a cron or the host has no scheduler. Creates one recurring scheduler task, titled `Auto Research campaign: <folder name>`, `cwd` the paper, `cron` from `Every`, whose prompt tells the unattended agent to run `openprogram programs run auto_research -a paper_dir=<paper> -a task=campaign`, stop on `STOPPED` or `REFUSED`, otherwise do the Agent work within the Edit rules of `workflow/experiment.md`, commit only on `campaign/<YYYY-MM-DD>`, never push, never approve anything for the author, and append an `agent` line to the log. Keeps `task_id`, `started_at`, `spend_at_start` in `workflow/campaign.json`. Starting a running campaign returns its task (`created: false`) and creates no second one. Returns `{status: RUNNING, task_id, created}`. |
+| Stop | `stop_campaign(paper_dir: str) -> dict`: deletes the campaign's scheduled task (by id and by title) and marks it stopped. Returns `{status: STOPPED, deleted}`. |
+| State | `campaign_state(paper_dir: str) -> dict`: `state` (`running` only while its scheduled task exists and is enabled), `approved`, `task_id`, `every`, `until`, `started_at`, `stop_reason`, `steps`, `spent`, `budget`, `last` (the last five log lines). Writes nothing. |
+| Log | `workflow/campaign_log.md`, one line per event: `- <time> step \| tasks: watch PASS, research_map ERROR \| spent $0.50 of $10.00 \| proposals open: 2 (consensus, watch)`, with `\| STOPPED: <reason>` on the last step; `start`, `stop` and the agent's `agent` lines. Proposals are those of `workflow/world.json` (research_map). |
+| Effects | Writes `workflow/campaign.md` (template only), `workflow/campaign.json`, `workflow/campaign_log.md`, and creates, disables or deletes one scheduler task. The tasks it runs write what they write. The scheduler (`openprogram.runtime.scheduler.service`), the runner and the run time limit (`time_limits.SCHEDULED_RUN_LIMIT_S`) are imported inside the functions. |
+| Model calls | None in this package; the listed tasks make theirs, and the scheduled agent does the Agent work. |
+| Registry | A task named `campaign` whose worker calls `campaign_step(paper)` and returns its JSON; the scheduled prompt runs that task. |
+| Tests | `tests/campaign/test_workflow.py`: a fake scheduler module and a fake runner. Refused when not approved, unknown tasks, per-task error isolation, log lines and proposals, spend before the start, budget stop disabling the scheduled task, the `Until` stop, start and stop round trip, idempotent start. |
+| Usage | `from auto_research.tasks.campaign import start_campaign, stop_campaign, campaign_state, campaign_step` |
+
+## Not covered
+
+- Judging the agent's work: the branch `campaign/<date>` waits for the author, and nothing is merged or pushed.
+- Exact spend: the step sees only metered runs saved under `drafts/`; the agent's own conversation is not counted, so set the budget with room.
+- Stopping a run already in progress: a stop takes effect at the next step; each scheduled run ends at the host's time limit.

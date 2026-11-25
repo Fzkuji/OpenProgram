@@ -35,34 +35,34 @@ test("every color style has distinct light and dark theme ids", () => {
   }
 });
 
-test("stored custom style coerces to beige and resolves the beige pair", () => {
-  assert.equal(coerceThemeStyle("custom"), "beige");
+test("stored custom style coerces to neutral and resolves the neutral pair", () => {
+  assert.equal(coerceThemeStyle("custom"), "neutral");
   assert.deepEqual(resolveThemePreference("custom", "dark", false), {
-    theme: "beige-dark",
+    theme: "dark",
     resolvedMode: "dark",
   });
   assert.deepEqual(resolveThemePreference("custom", "light", true), {
-    theme: "beige-light",
+    theme: "light",
     resolvedMode: "light",
   });
-  assert.equal(resolveThemePreference("custom", "auto", false).theme, "beige-light");
-  assert.equal(resolveThemePreference("custom", "auto", true).theme, "beige-dark");
+  assert.equal(resolveThemePreference("custom", "auto", false).theme, "light");
+  assert.equal(resolveThemePreference("custom", "auto", true).theme, "dark");
 });
 
-test("legacy custom prefs migrate onto beige, keeping the saved mode", () => {
+test("legacy custom prefs migrate onto neutral, keeping the saved mode", () => {
   assert.deepEqual(legacyThemePreference("custom", "2"), {
-    style: "beige",
+    style: "neutral",
     mode: "dark",
   });
   assert.deepEqual(legacyThemePreference("custom-light", "3"), {
-    style: "beige",
+    style: "neutral",
     mode: "light",
   });
-  assert.equal(LEGACY_THEME_PREFERENCES.custom.style, "beige");
+  assert.equal(LEGACY_THEME_PREFERENCES.custom.style, "neutral");
   assert.equal(LEGACY_THEME_PREFERENCES["custom-light"].mode, "light");
 });
 
-test("custom style + saved CSS migrates to beige and turns the overlay on", () => {
+test("custom style + saved CSS migrates to neutral and turns the overlay on", () => {
   const next = migrateAppearancePreferences({
     schema: "3",
     style: "custom",
@@ -70,13 +70,13 @@ test("custom style + saved CSS migrates to beige and turns the overlay on", () =
     legacy: "custom-light",
     customCss: '[data-theme="custom"] { --bg-primary: #111; }',
   });
-  assert.equal(next.style, "beige");
+  assert.equal(next.style, "neutral");
   assert.equal(next.mode, "light");
   assert.equal(next.customCssEnabled, true);
   assert.equal(next.migratedFromCustom, true);
 });
 
-test("custom style without CSS migrates to beige and leaves overlay off", () => {
+test("custom style without CSS migrates to neutral and leaves overlay off", () => {
   const next = migrateAppearancePreferences({
     schema: "3",
     style: "custom",
@@ -84,7 +84,7 @@ test("custom style without CSS migrates to beige and leaves overlay off", () => 
     legacy: "custom",
     customCss: "   ",
   });
-  assert.equal(next.style, "beige");
+  assert.equal(next.style, "neutral");
   assert.equal(next.customCssEnabled, false);
 });
 

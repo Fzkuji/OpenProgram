@@ -7,7 +7,7 @@
  * 以及强调色 token 覆盖。
  *
  * 字体用 cookie 是因为 SSR 要在首帧就把 font-family 内联进去；主题不需要，
- * 因为 :root 兜底取值就是默认外观（beige-dark），首帧不会白屏，
+ * 因为 :root 兜底取值就是默认外观（neutral 的深色），首帧不会白屏，
  * layout.tsx 的 pre-paint 脚本在 React 水合前就把属性打上了。
  */
 "use client";
@@ -76,15 +76,20 @@ function storageSet(key: string, value: string): void {
 /**
  * 向后兼容：schema 2 及更早版本只保存组合后的 agentic_theme。
  * schema 3 将它一次性拆成颜色风格与明暗模式，随后分别持久化。
- * Custom 不再是第四套皮肤：存量 custom / custom-light 迁到 beige，
+ * Custom 不再是第四套皮肤：存量 custom / custom-light 迁到默认风格，
  * 有保存的 CSS 则打开 overlay。
+ * schema 4 把默认风格从 beige 换成 neutral：之前的首次启动会把默认值
+ * beige 写进存储，分不出是不是用户自己选的，所以存量 beige 一次性改成 neutral。
  */
 const SCHEMA_KEY = "agentic_theme_schema";
-const SCHEMA_VERSION = "3";
+const SCHEMA_VERSION = "4";
 
 /** 存量值迁移，幂等。模块加载和 pre-paint 脚本各跑一次都安全。 */
 export function migrateLegacyThemePreferences(): void {
   if (typeof window === "undefined") return;
+  if (storageGet(SCHEMA_KEY) !== SCHEMA_VERSION && storageGet(THEME_STYLE_STORAGE_KEY) === "beige") {
+    storageSet(THEME_STYLE_STORAGE_KEY, "neutral");
+  }
   const next = migrateAppearancePreferences({
     schema: storageGet(SCHEMA_KEY),
     style: storageGet(THEME_STYLE_STORAGE_KEY),

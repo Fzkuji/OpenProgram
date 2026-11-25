@@ -638,7 +638,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const visibleProjectGroups = groupedProjects.filter(group => !collapsedGroups.has(projectSectionKey(projectSection(group.key))));
   // The bell rides beside the filter wherever the filter sits.
   const listActions = (
-    <span className="flex items-center gap-[2px]">
+    <span className="flex items-center gap-[8px]">
       <ActivityBell />
       <RecentsFilter projects={projects} />
     </span>
@@ -674,7 +674,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         collapsible={false}
         collapsed={false}
         onToggle={() => {}}
-        actions={<span className="flex items-center gap-[2px]">
+        actions={<span className="flex items-center gap-[8px]">
           <ActivityBell />
           <ActivityMenu unread={toMarkRead.length} onMarkAllRead={() => markAllRead(toMarkRead)} />
         </span>}

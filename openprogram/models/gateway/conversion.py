@@ -220,6 +220,10 @@ def reasoning_level(model: Model, requested: str | None) -> str | None:
     """``requested`` clamped to a level ``model`` offers; ``None`` for its default."""
     if not requested or not getattr(model, "reasoning", False):
         return None
+    if requested in ("none", "off"):
+        # Thinking off reaches only a provider with a wire value for it, as in the agent loop.
+        from openprogram.models.providers.settings.thinking_spec import off_wire_value
+        return "off" if off_wire_value(model.provider, model.id, getattr(model, "api", None)) is not None else None
     offered = [level for level in _LEVELS if level in (model.thinking_levels or [])] or list(_LEVELS[1:4])
     if requested in offered:
         return requested

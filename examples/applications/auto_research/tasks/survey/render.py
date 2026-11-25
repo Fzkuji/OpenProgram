@@ -17,7 +17,8 @@ COLORS = 8
 WORDS = {
     "zh": {"toc": "目录", "overview": "领域全貌", "lines": "研究线", "trends": "近期动态", "directions": "可跟的方向",
            "papers": "论文列表", "scope": "检索与阅读范围", "prereq": "读者需要的基础：", "core": "篇核心论文",
-           "full": "篇读过正文", "since": "检索自", "map": "各研究线的论文分布，点的大小表示被引次数，点击打开论文。",
+           "full": "篇读过正文", "since": "检索自", "coverage": "覆盖度",
+           "coverage_about": "按检索源之间的重合估计找到了相关论文的多少；各源不独立，这是上限。", "map": "各研究线的论文分布，点的大小表示被引次数，点击打开论文。",
            "counts": "每年标题或摘要匹配该研究线首个检索词的论文数（OpenAlex）。当年数据不完整。",
            "rising": "增长明显的研究线", "new": "新出现的设定、基准与方法", "saturated": "进展放缓的问题",
            "problem": "问题", "active": "在做的工作", "crowding": "近期篇数", "cost": "入手成本", "first": "第一个实验",
@@ -28,7 +29,8 @@ WORDS = {
            "none": "无"},
     "en": {"toc": "Contents", "overview": "The field", "lines": "Research lines", "trends": "Recent work",
            "directions": "Open directions", "papers": "Papers", "scope": "Search and reading scope",
-           "prereq": "Assumed background: ", "core": "core papers", "full": "read in full", "since": "searched from",
+           "prereq": "Assumed background: ", "core": "core papers", "full": "read in full", "since": "searched from", "coverage": "coverage",
+           "coverage_about": "How much of the relevant work the search found, estimated from the overlap of the sources; an upper bound.",
            "map": "Papers of each research line; dot size shows citations. Click to open a paper.",
            "counts": "Works per year whose title or abstract matches the line's first query (OpenAlex). The current year is partial.",
            "rising": "Growing lines", "new": "New settings, benchmarks and methods", "saturated": "Slowing problems",
@@ -136,6 +138,14 @@ def chapter(i: int, ch: dict, papers: dict) -> str:
     return "\n".join(out)
 
 
+def covered(survey: dict, w: dict) -> str:
+    """The coverage estimate in the page's meta line, when there is one."""
+    est = (survey.get("retrieval") or {}).get("coverage") or {}
+    if est.get("coverage") is None:
+        return ""
+    return f'<span title="{esc(w["coverage_about"])}">{esc(w["coverage"])} ~{round(est["coverage"] * 100)}%</span>'
+
+
 def page(survey: dict) -> str:
     lang = survey["language"]
     w = WORDS[lang]
@@ -155,7 +165,7 @@ def page(survey: dict) -> str:
     body = [f"<header><h1>{esc(plan['title'])}</h1>",
             f'<p class="prereq">{esc(w["prereq"])}{esc(plan["prerequisites"])}</p>',
             f'<p class="meta"><span>{esc(survey["date"])}</span><span>{core} {esc(w["core"])}</span>'
-            f'<span>{full} {esc(w["full"])}</span><span>{esc(w["since"])} {survey["since"]}</span></p></header>']
+            f'<span>{full} {esc(w["full"])}</span><span>{esc(w["since"])} {survey["since"]}</span>{covered(survey, w)}</p></header>']
 
     body.append(f'<h2 class="part" id="overview">{esc(w["overview"])}</h2>')
     body += [f"<p>{prose(t, papers)}</p>" for t in survey["overview"]["paragraphs"]]
@@ -306,6 +316,32 @@ def latex_keep_cites(text: str) -> str:
     return "".join(p if p.startswith("~\\cite") else latex(p) for p in parts)
 
 
+def coverage_line(est: dict | None) -> str:
+    if not est:
+        return "- 覆盖度：没有估计"
+    if est["coverage"] is None:
+        return f"- 覆盖度：各检索源没有共同找到的相关论文，无法估计（找到 {est['found']} 篇）"
+    return (f"- 覆盖度：约 {round(est['coverage'] * 100)}%（找到 {est['found']} 篇，按检索源重合估计相关论文约 "
+            f"{est['estimated']} 篇；各源不独立，这是上限）")
+
+
+def prisma(f: dict | None) -> list[str]:
+    """The screening flow as PRISMA 2020 reports it, for a systematic review's method section."""
+    if not f:
+        return []
+    inc = f["included"]
+    return ["## 筛选流程（PRISMA 2020）", "",
+            "| 步骤 | 篇数 |", "|---|---|",
+            f"| 首轮关键词检索返回（含重复） | {f['returned']} |",
+            f"| 去重后（含补检和引文扩展） | {f['unique']} |",
+            f"| 筛选过 | {f['screened']} |",
+            f"| 排除 | {f['excluded']} |",
+            f"| 没有筛选（超出预算） | {f['not_screened']} |",
+            f"| 纳入：核心 / 相邻 / 综述 | {inc['core']} / {inc['adjacent']} / {inc['survey']} |",
+            f"| 读过正文 | {f['read_full']} |", "",
+            "每篇候选的筛选决定和理由在 candidates.json。", ""]
+
+
 def report(survey: dict, status: str, notes: list[str], issues: list[dict]) -> str:
     papers = survey["papers"]
     count = lambda k: sum(p["decision"] == k for p in papers)
@@ -314,6 +350,7 @@ def report(survey: dict, status: str, notes: list[str], issues: list[dict]) -> s
              f"- 方向：{survey['direction']}（用途 {survey['purpose']}）",
              f"- 候选 {survey['retrieval']['candidates']} 篇；核心 {count('core')}、相邻 {count('adjacent')}、"
              f"综述 {count('survey')}",
+             coverage_line(survey["retrieval"].get("coverage")),
              f"- 读过正文 {sum(p.get('read_level') == 'full' for p in papers)} 篇，仅读摘要 "
              f"{sum(p.get('read_level') == 'abstract' for p in papers)} 篇",
              f"- 章节 {len(survey['chapters'])}，可跟方向 {len(survey['directions']['cards'])}", ""]
@@ -323,6 +360,7 @@ def report(survey: dict, status: str, notes: list[str], issues: list[dict]) -> s
         lines += ["## 改写一次后仍未解决的核查问题", "", "| 章 | 段 | 问题 | 原句 | 说明 |", "|---|---|---|---|---|"]
         lines += [f"| {i['chapter']} | {i['paragraph']} | {i['problem']} | {i['quote']} | {i['note']} |" for i in issues]
         lines.append("")
+    lines += prisma(survey["retrieval"].get("flow"))
     lines += ["## 研究线", ""] + [f"- {l['id']} {l['name']}：{sum(p['line'] == l['id'] for p in papers)} 篇"
                                 for l in survey["lines"]] + [""]
     return "\n".join(lines)

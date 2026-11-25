@@ -55,6 +55,12 @@ def is_attended(session_id: "str | None" = None) -> bool:
         return _default
 
 
+def stepped_away(session_id: "str | None") -> bool:
+    """The person turned Unattended on for this conversation (not just the default)."""
+    with _lock:
+        return bool(session_id) and _by_session.get(session_id) is False
+
+
 def clear_session(session_id: str) -> None:
     """Drop a session's override (it falls back to the default)."""
     with _lock:

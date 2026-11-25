@@ -2,12 +2,12 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { showToast } from "@/lib/format-utils/toast";
 import { cancel, loadSaved, op, setProject, store, type Saved } from "./api";
-import { baseName, type Overview, type Task } from "./model";
+import { baseName, type Brief, type Overview, type Stand, type Task } from "./model";
 import { Welcome } from "./Welcome";
 import { Workspace } from "./Workspace";
 import { FolderDialog } from "./FolderDialog";
 
-export type Route = { page: "overview" } | { page: "task"; task: string };
+export type Route = { page: "overview" } | { page: "changes" } | { page: "task"; task: string };
 
 export interface Step { key: string; label: string; state: "run" | "done" | "fail"; seconds?: number }
 export interface Job {
@@ -23,6 +23,11 @@ interface Ctx {
   stop(): void;
   /** Bumped when the project's files may have changed (a check ran, a reply ended). */
   changes: number; touched(): void;
+  /** What the reader is doing now: suggesting the kind of work, or reading where the tasks stand. */
+  reading: "kind" | "scan" | null;
+  suggestKind(): void; scan(): void;
+  setBrief(brief: Partial<Brief>): Promise<boolean>;
+  setProgress(change: { task: string; state: Stand } | { confirm: true }): Promise<void>;
 }
 const AppContext = createContext<Ctx>(null as unknown as Ctx);
 export const useApp = () => useContext(AppContext);
@@ -45,6 +50,8 @@ export function App() {
   const [welcomeError, setWelcomeError] = useState("");
   const [browsing, setBrowsing] = useState(false);
   const [changes, setChanges] = useState(0);
+  const [reading, setReading] = useState<Ctx["reading"]>(null);
+  const readingRef = useRef<Ctx["reading"]>(null);
   const jobRef = useRef<Job | null>(null);
 
   const updateJob = (change: (j: Job) => Job) => setJob((j) => (jobRef.current = j ? change(j) : j));
@@ -134,11 +141,29 @@ export function App() {
     }
   };
 
+  /** One reader call at a time; the overview shows it until it ends. */
+  const read = async (what: "kind" | "scan", name: string) => {
+    if (readingRef.current) return;
+    readingRef.current = what; setReading(what);
+    try { await op(name); await refresh(); }
+    catch (e) { showToast(`${what === "kind" ? "没读完论文" : "没盘点完"}：${explain((e as Error).message)}`, { tone: "error" }); }
+    finally { readingRef.current = null; setReading(null); }
+  };
+
   const ctx: Ctx = {
     saved, home, view, route, job, go: setRoute, refresh, openFolder, openProject, closeProject, forget,
     check: (task, inputs) => start(task, "check", "run_task", { task: task.name, inputs }),
     changes, touched: () => { setChanges((n) => n + 1); void refresh(); },
     stop: () => { if (jobRef.current?.id) cancel(jobRef.current.id).catch(() => {}); },
+    reading, suggestKind: () => read("kind", "suggest_kind"), scan: () => read("scan", "scan"),
+    setBrief: async (brief) => {
+      try { await op("set_brief", brief); await refresh(); return true; }
+      catch (e) { showToast(explain((e as Error).message), { tone: "error" }); return false; }
+    },
+    setProgress: async (change) => {
+      try { await op("set_progress", change); await refresh(); }
+      catch (e) { showToast(explain((e as Error).message), { tone: "error" }); }
+    },
   };
 
   if (!ready) return <div className="shadcn-scale grid h-full place-items-center text-sm text-text-muted">正在打开…</div>;

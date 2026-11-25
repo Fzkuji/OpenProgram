@@ -35,6 +35,13 @@ function str(v: unknown): string | undefined {
   return undefined;
 }
 
+function firstQuestion(args: Args): string | undefined {
+  const questions = (args as Record<string, unknown>)?.questions;
+  const first = Array.isArray(questions) ? questions[0] : undefined;
+  const question = first && typeof first === "object" ? (first as Record<string, unknown>).question : undefined;
+  return typeof question === "string" && question.trim() ? question : undefined;
+}
+
 function pick(args: Args, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const v = str(args[key]);
@@ -203,7 +210,7 @@ export function presentTool(
 ): ToolPresentation {
   if (options.providerExecuted && name === "web_search") return presentProviderSearch(input, text);
   const args = parseToolArgs(input);
-  const path = shortPath(pick(args, "path", "file_path", "filename", "file"));
+  const path = shortPath(pick(args, "path", "file_path", "filename", "file", "notebook_path"));
   switch (name) {
     case "computer_use":
       return computerUseToolPresentation(args, text);
@@ -296,7 +303,8 @@ export function presentTool(
         target: genericTarget(args) };
     case "ask_user_question":
       return { icon: "chat-round-question-mark", tone: "plan", title: text("Asked", "提问"),
-        target: firstLine(pick(args, "question", "prompt")) };
+        // Claude Code's question tool asks a list: its first question names the card.
+        target: firstLine(pick(args, "question", "prompt") ?? firstQuestion(args)) };
     case "enter_plan_mode":
     case "exit_plan_mode":
       return { icon: "map", tone: "plan", title: name === "enter_plan_mode" ? text("Planning", "进入规划") : text("Plan ready", "规划完成") };

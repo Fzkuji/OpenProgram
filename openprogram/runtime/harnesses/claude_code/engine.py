@@ -57,12 +57,14 @@ _windows: dict[str, int] = {}
 
 
 def claude_effort(effort: Optional[str], supported: Optional[list[str]] = None) -> Optional[str]:
-    """Claude Code's effort nearest OpenProgram's ``effort``; None keeps Claude Code's own."""
+    """Claude Code's effort nearest OpenProgram's ``effort``; None keeps Claude Code's own.
+
+    ``supported`` is the model's listed levels; None when unknown, [] for a model with none."""
     value = str(effort or "").strip().lower()
-    if not value or value in ("auto", "default"):
+    if not value or value in ("auto", "default") or supported == []:
         return None
     value = {"off": "low", "none": "low", "minimal": "low"}.get(value, value)
-    levels = [level for level in (supported or _EFFORT_ORDER) if level in _EFFORT_ORDER]
+    levels = [level for level in (_EFFORT_ORDER if supported is None else supported) if level in _EFFORT_ORDER]
     if value in levels:
         return value
     if value not in _EFFORT_ORDER or not levels:
@@ -147,6 +149,9 @@ class ClaudeTurn:
         self.last_start_at = 0.0  # when Claude Code last began a message
         self.own_saved = 0
         self.own_saved_at = 0.0
+        self.action = "start"  # how this turn reached its session: resume, fork or start
+        self.inited = False  # the process announced its session
+        self.fresh = False  # the session could not be resumed: this turn starts a new one
 
     # -- frames and blocks ------------------------------------------------
 
@@ -238,6 +243,9 @@ class ClaudeTurn:
         key = handoff.branch_key(self.req)
         records = handoff.read_records(db, self.req.session_id, PROVIDER)
         plan = handoff.plan_thread(records, key, self.history)
+        if self.fresh:
+            plan = handoff.ThreadPlan("start", missed=list(self.history))
+        self.action = plan.action
         self.records = records
         cwd = self._workdir()
         if plan.action in ("resume", "fork") and plan.thread_id:
@@ -327,7 +335,34 @@ class ClaudeTurn:
         message_uuid = str(uuid.uuid4())
         if message_uuid not in self.own:
             self.own.append(message_uuid)
-        return self._user_message(self._message_text(note), uuid=message_uuid)
+        message = self._user_message(self._message_text(note), uuid=message_uuid)
+        message["message"]["content"].extend(self._images())
+        return message
+
+    def _images(self) -> list[dict]:
+        """The person's attached images, as the image blocks Claude Code reads."""
+        import base64
+        import mimetypes
+        from pathlib import Path
+        blocks: list[dict] = []
+        for attachment in getattr(self.req, "attachments", None) or []:
+            if not (isinstance(attachment, dict) and attachment.get("type") == "image"):
+                continue
+            # Chat attachments carry their data; a saved one may name only its file.
+            data = attachment.get("data") if isinstance(attachment.get("data"), str) else None
+            media = str(attachment.get("media_type") or attachment.get("mimeType") or "")
+            if not data and attachment.get("path"):
+                path = Path(str(attachment["path"]))
+                media = media or mimetypes.guess_type(path.name)[0] or ""
+                try:
+                    data = base64.b64encode(path.read_bytes()).decode("ascii")
+                except OSError:
+                    _log.warning("attached image %s not read", path)
+                    continue
+            if not data or media not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+                continue
+            blocks.append({"type": "image", "source": {"type": "base64", "media_type": media, "data": data}})
+        return blocks
 
     def _user_message(self, text: str, **extra: Any) -> dict:
         return {"type": "user", "session_id": self.session_id or "", "parent_tool_use_id": None,
@@ -380,7 +415,7 @@ class ClaudeTurn:
             self.process = live.process
             self._mark()
             try:
-                live.process.send(self._opening_message(note))
+                live.process.send(self._opening(note))
             except ClaudeError:
                 if not self.reused:
                     raise
@@ -390,8 +425,24 @@ class ClaudeTurn:
                 live, note = self._open(binary)
                 self.live = live
                 self.process = live.process
-                live.process.send(self._opening_message(note))
-            result = self._drain()
+                live.process.send(self._opening(note))
+            try:
+                result = self._drain()
+            except ClaudeError as exc:
+                if not self._unresumable(exc):
+                    raise
+                # The session is gone from Claude Code (deleted, or another folder): a new one
+                # takes the conversation so far as its handoff, and later turns go on in it.
+                _log.warning("Claude Code session %s not resumed; starting a new one", self.session_id)
+                client.pool().release(key, live, broken=True)
+                live = None
+                self._start_over()
+                live, note = self._open(binary)
+                self.live = live
+                self.process = live.process
+                self._mark()
+                live.process.send(self._opening(note))
+                result = self._drain()
             if result is None:  # stopped
                 finished = True
             elif result.get("is_error") and not self.cancel_event.is_set():
@@ -426,6 +477,33 @@ class ClaudeTurn:
                 handoff.leave_running(self.marked)
         from openprogram.state.reply_text import reply_text
         return reply_text(self.blocks).strip(), self.usage, self.tool_calls
+
+    def _unresumable(self, exc: ClaudeError) -> bool:
+        """Claude Code no longer has the session this turn resumes or forks: it said so and
+        ended before starting it, and nothing was sent mid-turn that a new session would miss."""
+        if not (exc.exited and not self.inited and not self.fresh and not self.reused
+                and self.action in ("resume", "fork") and not self.last_steer_at
+                and not self.cancel_event.is_set()):
+            return False
+        return "no conversation found" in (self.process.stderr_tail() if self.process else "").lower()
+
+    def _start_over(self) -> None:
+        self.fresh = True
+        if self.marked:
+            handoff.leave_running(self.marked)
+            self.marked = None
+        self.own = []
+        self.own_saved = 0
+        self.session_id = None
+        self.resumed_seen = None
+
+    def _opening(self, note: Optional[str]) -> dict:
+        """The opening message, its uuid kept first: a sync reading it then knows it as this turn's."""
+        message = self._opening_message(note)
+        # A session started in place of one that is gone is kept once it begins (``init``).
+        if self.session_id and not self.fresh:
+            self._save_own()
+        return message
 
     def _mark(self) -> None:
         """The app sync waits while this turn writes into the session (a fork's id comes with ``init``)."""
@@ -462,8 +540,8 @@ class ClaudeTurn:
         self._write_record(seen=False)
 
     def _write_record(self, *, seen: bool) -> None:
-        if not self.session_id:
-            return
+        if not self.session_id or self.fresh and not self.inited:
+            return  # a session started in place of a gone one that never began keeps the old record
         try:
             from openprogram.runtime.context.session_db import default_db
             db = default_db()
@@ -537,7 +615,10 @@ class ClaudeTurn:
                 self._answer(message)
             elif kind == "system" and message.get("subtype") == "init" and message.get("session_id"):
                 self.session_id = str(message["session_id"])
+                self.inited = True
                 self._mark()
+                if self.fresh:
+                    self._save_own()
             elif message.get("parent_tool_use_id"):
                 continue  # a subagent's own steps: its outcome comes back as the tool's result
             elif kind == "stream_event":
@@ -612,7 +693,9 @@ class ClaudeTurn:
                 continue
             kind = block.get("type")
             if kind == "tool_use":
-                self._start_card(str(block.get("id") or ""), str(block.get("name") or "tool"), block.get("input"))
+                from openprogram.state.store.session.external_import.claude_code import tool_name
+                self._start_card(str(block.get("id") or ""), tool_name(str(block.get("name") or "tool")),
+                                 block.get("input"))
             elif not streamed and kind == "text":
                 self._add_text("text", str(block.get("text") or ""), message_id)
             elif not streamed and kind == "thinking":
@@ -646,10 +729,18 @@ class ClaudeTurn:
         if owner is None:
             self.process.respond(request_id, deny)
             return
+        if tool == "AskUserQuestion" and isinstance(arguments.get("questions"), list):
+            self._ask_questions(owner, request_id, arguments)
+            return
         suggestions = request.get("permission_suggestions") or []
+        from openprogram.state.store.session.external_import.claude_code import tool_name
+        shown_tool, shown_arguments = tool_name(tool), arguments
+        prompt, detail = f"允许执行 {shown_tool}？", str(request.get("decision_reason") or "")
+        if tool == "ExitPlanMode":
+            # The plan itself is what is approved: shown as written, not as an argument list.
+            prompt, detail, shown_arguments = "批准这个计划？", str(arguments.get("plan") or detail), {}
         decision = ask_live_approval(
-            owner, tool=tool, arguments=arguments, prompt=f"允许执行 {tool}？",
-            detail=str(request.get("decision_reason") or ""),
+            owner, tool=shown_tool, arguments=shown_arguments, prompt=prompt, detail=detail,
             allowed_scopes=("once", "session") if suggestions else ("once",),
             risk_level="high" if tool == "Bash" else "medium",
             publish=self.on_event, cancel_event=self.cancel_event,
@@ -663,6 +754,45 @@ class ClaudeTurn:
                 self._leave_plan()
         else:
             self.process.respond(request_id, {**deny, "interrupt": decision.outcome != "deny"})
+
+
+    def _ask_questions(self, owner, request_id: str, arguments: dict) -> None:
+        """Claude Code's questions on OpenProgram's question card; the answers go back
+        as the tool's ``answers`` (question text → the picked labels, comma-joined)."""
+        from openprogram.runtime.permissions.approvals.live import ask_live_questions
+        from openprogram.runtime.permissions.attended import stepped_away
+        if stepped_away(self.req.session_id):
+            self.process.respond(request_id, {"behavior": "deny", "message": (
+                "The person is away (Unattended) and cannot be asked. Go on with your best judgement "
+                "and say what you assumed.")})
+            return
+        asked = [q for q in arguments["questions"] if isinstance(q, dict) and q.get("question")]
+        reply = ask_live_questions(owner, [_card_question(q) for q in asked],
+                                   publish=self.on_event, cancel_event=self.cancel_event)
+        if reply.outcome == "answered":
+            answers = {str(q["question"]): ", ".join(a) if isinstance(a, list) else str(a)
+                       for q, a in zip(asked, reply.value)}
+            self.process.respond(request_id, {"behavior": "allow",
+                                              "updatedInput": {**arguments, "answers": answers}})
+        elif reply.outcome == "declined":
+            note = f"The person did not pick an answer and wrote instead: {reply.value}" if reply.value \
+                else "The person declined to answer."
+            self.process.respond(request_id, {"behavior": "deny", "message": note})
+        else:
+            self.process.respond(request_id, {"behavior": "deny", "message": "The person did not answer.",
+                                              "interrupt": True})
+
+
+def _card_question(question: dict) -> dict:
+    """One of Claude Code's questions as OpenProgram's card asks it (as ``ask_user_question`` does)."""
+    options = [o for o in question.get("options") or [] if isinstance(o, dict) and o.get("label")]
+    hints = [f"  • {o['label']}: {o['description']}" for o in options if o.get("description")]
+    return {
+        "prompt": "\n".join([str(question["question"]), *hints]), "question_title": str(question["question"]),
+        "options": [str(o["label"]) for o in options],
+        "option_descriptions": {str(o["label"]): str(o["description"]) for o in options if o.get("description")},
+        "multi": bool(question.get("multiSelect")), "allow_custom": True,
+    }
 
 
 def _restore_after_plan(req: Any) -> Optional[str]:

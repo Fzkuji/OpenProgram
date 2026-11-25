@@ -25,6 +25,8 @@ import { useTranslation } from "@/lib/i18n";
 import { effortLevelColor, formatEffortLabel } from "@/lib/effort/effort-color";
 import { MENU_PANEL, MENU_SEPARATOR } from "@/components/ui/menu/menu-styles";
 import { AgentBadge, AgentConfigBadge, HarnessBadge, PermissionBadge } from "../../top-bar";
+import { harnessOf } from "@/lib/models/harnesses";
+import { useSessionAgentSettings } from "../state/use-session-agent-settings";
 import { ContextBadge } from "../../badges/context-badge";
 import {
   AttachIcon,
@@ -125,8 +127,11 @@ export const ControlsCluster = memo(function ControlsCluster({
   const { text } = useTranslation();
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
   const effortIconRef = useRef<AnimatedNavIconHandle>(null);
+  // An outside agent searches and runs commands its own way: no web search or sandbox switch.
+  const chat = useSessionAgentSettings().chat;
+  const outside = !!(chat?.harness ?? harnessOf(chat?.provider));
   const anyToolActive =
-    webSearchEnabled || unattended || (sandboxEnabled && sandboxAvailable);
+    (!outside && webSearchEnabled) || unattended || (!outside && sandboxEnabled && sandboxAvailable);
   const effortColor = effortLevelColor(thinkingOptions, thinking);
 
   return (
@@ -149,7 +154,9 @@ export const ControlsCluster = memo(function ControlsCluster({
                 label={
                   <TipBody
                     title={text("Options", "选项")}
-                    detail={text("Attach files, and turn web search or sandbox on and off", "添加文件，开关网页搜索或沙箱")}
+                    detail={outside
+                      ? text("Attach files", "添加文件")
+                      : text("Attach files, and turn web search or sandbox on and off", "添加文件，开关网页搜索或沙箱")}
                   />
                 }
               >
@@ -206,6 +213,7 @@ export const ControlsCluster = memo(function ControlsCluster({
                 <DropdownMenuSeparator className={MENU_SEPARATOR} />
 
                 {/* Toggles keep the menu open (keepOpen). */}
+                {outside ? null : <>
                 <PlusMenuRow
                   active={webSearchEnabled}
                   keepOpen
@@ -223,12 +231,13 @@ export const ControlsCluster = memo(function ControlsCluster({
                   label={
                     sandboxAvailable
                       ? text("Sandbox", "沙箱")
-                      : text("Sandbox · Unavailable", "Sandbox · Unavailable")
+                      : text("Sandbox · Unavailable", "沙箱 · 不可用")
                   }
                   onSelect={() => toggleSandbox()}
                 />
 
                 <DropdownMenuSeparator className={MENU_SEPARATOR} />
+                </>}
 
                 <PlusMenuRow
                   active={unattended}
@@ -248,7 +257,7 @@ export const ControlsCluster = memo(function ControlsCluster({
                   display:none, so all-off shows nothing.) HoverTip is a
                   real top-layer tooltip; a CSS ::after would be cropped by
                   the chip's overflow:hidden. */}
-              {webSearchEnabled && (
+              {webSearchEnabled && !outside && (
                 <HoverTip label={<TipBody title={text("Web search on", "网页搜索已开启")} detail={text(
                   "With a provider that has its own web search (ChatGPT, OpenAI, Claude, Gemini), the model searches through the provider; otherwise it uses the local web_search tool and the search backend set in Settings. Click to turn off.",
                   "模型的提供商自带网页搜索时（ChatGPT、OpenAI、Claude、Gemini）由提供商搜索；否则使用本地 web_search 工具和设置里配置的搜索后端。点击关闭。",
@@ -264,7 +273,7 @@ export const ControlsCluster = memo(function ControlsCluster({
                   />
                 </HoverTip>
               )}
-              {sandboxEnabled && sandboxAvailable && (
+              {sandboxEnabled && sandboxAvailable && !outside && (
                 <HoverTip label={<TipBody title={text("Sandbox on", "沙箱已开启")} detail={text("Commands run in an isolated sandbox. Click to turn off.", "命令在隔离的沙箱里运行。点击关闭。")} />}>
                   <ToolChip
                     icon={<SandboxIcon size={16} />}
@@ -309,7 +318,7 @@ export const ControlsCluster = memo(function ControlsCluster({
                 blocked send/run fires a transient top toast instead
                 (see ``promptNeedModel``). The `thinking` value still
                 flows to submit (uses the model default) when hidden. */}
-            {chatModel && !noEnabledModels ? (
+            {chatModel && !noEnabledModels && thinkingOptions.length > 0 ? (
               <HoverTip
                 label={
                   <TipBody

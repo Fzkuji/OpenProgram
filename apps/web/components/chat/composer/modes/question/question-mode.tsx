@@ -466,7 +466,8 @@ function StepBody({
       <>
         <div className={styles.prompt}>{prompt}</div>
         {command ? <OperationCode value={command} language="bash" /> : null}
-        {esc && summary ? <pre className={approvalStyles.summary}>{summary}</pre> : null}
+        {/* An outside agent asking for more access says why above what it asks for. */}
+        {summary && (esc || tool === "permissions") ? <pre className={approvalStyles.summary}>{summary}</pre> : null}
         {step.args && Object.keys(step.args).length > 0 ? (
           command ? (
             <details className={approvalStyles.executionDetails}>

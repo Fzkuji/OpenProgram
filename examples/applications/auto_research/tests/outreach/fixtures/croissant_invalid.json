@@ -1,0 +1,92 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/",
+    "sc": "https://schema.org/",
+    "cr": "http://mlcommons.org/croissant/",
+    "rai": "http://mlcommons.org/croissant/RAI/",
+    "dct": "http://purl.org/dc/terms/",
+    "conformsTo": "dct:conformsTo",
+    "field": "cr:field",
+    "fileObject": "cr:fileObject",
+    "recordSet": "cr:recordSet",
+    "source": "cr:source",
+    "extract": "cr:extract",
+    "column": "cr:column",
+    "dataType": {
+      "@id": "cr:dataType",
+      "@type": "@vocab"
+    },
+    "citeAs": "cr:citeAs"
+  },
+  "@type": "sc:Thing",
+  "name": "tiny-scores",
+  "description": "Two scored sentences for testing.",
+  "url": "https://example.org/tiny",
+  "creator": [
+    {
+      "@type": "sc:Person",
+      "name": "Jane Doe"
+    }
+  ],
+  "datePublished": "2026-01-01",
+  "version": "1.0.0",
+  "keywords": [
+    "test"
+  ],
+  "citeAs": "@misc{tiny}",
+  "rai:dataCollection": "Written by hand.",
+  "rai:dataCollectionType": "Manual Human Curation",
+  "rai:personalSensitiveInformation": "None.",
+  "rai:dataUseCases": "Testing loaders.",
+  "rai:dataLimitations": "TODO: known limitations",
+  "rai:dataPreprocessingProtocol": "None.",
+  "rai:dataAnnotationProtocol": "Scores set by the author.",
+  "rai:dataReleaseMaintenancePlan": "Kept as is.",
+  "distribution": [
+    {
+      "@type": "cr:FileObject",
+      "@id": "data.csv",
+      "name": "data.csv",
+      "contentUrl": "data.csv",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "@type": "cr:FileSet",
+      "@id": "images"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "cr:RecordSet",
+      "@id": "rows",
+      "name": "rows",
+      "field": [
+        {
+          "@type": "cr:Field",
+          "@id": "rows/id",
+          "name": "id",
+          "source": {
+            "fileObject": {
+              "@id": "data.csv"
+            },
+            "extract": {
+              "column": "id"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "rows/text",
+          "name": "text",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "missing.csv"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

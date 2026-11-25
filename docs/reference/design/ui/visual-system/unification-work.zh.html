@@ -8,7 +8,6 @@
 <table class="stack">
 <thead><tr><th scope="col">事项、优先级</th><th scope="col">现状</th><th scope="col">下一步</th></tr></thead>
 <tbody>
-<tr><th scope="row">Web 令牌兜底<br>高</th><td><code translate="no">themes/fallback.css</code> 的 <code translate="no">:root</code> 兜底是 beige-dark 表面；<code translate="no">design/color.css</code> 给 <code translate="no">--accent-orange: #6ea8fe</code>，是 neutral 蓝</td><td>选定 beige 或 neutral 并统一</td></tr>
 <tr><th scope="row">CLI 和 TUI<br>中</th><td>TUI 主色固定 <code translate="no">#d97757</code>，不看 Web 主题（<code translate="no">apps/cli/src/theme/themes.ts</code>）。Rich 横幅用 <code translate="no">bright_blue</code>（<code translate="no">openprogram/interfaces/cli/repl/banner.py</code>）。</td><td>读取 Web 偏好，或写明是独立品牌</td></tr>
 <tr><th scope="row">按钮<br>低</th><td><code translate="no">button.tsx</code> 是官方 radix-nova Button；管理页标签仍用 <code translate="no">--ui-button-h</code> 和 <code translate="no">--ui-button-radius</code> 自定尺寸</td><td>手写尺寸的标签改用 Button 尺寸</td></tr>
 <tr><th scope="row">命名<br>低</th><td><code translate="no">--accent-orange</code> 也承载蓝色和青色；shadcn <code translate="no">--accent</code> 是 9% 墨色，不是主色</td><td>改名，例如 <code translate="no">--accent-primary</code></td></tr>
@@ -34,12 +33,12 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">已存值</th><th scope="col">迁移为</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">auto</code></th><td>beige + auto</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>neutral + auto</td></tr>
 <tr><th scope="row"><code translate="no">beige-dark</code> <code translate="no">beige-light</code></th><td>beige + 深色或浅色</td></tr>
 <tr><th scope="row"><code translate="no">dark</code> <code translate="no">light</code>（schema 2）</th><td>neutral + 深色或浅色</td></tr>
 <tr><th scope="row"><code translate="no">aurora</code> <code translate="no">aurora-light</code></th><td>aurora + 深色或浅色</td></tr>
 <tr><th scope="row"><code translate="no">vivid</code> <code translate="no">vivid-light</code></th><td>vivid + 深色或浅色</td></tr>
-<tr><th scope="row"><code translate="no">custom</code> <code translate="no">custom-light</code></th><td>beige + 已存模式；存有自定义 CSS 时打开覆盖层</td></tr>
+<tr><th scope="row"><code translate="no">custom</code> <code translate="no">custom-light</code></th><td>neutral + 已存模式；存有自定义 CSS 时打开覆盖层</td></tr>
 </tbody>
 </table>
 </details>
@@ -50,7 +49,7 @@
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row">解析</th><td>Schema 3 键加旧 <code translate="no">agentic_theme</code>。来源优先级见<a href="theme-system.zh.html#diagnostics">排查</a>。<code translate="no">auto</code> 跟随 <code translate="no">nativeTheme.shouldUseDarkColors</code>。</td></tr>
-<tr><th scope="row">颜色表</th><td><code translate="no">apps/desktop/main/windows/theme-chrome.js</code> 复制主题 CSS 的取值。<code translate="no">custom</code> id 解析为 beige 一对。</td></tr>
+<tr><th scope="row">颜色表</th><td><code translate="no">apps/desktop/main/windows/theme-chrome.js</code> 复制主题 CSS 的取值。<code translate="no">custom</code> id 解析为 neutral 一对。</td></tr>
 <tr><th scope="row">错误页和列表页</th><td>使用同一组外观令牌</td></tr>
 <tr><th scope="row">切换主题</th><td>渲染进程调用 <code translate="no">theme.setChrome</code>，更新每个 <code translate="no">BrowserWindow</code> 的背景，下次显示或刷新不闪旧色</td></tr>
 <tr><th scope="row">窗口状态</th><td>不受影响，见<a href="../desktop/window-state.zh.html">窗口状态</a></td></tr>

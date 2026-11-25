@@ -42,6 +42,8 @@ export interface Harness {
   updatable?: boolean;
   /** Models Codex offers that only a newer Codex lists. */
   newModels?: { id: string; label: string }[];
+  /** Why it could not be read: `not_started` when it is installed but would not start. */
+  error?: string;
 }
 
 /** OpenProgram's own engine, as the Harness chip names it. */
@@ -115,9 +117,12 @@ export function gatewayRef(provider: string, model: string): string {
 }
 
 /** Why a harness cannot be picked on that machine, or null. */
-export function unavailable(harness: Harness): "not_installed" | "not_signed_in" | null {
+export function unavailable(harness: Harness): "not_installed" | "not_started" | "not_signed_in" | "no_models" | null {
+  // As the server refuses a switch (routes/execution/harnesses.py `_unavailable`).
   if (!harness.installed) return "not_installed";
+  if (harness.error === "not_started") return "not_started";
   if (!harness.signedIn) return "not_signed_in";
+  if (!harness.models?.length) return "no_models";
   return null;
 }
 
@@ -140,5 +145,12 @@ export function defaultModel(harness: Harness | undefined): HarnessModel | undef
  *  profiles always, personalities only for a model that takes one. */
 export function agentChoices(harness: Harness | undefined, model: string | undefined): HarnessAgent[] {
   const listed = harness?.models.find((m) => m.id === model);
-  return (harness?.agents ?? []).filter((a) => a.kind !== "personality" || !!listed?.personality);
+  const agents = (harness?.agents ?? []).filter((a) => a.kind !== "personality" || !!listed?.personality);
+  // A harness read without its agents still runs with its own default.
+  return agents.length || !harness ? agents : [{ id: "default", label: "Default", kind: "default", default: true }];
+}
+
+/** The query the harness listing of the machine `sessionId` runs on is kept under. */
+export function harnessQueryKey(sessionId: string | null): readonly unknown[] {
+  return ["harnesses", sessionId ?? ""] as const;
 }

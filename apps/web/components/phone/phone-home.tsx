@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Pin, Search, Settings } from "lucide-react";
+import { ChevronRight, Mic, Pin, Search, Settings, SlidersHorizontal } from "lucide-react";
 
 import { useSessionActions } from "@/components/chat/pane/session-actions-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,21 +22,23 @@ import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
 import { activityState, type ActivityState } from "@/components/sidebar/sessions/activity";
 import { displayTitle, wsSend, type LegacyConv } from "@/components/sidebar/sessions/helpers";
 import { useTranslation } from "@/lib/i18n";
-import { callMobile, haptic, mobileBridge } from "@/lib/mobile/bridge";
+import { LOCAL_ID, projectMachineId } from "@/lib/machines/store";
+import { haptic, mobileBridge } from "@/lib/mobile/bridge";
 import { navigate } from "@/lib/nav/navigate";
 import { listSessionProjects } from "@/lib/projects/list-projects";
 import { projectGroups, type ProjectGroupSource } from "@/lib/projects/project-groups";
 import { useSessionStore } from "@/lib/session-store";
-import { openNewChat, openSession } from "@/lib/tabs/navigation/open-session";
+import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import { cn } from "@/lib/utils";
 
+import { PhoneComputerSwitcher, useLinkedComputers, useShownMachine } from "./phone-computer-switcher";
 import { PhoneNavBar } from "./phone-nav-bar";
-import { pushUrl } from "./phone-nav";
+import { openSessionWhenReady, pushUrl } from "./phone-nav";
 
 type Row = { conv: LegacyConv; state: ActivityState | null };
 /** `registered`: `id` is a registry project's id, not a name from the
  *  chats before the registry answered. */
-type Group = { id: string; name: string; rows: Row[]; waiting: number; latest: number; registered: boolean };
+type Group = { id: string; name: string; rows: Row[]; waiting: number; latest: number; registered: boolean; machine: string };
 
 const time = (conv: LegacyConv) => conv.updated_at || conv.created_at || 0;
 
@@ -78,7 +80,7 @@ function useGroups(): Group[] {
   return useMemo(() => {
     const convs = (Object.values(conversations) as LegacyConv[]).filter((conv) => !conv.archived);
     const rank = (row: Row) => row.state === "needs_input" ? 0 : row.conv.pinned ? 1 : 2;
-    const toGroup = (id: string, name: string, items: LegacyConv[], registered: boolean): Group => {
+    const toGroup = (id: string, name: string, items: LegacyConv[], registered: boolean, machine = LOCAL_ID): Group => {
       const rows = items.map((conv) => ({ conv, state: activityState(conv, !!runningTasks[conv.id]) }));
       rows.sort((a, b) => rank(a) - rank(b) || time(b.conv) - time(a.conv));
       return {
@@ -88,11 +90,14 @@ function useGroups(): Group[] {
         waiting: rows.filter((row) => row.state === "needs_input").length,
         latest: Math.max(0, ...items.map(time)),
         registered,
+        machine,
       };
     };
     let groups: Group[];
     if (projects.length) {
-      groups = projectGroups(projects, convs, [], { sort: "recency" }).map((g) => toGroup(g.key, g.name, g.items, true));
+      const byId = new Map(projects.map((project) => [project.id, project]));
+      groups = projectGroups(projects, convs, [], { sort: "recency" })
+        .map((g) => toGroup(g.key, g.name, g.items, true, projectMachineId(byId.get(g.key))));
     } else {
       // Before the registry answers, the chats' own project names.
       const byName = new Map<string, LegacyConv[]>();
@@ -237,13 +242,14 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
             if (swallowClick.current) { swallowClick.current = false; return; }
             if (shown.current) { closeOpenRow?.(); return; }
             closeOpenRow?.();
-            openSession(conv.id);
+            openSessionWhenReady(conv.id);
           }}
           onContextMenu={(event) => { event.preventDefault(); onMenu(conv.id); }}
         >
           <span className="phone-home-text">
             <span className="phone-home-line">
               <span className="phone-home-title">{conv.pinned ? <Pin size={12} className="phone-home-pin" aria-hidden="true" /> : null}{displayTitle(conv)}</span>
+              {conv.harness ? <AgentMark harness={conv.harness} size={13} fit="contain" className="shrink-0 self-center" /> : null}
               <span className="phone-home-slot">
                 {state === "needs_input" ? <span className="phone-home-badge">{text("Waiting", "等你")}</span>
                   : state ? <span className="phone-home-state" data-state={state} aria-label={word ?? undefined} />
@@ -364,11 +370,37 @@ function NewChatDock({ projectId, name }: { projectId?: string; name?: string })
     }
     pushUrl("/chat");
   }
+  // Its settings and voice: the new chat's own settings button or mic,
+  // pressed once its page is up.
+  function newChatThen(selector: string) {
+    newChat();
+    const started = performance.now();
+    const press = () => {
+      const button = document.querySelector<HTMLButtonElement>(`.phone-conversation ${selector}`);
+      if (button) {
+        // A menu trigger opens on the press, not on the click.
+        button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }));
+        button.click();
+      }
+      else if (performance.now() - started < 2000) window.requestAnimationFrame(press);
+    };
+    window.requestAnimationFrame(press);
+  }
+  // One capsule at the bottom, its ends round like the screen's corners:
+  // the new chat's settings (model, effort), its field, and voice.
   return (
     <div className="phone-home-dock">
-      <button type="button" className="phone-home-new" onClick={newChat}>
-        {name ? text(`New chat in ${name}…`, `在 ${name} 里开新对话…`) : text("Start a new chat…", "开一个新对话…")}
-      </button>
+      <div className="phone-home-capsule">
+        <button type="button" className="phone-home-dock-button" aria-label={text("New chat settings", "新对话设置")} onClick={() => newChatThen(".phone-composer-settings")}>
+          <SlidersHorizontal size={20} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+        <button type="button" className="phone-home-new" onClick={newChat}>
+          {name ? text(`New chat in ${name}…`, `在 ${name} 里开新对话…`) : text("Start a new chat…", "开一个新对话…")}
+        </button>
+        <button type="button" className="phone-home-dock-button" aria-label={text("New chat by voice", "语音开新对话")} onClick={() => newChatThen("[data-composer-mic]")}>
+          <Mic size={21} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -379,10 +411,17 @@ export function PhoneHome({ projectId }: { projectId?: string | null }) {
 
 function PhoneProjects() {
   const { text, locale } = useTranslation();
-  const groups = useGroups();
+  const all = useGroups();
   const socket = useSessionStore((s) => s.wsStatus);
   const [query, setQuery] = useState("");
   const computer = mobileBridge()?.computer;
+  // One computer at a time: this one (with its SSH and Docker machines),
+  // or a computer it is linked to (phone-computer-switcher.tsx).
+  const shown = useShownMachine();
+  const linked = useLinkedComputers();
+  const groups = useMemo(() => all.filter((g) => shown === LOCAL_ID
+    ? !linked.some((machine) => machine.id === g.machine)
+    : g.machine === shown), [all, shown, linked]);
   const q = query.trim().toLowerCase();
   const found = useMemo(() => q
     ? groups.flatMap((g) => g.rows).filter((row) => displayTitle(row.conv).toLowerCase().includes(q))
@@ -392,25 +431,19 @@ function PhoneProjects() {
   return (
     <div className="phone-app-page phone-home">
       <header className="phone-app-nav">
-        <button
-          type="button"
-          className="phone-home-computer"
-          data-state={socket}
-          onClick={() => callMobile("computers")}
-          disabled={!computer}
-        >
+        <div className="phone-home-computer" data-state={socket}>
           <span className="phone-home-dot" aria-hidden="true" />
-          {computer
-            ? `${computer.name} · ${socket === "open"
-              ? computer.via === "lan" ? text("Same Wi-Fi", "同一 Wi-Fi") : text("Anywhere", "远程")
-              : text("Connecting…", "正在连接…")}`
-            : socket === "open" ? text("Connected", "已连接") : text("Connecting…", "正在连接…")}
-        </button>
-        <div className="phone-app-nav-side phone-app-nav-trailing">
-          <button type="button" className="phone-app-circle" aria-label={text("Settings", "设置")} onClick={() => navigate("/settings")}>
-            <Settings size={19} strokeWidth={1.8} aria-hidden="true" />
-          </button>
+          <PhoneComputerSwitcher
+            status={computer
+              ? `${computer.name} · ${socket === "open"
+                ? computer.via === "lan" ? text("Same Wi-Fi", "同一 Wi-Fi") : text("Anywhere", "远程")
+                : text("Connecting…", "正在连接…")}`
+              : socket === "open" ? text("Connected", "已连接") : text("Connecting…", "正在连接…")}
+          />
         </div>
+        <button type="button" className="phone-app-circle" aria-label={text("Settings", "设置")} onClick={() => navigate("/settings")}>
+          <Settings size={19} strokeWidth={1.8} aria-hidden="true" />
+        </button>
       </header>
       <div className="phone-app-scroll">
         <h1 className="phone-app-large-title">{text("Projects", "项目")}</h1>

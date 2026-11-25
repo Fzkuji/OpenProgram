@@ -823,6 +823,8 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           }))} ${styles.actionBtn} ${showStop ? "" : styles.sendBtn}`}
           onClick={showStop ? stop : onSendButtonClick}
           data-composer-send=""
+          // Nothing to send and nothing to stop: the phone shows the mic in its place.
+          data-empty={!showStop && sendDisabled ? "" : undefined}
           disabled={isCancelling || (!showStop && sendDisabled)}
           data-fn-missing={
             !showStop && fnFormActive && missingFnParams.length > 0

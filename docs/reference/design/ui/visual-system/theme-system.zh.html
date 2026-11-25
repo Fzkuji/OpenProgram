@@ -34,6 +34,7 @@
 <tr><th scope="row">Vivid</th><td><code translate="no">vivid</code><br><code translate="no">vivid-light</code></td><td colspan="2"><code translate="no">--tabrow-seed</code> 的 <code translate="no">oklch</code> 色调</td><td>跟随标签栏颜色</td></tr>
 </tbody>
 </table>
+<p class="note">默认主题包是 Neutral，明暗跟随系统。以前默认是 Beige，首次启动会把默认值当成选择存下来，所以 schema 4 之前存的 beige 一次性改成 Neutral。</p>
 <p class="note">Vivid 用 Beige 的面板结构。标签栏颜色是单独的设置，取自 Chrome 的配色集，浅色模式用同色相的淡色。<code translate="no">custom</code>、<code translate="no">custom-light</code> 保留为旧片段的兜底 id 和 CSS 文件，不显示卡片；<code translate="no">custom-light.css</code> 与 beige-light 取值相同。</p>
 <p class="note">Vivid 的默认种子色（<code translate="no">#3d475c</code>）写在 <code translate="no">themes/fallback.css</code>，只引入主题的应用页面也能拿到 Vivid 的颜色。</p>
 
@@ -119,4 +120,4 @@
 </table>
 
 <h2 id="status">实现状态</h2>
-<p>已实现：模式 × 主题包 × 强调色 × 覆盖层，<code translate="no">THEME_STYLE_PAIRS</code> 是明暗矩阵。已存的 <code translate="no">custom</code>、<code translate="no">custom-light</code> 迁到 beige，已保存的 CSS 会打开覆盖层。输入框、供应商图标和 DAG 只用角色令牌。桌面首帧细节见<a href="unification-work.zh.html#desktop-chrome">桌面窗口外观</a>。</p>
+<p>已实现：模式 × 主题包 × 强调色 × 覆盖层，<code translate="no">THEME_STYLE_PAIRS</code> 是明暗矩阵。已存的 <code translate="no">custom</code>、<code translate="no">custom-light</code> 迁到 Neutral，已保存的 CSS 会打开覆盖层。输入框、供应商图标和 DAG 只用角色令牌。桌面首帧细节见<a href="unification-work.zh.html#desktop-chrome">桌面窗口外观</a>。</p>

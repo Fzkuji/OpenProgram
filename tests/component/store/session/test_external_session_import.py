@@ -119,7 +119,7 @@ def test_claude_code_follows_the_active_chain(homes):
     first = session.turns[0]
     assert [b["type"] if isinstance(b, dict) else "tool" for b in first.blocks] == ["thinking", "tool", "text"]
     tool = first.tools()[0]
-    assert (tool.name, tool.arguments, tool.result) == ("Bash", {"command": "ls"}, "parser.py")
+    assert (tool.name, tool.arguments, tool.result) == ("bash", {"command": "ls"}, "parser.py")
     assert session.turns[1].reply_text() == "Tests added."
 
 
@@ -201,7 +201,7 @@ def test_imported_tool_calls_render_as_text_for_the_model(homes, store, tmp_path
     kinds = [type(block).__name__ for m in messages for block in m.content]
     assert "ToolCall" not in kinds
     texts = [getattr(b, "text", "") for m in messages for b in m.content]
-    assert any(t.startswith("[claude-code tool call] Bash(") and "parser.py" in t for t in texts)
+    assert any(t.startswith("[claude-code tool call] bash(") and "parser.py" in t for t in texts)
 
 
 @pytest.mark.parametrize("raw,expected", [

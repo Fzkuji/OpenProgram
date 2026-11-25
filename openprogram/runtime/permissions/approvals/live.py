@@ -67,25 +67,74 @@ def ask_live_approval(
     relays it. A Stop (``cancel_event``) closes the wait and returns
     ``cancelled``.
     """
+    from openprogram.runtime.execution.waits import WaitStatus
+
+    scopes = [scope for scope in allowed_scopes if scope in ("once", "session", "always")] or ["once"]
+    request = {
+        "prompt": prompt, "options": ["允许", "拒绝"], "multi": False, "allow_custom": False,
+        "detail": detail, "schema": {}, "questions": [],
+        "tool": tool, "args": dict(arguments), "risk_level": risk_level,
+        "allowed_scopes": scopes,
+    }
+    status, answer = _live_wait(owner, "approval", request, {"allowed_scopes": scopes},
+                                publish=publish, cancel_event=cancel_event, timeout=timeout)
+    if status is WaitStatus.RESOLVED:
+        answer = answer if isinstance(answer, Mapping) else {}
+        return LiveDecision("allow", str(answer.get("scope") or "once"))
+    if status is WaitStatus.DECLINED:
+        return LiveDecision("deny")
+    return LiveDecision("cancelled")
+
+
+@dataclass(frozen=True)
+class LiveAnswer:
+    """``answered`` (``value`` is one answer per question), ``declined`` (``value`` is what the
+    person wrote instead, if anything), or ``cancelled`` (Stop or timeout)."""
+
+    outcome: str
+    value: Any = None
+
+
+def ask_live_questions(
+    owner: LiveOwner,
+    questions: Sequence[Mapping[str, Any]],
+    *,
+    publish: Callable[[dict], None],
+    cancel_event: Optional[threading.Event] = None,
+    timeout: Optional[float] = None,
+) -> LiveAnswer:
+    """Ask the person an outside agent's questions (``runtime.ask``'s shape: prompt, options,
+    multi, allow_custom) on the same card OpenProgram's own agent asks with, and block until
+    they answer."""
+    from openprogram.runtime.execution.waits import WaitStatus
+
+    request = {"prompt": "", "options": [], "multi": False, "allow_custom": False, "detail": "",
+               "schema": {}, "questions": [dict(question) for question in questions]}
+    status, answer = _live_wait(owner, "ask_many", request, {}, publish=publish,
+                                cancel_event=cancel_event, timeout=timeout)
+    if status is WaitStatus.RESOLVED:
+        return LiveAnswer("answered", answer if isinstance(answer, list) else [])
+    if status is WaitStatus.DECLINED:
+        return LiveAnswer("declined", answer.strip() if isinstance(answer, str) else "")
+    return LiveAnswer("cancelled")
+
+
+def _live_wait(owner: LiveOwner, kind: str, request: dict, policy: dict, *,
+               publish: Callable[[dict], None], cancel_event: Optional[threading.Event],
+               timeout: Optional[float]):
+    """Open a live wait on the running attempt, show it, and block until it is settled:
+    its final status and answer. A Stop (``cancel_event``) closes it."""
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus, question_frame_data
 
     store = owner.store if owner.store is not None else default_store()
     waits = DurableWaitStore(store)
-    scopes = [scope for scope in allowed_scopes if scope in ("once", "session", "always")] or ["once"]
     wait = waits.open_wait(
         execution_id=owner.execution_id, attempt_id=owner.attempt_id, generation=owner.generation,
-        kind="approval",
-        request={
-            "prompt": prompt, "options": ["允许", "拒绝"], "multi": False, "allow_custom": False,
-            "detail": detail, "schema": {}, "questions": [],
-            "tool": tool, "args": dict(arguments), "risk_level": risk_level,
-            "allowed_scopes": scopes,
-        },
+        kind=kind, request=request,
         policy_snapshot={
-            "version": 1, "kind": "approval", "mode": "live", "producer_id": owner.producer_id,
-            "on_answer": "continue", "on_decline": "continue", "on_timeout": "fail",
-            "allowed_scopes": scopes,
+            "version": 1, "kind": kind, "mode": "live", "producer_id": owner.producer_id,
+            "on_answer": "continue", "on_decline": "continue", "on_timeout": "fail", **policy,
         },
         expires_at=0 if timeout is None else time.time() + timeout,
     )
@@ -97,9 +146,9 @@ def ask_live_approval(
         from openprogram.runtime.events import emit_safe
         emit_safe("question.asked", "agent", data, {"session": owner.session_id})
     except Exception:  # noqa: BLE001 - the wait stays answerable from the recovery list
-        _log.warning("live approval %s was not announced", wait.wait_id, exc_info=True)
+        _log.warning("live %s %s was not announced", kind, wait.wait_id, exc_info=True)
 
-    def close(reason: str) -> LiveDecision:
+    def close(reason: str):
         waits.cancel_live_waits(
             execution_id=owner.execution_id, attempt_id=owner.attempt_id,
             generation=owner.generation, producer_id=owner.producer_id, wait_id=wait.wait_id,
@@ -107,22 +156,17 @@ def ask_live_approval(
         try:
             publish({"type": "question.rejected", "data": {"id": wait.wait_id, "reason": reason}})
         except Exception:  # noqa: BLE001
-            _log.debug("live approval %s retraction not sent", wait.wait_id, exc_info=True)
-        return LiveDecision("cancelled")
+            _log.debug("live %s %s retraction not sent", kind, wait.wait_id, exc_info=True)
+        return WaitStatus.CANCELLED, None
 
     while True:
         if cancel_event is not None and cancel_event.is_set():
             return close("cancelled")
         current = waits.get_wait(wait.wait_id)
         if current is None:
-            return LiveDecision("cancelled")
-        if current.status is WaitStatus.RESOLVED:
-            answer = current.answer if isinstance(current.answer, Mapping) else {}
-            return LiveDecision("allow", str(answer.get("scope") or "once"))
-        if current.status is WaitStatus.DECLINED:
-            return LiveDecision("deny")
-        if current.status in (WaitStatus.EXPIRED, WaitStatus.CANCELLED):
-            return LiveDecision("cancelled")
+            return WaitStatus.CANCELLED, None
+        if current.status in (WaitStatus.RESOLVED, WaitStatus.DECLINED, WaitStatus.EXPIRED, WaitStatus.CANCELLED):
+            return current.status, current.answer
         if 0 < current.expires_at <= time.time():
             return close("timeout")
         if cancel_event is not None:

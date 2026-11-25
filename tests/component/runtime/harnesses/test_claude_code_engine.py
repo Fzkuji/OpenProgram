@@ -124,7 +124,7 @@ def test_a_turn_streams_thinking_cards_and_text(claude):
     events = _events(frames)
     assert {"type": "thinking", "text": "look first"} in events
     [use] = [e for e in events if e["type"] == "tool_use"]
-    assert (use["tool"], json.loads(use["input"])) == ("Bash", {"command": "ls"})
+    assert (use["tool"], json.loads(use["input"])) == ("bash", {"command": "ls"})
     [result] = [e for e in events if e["type"] == "tool_result"]
     assert result["result"] == "a.py"
     assert [b["type"] for b in blocks] == ["thinking", "tool", "text"]
@@ -195,7 +195,7 @@ def test_a_permission_prompt_waits_for_the_person(claude, monkeypatch, outcome, 
     monkeypatch.setattr(live, "live_owner_from", lambda *_a: object())
     claude.script([[{"ask": {"subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm x"}}}]])
     _run(_request(mode="ask"))
-    assert asked[0]["tool"] == "Bash" and asked[0]["arguments"] == {"command": "rm x"}
+    assert asked[0]["tool"] == "bash" and asked[0]["arguments"] == {"command": "rm x"}
     [answer] = [m for m in claude.inputs() if m.get("type") == "control_response"]
     assert answer["response"]["response"]["behavior"] == behavior
 
@@ -225,3 +225,62 @@ def test_a_transcript_turn_is_known_by_its_last_assistant_record(tmp_path):
             {"type": "assistant", "uuid": "r2", "parentUuid": "r1", "message": {"content": [{"type": "text", "text": "b"}]}}]
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
     assert claude_code.parse(path).turns[0].turn_id == "r2"
+
+
+def test_claude_codes_questions_are_asked_on_the_question_card(claude, monkeypatch):
+    from openprogram.runtime.permissions.approvals import live
+    asked = []
+
+    def ask(owner, questions, **kwargs):
+        asked.append(questions)
+        return live.LiveAnswer("answered", [["A", "B"]])
+
+    monkeypatch.setattr(live, "ask_live_questions", ask)
+    monkeypatch.setattr(live, "live_owner_from", lambda *_a: object())
+    question = {"question": "Which ones?", "header": "Pick", "multiSelect": True,
+                "options": [{"label": "A", "description": "first"}, {"label": "B"}]}
+    claude.script([[{"ask": {"subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+                             "input": {"questions": [question]}}}]])
+    _run(_request(mode="ask"))
+    [[card]] = asked
+    assert card["options"] == ["A", "B"] and card["multi"] and card["option_descriptions"] == {"A": "first"}
+    [answer] = [m for m in claude.inputs() if m.get("type") == "control_response"]
+    reply = answer["response"]["response"]
+    assert reply["behavior"] == "allow" and reply["updatedInput"]["answers"] == {"Which ones?": "A, B"}
+
+
+def test_effort_is_left_alone_for_a_model_with_no_levels():
+    from openprogram.runtime.harnesses.claude_code.engine import claude_effort
+    assert claude_effort("max", []) is None and claude_effort("max", None) == "max"
+
+
+def test_an_unattended_conversation_is_not_asked(claude, monkeypatch):
+    from openprogram.runtime.permissions import attended
+    from openprogram.runtime.permissions.approvals import live
+    monkeypatch.setattr(live, "live_owner_from", lambda *_a: object())
+    monkeypatch.setattr(live, "ask_live_questions", lambda *_a, **_k: pytest.fail("asked"))
+    attended.set_attended(False, "s1")
+    try:
+        claude.script([[{"ask": {"subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+                                 "input": {"questions": [{"question": "Which?", "options": []}]}}}]])
+        _run(_request(mode="ask"))
+    finally:
+        attended.clear_session("s1")
+    [answer] = [m for m in claude.inputs() if m.get("type") == "control_response"]
+    assert answer["response"]["response"]["behavior"] == "deny"
+
+
+def test_a_session_claude_code_no_longer_has_starts_over_with_the_conversation(claude):
+    from openprogram.runtime.harnesses import handoff
+    handoff.write_record(claude.sessions, "s1", "claude-code-harness", "main",
+                         {"thread_id": "gone", "seen": "n1", "at": 1})
+    claude.script([[_assistant("x", "m", [{"type": "text", "text": "hi"}])]])
+    (text, _u, _t), _f, _b = _run(_request("again"), history=[
+        {"id": "n0", "role": "user", "content": "earlier question"},
+        {"id": "n1", "role": "assistant", "content": "earlier answer"}])
+    assert text == "hi"
+    gone, fresh = claude.launches()
+    assert "--resume" in gone["argv"] and "--session-id" in fresh["argv"]
+    [user] = [m for m in claude.inputs() if m.get("type") == "user"]
+    assert "earlier answer" in user["message"]["content"][0]["text"]  # the new session is told what came before
+    assert _records(claude)["main"]["thread_id"] == fresh["argv"][fresh["argv"].index("--session-id") + 1]

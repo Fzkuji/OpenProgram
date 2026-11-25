@@ -73,6 +73,7 @@ import {
   type ClearedTaskIdentity,
 } from "@/lib/chat/decisions/running-task-clear";
 import { translateText } from "@/lib/i18n";
+import { cacheSessionList } from "@/lib/mobile/session-list-cache";
 import { isBeingStopped, isOpen } from "../../chat/transcript/row-status.ts";
 import { appendLocalNotice } from "@/lib/chat/transcript/apply-read";
 import { stopOverlay } from "@/lib/chat/transcript/apply-transcript-update";
@@ -591,6 +592,7 @@ export function windowVisibilityChanged(): void {
 let prevServerListedIds: Set<string> | null = null;
 
 export function handleSessionsList(data: SessionRow[]): void {
+  cacheSessionList(data || []);
   const convs = runtimeState.conversations;
   const serverIds = new Set((data || []).map((c) => c.id));
   Object.keys(convs).forEach((id) => {

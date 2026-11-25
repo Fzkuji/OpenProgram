@@ -169,11 +169,24 @@ function Thumb({ artifact, on, onPick }: { artifact: Artifact; on: boolean; onPi
 
 const picked = new Map<string, string>();
 
+const LOOSE: Record<string, Artifact["kind"]> = {
+  png: "image", jpg: "image", jpeg: "image", svg: "image", gif: "image", pdf: "pdf", csv: "table", tsv: "table",
+  md: "markdown", html: "html", htm: "html", txt: "text", tex: "text", bib: "text", json: "text", cff: "text",
+};
+/** A file the page did not list, described from its name. */
+function loose(path: string): Artifact {
+  return { path, kind: LOOSE[path.split(".").pop()?.toLowerCase() || ""] || "other", group: "outputs", mtime: 0, size: 0 };
+}
+
 /** One file large, the rest in a strip below it. The newest change leads; then the task's
  *  own files, the paper, what the last check wrote. */
-export function ArtifactPanel({ scope, items }: { scope: string; items: Artifact[] }) {
+export function ArtifactPanel({ scope, items, want }: { scope: string; items: Artifact[]; want?: { path: string; n: number } }) {
   const [path, setPath] = useState(() => picked.get(scope) || "");
-  const current = items.find((a) => a.path === path) || items[0];
+  useEffect(() => { if (want?.path) setPath(want.path); }, [want?.n]);
+  // A file asked for that is not among the page's own (an earlier run's report) is shown too.
+  const asked = path && !items.some((a) => a.path === path) && want?.path === path ? [loose(path)] : [];
+  const all = [...asked, ...items];
+  const current = all.find((a) => a.path === path) || all[0];
   useEffect(() => { if (current) picked.set(scope, current.path); }, [scope, current]);
   if (!current) return null;
   return (
@@ -183,9 +196,9 @@ export function ArtifactPanel({ scope, items }: { scope: string; items: Artifact
         <span className="shrink-0">{GROUPS[current.group]} · {ago(new Date(current.mtime * 1000).toISOString())}</span>
       </div>
       <div className="min-h-0 flex-1"><Viewer artifact={current} /></div>
-      {items.length > 1 ? (
+      {all.length > 1 ? (
         <div className="flex shrink-0 gap-3 overflow-x-auto pb-1">
-          {items.map((a) => <Thumb key={a.path} artifact={a} on={a.path === current.path} onPick={() => setPath(a.path)} />)}
+          {all.map((a) => <Thumb key={a.path} artifact={a} on={a.path === current.path} onPick={() => setPath(a.path)} />)}
         </div>
       ) : null}
     </div>

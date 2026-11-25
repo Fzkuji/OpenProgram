@@ -182,19 +182,24 @@ async def handle_rename_session(ws, cmd: dict):
 async def handle_predict_next_prompt(ws, cmd: dict):
     """Suggest the user's next message once a turn has ended (Codex composer predictions).
 
-    Answers ``next_prompt_prediction`` with ``text`` (None when there is no
+    ``reason`` is ``"turn_end"`` when the client watched the turn finish and
+    ``"opened"`` when it is showing an idle conversation; an opened one whose
+    last reply is old gets no suggestion. Answers ``next_prompt_prediction`` with ``text`` (None when there is no
     suggestion). Runs in the background so the socket stays free.
     """
     from openprogram.interfaces.server import server as _s
-    from openprogram.runtime.conversation.turn_runtime.next_prompt import predict_next_prompt
+    from openprogram.runtime.conversation.turn_runtime.next_prompt import (
+        OPENED_MAX_AGE_S, predict_next_prompt,
+    )
 
     session_id = cmd.get("session_id")
+    max_age = OPENED_MAX_AGE_S if cmd.get("reason") == "opened" else None
 
     async def run():
         text = None
         if isinstance(session_id, str) and session_id:
             try:
-                text = await asyncio.wait_for(asyncio.to_thread(predict_next_prompt, session_id), 30)
+                text = await asyncio.wait_for(asyncio.to_thread(predict_next_prompt, session_id, max_age=max_age), 30)
             except Exception as exc:
                 _s._log(f"[predict_next_prompt] {session_id}: {type(exc).__name__}")
         try:

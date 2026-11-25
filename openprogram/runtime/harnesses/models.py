@@ -316,9 +316,19 @@ def cached_harness(provider: str) -> Optional[dict]:
 def warm(provider: str) -> None:
     """Read the harness behind ``provider`` in the background."""
     from openprogram.runtime.harnesses import HARNESS_IDS
+
+    def read_then_tell(harness_id: str) -> None:
+        read_harness(harness_id)
+        # A conversation asked before the reading sees its model's efforts now.
+        try:
+            from openprogram.runtime.events import emit_ws_frame
+            emit_ws_frame({"type": "agent_settings_changed", "data": {}})
+        except Exception:  # noqa: BLE001 - the next read of the settings has them
+            pass
+
     for harness_id in _READERS:
         if harness_id == HARNESS_IDS.get(provider):
-            threading.Thread(target=read_harness, args=(harness_id,), daemon=True,
+            threading.Thread(target=read_then_tell, args=(harness_id,), daemon=True,
                              name=f"harness-read-{harness_id}").start()
 
 

@@ -68,7 +68,7 @@ export function FolderDialog({ open, onOpenChange, start, onChoose }: {
         <DialogFooter className="items-center sm:justify-between">
           <span className="truncate text-xs text-text-muted">{target ? (targetIsRepo ? "" : "这个文件夹不是 Git 仓库") : "选一个文件夹"}</span>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button variant="elevated" onClick={() => onOpenChange(false)}>取消</Button>
             <Button disabled={!target || !targetIsRepo} onClick={() => onChoose(target)}>打开</Button>
           </div>
         </DialogFooter>

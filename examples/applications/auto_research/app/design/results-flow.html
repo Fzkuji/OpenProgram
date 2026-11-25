@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-theme-mode="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生成的结果怎么处理</title>
+<link rel="stylesheet" href="../ui/theme.css">
+<style>
+  :root { --w: 1180px; }
+  /* The App's stylesheet pins html/body to one screen; a design page scrolls. */
+  html, body { height: auto !important; overflow: auto !important; }
+  .opt ul { list-style: disc; }
+  body { margin: 0; background: var(--bg-secondary); color: var(--text-primary); font: 14px/1.5 var(--font-sans, -apple-system, "PingFang SC", system-ui, sans-serif); }
+  .page { max-width: 1320px; margin: 0 auto; padding: 28px 32px 80px; }
+  h1 { margin: 0 0 6px; font-size: 20px; color: var(--text-bright); }
+  .lead { margin: 0 0 18px; color: var(--text-secondary); max-width: 960px; }
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 34px; }
+  .flow div { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 12px; font-size: 13px; }
+  .flow b { display: block; color: var(--text-bright); margin-bottom: 2px; }
+  .flow span { color: var(--text-muted); }
+  section.opt { margin: 0 0 56px; }
+  .opt > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 16px; color: var(--text-bright); }
+  .opt > h2 .tag { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: var(--primary); color: #fff; }
+  .opt > p { margin: 0 0 12px; color: var(--text-secondary); max-width: 1000px; }
+  .opt > ul { margin: 0 0 12px; padding-left: 18px; color: var(--text-secondary); max-width: 1000px; }
+  .mock-label { font-size: 11px; color: var(--text-muted); margin: 0 0 6px; }
+  .frames { display: flex; flex-direction: column; gap: 22px; }
+  .step { font-size: 13px; color: var(--text-bright); font-weight: 600; margin: 0 0 6px; }
+
+  /* the App's workspace, drawn with its tokens */
+  .win { width: var(--w); height: 720px; display: flex; flex-direction: column; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .win.short { height: auto; }
+  .top { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+  .el { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--radius-md); background: var(--bg-primary); box-shadow: var(--shadow-raised); font-weight: 600; font-size: 13px; color: var(--text-bright); }
+  .badge { font: 12px ui-monospace, Menlo, monospace; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); }
+  .body { flex: 1; display: flex; min-height: 0; }
+  .side { width: 287px; flex: none; border-right: 1px solid var(--border); background: var(--bg-secondary); padding: 8px; display: flex; flex-direction: column; gap: 1px; font-size: 14px; color: var(--nav-color); }
+  .side .search { height: 30px; border: 1px solid var(--border); background: var(--bg-input); border-radius: var(--radius-md); display: flex; align-items: center; padding: 0 8px; color: var(--text-secondary); font-size: 13px; margin-bottom: 7px; gap: 6px; }
+  .row { height: 30px; display: flex; align-items: center; gap: 12px; padding: 0 8px; border-radius: var(--radius-lg); white-space: nowrap; }
+  .row.on { background: var(--bg-hover); color: var(--text-bright); font-weight: 500; }
+  .row .n { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-left: auto; }
+  .gl { font-size: 12px; font-weight: 500; color: var(--text-muted); padding: 12px 8px 4px; display: flex; }
+  .gl .n { margin-left: auto; font-weight: 400; }
+  .ind { padding-left: 16px; }
+  .ico { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px dashed var(--text-muted); box-sizing: border-box; }
+  .ico.half { border: 1.5px solid var(--warning-soft, #c9a227); background: linear-gradient(90deg, transparent 50%, var(--warning-soft, #c9a227) 50%); }
+  .ico.fail { border: 0; background: var(--accent-red); mask: radial-gradient(circle, #000 60%, transparent 62%); }
+  .ico.pass { border: 0; background: var(--accent-green); mask: radial-gradient(circle, #000 60%, transparent 62%); }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 20px 32px 0; gap: 14px; overflow: hidden; }
+  .h { display: flex; align-items: center; gap: 10px; }
+  .h .t { font-size: 20px; font-weight: 700; color: var(--text-bright); }
+  .h .st { font-size: 13px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+  .h .sp { flex: 1; }
+  .sub2 { font-size: 13px; color: var(--text-secondary); margin-top: -8px; }
+  .btn { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; border: 1px solid transparent; white-space: nowrap; cursor: default; }
+  .btn.sm { height: 26px; padding: 0 10px; font-size: 12px; }
+  .btn.pri { background: var(--primary); color: #fff; box-shadow: var(--shadow-raised); }
+  .btn.elev { background: var(--bg-primary); color: var(--text-bright); box-shadow: var(--shadow-raised); }
+  .btn.ghost { color: var(--text-secondary); }
+  .btn.ghost:hover { background: var(--bg-hover); }
+  .card { border: 1px solid var(--border); background: var(--bg-secondary); border-radius: var(--radius-xl); }
+  .card.white { background: var(--bg-primary); }
+  .cl { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .verdict { display: flex; gap: 10px; align-items: flex-start; }
+  .vdot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
+  .muted { color: var(--text-muted); }
+  .sec { color: var(--text-secondary); }
+  .bright { color: var(--text-bright); }
+  .thumbs { display: flex; gap: 10px; }
+  .th { width: 150px; flex: none; }
+  .th .box { height: 84px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-primary); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .th .nm { font-size: 12px; color: var(--text-primary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .th .ds { font-size: 11px; color: var(--text-muted); }
+  .th.on .box { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
+  .mini { width: 100%; height: 100%; padding: 8px 10px; box-sizing: border-box; font-size: 6.5px; line-height: 1.5; color: var(--text-secondary); text-align: left; }
+  .mini b { display: block; font-size: 8px; color: var(--text-bright); margin-bottom: 2px; }
+  .ask { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-primary); padding: 10px 12px; display: flex; gap: 12px; align-items: center; }
+  .ask .q { flex: 1; min-width: 0; }
+  .ask .q div:first-child { color: var(--text-bright); font-size: 13px; }
+  .ask .q div:last-child { color: var(--text-muted); font-size: 12px; }
+  .composer { margin: auto -12px 0; padding: 0 0 14px; }
+  .composer .box { border: 1px solid var(--border); border-radius: 14px; background: var(--bg-primary); box-shadow: var(--shadow-raised); height: 44px; display: flex; align-items: center; padding: 0 14px; color: var(--text-muted); font-size: 13px; }
+  .msg { font-size: 13px; }
+  .turn { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 10px; background: var(--bg-primary); width: fit-content; }
+  .turn .sep { color: var(--text-muted); }
+  .link { color: var(--accent-blue); }
+  .diff { font: 12px/1.6 ui-monospace, Menlo, monospace; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-primary); }
+  .diff .hd { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); font-family: inherit; }
+  .diff .hd .p { flex: 1; color: var(--text-bright); }
+  .diff .l { padding: 0 10px; white-space: pre; }
+  .diff .add { background: color-mix(in oklab, var(--accent-green) 12%, transparent); }
+  .diff .del { background: color-mix(in oklab, var(--accent-red) 12%, transparent); }
+  .doc { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-primary); padding: 18px 22px; font-size: 13px; line-height: 1.7; }
+  .doc h4 { margin: 0 0 6px; font-size: 15px; color: var(--text-bright); }
+  .hl { background: color-mix(in oklab, var(--accent-blue) 16%, transparent); border-bottom: 2px solid var(--accent-blue); }
+  .pop { position: absolute; background: var(--bg-primary); border: 1px solid var(--border); box-shadow: var(--shadow-raised); border-radius: var(--radius-lg); padding: 8px; width: 280px; font-size: 12px; }
+  .tabs { display: flex; gap: 2px; padding: 3px; border-radius: var(--radius-groove); background: var(--bg-hover); width: fit-content; }
+  .tabs span { padding: 3px 10px; border-radius: var(--radius-md); font-size: 12px; color: var(--text-secondary); }
+  .tabs span.on { background: var(--bg-primary); color: var(--text-bright); box-shadow: var(--shadow-raised); }
+  .right { width: 340px; flex: none; border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--bg-primary); }
+  .li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-md); font-size: 13px; }
+  .li:hover { background: var(--bg-hover); }
+  .li .k { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+  .fi { width: 14px; height: 16px; border: 1.5px solid var(--text-muted); border-radius: 2px; flex: none; box-sizing: border-box; }
+  .note { margin-top: 14px; font-size: 12px; color: var(--text-muted); }
+  .cmp { display: grid; grid-template-columns: 140px repeat(3, 1fr); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-primary); font-size: 13px; margin: 0 0 40px; }
+  .cmp div { padding: 8px 12px; border-top: 1px solid var(--border); }
+  .cmp div:nth-child(-n+4) { border-top: 0; font-weight: 600; color: var(--text-bright); background: var(--bg-secondary); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>生成的结果怎么处理</h1>
+  <p class="lead">现在一个任务跑完，结果散在 drafts/ 里：页面只显示 PDF，报告里写着「复制到 docs/ 的 cp 命令」让你自己去终端跑；agent 改过的文件挤在「刚改」里，没有地方看改了什么、留不留、怎么存成一个版本。下面三版都按同一条路走，区别在<b>结果放在哪</b>、<b>下一步怎么点</b>。所有画面都是设计稿，不是 App 截图；例子是真实跑出来的「论文列表」结果（Kaiming He，105 篇，2 篇疑似同名作者待确认）。</p>
+
+  <div class="flow">
+    <div><b>1 · 看结果</b><span>一句话结论 + 产出的文件，不用翻 drafts/</span></div>
+    <div><b>2 · 回答它的问题</b><span>结果里需要你拍板的地方，就地点「是 / 不是」</span></div>
+    <div><b>3 · 用起来</b><span>每类结果一个明确的下一步：放进论文、放到网站、修掉问题、选定这个</span></div>
+    <div><b>4 · 留下或撤销</b><span>看改了哪些文件，留下就存成一个版本（git 提交），不要就撤销</span></div>
+  </div>
+
+  <div class="cmp">
+    <div></div><div>A · 结果卡片（推荐）</div><div>B · 右侧结果栏</div><div>C · 审阅模式</div>
+    <div>结果在哪</div><div>任务页顶部一张卡；概览页「等你处理」汇总所有任务的</div><div>右侧一栏，分「结果 / 改动」两页，跟着每个任务</div><div>跑完进入全屏审阅，处理完才回到任务页</div>
+    <div>下一步</div><div>卡片上一个主按钮，按结果类型变</div><div>每个文件一行操作</div><div>底部一条：采纳 / 让 agent 改 / 不要</div>
+    <div>参考</div><div>Claude 的 Outputs 与 Copy to project；Codex 的回合摘要 + Undo</div><div>Codex 与 Claude 的 Outputs / Changes 侧栏</div><div>Codex 文档审阅条（批注后 Apply these annotations）</div>
+    <div>缺点</div><div>卡片占顶部空间，结果多时要折叠</div><div>第三栏挤窄正文，改动和结果分两处找</div><div>打断工作；小结果也要进一次审阅</div>
+  </div>
+
+  <!-- ===================== A ===================== -->
+  <section class="opt">
+    <h2>A · 结果卡片 <span class="tag">推荐</span></h2>
+    <p>每次运行的结果是一张卡：结论、要你回答的问题、产出的文件、一个下一步按钮。任务页放在最上面；概览页把所有任务还没处理的卡排成「等你处理」，这样打开项目第一眼就知道要做什么。agent 改过的文件不再混在结果里，统一在概览的「改动」卡里看、留、存。</p>
+    <ul>
+      <li>主按钮按结果类型变：<b>检查报告</b>→「修掉 3 处」；<b>要进论文的内容</b>（声明 .tex、参考文献 .bib、相关工作段落）→「放进论文」；<b>独立成品</b>（论文列表网页、讲稿、基金申请书）→「放到网站 docs/」或「在 Finder 中显示」；<b>选择题</b>（投哪个会、哪个想法）→「选定这个」。</li>
+      <li>任何写进项目的操作做完，卡片变成「已放进 main.tex · 看改动 · 撤销」，不会悄悄改论文。</li>
+      <li>处理完（放进去、选定、或点「不需要」）卡片收起，留在任务页的「以前的结果」里，可以回看每一次运行。</li>
+    </ul>
+    <div class="frames">
+      <div>
+        <div class="step">① 任务页：跑完的样子</div>
+        <div class="mock-label">设计稿，不是 App 截图</div>
+        <div class="win">
+          <div class="top"><span class="el">agent-paper ▾</span><span class="el">方法 ▾</span><span class="badge">main · 3d735bd ●</span></div>
+          <div class="body">
+            <div class="side">
+              <div class="search">⌕ 找任务</div>
+              <div class="row">▦ 概览 <span class="dot"></span></div>
+              <div class="gl">发布 <span class="n">1/28</span></div>
+              <div class="row">⌄ 介绍给别人 <span class="n">1/5</span></div>
+              <div class="ind">
+                <div class="row"><span class="ico"></span>项目主页</div>
+                <div class="row on"><span class="ico fail"></span>论文列表<span class="dot"></span></div>
+                <div class="row"><span class="ico"></span>讲稿与问答</div>
+              </div>
+            </div>
+            <div class="main">
+              <div class="h"><span class="t">论文列表</span><span class="st"><span class="ico fail" style="width:12px;height:12px"></span>等你确认</span><span class="sp"></span><span class="btn ghost">⚙</span><span class="btn ghost">▷ 重新运行</span></div>
+              <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+                <div class="verdict"><span class="vdot" style="background:var(--warning-soft, #c9a227)"></span>
+                  <div style="flex:1"><div class="bright" style="font-weight:600">Kaiming He 的 105 篇论文，84 篇合并了预印本和正式版</div><div class="sec" style="font-size:13px">2 篇疑似同名作者的论文没放进列表，等你确认。 <span class="muted">· 2 分钟前 · 用时 41 秒</span></div></div>
+                  <span class="btn ghost sm">完整报告</span>
+                </div>
+                <div class="ask"><div class="q"><div>KT-LLM: an evidence-grounded and sequence text framework for auditable kidney transplant modeling</div><div>2026 · npj Digit. Medicine · 和你的其他论文没有共同作者</div></div><span class="btn elev sm">是我的</span><span class="btn ghost sm">不是</span></div>
+                <div class="ask"><div class="q"><div>POI recommendation based on a multiple bipartite graph network model</div><div>2022 · J. Supercomput. · 研究方向和你的论文差得远</div></div><span class="btn elev sm">是我的</span><span class="btn ghost sm">不是</span></div>
+                <div class="thumbs">
+                  <div class="th on"><div class="box"><div class="mini"><b>Publications</b>2026 · ARC Is a Vision Problem! — CVPR<br>2026 · Back to Basics: Let Denoising…<br>2026 · Bidirectional Normalizing Flow…<br>2025 · Diffuse and Disperse…</div></div><div class="nm">publications.html</div><div class="ds">网页 · 105 篇</div></div>
+                  <div class="th"><div class="box"><div class="mini" style="font-family:ui-monospace,monospace">@inproceedings{he2026arc,<br>&nbsp; title={ARC Is a Vision…},<br>&nbsp; booktitle={CVPR}, …</div></div><div class="nm">publications.bib</div><div class="ds">BibTeX · 105 条</div></div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center"><span class="btn pri">放到网站 docs/</span><span class="btn elev">在浏览器打开</span><span class="sp" style="flex:1"></span><span class="btn ghost sm">不需要</span></div>
+              </div>
+              <div class="cl">以前的结果 · 3 次 ›</div>
+              <div class="composer"><div class="box">对「论文列表」有什么要求，在这里说</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="step">② 点了「放到网站 docs/」：写进项目，但可以撤销</div>
+        <div class="mock-label">设计稿，不是 App 截图</div>
+        <div class="win short">
+          <div class="main" style="padding:16px 32px 16px">
+            <div class="card" style="padding:12px 16px;display:flex;align-items:center;gap:10px">
+              <span class="vdot" style="background:var(--accent-green);margin:0"></span>
+              <div style="flex:1"><span class="bright" style="font-weight:600">已放到 docs/publications.html 和 docs/publications.bib</span> <span class="muted" style="font-size:13px">· 没提交，在概览的「改动」里</span></div>
+              <span class="btn ghost sm">看改动</span><span class="btn ghost sm">撤销</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="step">③ 概览：所有任务等你处理的结果 + 这段时间的改动</div>
+        <div class="mock-label">设计稿，不是 App 截图</div>
+        <div class="win">
+          <div class="top"><span class="el">agent-paper ▾</span><span class="el">方法 ▾</span><span class="badge">main · 3d735bd ●</span></div>
+          <div class="body">
+            <div class="side">
+              <div class="search">⌕ 找任务</div>
+              <div class="row on">▦ 概览</div>
+              <div class="gl">研究 <span class="n">0/36</span></div>
+              <div class="row">› 找方向 <span class="n">0/9</span></div>
+              <div class="row">› 读文献 <span class="n">0/5</span></div>
+              <div class="gl">写作 <span class="n">0/20</span></div>
+              <div class="row">› 写稿 <span class="dot"></span></div>
+              <div class="row">› 核对数字和引用 <span class="dot"></span></div>
+              <div class="gl">发布 <span class="n">1/28</span></div>
+              <div class="row">› 介绍给别人 <span class="n">1/5</span></div>
+            </div>
+            <div class="main">
+              <div class="h"><span class="t">概览</span><span class="sp"></span><span class="btn ghost">↻ 重新盘点</span></div>
+              <div class="sub2">方法 · 模型花费 $0.42（7 次运行）</div>
+              <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px;min-height:0">
+                <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:2px">
+                  <div class="cl" style="margin-bottom:6px">等你处理 · 3</div>
+                  <div class="li"><span class="ico fail"></span><div style="flex:1"><div class="bright">参考文献核查</div><div class="muted" style="font-size:12px">3 条引用找不到出处</div></div><span class="btn pri sm">修掉 3 处</span></div>
+                  <div class="li"><span class="ico half"></span><div style="flex:1"><div class="bright">论文声明</div><div class="muted" style="font-size:12px">写好了数据可用性和利益冲突两段</div></div><span class="btn elev sm">放进论文</span></div>
+                  <div class="li"><span class="ico fail"></span><div style="flex:1"><div class="bright">论文列表</div><div class="muted" style="font-size:12px">2 篇疑似同名作者等你确认</div></div><span class="btn elev sm">去确认</span></div>
+                  <div class="cl" style="margin:12px 0 6px">接下来</div>
+                  <div class="li"><span class="ico half"></span><div style="flex:1"><div class="bright">章节计划</div><div class="muted" style="font-size:12px">按计划卡扩写 Introduction</div></div><span class="btn elev sm">继续</span></div>
+                </div>
+                <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:4px">
+                  <div class="cl" style="margin-bottom:6px;display:flex">改动 · 4 个文件没提交</div>
+                  <div class="li"><span class="fi"></span>main.tex<span class="k">论文声明 · <span style="color:var(--accent-green)">+18</span></span></div>
+                  <div class="li"><span class="fi"></span>docs/publications.html<span class="k">论文列表 · 新文件</span></div>
+                  <div class="li"><span class="fi"></span>docs/publications.bib<span class="k">论文列表 · 新文件</span></div>
+                  <div class="li"><span class="fi"></span>sections/intro.tex<span class="k">对话 · <span style="color:var(--accent-green)">+42</span> <span style="color:var(--accent-red)">−9</span></span></div>
+                  <div style="display:flex;gap:8px;margin-top:8px"><span class="btn pri sm">存为一个版本</span><span class="btn ghost sm">看改动</span></div>
+                  <div class="muted" style="font-size:12px;margin-top:4px">存为版本 = git 提交，说明自动写好</div>
+                </div>
+              </div>
+              <div class="composer"><div class="box">说说接下来要做什么；只做某一个任务时，先在左边点开它</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="step">④ 看改动 / 让 agent 改：选中一段，说要怎么改；改完看差别，留下或撤销</div>
+        <div class="mock-label">设计稿，不是 App 截图</div>
+        <div class="win short" style="position:relative">
+          <div class="main" style="padding:16px 32px 18px;flex-direction:row;gap:16px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+              <div class="cl">论文声明 · statements.tex</div>
+              <div class="doc"><h4>Data availability</h4>All benchmark tasks and agent traces are released under CC-BY 4.0 at <span class="hl">https://github.com/… upon acceptance</span>. Model weights are not redistributed; we use the public API versions listed in Appendix B.</div>
+              <div class="pop" style="left:300px;top:150px"><div class="muted" style="margin-bottom:6px">让 agent 改这里</div><div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:6px 8px;color:var(--text-primary)">投稿匿名，不要写 GitHub 链接，改成"附在补充材料里"</div><div style="display:flex;justify-content:flex-end;margin-top:6px"><span class="btn pri sm">加入（1）</span></div></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+              <div class="turn">改了 1 个文件 <span class="sep">·</span> <span class="link">看改动</span> <span class="sep">·</span> <span class="link">撤销</span></div>
+              <div class="diff">
+                <div class="hd"><span class="p">main.tex</span><span style="color:var(--accent-green)">+1</span><span style="color:var(--accent-red)">−1</span><span class="btn ghost sm">撤销这处</span></div>
+                <div class="l">\section*{Data availability}</div>
+                <div class="l del">- … released under CC-BY 4.0 at https://github.com/… upon acceptance.</div>
+                <div class="l add">+ … released under CC-BY 4.0 in the supplementary material.</div>
+                <div class="l">Model weights are not redistributed; …</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== B ===================== -->
+  <section class="opt">
+    <h2>B · 右侧结果栏</h2>
+    <p>照 Codex 和 Claude 桌面版：正文右边加一栏，分「结果」（这次运行产出的文件）和「改动」（项目里没提交的文件）两页。每个文件一行，悬停出操作。对话里每一轮结束有一行「生成 2 个文件 · 看 · 撤销」。熟悉，但第三栏让正文变窄，而「要你确认的问题」和「下一步」没有固定位置。</p>
+    <div class="mock-label">设计稿，不是 App 截图</div>
+    <div class="win">
+      <div class="top"><span class="el">agent-paper ▾</span><span class="el">方法 ▾</span><span class="badge">main · 3d735bd ●</span></div>
+      <div class="body">
+        <div class="side">
+          <div class="search">⌕ 找任务</div>
+          <div class="row">▦ 概览</div>
+          <div class="gl">发布 <span class="n">1/28</span></div>
+          <div class="row">⌄ 介绍给别人 <span class="n">1/5</span></div>
+          <div class="ind"><div class="row on"><span class="ico fail"></span>论文列表</div></div>
+        </div>
+        <div class="main">
+          <div class="h"><span class="t">论文列表</span><span class="st">等你确认</span><span class="sp"></span><span class="btn ghost">▷ 重新运行</span></div>
+          <div class="doc" style="flex:1;overflow:hidden"><h4>论文列表</h4><b>结论：</b>FAIL　Kaiming He，105 篇；84 篇把预印本和正式版本合成了一条；2 篇疑似同名作者的论文等你确认。<br><br><b>需要你确认</b><br>· KT-LLM: an evidence-grounded and sequence text framework …<br>· POI recommendation based on a multiple bipartite graph …</div>
+          <div class="turn">运行完成，生成 3 个文件 <span class="sep">·</span> <span class="link">看</span> <span class="sep">·</span> <span class="link">撤销</span></div>
+          <div class="composer"><div class="box">对「论文列表」有什么要求，在这里说</div></div>
+        </div>
+        <div class="right">
+          <div class="tabs"><span class="on">结果 3</span><span>改动 4</span></div>
+          <div class="li"><span class="fi"></span>publications.html<span class="k">网页</span></div>
+          <div class="li" style="background:var(--bg-hover)"><span class="fi"></span>publications.bib<span class="k">放进项目 · 打开 · ⋯</span></div>
+          <div class="li"><span class="fi"></span>report.md<span class="k">报告</span></div>
+          <div class="cl" style="margin-top:8px">以前的运行</div>
+          <div class="li muted">11 月 23 日 · 103 篇</div>
+          <div class="li muted">11 月 20 日 · 失败</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== C ===================== -->
+  <section class="opt">
+    <h2>C · 审阅模式</h2>
+    <p>跑完后整页进入审阅：左边是产出的文件，可以选中段落批注；右边是这次要你处理的事（确认、下一步）。底部一条决定整次结果的去留。最专注，但每次运行都要进出一次，小检查也被打断。</p>
+    <div class="mock-label">设计稿，不是 App 截图</div>
+    <div class="win">
+      <div class="top"><span class="btn ghost sm">‹ 回到任务</span><span class="bright" style="font-weight:600">审阅「论文列表」这次的结果</span><span style="flex:1"></span><span class="tabs"><span class="on">publications.html</span><span>publications.bib</span><span>报告</span></span></div>
+      <div class="body">
+        <div class="main" style="padding:20px 28px">
+          <div class="doc" style="flex:1"><h4>Publications</h4>
+            <div>2026 · <b>ARC Is a Vision Problem!</b> · CVPR 2026 · <span class="link">arXiv</span> <span class="link">PDF</span></div>
+            <div>2026 · <b>Back to Basics: Let Denoising Generative Models Denoise</b> · CVPR 2026</div>
+            <div><span class="hl">2026 · <b>Bidirectional Normalizing Flow: From Data to Noise and Back</b> · CVPR 2026</span></div>
+            <div>2026 · <b>Generative Modeling via Drifting</b> · arXiv 2026</div>
+            <div class="muted">… 另 101 篇</div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="cl">这次要你处理</div>
+          <div class="ask" style="flex-direction:column;align-items:stretch"><div class="q"><div>KT-LLM: … kidney transplant modeling</div><div>没有共同作者</div></div><div style="display:flex;gap:6px"><span class="btn elev sm">是我的</span><span class="btn ghost sm">不是</span></div></div>
+          <div class="ask" style="flex-direction:column;align-items:stretch"><div class="q"><div>POI recommendation based on …</div><div>方向不同</div></div><div style="display:flex;gap:6px"><span class="btn elev sm">是我的</span><span class="btn ghost sm">不是</span></div></div>
+          <div class="cl">批注 · 1</div>
+          <div class="li">第 3 条的会议写成 CVPR Oral</div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:8px;align-items:center"><span class="muted" style="font-size:13px;flex:1">2 个问题已回答 0 个 · 1 条批注</span><span class="btn ghost">不要这次的结果</span><span class="btn elev">让 agent 按批注改</span><span class="btn pri">采纳，放到网站 docs/</span></div>
+    </div>
+  </section>
+
+  <p class="note">A 用到的「下一步」按结果类型由任务声明（registry 里每个任务写明它的产物是检查报告、要进论文的内容、独立成品还是选择题，以及放到哪里）；「放进论文」「放到网站」都是改项目文件，所以统一进「改动」，存版本前都能撤销。现在报告里让人手动跑的 cp 命令全部去掉。</p>
+</div>
+</body>
+</html>

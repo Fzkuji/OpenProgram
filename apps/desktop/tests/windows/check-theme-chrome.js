@@ -14,28 +14,36 @@ function checkBackgroundMapUsesRealHexes() {
   assert.equal(themeChrome.backgroundForTheme("aurora-light"), "#fbfaff");
   assert.equal(themeChrome.backgroundForTheme("vivid"), "#18191d");
   assert.equal(themeChrome.backgroundForTheme("vivid-light"), "#fbfcfe");
-  assert.equal(themeChrome.backgroundForTheme("custom"), "#191918");
-  assert.equal(themeChrome.backgroundForTheme("custom-light"), "#fbfaf8");
+  assert.equal(themeChrome.backgroundForTheme("custom"), "#1e1e20");
+  assert.equal(themeChrome.backgroundForTheme("custom-light"), "#ffffff");
   assert.notEqual(themeChrome.backgroundForTheme("beige-light"), "#141416");
   assert.notEqual(themeChrome.backgroundForTheme("beige-dark"), "#141416");
 }
 
-function checkStoredCustomMigratesToBeige() {
+function checkStoredCustomMigratesToNeutral() {
   assert.deepEqual(
     themeChrome.resolveThemePreference("custom", "dark", true),
-    { theme: "beige-dark", resolvedMode: "dark" },
+    { theme: "dark", resolvedMode: "dark" },
   );
   assert.deepEqual(
     themeChrome.resolveThemePreference("custom", "light", false),
-    { theme: "beige-light", resolvedMode: "light" },
+    { theme: "light", resolvedMode: "light" },
   );
-  assert.equal(themeChrome.resolveThemePreference("custom", "auto", false).theme, "beige-light");
-  assert.equal(themeChrome.resolveThemePreference("custom", "auto", true).theme, "beige-dark");
+  assert.equal(themeChrome.resolveThemePreference("custom", "auto", false).theme, "light");
+  assert.equal(themeChrome.resolveThemePreference("custom", "auto", true).theme, "dark");
+}
+
+function checkSchema3BeigeBecomesNeutral() {
+  const old = themeChrome.resolveFromPrefBag({ schema: "3", style: "beige", mode: "light" }, false);
+  assert.equal(old.style, "neutral");
+  assert.equal(old.theme, "light");
+  const picked = themeChrome.resolveFromPrefBag({ schema: "4", style: "beige", mode: "light" }, false);
+  assert.equal(picked.theme, "beige-light");
 }
 
 function checkSchema3PrefsBeatLegacy() {
   const light = themeChrome.resolveFromPrefBag({
-    schema: "3",
+    schema: "4",
     style: "beige",
     mode: "light",
     legacy: "beige-dark",
@@ -49,9 +57,9 @@ function checkSchema3PrefsBeatLegacy() {
     mode: "light",
     legacy: "custom",
   }, true);
-  assert.equal(customLight.style, "beige");
-  assert.equal(customLight.theme, "beige-light");
-  assert.equal(customLight.backgroundColor, "#fbfaf8");
+  assert.equal(customLight.style, "neutral");
+  assert.equal(customLight.theme, "light");
+  assert.equal(customLight.backgroundColor, "#ffffff");
 
   const customDark = themeChrome.resolveFromPrefBag({
     schema: "3",
@@ -59,22 +67,22 @@ function checkSchema3PrefsBeatLegacy() {
     mode: "dark",
     legacy: "custom",
   }, false);
-  assert.equal(customDark.style, "beige");
-  assert.equal(customDark.theme, "beige-dark");
-  assert.equal(customDark.backgroundColor, "#191918");
+  assert.equal(customDark.style, "neutral");
+  assert.equal(customDark.theme, "dark");
+  assert.equal(customDark.backgroundColor, "#1e1e20");
 }
 
 function checkLegacyMigration() {
   assert.deepEqual(themeChrome.legacyThemePreference("custom", "2"), {
-    style: "beige",
+    style: "neutral",
     mode: "dark",
   });
   assert.deepEqual(themeChrome.legacyThemePreference("custom-light", "2"), {
-    style: "beige",
+    style: "neutral",
     mode: "light",
   });
   assert.deepEqual(themeChrome.legacyThemePreference("light", "1"), {
-    style: "beige",
+    style: "neutral",
     mode: "light",
   });
   assert.deepEqual(themeChrome.legacyThemePreference("light", "2"), {
@@ -204,7 +212,7 @@ function checkErrorPageAndListingUseThemeSurface() {
 
 function checkAccentOverrideChangesLinkNotBackground() {
   const overridden = themeChrome.resolveFromPrefBag({
-    schema: "3",
+    schema: "4",
     style: "beige",
     mode: "dark",
     legacy: "beige-dark",
@@ -216,7 +224,7 @@ function checkAccentOverrideChangesLinkNotBackground() {
   assert.equal(overridden.accentColor, "#2563eb");
 
   const defaults = themeChrome.resolveFromPrefBag({
-    schema: "3",
+    schema: "4",
     style: "beige",
     mode: "dark",
     legacy: "beige-dark",
@@ -238,7 +246,8 @@ function checkColorToHex() {
 }
 
 checkBackgroundMapUsesRealHexes();
-checkStoredCustomMigratesToBeige();
+checkStoredCustomMigratesToNeutral();
+checkSchema3BeigeBecomesNeutral();
 checkSchema3PrefsBeatLegacy();
 checkLegacyMigration();
 checkPrefsFileRoundTrip();

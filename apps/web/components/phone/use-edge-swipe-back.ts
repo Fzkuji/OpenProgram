@@ -6,35 +6,18 @@
  * phone's browser has its own edge gesture, and both would go back.
  * WKWebView's own back-forward gesture does not take the history entries
  * the pages push, so the app does not turn it on (WebShell.swift).
- *
- * Also marks a back navigation (`data-nav="back"` on the app) so the page
- * that returns slides in from the left instead of playing the push.
  */
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 
 import { mobileBridge } from "@/lib/mobile/bridge";
+
+import { skipNextTransition } from "./use-page-transitions";
 
 const EDGE = 24; // px from the left edge where a swipe may start
 const COMMIT = 0.33; // of the width, or a flick
 
-export function useEdgeSwipeBack(root: RefObject<HTMLElement | null>, canGoBack: boolean): "back" | null {
-  const [nav, setNav] = useState<"back" | null>(null);
-
-  useEffect(() => {
-    let timer = 0;
-    const onPop = () => {
-      setNav("back");
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => setNav(null), 400);
-    };
-    window.addEventListener("popstate", onPop);
-    return () => {
-      window.removeEventListener("popstate", onPop);
-      window.clearTimeout(timer);
-    };
-  }, []);
-
+export function useEdgeSwipeBack(root: RefObject<HTMLElement | null>, canGoBack: boolean): void {
   useEffect(() => {
     const el = root.current;
     if (!el || !canGoBack || !mobileBridge()) return;
@@ -49,7 +32,7 @@ export function useEdgeSwipeBack(root: RefObject<HTMLElement | null>, canGoBack:
     const onStart = (event: TouchEvent) => {
       const touch = event.touches[0];
       if (event.touches.length !== 1 || touch.clientX > EDGE) return;
-      page = el.querySelector<HTMLElement>(":scope > .phone-app-page");
+      page = el.querySelector<HTMLElement>(":scope > .phone-app-slot > .phone-app-page");
       if (!page) return;
       startX = lastX = touch.clientX;
       startY = touch.clientY;
@@ -88,7 +71,7 @@ export function useEdgeSwipeBack(root: RefObject<HTMLElement | null>, canGoBack:
       target.style.transform = commit ? `translateX(${width}px)` : "";
       const done = () => {
         target.style.transition = "";
-        if (commit) window.history.back();
+        if (commit) { skipNextTransition(); window.history.back(); }
         else { target.style.transform = ""; target.style.animation = ""; }
       };
       target.addEventListener("transitionend", done, { once: true });
@@ -105,6 +88,4 @@ export function useEdgeSwipeBack(root: RefObject<HTMLElement | null>, canGoBack:
       el.removeEventListener("touchcancel", onEnd);
     };
   }, [root, canGoBack]);
-
-  return nav;
 }

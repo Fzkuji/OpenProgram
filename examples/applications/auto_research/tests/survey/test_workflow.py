@@ -110,6 +110,10 @@ def test_whole_survey(offline, tmp_path):
     assert labels["Show, Attend and Tell"] == "Author et al. 2015a"      # same author and year, by date
     assert labels["Effective Approaches to Attention-based Neural Machine Translation"] == "Author et al. 2015b"
     assert survey["directions"]["cards"][0]["crowding"] == 1
+    flow = survey["retrieval"]["flow"]
+    assert flow["included"]["core"] == 5 and flow["unique"] >= flow["screened"] >= flow["excluded"] >= 1
+    report = open(out["report"], encoding="utf-8").read()
+    assert "筛选流程（PRISMA 2020）" in report and "覆盖度" in report
 
     page = open(out["page"], encoding="utf-8").read()
     assert "<h1>注意力机制</h1>" in page and 'data-p="p4"' in page and "去掉循环" in page

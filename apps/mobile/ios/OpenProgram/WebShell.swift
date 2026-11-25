@@ -3,22 +3,28 @@ import UIKit
 import WebKit
 import ObjectiveC
 
-/// The OpenProgram UI for one computer at one address.
+/// The OpenProgram UI for one computer.
 ///
-/// Recreated when the computer or its address changes, so the page always
-/// starts with the right `window.openprogramMobile` (apps/web/lib/mobile/bridge.ts).
+/// Recreated only when the computer changes. When its address changes
+/// (Wi-Fi to cellular, or the probe finds another one) the page stays:
+/// requests read the address each time, and the page is told the new
+/// socket address (`openprogram-mobile-address`, apps/web/lib/mobile/bridge.ts).
 struct WebShell: UIViewRepresentable {
     let computer: Computer
+    /// Every computer paired with this phone, for the page's switcher.
+    let computers: [Computer]
     let origin: String
     let token: String
-    let onAction: (String) -> Void
+    let onAction: (String, [String: Any]) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
+    func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction, origin: origin) }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let root = Bundle.main.url(forResource: "web", withExtension: nil)!
-        let handler = AppSchemeHandler(root: root) { [origin, token] in (origin, token) }
+        let coordinator = context.coordinator
+        coordinator.listed = computers.map { $0.id + "\u{1}" + $0.name }
+        let handler = AppSchemeHandler(root: root) { [token] in (coordinator.origin, token) }
         context.coordinator.handler = handler
         config.setURLSchemeHandler(handler, forURLScheme: AppSchemeHandler.scheme)
         config.websiteDataStore = .default()
@@ -26,7 +32,7 @@ struct WebShell: UIViewRepresentable {
 
         let content = WKUserContentController()
         content.add(context.coordinator, name: "openprogram")
-        content.addUserScript(WKUserScript(source: bootstrap(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        content.addUserScript(WKUserScript(source: bootstrap(origin), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         // An app's screens do not zoom: two quick taps on two controls, or a
         // pinch, would otherwise magnify the whole UI.
         content.addUserScript(WKUserScript(source: """
@@ -37,8 +43,13 @@ struct WebShell: UIViewRepresentable {
 
         let view = WKWebView(frame: .zero, configuration: config)
         view.isOpaque = false
-        view.backgroundColor = .systemBackground
-        view.scrollView.backgroundColor = .systemBackground
+        // The page's own background (--bg-primary of the light and dark
+        // themes) shows until its first paint, so the start is not a white flash.
+        let page = UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0x1e / 255, green: 0x1e / 255, blue: 0x20 / 255, alpha: 1)
+            : UIColor.white }
+        view.backgroundColor = page
+        view.scrollView.backgroundColor = page
         // The page lays itself out to the safe area (viewport-fit=cover) and
         // owns its own scrolling.
         view.scrollView.contentInsetAdjustmentBehavior = .never
@@ -54,27 +65,42 @@ struct WebShell: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        let listed = computers.map { $0.id + "\u{1}" + $0.name }
+        guard context.coordinator.origin != origin || context.coordinator.listed != listed else { return }
+        let moved = context.coordinator.origin != origin
+        context.coordinator.origin = origin
+        context.coordinator.listed = listed
+        let bridge = String(data: try! JSONSerialization.data(withJSONObject: bridgeValue(origin)), encoding: .utf8)!
+        view.evaluateJavaScript("""
+        Object.assign(window.openprogramMobile, \(bridge));
+        window.dispatchEvent(new Event("\(moved ? "openprogram-mobile-address" : "openprogram-mobile-computers")"));
+        """)
+    }
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "openprogram")
     }
 
     /// What the page reads before any of its own scripts run.
-    private func bootstrap() -> String {
+    private func bridgeValue(_ origin: String) -> [String: Any] {
         var socket = URLComponents(string: origin)!
         socket.scheme = socket.scheme == "https" ? "wss" : "ws"
         socket.path = "/ws"
-        let bridge: [String: Any] = [
+        return [
             "socket": ["url": socket.string!, "protocols": ["openprogram.v1", "openprogram.bearer." + token]],
-            "computer": ["name": computer.name, "via": ComputerStore.isLocal(origin) ? "lan" : "anywhere"],
+            "computer": ["id": computer.id, "name": computer.name, "via": ComputerStore.isLocal(origin) ? "lan" : "anywhere"],
+            "computers": computers.map { ["id": $0.id, "name": $0.name] },
         ]
-        let json = String(data: try! JSONSerialization.data(withJSONObject: bridge), encoding: .utf8)!
+    }
+
+    private func bootstrap(_ origin: String) -> String {
+        let json = String(data: try! JSONSerialization.data(withJSONObject: bridgeValue(origin)), encoding: .utf8)!
         // The document element exists at document start: the screen's corner
         // radius is set before the first paint, so floating panels round
         // in parallel with the screen (app/styles/base/phone.css).
         return """
-        window.openprogramMobile = Object.freeze(\(json));
+        window.openprogramMobile = \(json);
         document.documentElement.style.setProperty("--phone-screen-radius", "\(Self.screenCornerRadius())px");
         """
     }
@@ -103,9 +129,16 @@ struct WebShell: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var handler: AppSchemeHandler?
-        let onAction: (String) -> Void
+        let onAction: (String, [String: Any]) -> Void
+        /// Where requests go now; read by the scheme handler on each request.
+        var origin: String
+        /// The paired computers the page was last told about.
+        var listed: [String] = []
 
-        init(onAction: @escaping (String) -> Void) { self.onAction = onAction }
+        init(onAction: @escaping (String, [String: Any]) -> Void, origin: String) {
+            self.onAction = onAction
+            self.origin = origin
+        }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
@@ -117,7 +150,7 @@ struct WebShell: UIViewRepresentable {
                 default: UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
             } else {
-                onAction(action)
+                onAction(action, body)
             }
         }
     }

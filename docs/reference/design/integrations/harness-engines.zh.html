@@ -60,7 +60,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">芯片</th><th scope="col">OpenProgram</th><th scope="col">Codex</th></tr></thead>
 <tbody>
-<tr><th scope="row">Harness</th><td>默认</td><td>显示版本；在对话所在机器上未安装或未登录时变灰</td></tr>
+<tr><th scope="row">Harness</th><td>默认</td><td>显示版本；在对话所在机器上未安装、无法启动、未登录或没有模型时变灰，与服务器拒绝切换的条件一致。服务器读完一个 Harness 后列表随之重读</td></tr>
 <tr><th scope="row">模型</th><td>不变</td><td>Codex 自己的模型；有更新的 Codex 时，还有只有新版才列出的模型（变暗）和 <strong>Update Codex</strong>；然后是 <strong>Through OpenProgram</strong> 下的各 provider（<code translate="no">openprogram:&lt;provider&gt;/&lt;model&gt;</code>）</td></tr>
 <tr><th scope="row">思考档位</th><td>不变</td><td>模型的 <code translate="no">supportedReasoningEfforts</code></td></tr>
 <tr><th scope="row">Agent</th><td>不变</td><td>默认、Codex 配置里的 <code translate="no">[profiles.*]</code>，以及模型支持时的性格</td></tr>
@@ -70,6 +70,10 @@
 <dl class="pairs">
 <dt>Claude Code</dt><dd>模型列出它自己的别名；同步来的记录里的完整 id 显示成对应别名。没有 Through OpenProgram。Agent 列出默认和它的具名 agent。权限有跳过授权、自动、自动接受编辑、询问和 Plan；批准它的计划后，菜单回到 Plan 之前的模式，和 OpenProgram 自己的计划模式一样。</dd>
 <dt>DeepSeek Harness</dt><dd>模型列出会话提供的模型，不带 provider 前缀。没有 Through OpenProgram。权限有完全访问和询问。</dd>
+<dt>力度</dt><dd>没有思考力度档位的 Harness 模型不显示力度控件，也不发送力度。Harness 第一次读取之前控件先等着；读完后刷新每个会话的设置。Codex 和 DeepSeek Harness 的力度跟着线程走，所以选 Auto 时发送模型的默认档位；Codex 的 Default 智能体同样发送 <code translate="no">config.toml</code> 里设的人格。</dd>
+<dt>选项</dt><dd>不提供网页搜索和沙箱，选项的提示也只说添加文件：智能体用自己的方式搜索和运行命令。开了无人值守时，智能体的提问会被告知没人可问。</dd>
+<dt>芯片</dt><dd>Agent 芯片用 Agent 图标，Harness 的标只在 Harness 芯片上。它只显示模型接受的选项，默认和 Codex 的性格按界面语言显示。手机上，对话的设置面板有 Harness 一行。</dd>
+<dt>卡片</dt><dd>Claude Code 的工具按 OpenProgram 自己接受同样参数的工具名显示：<code translate="no">Bash</code> 是命令，<code translate="no">Edit</code> 是修改，<code translate="no">TodoWrite</code> 是清单。批准它的计划时，按原文显示计划。</dd>
 </dl>
 <p>Harness 是分支的运行设置，与模型、思考档位、权限并列。切到 Codex 时换成它的默认模型和 Agent，并记住原来的 OpenProgram 模型和思考档位；切回时恢复。</p>
 
@@ -83,7 +87,7 @@
 <tr><th scope="row"><code translate="no">webSearch</code>、<code translate="no">mcpToolCall</code></td><td>由提供方执行的 <code translate="no">web_search</code>；<code translate="no">mcp__&lt;server&gt;__&lt;tool&gt;</code></td></tr>
 <tr><th scope="row"><code translate="no">turn/plan/updated</code></td><td><code translate="no">todo_write</code> 清单</td></tr>
 <tr><th scope="row"><code translate="no">thread/tokenUsage/updated</code></td><td>上下文用量；不计入 Token 用量，因为第三方 Harness 页面已从 Codex 自己的文件统计这些调用</td></tr>
-<tr><th scope="row">审批请求</th><td>实时等待，显示为普通的提问卡片；允许 → <code translate="no">accept</code>，本对话内允许 → <code translate="no">acceptForSession</code>，拒绝 → <code translate="no">decline</code>。没有卡片的请求一律拒绝，一轮不会卡住</td></tr>
+<tr><th scope="row">审批请求</th><td>实时等待，显示为普通的提问卡片；允许 → <code translate="no">accept</code>，本对话内允许 → <code translate="no">acceptForSession</code>，拒绝 → <code translate="no">decline</code>。要更多权限（网络、文件夹）的请求同样询问；Codex 自己的提问放在提问卡片上，按问题 id 回答。没有卡片的请求一律拒绝，一轮不会卡住</td></tr>
 <tr><th scope="row">停止、插话</th><td><code translate="no">turn/interrupt</code>（还没拿到 turn id 时先排队）；插话从执行中取出，用 <code translate="no">turn/steer</code> 发送</td></tr>
 </tbody>
 </table>
@@ -96,7 +100,7 @@
 <dt>文件夹</dt><dd>每次 <code translate="no">turn/start</code> 都带上对话当前的文件夹。</dd>
 <dt>分支</dt><dd>每个分支有自己的 Codex 线程，以及它看到的最后一条消息的 id。</dd>
 <dt>交接</dt><dd>线程在已有历史的对话上开始，或在它没运行的轮次之后恢复时，先收到这些轮次的限长记录，保留最新的。切回 OpenProgram 不需要交接：Codex 的轮次已按普通消息和工具调用保存。</dd>
-<dt>崩溃</dt><dd>进程退出会让正在进行的一轮失败；下一轮启动新进程并恢复线程。</dd>
+<dt>崩溃</dt><dd>进程退出会让正在进行的一轮失败；下一轮启动新进程并恢复线程。一轮还在跑时来的第二轮用它自己的进程，结束时关掉；保留的那个进程在下一轮前重新载入线程。</dd>
 </dl>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">保持最新</th><th scope="col">做法</th></tr></thead>
@@ -141,7 +145,7 @@
 <tr><th scope="row">模型、智能体列表</th><td>清单加 <code translate="no">initialize</code></td><td><code translate="no">supportedModels()</code> 加清单</td><td>不适用</td><td><code translate="no">initialize</code> 的回答，不跑任何一轮：模型、各自的强度，以及 Agent 芯片里的智能体（<code translate="no">--agent</code>）</td></tr>
 <tr><th scope="row">思考</th><td>自适应，摘要显示</td><td>自适应，摘要显示</td><td>不适用</td><td>相同</td></tr>
 <tr><th scope="row">会话</th><td><code translate="no">sessionId</code>、<code translate="no">resume</code>，按消息分叉</td><td>同上；只在回退时分叉</td><td>在终端里 <code translate="no">claude --resume</code></td><td><code translate="no">--session-id</code>，在会话的文件夹里 <code translate="no">--resume</code>；新分支用 <code translate="no">--fork-session</code> 分叉并带上交接记录</td></tr>
-<tr><th scope="row">权限提示</th><td>本次、本会话、拒绝、取消</td><td>同上</td><td>不适用</td><td>同样，用实时等待；本会话允许时带上 Claude Code 自己的建议规则</td></tr>
+<tr><th scope="row">权限提示</th><td>本次、本会话、拒绝、取消</td><td>同上</td><td>不适用</td><td>同样，用实时等待；本会话允许时带上 Claude Code 自己的建议规则。它的提问（<code translate="no">AskUserQuestion</code>）显示在 OpenProgram 的提问卡片上，答案作为工具的 <code translate="no">answers</code> 交回</td></tr>
 <tr><th scope="row">停止、插话</th><td><code translate="no">interrupt</code>，10 秒后强停；<code translate="no">priority: next</code></td><td>同上</td><td>不适用</td><td>T3 的做法</td></tr>
 <tr><th scope="row">流</th><td>增量为主，快照补没流出来的；子智能体单独</td><td>同上</td><td>不适用</td><td>增量为主，快照补没流出来的；子智能体的步骤留在它的工具卡片里</td></tr>
 <tr><th scope="row">外面加的轮次</th><td>记录比运行中的进程新就重启</td><td>手动重新加载</td><td>重读变了的文件</td><td>T3 的重启，在 App 同步写入之后</td></tr>
@@ -150,10 +154,14 @@
 
 <dl class="pairs">
 <dt>App 的线程</dt><dd>引擎在某个分支上接着用了 App 的线程之后，其他分支既不接着用也不分叉 App 那份记录，而是带着交接内容开新会话。</dd>
-<dt>同时两轮</dt><dd>一个分支的进程一次只跑一轮。同一分支上的第二轮用它自己的进程，结束时关掉。</dd>
+<dt>同时两轮</dt><dd>一个分支的进程一次只跑一轮。同一分支上的第二轮用它自己的进程，结束时关掉；保留的进程随后重新恢复会话。</dd>
+<dt>图片</dt><dd>附带的图片作为图片块随消息发送。</dd>
+<dt>会话丢失</dt><dd>Claude Code 说找不到这个会话时，这一轮带着交接内容开一个新会话，新会话开始后之后的轮次都在里面继续。其他失败保留原会话的记录。</dd>
 <dt>插话</dt><dd>运行中发来的消息可能被当作单独一轮回答，这一轮会等到那一轮的结果。收过插话的进程不再复用，里面排着的内容不会混进之后的回合。</dd>
 <dt>Effort</dt><dd>没有请求能取消已设的 effort，所以改回 Claude Code 自己的默认会换一个新进程。换模型后会重新设置 effort。</dd>
 <dt>写下的轮次</dt><dd>用户的消息带着自己的 uuid 发进去。它和这一轮写下的记录 uuid 在运行中和失败时都会保存，即使中途停止，应用同步也不会再写回来。Claude Code 的中断提示不算消息。</dd>
+<dt>没有回答的消息</dt><dd>DeepSeek Harness 在回答前被停止的消息没有 id。如果这里的对话已经显示了这条消息，同步会跳过它。App 里最后一条还没回答的消息等一分钟回答，之后写成已停止。</dd>
+<dt>早先的读取</dt><dd>早先的读取多算了这次不算的轮次时，同步找到它写过、App 里仍有的最新一轮，新轮次接着往后编号。</dd>
 <dt>已退出的进程</dt><dd>两轮之间退出的保留进程会被替换，这一轮发给新进程。</dd>
 </dl>
 
@@ -170,6 +178,7 @@
 <tr><th scope="row">侧边栏</th><td>状态点和频道 logo 不变；行尾是智能体自己的彩色 logo，表示这个对话现在在那个智能体里跑，悬停时让位给 ⋯ 按钮。悬停卡片写模型和智能体、项目、时间，以及同步来的对话也在哪个 App 里。OpenProgram 自己的对话没有标</td><td>T3 Code 的 provider 标</td></tr>
 <tr><th scope="row">Claude App 和 DeepSeek Harness</th><td>它们的对话也同样进来（<code translate="no">app_sync.py</code>）：Claude App Code 标签页的列表（<code translate="no">claude-code-sessions/**/local_*.json</code>，每条指向一份 Claude Code 记录）和 DeepSeek Harness 的工作区（<code translate="no">~/.dsh</code>，每个对话一份 zstd 事件日志），归档的不算。终端里用 <code translate="no">claude</code> 开的对话也进来；通过 SDK 或 <code translate="no">claude -p</code> 跑的不进来，和 Codex 的 <code translate="no">exec</code> 线程一样。每个对话都在它那个智能体的引擎上接着原会话聊</td><td>Paseo 的导入</td></tr>
 <tr><th scope="row">互不重复</th><td>引擎在这里新建或分叉的会话不会再作为另一个对话导入。引擎正在跑一轮的会话，等这一轮结束再读；还在写入的，停几秒后再读。App 里回退时，这里已有的内容不变。App 后来生成的标题会替换最初的标题，除非这里改过名</td><td>Codex 的自有轮次 id</td></tr>
+<tr><th scope="row">App 轮次的去处</th><td>DeepSeek Harness 引擎在这里新建的会话里，App 之后的轮次接到持有它的对话里；Claude Code 的分叉开头复制了这里已有的轮次，不读。显示的是另一个分支时，接在这个线程自己的分支上，显示的分支不变</td><td>Codex 在这里开的线程</td></tr>
 <tr><th scope="row">历史页</th><td>和 OpenProgram 的对话混在一起，每行同样的标；有别的智能体的对话时出现“来源”筛选</td><td>T3 Code</td></tr>
 </tbody>
 </table>

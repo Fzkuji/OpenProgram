@@ -1,4 +1,4 @@
-/* :root 兜底 —— 表面取值等同 beige-dark，主色使用 neutral blue。
+/* :root 兜底 —— 取值等同默认外观 neutral 的深色（dark.css）。
    具名主题全部搬到 app/styles/themes/ 下，由 globals.css import；
    这里留一份完整取值，是为了 data-theme 是未知值（用户自定义主题
    片段没写全、或存量 localStorage 里的旧值）时页面仍然画得出来。 */
@@ -8,32 +8,32 @@
      theme layer, so an application frame that loads only the themes still
      gets Vivid's colours. */
   --tabrow-seed: #3d475c;
-  --bg-primary: #191918;
-  --bg-secondary: #141413;
-  --bg-tertiary: #252523;
+  --bg-primary: #1e1e20;
+  --bg-secondary: #171719;
+  --bg-tertiary: #252529;
   --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-hover-contrast: #0f0f0e;
-  --bg-input: #262624;
-  --border: rgba(255, 255, 255, 0.06);       /* subtle hairline */
-  --border-light: rgba(255, 255, 255, 0.10); /* strong hairline */
-  --text-primary: #b8b5ad;
-  --text-secondary: #94928b; /* 5.65:1 on --bg-primary */
-  --text-bright: #f0efea;
-  --text-muted: #757370; /* 3.72:1 on --bg-primary */
-  --nav-color: #b8b5ad;       /* nav default — same as text-primary in dark */
-  --nav-color-hover: #f0efea; /* nav hover — same as text-bright */
+  --bg-hover-contrast: #0f0f11;
+  --bg-input: #2a2a2e;
+  --border: rgba(255, 255, 255, 0.07);       /* subtle hairline */
+  --border-light: rgba(255, 255, 255, 0.12); /* strong hairline */
+  --text-primary: #b6b6bb;
+  --text-secondary: #92929a; /* 5.65:1 on --bg-primary */
+  --text-bright: #ededf0;
+  --text-muted: #74747c; /* 3.72:1 on --bg-primary */
+  --nav-color: #b6b6bb;       /* nav default — same as text-primary in dark */
+  --nav-color-hover: #ededf0; /* nav hover — same as text-bright */
   --bg-selected: rgba(255, 255, 255, 0.10); /* selected row, one step above hover */
   /* Chat surfaces: the sent user bubble is the same raised surface as
      the composer (--bg-input + --composer-shadow); the assistant
      message sits flat on the page (no bubble tint). */
   --user-msg-bg: var(--bg-input);
-  --assistant-msg-bg: #191918;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
-  --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  --assistant-msg-bg: #1e1e20;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   /* Popover / menu surface — the ONE elevated card every floating menu
      uses (see components/ui/menu/menu-styles.ts MENU_PANEL). The
      shadow carries its own 1px ring, so panels need no border. */
-  --surface-popover: #252523;
+  --surface-popover: #252529;
   --border-popover: rgba(255, 255, 255, 0.12);
   /* Glass popovers (iOS-style material): one recipe for every floating
      menu, picker and popup, in every theme. light-dark() follows each
@@ -56,12 +56,12 @@
     0 20px 44px light-dark(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.32));
   --glass-radius: 10px;
   --shadow-popover: var(--glass-shadow);
-  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
-  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
-  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.34);
+  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.34);
   /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
      so it reads as a distinct chip on the dark composer. */
-  --effort-off-bg: #2d2d2b;
+  --effort-off-bg: #303035;
   /* Effort slider thumb. Dark themes get a paper chip instead of raw
      white; light themes keep Claude's white knob. Stays on :root so
      theme files don't grow a new contract token. */
@@ -121,7 +121,7 @@
   --text-on-tooltip: var(--background);
   /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
   --composer-ring: rgba(255, 255, 255, 0.08);
-  --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  --composer-ring-focus: rgba(255, 255, 255, 0.16);
   /* Input box = shadcn Luma Card surface with no border: shadow-sm
      at rest, shadow-md on hover / focus. */
   --composer-surface: var(--bg-input);
@@ -134,6 +134,6 @@
   /* 用量条（context breakdown）保持信息蓝，不跟随主题主色。 */
   --meter-fill: #5b9cf8;
   --meter-track: rgba(255, 255, 255, 0.08);
-  --provider-icon-bg: var(--bg-tertiary);
-  --dag-ghost: #57564f;
+  --provider-icon-bg: var(--bg-hover);
+  --dag-ghost: #5c5c64;
 }

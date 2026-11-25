@@ -195,7 +195,7 @@ def parse_request(body: Any) -> ResponsesRequest:
         temperature=body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else None,
         tool_choice=_tool_choice(body.get("tool_choice")),
         parallel_tool_calls=body.get("parallel_tool_calls") if isinstance(body.get("parallel_tool_calls"), bool) else None,
-        reasoning=cv.reasoning_level(model, effort) if isinstance(effort, str) and effort != "none" else None,
+        reasoning=cv.reasoning_level(model, effort) if isinstance(effort, str) else None,
         session_id=cv.session_key(body.get("prompt_cache_key")),
     )
     context = Context(system_prompt="\n\n".join(system) or None, messages=messages, tools=tools)

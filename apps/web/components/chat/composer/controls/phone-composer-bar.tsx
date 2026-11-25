@@ -38,7 +38,7 @@ import {
 import { ChatModelMenuBody, useChatModel } from "@/components/chat/top-bar";
 import { ModelMark } from "@/components/chat/top-bar/chips/model-mark";
 import { ChatAgentMenuRows, useChatAgent } from "@/components/chat/top-bar/menus/agent-config-menu";
-import { HarnessAgentRows, harnessAgentLabel, useHarness } from "@/components/chat/top-bar/menus/harness-menu";
+import { HarnessAgentRows, harnessAgentLabel, harnessName, HarnessRows, useHarness } from "@/components/chat/top-bar/menus/harness-menu";
 import { formatEffortLabel } from "@/lib/effort/effort-color";
 import { useTranslation } from "@/lib/i18n";
 import { haptic } from "@/lib/mobile/bridge";
@@ -65,7 +65,7 @@ export const PhoneComposerBar = memo(function PhoneComposerBar(props: Props) {
   const model = useChatModel(props.chatAgent.provider, props.chatAgent.model, open);
   const permission = usePermissionMode();
   const permissionLabel = permission.options.find((o) => o.value === permission.mode)?.label ?? permission.mode;
-  const showEffort = !!props.chatModel && !props.noEnabledModels && props.thinkingOptions.length > 1;
+  const showEffort = !!props.chatModel && !props.noEnabledModels && props.thinkingOptions.length > 0;
   const modelText = [
     model.label || text("Choose a model", "选择模型"),
     showEffort && props.thinking ? formatEffortLabel(props.thinking) : null,
@@ -122,7 +122,8 @@ function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, clo
   close: () => void;
 }) {
   const { text } = useTranslation();
-  const harness = useHarness();
+  // The sheet is open: read the harnesses its Harness row lists.
+  const harness = useHarness(true);
   const agent = useChatAgent(close);
   const toggle = (on: boolean, flip: () => void, label: string) => (
     <DropdownMenuItem
@@ -143,6 +144,14 @@ function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, clo
         <button type="button" onClick={close}>{text("Done", "完成")}</button>
       </div>
       <div className="phone-sheet-group">
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className={ROW}>
+            <MenuRow label="Harness" trail={harnessName(harness)} submenu />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className={MENU_PANEL}>
+            <HarnessRows state={harness} onPicked={close} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className={ROW}>
             <MenuRow label={text("Model", "模型")} trail={<ModelTrail label={model.label} id={model.model} none={text("None", "未选择")} />} submenu />
@@ -196,7 +205,8 @@ function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, clo
       {harness.harness ? (
         // The outside agent's own agents (Codex profiles, Claude Code's agents).
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger className={ROW}>
+          {/* Until the harness is read it has no choices to list. */}
+          <DropdownMenuSubTrigger className={ROW} disabled={!harness.entry}>
             <MenuRow label={text("Agent", "智能体")} trail={harnessAgentLabel(harness, text)} submenu />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className={MENU_PANEL}>
@@ -216,8 +226,9 @@ function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, clo
       </div>
       <div className="phone-sheet-group">
         {props.fastSupported ? toggle(props.fastEnabled, props.toggleFast, text("Fast mode", "高速模式")) : null}
-        {toggle(props.webSearchEnabled, props.toggleWebSearch, text("Web search", "网页搜索"))}
-        {props.sandboxAvailable ? toggle(props.sandboxEnabled, props.toggleSandbox, text("Sandbox", "沙箱")) : null}
+        {/* An outside agent searches and runs commands its own way. */}
+        {harness.harness ? null : toggle(props.webSearchEnabled, props.toggleWebSearch, text("Web search", "网页搜索"))}
+        {props.sandboxAvailable && !harness.harness ? toggle(props.sandboxEnabled, props.toggleSandbox, text("Sandbox", "沙箱")) : null}
         {toggle(props.unattended, props.toggleUnattended, text("Unattended", "无人值守"))}
       </div>
     </>

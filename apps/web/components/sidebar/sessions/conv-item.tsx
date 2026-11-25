@@ -19,7 +19,8 @@ import { channelBrand } from "@/lib/channels/channel-brands";
 import type { ActivityState } from "./activity";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
 import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
-import { agentName, gatewayModel } from "@/lib/models/harnesses";
+import { useQuery } from "@tanstack/react-query";
+import { agentName, gatewayModel, harnessQueryKey, listedModel } from "@/lib/models/harnesses";
 import { formatRelativeTime } from "@/lib/format-utils/format";
 
 /** What an Activity row adds to the chat row: a second line with the
@@ -414,8 +415,15 @@ function AgentCard({ conv, agent, zh }: { conv: LegacyConv; agent: string; zh: b
   // DeepSeek Harness names a model with its provider (`deepseek-official:deepseek-flash`).
   const raw = conv.model ? gatewayModel(conv.model)?.model ?? conv.model : null;
   const named = raw && conv.harness === "deepseek-harness" ? raw.split(":").pop() ?? raw : raw;
+  // Named as the model chip names it: the harness's own label for it (read when the card shows).
+  const { data: harnesses } = useQuery({
+    queryKey: harnessQueryKey(null), staleTime: 5 * 60_000,
+    // Loaded with the card: the listing reaches the Worker, which a sidebar row never needs.
+    queryFn: () => import("@/lib/models/harness-listing").then((listing) => listing.listHarnesses(null)),
+  });
+  const listed = listedModel(harnesses?.find((h) => h.id === conv.harness), raw);
   // The agent's own default model has no name to show.
-  const model = named && named.toLowerCase() !== "default" ? named : null;
+  const model = named && named.toLowerCase() !== "default" ? listed?.label ?? named : null;
   const time = formatRelativeTime(conv.updated_at || conv.created_at || 0, zh ? "zh" : "en");
   // A conversation synced from an app is that app's too, while it runs there.
   const home = conv.source && conv.source === conv.harness ? ALSO_IN[conv.source] : undefined;

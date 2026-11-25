@@ -149,15 +149,18 @@ def _harness_thinking_config(provider: str, model_id: str | None, build) -> dict
         entry = cached_harness(provider)
         if entry is None:
             warm(provider)
-        model = next((m for m in (entry or {}).get("models") or [] if m.get("default")), None)
+            # Not read yet: no answer about its levels (the read says when it has one).
+            return {"label": "reasoning effort", "options": [], "default": None, "variant": None, "pending": True}
+        model = next((m for m in entry.get("models") or [] if m.get("default")), None)
     if not model or not model.get("efforts"):
         return {"label": "reasoning effort", "options": [], "default": None, "variant": None}
-    # Codex's "none" is OpenProgram's "off"; a model without it lists no "off".
-    levels = [level for level in model["efforts"] if level != "none"]
+    # Codex's "none" and DeepSeek Harness's "off" are OpenProgram's "off";
+    # a model with neither lists no "off".
+    levels = [level for level in model["efforts"] if level not in ("none", "off")]
     default = "off" if model.get("default_effort") == "none" else model.get("default_effort")
     config = build(levels, default, None)
     config["label"] = "reasoning effort"
-    if "none" not in model["efforts"]:
+    if "none" not in model["efforts"] and "off" not in model["efforts"]:
         config["options"] = [option for option in config["options"] if option["value"] != "off"]
     return config
 

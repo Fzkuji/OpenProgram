@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { harnessOf } from "@/lib/models/harnesses";
 import { runtimeState, THINKING_CONFIG_CHANGED } from "@/lib/runtime-bridge/state";
 
 import {
@@ -93,7 +94,14 @@ export function useThinkingEffort(): ThinkingEffortHook {
   const stored: ThinkingEffort = storedRaw || DEFAULT_THINKING;
   // This conversation's model levels; the focused one's global config
   // answers until they arrive.
-  const own = useSessionAgentSettings().chat?.thinking;
+  const chat = useSessionAgentSettings().chat;
+  const own = chat?.thinking;
+  // An outside agent's model that lists no levels takes none: no list to pick from.
+  const outside = !!(chat?.harness ?? harnessOf(chat?.provider));
+  const noLevels = outside && Array.isArray(own?.options) && own.options.length === 0
+    && !(own as { pending?: boolean } | undefined)?.pending;
+  // Its levels are not read yet: no control until they are, rather than levels it may not take.
+  const waiting = outside && !!(own as { pending?: boolean } | undefined)?.pending;
   const [menuOpen, setMenuOpen] = useState(false);
   // `_thinkingConfig` is replaced by providers.ts when the agent/model
   // changes, which then sends THINKING_CONFIG_CHANGED. This re-renders
@@ -131,9 +139,10 @@ export function useThinkingEffort(): ThinkingEffortHook {
           (invocation.thinkingLevels ?? []).map((value) => ({ value })),
           invocation.defaultThinking,
         )
+      : noLevels || waiting ? []
       : markRecommended(readThinkingOptions(own), readBackendDefault(own) ?? DEFAULT_THINKING),
     // The live config is mutated in place; the last three name its content.
-    [invocation, own, liveOptions, liveDefault, liveFingerprint],
+    [invocation, own, noLevels, waiting, liveOptions, liveDefault, liveFingerprint],
   );
 
   // CLAMP: the value actually exposed (and sent with chat turns) must
@@ -145,6 +154,9 @@ export function useThinkingEffort(): ThinkingEffortHook {
   // "'minimal' is not supported with the 'gpt-5.5' model".
   const thinking = invocation
     ? storedRaw || invocation.defaultThinking || ""
+    : noLevels ? ""
+    // Not read yet: the person's own pick goes as chosen, and the engine takes the model's nearest level.
+    : waiting ? storedRaw || ""
     : options.some((o) => o.value === stored) ? stored : readBackendDefault(own) ?? options[0]?.value ?? stored;
 
   const set = useCallback((level: ThinkingEffort) => {

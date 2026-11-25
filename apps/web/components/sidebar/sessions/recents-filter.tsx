@@ -84,15 +84,14 @@ export function RecentsFilter({projects = []}: {projects?: readonly {id:string;n
     [conversations],
   );
 
-  // Any non-default selection lights the trigger so an active filter
-  // is visible without opening the menu.
+  // A filter that hides conversations lights the trigger so it is visible
+  // without opening the menu. Grouping and sort order only arrange the list,
+  // so they leave it the same grey as the bell beside it.
   const active =
     view.status !== DEFAULT_RECENTS_VIEW.status ||
     view.project !== DEFAULT_RECENTS_VIEW.project ||
     view.environment !== DEFAULT_RECENTS_VIEW.environment ||
-    view.lastActivity !== DEFAULT_RECENTS_VIEW.lastActivity ||
-    view.groupBy !== DEFAULT_RECENTS_VIEW.groupBy ||
-    view.sort !== DEFAULT_RECENTS_VIEW.sort;
+    view.lastActivity !== DEFAULT_RECENTS_VIEW.lastActivity;
 
   return (
     <DM.Root open={open} onOpenChange={setOpen}>

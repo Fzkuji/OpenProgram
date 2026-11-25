@@ -37,6 +37,10 @@ class WrappedProvider:
 
 @pytest.fixture(autouse=True)
 def isolated_registry(monkeypatch: pytest.MonkeyPatch):
+    # The built-ins register once, on first use: into the real registry first, so a use
+    # during this test does not spend that once on the empty one it gets.
+    from openprogram.models.providers.catalog.register import register_builtins
+    register_builtins()
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)

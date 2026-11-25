@@ -19,6 +19,8 @@ declare global {
       chat: {
         open(key: string, folder: string): Promise<{ session_id: string; folder: string; exists: boolean }>;
         note(text: string): Promise<unknown>;
+        hint(text: string): Promise<unknown>;
+        send(text: string): Promise<unknown>;
         place(rect: { left: number; right: number; bottom: number } | null): Promise<unknown>;
         reveal(): Promise<boolean>;
         close(): Promise<unknown>;

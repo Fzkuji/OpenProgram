@@ -27,7 +27,7 @@ const THEME_STYLE_PAIRS = {
   vivid: { dark: "vivid", light: "vivid-light" },
 };
 const LEGACY_THEME_PREFERENCES = {
-  auto: { style: "beige", mode: "auto" },
+  auto: { style: "neutral", mode: "auto" },
   "beige-dark": { style: "beige", mode: "dark" },
   "beige-light": { style: "beige", mode: "light" },
   dark: { style: "neutral", mode: "dark" },
@@ -36,10 +36,10 @@ const LEGACY_THEME_PREFERENCES = {
   "aurora-light": { style: "aurora", mode: "light" },
   vivid: { style: "vivid", mode: "dark" },
   "vivid-light": { style: "vivid", mode: "light" },
-  custom: { style: "beige", mode: "dark" },
-  "custom-light": { style: "beige", mode: "light" },
+  custom: { style: "neutral", mode: "dark" },
+  "custom-light": { style: "neutral", mode: "light" },
 };
-const DEFAULT_THEME_STYLE = "beige";
+const DEFAULT_THEME_STYLE = "neutral";
 const DEFAULT_THEME_MODE = "auto";
 const PREFS_FILE_NAME = "theme-prefs.json";
 const STORAGE_KEYS = {
@@ -52,7 +52,7 @@ const STORAGE_KEYS = {
 
 // Built-in chrome tokens copied from --bg-primary / --text-primary /
 // --text-muted / --bg-tertiary / --accent-orange / --border-light in
-// apps/web/app/styles/themes/*.css. custom* reuse the beige pair.
+// apps/web/app/styles/themes/*.css. custom* reuse the neutral pair.
 const THEME_CHROME = {
   "beige-dark": {
     bg: "#191918",
@@ -129,8 +129,8 @@ const THEME_CHROME = {
   },
 };
 const CUSTOM_FALLBACK_THEME = {
-  custom: "beige-dark",
-  "custom-light": "beige-light",
+  custom: "dark",
+  "custom-light": "light",
 };
 
 function isThemeId(value) {
@@ -159,7 +159,7 @@ function resolveThemePreference(style, mode, systemDark) {
 
 function legacyThemePreference(value, schemaVersion = "2") {
   if (schemaVersion !== "2" && (value === "dark" || value === "light")) {
-    return { style: "beige", mode: value };
+    return { style: "neutral", mode: value };
   }
   const preference = value && Object.prototype.hasOwnProperty.call(LEGACY_THEME_PREFERENCES, value)
     ? LEGACY_THEME_PREFERENCES[value]
@@ -169,7 +169,7 @@ function legacyThemePreference(value, schemaVersion = "2") {
 
 function chromeForTheme(themeId, accentColor) {
   const resolved = CUSTOM_FALLBACK_THEME[themeId]
-    || (THEME_CHROME[themeId] ? themeId : "beige-dark");
+    || (THEME_CHROME[themeId] ? themeId : "dark");
   const chrome = { ...THEME_CHROME[resolved] };
   const accent = normalizeHex(accentColor);
   if (accent) chrome.link = accent;
@@ -217,7 +217,7 @@ function readPrefsFile(filePath) {
   }
 }
 
-function writePrefsFile(filePath, { style, mode, theme, schema = "3", accent = null }) {
+function writePrefsFile(filePath, { style, mode, theme, schema = "4", accent = null }) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = `${filePath}.tmp`;
@@ -289,7 +289,7 @@ function readChromiumLocalStorage(userDataPath) {
     [STORAGE_KEYS.style, LEGACY_THEME_STYLES, "style"],
     [STORAGE_KEYS.mode, THEME_MODES, "mode"],
     [STORAGE_KEYS.legacy, [...THEME_IDS, "auto"], "legacy"],
-    [STORAGE_KEYS.schema, ["1", "2", "3"], "schema"],
+    [STORAGE_KEYS.schema, ["1", "2", "3", "4"], "schema"],
   ];
   for (const name of names) {
     let buffer;
@@ -341,6 +341,9 @@ function resolveFromPrefBag(prefs, systemDark) {
   let style = prefs.style;
   let mode = prefs.mode;
   const schema = prefs.schema || "1";
+  // Schema 4 made neutral the default; a stored beige from before was the
+  // old default written on first run (apps/web/lib/prefs/appearance/theme-pref.ts).
+  if (schema !== "4" && style === "beige") style = "neutral";
   if (!THEME_STYLES.includes(style) || !THEME_MODES.includes(mode)) {
     const migrated = legacyThemePreference(prefs.legacy, schema);
     if (!THEME_STYLES.includes(style)) style = migrated.style;

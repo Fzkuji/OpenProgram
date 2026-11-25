@@ -5,6 +5,8 @@ export interface ProjectGroupSource {
   is_default: boolean;
   hidden?: boolean;
   session_ids?: readonly string[];
+  /** The machine its folder is on; none for this computer. */
+  machine_id?: string | null;
 }
 
 export type ProjectSort = "recency" | "oldest" | "name" | "manual";

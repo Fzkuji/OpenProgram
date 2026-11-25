@@ -9,6 +9,7 @@
  * handler.
  */
 export interface MobileComputer {
+  id?: string;
   name: string;
   /** How it is reached right now: "lan" (Same Wi-Fi) or "anywhere". */
   via: string;
@@ -17,6 +18,9 @@ export interface MobileComputer {
 export interface MobileBridge {
   socket: { url: string; protocols: string[] };
   computer: MobileComputer;
+  /** Every computer paired with this phone (the app sends
+   *  `openprogram-mobile-computers` when the list changes). */
+  computers?: Array<{ id: string; name: string }>;
 }
 
 type Native = { webkit?: { messageHandlers?: { openprogram?: { postMessage(message: unknown): void } } } };
@@ -26,8 +30,12 @@ export function mobileBridge(): MobileBridge | null {
   return window.openprogramMobile ?? null;
 }
 
-/** Ask the app to do something native: scan a code, open the computers list, sign this computer out. */
-export function callMobile(action: "signedOut" | "computers" | "haptic", detail: Record<string, unknown> = {}): void {
+/** Ask the app to do something native: open the computers list, pair or
+ *  switch to another computer, sign this computer out, tap the haptics. */
+export function callMobile(
+  action: "signedOut" | "computers" | "addComputer" | "selectComputer" | "haptic",
+  detail: Record<string, unknown> = {},
+): void {
   (window as unknown as Native).webkit?.messageHandlers?.openprogram?.postMessage({ action, ...detail });
 }
 

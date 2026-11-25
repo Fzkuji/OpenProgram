@@ -431,20 +431,32 @@ class ProcessPool:
         replaced.
         """
         launch = (tuple(extra_args), tuple(sorted(env.items())))
+        stale = None
+        loose = False
         with self._lock:
             entry = self._entries.get(key)
-            if entry is not None and (entry["launch"] != launch or not entry["server"].alive):
+            if entry is not None and entry.get("reload") and not entry["busy"]:
+                # A turn ran in a process of its own meanwhile: this one's thread is behind.
+                self._entries.pop(key, None)
+                stale, entry = entry["server"], None
+            if entry is not None and entry["busy"] and entry["server"].alive:
+                # Another turn is running in it: this one gets a process of its own
+                # rather than a second turn in the same thread, or a restart under it.
+                loose = True
+            elif entry is not None and (entry["launch"] != launch or not entry["server"].alive):
                 self._entries.pop(key, None)
                 stale = entry["server"]
-            else:
-                stale = None
-            if entry is not None and stale is None:
+            elif entry is not None:
                 entry["busy"] += 1
                 entry["used"] = time.monotonic()
                 return entry["server"], False
         if stale is not None:
             stale.close()
         server = (self.starter or start_app_server)(extra_args, env)
+        if loose:
+            with self._lock:
+                self._loose.add(server)
+            return server, True
         with self._lock:
             current = self._entries.get(key)
             if current is not None and current["server"].alive:
@@ -460,6 +472,7 @@ class ProcessPool:
             loose = server in self._loose
             self._loose.discard(server)
         if loose:
+            self._behind(key)
             server.close()
             return
         with self._lock:
@@ -471,11 +484,21 @@ class ProcessPool:
     def discard(self, key: str, server: AppServer) -> None:
         """Forget and stop a process that failed; the next turn starts another."""
         with self._lock:
+            loose = server in self._loose
             self._loose.discard(server)
             entry = self._entries.get(key)
             if entry is not None and entry["server"] is server:
                 self._entries.pop(key, None)
+        if loose:
+            self._behind(key)
         server.kill()
+
+    def _behind(self, key: str) -> None:
+        """A turn ran in a process of its own: the kept one reloads the thread before its next."""
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None:
+                entry["reload"] = True
 
     def close_all(self) -> None:
         with self._lock:
@@ -495,16 +518,24 @@ class ProcessPool:
             server.close()
 
     def _ensure_reaper(self) -> None:
-        if self._reaper is not None and self._reaper.is_alive():
+        # Called under the lock; a reaper leaving clears itself under it too.
+        if self._reaper is not None:
             return
 
         def run() -> None:
-            while True:
-                time.sleep(min(60.0, max(1.0, self.idle_seconds / 4)))
-                self.reap()
+            try:
+                while True:
+                    time.sleep(min(60.0, max(1.0, self.idle_seconds / 4)))
+                    self.reap()
+                    with self._lock:
+                        if not self._entries:
+                            self._reaper = None
+                            return
+            finally:
+                # Ended by an error too: the next process starts another reaper.
                 with self._lock:
-                    if not self._entries:
-                        return
+                    if self._reaper is threading.current_thread():
+                        self._reaper = None
 
         self._reaper = threading.Thread(target=run, name="codex-app-server-reaper", daemon=True)
         self._reaper.start()

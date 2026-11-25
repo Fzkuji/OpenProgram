@@ -22,6 +22,7 @@ code itself holds nothing that belongs to one paper. Keys:
 """
 
 import json
+import re
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -55,9 +56,7 @@ def load(paper_dir: Path) -> Rules:
     """The defaults, with every key of <paper_dir>/workflow/rules.json applied over them."""
     rules = Rules()
     path = Path(paper_dir) / FILE
-    if not path.exists():
-        return rules
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     known = {f.name for f in fields(Rules)}
     unknown = set(data) - known - {"_doc"}
     if unknown:
@@ -65,7 +64,18 @@ def load(paper_dir: Path) -> Rules:
     for key, value in data.items():
         if key != "_doc":
             setattr(rules, key, value)
+    if "main_tex" not in data and not (Path(paper_dir) / rules.main_tex).is_file():
+        rules.main_tex = found_main(Path(paper_dir)) or rules.main_tex
+    if "bib_files" not in data and not any((Path(paper_dir) / b).is_file() for b in rules.bib_files):
+        rules.bib_files = [b.name for b in sorted(Path(paper_dir).glob("*.bib"))] or rules.bib_files
     return rules
+
+
+def found_main(paper: Path) -> str:
+    """The one top-level .tex that starts a document, when rules.json names none."""
+    mains = [tex.name for tex in sorted(paper.glob("*.tex"))
+             if re.search(r"^\s*\\documentclass", tex.read_text(encoding="utf-8", errors="ignore"), re.M)]
+    return mains[0] if len(mains) == 1 else ""
 
 
 __all__ = ["FILE", "Rules", "load"]

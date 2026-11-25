@@ -393,7 +393,7 @@ def test_the_listing_says_when_codex_is_missing(codex, monkeypatch, tmp_path):
     ("profile:fast", False, ["-c", 'profile="fast"'], None),
     ("personality:friendly", True, [], "friendly"),
     ("personality:friendly", False, [], None),
-    (None, True, [], None),
+    (None, True, [], "pragmatic"),  # Default asks for Codex's own again: a personality stays with the thread
 ])
 def test_the_branch_agent_choice_reaches_codex(codex, monkeypatch, choice, listed, launch, param):
     """A profile is a launch argument; a personality goes on thread/start and
@@ -407,3 +407,39 @@ def test_the_branch_agent_choice_reaches_codex(codex, monkeypatch, choice, liste
     for method in ("thread/start", "turn/start"):
         sent = codex.log("in", method)[0]["params"]
         assert sent.get("personality") == param
+
+
+def test_a_second_turn_while_one_runs_gets_its_own_process():
+    from openprogram.runtime.harnesses.codex.client import ProcessPool
+
+    class Server:
+        alive = True
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+        kill = close
+
+    pool = ProcessPool(starter=lambda _a, _e: Server())
+    first, _ = pool.acquire("s1:main", extra_args=[], env={})
+    second, fresh = pool.acquire("s1:main", extra_args=["-c", "profile=\"x\""], env={})
+    assert second is not first and fresh and not first.closed  # the running turn keeps its process
+    pool.release("s1:main", second)
+    assert second.closed and not first.closed
+    pool.release("s1:main", first)
+    again, fresh = pool.acquire("s1:main", extra_args=[], env={})
+    # The kept process never saw the other turn: the next one resumes the thread anew.
+    assert again is not first and fresh and first.closed
+
+
+def test_two_turns_keeping_their_ids_at_once_keep_both():
+    from openprogram.runtime.harnesses import handoff
+    from openprogram.state.store.session.session_store import SessionStore
+    import tempfile
+    store = SessionStore(tempfile.mkdtemp())
+    store.create_session("s1", "main")
+    handoff.write_record(store, "s1", "codex-harness", "main", {"thread_id": "t", "own_turns": ["x"]})
+    handoff.write_record(store, "s1", "codex-harness", "main", {"thread_id": "t", "own_turns": ["x", "a"]})
+    handoff.write_record(store, "s1", "codex-harness", "main", {"thread_id": "t", "own_turns": ["x", "b"]})
+    assert handoff.read_records(store, "s1", "codex-harness")["main"]["own_turns"] == ["x", "a", "b"]

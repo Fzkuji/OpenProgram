@@ -90,9 +90,14 @@ def write_turns(
     start: int = 0,
     predecessor: str = _ROOT_ID,
     indices: Optional[list[int]] = None,
+    offset: int = 0,
 ) -> Optional[str]:
     """Write ``session.turns[start:]`` (or the turns at ``indices``, in
     order, each after the one before); return the last reply's id.
+
+    A turn's nodes are numbered by its index plus ``offset``: after an
+    earlier reading counted turns this one does not, new turns are numbered
+    past what was written then.
 
     Turns already in the session are refreshed in place (same ids), so
     a turn that was still running when first imported gets completed.
@@ -110,7 +115,7 @@ def write_turns(
     for index in (indices if indices is not None else range(start, len(session.turns))):
         turn = session.turns[index]
         started = turn.timestamp or time.time()
-        uid, rid = user_id(prefix, index), reply_id(prefix, index)
+        uid, rid = user_id(prefix, index + offset), reply_id(prefix, index + offset)
         _put(store, writer, session_id, Call(
             id=uid, created_at=started, role=ROLE_USER, output=turn.user_text,
             caller=_ROOT_ID, predecessor=previous,

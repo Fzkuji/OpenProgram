@@ -110,8 +110,9 @@ class ClaudeProcess:
             env=child_env(self.env), text=True, encoding="utf-8", errors="replace", bufsize=1,
             **process_tree_popen_kwargs(),
         )
+        self._stderr_reader = threading.Thread(target=self._read_stderr, name="claude-stderr", daemon=True)
+        self._stderr_reader.start()
         threading.Thread(target=self._read, name="claude-reader", daemon=True).start()
-        threading.Thread(target=self._read_stderr, name="claude-stderr", daemon=True).start()
 
     @property
     def alive(self) -> bool:
@@ -219,7 +220,10 @@ class ClaudeProcess:
         except (OSError, ValueError):
             _log.debug("Claude Code output not read", exc_info=True)
         finally:
-            # Whoever waits on this process hears that it is gone.
+            # Whoever waits on this process hears that it is gone, with all it said on stderr.
+            reader = getattr(self, "_stderr_reader", None)
+            if reader is not None and reader is not threading.current_thread():
+                reader.join(timeout=1)
             self.exited.set()
             for waiting in list(self._answers.values()):
                 waiting.put({"subtype": "error", "error": "Claude Code stopped", "exited": True})
@@ -271,6 +275,8 @@ class Live:
         self.model: Optional[str] = None
         self.effort: Optional[str] = None
         self.mode: Optional[str] = None
+        # A turn ran in a process of its own meanwhile: this one's session is behind.
+        self.behind = False
 
 
 class Pool:
@@ -293,7 +299,7 @@ class Pool:
             live = self._entries.get(key)
             if live is None or live.busy:
                 return None
-            if live.identity == identity and live.process.alive:
+            if live.identity == identity and live.process.alive and not live.behind:
                 live.busy = 1
                 live.used = time.monotonic()
                 return live
@@ -321,6 +327,10 @@ class Pool:
         live.busy = 0
         live.used = time.monotonic()
         with self._lock:
+            if live in self._loose:
+                current = self._entries.get(key)
+                if current is not None:
+                    current.behind = True
             self._loose.discard(live)
             kept = self._entries.get(key) is live
             if kept and (broken or not live.process.alive):

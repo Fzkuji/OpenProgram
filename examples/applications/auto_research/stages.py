@@ -69,12 +69,14 @@ def started(paper: Path, artifact: str) -> bool:
     if artifact.endswith("/"):
         if not path.is_dir():
             return False
-        return any(_own(f) for f in path.rglob("*") if f.is_file() and not f.name.startswith("."))
-    return path.is_file() and _own(path)
+        return any(_own(f, folder(paper)) for f in path.rglob("*") if f.is_file() and not f.name.startswith("."))
+    return path.is_file() and _own(path, folder(paper))
 
 
-def _own(path: Path) -> bool:
-    copy = TEMPLATES / path.name
+def _own(path: Path, root: Path) -> bool:
+    copy = TEMPLATES / path.relative_to(root) if path.is_relative_to(root) else TEMPLATES / path.name
+    if not copy.is_file():
+        copy = TEMPLATES / path.name
     if not copy.is_file():
         return True
     try:

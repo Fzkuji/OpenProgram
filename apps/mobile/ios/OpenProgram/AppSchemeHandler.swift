@@ -144,8 +144,22 @@ private final class ProxyCall: NSObject, URLSessionDataDelegate {
     private let task: WKURLSchemeTask
     private let pageURL: URL
     private let done: () -> Void
-    private var session: URLSession?
+    private var running: URLSessionDataTask?
     private var stopped = false
+
+    /// One session for every forwarded request, so requests reuse its
+    /// connections: a session per request paid a new TLS handshake each
+    /// time, most of a second over the internet. Each request still gets
+    /// its own delegate (`URLSessionTask.delegate`).
+    private static let shared: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 300
+        config.httpMaximumConnectionsPerHost = 8
+        return URLSession(configuration: config, delegate: nil, delegateQueue: .main)
+    }()
 
     init(task: WKURLSchemeTask, pageURL: URL, done: @escaping () -> Void) {
         self.task = task
@@ -154,19 +168,15 @@ private final class ProxyCall: NSObject, URLSessionDataDelegate {
     }
 
     func start(_ request: URLRequest) {
-        let config = URLSessionConfiguration.default
-        config.httpCookieAcceptPolicy = .never
-        config.httpShouldSetCookies = false
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.timeoutIntervalForRequest = 300
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
-        self.session = session
-        session.dataTask(with: request).resume()
+        let task = Self.shared.dataTask(with: request)
+        task.delegate = self
+        running = task
+        task.resume()
     }
 
     func cancel() {
         stopped = true
-        session?.invalidateAndCancel()
+        running?.cancel()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
@@ -193,7 +203,7 @@ private final class ProxyCall: NSObject, URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, task sessionTask: URLSessionTask, didCompleteWithError error: Error?) {
         defer {
-            session.finishTasksAndInvalidate()
+            running = nil
             done()
         }
         guard !stopped else { return }

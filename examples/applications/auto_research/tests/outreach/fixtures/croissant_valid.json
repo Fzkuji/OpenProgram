@@ -1,0 +1,97 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/",
+    "sc": "https://schema.org/",
+    "cr": "http://mlcommons.org/croissant/",
+    "rai": "http://mlcommons.org/croissant/RAI/",
+    "dct": "http://purl.org/dc/terms/",
+    "conformsTo": "dct:conformsTo",
+    "field": "cr:field",
+    "fileObject": "cr:fileObject",
+    "recordSet": "cr:recordSet",
+    "source": "cr:source",
+    "extract": "cr:extract",
+    "column": "cr:column",
+    "dataType": {
+      "@id": "cr:dataType",
+      "@type": "@vocab"
+    },
+    "citeAs": "cr:citeAs"
+  },
+  "@type": "sc:Dataset",
+  "conformsTo": "http://mlcommons.org/croissant/1.0",
+  "name": "tiny-scores",
+  "description": "Two scored sentences for testing.",
+  "license": "CC-BY-4.0",
+  "url": "https://example.org/tiny",
+  "creator": [
+    {
+      "@type": "sc:Person",
+      "name": "Jane Doe"
+    }
+  ],
+  "datePublished": "2026-01-01",
+  "version": "1.0.0",
+  "keywords": [
+    "test"
+  ],
+  "citeAs": "@misc{tiny}",
+  "rai:dataCollection": "Written by hand.",
+  "rai:dataCollectionType": "Manual Human Curation",
+  "rai:dataBiases": "Two English sentences only.",
+  "rai:personalSensitiveInformation": "None.",
+  "rai:dataUseCases": "Testing loaders.",
+  "rai:dataLimitations": "Far too small for training.",
+  "rai:dataSocialImpact": "None expected.",
+  "rai:dataPreprocessingProtocol": "None.",
+  "rai:dataAnnotationProtocol": "Scores set by the author.",
+  "rai:dataReleaseMaintenancePlan": "Kept as is.",
+  "distribution": [
+    {
+      "@type": "cr:FileObject",
+      "@id": "data.csv",
+      "name": "data.csv",
+      "contentUrl": "data.csv",
+      "encodingFormat": "text/csv",
+      "sha256": "86891a8ed0d1c889fb65ded2e38b7a650d9745883137beb0de5f1f805144d1f2"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "cr:RecordSet",
+      "@id": "rows",
+      "name": "rows",
+      "field": [
+        {
+          "@type": "cr:Field",
+          "@id": "rows/id",
+          "name": "id",
+          "dataType": "sc:Integer",
+          "source": {
+            "fileObject": {
+              "@id": "data.csv"
+            },
+            "extract": {
+              "column": "id"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "rows/text",
+          "name": "text",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "data.csv"
+            },
+            "extract": {
+              "column": "text"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

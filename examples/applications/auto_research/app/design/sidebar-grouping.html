@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>侧边栏分组方案</title>
+<link rel="stylesheet" href="../ui/theme.css">
+<style>
+  body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font: 14px/1.45 var(--font-sans, -apple-system, "PingFang SC", system-ui, sans-serif); }
+  header { padding: 24px 32px 8px; }
+  h1 { margin: 0 0 6px; font-size: 18px; color: var(--text-bright); font-weight: 600; }
+  header p { margin: 0; color: var(--text-muted); max-width: 900px; }
+  .row { display: flex; gap: 28px; padding: 20px 32px 40px; align-items: flex-start; overflow-x: auto; }
+  .col { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; }
+  .col h2 { margin: 0; font-size: 14px; color: var(--text-bright); font-weight: 600; }
+  .col .why { margin: 0; width: 248px; color: var(--text-muted); font-size: 12px; }
+  .col.rec h2::after { content: "推荐"; margin-left: 8px; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--text-bright); }
+  nav { width: 248px; height: 720px; overflow-y: auto; box-sizing: border-box; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px;
+        background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; }
+  .item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 6px; font-size: 14px; color: var(--text-primary); cursor: pointer; border: 0; background: none; text-align: left; width: 100%; box-sizing: border-box; font-family: inherit; }
+  .item:hover { background: var(--bg-hover); }
+  .item.on { background: var(--accent); color: var(--text-bright); font-weight: 500; }
+  .item.muted { color: var(--text-muted); }
+  .item .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .item .n { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .label { display: flex; align-items: center; gap: 6px; padding: 16px 10px 4px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .label .n { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .sub { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--text-primary); cursor: pointer; border: 0; background: none; width: 100%; font-family: inherit; text-align: left; }
+  .sub:hover { background: var(--bg-hover); }
+  .sub .n { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .chev { width: 14px; height: 14px; transition: transform .15s; flex: none; color: var(--text-muted); }
+  .open > .sub .chev, .open > .label .chev { transform: rotate(90deg); }
+  .kids { display: none; flex-direction: column; gap: 2px; padding-left: 8px; }
+  .open > .kids { display: flex; }
+  .ico { width: 16px; height: 16px; flex: none; }
+  .search { margin: 4px 4px 6px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-muted); display: flex; align-items: center; padding: 0 10px; font-size: 13px; gap: 8px; }
+  .kind { margin: 8px 4px 4px; align-self: flex-start; padding: 4px 10px; border-radius: 6px; font-size: 13px; background: var(--bg-hover); color: var(--text-bright); }
+  .lib { width: 560px; height: 720px; overflow-y: auto; box-sizing: border-box; padding: 20px 24px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 10px; }
+  .lib h3 { margin: 0 0 4px; font-size: 16px; color: var(--text-bright); }
+  .lib .g { margin-top: 18px; }
+  .lib .g b { display: block; font-size: 13px; color: var(--text-bright); margin-bottom: 2px; }
+  .lib .g span.d { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-primary); background: var(--bg-secondary); }
+  .chip.pinned { background: var(--accent); color: var(--text-bright); }
+  .pair { display: flex; gap: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>侧边栏怎么分组</h1>
+  <p>同一个“方法类”项目，89 个任务里这类工作会用到 84 个。左边是现在的样子，右边三版是改法。点分组可以展开收起。</p>
+</header>
+<div class="row" id="row"></div>
+
+<script>
+const PASS = new Set(["调研材料","想法与研究问题","实验计划","章节计划","参考文献核查"]);
+const ON = "实验循环";
+const NOT_FOR_METHOD = ["领域综述","分类体系","基准污染检查","数据集发布","Croissant 元数据"];
+
+// Current order: three phases, registry order
+const CURRENT = {
+  "研究": ["调研材料","新工作跟踪","想法与研究问题","想法生成","组合式想法","论文精读","支持文献独立性","主张与文献对照","文献对比表","研究地图","无人值守研究","组会讨论","质性主题分析","人工评测问卷","人工评测分析","荟萃分析","共识分析","基金项目检索","申请要求清单","基金申请书","实验计划","实验循环","选题趋势","新工作排序","数据探索","实验方法检查","消融定位","超参数搜索","种子数功效分析","显著性检验","干净环境复现","远程运行","基线代码","基线复现","实验证据","研究笔记"],
+  "写作": ["章节计划","论文检查","实验设置核对","结果数字核对","漏掉的更强基线","基线数字核对","逐段文献推荐","速读测试","定理形式化","定理证明","参考文献核查","论文图表","写作风格","论文翻译","方法示意图","图表标题检查","论文校对","引文图谱","投稿前找人审读","论文评审"],
+  "发布": ["代码 Wiki","代码来源与许可证核查","软件引用文件","代码发布","海报与报告材料","审稿回复","文本重合检查","播客与讲解视频","投稿前检查","arXiv 打包","论文声明","AI 使用声明","选投会议","隐藏文字检查","图片复用检查","报告问答准备","论文工具包","发表后跟踪","引用预测","技术转化评估","写作溯源","终稿检查","匿名补充材料","换投会议","投稿表单信息","论文列表","项目主页","会议清单"],
+};
+
+// Grouped by what the author is trying to do
+const GROUPS = [
+  ["研究", [
+    ["找方向", "读领域、跟新工作、出想法", ["调研材料","新工作跟踪","新工作排序","选题趋势","想法与研究问题","想法生成","组合式想法","组会讨论","研究地图"]],
+    ["读文献", "精读、对比、拿文献验证主张", ["论文精读","文献对比表","主张与文献对照","支持文献独立性","荟萃分析"]],
+    ["做实验", "从计划到跑出结果", ["实验计划","数据探索","基线代码","基线复现","实验循环","超参数搜索","种子数功效分析","消融定位","远程运行","无人值守研究","研究笔记"]],
+    ["检验结果", "结果站不站得住", ["实验方法检查","显著性检验","共识分析","干净环境复现","实验证据"]],
+    ["人工评测与访谈", "请人打分、分析访谈", ["人工评测问卷","人工评测分析","质性主题分析"]],
+    ["基金", "找项目、对要求、写申请书", ["基金项目检索","申请要求清单","基金申请书"]],
+  ]],
+  ["写作", [
+    ["写稿", "", ["章节计划","逐段文献推荐","写作风格","论文翻译"]],
+    ["图表", "", ["论文图表","方法示意图","图表标题检查"]],
+    ["核对数字和引用", "", ["论文检查","实验设置核对","结果数字核对","基线数字核对","漏掉的更强基线","参考文献核查","引文图谱"]],
+    ["定理", "", ["定理形式化","定理证明"]],
+    ["审读", "", ["速读测试","论文校对","投稿前找人审读","论文评审"]],
+  ]],
+  ["发布", [
+    ["投稿", "", ["选投会议","会议清单","投稿前检查","投稿表单信息","论文声明","AI 使用声明","写作溯源","文本重合检查","隐藏文字检查","图片复用检查","匿名补充材料","arXiv 打包"]],
+    ["审稿之后", "", ["审稿回复","终稿检查","换投会议"]],
+    ["开源代码", "", ["代码发布","代码 Wiki","代码来源与许可证核查","软件引用文件","论文工具包"]],
+    ["介绍给别人", "", ["项目主页","海报与报告材料","报告问答准备","播客与讲解视频","论文列表"]],
+    ["发表之后", "", ["发表后跟踪","引用预测","技术转化评估"]],
+  ]],
+];
+
+// Option C: the flow in six steps, no second level
+const STEPS = [
+  ["1 找方向", ["调研材料","新工作跟踪","新工作排序","选题趋势","想法与研究问题","想法生成","组合式想法","组会讨论","研究地图","论文精读","文献对比表","主张与文献对照","支持文献独立性","荟萃分析"]],
+  ["2 做实验", ["实验计划","数据探索","基线代码","基线复现","实验循环","超参数搜索","种子数功效分析","消融定位","远程运行","无人值守研究","研究笔记","实验方法检查","显著性检验","共识分析","干净环境复现","实验证据","人工评测问卷","人工评测分析","质性主题分析"]],
+  ["3 写论文", ["章节计划","逐段文献推荐","写作风格","论文翻译","论文图表","方法示意图","图表标题检查","定理形式化","定理证明"]],
+  ["4 投稿前核对", ["论文检查","实验设置核对","结果数字核对","基线数字核对","漏掉的更强基线","参考文献核查","引文图谱","速读测试","论文校对","投稿前找人审读","论文评审"]],
+  ["5 投稿与审稿", ["选投会议","会议清单","投稿前检查","投稿表单信息","论文声明","AI 使用声明","写作溯源","文本重合检查","隐藏文字检查","图片复用检查","匿名补充材料","arXiv 打包","审稿回复","终稿检查","换投会议"]],
+  ["6 发布之后", ["代码发布","代码 Wiki","代码来源与许可证核查","软件引用文件","论文工具包","项目主页","海报与报告材料","报告问答准备","播客与讲解视频","论文列表","发表后跟踪","引用预测","技术转化评估"]],
+  ["基金", ["基金项目检索","申请要求清单","基金申请书"]],
+];
+
+const chev = '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4"/></svg>';
+function icon(t) {
+  if (t === ON) return '<svg class="ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--accent-blue, #6ea8fe)" stroke-width="1.5"/><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="var(--accent-blue, #6ea8fe)"/></svg>';
+  if (PASS.has(t)) return '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.2 8.2l1.9 1.9 3.7-3.9"/></svg>';
+  return '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="var(--text-muted)" stroke-width="1.3" stroke-dasharray="3 3"><circle cx="8" cy="8" r="6.5"/></svg>';
+}
+const item = (t, muted) => `<button class="item${t === ON ? " on" : ""}${muted ? " muted" : ""}">${icon(t)}<span class="t">${t}</span></button>`;
+const done = (list) => list.filter((t) => PASS.has(t)).length;
+const HEAD = '<button class="item"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="var(--text-muted)" stroke-width="1.3"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="t">概览</span></button><span class="kind">方法类论文 ▾</span>';
+const fold = (cls, head, kids, open) => `<div class="${open ? "open" : ""}">${head.replace("<button", `<button onclick="this.parentElement.classList.toggle('open')"`)}<div class="kids">${kids}</div></div>`;
+const unused = fold("", `<button class="label" style="border:0;background:none;width:100%;cursor:pointer;font-family:inherit">${chev}这类工作不用<span class="n">${NOT_FOR_METHOD.length}</span></button>`, NOT_FOR_METHOD.map((t) => item(t, true)).join(""), false);
+
+function current() {
+  let h = HEAD;
+  for (const [p, list] of Object.entries(CURRENT)) h += `<div class="label">${p}<span class="n">${done(list)}/${list.length}</span></div>` + list.map((t) => item(t)).join("");
+  return h + unused;
+}
+function optionA() {
+  let h = HEAD + '<div class="search">⌕ 找任务</div>';
+  for (const [p, subs] of GROUPS) {
+    const all = subs.flatMap((s) => s[2]);
+    h += `<div class="label">${p}<span class="n">${done(all)}/${all.length}</span></div>`;
+    for (const [name, , list] of subs) {
+      const open = list.includes(ON);
+      h += fold("", `<button class="sub">${chev}${name}<span class="n">${done(list)}/${list.length}</span></button>`, list.map((t) => item(t)).join(""), open);
+    }
+  }
+  return h + unused;
+}
+const PINNED = ["调研材料","想法与研究问题","实验计划","实验循环","显著性检验","章节计划","结果数字核对","参考文献核查","论文评审"];
+function optionB() {
+  let h = HEAD;
+  h += '<div class="label">正在用<span class="n">' + PINNED.length + '</span></div>' + PINNED.map((t) => item(t)).join("");
+  h += '<div class="label">建议下一个</div>' + ["显著性检验","论文图表"].filter((t) => !PINNED.includes(t)).map((t) => item(t)).join("");
+  h += '<button class="item" style="margin-top:12px"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="var(--text-muted)" stroke-width="1.4"><path d="M8 3v10M3 8h10"/></svg><span class="t">全部任务</span><span class="n">84</span></button>';
+  return h;
+}
+function library() {
+  let h = '<h3>全部任务</h3><div style="color:var(--text-muted);font-size:12px">点一个任务打开它，用过的会自动留在侧边栏“正在用”里。</div><div class="search" style="margin:12px 0 0">⌕ 找任务</div>';
+  for (const [p, subs] of GROUPS) {
+    h += `<div class="label" style="padding-left:0;padding-top:20px">${p}</div>`;
+    for (const [name, about, list] of subs) h += `<div class="g" style="margin-top:8px"><b>${name}</b>${about ? `<span class="d">${about}</span>` : '<span class="d"></span>'}<div class="chips">${list.map((t) => `<span class="chip${PINNED.includes(t) ? " pinned" : ""}">${t}</span>`).join("")}</div></div>`;
+  }
+  return h;
+}
+function optionC() {
+  let h = HEAD;
+  for (const [name, list] of STEPS) {
+    const open = list.includes(ON);
+    h += fold("", `<button class="label" style="border:0;background:none;width:100%;cursor:pointer;font-family:inherit;color:var(--text-primary);font-size:13px">${chev}${name}<span class="n">${done(list)}/${list.length}</span></button>`, list.map((t) => item(t)).join(""), open);
+  }
+  return h + unused;
+}
+
+const cols = [
+  ["现在", "三个大类直接平铺 84 项，要一直往下滚，同一类里的任务也没有顺序。", current(), false, ""],
+  ["方案 A：大类下面再分小组", "保留研究 / 写作 / 发布，下面按“想做什么”分成 16 个小组，默认收起，只展开正在做的那组；顶上加个搜索。一屏能看到全部结构，每组 2–12 项。", optionA(), true, ""],
+  ["方案 B：侧边栏只放在用的", "侧边栏只有跑过的、正在做的和建议下一个，通常十来项；其余放进“全部任务”页，按同样的小组排开。最清爽，但不常用的任务要多点一下才找得到。", optionB(), false, library()],
+  ["方案 C：按做论文的先后分 6 步", "不再分研究 / 写作 / 发布，按时间顺序分成 6 步加基金，每步一层、默认只展开当前这步。顺序直观，但每步仍有 9–19 项。", optionC(), false, ""],
+];
+document.getElementById("row").innerHTML = cols.map(([title, why, nav, rec, extra]) =>
+  `<div class="col${rec ? " rec" : ""}"><h2>${title}</h2><p class="why">${why}</p>${extra ? `<div class="pair"><nav>${nav}</nav><div class="lib">${extra}</div></div>` : `<nav>${nav}</nav>`}</div>`).join("");
+</script>
+</body>
+</html>

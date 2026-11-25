@@ -29,11 +29,11 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import claude_code, deepseek_harness
-from .codex_sync import _project_of, _tip, _write_records, thread_records
+from .codex_sync import _after, _project_of, _tip, _write_records, thread_records
 from .ledger import locked
 from .model import AGENT_LABELS, CLAUDE_CODE, DEEPSEEK_HARNESS, ExternalSession
 from .sanitize import remove_secret_values, remove_secrets
-from .writer import node_prefix, reply_id, write_turns
+from .writer import node_prefix, reply_id, user_id, write_turns
 
 _log = logging.getLogger(__name__)
 
@@ -233,12 +233,50 @@ def _link_existing(store, session_id: str, item: Item, row: dict, entry: dict) -
         _write_records(store, session_id, item.id, None, tip, provider=provider)
 
 
-def _append(store, session_id: str, item: Item, session: ExternalSession, entry: dict) -> int:
-    """Write the turns the app added since the last sync; how many."""
+def _last_written(store, session_id: str, item: Item, session: ExternalSession,
+                  last: int) -> Optional[tuple[int, int]]:
+    """(Its node number, its index now) of the newest turn written here that the app still has, when every turn
+    written after it was one the app no longer counts as a turn (Claude Code's interruption
+    notes, which an earlier reading took for turns); None otherwise, as for a rewind."""
+    prefix = node_prefix(item.agent, item.id)
+    index_of = {turn.fingerprint(): k for k, turn in enumerate(session.turns)}
+    for node in range(last, -1, -1):
+        found = store.get_messages_by_id(session_id, [user_id(prefix, node)])
+        written = found[0] if found else {}
+        index = index_of.get(written.get("import_fingerprint"))
+        if index is not None:
+            return node, index
+        if not str(written.get("content") or "").startswith(claude_code.INTERRUPTED):
+            return None  # a turn the app took back: what is here stays as it is
+    return None
+
+
+from .engine_turns import Busy as _Busy  # noqa: E402 - an engine turn started after the reading
+
+
+def _append(store, session_id: str, item: Item, session: ExternalSession, entry: dict,
+            since: int = 0) -> int:
+    """Write the turns the app added since the last sync; how many. ``since`` is how many
+    engine turns had started in the agent session when it was read (``engine_turns.started``)."""
     done = int(entry.get("turns") or 0)
+    offset = int(entry.get("offset") or 0)
     if done and (done > len(session.turns)
                  or session.turns[done - 1].fingerprint() != entry.get("last_fingerprint")):
-        return -1  # rewound in the app: what is here stays as it is
+        # The last turn written, found earlier: an earlier reading counted turns this one
+        # does not (Claude Code's interruption notes). New turns are numbered past it.
+        last = done - 1 + offset
+        written = _last_written(store, session_id, item, session, last)
+        if written is None:
+            return -1  # rewound in the app: what is here stays as it is
+        node, found = written
+        # New turns are numbered after every node written, the notes' too. The last turn
+        # written may still have been running then, unless it was a note skipped here.
+        offset = last - found
+        done = found + 1
+        rerun = node == last
+    else:
+        rerun = True
+    entry["offset"] = offset
     row = store.get_session(session_id) or {}
     _retitle(store, session_id, row, session)
     tip = entry.get("last_node_id")
@@ -246,26 +284,58 @@ def _append(store, session_id: str, item: Item, session: ExternalSession, entry:
     records = thread_records(row, item.id, provider=provider)
     tip = _tip(records, tip)
     own = {t for r in records for t in (r.get("own_turns") or [])}
-    indices = [i for i in range(done, len(session.turns)) if not (own and session.turns[i].turn_id in own)]
+    # After what the conversation shows now: when it went on here, the app's new turns
+    # follow that; when another branch is shown, they follow the thread's own.
+    after, on_head = _after(store, session_id, row, tip)
+
+    shown: Optional[list[str]] = None
+
+    def engine_ran(turn) -> bool:
+        nonlocal shown
+        if own and turn.turn_id in own:
+            return True
+        if not records or turn.blocks or turn.turn_id:
+            return False
+        # A message an engine here sent and stopped before any answer: DeepSeek Harness
+        # names no id for it, but the conversation shows it already (after any handoff note).
+        if shown is None:
+            # Messages sent here, as the app's reading has them (secrets taken out).
+            shown = [remove_secret_values(str(m.get("content") or "")).strip()
+                     for m in store.get_branch(session_id, after)
+                     if m.get("role") == "user" and m.get("source") != "import"] if after != "ROOT" else []
+        text = turn.user_text.strip()
+        for k, sent in enumerate(shown):
+            if sent and (text == sent or text.endswith("\n\n" + sent)):
+                del shown[k]  # one message sent here stands for one turn
+                return True
+        return False
+
+    indices = [i for i in range(done, len(session.turns)) if not engine_ran(session.turns[i])]
     prefix = node_prefix(item.agent, item.id)
     # The last turn written may still have been running in the app then.
-    if done and tip == reply_id(prefix, done - 1) and row.get("head_id") in (tip, None):
+    # When another branch is shown, the thread's tip is its own last turn: rewritten in place.
+    if rerun and done and tip == reply_id(prefix, done - 1 + offset) and (row.get("head_id") in (tip, None) or not on_head):
         if session.turns[done - 1].digest() != entry.get("last_digest"):
             indices.insert(0, done - 1)
     if not indices:
         return 0
-    # After what the conversation shows now: when it went on here, the
-    # app's new turns follow that. A turn written before keeps its place.
-    head = row.get("head_id") or tip or "ROOT"
-    last =write_turns(store, session_id, session, indices=indices, predecessor=head)
-    if not last:
-        return 0
-    store.set_head(session_id, last)
-    if last != tip:
-        # The session has these turns: the engine hands it only what follows.
-        _write_records(store, session_id, item.id, tip, last, provider=provider)
-    store.update_session(session_id, updated_at=item.updated_at or time.time())
-    store.commit_turn(session_id, f"sync from {AGENT_LABELS[item.agent]}")
+    # A turn written before keeps its place.
+    from .engine_turns import unchanged
+    # Written only if no engine turn started since the reading: one that did may be in it,
+    # its ids not yet kept. No turn starts while this writes.
+    with unchanged((provider, item.id), since) as still:
+        if not still:
+            raise _Busy()
+        last = write_turns(store, session_id, session, indices=indices, predecessor=after, offset=offset)
+        if not last:
+            return 0
+        if on_head:
+            store.set_head(session_id, last)
+        if last != tip:
+            # The session has these turns: the engine hands it only what follows.
+            _write_records(store, session_id, item.id, tip, last, provider=provider)
+        store.update_session(session_id, updated_at=item.updated_at or time.time())
+        store.commit_turn(session_id, f"sync from {AGENT_LABELS[item.agent]}")
     return len([i for i in indices if i >= done])
 
 
@@ -284,10 +354,10 @@ def _running(item: Item) -> bool:
     return is_running((ENGINES[item.agent][0], item.id))
 
 
-def _engine_threads(store, agent: str) -> set[str]:
-    """Every agent session an engine ran a conversation in."""
+def _engine_threads(store, agent: str) -> dict[str, str]:
+    """Every agent session an engine ran a conversation in → the conversation here that holds it."""
     provider = ENGINES[agent][0]
-    threads: set[str] = set()
+    threads: dict[str, str] = {}
     try:
         # Every conversation: one switched back to OpenProgram still owns its agent sessions.
         rows = store.list_sessions(limit=1_000_000, include_archived=True)
@@ -296,7 +366,9 @@ def _engine_threads(store, agent: str) -> set[str]:
     for listed in rows or []:
         row = store.get_session(listed.get("id")) or {}
         records = (row.get("harness_threads") or {}).get(provider) or {}
-        threads.update(str(r.get("thread_id")) for r in records.values() if isinstance(r, dict) and r.get("thread_id"))
+        for record in records.values():
+            if isinstance(record, dict) and record.get("thread_id"):
+                threads.setdefault(str(record["thread_id"]), str(listed.get("id")))
     return threads
 
 
@@ -309,7 +381,7 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
     results: list[dict[str, Any]] = []
     if not found:
         return results
-    engine_threads: dict[str, set[str]] = {}
+    engine_threads: dict[str, dict[str, str]] = {}
     with locked(ledger_root) as ledger:
         for item in found:
             entry = ledger.get(item.agent, item.id) or {}
@@ -317,15 +389,26 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
             session_id = entry.get("session_id")
             row = store.get_session(session_id) if session_id else None
             alive = row is not None
-            if entry.get("engine"):
-                continue
-            if not alive and not entry:
-                # A session an engine started or forked here is that conversation's, not a new one.
+            if not alive and (not entry or (entry.get("engine") and not session_id and item.agent == DEEPSEEK_HARNESS)):
+                # A session an engine started or forked here is that conversation's, not a new one:
+                # turns made in the app later go to it, past those the engine ran.
                 if item.agent not in engine_threads:
                     engine_threads[item.agent] = _engine_threads(store, item.agent)
-                if item.id in engine_threads[item.agent]:
-                    ledger.put(item.agent, item.id, {"engine": True})  # known from now on, even once deleted
+                owner = engine_threads[item.agent].get(item.id)
+                if owner and item.agent != DEEPSEEK_HARNESS:
+                    # A Claude Code fork starts with copies of its parent's records, turns already
+                    # here: its later turns are not read (its own app does not list it either).
+                    ledger.put(item.agent, item.id, {"engine": True})
                     continue
+                if owner:
+                    entry = {"engine": True, "session_id": owner, "turns": 0}
+                    ledger.put(item.agent, item.id, entry)  # known from now on, even once deleted
+                    session_id = owner
+                    row = store.get_session(owner)
+                    alive = row is not None
+            if entry.get("engine") and not alive:
+                continue  # its conversation here was deleted: never brought back as a new one
+            engine = {"engine": True, "session_id": session_id} if entry.get("engine") else {}
             if alive and _unlinked(row, item):
                 try:
                     _link_existing(store, session_id, item, row, entry)  # synced before its engine existed
@@ -339,14 +422,32 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
                 # Still being written: read once it rests, not on every poll while it streams.
                 results.append({"agent": item.agent, "source_id": item.id, "status": "deferred"})
                 continue
+            from .engine_turns import started
+            since = started((ENGINES[item.agent][0], item.id))
             try:
                 session = remove_secrets(item.read())
+                # A last message with no answer and no id yet is read once it has one; one
+                # left like that is a message stopped before any answer, written as such.
+                waiting = False
+                if time.time() - item.updated_at < UNANSWERED_SECONDS:
+                    written = int(entry.get("turns") or 0) if alive else 0
+                    while (len(session.turns) > written and not session.turns[-1].blocks
+                           and not session.turns[-1].turn_id):
+                        session.turns.pop()
+                        waiting = True
                 if not any(t.blocks for t in session.turns):
-                    ledger.put(item.agent, item.id, {"empty": True, "path": str(session.path),
-                                                     "last_message_at": item.updated_at})
+                    ledger.put(item.agent, item.id, {**engine, "empty": True, "path": str(session.path),
+                                                     "last_message_at": item.updated_at - 1 if waiting else item.updated_at})
+                    if waiting:
+                        results.append({"agent": item.agent, "source_id": item.id, "status": "deferred"})
                     continue
                 if alive:
-                    added = _append(store, session_id, item, session, entry)
+                    try:
+                        added = _append(store, session_id, item, session, entry, since)
+                    except _Busy:
+                        # An engine turn started there since it was read: read it again after.
+                        results.append({"agent": item.agent, "source_id": item.id, "status": "deferred"})
+                        continue
                     if added < 0:
                         # Rewound in the app: the ledger stays at what was written, so turns
                         # added later are never put after ones the app took back.
@@ -356,16 +457,21 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
                 else:
                     session_id = _create(store, item, session, agent_id or _default_agent_id())
                     status, added = "created", len(session.turns)
-                head = (store.get_session(session_id) or {}).get("head_id")
+                now = store.get_session(session_id) or {}
+                # The thread's last turn here (not the head, when another branch is shown).
+                head = _tip(thread_records(now, item.id, provider=ENGINES[item.agent][0]), now.get("head_id"))
                 ledger.put(item.agent, item.id, {
-                    "session_id": session_id, "path": str(session.path),
+                    **engine, "session_id": session_id, "path": str(session.path),
                     "turns": len(session.turns), "last_node_id": head,
                     "last_fingerprint": session.turns[-1].fingerprint(),
                     "last_digest": session.turns[-1].digest(),
-                    "last_message_at": item.updated_at, "imported_at": time.time(),
+                    # One waiting for its answer is read again until it has one or stops waiting.
+                    "last_message_at": item.updated_at - 1 if waiting else item.updated_at,
+                    "imported_at": time.time(),
+                    "offset": int(entry.get("offset") or 0) if alive else 0,
                 })
                 results.append({"agent": item.agent, "source_id": item.id, "session_id": session_id,
-                                "status": status, "turns_added": added,
+                                "status": status, "turns_added": added, "waiting": waiting,
                                 "title": remove_secret_values(session.title)})
             except Exception as exc:  # noqa: BLE001 - one unreadable conversation must not stop the rest
                 _log.warning("%s conversation %s not synced", item.agent, item.id, exc_info=True)
@@ -378,6 +484,8 @@ POLL_SECONDS = 10.0
 #: How long a conversation's file rests before it is read: a session that is
 #: streaming is parsed once it pauses, not on every poll.
 SETTLE_SECONDS = 4.0
+#: How long a last message with no answer and no id waits for one before it is written as stopped.
+UNANSWERED_SECONDS = 60.0
 
 
 def _stamp(found: list[Item]) -> tuple:
@@ -401,7 +509,7 @@ async def run_sync(stop, notify) -> None:
                 results = await asyncio.to_thread(sync, found=found, settle=SETTLE_SECONDS)
                 if any(r.get("status") in ("created", "appended") for r in results):
                     notify()
-                if any(r.get("status") == "deferred" for r in results):
+                if any(r.get("status") == "deferred" or r.get("waiting") for r in results):
                     seen = ()  # what was left until it rests is read on the next poll
         except Exception:  # noqa: BLE001 - the next change tries again
             _log.warning("app conversations not synced", exc_info=True)

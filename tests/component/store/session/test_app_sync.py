@@ -209,6 +209,43 @@ def test_a_deepseek_conversation_goes_on_in_its_session(apps, store, tmp_path) -
     assert records["b"]["seen"] == store.get_session(session_id)["head_id"] and records["b"]["synced_at"]
 
 
+def _own_conversation(store, *, seen="mine_reply"):
+    """A conversation here whose DeepSeek Harness engine started the app's session-1 (reply r1)."""
+    store.create_session("mine", "main", title="Mine")
+    store.append_message("mine", {"id": "q", "role": "user", "content": "one", "parent_id": None,
+                                  "caller": "ROOT", "predecessor": "ROOT", "created_at": 1000})
+    store.append_message("mine", {"id": "mine_reply", "role": "assistant", "content": "first",
+                                  "parent_id": "q", "caller": "ROOT", "predecessor": "q", "created_at": 1001})
+    store.set_head("mine", "mine_reply")
+    from openprogram.runtime.harnesses import handoff
+    handoff.write_record(store, "mine", "deepseek-harness", "b", {
+        "thread_id": "session-1", "seen": seen, "at": time.time(), "own_turns": ["r1"]})
+
+
+def test_a_session_an_engine_started_gets_the_apps_later_turns(apps, store, tmp_path) -> None:
+    """Not a new conversation: the turn made in the app follows the engine's own."""
+    _own_conversation(store)
+    apps.deepseek("session-1", [DEEPSEEK_TURN[0], _ask("one"), _reply("r1", "first", 0),
+                                _ask("two"), _reply("r2", "second", 1)])
+    [result] = _sync(apps, store, tmp_path)
+    assert result["session_id"] == "mine" and result["turns_added"] == 1
+    assert _texts(store, "mine") == ["one", "first", "two", "second"]
+    assert [s["id"] for s in store.list_sessions(limit=10)] == ["mine"]
+
+
+def test_app_turns_follow_their_thread_when_another_branch_is_shown(apps, store, tmp_path) -> None:
+    _own_conversation(store)
+    store.append_message("mine", {"id": "other", "role": "user", "content": "elsewhere", "parent_id": "q",
+                                  "caller": "ROOT", "predecessor": "q", "created_at": 1002})
+    store.set_head("mine", "other")
+    apps.deepseek("session-1", [DEEPSEEK_TURN[0], _ask("one"), _reply("r1", "first", 0),
+                                _ask("two"), _reply("r2", "second", 1)])
+    _sync(apps, store, tmp_path)
+    assert store.get_session("mine")["head_id"] == "other"
+    [record] = store.get_session("mine")["harness_threads"]["deepseek-harness"].values()
+    assert [m["content"] for m in store.get_branch("mine", record["seen"])][-2:] == ["two", "second"]
+
+
 def test_a_conversation_synced_before_its_engine_is_put_on_it(apps, store, tmp_path) -> None:
     apps.claude("cli-1", 1)
     [result] = _sync(apps, store, tmp_path)
@@ -219,3 +256,93 @@ def test_a_conversation_synced_before_its_engine_is_put_on_it(apps, store, tmp_p
     row = store.get_session(session_id)
     [record] = row["harness_threads"]["claude-code-harness"].values()
     assert record["thread_id"] == "cli-1" and record["seen"] == row["head_id"]
+
+
+def test_turns_an_earlier_reading_counted_do_not_stop_the_sync(apps, store, tmp_path) -> None:
+    """An earlier reading counted a turn this one does not (Claude Code's interruption note):
+    the app's new turns still come, numbered past what was written."""
+    from openprogram.state.store.session.external_import.ledger import locked
+    from openprogram.state.store.session.external_import.writer import node_prefix, user_id
+    apps.claude("cli-1", 2)
+    [created] = _sync(apps, store, tmp_path)
+    session_id = created["session_id"]
+    # As an earlier reading wrote it: a Stop's note as a third turn, last in the ledger.
+    note = user_id(node_prefix("claude-code", "cli-1"), 2)
+    head = store.get_session(session_id)["head_id"]
+    store.append_message(session_id, {"id": note, "role": "user", "content": "[Request interrupted by user]",
+                                      "parent_id": head, "caller": "ROOT", "predecessor": head,
+                                      "created_at": 1500, "import_fingerprint": "note"})
+    store.set_head(session_id, note)
+    with locked(tmp_path / "ledger") as ledger:
+        entry = ledger.get("claude-code", "cli-1")
+        ledger.put("claude-code", "cli-1", {**entry, "turns": 3, "last_fingerprint": "note",
+                                            "last_node_id": note + "_reply", "last_digest": "note"})
+    apps.claude("cli-1", 3, activity=3000)
+    [result] = _sync(apps, store, tmp_path)
+    assert (result["status"], result["turns_added"]) == ("appended", 1)
+    texts = _texts(store, session_id)
+    assert texts[-2:] == ["question 2", "answer 2"] and texts.count("question 1") == 1
+    assert store.message_exists(session_id, user_id(node_prefix("claude-code", "cli-1"), 3))
+    assert _sync(apps, store, tmp_path) == []
+
+
+def test_a_rewind_in_the_app_leaves_the_conversation_as_it_is(apps, store, tmp_path) -> None:
+    apps.claude("cli-1", 3)
+    [created] = _sync(apps, store, tmp_path)
+    before = _texts(store, created["session_id"])
+    apps.claude("cli-1", 2, activity=3000)  # the app went back a turn
+    _sync(apps, store, tmp_path)
+    assert _texts(store, created["session_id"]) == before
+
+
+def test_a_turn_still_running_after_a_note_is_completed(apps, store, tmp_path) -> None:
+    """An earlier reading wrote A, a Stop's note, then B while B was still running: B's answer still comes."""
+    from openprogram.state.store.session.external_import import claude_code
+    from openprogram.state.store.session.external_import.codex_sync import _write_records
+    from openprogram.state.store.session.external_import.ledger import locked
+    from openprogram.state.store.session.external_import.writer import node_prefix, reply_id, user_id, write_turns
+    apps.claude("cli-1", 1)
+    [created] = _sync(apps, store, tmp_path)
+    session_id = created["session_id"]
+    prefix = node_prefix("claude-code", "cli-1")
+    # As the earlier reading wrote it: the note as turn 1, then B unanswered as turn 2.
+    head = store.get_session(session_id)["head_id"]
+    note = user_id(prefix, 1)
+    store.append_message(session_id, {"id": note, "role": "user", "content": "[Request interrupted by user]",
+                                      "parent_id": head, "caller": "ROOT", "predecessor": head, "created_at": 1500,
+                                      "import_fingerprint": "note"})
+    apps.claude("cli-1", 2)
+    session = claude_code.parse(apps.claude_home / "projects" / "-work-repo" / "cli-1.jsonl")
+    session.turns[1].blocks = []
+    last = write_turns(store, session_id, session, indices=[1], predecessor=note, offset=1)
+    assert last == reply_id(prefix, 2)
+    store.set_head(session_id, last)
+    _write_records(store, session_id, "cli-1", head, last, provider="claude-code-harness")
+    with locked(tmp_path / "ledger") as ledger:
+        entry = ledger.get("claude-code", "cli-1")
+        ledger.put("claude-code", "cli-1", {**entry, "turns": 3, "offset": 0, "last_node_id": last,
+                                            "last_fingerprint": session.turns[1].fingerprint(),
+                                            "last_digest": session.turns[1].digest()})
+    apps.claude("cli-1", 3, activity=3000)
+    [result] = _sync(apps, store, tmp_path)
+    assert result["status"] == "appended"
+    texts = _texts(store, session_id)
+    assert texts.count("answer 1") == 1 and texts.count("question 1") == 1
+    assert texts[-2:] == ["question 2", "answer 2"]
+
+
+def test_a_message_written_as_stopped_stays_while_the_next_one_waits(apps, store, tmp_path) -> None:
+    def touch(at):
+        for log in apps.dsh.glob("sessions/*/session-1/*"):
+            os.utime(log, (at, at))
+
+    first = [DEEPSEEK_TURN[0], _ask("one"), _reply("r1", "first", 0), _ask("stopped")]
+    apps.deepseek("session-1", first)
+    touch(time.time() - 600)
+    [result] = _sync(apps, store, tmp_path)
+    assert _texts(store, result["session_id"])[:3] == ["one", "first", "stopped"]
+    apps.deepseek("session-1", first + [_ask("waiting")])
+    touch(time.time())
+    [again] = _sync(apps, store, tmp_path)
+    assert again["status"] == "unchanged" and again["waiting"]
+    assert _texts(store, result["session_id"])[:3] == ["one", "first", "stopped"]
