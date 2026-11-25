@@ -114,7 +114,7 @@ Consulta [cómo escribir agentes](https://fzkuji.github.io/OpenProgram/docs/capa
 
 ## Novedades
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — Acceso a este ordenador desde el teléfono o desde cualquier lugar con Tailscale integrado, chats sobre Codex, aplicaciones que se exportan como software propio y una herramienta de capturas.
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — Acceso a este ordenador desde el teléfono o desde cualquier lugar con Tailscale integrado, chats sobre Codex, aplicaciones que se exportan como software propio y una herramienta de capturas.
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Varias claves e inicios de sesión por proveedor, con cambio automático al llegar a un límite; bloques de tareas en las respuestas e historial de ejecuciones para las tareas programadas.
 - **2026-11-15 · v1.3.0** — Página de proveedores con estado, cuota y gasto; los agentes que trabajan en una conversación, listados en Activity.
 

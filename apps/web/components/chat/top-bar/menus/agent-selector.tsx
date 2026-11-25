@@ -342,7 +342,14 @@ function RowTrail({ state, current, count, text }: {
       )}
     >
       {ring ? <QuotaRing quota={ring} stale={state?.stale} tip={quotaSummary(ring, text)} className="mr-1.5 align-[-4px]" /> : null}
-      {word ? <StateWord label={word.label} tone={word.tone} /> : current ?? count}
+      {word ? <StateWord label={word.label} tone={word.tone} /> : current ?? (
+        <>
+          {count}
+          {/* On a phone's own line, under the name, the bare number needs
+              its noun (app/styles/base/phone.css). */}
+          <span className="picker-count-unit hidden">{text(count === 1 ? " model" : " models", " 个模型")}</span>
+        </>
+      )}
     </span>
   );
 }
@@ -358,7 +365,9 @@ function ProviderRow({ id, name, state, current, count, header, text, onClose, c
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const rowCls = cn(itemCls(false), MENU_ITEM_STATES, "col-span-3 grid grid-cols-subgrid items-center gap-0");
+  // picker-provider-row: on a touch phone the state goes under the name
+  // (app/styles/base/phone.css).
+  const rowCls = cn(itemCls(false), MENU_ITEM_STATES, "picker-provider-row col-span-3 grid grid-cols-subgrid items-center gap-0");
   const label = (
     <span className="truncate">
       {/* Inline in the label's line, at the middle of the text. */}

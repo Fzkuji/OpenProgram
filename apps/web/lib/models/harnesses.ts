@@ -72,9 +72,17 @@ export function harnessOf(provider: string | null | undefined): string | null {
 const AGENT_LOGOS: Record<string, string> = {
   codex: "codex", "codex-harness": "codex",
   "claude-code": "claudecode", "claude-code-harness": "claudecode",
+  "deepseek-harness": "deepseek",
 };
-/** Agent names as people know them, for marks and hover cards. */
-const AGENT_NAMES: Record<string, string> = { codex: "Codex", "claude-code": "Claude Code" };
+/** Agent names as people know them, for marks, hover cards and the
+ *  History page's Source filter. */
+const AGENT_NAMES: Record<string, string> = {
+  codex: "Codex", "claude-code": "Claude Code", "deepseek-harness": "DeepSeek Harness",
+};
+
+/** The agents whose own apps' conversations are synced here, by the
+ *  `source` their conversations carry. */
+export const SYNCED_SOURCES = ["codex", "claude-code", "deepseek-harness"];
 
 export function agentLogo(id: string | null | undefined): string | undefined {
   return id ? AGENT_LOGOS[id] : undefined;

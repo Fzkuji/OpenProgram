@@ -114,7 +114,7 @@ Siehe [Agenten schreiben](https://fzkuji.github.io/OpenProgram/docs/capabilities
 
 ## Neuigkeiten
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — Diesen Computer vom Telefon oder per eingebautem Tailscale von überall erreichen, Chats auf Codex, Anwendungen, die sich als eigene Software exportieren lassen, und ein Screenshot-Werkzeug.
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — Diesen Computer vom Telefon oder per eingebautem Tailscale von überall erreichen, Chats auf Codex, Anwendungen, die sich als eigene Software exportieren lassen, und ein Screenshot-Werkzeug.
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Mehrere Schlüssel und Anmeldungen je Anbieter mit automatischem Wechsel bei einem Limit, Aufgabenblöcke in Antworten und ein Ausführungsverlauf für geplante Aufgaben.
 - **2026-11-15 · v1.3.0** — Anbieterseite mit Zustand, Kontingent und Kosten; die Agenten einer Unterhaltung in Activity aufgelistet.
 

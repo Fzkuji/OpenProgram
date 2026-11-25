@@ -86,13 +86,17 @@ export function ControlTips() {
       current = null;
       setTip(null);
     };
+    const canHover = window.matchMedia("(hover: hover)");
     const over = (e: PointerEvent) => {
       const target = e.target as Element | null;
       const el = target?.closest?.<HTMLElement>(RAIL) ?? target?.closest?.<HTMLElement>(CONTROL) ?? null;
       if (el === current) return;
       const carry = shown || performance.now() - hiddenAt < CARRY_MS;
       hide();
-      if (!el || e.pointerType === "touch") return;
+      // A touch screen has no hover: WebKit also sends a mouse-typed over
+      // when a tap changes what lies under the finger (a submenu sheet
+      // closing), so the device decides, not the event.
+      if (!el || e.pointerType === "touch" || !canHover.matches) return;
       current = el;
       // Take the title now, so the system's own tip never comes up.
       if (!el.matches(RAIL)) labelOf(el);

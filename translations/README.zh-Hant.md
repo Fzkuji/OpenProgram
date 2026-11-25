@@ -114,7 +114,7 @@ class SupportAgent(Agent):
 
 ## 動態
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — 用手機或在任何地方透過內建 Tailscale 存取這台電腦；對話可以交給 Codex 執行；應用程式可以匯出成獨立軟體；新增截圖工具。
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — 用手機或在任何地方透過內建 Tailscale 存取這台電腦；對話可以交給 Codex 執行；應用程式可以匯出成獨立軟體；新增截圖工具。
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每個服務商可放多組金鑰與登入，到達限額時自動切換；回覆依任務分塊；排程任務有執行紀錄。
 - **2026-11-15 · v1.3.0** — 服務商頁面顯示健康狀態、額度與花費；Activity 列出對話中工作的 Agent。
 

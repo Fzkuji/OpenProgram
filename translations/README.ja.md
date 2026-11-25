@@ -114,7 +114,7 @@ class SupportAgent(Agent):
 
 ## ニュース
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — スマートフォンや内蔵 Tailscale でどこからでもこのコンピューターに接続、Codex で動くチャット、単体のソフトウェアとして書き出せるアプリケーション、スクリーンショットツール。
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — スマートフォンや内蔵 Tailscale でどこからでもこのコンピューターに接続、Codex で動くチャット、単体のソフトウェアとして書き出せるアプリケーション、スクリーンショットツール。
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — プロバイダーごとに複数のキーとサインインを持ち、上限に達すると自動で切り替え。返信はタスクブロックにまとまり、スケジュールタスクに実行履歴が付きました。
 - **2026-11-15 · v1.3.0** — 状態・クォータ・利用額を示すプロバイダーページ、会話で動くエージェントを Activity に一覧表示。
 

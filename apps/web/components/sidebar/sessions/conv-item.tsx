@@ -459,7 +459,9 @@ export type ConvRowSource = { current: Map<string, ConvItemProps> };
 
 /** The conversation fields a row and its menu draw. */
 const DRAWN_FIELDS = ["id", "title", "pinned", "archived", "group", "status", "unread", "channel",
-  "harness", "model", "project", "updated_at"] as const;
+  "harness", "model"] as const;
+/** What only the hover card of a chat run by an outside agent draws. */
+const CARD_FIELDS = ["project", "updated_at"] as const;
 
 const sameList = <T,>(a: readonly T[] | undefined, b: readonly T[] | undefined, same: (x: T, y: T) => boolean) =>
   a === b || (!!a && !!b && a.length === b.length && a.every((item, index) => same(item, b[index])));
@@ -488,6 +490,7 @@ function sameDragProps(a: ChatRowProps | undefined, b: ChatRowProps | undefined)
  *  left out: the row calls the list's latest ones through its source. */
 export function sameConvRow(a: ConvItemProps, b: ConvItemProps): boolean {
   return DRAWN_FIELDS.every((field) => a.conv[field] === b.conv[field])
+    && (!a.conv.harness || CARD_FIELDS.every((field) => a.conv[field] === b.conv[field]))
     && a.label === b.label && a.active === b.active && !!a.selected === !!b.selected && a.running === b.running
     && sameList(a.groups, b.groups, Object.is)
     && sameList(a.projects, b.projects, sameProject)

@@ -15,9 +15,12 @@ from typing import Any, Optional
 
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
+DEEPSEEK_HARNESS = "deepseek-harness"
+#: The agents ``openprogram sessions import`` reads; DeepSeek Harness
+#: conversations come in only by the app sync (``app_sync``).
 AGENTS = (CLAUDE_CODE, CODEX)
 
-AGENT_LABELS = {CLAUDE_CODE: "Claude Code", CODEX: "Codex"}
+AGENT_LABELS = {CLAUDE_CODE: "Claude Code", CODEX: "Codex", DEEPSEEK_HARNESS: "DeepSeek Harness"}
 
 
 @dataclass

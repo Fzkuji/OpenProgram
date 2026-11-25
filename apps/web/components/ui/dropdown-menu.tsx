@@ -15,12 +15,16 @@
  * a row that routes away from the chat hides the chat column while the
  * panel still fades out, and Floating UI would otherwise place the fading
  * panel against the trigger's zero rect, at the window's top-left corner.
+ *
+ * On a touch phone every panel is a sheet from the bottom of the screen and
+ * a submenu opens over its parent with a Back row (menu/phone-sheet.tsx).
  */
 
 import * as React from "react"
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 
 import { cn } from "@/lib/utils"
+import { PhoneSheetBack, PhoneSub, usePhoneSheet, usePhoneSheetSwipe } from "@/components/ui/menu/phone-sheet"
 
 const DropdownMenu = DropdownMenuPrimitive.Root
 
@@ -29,28 +33,36 @@ const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, align = "end", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal>
-    <DropdownMenuPrimitive.Content
-      ref={ref}
-      align={align}
-      sideOffset={sideOffset}
-      hideWhenDetached={hideWhenDetached}
-      className={cn(
-        "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-        className
-      )}
-      {...props}
-    />
-  </DropdownMenuPrimitive.Portal>
-))
+>(({ className, align = "end", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => {
+  const sheet = usePhoneSheet()
+  const swipe = usePhoneSheetSwipe(sheet)
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.Content
+        ref={ref}
+        align={align}
+        sideOffset={sideOffset}
+        hideWhenDetached={hideWhenDetached && !sheet}
+        data-phone-sheet={sheet ? "" : undefined}
+        {...swipe}
+        className={cn(
+          "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          className
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  )
+})
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 
 const DropdownMenuItem = DropdownMenuPrimitive.Item
 
 const DropdownMenuSeparator = DropdownMenuPrimitive.Separator
 
-const DropdownMenuSub = DropdownMenuPrimitive.Sub
+function DropdownMenuSub(props: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
+  return <PhoneSub Sub={DropdownMenuPrimitive.Sub} props={props} />
+}
 
 const DropdownMenuSubTrigger = DropdownMenuPrimitive.SubTrigger
 
@@ -59,21 +71,31 @@ const DropdownMenuSubContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
 // A submenu stands 4px off its parent panel (the offset is measured from
 // the row, inside the panel's p-1), and its first row lines up with that row.
->(({ className, sideOffset = 8, alignOffset = -4, hideWhenDetached = true, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal>
-    <DropdownMenuPrimitive.SubContent
-      ref={ref}
-      sideOffset={sideOffset}
-      alignOffset={alignOffset}
-      hideWhenDetached={hideWhenDetached}
-      className={cn(
-        "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        className
-      )}
-      {...props}
-    />
-  </DropdownMenuPrimitive.Portal>
-))
+>(({ className, sideOffset = 8, alignOffset = -4, hideWhenDetached = true, children, ...props }, ref) => {
+  const sheet = usePhoneSheet()
+  const swipe = usePhoneSheetSwipe(sheet)
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.SubContent
+        ref={ref}
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+        hideWhenDetached={hideWhenDetached && !sheet}
+        data-phone-sheet={sheet ? "" : undefined}
+        data-phone-sub={sheet ? "" : undefined}
+        {...swipe}
+        className={cn(
+          "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          className
+        )}
+        {...props}
+      >
+        {sheet ? <PhoneSheetBack Item={DropdownMenuPrimitive.Item} /> : null}
+        {children}
+      </DropdownMenuPrimitive.SubContent>
+    </DropdownMenuPrimitive.Portal>
+  )
+})
 DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName
 
 export {

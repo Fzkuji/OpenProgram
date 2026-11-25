@@ -114,7 +114,7 @@ Voir [écrire des agents](https://fzkuji.github.io/OpenProgram/docs/capabilities
 
 ## Actualités
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — Accéder à cet ordinateur depuis un téléphone ou de n'importe où grâce à Tailscale intégré, des conversations sur Codex, des applications exportables comme logiciels autonomes et un outil de capture d'écran.
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — Accéder à cet ordinateur depuis un téléphone ou de n'importe où grâce à Tailscale intégré, des conversations sur Codex, des applications exportables comme logiciels autonomes et un outil de capture d'écran.
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Plusieurs clés et connexions par fournisseur, avec bascule automatique quand une limite est atteinte ; blocs de tâches dans les réponses et historique d’exécution pour les tâches planifiées.
 - **2026-11-15 · v1.3.0** — Page des fournisseurs avec état, quota et dépenses ; les agents à l’œuvre dans une conversation listés dans Activity.
 

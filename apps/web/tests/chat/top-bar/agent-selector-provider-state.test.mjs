@@ -41,7 +41,7 @@ installLoader({
     "/components/chat/top-bar/menus/agent-config-menu.tsx": "export const AgentConfigBadge = () => null;",
     "/components/chat/top-bar/menus/harness-menu.tsx": "export const HarnessBadge = () => null; export const useHarness = () => ({ harness: null });",
     "/components/solar-icons/index.ts": `${passthrough} export const SolarIcon = ({ name }) => h('svg', { 'data-solar': name });`,
-    "/components/chat/top-bar/chips/model-mark.tsx": `${passthrough} export const ModelMark = ({ provider }) => h('i', { 'data-mark': provider });`,
+    "/components/chat/top-bar/chips/model-mark.tsx": `${passthrough} export const ModelMark = ({ provider }) => h('i', { 'data-mark': provider }); export const AgentMark = ({ harness }) => h('i', { 'data-agent': harness });`,
     "/components/chat/top-bar/bound-chat.tsx": "export const useBoundChat = () => ({ sessionId: 's1', chatKey: 's1' });",
     "/lib/agents/model-pick.ts": "export const pickBranchModel = async (...args) => { (globalThis.__picks ??= []).push(args); };",
     "/lib/agents/start-conversation.ts": "export const updatePendingAgentModel = async () => false;",
@@ -276,7 +276,8 @@ test("a failed read of the models shows no notice and no false empty state", () 
 test("providers with no state keep today's rows", () => {
   const html = menu({ models: MODELS.slice(0, 2), providers: {}, status: undefined });
   assert.doesNotMatch(html, /data-quota-ring|data-state-word|data-picker-fix|data-quota-rows/);
-  assert.match(html, />1<\/span>/);
+  // The count; its unit shows only where the state sits under the name (a phone sheet).
+  assert.match(html, />1<span class="picker-count-unit hidden"> model<\/span><\/span>/);
 });
 
 test("the chip's mark is a dot in the state's tone", () => {

@@ -75,7 +75,9 @@ export const CHECK_SLOT = "shrink-0 text-[var(--accent-blue)]";
 export const CHECK_SLOT_PAD = "size-4 shrink-0";
 
 /** Right-aligned single-key shortcut hint. Stays muted. */
-export const SHORTCUT = "shrink-0 text-fs-xs tracking-widest text-text-muted";
+/** A row's key hint as plain text (1, 2, ⌃⌥R). `menu-shortcut` lets a
+ *  phone, which has no keys to press, hide it (app/styles/base/phone.css). */
+export const SHORTCUT = "menu-shortcut shrink-0 text-fs-xs tracking-widest text-text-muted";
 /** A row's key as a price tag (MenuKey): a menu-local letter (R) or a
  *  system shortcut (⌘T / Ctrl+T). The tag is a fixed 10px tip — the
  *  right end of Solar's tag-horizontal outline, mirrored — joined to the

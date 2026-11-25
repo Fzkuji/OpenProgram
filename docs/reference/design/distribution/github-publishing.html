@@ -183,7 +183,8 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="what-a-release-builds">What a release builds</h2>
 <p>The Release workflow runs on the pushed tag. Every platform leg is independent.</p>
 <p>A tag never moves, so a release can be rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit; without <code translate="no">--source</code>, commits made on <code translate="no">dev</code> in between would go up as a new, unrehearsed sync.</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. A leg that fails is fixed at its cause and the rehearsal runs again.</p>
+<p>When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit, no sooner than 12 hours after the rehearsal passed. Without <code translate="no">--source</code>, commits made on <code translate="no">dev</code> in between would go up as a new, unrehearsed sync.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>

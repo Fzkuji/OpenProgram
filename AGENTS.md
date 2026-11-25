@@ -15,7 +15,7 @@
 | 数据 | `~/.openprogram` | `~/.openprogram-dev`（`dev` profile） |
 | 怎么更新 | 只靠 App 自己的更新：后台下载，侧边栏出现 NEW，点“重启以更新” | 提交后运行 `.venv/bin/openprogram dev deploy` |
 
-- 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。现在机器上的稳定版还是本地构建的，等下一个正式版（1.5.0）发布后用它的 DMG 覆盖安装一次完成切换；切换前不动它，也不要装比它旧的正式版（旧代码读不了新代码写过的数据）。
+- 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。现在机器上的稳定版还是本地构建的，等下一个正式版（1.5.1；v1.5.0 标签的构建失败，没有 Release）发布后用它的 DMG 覆盖安装一次完成切换；切换前不动它，也不要装比它旧的正式版（旧代码读不了新代码写过的数据）。
 - 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `.venv/bin/openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；可以在稳定版的对话里运行。改动做完就停在开发版，不再往稳定版推。
 - 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/local-instances/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`.venv/bin/openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
 - 禁止在 `post-commit` 中自动刷新开发版；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
@@ -42,7 +42,8 @@
 
 - 日常提交只进 `dev`。禁止在 `main` 上提交（`pre-commit` 会拒绝），禁止把 `main` 合进 `dev`，两边历史本来就不同。
 - **每天同步一次代码**：当天 `dev` 有新提交时运行 `scripts/publishing/publish-github.sh -m "今天的改动摘要"`（不带 `--tag`），把 `dev` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，再推送 `main`。推送 `main` 不触发任何 GitHub Action（除 Release 外的工作流都只能手动运行），不用问。先加 `--dry-run` 看提交说明；`--no-push` 只更新本地 `main`。
-- **发版低频**：只有用户说要发版时才加 `--tag vX.Y.Z`：推送 `main` 后给这个提交打标签并推送标签，由此启动 Release 工作流（构建、签名、公证、发布 Release）；版本号、发布说明或 Office 包对不上会先拒绝，`--dry-run` 能看到这些检查和标签。想先验证安装包而不发布，用 Release 工作流的 `rehearse` 手动运行。Release 发布后，稳定版在 App 里收到更新。
+- **发版低频**：只有用户说要发版时才加 `--tag vX.Y.Z`：推送 `main` 后给这个提交打标签并推送标签，由此启动 Release 工作流（构建、签名、公证、发布 Release）；版本号、发布说明或 Office 包对不上会先拒绝，`--dry-run` 能看到这些检查和标签。Release 发布后，稳定版在 App 里收到更新。
+- **发版前先演练，通过后隔 12 小时再发**：版本号和发布说明提交后，先不带 `--tag` 同步 `main`，再运行 `gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag=vX.Y.Z -f rehearse=true`（构建和检查全部跑一遍，不发布），通过后再运行 `gh workflow run windows-install-smoke.yml -R Fzkuji/OpenProgram -f tag=vX.Y.Z -f run_id=<演练的运行号>`。有任务失败就修根因、重新同步、重新演练，直到全部通过。全部通过后至少等 12 小时，再运行 `publish-github.sh --source refs/publish/last --tag vX.Y.Z`，给演练过的那个提交打标签；不带 `--source` 会把这期间 `dev` 上没演练过的提交一起发出去。
 - 禁止手动 `git push`；`.git/hooks/pre-push` 只放行脚本推送的 `main` 和指向它的标签，其他分支一律拒绝。不要从本地分支向 GitHub 开 PR。
 - worktree 分支合入 `dev` 或放弃后删除，想留着的放到 `refs/archive/`。
 

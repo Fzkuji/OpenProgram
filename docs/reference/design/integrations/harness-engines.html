@@ -113,10 +113,11 @@
 <tr><th scope="row">Move it to OpenProgram</th><td>Switch its Harness chip to OpenProgram. What is said in the app later still arrives, after what was said here</td><td>T3 Code's handoff</td></tr>
 <tr><th scope="row">The app's history</th><td>Codex lists and resumes a thread only on the provider it was saved with, so turning on Also in the Terminal moves the app's threads to the OpenProgram provider and turning it off moves them back; a single thread follows the model of the turn run on it</td><td>magpie's provider move</td></tr>
 <tr><th scope="row">Sidebar</th><td>The status dot and a channel's logo stay as they are; a dimmed one-colour mark of the agent at the row's end says the conversation runs in that agent now, and it gives way to the ⋯ button on hover. A hover card names the model and agent, the project, the time and that the conversation is also in the Codex app. OpenProgram's own conversations have no mark</td><td>T3 Code's provider mark</td></tr>
+<tr><th scope="row">The Claude app and DeepSeek Harness</th><td>Their conversations come in the same way (<code translate="no">app_sync.py</code>): the Claude app's Code tab list (<code translate="no">claude-code-sessions/**/local_*.json</code>, each naming a Claude Code transcript) and DeepSeek Harness's workspaces (<code translate="no">~/.dsh</code>, a zstd event log per conversation), archived ones left out. With no engine for them yet, a turn sent here runs in OpenProgram, so these rows carry no mark; turns made in the app later still arrive</td><td>Paseo's import</td></tr>
 <tr><th scope="row">History page</th><td>Mixed with OpenProgram's chats, the same mark on each row, and a Source filter that appears once another agent has conversations here</td><td>T3 Code</td></tr>
 </tbody>
 </table>
 
 <h2 id="status">Implementation status</h2>
 <p>Codex runs chats, natively or through OpenProgram's models, and the Codex app's conversations are synced both ways. Claude Code (Claude Agent SDK, with an Anthropic API key only) and ACP agents (Gemini CLI, OpenCode) are next with the same engine shape.</p>
-<p>Their conversations can be listed and moved to OpenProgram the same way; continuing them in that agent comes with its engine.</p>
+<p>The Claude app's and DeepSeek Harness's conversations already come in and follow the apps; continuing them in that agent comes with its engine. DeepSeek Harness ships an ACP server (<code translate="no">dsh-acp</code>), the way in for its engine.</p>

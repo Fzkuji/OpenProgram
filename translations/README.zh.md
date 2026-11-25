@@ -114,7 +114,7 @@ class SupportAgent(Agent):
 
 ## 动态
 
-- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — 用手机或在任何地方通过内置 Tailscale 访问这台电脑；对话可以交给 Codex 运行；应用可以导出成独立软件；新增截图工具。
+- **2026-11-25 · [v1.5.1](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.1)** — 用手机或在任何地方通过内置 Tailscale 访问这台电脑；对话可以交给 Codex 运行；应用可以导出成独立软件；新增截图工具。
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每个服务商可放多个密钥和登录，到限额时自动切换；回复按任务分块；定时任务有运行记录。
 - **2026-11-15 · v1.3.0** — 服务商页面显示健康状态、额度和花费；Activity 列出对话里在工作的 Agent。
 

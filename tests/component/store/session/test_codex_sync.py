@@ -83,8 +83,8 @@ def test_only_conversations_are_listed_and_moved(codex) -> None:
     codex.thread("cli", [_turn("t1", "hi", "hello", 1)], source="cli", updated=2000)
     codex.thread("exec", [_turn("t1", "hi", "hello", 1)], source="exec")
     codex.thread("old", [_turn("t1", "hi", "hello", 1)], archived=1)
-    codex.thread("blank", [], user=0)
     assert [t.id for t in codex_threads.threads(codex.home)] == ["cli", "app"]
+    codex.thread("blank", [], user=0)
 
     # Every app and terminal thread moves, archived ones too; exec runs stay.
     assert codex_threads.move_provider(codex.home, "openprogram", from_provider="openai") == 4
@@ -159,3 +159,15 @@ def test_a_shared_thread_is_resumed_only_when_it_saw_the_latest_message() -> Non
     moved_on = history + [{"id": "u2", "role": "user"}, {"id": "a2", "role": "assistant"}]
     plan = plan_thread(records, "b2", moved_on)
     assert (plan.action, plan.thread_id, [m["id"] for m in plan.missed]) == ("resume", "app", ["u2", "a2"])
+
+
+def test_a_compressed_rollout_is_read(codex, store, tmp_path) -> None:
+    import zstandard
+    codex.thread("old", [_turn("t1", "asked long ago", "answered", 1)])
+    rollout = codex.home / "sessions" / "rollout-old.jsonl"
+    packed = rollout.with_name(rollout.name + ".zst")
+    packed.write_bytes(zstandard.ZstdCompressor().compress(rollout.read_bytes()))
+    rollout.unlink()  # Codex keeps the uncompressed name in its state
+    [result] = _sync(codex, store, tmp_path)
+    assert result["status"] == "created"
+    assert _texts(store, result["session_id"]) == ["asked long ago", "answered"]

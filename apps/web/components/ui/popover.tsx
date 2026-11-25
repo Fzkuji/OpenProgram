@@ -18,10 +18,15 @@ import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
+import { usePhoneSheet, usePhoneSheetSwipe } from "@/components/ui/menu/phone-sheet"
 
-const Popover = (props: React.ComponentProps<typeof PopoverPrimitive.Root>) => (
-  <PopoverPrimitive.Root data-slot="popover" {...props} />
-)
+// On a touch phone a popover is a sheet from the bottom of the screen, as
+// the menus are (menu/phone-sheet.tsx), and modal: a tap beside it only
+// closes it, it does not also press what lies under the dimmed page.
+const Popover = (props: React.ComponentProps<typeof PopoverPrimitive.Root>) => {
+  const sheet = usePhoneSheet()
+  return <PopoverPrimitive.Root data-slot="popover" {...props} modal={sheet || props.modal} />
+}
 
 const PopoverTrigger = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Trigger>,
@@ -42,16 +47,21 @@ export const POPOVER_SURFACE =
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = "center", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => (
+>(({ className, align = "center", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => {
+  const sheet = usePhoneSheet()
+  const swipe = usePhoneSheetSwipe(sheet)
+  return (
   <PopoverPrimitive.Portal>
     <PopoverPrimitive.Content
       ref={ref}
       data-slot="popover-content"
+      data-phone-sheet={sheet ? "" : undefined}
+      {...swipe}
       align={align}
       sideOffset={sideOffset}
       // Hidden once the trigger leaves the layout, as the menus are
       // (ui/dropdown-menu.tsx): never drawn at the window's top-left corner.
-      hideWhenDetached={hideWhenDetached}
+      hideWhenDetached={hideWhenDetached && !sheet}
       className={cn(
         "z-(--z-popover) origin-(--radix-popover-content-transform-origin) outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
         /\bbg-transparent\b/.test(className ?? "") ? "w-72" : POPOVER_SURFACE,
@@ -60,7 +70,8 @@ const PopoverContent = React.forwardRef<
       {...props}
     />
   </PopoverPrimitive.Portal>
-))
+  )
+})
 PopoverContent.displayName = PopoverPrimitive.Content.displayName
 
 function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {

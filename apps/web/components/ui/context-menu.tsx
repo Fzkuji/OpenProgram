@@ -26,11 +26,16 @@ import {
   itemCls,
 } from "@/components/ui/menu/menu-styles"
 import { MenuCheck } from "@/components/ui/menu/menu-check"
+import { PhoneSheetBack, PhoneSub, usePhoneSheet, usePhoneSheetSwipe } from "@/components/ui/menu/phone-sheet"
 
 const ContextMenu = ContextMenuPrimitive.Root
 const ContextMenuGroup = ContextMenuPrimitive.Group
 const ContextMenuPortal = ContextMenuPrimitive.Portal
-const ContextMenuSub = ContextMenuPrimitive.Sub
+// On a touch phone a submenu opens over its parent with a Back row
+// (menu/phone-sheet.tsx).
+function ContextMenuSub(props: React.ComponentProps<typeof ContextMenuPrimitive.Sub>) {
+  return <PhoneSub Sub={ContextMenuPrimitive.Sub} props={props} />
+}
 const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup
 
 const ContextMenuTrigger = React.forwardRef<
@@ -56,16 +61,22 @@ const MENU_MOTION =
 const ContextMenuContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <ContextMenuPrimitive.Portal>
-    <ContextMenuPrimitive.Content
-      ref={ref}
-      data-slot="context-menu-content"
-      className={cn(MENU_PANEL, MENU_MOTION, "min-w-36 text-text-primary", className)}
-      {...props}
-    />
-  </ContextMenuPrimitive.Portal>
-))
+>(({ className, ...props }, ref) => {
+  const sheet = usePhoneSheet()
+  const swipe = usePhoneSheetSwipe(sheet)
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.Content
+        ref={ref}
+        data-slot="context-menu-content"
+        data-phone-sheet={sheet ? "" : undefined}
+        {...swipe}
+        className={cn(MENU_PANEL, MENU_MOTION, "min-w-36 text-text-primary", className)}
+        {...props}
+      />
+    </ContextMenuPrimitive.Portal>
+  )
+})
 ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName
 
 const ContextMenuItem = React.forwardRef<
@@ -117,18 +128,28 @@ const ContextMenuSubContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent>
 // A submenu stands 4px off its parent panel (the offset is measured from
 // the row, inside the panel's p-1), and its first row lines up with that row.
->(({ className, sideOffset = 8, alignOffset = -4, ...props }, ref) => (
-  <ContextMenuPrimitive.Portal>
-    <ContextMenuPrimitive.SubContent
-      ref={ref}
-      sideOffset={sideOffset}
-      alignOffset={alignOffset}
-      data-slot="context-menu-sub-content"
-      className={cn(MENU_PANEL, MENU_MOTION, "text-text-primary", className)}
-      {...props}
-    />
-  </ContextMenuPrimitive.Portal>
-))
+>(({ className, sideOffset = 8, alignOffset = -4, children, ...props }, ref) => {
+  const sheet = usePhoneSheet()
+  const swipe = usePhoneSheetSwipe(sheet)
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.SubContent
+        ref={ref}
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+        data-slot="context-menu-sub-content"
+        data-phone-sheet={sheet ? "" : undefined}
+        data-phone-sub={sheet ? "" : undefined}
+        {...swipe}
+        className={cn(MENU_PANEL, MENU_MOTION, "text-text-primary", className)}
+        {...props}
+      >
+        {sheet ? <PhoneSheetBack Item={ContextMenuPrimitive.Item} /> : null}
+        {children}
+      </ContextMenuPrimitive.SubContent>
+    </ContextMenuPrimitive.Portal>
+  )
+})
 ContextMenuSubContent.displayName = ContextMenuPrimitive.SubContent.displayName
 
 /** A check row: the app's trailing accent check (MenuCheck) rather than

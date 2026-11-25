@@ -34,7 +34,8 @@ def discover(home: Optional[Path] = None) -> list[Path]:
     root = (home or default_home()) / "sessions"
     if not root.is_dir():
         return []
-    return sorted(p for p in root.glob("**/rollout-*.jsonl") if p.is_file())
+    return sorted(p for p in [*root.glob("**/rollout-*.jsonl"), *root.glob("**/rollout-*.jsonl.zst")]
+                  if p.is_file())
 
 
 def thread_titles(home: Optional[Path] = None) -> dict[str, str]:
@@ -55,8 +56,27 @@ def thread_titles(home: Optional[Path] = None) -> dict[str, str]:
     return titles
 
 
+def open_rollout(path: Path):
+    """A rollout as text; Codex zstd-compresses older ones (``.jsonl.zst``)."""
+    if path.suffix == ".zst":
+        import io
+        import zstandard
+        raw = open(path, "rb")
+        reader = zstandard.ZstdDecompressor().stream_reader(raw, read_across_frames=True, closefd=True)
+        return io.TextIOWrapper(reader, encoding="utf-8", errors="replace")
+    return open(path, encoding="utf-8", errors="replace")
+
+
+def rollout_file(path: Path) -> Optional[Path]:
+    """The rollout Codex's state names, or its compressed form."""
+    if path.is_file():
+        return path
+    packed = path.with_name(path.name + ".zst")
+    return packed if packed.is_file() else None
+
+
 def _records(path: Path) -> Iterator[dict[str, Any]]:
-    with open(path, encoding="utf-8", errors="replace") as fh:
+    with open_rollout(path) as fh:
         for line in fh:
             line = line.strip()
             if not line:

@@ -415,6 +415,9 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
     function onDoc(ev: MouseEvent) {
       const t = ev.target as Node | null;
       if (!t) return;
+      // On a touch phone the card is a sheet portaled to the body.
+      const el = t instanceof Element ? t : t.parentElement;
+      if (el?.closest("[data-effort-sheet]")) return;
       // Do not require the chat textarea wrapper: fn-form unmounts it,
       // and that used to skip this handler so the effort card stuck.
       if (

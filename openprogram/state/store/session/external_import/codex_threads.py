@@ -60,7 +60,8 @@ def _connect(path: Path, write: bool = False) -> sqlite3.Connection:
 
 def threads(home: Path) -> list[Thread]:
     """The person's Codex conversations, newest first: not archived, started
-    in the app or the terminal, with something they said."""
+    in the app or the terminal. (``has_user_event`` is not kept up to date
+    by Codex; a thread with nothing said in it is found empty when read.)"""
     db = state_db(home)
     if db is None:
         return []
@@ -69,15 +70,16 @@ def threads(home: Path) -> list[Thread]:
         with _connect(db) as connection:
             rows = connection.execute(
                 f"SELECT id, rollout_path, cwd, title, name, model, model_provider, updated_at,"
-                f" updated_at_ms, originator FROM threads WHERE archived = 0 AND has_user_event = 1"
+                f" updated_at_ms, originator FROM threads WHERE archived = 0"
                 f" AND source IN ({marks}) ORDER BY updated_at DESC", INTERACTIVE_SOURCES).fetchall()
     except sqlite3.Error as exc:
         _log.info("Codex threads not read from %s: %s", db, exc)
         return []
     found = []
     for row in rows:
-        path = Path(row["rollout_path"] or "")
-        if not row["id"] or not path.is_file():
+        from .codex import rollout_file
+        path = rollout_file(Path(row["rollout_path"] or "")) if row["rollout_path"] else None
+        if not row["id"] or path is None:
             continue
         updated = (row["updated_at_ms"] or 0) / 1000 or float(row["updated_at"] or 0)
         found.append(Thread(
@@ -92,7 +94,8 @@ def threads(home: Path) -> list[Thread]:
 def originator(path: Path) -> str:
     """The client that started a rollout, from its ``session_meta``."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        from .codex import open_rollout
+        with open_rollout(path) as fh:
             for line in fh:
                 record = json.loads(line)
                 if record.get("type") == "session_meta":

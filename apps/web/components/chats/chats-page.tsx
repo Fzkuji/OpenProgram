@@ -48,15 +48,16 @@ import {
 } from "@/components/animated-icons";
 import { SimpleSelect } from "@/components/ui/select";
 import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
-import { agentName, OPENPROGRAM_HARNESS } from "@/lib/models/harnesses";
+import { agentName, OPENPROGRAM_HARNESS, SYNCED_SOURCES } from "@/lib/models/harnesses";
 
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
 
-/** Where a chat comes from: an outside agent it runs in or was synced
- *  from (`codex`), else OpenProgram. */
+/** Where a chat comes from: an outside agent it runs in or whose app it
+ *  was synced from (Codex, Claude, DeepSeek Harness), else OpenProgram. */
 function sourceOf(conv: ConvSummary): string {
-  return conv.harness || (conv.source === "codex" ? "codex" : OPENPROGRAM_HARNESS);
+  if (conv.harness) return conv.harness;
+  return conv.source && SYNCED_SOURCES.includes(conv.source) ? conv.source : OPENPROGRAM_HARNESS;
 }
 
 type FilterId = "all" | "today" | "past7" | "older";

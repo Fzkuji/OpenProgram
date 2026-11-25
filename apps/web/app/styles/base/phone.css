@@ -176,7 +176,8 @@
     border-radius: 14px;
     font-size: 16px;
   }
-  [data-slot="menu-key"] { display: none; }
+  [data-slot="menu-key"],
+  .menu-shortcut { display: none; }
 
   /* --- Messages: the phone's own bubbles ------------------------------ */
   .message.user .message-content {
@@ -317,4 +318,134 @@
   [role="menu"][data-state] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) svg {
     zoom: 1.2;
   }
+
+  /* --- Menus as sheets (components/ui/menu/phone-sheet.tsx) ----------- */
+  /* A menu rises from the bottom of the screen instead of hanging off its
+     button, 8px off the edges and rounded in parallel with the screen's
+     corners; the page behind dims. Floating UI still places the wrapper,
+     so its place is overridden here. The bottom follows the visual
+     viewport, so a sheet opened with the keyboard up sits above it. */
+  [data-radix-popper-content-wrapper]:has(> [data-phone-sheet]) {
+    transform: none !important;
+    top: auto !important;
+    left: var(--phone-edge-gap) !important;
+    right: var(--phone-edge-gap) !important;
+    bottom: calc(100lvh - var(--phone-viewport-top, 0px) - var(--phone-viewport-h, 100lvh) + var(--phone-edge-gap)) !important;
+    width: auto !important;
+    min-width: 0 !important;
+  }
+  [data-phone-sheet][data-phone-sheet] {
+    position: relative;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: calc(var(--phone-viewport-h, 100dvh) - env(safe-area-inset-top) - 56px) !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: max(12px, var(--phone-screen-radius) - var(--phone-edge-gap)) !important;
+    padding: 22px 8px max(8px, env(safe-area-inset-bottom) - var(--phone-edge-gap)) !important;
+    box-shadow: 0 0 0 100vmax rgb(20 16 12 / 0.18), 0 -4px 24px rgb(0 0 0 / 0.1) !important;
+  }
+  /* A popover that hosts its own panel (a transparent content around a
+     MENU_PANEL or a picker): the sheet is the surface, the panel inside
+     only lays out its rows. */
+  [data-phone-sheet].bg-transparent { background: var(--popover) !important; }
+  [data-phone-sheet].bg-transparent > * {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  /* The grab handle. */
+  [data-phone-sheet]::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 5px;
+    margin-left: -18px;
+    border-radius: 3px;
+    background: var(--border);
+  }
+  /* A submenu opens as a sheet over its parent; the parent steps out of
+     sight until it comes back. */
+  [data-phone-sheet]:has([aria-haspopup="menu"][data-state="open"]) {
+    visibility: hidden;
+  }
+  .phone-sheet-back.phone-sheet-back {
+    gap: 4px;
+    padding-left: 6px;
+    color: var(--theme-accent);
+    font-weight: 500;
+  }
+  [data-phone-sheet][data-state="open"] {
+    animation: phone-sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  }
+  [data-phone-sheet][data-state="closed"] {
+    animation: phone-sheet-down 200ms ease-in forwards !important;
+  }
+  [data-phone-sub][data-state="open"] {
+    animation: phone-sheet-in 220ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  }
+  [data-phone-sub][data-state="closed"] {
+    animation: phone-sheet-out 140ms ease-in forwards !important;
+  }
+
+  /* The effort card is not a radix layer: its sheet places itself, and
+     a clear backdrop under it takes the tap that closes it. */
+  .effort-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+  }
+  .effort-sheet.effort-sheet[data-phone-sheet] {
+    position: fixed;
+    z-index: 61;
+    left: var(--phone-edge-gap);
+    right: var(--phone-edge-gap);
+    bottom: calc(100lvh - var(--phone-viewport-top, 0px) - var(--phone-viewport-h, 100lvh) + var(--phone-edge-gap));
+    width: auto !important;
+    background: var(--popover);
+  }
+  .effort-sheet .effort-card.effort-card {
+    padding: 4px 10px 6px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  /* The model menu's providers: the name has the row's first line and its
+     state the second, under the name, so neither is cut short. */
+  [data-phone-sheet] .picker-provider-row.picker-provider-row {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 1px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  [data-phone-sheet] .picker-provider-row > :nth-child(1) { grid-area: 1 / 1; }
+  [data-phone-sheet] .picker-provider-row > :nth-child(2) {
+    grid-area: 2 / 1;
+    justify-self: start;
+    max-width: 100%;
+    padding-left: 24px;
+    font-size: 13px;
+  }
+  [data-phone-sheet] .picker-count-unit { display: inline; }
+  [data-phone-sheet] .picker-provider-row > :nth-child(3) { grid-area: 1 / 2 / 3 / 3; }
+}
+
+@keyframes phone-sheet-up { from { transform: translateY(calc(100% + 16px)); } }
+@keyframes phone-sheet-down { to { transform: translateY(calc(100% + 16px)); } }
+@keyframes phone-sheet-in { from { transform: translateX(32px); opacity: 0; } }
+@keyframes phone-sheet-out { to { opacity: 0; } }
+
+@media (max-width: 760px) and (pointer: coarse) and (prefers-reduced-motion: reduce) {
+  [data-phone-sheet][data-state] { animation-duration: 1ms !important; }
 }

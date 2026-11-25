@@ -183,7 +183,8 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="what-a-release-builds">一次发布构建什么</h2>
 <p>Release 工作流由推送的标签触发。每个平台分支彼此独立。</p>
 <p>标签不会移动，所以发版前可以先演练。不带 <code translate="no">--tag</code> 发布 <code translate="no">main</code>，再运行 <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>：每个分支都从 <code translate="no">main</code> 构建，跑同样的检查，什么都不发布。</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> 给同一个提交打标签；不带 <code translate="no">--source</code> 时，这期间 <code translate="no">dev</code> 上的新提交会作为一次没演练过的新同步上传。</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。有分支失败就修根因，再演练一次。</p>
+<p>两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> 给同一个提交打标签，最早在演练通过 12 小时之后。不带 <code translate="no">--source</code> 时，这期间 <code translate="no">dev</code> 上的新提交会作为一次没演练过的新同步上传。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
 <tbody>

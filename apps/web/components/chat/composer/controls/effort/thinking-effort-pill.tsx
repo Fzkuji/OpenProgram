@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
 
 import { EffortSlider } from "./effort-slider";
@@ -13,6 +14,7 @@ import { GLASS_SURFACE } from "@/lib/glass";
 import { captionAlignment, THUMB_WIDTH } from "@/lib/effort/effort-matrix";
 import { type AnimatedNavIconHandle, GaugeIcon } from "@/components/animated-icons";
 import { SolarIcon } from "@/components/solar-icons";
+import { usePhoneSheet, usePhoneSheetSwipe } from "@/components/ui/menu/phone-sheet";
 
 // Extends div attributes so a tooltip trigger (HoverTip / Radix
 // `asChild`) can inject its hover/focus handlers — they must reach the
@@ -108,72 +110,17 @@ const ThinkingEffortSliderPill = React.forwardRef<
 
   const atHighest = options.length > 1 && valueIndex === maxIndex;
   useEffect(() => { if (!expanded) setPreview(null); }, [expanded]);
+  // On a touch phone the card is a bottom sheet like every other menu
+  // (ui/menu/phone-sheet.tsx); the chip stays where it is.
+  const sheet = usePhoneSheet();
+  const inline = expanded && !sheet;
+  const swipe = usePhoneSheetSwipe(expanded && sheet, onToggle);
+  const sliderVars = {
+    ["--slider-active" as string]: activeColor,
+    ["--slider-active-solid" as string]: activeColorSolid,
+  } as React.CSSProperties;
 
-  return (
-    <div
-      ref={ref}
-      {...rest}
-      className="effort-pill-host relative inline-flex h-(--ui-button-h-lg) items-center"
-      data-effort-expanded={expanded ? "true" : undefined}
-      onMouseEnter={(e) => {
-        onMouseEnter?.(e);
-        effortIconChipRef.current?.startAnimation?.();
-        caretRef.current?.startAnimation?.();
-      }}
-      onMouseLeave={(e) => {
-        onMouseLeave?.(e);
-        // 鼠标移开不再收起卡片——和其它弹层一致，只有点击卡片外部才关
-        // （outside-click 由 composer 的 pointerdown 侦听负责）。这里只
-        // 停掉折叠 chip 的图标 / caret 悬停动画。
-        effortIconChipRef.current?.stopAnimation?.();
-        caretRef.current?.stopAnimation?.();
-      }}
-    >
-      {/* Shell. Collapsed = the 32px round chip (48px on hover — widths
-          in chat.css). Expanded = repositioned by chat.css into a
-          floating layer above the trigger; the visible surface is the
-          .effort-card inside. */}
-      <div
-        data-expanded={expanded ? "true" : undefined}
-        className={[
-          "effort-pill-shell absolute select-none",
-          expanded
-            ? "" // floating-card geometry comes from chat.css
-            : "left-0 top-0 h-(--ui-button-h-lg) overflow-hidden rounded-md text-fs-base text-text-primary transition-[width,background-color] duration-[220ms] ease-out",
-        ].join(" ")}
-        style={{
-          // Tint the collapsed pill by current effort level (neutral
-          // white-grey at `off`, ramps to soft red at `xhigh`). The
-          // expanded card paints its own popover surface instead.
-          ...(expanded ? {} : { backgroundColor: collapsedTint }),
-          // CSS variables inherited by the slider inside:
-          //   --slider-active        →  focus ring (soft, ~70% alpha)
-          //   --slider-active-solid  →  collapsed chip glyph
-          //                              (opaque, full-strength hue)
-          ["--slider-active" as string]: activeColor,
-          ["--slider-active-solid" as string]: activeColorSolid,
-        } as React.CSSProperties}
-      >
-        <div
-          className={[
-            "effort-pill-collapsed h-full flex items-center px-[8px] cursor-pointer",
-            expanded ? "hidden" : "",
-          ].join(" ")}
-          onClick={onToggle}
-        >
-          <SolarIcon
-            name="fire"
-            ref={effortIconChipRef}
-            size={16}
-            fit="fill"
-            className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
-            aria-hidden="true"
-          />
-          <span className="effort-pill-caret text-[var(--slider-active-solid)]">
-            <SolarIcon ref={caretRef} name="alt-arrow-right" size={12} motionPreset="nudge" />
-          </span>
-        </div>
-        {expanded && (
+  const card = (
           /* 卡片内容自上而下：标题行（muted 维度 + 紫色当前档 + Fast 仪表
              + ? 帮助）、Faster/Smarter 两端标签、刻度滑轨、"推荐"标注。
              画框 = GLASS_SURFACE，与所有弹层同一画框。
@@ -245,8 +192,84 @@ const ThinkingEffortSliderPill = React.forwardRef<
             )}
             </>}
           </div>
-        )}
+  );
+
+  return (
+    <div
+      ref={ref}
+      {...rest}
+      className="effort-pill-host relative inline-flex h-(--ui-button-h-lg) items-center"
+      data-effort-expanded={inline ? "true" : undefined}
+      onMouseEnter={(e) => {
+        onMouseEnter?.(e);
+        effortIconChipRef.current?.startAnimation?.();
+        caretRef.current?.startAnimation?.();
+      }}
+      onMouseLeave={(e) => {
+        onMouseLeave?.(e);
+        // 鼠标移开不再收起卡片——和其它弹层一致，只有点击卡片外部才关
+        // （outside-click 由 composer 的 pointerdown 侦听负责）。这里只
+        // 停掉折叠 chip 的图标 / caret 悬停动画。
+        effortIconChipRef.current?.stopAnimation?.();
+        caretRef.current?.stopAnimation?.();
+      }}
+    >
+      {/* Shell. Collapsed = the 32px round chip (48px on hover — widths
+          in chat.css). Expanded = repositioned by chat.css into a
+          floating layer above the trigger; the visible surface is the
+          .effort-card inside. */}
+      <div
+        data-expanded={inline ? "true" : undefined}
+        className={[
+          "effort-pill-shell absolute select-none",
+          inline
+            ? "" // floating-card geometry comes from chat.css
+            : "left-0 top-0 h-(--ui-button-h-lg) overflow-hidden rounded-md text-fs-base text-text-primary transition-[width,background-color] duration-[220ms] ease-out",
+        ].join(" ")}
+        style={{
+          // Tint the collapsed pill by current effort level (neutral
+          // white-grey at `off`, ramps to soft red at `xhigh`). The
+          // expanded card paints its own popover surface instead.
+          ...(inline ? {} : { backgroundColor: collapsedTint }),
+          // CSS variables inherited by the slider inside:
+          //   --slider-active        →  focus ring (soft, ~70% alpha)
+          //   --slider-active-solid  →  collapsed chip glyph
+          //                              (opaque, full-strength hue)
+          ...sliderVars,
+        } as React.CSSProperties}
+      >
+        <div
+          className={[
+            "effort-pill-collapsed h-full flex items-center px-[8px] cursor-pointer",
+            inline ? "hidden" : "",
+          ].join(" ")}
+          onClick={onToggle}
+        >
+          <SolarIcon
+            name="fire"
+            ref={effortIconChipRef}
+            size={16}
+            fit="fill"
+            className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
+            aria-hidden="true"
+          />
+          <span className="effort-pill-caret text-[var(--slider-active-solid)]">
+            <SolarIcon ref={caretRef} name="alt-arrow-right" size={12} motionPreset="nudge" />
+          </span>
+        </div>
+        {inline && card}
       </div>
+      {expanded && sheet && createPortal(
+        <>
+          {/* Takes the tap outside the sheet, which closes it (the
+              composer's outside-pointerdown check). */}
+          <div className="effort-sheet-backdrop" />
+          <div className="effort-sheet" data-phone-sheet data-effort-sheet data-state="open" style={sliderVars} {...swipe}>
+            {card}
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   );
 });
