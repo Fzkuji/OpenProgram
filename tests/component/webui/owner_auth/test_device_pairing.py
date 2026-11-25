@@ -11,7 +11,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
-from starlette.testclient import TestClient
+from starlette.testclient import TestClient, WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from openprogram.interfaces.server.device_access import (
@@ -147,6 +147,7 @@ def test_native_client_gets_a_bearer_that_survives_a_new_owner_token(tmp_path: P
         paired = client.post("/api/auth/pair", json={"code": code}).json()
     credential = paired["token"]
     assert credential.startswith("opd1.")
+    assert paired["name"]
     if os.name != "nt":
         assert path.stat().st_mode & 0o777 == 0o600
     stored = path.read_text(encoding="utf-8")
@@ -169,6 +170,51 @@ def test_native_client_gets_a_bearer_that_survives_a_new_owner_token(tmp_path: P
             "/api/x", headers={"Authorization": f"Bearer {credential[:-1]}A"}
         ).status_code == 401
     assert restarted.devices.list()[0]["label"] == "Work laptop"
+
+
+def test_the_phone_app_socket_names_its_credential_as_a_subprotocol():
+    """apps/mobile: a page at openprogram://app cannot set WebSocket headers."""
+    from openprogram.interfaces.server.owner_auth import APP_ORIGIN, APP_SUBPROTOCOL, APP_BEARER_PREFIX
+
+    state = _state()
+    code, _ = state.devices.create_pairing()
+    seen: dict = {}
+
+    async def socket(ws):
+        seen["subprotocols"] = list(ws.scope.get("subprotocols") or [])
+        seen["headers"] = [value for key, value in ws.scope["headers"] if key == b"sec-websocket-protocol"]
+        seen["device"] = ws.scope["state"].get("device_id")
+        await ws.accept()
+        await ws.send_text("hello")
+
+    app = OwnerAuthMiddleware(Starlette(routes=[WebSocketRoute("/ws", socket)]), auth_state=state)
+    with TestClient(app, base_url=LAN_ORIGIN) as client:
+        credential = client.post("/api/auth/pair", json={"code": code}).json()["token"]
+        offered = [APP_SUBPROTOCOL, APP_BEARER_PREFIX + credential]
+        host = {"host": "192.168.1.20:18100"}
+        with client.websocket_connect("/ws", headers={"origin": APP_ORIGIN, **host}, subprotocols=offered) as ws:
+            assert ws.accepted_subprotocol == APP_SUBPROTOCOL
+            assert ws.receive_text() == "hello"
+        assert seen["subprotocols"] == [APP_SUBPROTOCOL]
+        assert credential.encode() not in b"".join(seen["headers"])
+        assert seen["device"] is not None
+
+        refused = [
+            # The credential from any other page origin.
+            ({"origin": LAN_ORIGIN}, offered),
+            # Without the app's own subprotocol, or with a wrong credential.
+            ({"origin": APP_ORIGIN}, [APP_BEARER_PREFIX + credential]),
+            ({"origin": APP_ORIGIN}, [APP_SUBPROTOCOL, APP_BEARER_PREFIX + credential[:-1] + "A"]),
+            # The app origin with no credential at all.
+            ({"origin": APP_ORIGIN}, [APP_SUBPROTOCOL]),
+        ]
+        for headers, protocols in refused:
+            with pytest.raises(WebSocketDenialResponse):
+                with client.websocket_connect("/ws", headers={**headers, **host}, subprotocols=protocols) as ws:
+                    ws.receive_text()
+        # Plain HTTP from the app origin is refused: the app's requests go through its native proxy.
+        assert client.get("/api/auth/session", headers={"origin": APP_ORIGIN,
+                                                        "Authorization": f"Bearer {credential}"}).status_code == 403
 
 
 def test_idle_devices_are_forgotten():

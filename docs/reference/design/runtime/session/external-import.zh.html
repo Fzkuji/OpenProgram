@@ -66,6 +66,7 @@
 <tr><th scope="row">凭据按请求脱敏的模式去掉</th><td>导入的轮次会重放给接着对话的模型。<code translate="no">models/providers/utils/redaction.py</code> 的高精度模式能抓到密钥和令牌，又不改写只是提到 key 或 token 的正文；导出用的宽规则会改写。标题先去凭据再截断，因为截短的密钥不再符合它的模式；列表的扫描缓存里存的第一条消息和标题也去掉凭据。登录文件从不打开。</td></tr>
 <tr><th scope="row">放进所在文件夹的项目</th><td>和在这里打开那个文件夹一样；原 cwd 保留在 <code translate="no">imported_from.cwd</code>。</td></tr>
 <tr><th scope="row"><code translate="no">--list</code> 之外另有 <code translate="no">--dry-run</code></th><td><code translate="no">--list</code> 列出所有对话文件及状态；<code translate="no">--dry-run</code> 只列出同一条命令会新建或追加的对话。它运行 <code translate="no">plan_imports</code>，和导入做同样的判断，所以回退过的来源显示为新对话，而不是追加。</td></tr>
+<tr><th scope="row">Codex App 的对话是同步，不是导入</th><td>Codex App 和 CLI 的线程通过 <code translate="no">codex_sync.py</code> 自己进来：它复用这里的读取、写入和台账，但把每个对话连到它的 Codex 线程，并追加 App 里新加的轮次，跳过 OpenProgram 在上面跑的轮次；见 <a href="../../integrations/harness-engines.zh.html#synced">Harness 引擎</a>。和导入不同，它不新建项目，因为 Codex App 每个对话都会开一个文件夹。</td></tr>
 </tbody>
 </table>
 

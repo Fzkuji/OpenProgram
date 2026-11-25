@@ -347,6 +347,58 @@ def _one_header(headers: dict[str, list[str]], name: str) -> str | None:
     return values[0] if values else None
 
 
+#: The phone app's page origin (apps/mobile). Its WebSocket cannot set headers, so it names its
+#: credential in the handshake's subprotocols; nothing else is accepted from this origin.
+APP_ORIGIN = "openprogram://app"
+APP_SUBPROTOCOL = "openprogram.v1"
+APP_BEARER_PREFIX = "openprogram.bearer."
+
+
+def _app_socket_bearer(scope, headers: dict[str, list[str]]) -> str | None:
+    """The credential an app WebSocket offers as a subprotocol, or None.
+
+    Only a WebSocket whose Origin is exactly the app's and that carries no
+    Authorization header qualifies. The bearer entry is removed from the
+    scope, so the application never sees it.
+    """
+    if scope.get("type") != "websocket" or "authorization" in headers:
+        return None
+    origins = headers.get("origin", [])
+    if len(origins) != 1 or origins[0].strip() != APP_ORIGIN:
+        return None
+    offered = [item.strip() for value in headers.get("sec-websocket-protocol", []) for item in value.split(",")]
+    tokens = [item[len(APP_BEARER_PREFIX):] for item in offered if item.startswith(APP_BEARER_PREFIX)]
+    if len(tokens) != 1 or APP_SUBPROTOCOL not in offered:
+        return None
+    scope["subprotocols"] = [item for item in scope.get("subprotocols") or [] if not item.startswith(APP_BEARER_PREFIX)]
+    scope["headers"] = [
+        (key, APP_SUBPROTOCOL.encode("latin-1") if key.lower() == b"sec-websocket-protocol" else value)
+        for key, value in scope.get("headers") or []
+    ]
+    return tokens[0]
+
+
+def _app_socket_sender(send):
+    """Accept an app WebSocket with ``openprogram.v1``, the subprotocol it asked for."""
+
+    async def wrapped(message):
+        if message.get("type") == "websocket.accept" and not message.get("subprotocol"):
+            message = {**message, "subprotocol": APP_SUBPROTOCOL}
+        await send(message)
+
+    return wrapped
+
+
+def _computer_name() -> str:
+    """This computer's short host name, as a paired app shows it."""
+    import socket
+
+    try:
+        return socket.gethostname().split(".", 1)[0].strip() or "OpenProgram"
+    except OSError:
+        return "OpenProgram"
+
+
 def _peer_is_loopback(scope) -> bool:
     client = scope.get("client")
     return bool(client and is_loopback_host(str(client[0])))
@@ -662,6 +714,14 @@ class OwnerAuthMiddleware:
             await office.serve_asset(scope, receive, send, self.auth_state.port, frame_ancestors)
             return
         headers = _headers(scope)
+        app_bearer = _app_socket_bearer(scope, headers)
+        if app_bearer is not None:
+            # From here on the app socket is a native bearer client: no
+            # Origin to match, the credential as Authorization.
+            headers.pop("origin", None)
+            headers.pop("sec-fetch-site", None)
+            headers["authorization"] = [f"Bearer {app_bearer}"]
+            send = _app_socket_sender(send)
         # Sandboxed application module imports have Origin: null and no owner
         # credential. Their URL grants only reads of one immutable UI tree.
         asset_path = str(scope.get("path") or "")
@@ -947,7 +1007,8 @@ class OwnerAuthMiddleware:
         device, credential = redeemed
         if origin is None:
             body = json.dumps(
-                {"device_id": device.id, "token": credential},
+                # The name lets the phone app list this computer by name, not by address.
+                {"device_id": device.id, "token": credential, "name": _computer_name()},
                 separators=(",", ":"),
             ).encode("utf-8")
             await send(

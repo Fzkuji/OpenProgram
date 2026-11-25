@@ -428,6 +428,11 @@ class SessionsOperations:
                 session_log.write_meta(meta)
         if selected:
             index_fields = {k: v for k, v in values.items() if k in self._INDEX_FIELDS and v is not None}
+            if "harness" in values or "model_override" in values:
+                # The sidebar's agent mark: what the selected branch runs in now.
+                current = config_for_branch(meta, meta.get("active_branch_id"))
+                index_fields["harness"] = current.get("harness")
+                index_fields["model_override"] = current.get("model_override")
             if index_fields:
                 self._update_index_entry(session_id, **index_fields)
                 self._save_index()

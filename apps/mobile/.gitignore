@@ -1,0 +1,4 @@
+# Built by scripts/bundle-web.sh from apps/web.
+/ios/web/
+/ios/build/
+xcuserdata/

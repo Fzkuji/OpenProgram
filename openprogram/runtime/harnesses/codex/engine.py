@@ -25,6 +25,9 @@ from openprogram.runtime.harnesses.codex.client import AppServer, AppServerError
 _log = logging.getLogger(__name__)
 
 PROVIDER = "codex-harness"
+#: The Codex turn ids a thread record keeps of the turns run here, so a sync
+#: of the thread from the Codex app does not write them twice.
+_OWN_TURNS_KEPT = 500
 #: A model id that runs OpenProgram's own model through the local gateway.
 GATEWAY_PREFIX = "openprogram:"
 #: How long a Stop waits for Codex to end the turn before its process is stopped.
@@ -334,11 +337,22 @@ class CodexTurn:
         if model:
             common["model"] = model
         loaded: set = server.__dict__.setdefault("loaded_threads", set())
+        loaded_at: dict = server.__dict__.setdefault("loaded_at", {})
         note: Optional[str] = None
         thread_id: Optional[str] = None
         if plan.action == "resume":
             thread_id = plan.thread_id
+            if thread_id in loaded and not fresh and _synced_since(records, thread_id, loaded_at.get(thread_id, 0)):
+                # The Codex app added turns since this process read the
+                # thread: let it go so the resume reads the rollout again.
+                try:
+                    server.request("thread/unsubscribe", {"threadId": thread_id})
+                except AppServerError as exc:
+                    if exc.exited:
+                        raise
+                loaded.discard(thread_id)
             if fresh or thread_id not in loaded:
+                _match_provider(thread_id, model)
                 try:
                     server.request("thread/resume", {"threadId": thread_id, "excludeTurns": True, **common})
                 except AppServerError as exc:
@@ -363,6 +377,8 @@ class CodexTurn:
             thread_id = ((answer or {}).get("thread") or {}).get("id")
             if not thread_id:
                 raise AppServerError("Codex did not start a thread")
+        if thread_id not in loaded:
+            loaded_at[thread_id] = time.time()
         loaded.add(thread_id)
         self.thread_id = thread_id
         handoff.write_record(db, self.req.session_id, PROVIDER, key, {"thread_id": thread_id})
@@ -453,8 +469,14 @@ class CodexTurn:
             return
         try:
             from openprogram.runtime.context.session_db import default_db
-            handoff.write_record(default_db(), self.req.session_id, PROVIDER, handoff.branch_key(self.req),
-                                 {"thread_id": self.thread_id, "seen": self.assistant_msg_id,
+            db = default_db()
+            key = handoff.branch_key(self.req)
+            own = list((handoff.read_records(db, self.req.session_id, PROVIDER).get(key) or {}).get("own_turns") or [])
+            if self.turn_id and self.turn_id not in own:
+                own = (own + [self.turn_id])[-_OWN_TURNS_KEPT:]
+            handoff.write_record(db, self.req.session_id, PROVIDER, key,
+                                 {"thread_id": self.thread_id, "seen": self.assistant_msg_id, "at": time.time(),
+                                  "own_turns": own,
                                   **({"last_turn_id": self.turn_id} if self.turn_id else {})})
         except Exception:  # noqa: BLE001 - the next turn hands off what it cannot tell
             _log.warning("Codex thread record not kept for %s", self.req.session_id, exc_info=True)
@@ -672,3 +694,41 @@ class CodexTurn:
 
 #: Codex's requests this engine answers itself; the rest get the client's default answer.
 _ANSWERED_REQUESTS = frozenset({"item/commandExecution/requestApproval", "item/fileChange/requestApproval"})
+
+
+def _synced_since(records: dict, thread_id: str, since: float) -> bool:
+    """A sync from the Codex app moved ``thread_id`` on after ``since``."""
+    return any(isinstance(r, dict) and r.get("thread_id") == thread_id
+               and float(r.get("synced_at") or 0) > since for r in (records or {}).values())
+
+
+def _match_provider(thread_id: Optional[str], model: Optional[str]) -> None:
+    """Save the thread on the provider this turn runs on: Codex resumes a
+    thread only on the provider it was saved with (after magpie)."""
+    if not thread_id:
+        return
+    try:
+        from openprogram.state.store.session.external_import import codex, codex_threads
+        from openprogram.models.gateway.harness_config import PROVIDER_ID
+        home = codex.default_home()
+        saved = codex_threads.saved_provider(home, thread_id)
+        if saved is None:
+            return
+        gateway = bool(model) and "/" in str(model)
+        if gateway and saved != PROVIDER_ID:
+            codex_threads.move_provider(home, PROVIDER_ID, thread_ids=[thread_id])
+        elif not gateway and saved == PROVIDER_ID:
+            codex_threads.move_provider(home, _configured_provider(home), thread_ids=[thread_id])
+    except Exception:  # noqa: BLE001 - an unmoved thread starts a new one with the handoff
+        _log.info("Codex thread %s kept on its provider", thread_id, exc_info=True)
+
+
+def _configured_provider(home) -> str:
+    """The provider Codex's config.toml names, else ``openai``."""
+    try:
+        import tomllib
+        value = tomllib.loads((home / "config.toml").read_text(encoding="utf-8")).get("model_provider")
+    except Exception:  # noqa: BLE001
+        value = None
+    from openprogram.models.gateway.harness_config import PROVIDER_ID
+    return value if isinstance(value, str) and value and value != PROVIDER_ID else "openai"

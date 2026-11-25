@@ -15,7 +15,7 @@
 import { BrandMark } from "@/components/brand-mark";
 import { SolarIcon } from "@/components/solar-icons";
 import { providerLogo } from "@/components/settings/providers/icons/provider-icon";
-import { harnessMark } from "@/lib/models/harnesses";
+import { agentLogo, harnessMark } from "@/lib/models/harnesses";
 import { cn } from "@/lib/utils";
 
 /** Shown when the provider has no logo. */
@@ -27,4 +27,14 @@ export function ModelMark({ provider, size = 16, className }: { provider?: strin
     return <SolarIcon name={MODEL_FALLBACK_ICON} size={size} fit="fill" className={cn("shrink-0", className)} aria-hidden="true" />;
   }
   return <BrandMark logo={logo} size={size} fit="fill" className={className} attributes={{ "data-provider-logo": provider }} />;
+}
+
+/** An outside agent's own logo (Codex, Claude Code), for where the agent
+ *  rather than its model's maker is meant: the Harness chip and its menu. */
+export function AgentMark({ harness, size = 16, fit = "fill", className }: {
+  harness?: string | null; size?: number; fit?: "fill" | "contain"; className?: string;
+}) {
+  const logo = providerLogo(agentLogo(harness));
+  if (!logo) return <ModelMark provider={harness ?? undefined} size={size} className={className} />;
+  return <BrandMark logo={logo} size={size} fit={fit} className={className} attributes={{ "data-agent-logo": harness ?? undefined }} />;
 }

@@ -186,6 +186,7 @@ def parse(path: Path, titles: Optional[dict[str, str]] = None) -> ExternalSessio
     turn: Optional[Turn] = None
     pending: dict[str, ToolBlock] = {}
     model = ""
+    turn_id: Optional[str] = None
     for record in _records(path):
         kind = record.get("type")
         payload = record.get("payload") or {}
@@ -196,6 +197,10 @@ def parse(path: Path, titles: Optional[dict[str, str]] = None) -> ExternalSessio
             continue
         if kind == "turn_context":
             model = payload.get("model") or model
+            turn_id = payload.get("turn_id") or turn_id
+            continue
+        if kind == "event_msg" and payload.get("type") in ("task_started", "turn_started"):
+            turn_id = payload.get("turn_id") or turn_id
             continue
         if kind != "response_item":
             continue
@@ -203,7 +208,7 @@ def parse(path: Path, titles: Optional[dict[str, str]] = None) -> ExternalSessio
         if item == "message" and payload.get("role") == "user":
             text, command = _user_text(payload.get("content"))
             if text:
-                turn = Turn(user_text=text, timestamp=ts, ended_at=ts, command=command)
+                turn = Turn(user_text=text, timestamp=ts, ended_at=ts, command=command, turn_id=turn_id)
                 pending.clear()
                 session.turns.append(turn)
             continue

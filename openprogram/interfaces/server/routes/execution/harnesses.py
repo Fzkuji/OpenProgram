@@ -104,6 +104,10 @@ def switch_harness(session_id: str, body: dict) -> tuple[int, dict]:
             with contextlib.suppress(Exception):
                 old.close()
     emit_ws_frame({"type": "agent_settings_changed", "data": {}})
+    if selected:
+        # The sidebar marks the conversations an outside agent runs.
+        from openprogram.interfaces.server.ws_actions.session.listing import broadcast_sessions_list
+        broadcast_sessions_list()
     return 200, {"session_id": session_id, **picked_reply(row)}
 
 

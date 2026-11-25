@@ -51,6 +51,7 @@
 <li>左侧栏滚动时关闭，链接随宽度滑到顶部（一个 transform 的 Web Animation），结束时在同一帧重置滚动。</li>
 <li>右侧面板的视图只在打开时工作：折叠期间暂停活动、资源的进程、页面截图和终端读取。</li>
 <li>已保存为关闭的左侧栏在首帧按 <code translate="no">html[data-sidebar-closed]</code> 画成折叠，没有过渡，仅展开部件靠 <code translate="no">interactivity: inert</code> 不可达，直到侧栏挂载后把它们设为 inert。</li>
+<li>再次挂载的左侧栏（所有者登录完成后外壳会再挂载一次）直接以稳定状态开始，不从打开开始，所以手机上加载页面时不会看到抽屉盖在页面上再滑走。</li>
 </ul>
 </details>
 

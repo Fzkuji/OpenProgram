@@ -162,9 +162,17 @@ def apply(harness: str, model_ref: str, tiers: dict[str, str] | None = None,
     wrote.update({key: value for key, value in previous.items() if value.get("deleted") and key not in wrote})
     stash.wrote(harness, wrote)
     if harness == "codex" and not was_applied:
-        from .codex_app import restart_app
+        from .codex_app import move_history, restart_app
+        move_history(path.parent, PROVIDER_ID, _original_provider(record))
         restart_app(path.parent)
     return status(harness)
+
+
+def _original_provider(record: dict[str, Any]) -> str:
+    """The provider Codex used before the gateway: config.toml's, else ``openai``."""
+    original = (record.get("originals") or {}).get("model_provider") or {}
+    value = original.get("value") if original.get("had") else None
+    return value if isinstance(value, str) and value and value != PROVIDER_ID else "openai"
 
 
 def _ours(written: dict[str, Any] | None, present: bool, current: Any) -> bool:
@@ -206,8 +214,9 @@ def restore(harness: str) -> dict[str, Any]:
         raise HarnessConfigError(f"{exc}; the original settings are kept to restore later") from exc
     stash.forget(harness)
     if harness == "codex":
-        from .codex_app import remove_catalog, restart_app
+        from .codex_app import move_history, remove_catalog, restart_app
         remove_catalog(path.parent)
+        move_history(path.parent, _original_provider(record), PROVIDER_ID)
         restart_app(path.parent)
     return status(harness)
 

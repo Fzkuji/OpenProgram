@@ -4,6 +4,7 @@
  * Everything the frontend owns itself lives in a module now; what remains
  * are genuine boundaries we do not control:
  *  - `openprogramDesktop` is injected by the Electron preload script.
+ *  - `openprogramMobile` is injected by the phone app's web view.
  *  - `__centerTabs` / `__desktopTransfer` are debug handles for the
  *    desktop multi-window acceptance runs, which drive the renderer over
  *    CDP and can only reach the stores through `window`.
@@ -22,6 +23,8 @@ declare global {
   interface Window {
     /** Injected by the Electron preload; absent in a plain browser. */
     openprogramDesktop?: DesktopBridge;
+    /** Injected by the phone app (apps/mobile); absent elsewhere. */
+    openprogramMobile?: import("./mobile/bridge").MobileBridge;
     /** CDP-only debug handle. Not read by application code. */
     __centerTabs?: typeof useCenterTabs;
     /** CDP-only debug handle. Not read by application code. */

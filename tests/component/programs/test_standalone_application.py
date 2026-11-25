@@ -35,7 +35,7 @@ def write_package(root: Path, **manifest) -> Path:
 @pytest.fixture
 def data(tmp_path, monkeypatch):
     folder = tmp_path / "data"
-    monkeypatch.setenv("OPENPROGRAM_STATE_DIR", str(folder))
+    monkeypatch.setenv("OPENPROGRAM_DATA_DIR", str(folder))
     return folder
 
 

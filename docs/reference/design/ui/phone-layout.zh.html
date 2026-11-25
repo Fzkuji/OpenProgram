@@ -1,5 +1,5 @@
 <title>手机布局</title>
-<meta name="description" content="网页界面在 760px 及以下怎样变成手机 App：侧边栏抽屉、右侧面板整屏、分区列表单独成页、输入框在键盘之上，以及从 dsh-mobile 照搬了什么。">
+<meta name="description" content="网页界面在 760px 及以下怎样变成手机 App：侧边栏和右侧面板做成两边的抽屉、顶部导航栏、分区列表单独成页、输入框在键盘之上，以及从 dsh-mobile 照搬了什么。">
 <meta name="covers" content="apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx apps/web/components/layout/phone-drawer-button.tsx apps/web/lib/layout/">
 <h1>手机布局</h1>
 <p>宽度在 760px 及以下时，外壳是单列的手机 App。断点只有一个常量 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/layout/phone.ts"><code translate="no">PHONE_MAX_WIDTH</code></a>，和<a href="sidebar/secondary-rail.zh.html">二级侧栏</a>原来用的是同一个。其余都是最后加载的 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/styles/base/phone.css"><code translate="no">styles/base/phone.css</code></a>，加上 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/layout/phone-shell.tsx"><code translate="no">phone-shell.tsx</code></a> 里的手势。760px 以上什么都不变。</p>
@@ -15,11 +15,16 @@
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">手机上</th></tr></thead>
 <tbody>
 <tr><th scope="row">侧边栏</th><td>抽屉，宽 <code translate="no">min(86vw, 320px)</code>，下面盖一层 <code translate="no">--scrim</code>。用标签行或页面标题最前面的按钮、或从左边 24px 内滑动打开；用它自己的收起按钮、点遮罩、向左滑、或选中对话、页面、标签关上。拖动时跟手，松手按距离或甩动速度决定开关。它一直挂着，再打开时停在原来的滚动位置。关上后不留图标栏。</td></tr>
-<tr><th scope="row">对话</th><td>中间卡片占满屏幕；消息左右留 12px，输入框与之对齐。消息刻度条住在侧边留白里，手机上不显示；视图控件保持窄的竖条，离右上角 8px。代码块和表格在自身内部横向滚动。</td></tr>
-<tr><th scope="row">右侧面板</th><td>从右边滑进来的整屏面板，用标签行最后的按钮打开，用它的收起按钮或选中标签关上。工具详情、文件、活动和资源都占满宽度。</td></tr>
+<tr><th scope="row">对话</th><td>中间卡片占满屏幕；消息左右留 12px，输入框与之对齐。消息刻度条住在侧边留白里，手机上不显示；浮动的视图控件也不显示，它们的操作在标题菜单里。代码块和表格在自身内部横向滚动。</td></tr>
+<tr><th scope="row">导航栏</th><td>标签行变成 48px 的导航栏，只有两个按钮，和 Claude、ChatGPT 的手机 App 一样：左边两道横线打开左侧抽屉，右边的写字图标开新对话。中间是当前页面的标题；在对话上标题带一个小箭头，点开是这个对话的菜单。标签、前进后退、窗口总览和主菜单不显示。</td></tr>
+<tr><th scope="row">对话菜单</th><td>文件、活动、资源打开右侧抽屉的对应视图；上下文图切换视角；然后是对话区自己的会话操作（<code translate="no">components/chat/pane/session-actions-menu.tsx</code>）：显示方式、重命名、自动命名、置顶、复制链接、复制会话、归档、删除。“设为默认显示方式”只留在电脑上。</td></tr>
+<tr><th scope="row">菜单</th><td>手机上所有菜单的行高 40px、字号 16px、圆角 22px，不显示快捷键字母，可以用导航栏以下的整屏高度。</td></tr>
+<tr><th scope="row">一次一个页面</th><td>在触屏手机上（App、手机浏览器），打开一个页面就关掉前一个，标签不会在看不见的地方越堆越多；写字图标直接在原地开新对话，不打开新标签页。窄的桌面窗口保留它的标签。</td></tr>
+<tr><th scope="row">右侧面板</th><td>和左侧抽屉对称：从右边缘出来，<code translate="no">min(86vw, 340px)</code> 宽，盖在同一层遮罩上。从对话菜单或从右边 24px 内滑出来打开；用它的收起按钮、遮罩、往右滑或选中标签关上。拖动和左侧抽屉一样跟手。</td></tr>
+<tr><th scope="row">消息</th><td>用户的消息是主题强调色填充、白字的气泡，靠发送方的角更小；助手的回复仍是正文。</td></tr>
 <tr><th scope="row">设置、历史、项目、智能体</th><td>二级侧栏就是本页的分区列表，占满宽度；点一行打开内容。列表页标题前只有侧边栏按钮，内容页只有回到列表的返回箭头。</td></tr>
 <tr><th scope="row">管理页</th><td>抽屉按钮、侧栏按钮和标题在标题栏第一行；标签和工具栏换到下面。原来给收起图标栏留的 62px 去掉。</td></tr>
-<tr><th scope="row">输入框和提问卡片</th><td>三段式输入框布局不变，占满这一列；提问和审批卡片在输入框里，所以也是满宽。</td></tr>
+<tr><th scope="row">输入框和提问卡片</th><td>三段式输入框布局不变，占满这一列；提问和审批卡片在输入框里，所以也是满宽。触屏手机上，回复进行中时提示写“补充到这一轮”，不写键盘快捷键。</td></tr>
 </tbody>
 </table>
 
@@ -27,13 +32,14 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col">做法</th></tr></thead>
 <tbody>
-<tr><th scope="row">键盘</th><td>外壳 <code translate="no">position: fixed</code>，顶部和高度跟随可视视口（<code translate="no">visualViewport</code> 写入的 <code translate="no">--phone-viewport-top</code>、<code translate="no">--phone-viewport-h</code>），没有时用 <code translate="no">100dvh</code>，所以在 Safari 里输入框也停在屏幕键盘之上。</td></tr>
-<tr><th scope="row">刘海和底部横条</th><td>外壳按 <code translate="no">env(safe-area-inset-*)</code> 留边；抽屉和整屏面板至少留 8px 或安全区。</td></tr>
-<tr><th scope="row">触摸目标</th><td>标题按钮、抽屉和面板里的行、分区列表的行都是 44px。</td></tr>
+<tr><th scope="row">键盘</th><td>外壳 <code translate="no">position: fixed</code>，顶部和高度跟随可视视口（<code translate="no">visualViewport</code> 写入的 <code translate="no">--phone-viewport-top</code>、<code translate="no">--phone-viewport-h</code>），没有时用 <code translate="no">100dvh</code>，所以在 Safari 里输入框也停在屏幕键盘之上。键盘弹出时外壳去掉底部安全区留边，输入框贴着键盘；手机 App 还去掉了网页表单在键盘上方加的“上一项、下一项、完成”那一栏。</td></tr>
+<tr><th scope="row">圆角</th><td>浮在页面上的东西和屏幕边缘保持均匀的间距，抽屉 8px、弹窗 16px，圆角取屏幕圆角减去这个间距，和屏幕的圆角平行。手机 App 把屏幕的真实圆角写进 <code translate="no">--phone-screen-radius</code>；浏览器在有底部横条的屏幕上按 55px 算，否则按 24px。抽屉伸到状态栏和底部横条下面，内容避开这两处。</td></tr>
+<tr><th scope="row">刘海和底部横条</th><td>外壳按 <code translate="no">env(safe-area-inset-*)</code> 留边；抽屉的内容留在安全区里（见上面的圆角）。</td></tr>
+<tr><th scope="row">触摸目标</th><td>标题按钮、抽屉里的行、分区列表的行都是 44px。触屏手机上，输入框的两排小按钮（电脑、频道、文件夹；工具、思考档位、模型）和菜单里的图标放大到 1.2 倍，图标看得清，按钮是 34px。</td></tr>
 <tr><th scope="row">输入框字号</th><td>至少 16px，聚焦时页面不放大。</td></tr>
 <tr><th scope="row">悬停</th><td>手指点按不会打开悬停提示；消息操作本来就不需要悬停就可见。</td></tr>
-<tr><th scope="row">保存的选择</th><td>在手机上开抽屉、面板或分区页都不保存；保存为打开的右侧面板在手机上启动时是关的。宽窗口保留自己的选择。</td></tr>
-<tr><th scope="row">动效</th><td>抽屉和面板滑动 220ms；拖动跟手；减少动态效果时不滑动。</td></tr>
+<tr><th scope="row">保存的选择</th><td>在手机上开两边的抽屉或分区页都不保存；保存为打开的右侧面板在手机上启动时是关的。宽窗口保留自己的选择。</td></tr>
+<tr><th scope="row">动效</th><td>两边的抽屉滑动 220ms；拖动跟手，松手后从手指离开的位置接着滑；减少动态效果时不滑动。</td></tr>
 </tbody>
 </table>
 
@@ -43,7 +49,7 @@
 <thead class="sr"><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
 <tbody>
 <tr><th scope="row">会话列表做成带遮罩的覆盖抽屉</th><td>对话占满宽度；列表一滑就到，并保留滚动位置。</td></tr>
-<tr><th scope="row">右侧面板做成整屏</th><td>手机上 300px 的一列放不下正文；整屏能满宽看详情。</td></tr>
+<tr><th scope="row">右侧面板做成右边缘的抽屉</th><td>dsh-mobile 用的是整屏面板；手机聊天 App 用和左边同样的滑动从右边缘拉出侧栏，对话还露在边上。</td></tr>
 <tr><th scope="row">设置分区做成可返回的列表页</th><td>分区列表和内容挤不进 390px。</td></tr>
 <tr><th scope="row">高度跟随键盘、安全区留边、44px 目标、16px 输入框</th><td>它的设计系统清单：主操作在键盘之上，刘海下不放东西，聚焦不放大。</td></tr>
 <tr><th scope="row">页面不横向滚动，宽内容在自身内部滚动</th><td>同上。</td></tr>

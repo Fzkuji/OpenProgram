@@ -104,7 +104,9 @@ def enabled_model_refs() -> list[dict[str, Any]]:
         if provider and model_id:
             rows.append({"id": f"{provider}/{model_id}", "provider": provider,
                          "name": row.get("name") or model_id,
-                         "context_window": row.get("context_window")})
+                         "context_window": row.get("context_window"),
+                         "thinking_levels": row.get("thinking_levels") or [],
+                         "default_thinking_level": row.get("default_thinking_level")})
     return rows
 
 

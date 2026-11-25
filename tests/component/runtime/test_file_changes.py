@@ -54,3 +54,29 @@ def test_a_directory_made_later_is_watched_once_it_exists(tmp_path, watching):
         listener.wait(0)
         (later / "f").write_text("x", encoding="utf-8")
         assert listener.wait(5.0) == {"later"}
+
+
+def test_registrations_from_many_threads_at_once_start_each_watcher_once(tmp_path, watching):
+    # The Worker registers paths from its server thread and its own at once;
+    # each restart used to start the threads another restart had just made.
+    import threading
+
+    errors = []
+    previous = threading.excepthook
+    threading.excepthook = lambda args: errors.append(args.exc_value)
+    try:
+        def register(index):
+            for step in range(20):
+                folder = tmp_path / f"t{index}-{step}"
+                folder.mkdir()
+                changes.watch(folder, f"topic-{index}", recursive=bool(step % 2))
+        workers = [threading.Thread(target=register, args=(index,)) for index in range(8)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+    finally:
+        threading.excepthook = previous
+    assert errors == []
+    with changes._lock:
+        assert all(thread.is_alive() for thread, _stop in changes._watch_threads.values())

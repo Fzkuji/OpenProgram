@@ -36,7 +36,10 @@ _log = logging.getLogger(__name__)
 _ENV_PROFILE = "OPENPROGRAM_PROFILE"
 # An exported application (interfaces/standalone) keeps all of its state
 # in one folder of its own, named by its launcher; it wins over a profile.
-_ENV_STATE_DIR = "OPENPROGRAM_STATE_DIR"
+# Not OPENPROGRAM_STATE_DIR: that is the installer's root, which every
+# installed CLI launcher exports, so reading it here moved an installed
+# CLI's data and overrode --profile.
+_ENV_STATE_DIR = "OPENPROGRAM_DATA_DIR"
 
 # pytest sets this in its own process for the length of each test, and every
 # child that process starts inherits it.

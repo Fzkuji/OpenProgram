@@ -31,6 +31,9 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
         "source", "channel", "account_id", "peer_display", "peer_id",
         "pinned", "archived", "group", "status", "unread",
         "sort_at", "sort_since", "agent_trial",
+        # The outside agent the selected branch runs in (``codex``) and its
+        # model; the sidebar marks those conversations.
+        "harness", "model_override",
     })
 
     _EMPTY_SHELL_AGE = 3600       # 1 hour

@@ -67,6 +67,23 @@ export function harnessOf(provider: string | null | undefined): string | null {
   return Object.entries(PROVIDERS).find(([, id]) => id === provider)?.[0] ?? null;
 }
 
+/** The agent's own logo for a harness or its provider: the Harness chip,
+ *  its menu and the sidebar's mark of a conversation running there. */
+const AGENT_LOGOS: Record<string, string> = {
+  codex: "codex", "codex-harness": "codex",
+  "claude-code": "claudecode", "claude-code-harness": "claudecode",
+};
+/** Agent names as people know them, for marks and hover cards. */
+const AGENT_NAMES: Record<string, string> = { codex: "Codex", "claude-code": "Claude Code" };
+
+export function agentLogo(id: string | null | undefined): string | undefined {
+  return id ? AGENT_LOGOS[id] : undefined;
+}
+
+export function agentName(id: string | null | undefined): string | undefined {
+  return id ? AGENT_NAMES[id] ?? AGENT_NAMES[harnessOf(id) ?? ""] : undefined;
+}
+
 /** The provider whose logo stands for `id` (a harness or its provider). */
 export function harnessMark(id: string | undefined): string | undefined {
   return id ? MARKS[id] ?? id : id;

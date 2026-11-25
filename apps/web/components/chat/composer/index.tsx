@@ -23,6 +23,7 @@
 "use client";
 
 import { platformKeys } from "@/lib/shortcut-keys";
+import { useTouchPhone } from "@/lib/layout/phone";
 import { PendingDecisionPanels } from "../messages/runtime/decision-output";
 import { QueuedMessages } from "../messages/editing/queued-messages";
 
@@ -228,6 +229,8 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const send = wsSend;
   const modKey = platformKeys("⌘");
+  // A touch phone has no Enter-with-modifier or Esc to hint at.
+  const touchPhone = useTouchPhone();
   const fnFormActive = fnFormFunction !== null;
   // Decisions have their own output cards. Chat text always sends or queues
   // a message. While a run goes on the action button is Stop, draft or not:
@@ -750,6 +753,9 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           runningPlaceholder={awaitingAnswer ? text(
             "Reply to the request above, or tell the agent what to do instead",
             "答复上面的请求，或者告诉 agent 改做什么",
+          ) : touchPhone ? text(
+            "Add to this turn",
+            "补充到这一轮",
           ) : text(
             `Enter adds to this turn · ${modKey}Enter queues · Esc stops`,
             `回车插入当前轮 · ${modKey}回车排到下一轮 · Esc 停止`,

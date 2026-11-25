@@ -7,7 +7,7 @@
      a swipe from the left edge, closed by its toggle, the scrim or a swipe
      back (components/layout/phone-shell.tsx); it stays mounted, so it
      reopens at the same scroll position;
-   - the right panel is a full-screen sheet;
+   - the right panel is the same kind of drawer from the right edge;
    - the shell follows the visual viewport, so the composer stays above
      the on-screen keyboard, and keeps every control inside the safe area;
    - touch-sized rows and buttons (44px), inputs at 16px so focusing one
@@ -21,6 +21,45 @@
 
 @media (max-width: 760px) {
   .phone-only { display: flex !important; }
+
+  /* --- Corners that follow the screen's ------------------------------ */
+  /* Whatever floats over the page keeps an even gap to the screen's edge
+     and rounds its corners by the screen's radius less that gap, so its
+     corners run parallel to the screen's. The phone app writes the real
+     radius (apps/mobile WebShell.swift); a browser assumes a
+     current iPhone's when the screen has a home indicator, else a plain
+     card corner. */
+  :root {
+    --phone-screen-radius: max(24px, min(55px, env(safe-area-inset-bottom) * 100));
+    --phone-edge-gap: 8px;
+    --phone-dialog-gap: 16px;
+  }
+  /* The drawers run under the status bar and the home indicator; their
+     content keeps clear of both. */
+  #sidebar [data-slot="sidebar-inner"],
+  .right-sidebar [data-slot="sidebar-inner"] {
+    border-radius: max(12px, var(--phone-screen-radius) - var(--phone-edge-gap));
+    padding-top: max(0px, env(safe-area-inset-top) - var(--phone-edge-gap));
+    padding-bottom: max(0px, env(safe-area-inset-bottom) - var(--phone-edge-gap));
+  }
+  /* The larger corner needs more room inside it: the content and the
+     close button move in from the curve. */
+  [data-slot="dialog-content"] {
+    max-width: calc(100% - 2 * var(--phone-dialog-gap));
+    padding: 22px;
+  }
+  [data-slot="dialog-content"] > [data-slot="dialog-close"] {
+    top: 12px;
+    right: 12px;
+  }
+  :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+    --phone-dialog-radius: max(12px, var(--phone-screen-radius) - var(--phone-dialog-gap));
+    border-radius: var(--phone-dialog-radius);
+  }
+  [data-slot="alert-dialog-footer"] {
+    border-bottom-left-radius: var(--phone-dialog-radius);
+    border-bottom-right-radius: var(--phone-dialog-radius);
+  }
 
   /* --- The shell follows the visual viewport ------------------------- */
   html, body { overscroll-behavior: none; }
@@ -38,6 +77,7 @@
       env(safe-area-inset-left);
     background: var(--bg-primary);
   }
+  html[data-phone-keyboard] .app { padding-bottom: 0; }
   .app .center-col,
   .app .page-col,
   .app .center-col[data-right-rail-hidden] {
@@ -55,10 +95,99 @@
   /* A section's page goes back with its arrow; the drawer opens from the list. */
   .phone-header-button:has(~ [data-phone-back], ~ * [data-phone-back]) { display: none !important; }
   .app [data-center-tab-strip] {
-    height: 44px;
     gap: 4px;
     padding: 0 4px;
   }
+
+  /* --- The tab strip as a navigation bar ------------------------------ */
+  /* One page at a time: the menu on the left, the page's title in the
+     middle (it opens the conversation's menu), new chat on the right. The
+     tabs, history arrows, window overview and main menu are desktop ideas;
+     the right drawer opens from the title's menu or the right edge. */
+  .app [data-center-tab-strip] {
+    position: relative;
+    height: 48px;
+    background: var(--bg-primary);
+    border-bottom: 0.5px solid var(--border-light);
+  }
+  .app [data-center-tab-strip] > :is([role="tablist"], [role="group"], [data-overview-toggle], [data-main-menu]),
+  .app [data-center-tab-strip] [data-main-menu] {
+    display: none !important;
+  }
+  .app [data-center-tab-strip] > button:not(.phone-header-button) {
+    width: 40px;
+    height: 40px;
+    margin-left: auto;
+    border-radius: 20px;
+  }
+  /* The title is centred over the bar and opens the conversation's menu. */
+  .phone-nav-title.phone-nav-title {
+    position: absolute;
+    left: 56px;
+    right: 56px;
+    top: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    pointer-events: none;
+  }
+  .phone-nav-title-button,
+  .phone-nav-title > .phone-nav-title-text {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 18px;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+  .phone-nav-title-button:active { background: var(--bg-hover); }
+  .phone-nav-title-button > svg { flex: none; color: var(--text-muted); }
+  .phone-nav-title-text {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The conversation's floating controls move into the title's menu. */
+  .chat-view-controls { display: none; }
+
+  /* --- Menus: touch rows ------------------------------------------- */
+  /* Rows a finger can hit and type at the phone's reading size; no
+     keyboard letters, a phone has no keyboard to press them on. */
+  :is([role="menu"], [role="listbox"])[data-state] {
+    border-radius: 22px;
+    padding: 6px;
+    min-width: 220px;
+    /* The desktop's 60vh cap leaves a phone's conversation menu scrolling;
+       the screen below the bar has room for it. */
+    max-height: calc(var(--phone-viewport-h, 100dvh) - 112px);
+  }
+  :is([role="menu"], [role="listbox"])[data-state] :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) {
+    min-height: 40px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 14px;
+    font-size: 16px;
+  }
+  [data-slot="menu-key"] { display: none; }
+
+  /* --- Messages: the phone's own bubbles ------------------------------ */
+  .message.user .message-content {
+    background: var(--theme-accent-fill);
+    color: #fff;
+    box-shadow: none;
+    border-radius: 20px 20px 6px 20px;
+    max-width: 82%;
+  }
+  .message.user:not(.is-editing) .message-content:hover { box-shadow: none; }
+  .message.user .message-content :is(a, code) { color: inherit; }
 
   /* --- The sidebar drawer --------------------------------------------- */
   /* Two ids outweigh html[data-sidebar-closed] #sidebar's forced width. */
@@ -73,11 +202,7 @@
     z-index: var(--z-drawer);
     width: var(--phone-drawer-w) !important;
     min-width: var(--phone-drawer-w) !important;
-    padding:
-      max(8px, env(safe-area-inset-top))
-      8px
-      max(8px, env(safe-area-inset-bottom))
-      max(8px, env(safe-area-inset-left));
+    padding: var(--phone-edge-gap) var(--phone-edge-gap) var(--phone-edge-gap) max(var(--phone-edge-gap), env(safe-area-inset-left));
     transform: translateX(0);
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
   }
@@ -121,27 +246,30 @@
     transition: opacity 200ms ease-out;
   }
   html:not([data-sidebar-closed]) .app:has(#sidebar:not(.collapsed)) .phone-scrim,
+  .app:has(.right-sidebar:not(.collapsed)) .phone-scrim,
   .phone-scrim[data-dragging] {
     opacity: 1;
     pointer-events: auto;
   }
   .phone-scrim[data-dragging] { transition: none; }
 
-  /* --- The right panel as a full-screen sheet ------------------------- */
+  /* --- The right panel: a drawer from the right edge ---------------- */
   .app .right-sidebar.right-sidebar {
-    --rail-open-w: 100vw !important;
+    --phone-drawer-w: min(86vw, 340px);
+    --rail-open-w: var(--phone-drawer-w) !important;
     --ui-list-h: 44px;
     position: fixed;
-    inset: 0;
-    z-index: calc(var(--z-drawer) + 1);
-    width: 100% !important;
-    min-width: 0 !important;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    z-index: var(--z-drawer);
+    width: var(--phone-drawer-w) !important;
+    min-width: var(--phone-drawer-w) !important;
     margin: 0;
-    padding:
-      max(8px, env(safe-area-inset-top))
-      8px
-      max(8px, env(safe-area-inset-bottom));
-    transform: translateX(100%);
+    border-radius: 0;
+    padding: var(--phone-edge-gap) max(var(--phone-edge-gap), env(safe-area-inset-right)) var(--phone-edge-gap) var(--phone-edge-gap);
+    transform: translateX(calc(100% + 16px));
     visibility: hidden;
     transition:
       transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -152,19 +280,16 @@
     visibility: visible;
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
   }
+  .app .right-sidebar.right-sidebar[data-dragging] { transition: none !important; }
   .right-sidebar .rail-header { height: auto; min-height: 48px; }
+  /* Closed by a swipe it is simply off screen: keep its open look. */
+  .right-sidebar.collapsed :is(.rail-open-only, .rail-row > .sidebar-nav-label) { opacity: 1; }
 
   /* --- The conversation: one column ----------------------------------- */
   :root { --chat-column-gutter: 12px; }
   /* The message rail lives in the column's side margin, which a phone
      does not have. */
   .msg-rail-anchor { display: none; }
-  /* The pane's view controls have no side margin to float in: they keep
-     their narrow column, tucked 8px from the corner. */
-  .chat-view-controls {
-    top: 8px;
-    right: 8px;
-  }
 
   /* Focusing a field under 16px makes iOS zoom the page. */
   body :is(textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]) {
@@ -178,5 +303,18 @@
   .app .right-sidebar.right-sidebar:not(.collapsed),
   .phone-scrim {
     transition: none !important;
+  }
+}
+
+/* A finger needs bigger marks than a mouse: on a touch phone the composer's
+   chip rows (where the computer, channel, folder, tools and model logos sit)
+   and the marks in menus are drawn a fifth larger. Their sizes are inline
+   pixels from the shared components, so they are zoomed rather than each
+   size overridden. */
+@media (max-width: 760px) and (pointer: coarse) {
+  [data-environment-row],
+  .composer-bottom-row,
+  [role="menu"][data-state] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) svg {
+    zoom: 1.2;
   }
 }

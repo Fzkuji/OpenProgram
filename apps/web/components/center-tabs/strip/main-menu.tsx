@@ -71,6 +71,7 @@ export function MainMenu() {
       <button
         type="button"
         className={styles.menuBtn}
+        data-main-menu=""
         aria-label={label}
         onClick={(e) => {
           const trigger = e.currentTarget.getBoundingClientRect();
@@ -97,6 +98,7 @@ export function MainMenu() {
           <button
             type="button"
             className={styles.menuBtn}
+            data-main-menu=""
             aria-label={label}
           >
             <MoreVertical size={16} />

@@ -28,6 +28,8 @@ function toSummary(c: Record<string, unknown>): ConvSummary {
     source: (c.source as string | undefined) ?? undefined,
     peer_display: (c.peer_display as string | undefined) ?? undefined,
     channel: (c.channel as string | undefined) ?? undefined,
+    harness: (c.harness as string | undefined) || undefined,
+    model: (c.model as string | undefined) || undefined,
     account_id: (c.account_id as string | undefined) ?? undefined,
     peer: (c.peer as string | undefined) ?? undefined,
     preview: (c.preview as string | null | undefined) ?? null,

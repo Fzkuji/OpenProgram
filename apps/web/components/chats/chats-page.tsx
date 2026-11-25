@@ -47,9 +47,17 @@ import {
   MessageCircleIcon,
 } from "@/components/animated-icons";
 import { SimpleSelect } from "@/components/ui/select";
+import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
+import { agentName, OPENPROGRAM_HARNESS } from "@/lib/models/harnesses";
 
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
+
+/** Where a chat comes from: an outside agent it runs in or was synced
+ *  from (`codex`), else OpenProgram. */
+function sourceOf(conv: ConvSummary): string {
+  return conv.harness || (conv.source === "codex" ? "codex" : OPENPROGRAM_HARNESS);
+}
 
 type FilterId = "all" | "today" | "past7" | "older";
 
@@ -96,6 +104,7 @@ export function ChatsPage({
   const [filter, setFilter] = useState<FilterId>("all");
   const [sort, setSort] = useState<SortKey>("recent");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
 
   // Buckets are calendar days; every row in one pass is bucketed against
   // the same instant, renewed at local midnight so a page left open
@@ -117,6 +126,7 @@ export function ChatsPage({
       arr = arr.filter((c) =>
         `${channelBrand(c.channel)} ${labelFor(c, untitled)}`.toLowerCase().includes(q));
     }
+    if (sourceFilter !== "all") arr = arr.filter((c) => sourceOf(c) === sourceFilter);
     if (statusFilter === "active") {
       arr = arr.filter((c) => !c.archived);
     } else if (statusFilter === "archived") {
@@ -131,7 +141,16 @@ export function ChatsPage({
       return labelFor(a, untitled).localeCompare(labelFor(b, untitled));
     });
     return arr;
-  }, [conversations, include, query, statusFilter, sort, untitled]);
+  }, [conversations, include, query, statusFilter, sourceFilter, sort, untitled]);
+
+  // The agents chats here come from; the Source select shows only when
+  // there is more than OpenProgram.
+  const sources = useMemo(() => {
+    const found = new Set<string>();
+    for (const c of Object.values(conversations) as ConvSummary[]) found.add(sourceOf(c));
+    found.delete(OPENPROGRAM_HARNESS);
+    return [...found].sort();
+  }, [conversations]);
 
   const counts = useMemo(() => {
     const c: Record<FilterId, number> = { all: searched.length, today: 0, past7: 0, older: 0 };
@@ -239,6 +258,18 @@ export function ChatsPage({
           { value: "archived", label: text(`Status: ${t("sidebar.status_archived")}`, `状态：${t("sidebar.status_archived")}`) },
         ]}
       />
+      {sources.length ? (
+        <SimpleSelect
+          aria-label={text("Source", "来源")}
+          value={sourceFilter}
+          onValueChange={setSourceFilter}
+          options={[
+            { value: "all", label: text("Source: All", "来源：全部") },
+            { value: OPENPROGRAM_HARNESS, label: text("Source: OpenProgram", "来源：OpenProgram") },
+            ...sources.map((id) => ({ value: id, label: text(`Source: ${agentName(id) ?? id}`, `来源：${agentName(id) ?? id}`) })),
+          ]}
+        />
+      ) : null}
     </>
   );
 
@@ -447,6 +478,12 @@ function ChatRow({
         </span>
         {asked ? <span className="truncate text-fs-base text-text-muted">{asked}</span> : null}
       </span>
+      {conv.harness ? (
+        // The agent it runs in, dimmed, as the sidebar marks it.
+        <span className="flex shrink-0 text-text-muted opacity-60" aria-label={agentName(conv.harness) ?? conv.harness}>
+          <AgentMark harness={conv.harness} size={14} fit="contain" />
+        </span>
+      ) : null}
       <ActivityTime ts={activityTs(conv)} locale={locale} />
     </button>
   );

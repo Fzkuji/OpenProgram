@@ -18,17 +18,19 @@
  */
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CirclePlus, LayoutGrid, Plus } from "lucide-react";
+import { CirclePlus, LayoutGrid, Plus, SquarePen } from "lucide-react";
 
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { topLevelTabs } from "@/lib/browser/web-tab/web-page-management";
 import { PageNavigation } from "../browser/toolbar/page-navigation";
+import { usePhoneViewport } from "@/lib/layout/phone";
+import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
 import { dragCoordinator } from "@/lib/tabs/transfer/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { MainMenu } from "./main-menu";
 import { PhoneDrawerButton } from "../../layout/phone-drawer-button";
-import { PhonePanelButton } from "../../layout/phone-shell";
+import { PhoneTitleMenu } from "../../layout/phone-title-menu";
 import { dismissOverview, useCanvasOverview } from "@/lib/tabs/canvas/canvas-overview";
 import { SplitViewPicker } from "../canvas/split-view-picker";
 import { useTranslation } from "@/lib/i18n";
@@ -60,6 +62,7 @@ const UNFREEZE_GRACE_MS = 400;
 // Memoized: the shell redraws on every tab and route change, and this takes no part in those.
 export const CenterTabStrip = memo(function CenterTabStrip() {
   const { t, text } = useTranslation();
+  const phone = usePhoneViewport();
 
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
@@ -327,6 +330,9 @@ export const CenterTabStrip = memo(function CenterTabStrip() {
       {/* Phone only: the sidebar drawer's button (layout/phone-shell.tsx). */}
       <PhoneDrawerButton />
       <PageNavigation />
+      {/* Phone only: the open page's title, which opens its menu
+         (layout/phone-title-menu.tsx); the tabs are hidden there. */}
+      <PhoneTitleMenu />
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div
@@ -385,13 +391,14 @@ export const CenterTabStrip = memo(function CenterTabStrip() {
       <button
         type="button"
         className={styles.plusBtn}
-        title={text("New tab", "新标签页")}
-        aria-label={text("New tab", "新标签页")}
-        onClick={onOpenNewTab}
+        title={phone ? text("New chat", "新对话") : text("New tab", "新标签页")}
+        aria-label={phone ? text("New chat", "新对话") : text("New tab", "新标签页")}
+        // A phone shows one page at a time, so ＋ starts a chat in place.
+        onClick={phone ? () => openNewChat() : onOpenNewTab}
         // ponytail: onOpenNewTab already releases (every new-tab path runs
         // through it); this stays a plain click handler.
       >
-        <Plus size={16} />
+        {phone ? <SquarePen size={21} strokeWidth={1.8} /> : <Plus size={16} />}
       </button>
       {/* Window overview, like Safari's tab overview: every window as a
          card that keeps its split. Pinching in on the center area opens
@@ -410,8 +417,6 @@ export const CenterTabStrip = memo(function CenterTabStrip() {
          end of the strip; the ＋ above is therefore free to sit
          naturally after the last tab. */}
       <MainMenu />
-      {/* Phone only: opens the right panel as a full-screen sheet. */}
-      <PhonePanelButton />
       {tabMenu ? (
         <TabContextMenu
           tabMenu={tabMenu}

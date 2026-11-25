@@ -22,6 +22,11 @@ export interface LegacyConv {
   sort_at?: number;
   sort_since?: number;
   channel?: string | null;
+  /** The outside agent the conversation runs in now (`codex`), else
+   *  OpenProgram; the row marks it at its end. */
+  harness?: string | null;
+  /** That agent's model, for the row's hover card. */
+  model?: string | null;
   account_id?: string | null;
   preview?: string | null;
   pinned?: boolean;

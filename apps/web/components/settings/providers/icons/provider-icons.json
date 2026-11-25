@@ -71,6 +71,10 @@
     "file": "chutes.svg",
     "mono": true
   },
+  "claudecode": {
+    "file": "claudecode.svg",
+    "mono": true
+  },
   "cloudflare-ai-gateway": {
     "file": "cloudflare-color.svg",
     "mono": false
@@ -78,6 +82,10 @@
   "cloudflare-workers-ai": {
     "file": "cloudflare-color.svg",
     "mono": false
+  },
+  "codex": {
+    "file": "codex.svg",
+    "mono": true
   },
   "cohere": {
     "file": "cohere-color.svg",

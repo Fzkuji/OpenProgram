@@ -1,0 +1,71 @@
+<title>手机 App</title>
+<meta name="description" content="OpenProgram 手机 App：一个很小的原生外壳，带着网页界面，用设备凭证把请求转发到配对的电脑，界面是对话在中间、左右各一个侧栏。">
+<meta name="covers" content="apps/mobile/ openprogram/interfaces/server/owner_auth.py apps/web/lib/net/ws/use-ws.ts apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx">
+<h1>手机 App</h1>
+<p>手机通过应用商店里的 App 使用 OpenProgram，不再用浏览器标签页。App 自带全部界面，打开时网络上只传数据；和电脑配对一次，之后一直保持登录。对话、文件和账号都留在电脑上，和<a href="../ui/remote-web-access.zh.html">远程 Web 访问</a>一样。</p>
+
+<ol class="flow fig-narrow">
+  <li><strong>电脑：添加设备</strong><small>一次性二维码，带着这台电脑的所有地址</small></li>
+  <li class="via"><strong>App：扫码</strong><small>用码换一份设备凭证，存进钥匙串</small></li>
+  <li class="flow-end"><strong>App：打开</strong><small>界面来自 App，数据来自第一个应答的地址</small></li>
+</ol>
+
+<h2 id="why">为什么做 App，为什么是这个形状</h2>
+<p>手机经 Tailscale Funnel 打开网页界面要 10 到 20 秒：大约五十个请求，每个 0.7 到 1 秒，界面自己的文件也在其中，之后对话列表才出来。手机上快的同类产品，都是把界面放在手机上，网络上只传数据。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">同类</th><th scope="col">手机怎么拿到界面和数据</th><th scope="col">采用</th></tr></thead>
+<tbody>
+<tr><th scope="row">Paseo</th><td>Expo App，界面自己写；经中继或 Tailscale 地址和电脑上的 daemon 之间一条端到端加密的 WebSocket；扫码配对，永不过期；列表和最近消息缓存在手机上</td><td>界面在手机上、网络上只有数据、配对一次不再要求登录、网络问题只是重连而不是登录提示</td></tr>
+<tr><th scope="row">Claude Code、Codex、Copilot CLI</th><td>厂商自己的手机 App；电脑主动连厂商的中继</td><td>商店 App。不采用：要我们运行的中继</td></tr>
+<tr><th scope="row">OpenCode</th><td>网页界面由 service worker 预缓存；启动只发三个请求，其余用到才拉</td><td>启动时请求少</td></tr>
+<tr><th scope="row">DSH Mobile</th><td>电脑提供页面，远程走 Tailscale Funnel，局域网优先</td><td>局域网优先，Funnel 作为远程方式</td></tr>
+</tbody>
+</table>
+<p>App 复用网页界面，不像 Paseo 那样另写一套手机界面：只维护一份界面，手机拥有电脑上的全部功能。它按手机重新排版（<a href="#layout">布局</a>），而不是直接显示网站。</p>
+
+<h2 id="shell">外壳</h2>
+<p><code translate="no">apps/mobile/ios</code> 是一个 SwiftUI App，里面一个 <code translate="no">WKWebView</code>。不用 Capacitor 或 Cordova：需要的只是一个协议处理器和几个原生调用，框架反而会挡在最关键的请求路径上。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">界面文件</th><td><code translate="no">apps/web</code> 的静态导出（<code translate="no">output: "export"</code>）在构建时拷进 App，由 <code translate="no">WKURLSchemeHandler</code> 在 <code translate="no">openprogram://app/</code> 提供。界面不经过网络。</td></tr>
+<tr><th scope="row">到电脑的 HTTP</th><td>同一个处理器接住 <code translate="no">/api/</code>、<code translate="no">/hooks/</code> 等服务端路径，用 <code translate="no">URLSession</code> 转发到选定的地址，加上 <code translate="no">Authorization: Bearer opd1.…</code>，不带 <code translate="no">Origin</code>。响应逐块流回，所以服务端事件流照常工作。对页面来说每个请求都是同源：图片、文件预览和下载都不用改。</td></tr>
+<tr><th scope="row">WebSocket</th><td>自定义协议承载不了 WebSocket，所以页面自己连 <code translate="no">wss://&lt;地址&gt;/ws</code>。App 告诉页面连哪里（<code translate="no">window.openprogramMobile.socket</code>）；浏览器的 WebSocket 不能设请求头，凭证放在握手的子协议里：<code translate="no">APP_BEARER_PREFIX</code> 后接凭证，和 <code translate="no">APP_SUBPROTOCOL</code> 一起（都在 <code translate="no">openprogram/interfaces/server/owner_auth.py</code>）。服务端只接受来自 App 源 <code translate="no">openprogram://app</code> 的这种握手，回 <code translate="no">APP_SUBPROTOCOL</code>，绝不回显凭证。</td></tr>
+<tr><th scope="row">凭证</th><td>就是<a href="../ui/remote-web-access.zh.html#paired-devices">配对设备</a>的设备凭证，没有改：兑换一次，在设置 → 设备里吊销，闲置 30 天被忘掉。存在钥匙串里，首次解锁后才可读。</td></tr>
+<tr><th scope="row">原生调用</th><td>扫码（VisionKit）、列出/添加/选择/移除电脑、触感反馈。页面通过一个 <code translate="no">WKScriptMessageHandler</code> 调用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="pairing">配对和地址</h2>
+<ul>
+<li>第一屏只有一个动作：扫电脑上 设置 → 设备 → 添加设备 显示的码，或者用系统的粘贴按钮粘贴它的链接，不弹授权提示。</li>
+<li>App 用不带 <code translate="no">Origin</code> 的 <code translate="no">POST /api/auth/pair</code> 兑换，返回 <code translate="no">{"device_id","token"}</code> 而不是 cookie。</li>
+<li>链接里有这台电脑所有已打开的地址（同一 Wi-Fi、任何地方）。App 全部保存，用第一个应答 <code translate="no">/api/auth/session</code> 的，局域网优先；网络变化时重新尝试。没人需要选地址。</li>
+<li>网络上失败的请求换下一个地址重试，绝不显示成登录问题。只有能连上的电脑返回 <code translate="no">401</code> 才说明设备被吊销，这时 App 回到这台电脑的扫码页。</li>
+</ul>
+
+<h2 id="layout">布局</h2>
+<p>对话在中间，左右各一个侧栏，把电脑上的三栏并排放进手机。从三版画出来的方案（对话优先加侧栏、底部标签栏、列表优先）里选定；这是 Claude 和 ChatGPT 手机 App 的结构，加上右侧栏。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">手机上</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话</th><td>导航栏：菜单按钮、当前对话的标题（点开是对话菜单：文件、活动、资源和对话操作）、新对话按钮。用户的消息是主题强调色的气泡，助手的是正文。三段式输入框保持原样，在键盘上方。一次只开一个页面，浮层的圆角和屏幕的圆角平行（<a href="../ui/phone-layout.zh.html">手机布局</a>）。</td></tr>
+<tr><th scope="row">左侧栏</th><td>从左边缘右滑，或点按钮。就是电脑上的左侧栏：新对话、任务、Agent、能力、应用、历史，然后是对话。</td></tr>
+<tr><th scope="row">右侧栏</th><td>从右边缘左滑，或点按钮。就是电脑上的右侧面板：文件、活动、资源。</td></tr>
+<tr><th scope="row">手势</th><td>两个侧栏都跟手，按距离或甩动速度决定打开还是收回，和<a href="../ui/phone-layout.zh.html">手机布局</a>里左侧抽屉现在的做法一样。</td></tr>
+<tr><th scope="row">设置</th><td>iOS 风格的分组列表：电脑（已连接的、添加电脑），然后是通用设置。</td></tr>
+</tbody>
+</table>
+
+<h2 id="later">实现状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已做</th><td>先做：iOS 外壳、配对、服务端 WebSocket 子协议、两侧栏的手机布局（手机浏览器也用这套布局）。</td></tr>
+<tr><th scope="row">通知</th><td>通知：商店 App 的推送要经苹果的服务，所需的密钥不能放在用户电脑上，需要一个小的中继。第一版在 App 关闭时不发通知。</td></tr>
+<tr><th scope="row">Android</th><td>Android：同样的设计，界面文件用 <code translate="no">WebViewAssetLoader</code>；先在 GitHub Release 发 APK，因为 Google Play 在中国大陆用不了。</td></tr>
+<tr><th scope="row">还没做</th><td>设计稿里还没做的：标题下面的模型、每个工具步骤一行灰底、左侧栏底部的已连接电脑、右侧栏的分段控件、设置里的 iOS 分组列表。</td></tr>
+<tr><th scope="row">编译 App</th><td>编译 App 的图标和资源目录需要 Xcode 里装 iOS 模拟器运行时（<code translate="no">xcodebuild -downloadPlatform iOS</code>）；Swift 代码不需要它也能对着 iOS SDK 编译通过。</td></tr>
+<tr><th scope="row">上架</th><td>商店审核和 TestFlight 需要在现有苹果团队下建 App Store Connect 记录。</td></tr>
+</tbody>
+</table>

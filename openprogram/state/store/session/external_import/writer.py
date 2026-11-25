@@ -89,8 +89,10 @@ def write_turns(
     *,
     start: int = 0,
     predecessor: str = _ROOT_ID,
+    indices: Optional[list[int]] = None,
 ) -> Optional[str]:
-    """Write ``session.turns[start:]``; return the last reply's id.
+    """Write ``session.turns[start:]`` (or the turns at ``indices``, in
+    order, each after the one before); return the last reply's id.
 
     Turns already in the session are refreshed in place (same ids), so
     a turn that was still running when first imported gets completed.
@@ -105,7 +107,7 @@ def write_turns(
     prefix = node_prefix(session.agent, session.source_id)
     last: Optional[str] = None
     previous = predecessor
-    for index in range(start, len(session.turns)):
+    for index in (indices if indices is not None else range(start, len(session.turns))):
         turn = session.turns[index]
         started = turn.timestamp or time.time()
         uid, rid = user_id(prefix, index), reply_id(prefix, index)

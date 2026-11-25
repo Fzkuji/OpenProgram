@@ -743,6 +743,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
             checkpoint_stop, lambda build: _broadcast(json.dumps({"type": "frontend_build", "data": {"id": build}}))))
         from openprogram.interfaces.server.remote_machines.links import run_remote_machines
         remote_machines_task = asyncio.create_task(run_remote_machines(checkpoint_stop))
+        from openprogram.state.store.session.external_import.codex_sync import run_sync as run_codex_sync
+        from openprogram.interfaces.server.ws_actions.session.listing import broadcast_sessions_list
+        codex_sync_task = asyncio.create_task(run_codex_sync(checkpoint_stop, broadcast_sessions_list))
         from openprogram.interfaces.server import lan_listener
         if _app.state.owner_auth is not None and lan_listener.configured():
             asyncio.create_task(lan_listener.apply(_app.state.owner_auth, _app))
@@ -760,6 +763,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
             await job_notices_task
             await frontend_task
             await remote_machines_task
+            await codex_sync_task
             for hook in reversed(_SHUTDOWN):
                 await hook()
 

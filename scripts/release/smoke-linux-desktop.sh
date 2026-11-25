@@ -52,6 +52,17 @@ stop_app() {
   sleep 2
   pkill -KILL -f openprogram-desktop 2>/dev/null || true
   wait "$app_process" 2>/dev/null || true
+  # The next App checks the same port: a worker of this run still answering
+  # there would pass its health check before its own seed is unpacked.
+  for _attempt in $(seq 1 30); do
+    curl -fsS "http://127.0.0.1:$health_port/healthz" >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  pkill -KILL -f 'openprogram worker run' 2>/dev/null || true
+  sleep 1
+  if curl -fsS "http://127.0.0.1:$health_port/healthz" >/dev/null 2>&1; then
+    fail "a worker still answers on port $health_port after the App was stopped"
+  fi
 }
 
 check_node_pty() {

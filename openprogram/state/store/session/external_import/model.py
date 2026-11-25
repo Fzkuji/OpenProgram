@@ -45,6 +45,9 @@ class Turn:
     # Fingerprint of the turn as read, kept when its text is redacted so
     # the turn's identity does not depend on what redaction removed.
     source_fingerprint: Optional[str] = None
+    # The agent's own id of the turn this message belongs to (Codex's
+    # ``turn_id``), when the transcript records one.
+    turn_id: Optional[str] = None
 
     def reply_text(self) -> str:
         parts = [b["text"].strip() for b in self.blocks

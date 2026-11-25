@@ -279,7 +279,7 @@ export function AgentSelector({
               onSelect={() => void pickModel(harness.provider, m.id)}
               className={cn(itemCls(false), MENU_ITEM_STATES)}
             >
-              <MenuRow label={m.label} checked={currentProvider === harness.provider && currentModel === m.id} />
+              <MenuRow icon={<ModelMark provider={harness.provider} />} label={m.label} checked={currentProvider === harness.provider && currentModel === m.id} />
             </DropdownMenuItem>
           ))}
           {harness.entry ? <HarnessUpdateRows harness={harness.entry} /> : null}

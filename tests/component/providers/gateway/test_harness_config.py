@@ -10,7 +10,7 @@ import pytest
 
 @pytest.fixture
 def homes(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENPROGRAM_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("OPENPROGRAM_DATA_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.setattr("openprogram.models.gateway.address.worker_base_url", lambda stable=False: "http://127.0.0.1:18100")
@@ -22,7 +22,8 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setattr(codex_app, "restart_app", lambda home: RESTARTS.append(str(home)))
     monkeypatch.setattr("openprogram.models.gateway.conversion.enabled_model_refs", lambda: [
         {"id": "openrouter/x", "name": "X", "provider": "openrouter", "context_window": None},
-        {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "deepseek", "context_window": 128000},
+        {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "deepseek", "context_window": 128000,
+         "thinking_levels": ["low", "medium", "high"], "default_thinking_level": "high"},
     ])
     return tmp_path
 
@@ -151,6 +152,9 @@ def test_the_codex_app_gets_the_models_and_restarts_when_the_route_changes(homes
     first = catalog["models"][0]
     assert first["context_window"] == 128000 and first["visibility"] == "list"
     assert first["model_messages"]["instructions_template"] == "You are Codex."
+    assert [p["effort"] for p in first["supported_reasoning_levels"]] == ["low", "medium", "high"]
+    assert first["default_reasoning_level"] == "high"
+    assert catalog["models"][1]["supported_reasoning_levels"] == []
     assert RESTARTS == [str(homes / "codex")]
 
     harness_config.apply("codex", "openprogram:openrouter/x")  # a new model alone restarts nothing
@@ -160,3 +164,24 @@ def test_the_codex_app_gets_the_models_and_restarts_when_the_route_changes(homes
     assert "model_catalog_json" not in tomllib.loads(path.read_text())
     assert not (homes / "codex" / "openprogram-models.json").exists()
     assert len(RESTARTS) == 2
+
+
+def test_the_codex_apps_conversations_move_with_its_provider_and_back(homes) -> None:
+    import sqlite3
+    from openprogram.models.gateway import harness_config
+
+    (homes / "codex" / "config.toml").write_text('model = "gpt-5.5"\n')
+    db = homes / "codex" / "state_5.sqlite"
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT, model_provider TEXT, source TEXT)")
+        connection.executemany("INSERT INTO threads VALUES (?,?,?)",
+                               [("app", "openai", "vscode"), ("run", "openai", "exec")])
+
+    def providers():
+        with sqlite3.connect(db) as connection:
+            return dict(connection.execute("SELECT id, model_provider FROM threads").fetchall())
+
+    harness_config.apply("codex", "openprogram:deepseek/deepseek-chat")
+    assert providers() == {"app": "openprogram", "run": "openai"}
+    harness_config.restore("codex")
+    assert providers() == {"app": "openai", "run": "openai"}

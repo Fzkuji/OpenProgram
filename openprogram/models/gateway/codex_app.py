@@ -9,7 +9,8 @@ same ``CODEX_HOME`` as the CLI, so "Also in the terminal" reaches it through
   as a ``model_catalog_json`` file (``openprogram-models.json`` beside
   ``config.toml``), each entry what Codex itself uses for a model it has no
   metadata for (``model_info_from_slug``): the slug as its name, a 272K
-  window unless OpenProgram knows the model's own, and Codex's base
+  window unless OpenProgram knows the model's own, the model's OpenProgram
+  thinking levels as its reasoning efforts, and Codex's base
   instructions (``codex-rs/models-manager/prompt.md`` of the installed
   Codex's release, read once and kept).
 * Its app-server reads ``config.toml`` and the catalog only as it starts. When
@@ -18,6 +19,9 @@ same ``CODEX_HOME`` as the CLI, so "Also in the terminal" reaches it through
   for a while; the app starts another at once and keeps its windows and
   chats. A change of model alone restarts nothing: the app reads it at its
   next launch.
+* It lists only the threads saved on the provider it uses now: the
+  person's threads move to the gateway's provider with the switch, and
+  back when it is turned off (``move_history``).
 """
 from __future__ import annotations
 
@@ -90,11 +94,29 @@ def _fetch(url: str) -> Optional[str]:
         return None
 
 
-def _entry(slug: str, name: str, window: Optional[int], priority: int, instructions: str) -> dict[str, Any]:
+_LEVEL_DESCRIPTIONS = {
+    "minimal": "Minimal reasoning", "low": "Quick reasoning", "medium": "Balanced",
+    "high": "Deep reasoning", "xhigh": "Extended effort", "max": "Maximum effort",
+    "ultra": "Beyond maximum",
+}
+
+
+def _efforts(levels: Any, default: Any) -> tuple[list[dict[str, str]], Optional[str]]:
+    """The model's OpenProgram thinking levels as Codex's effort presets and default."""
+    levels = [str(level) for level in levels or [] if level and level != "off"]
+    presets = [{"effort": level, "description": _LEVEL_DESCRIPTIONS.get(level, level)} for level in levels]
+    if not levels:
+        return [], None
+    return presets, default if default in levels else levels[len(levels) // 2]
+
+
+def _entry(slug: str, name: str, window: Optional[int], priority: int, instructions: str,
+           levels: Any = None, default_level: Any = None) -> dict[str, Any]:
     window = int(window) if window else FALLBACK_WINDOW
+    presets, default = _efforts(levels, default_level)
     return {
         "slug": slug, "display_name": name, "description": None,
-        "default_reasoning_level": None, "supported_reasoning_levels": [],
+        "default_reasoning_level": default, "supported_reasoning_levels": presets,
         "shell_type": "unified_exec", "visibility": "list", "supported_in_api": True,
         "priority": priority, "additional_speed_tiers": [], "service_tiers": [],
         "availability_nux": None, "upgrade": None,
@@ -124,7 +146,8 @@ def write_catalog(codex_home: Path, chosen: str, versions: list[str]) -> Optiona
     rows.sort(key=lambda row: row["id"] != chosen)
     if chosen not in {row["id"] for row in rows}:
         rows.insert(0, {"id": chosen, "name": chosen, "context_window": None})
-    models = [_entry(row["id"], str(row.get("name") or row["id"]), row.get("context_window"), index, instructions)
+    models = [_entry(row["id"], str(row.get("name") or row["id"]), row.get("context_window"), index, instructions,
+                     row.get("thinking_levels"), row.get("default_thinking_level"))
               for index, row in enumerate(rows)]
     path = catalog_path(codex_home)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,6 +162,20 @@ def remove_catalog(codex_home: Path) -> None:
         catalog_path(codex_home).unlink()
     except OSError:
         pass
+
+
+def move_history(codex_home: Path, to_provider: str, from_provider: str) -> int:
+    """Keep the person's threads in the app's history across the switch.
+
+    Codex lists only the threads saved on the provider it uses now, so
+    turning "Also in the terminal" on would hide every earlier chat, and
+    turning it off every chat made through the gateway; their provider
+    moves with the switch (magpie's bring-over and bring-back)."""
+    from openprogram.state.store.session.external_import.codex_threads import move_provider
+    moved = move_provider(codex_home, to_provider, from_provider=from_provider)
+    if moved:
+        _log.info("%d Codex thread(s) moved from %s to %s", moved, from_provider, to_provider)
+    return moved
 
 
 # The app's own app-server

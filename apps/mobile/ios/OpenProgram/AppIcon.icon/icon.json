@@ -1,0 +1,99 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.29412,0.30980,0.83922,1.00000",
+      "srgb:0.13725,0.12941,0.30980,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.2,
+        "y": 0.0
+      },
+      "stop": {
+        "x": 0.8,
+        "y": 1.0
+      }
+    }
+  },
+  "groups": [
+    {
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "layers": [
+        {
+          "image-name": "04-disc-sky.svg",
+          "name": "Sky disc",
+          "glass": false
+        }
+      ],
+      "name": "Sky disc",
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "layers": [
+        {
+          "image-name": "03-disc-violet.svg",
+          "name": "Violet disc",
+          "glass": false
+        }
+      ],
+      "name": "Violet disc",
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "layers": [
+        {
+          "image-name": "02-disc-indigo.svg",
+          "name": "Indigo disc",
+          "glass": false
+        }
+      ],
+      "name": "Indigo disc",
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "layers": [
+        {
+          "image-name": "01-cell.svg",
+          "name": "Cell",
+          "glass": false
+        }
+      ],
+      "name": "Cell",
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

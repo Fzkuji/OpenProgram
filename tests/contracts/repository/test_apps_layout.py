@@ -62,7 +62,7 @@ def test_apps_holds_only_the_non_python_clients() -> None:
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    assert {path.split("/")[1] for path in tracked} == {"cli", "desktop", "tailnet", "web"}
+    assert {path.split("/")[1] for path in tracked} == {"cli", "desktop", "mobile", "tailnet", "web"}
     assert [path for path in tracked if path.endswith(".py")] == []
 
 

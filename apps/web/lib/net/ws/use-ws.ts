@@ -1,4 +1,5 @@
 "use client";
+import { callMobile, mobileBridge } from "@/lib/mobile/bridge";
 import { dispatchChanged, dispatchReconnected } from "@/lib/net/ws/changes";
 import { sameSettingsBranch } from "@/lib/session-store/branch-settings";
 import { requestSessionLoad, acceptSessionLoad, failSessionLoad, disposeSessionLoads } from "@/lib/runtime-bridge/session/session-load";
@@ -1015,6 +1016,12 @@ export function useWS(): void {
           if (stopped || generation !== connectGeneration) return;
           if (!recovered) {
             updateStatus("disconnected");
+            if (mobileBridge()) {
+              // Reachable, and the credential refused: the device was
+              // revoked. The app takes the user back to pairing.
+              callMobile("signedOut");
+              return;
+            }
             if (!authNoticeShown) {
               authNoticeShown = true;
               // The worker mints a new owner token each time it starts. The
@@ -1041,7 +1048,12 @@ export function useWS(): void {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const historyFragments = createHistoryFragmentDecoder();
       let replayingHistory = false;
-      socket = new WebSocket(proto + "//" + location.host + "/ws");
+      // In the phone app the page is not on the computer's origin: the app
+      // names the socket's address and its credential subprotocol.
+      const mobile = mobileBridge();
+      socket = mobile
+        ? new WebSocket(mobile.socket.url, mobile.socket.protocols)
+        : new WebSocket(proto + "//" + location.host + "/ws");
       const connection = socket;
       recovery?.dispose();
       const connectionRecovery = createExecutionRecovery({

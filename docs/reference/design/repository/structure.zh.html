@@ -104,7 +104,7 @@
 <thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">核心包</th><td><code translate="no">interfaces/</code> 之外的 <code translate="no">openprogram/</code> 没有 FastAPI 路由或 WebSocket 处理器；没有前端或 Electron 源码，没有持久化的前端构建产物。</td></tr>
-<tr><th scope="row">接口</th><td><code translate="no">openprogram/interfaces/server</code>、<code translate="no">apps/web</code>、<code translate="no">apps/desktop</code>、<code translate="no">apps/cli</code> 各有自己的入口、README、测试和构建命令。<code translate="no">apps/tailnet</code> 是“从任何地方打开”背后的 Go 子进程，由 <code translate="no">scripts/release/build-tailnet.py</code> 构建进运行时。</td></tr>
+<tr><th scope="row">接口</th><td><code translate="no">openprogram/interfaces/server</code>、<code translate="no">apps/web</code>、<code translate="no">apps/desktop</code>、<code translate="no">apps/cli</code> 各有自己的入口、README、测试和构建命令。<code translate="no">apps/tailnet</code> 是“从任何地方打开”背后的 Go 子进程，由 <code translate="no">scripts/release/build-tailnet.py</code> 构建进运行时。<code translate="no">apps/mobile</code> 是手机 App，一个装着 <code translate="no">apps/web</code> 打包文件的原生外壳（<a href="../distribution/mobile-app.zh.html">手机 App</a>）。</td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">openprogram.interfaces.cli.main</code> 和 <code translate="no">build_parser</code> 保持可导入，完整命令树、控制台脚本和 TUI 不变。</td></tr>
 <tr><th scope="row">端口</th><td>默认端口 <code translate="no">18100</code>；一个 Worker 提供 API、WebSocket 和 Web 静态文件，没有双端口 Next.js Server。</td></tr>
 <tr><th scope="row">Web 与 Electron</th><td>浏览器和 Electron 加载同一 Web 应用；Electron 专属能力只经 preload/IPC。</td></tr>

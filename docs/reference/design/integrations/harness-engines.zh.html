@@ -102,5 +102,21 @@
 </tbody>
 </table>
 
+<h2 id="synced">Codex App 里的对话</h2>
+<p>用户在 Codex App 或 Codex CLI 里的每个对话，在 OpenProgram 里也是一个对话，和 OpenProgram 自己的对话混在一起，并且双向连着同一个 Codex 线程（<code translate="no">state/store/session/external_import/codex_sync.py</code>）。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">问题</th><th scope="col">决定</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">哪些线程</th><td>Codex 的状态库（<code translate="no">state_&lt;n&gt;.sqlite</code> 的 <code translate="no">threads</code> 表）：App 和终端里没归档、有用户消息的线程；<code translate="no">exec</code>、MCP 和子智能体线程不算。状态库一变就重新读</td><td>magpie、Paseo 的导入</td></tr>
+<tr><th scope="row">打开</th><td>每一轮写成 OpenProgram 的消息和工具卡片；对话的 Harness 是 Codex，模型是线程的模型，放进文件夹包含它的已有项目（不新建项目）</td><td>Paseo 的导入</td></tr>
+<tr><th scope="row">维持在 Codex 里聊</th><td>下一轮接着同一个线程（共享的线程记录），App 里也看得到；App 之后加的轮次会同步过来。OpenProgram 自己跑的轮次按 Codex 的 turn id 认出，不重复写；App 往前走了的已加载线程先重新加载</td><td>T3 Code 的原生 id</td></tr>
+<tr><th scope="row">搬到 OpenProgram 聊</th><td>把 Harness 芯片切到 OpenProgram。之后在 App 里说的仍会同步过来，接在这里说的之后</td><td>T3 Code 的交接</td></tr>
+<tr><th scope="row">App 的历史</th><td>Codex 只按线程保存时的 provider 列出和恢复线程，所以打开“也在终端里”时把 App 的线程移到 OpenProgram provider，关掉时移回去；单个线程跟着它这一轮的模型走</td><td>magpie 的 provider 迁移</td></tr>
+<tr><th scope="row">侧边栏</th><td>状态点和频道 logo 不变；行尾一个淡色单色的智能体标，表示这个对话现在在那个智能体里跑，悬停时让位给 ⋯ 按钮。悬停卡片写模型和智能体、项目、时间，以及它也在 Codex App 里。OpenProgram 自己的对话没有标</td><td>T3 Code 的 provider 标</td></tr>
+<tr><th scope="row">历史页</th><td>和 OpenProgram 的对话混在一起，每行同样的标；有别的智能体的对话时出现“来源”筛选</td><td>T3 Code</td></tr>
+</tbody>
+</table>
+
 <h2 id="status">实现状态</h2>
-<p>Codex 已能运行对话，用它自己的模型或 OpenProgram 的模型。下一步是 Claude Code（Claude Agent SDK，只用 Anthropic API key）和 ACP 智能体（Gemini CLI、OpenCode），引擎结构相同；把已有的 Harness 会话导入对话也随之实现。</p>
+<p>Codex 已能运行对话，用它自己的模型或 OpenProgram 的模型；Codex App 的对话双向同步。下一步是 Claude Code（Claude Agent SDK，只用 Anthropic API key）和 ACP 智能体（Gemini CLI、OpenCode），引擎结构相同。</p>
+<p>它们的对话同样可以列出并搬到 OpenProgram，继续在那个智能体里聊要等它的引擎。</p>

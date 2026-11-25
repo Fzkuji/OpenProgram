@@ -56,6 +56,13 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
             return ThreadPlan("resume", own["thread_id"])
         # The branch went back before what the thread saw (an edit or rewind).
         return ThreadPlan("start", missed=list(history))
+    # A conversation synced from the Codex app: its thread, when nothing
+    # was said here since the thread last saw it.
+    for record in (records or {}).values():
+        if isinstance(record, dict) and record.get("shared") and record.get("thread_id"):
+            seen = str(record.get("seen") or "")
+            if seen and seen in ids:
+                return ThreadPlan("resume", record["thread_id"], _after(history, seen))
     # A new branch: the thread of the branch it came from, when it forks at
     # that thread's latest turn.
     order = _ids(history)

@@ -13,7 +13,7 @@ from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerA
 
 @pytest.fixture
 def state_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENPROGRAM_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("OPENPROGRAM_DATA_DIR", str(tmp_path / "state"))
     return tmp_path / "state"
 
 

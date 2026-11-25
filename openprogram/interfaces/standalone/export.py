@@ -165,7 +165,7 @@ case "$(uname)" in
 esac
 settings="{settings}"
 [ -d "$settings" ] || settings="$HOME/.openprogram"
-export OPENPROGRAM_STATE_DIR="$data" OPENPROGRAM_STANDALONE_APPLICATION="$package" PYTHONNOUSERSITE=1
+export OPENPROGRAM_DATA_DIR="$data" OPENPROGRAM_STANDALONE_APPLICATION="$package" PYTHONNOUSERSITE=1
 exec "$python" -m openprogram.interfaces.standalone launch --package "$package" --data "$data" --settings-from "$settings" "$@"
 """
 
@@ -177,7 +177,7 @@ set "here=%~dp0"
 set "data=%LOCALAPPDATA%\\OpenProgram Applications\\{app_id}"
 if defined OPENPROGRAM_APPLICATION_DATA set "data=%OPENPROGRAM_APPLICATION_DATA%"
 set "settings=%USERPROFILE%\\.openprogram"
-set "OPENPROGRAM_STATE_DIR=%data%"
+set "OPENPROGRAM_DATA_DIR=%data%"
 set "OPENPROGRAM_STANDALONE_APPLICATION=%here%app"
 set PYTHONNOUSERSITE=1
 {python} -m openprogram.interfaces.standalone launch --package "%here%app" --data "%data%" --settings-from "%settings%" %*

@@ -523,6 +523,8 @@ interface SessionRow {
   sort_at?: number;
   sort_since?: number;
   channel?: string | null;
+  harness?: string | null;
+  model?: string | null;
   account_id?: string | null;
   peer?: string | null;
   peer_display?: string | null;
@@ -604,6 +606,8 @@ export function handleSessionsList(data: SessionRow[]): void {
           created_at: c.created_at,
           updated_at: c.updated_at,
           channel: c.channel || null,
+          harness: c.harness || null,
+          model: c.model || null,
           account_id: c.account_id || null,
           peer: c.peer || null,
           peer_display: c.peer_display || null,
@@ -625,6 +629,9 @@ export function handleSessionsList(data: SessionRow[]): void {
         }
         if ("channel" in c) convs[c.id].channel = c.channel || null;
         if ("account_id" in c) convs[c.id].account_id = c.account_id || null;
+        // The agent it runs in changes with its Harness chip: always current.
+        convs[c.id].harness = c.harness || null;
+        convs[c.id].model = c.model || null;
         if ("peer" in c) convs[c.id].peer = c.peer || null;
         if ("peer_display" in c) convs[c.id].peer_display = c.peer_display || null;
         if ("preview" in c) convs[c.id].preview = c.preview || null;

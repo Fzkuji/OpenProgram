@@ -78,10 +78,19 @@ function readPersistedSidebarOpen(): boolean {
   }
 }
 
+/** Set once a Sidebar has mounted. The first mount hydrates the exported
+ *  HTML, which is drawn open, so it starts open and the pre-hydration
+ *  attribute holds it shut until the layout effect below closes it. A
+ *  later mount (the shell mounts again once the owner sign-in finishes)
+ *  renders on the client and starts in its settled state: starting open
+ *  would play the closing slide, which waits for the busy main thread and
+ *  leaves a phone's drawer over the page for a second or two. */
+let mountedBefore = false;
+
 export const Sidebar = memo(function Sidebar() {
   const { t, text } = useTranslation();
 
-  const [open, setOpen] = useState<boolean>(true);
+  const [open, setOpen] = useState<boolean>(() => (mountedBefore ? readPersistedSidebarOpen() : true));
   const openRef = useRef(open);
   openRef.current = open;
   // The phone layout's header button, scrim and edge swipe open and close
@@ -134,6 +143,7 @@ export const Sidebar = memo(function Sidebar() {
   // 收起动画。右侧栏没这毛病，左侧栏也不该有。也回写共享状态
   // `runtimeState.sidebarOpen`。
   useLayoutEffect(() => {
+    mountedBefore = true;
     const persisted = readPersistedSidebarOpen();
     setOpen(persisted);
     runtimeState.sidebarOpen = persisted;

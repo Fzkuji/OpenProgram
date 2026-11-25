@@ -50,7 +50,7 @@ import { harnessQueryKey, listHarnesses } from "@/lib/models/harness-listing";
 import { cn } from "@/lib/utils";
 
 import { useBoundChat } from "../bound-chat";
-import { ModelMark } from "../chips/model-mark";
+import { AgentMark } from "../chips/model-mark";
 
 /** OpenProgram's own engine's glyph. */
 const OPENPROGRAM_GLYPH = "programming";
@@ -109,7 +109,7 @@ function useExclusiveOpen(): [boolean, (next: boolean) => void] {
 
 function HarnessMark({ harness }: { harness: string | null }) {
   return harness
-    ? <ModelMark provider={harness} />
+    ? <AgentMark harness={harness} />
     : <SolarIcon name={OPENPROGRAM_GLYPH} size={16} fit="fill" className="shrink-0" aria-hidden="true" />;
 }
 
@@ -177,7 +177,7 @@ export function HarnessBadge({ id }: { id: string }) {
             onSelect={() => void pick(h.id, h)}
             className={cn(itemCls(false), MENU_ITEM_STATES)}
           >
-            <MenuRow icon={<ModelMark provider={h.provider} />} label={h.label} trail={reason(h) || undefined} checked={state.harness === h.id} />
+            <MenuRow icon={<AgentMark harness={h.id} />} label={h.label} trail={reason(h) || undefined} checked={state.harness === h.id} />
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -232,7 +232,7 @@ export function HarnessAgentBadge({ id, state }: { id: string; state: HarnessSta
             id={id}
             className={cn(buttonVariants({ variant: "elevated", size: "sm" })) + " runtime-badge agent-badge"}
           >
-            <ModelMark provider={state.harness ?? undefined} />
+            <AgentMark harness={state.harness} />
             {label ? <span className="badge-details">{label}</span> : null}
           </button>
         </DropdownMenuTrigger>

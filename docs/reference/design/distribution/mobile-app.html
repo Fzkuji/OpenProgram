@@ -1,0 +1,71 @@
+<title>Mobile app</title>
+<meta name="description" content="The OpenProgram phone app: a small native shell that carries the web UI, forwards its requests to a paired computer with a device credential, and lays the UI out as chat in the middle with a sidebar on each side.">
+<meta name="covers" content="apps/mobile/ openprogram/interfaces/server/owner_auth.py apps/web/lib/net/ws/use-ws.ts apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx">
+<h1>Mobile app</h1>
+<p>A phone uses OpenProgram through an app from the store, not a browser tab. The app carries the whole UI, so opening it reads nothing over the network but data; it pairs with a computer once and stays signed in. Conversations, files and accounts stay on the computer, as in <a href="../ui/remote-web-access.html">remote web access</a>.</p>
+
+<ol class="flow fig-narrow">
+  <li><strong>Computer: Add device</strong><small>A one-time QR code with every address of this computer</small></li>
+  <li class="via"><strong>App: scan</strong><small>Redeems the code for a device credential, kept in the Keychain</small></li>
+  <li class="flow-end"><strong>App: open</strong><small>UI from the app, data from the first address that answers</small></li>
+</ol>
+
+<h2 id="why">Why an app, and why this shape</h2>
+<p>Opening the web UI through Tailscale Funnel took 10 to 20 seconds on a phone: about fifty requests at 0.7 to 1 second each, the UI's own files included, before the conversation list arrived. Every peer that is fast on a phone ships its UI on the phone and sends only data.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Peer</th><th scope="col">How the phone gets the UI and data</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row">Paseo</th><td>Expo app with its own UI; one end-to-end encrypted WebSocket to the computer's daemon through a relay or a Tailscale address; pairing by QR, never expires; list and recent messages cached on the phone</td><td>UI on the phone, data only on the wire, pair once and never ask again, network trouble is a reconnect and never a sign-in prompt</td></tr>
+<tr><th scope="row">Claude Code, Codex, Copilot CLI</th><td>The vendor's phone app; the computer talks out to the vendor's relay</td><td>Store app. Not taken: a relay we would have to run</td></tr>
+<tr><th scope="row">OpenCode</th><td>Web UI precached by a service worker; three requests at start, the rest when a view needs them</td><td>Few requests at start</td></tr>
+<tr><th scope="row">DSH Mobile</th><td>Served by the computer, Tailscale Funnel for remote, LAN first</td><td>LAN first, Funnel as the remote way</td></tr>
+</tbody>
+</table>
+<p>The app reuses the web UI instead of a second UI written for the phone (Paseo's way): one UI to keep, and the phone gets every feature the computer has. It is restyled for the phone (<a href="#layout">layout</a>) rather than shown as the website.</p>
+
+<h2 id="shell">The shell</h2>
+<p><code translate="no">apps/mobile/ios</code> is a SwiftUI app around one <code translate="no">WKWebView</code>. It does not use Capacitor or Cordova: what it needs is one scheme handler and a few native calls, and a framework would sit in the way of the one part that matters, the request path.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">UI files</th><td>The static export of <code translate="no">apps/web</code> (<code translate="no">output: "export"</code>) is copied into the app at build time and served at <code translate="no">openprogram://app/</code> by a <code translate="no">WKURLSchemeHandler</code>. Nothing of the UI crosses the network.</td></tr>
+<tr><th scope="row">HTTP to the computer</th><td>The same handler takes <code translate="no">/api/</code>, <code translate="no">/hooks/</code> and the other server paths and forwards them with <code translate="no">URLSession</code> to the chosen address, adding <code translate="no">Authorization: Bearer opd1.…</code> and no <code translate="no">Origin</code>. Responses stream back chunk by chunk, so server-sent events work. To the page every request is same-origin: images, file previews and downloads need no change.</td></tr>
+<tr><th scope="row">WebSocket</th><td>A custom scheme cannot carry WebSockets, so the page opens <code translate="no">wss://&lt;address&gt;/ws</code> itself. The app tells the page where (<code translate="no">window.openprogramMobile.socket</code>), and the credential goes in the handshake as a subprotocol, <code translate="no">APP_BEARER_PREFIX</code> followed by the credential, next to <code translate="no">APP_SUBPROTOCOL</code> (both in <code translate="no">openprogram/interfaces/server/owner_auth.py</code>), because a browser WebSocket cannot set headers. The server accepts this only from the app's origin <code translate="no">openprogram://app</code>, answers with <code translate="no">APP_SUBPROTOCOL</code>, and never echoes the credential.</td></tr>
+<tr><th scope="row">Credential</th><td>The device credential of <a href="../ui/remote-web-access.html#paired-devices">paired devices</a>, unchanged: redeemed once, revoked from Settings → Devices, forgotten after 30 idle days. Kept in the Keychain, readable only after the first unlock.</td></tr>
+<tr><th scope="row">Native calls</th><td>Scan a code (VisionKit), list, add, choose and forget computers, and haptics. The page calls them through one <code translate="no">WKScriptMessageHandler</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="pairing">Pairing and addresses</h2>
+<ul>
+<li>The first screen is one action: scan the code from Settings → Devices → Add device on the computer, or paste its link with the system paste button, which asks no permission.</li>
+<li>The app redeems the code with <code translate="no">POST /api/auth/pair</code> and no <code translate="no">Origin</code>, which returns <code translate="no">{"device_id","token"}</code> instead of a cookie.</li>
+<li>The link names every open address of the computer (Same Wi-Fi, Anywhere). The app keeps them all and uses the first that answers <code translate="no">/api/auth/session</code>, local network first, and tries again when the network changes. Nobody picks an address.</li>
+<li>A request that fails on the network is retried on the next address and never shown as a sign-in problem. Only a <code translate="no">401</code> from a reachable computer means the device was revoked; the app then returns to the scan screen for that computer.</li>
+</ul>
+
+<h2 id="layout">Layout</h2>
+<p>Chat in the middle and a sidebar on each side, the computer's three columns laid side by side on the phone. Chosen from three drawn options (chat first with sidebars, a bottom tab bar, a list first); this is the Claude and ChatGPT phone apps' structure with the right panel added.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">On the phone</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation</th><td>A navigation bar with a menu button, the open chat's title, which opens the conversation's menu (its files, activity and resources, then its actions), and a new chat button. The user's messages are bubbles in the theme's accent fill; the assistant's are plain text. The three-part composer keeps its layout above the keyboard. One page at a time, and floating panels round their corners parallel to the screen's (<a href="../ui/phone-layout.html">phone layout</a>).</td></tr>
+<tr><th scope="row">Left sidebar</th><td>A swipe from the left edge, or the button. The desktop's sidebar: New chat, Tasks, Agents, Abilities, Applications, History, then conversations.</td></tr>
+<tr><th scope="row">Right sidebar</th><td>A swipe from the right edge, or the button. The desktop's right panel: Files, Activity and Resources.</td></tr>
+<tr><th scope="row">Gestures</th><td>Both sidebars follow the finger and settle by distance or flick speed, as the left drawer already does in <a href="../ui/phone-layout.html">phone layout</a>.</td></tr>
+<tr><th scope="row">Settings</th><td>Grouped lists in the iOS style: computers (connected one, Add computer), then general settings.</td></tr>
+</tbody>
+</table>
+
+<h2 id="later">Implementation status</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Built</th><td>Built first: the iOS shell, pairing, the server's WebSocket subprotocol, and the two-sidebar phone layout, which the browser on a phone gets too.</td></tr>
+<tr><th scope="row">Notifications</th><td>Notifications: a store app's push goes through Apple's service with a key that cannot live on the user's computer, so it needs a small relay. The first version notifies nothing while the app is closed.</td></tr>
+<tr><th scope="row">Android</th><td>Android: the same design, with <code translate="no">WebViewAssetLoader</code> for the files; published as an APK on the GitHub release first, since Google Play does not reach mainland China.</td></tr>
+<tr><th scope="row">Not built yet</th><td>Not built yet from the drawn design: the model under the chat's title, tool steps as one gray line each, the connected computer at the bottom of the left sidebar, a segmented control in the right sidebar, and iOS grouped lists in Settings.</td></tr>
+<tr><th scope="row">Building the app</th><td>Compiling the app's icon and asset catalog needs an iOS Simulator runtime in Xcode (<code translate="no">xcodebuild -downloadPlatform iOS</code>); the Swift code compiles against the iOS SDK without it.</td></tr>
+<tr><th scope="row">Store</th><td>Store review and TestFlight need an App Store Connect record under the existing Apple team.</td></tr>
+</tbody>
+</table>

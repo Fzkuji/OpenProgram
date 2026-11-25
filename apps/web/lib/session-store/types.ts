@@ -510,6 +510,9 @@ export interface ConvSummary {
   source?: string;
   peer_display?: string;
   channel?: string;
+  /** The outside agent it runs in now (`codex`) and that agent's model. */
+  harness?: string;
+  model?: string;
   account_id?: string;
   peer?: string;
   preview?: string | null;

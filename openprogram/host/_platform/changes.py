@@ -345,7 +345,11 @@ def _anchor(path: Path) -> Path:
 
 def _restart_watchers() -> None:
     """One watcher thread per kind (recursive or not), started again with
-    the current set of paths whenever it changes."""
+    the current set of paths whenever it changes.
+
+    Threads are made, started and the old ones stopped under the lock: two
+    registrations from different threads at once otherwise each started
+    the threads the other had just made, and the second start raised."""
     if _stopping.is_set() or not file_events_available():
         return
     with _lock:
@@ -363,10 +367,9 @@ def _restart_watchers() -> None:
                 target=_run_watcher, args=(sorted(paths), recursive, stop),
                 name="file-changes" + ("-tree" if recursive else ""), daemon=True)
             _watch_threads[recursive] = (thread, stop)
-    for _thread, stop in old.values():
-        stop.set()
-    for thread, _stop in _watch_threads.values():
-        thread.start()
+            thread.start()
+        for _thread, stop in old.values():
+            stop.set()
 
 
 def _run_watcher(paths: list[str], recursive: bool, stop: threading.Event) -> None:

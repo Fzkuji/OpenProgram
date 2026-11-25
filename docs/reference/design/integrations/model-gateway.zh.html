@@ -76,7 +76,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">缺口</th><th scope="col">OpenProgram 的做法</th></tr></thead>
 <tbody>
-<tr><th scope="row">它的模型选择器</th><td>列的是 <code translate="no">model/list</code>，对 Codex 不自带的提供商只显示 Codex 自己的模型。已启用的模型写进 <code translate="no">config.toml</code> 旁边的 <code translate="no">openprogram-models.json</code>，由 <code translate="no">model_catalog_json</code> 指向；选中的排第一。每一项是 Codex 对不认识模型用的元数据：OpenProgram 知道的窗口或 272K，以及所装 Codex 版本的 <code translate="no">prompt.md</code> 指令，读一次后保留</td></tr>
+<tr><th scope="row">它的模型选择器</th><td>列的是 <code translate="no">model/list</code>，对 Codex 不自带的提供商只显示 Codex 自己的模型。已启用的模型写进 <code translate="no">config.toml</code> 旁边的 <code translate="no">openprogram-models.json</code>，由 <code translate="no">model_catalog_json</code> 指向；选中的排第一。每一项是 Codex 对不认识模型用的元数据：OpenProgram 知道的窗口或 272K，模型的思考档位作为它的推理强度，以及所装 Codex 版本的 <code translate="no">prompt.md</code> 指令，读一次后保留</td></tr>
 <tr><th scope="row">读到改动</th><td>它的 app-server 只在启动时读配置。开启或关闭时，等 20 秒没有会话文件写入（最多等 15 分钟），用 SIGTERM 结束应用自己的 app-server（在应用包内、走 stdio、用这个 Codex 目录）；应用会立刻再起一个，窗口和对话都保留。只换模型不重启</td></tr>
 </tbody>
 </table>

@@ -54,7 +54,7 @@ const TAG_TIP_PATH =
 /** A key as a price tag: the rounded Solar tip, then the shadcn Kbd. */
 export function MenuKey({ keys }: { keys: MenuKeys }) {
   return (
-    <span className={MENU_KEY}>
+    <span className={MENU_KEY} data-slot="menu-key">
       <svg viewBox="12.858 4 9.142 16" className={MENU_KEY_TIP} aria-hidden="true"><path d={TAG_TIP_PATH} /></svg>
       <Kbd className={MENU_KEY_PLATE}>{formatMenuKeys(keys)}</Kbd>
     </span>

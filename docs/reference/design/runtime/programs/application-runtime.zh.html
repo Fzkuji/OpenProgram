@@ -172,7 +172,7 @@
 <table class="stack">
 <thead><tr><th scope="col">部分</th><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
 <tbody>
-<tr><th scope="row">运行什么</th><td>worker 运行的那套应用运行时（目录、runner、状态、录音、宿主调用），只服务这一个包。<code translate="no">OPENPROGRAM_STANDALONE_APPLICATION</code> 让其他 Program 都不加载；<code translate="no">OPENPROGRAM_STATE_DIR</code> 把应用自己的数据文件夹设为状态文件夹。</td><td>LangGraph、AgentOS、OpenHands 说明：离开桌面客户端并不等于去掉应用需要的运行时。把运行时一起带上，包契约就不用变：窗口和后端不为第二个宿主重写。</td></tr>
+<tr><th scope="row">运行什么</th><td>worker 运行的那套应用运行时（目录、runner、状态、录音、宿主调用），只服务这一个包。<code translate="no">OPENPROGRAM_STANDALONE_APPLICATION</code> 让其他 Program 都不加载；<code translate="no">OPENPROGRAM_DATA_DIR</code> 把应用自己的数据文件夹设为状态文件夹。</td><td>LangGraph、AgentOS、OpenHands 说明：离开桌面客户端并不等于去掉应用需要的运行时。把运行时一起带上，包契约就不用变：窗口和后端不为第二个宿主重写。</td></tr>
 <tr><th scope="row">打包内容</th><td><code translate="no">app/</code> 放应用包。<code translate="no">python/</code> 放 App 自带的独立 CPython 和 OpenProgram，去掉 App 的网页前端、其他内置应用、Playwright、CPython 的测试和 Tk（会议：从 575 MB 减到 287 MB）。没有可复制的 Python 时，启动器指向执行导出的解释器（<code translate="no">--python reference</code>）。</td><td>复制已经在运行 App 的运行时，不需要新的构建流程。精简只去掉单个应用碰不到的部分。</td></tr>
 <tr><th scope="row">窗口</th><td>127.0.0.1 上的本地服务器提供一个页面，用与 App 标签页相同的沙箱 iframe 装窗口，并回答同一套桥接。页面用 App 的录音器录麦克风；外观用 App 的默认主题，跟随电脑的浅色或深色模式，语言跟随系统。</td><td>Chainlit 和 DeerFlow 都是服务加自己的网页前端；MCP Apps 保留沙箱 iframe 和 postMessage 桥接。</td></tr>
 <tr><th scope="row">原生窗口</th><td>在 macOS 上，启动器用自己的窗口显示页面：AppKit 和系统自带的 WebKit，经运行时自带的 PyObjC 调用。程序坞里是应用自己的图标，由应用页画出、导出时转成 <code translate="no">.icns</code>。不经过任何浏览器。其他系统用 Chromium 应用窗口或默认浏览器显示。</td><td>Tauri 和 pywebview 同样用系统的网页视图绘制；Electron 则要在每次导出里带上一个浏览器。</td></tr>

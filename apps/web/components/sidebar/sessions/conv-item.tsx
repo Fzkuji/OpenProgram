@@ -17,6 +17,10 @@ import { StatusMarker } from "./status-marker";
 import { ChannelLogo } from "@/components/channels/channel-logo";
 import { channelBrand } from "@/lib/channels/channel-brands";
 import type { ActivityState } from "./activity";
+import { HoverTip, TipBody } from "@/components/ui/tooltip";
+import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
+import { agentName, gatewayModel } from "@/lib/models/harnesses";
+import { formatRelativeTime } from "@/lib/format-utils/format";
 
 /** What an Activity row adds to the chat row: a second line with the
  *  project and the status word, and the time of its last activity on the
@@ -78,7 +82,7 @@ export function ConvItem({
   /** Set on Activity rows (the bell's list). */
   activity?: ConvRowActivity;
 }) {
-  const { t, text } = useTranslation();
+  const { t, text, locale } = useTranslation();
   // What a screen reader hears for the row: the logo is decorative, so a
   // channel chat names its app in words ("WeChat: title").
   const spoken = conv.channel ? `${channelBrand(conv.channel)}: ${label}` : label;
@@ -200,8 +204,12 @@ export function ConvItem({
     ]);
   }
 
+  const agent = conv.harness ? agentName(conv.harness) ?? conv.harness : null;
+
   return (
     <DropdownMenu open={menuOpen} onOpenChange={menu.onOpenChange} modal={false}>
+      <HoverTip side="right" disabled={!agent || renaming || !!activity}
+        label={agent ? <AgentCard conv={conv} agent={agent} zh={locale === "zh"} /> : null}>
       <div
         ref={rowRef}
         className={`${base} ${colorCls} ${stateCls}`}
@@ -315,6 +323,15 @@ export function ConvItem({
             </span>
           </span>)
         )}
+        {agent && !activity ? (
+          // The agent the chat runs in, dimmed at the row's end (T3 Code's
+          // provider mark); it steps aside for the ⋯ button on hover.
+          <span aria-hidden="true" className="flex shrink-0 text-text-muted opacity-60
+            transition-opacity duration-150 group-hover:opacity-0"
+            style={menuOpen ? { opacity: 0 } : undefined}>
+            <AgentMark harness={conv.harness} size={13} fit="contain" />
+          </span>
+        ) : null}
         {activity ? (
           // The time steps aside for the ⋯ button on hover.
           <span className="shrink-0 self-center text-fs-xs leading-[16px] text-text-muted tabular-nums
@@ -361,6 +378,7 @@ export function ConvItem({
             <MoreHorizontal size={SIDEBAR_ROW_ACTION_ICON} aria-hidden="true" />
           </button>
       </div>
+      </HoverTip>
 
         {bulk ? <BulkConvMenu {...bulk} groups={groups} onClose={menu.close} /> : <ConvMenu
           conv={conv}
@@ -379,6 +397,20 @@ export function ConvItem({
           onClose={menu.close}
         />}
     </DropdownMenu>
+  );
+}
+
+/** What a chat running in an outside agent shows on hover: its model and
+ *  agent, its project, and when it last moved. */
+function AgentCard({ conv, agent, zh }: { conv: LegacyConv; agent: string; zh: boolean }) {
+  const model = conv.model ? gatewayModel(conv.model)?.model ?? conv.model : null;
+  const time = formatRelativeTime(conv.updated_at || conv.created_at || 0, zh ? "zh" : "en");
+  const also = conv.harness === "codex" ? (zh ? "也在 Codex App 里" : "Also in the Codex app") : null;
+  return (
+    <TipBody
+      title={model ? `${model} · ${agent}` : agent}
+      detail={[conv.project, time, also].filter(Boolean).join(" · ")}
+    />
   );
 }
 
@@ -426,7 +458,8 @@ type ConvItemProps = React.ComponentProps<typeof ConvItem>;
 export type ConvRowSource = { current: Map<string, ConvItemProps> };
 
 /** The conversation fields a row and its menu draw. */
-const DRAWN_FIELDS = ["id", "title", "pinned", "archived", "group", "status", "unread", "channel"] as const;
+const DRAWN_FIELDS = ["id", "title", "pinned", "archived", "group", "status", "unread", "channel",
+  "harness", "model", "project", "updated_at"] as const;
 
 const sameList = <T,>(a: readonly T[] | undefined, b: readonly T[] | undefined, same: (x: T, y: T) => boolean) =>
   a === b || (!!a && !!b && a.length === b.length && a.every((item, index) => same(item, b[index])));

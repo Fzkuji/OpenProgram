@@ -5,7 +5,7 @@ runs) starts it in the background when it is not running yet and opens
 its window: on macOS a native one in the launcher's process
 (:mod:`.window`), elsewhere a browser's. The server
 
-- keeps everything in the data folder (``OPENPROGRAM_STATE_DIR``) and
+- keeps everything in the data folder (``OPENPROGRAM_DATA_DIR``) and
   takes the computer's model and voice settings first (:mod:`.settings`);
 - mounts the package as the App mounts a built-in application and opens
   its one instance;
@@ -345,7 +345,7 @@ def main(argv: list[str] | None = None) -> None:
     # the state folder is the application's data folder.
     if "openprogram.programs" in sys.modules:
         raise RuntimeError("start the standalone host in a process of its own")
-    os.environ["OPENPROGRAM_STATE_DIR"] = str(data)
+    os.environ["OPENPROGRAM_DATA_DIR"] = str(data)
     os.environ["OPENPROGRAM_STANDALONE_APPLICATION"] = str(package)
     if args.verb == "serve":
         serve(package, data, settings_from=args.settings_from, port=args.port, idle_minutes=args.idle_minutes)

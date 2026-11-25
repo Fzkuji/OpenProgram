@@ -91,6 +91,7 @@
 <tr><th scope="row">Native HTTP, SSE, WebSocket</th><td><code translate="no">Authorization: Bearer &lt;token&gt;</code></td><td>Header only; a token in a query is ignored</td></tr>
 <tr><th scope="row">Paired browser</th><td>Cookie <code translate="no">openprogram_device_&lt;16hex&gt;</code> = <code translate="no">opd1.&lt;device id&gt;.&lt;secret&gt;</code></td><td>Same attributes as the owner cookie, plus <code translate="no">Max-Age</code> of 400 days; the server forgets the device after 30 idle days</td></tr>
 <tr><th scope="row">Paired native client</th><td><code translate="no">Authorization: Bearer opd1.…</code></td><td>Same Bearer rules as the owner token</td></tr>
+<tr><th scope="row">Phone app's WebSocket</th><td>Subprotocols <code translate="no">APP_SUBPROTOCOL</code> and <code translate="no">APP_BEARER_PREFIX</code> + <code translate="no">opd1.…</code></td><td>Only from <code translate="no">Origin: openprogram://app</code> without an <code translate="no">Authorization</code> header, since the app's page cannot set one on a WebSocket; read as that Bearer, and the server answers with <code translate="no">APP_SUBPROTOCOL</code> alone (<a href="../distribution/mobile-app.html">phone app</a>)</td></tr>
 </tbody>
 </table>
 <ul>
@@ -160,7 +161,7 @@
   <li><strong>Computer</strong><small><code translate="no">openprogram web pair</code>: <code translate="no">POST /api/auth/pairings</code> mints a code; the CLI prints <code translate="no">&lt;origin&gt;/#pair=&lt;code&gt;</code> and its QR code</small></li>
   <li><strong>Other device</strong><small>opens the link; the fragment leaves the address bar before any request</small></li>
   <li><strong>Other device</strong><small><code translate="no">POST /api/auth/pair {"code"}</code></small></li>
-  <li><strong>Web server</strong><small>spends the code; a browser (it sends <code translate="no">Origin</code>) gets the device cookie with <code translate="no">204</code>, a native client gets <code translate="no">{"device_id","token"}</code></small></li>
+  <li><strong>Web server</strong><small>spends the code; a browser (it sends <code translate="no">Origin</code>) gets the device cookie with <code translate="no">204</code>, a native client gets <code translate="no">{"device_id","token","name"}</code>, the name being the computer's</small></li>
   <li class="flow-end"><strong>Other device</strong><small>every later request, across restarts, until revoked or idle 30 days</small></li>
 </ol>
 <table class="stack">

@@ -1,0 +1,14 @@
+"Connect your computer" = "连接你的电脑";
+"In OpenProgram on the computer, open **Settings → Devices → Add device** and scan the code it shows." = "在电脑的 OpenProgram 里打开 **设置 → 设备 → 添加设备**，扫它显示的二维码。";
+"Scan QR code" = "扫描二维码";
+"Paste link" = "粘贴链接";
+"Computers" = "电脑";
+"Add computer" = "添加电脑";
+"Done" = "完成";
+"Not connected" = "未连接";
+"Same Wi-Fi" = "同一 Wi-Fi";
+"Anywhere" = "任何地方";
+"Connected · %@" = "已连接 · %@";
+"This is not an OpenProgram pairing code. On the computer open Settings → Devices → Add device." = "这不是 OpenProgram 的配对码。请在电脑上打开 设置 → 设备 → 添加设备。";
+"Can't reach the computer. Check that the phone and the computer are online, then scan again." = "连不上这台电脑。确认手机和电脑都联网后再扫一次。";
+"This code has expired or was already used. Show a new one on the computer." = "这个码已过期或已用过，请在电脑上重新生成。";

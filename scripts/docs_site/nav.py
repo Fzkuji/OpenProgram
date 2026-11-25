@@ -702,6 +702,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/distribution/dev-instance.html",
             "reference/design/distribution/github-publishing.html",
             "reference/design/distribution/developer-id.html",
+            "reference/design/distribution/mobile-app.html",
             "reference/design/distribution/windows-support.html",
             "reference/design/distribution/windows-command-shell.html",
         ]),

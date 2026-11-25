@@ -23,6 +23,7 @@ import { harnessQueryKey, updateHarness } from "@/lib/models/harness-listing";
 import { cn } from "@/lib/utils";
 
 import { useBoundChat } from "../bound-chat";
+import { AgentMark } from "../chips/model-mark";
 
 export function HarnessUpdateRows({ harness }: { harness: Harness }) {
   const { text } = useTranslation();
@@ -63,7 +64,7 @@ export function HarnessUpdateRows({ harness }: { harness: Harness }) {
             onSelect={(e) => { e.preventDefault(); if (harness.updatable) void update(); }}
             className={cn(itemCls(false), MENU_ITEM_STATES, "text-text-muted")}
           >
-            <MenuRow label={m.label} trail={harness.latest} checked={false} />
+            <MenuRow icon={<AgentMark harness={harness.id} className="opacity-60" />} label={m.label} trail={harness.latest} checked={false} />
           </DropdownMenuItem>
         </HoverTip>
       ))}

@@ -59,6 +59,8 @@ def build_sessions_list(*, local_only: bool = False) -> list[dict]:
             "source": row.get("source"),
             "peer_display": row.get("peer_display"),
             "channel": row.get("channel"),
+            "harness": row.get("harness") or None,
+            "model": row.get("model_override") if row.get("harness") else None,
             "account_id": row.get("account_id"),
             "peer": row.get("peer_id"),
             "preview": preview or None,

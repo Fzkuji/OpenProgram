@@ -1,5 +1,5 @@
 <title>Phone layout</title>
-<meta name="description" content="How the web UI becomes a phone app at 760px and below: sidebar drawer, right panel as a sheet, section lists as pages, composer above the keyboard, and what was taken from dsh-mobile.">
+<meta name="description" content="How the web UI becomes a phone app at 760px and below: sidebar and right panel as drawers from either edge, a navigation bar, section lists as pages, composer above the keyboard, and what was taken from dsh-mobile.">
 <meta name="covers" content="apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx apps/web/components/layout/phone-drawer-button.tsx apps/web/lib/layout/">
 <h1>Phone layout</h1>
 <p>At or below 760px the shell is a phone app in one column. The breakpoint is one constant, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/layout/phone.ts"><code translate="no">PHONE_MAX_WIDTH</code></a>, the same one the <a href="sidebar/secondary-rail.html">secondary rail</a> already used. Everything else is CSS in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/styles/base/phone.css"><code translate="no">styles/base/phone.css</code></a>, loaded last, plus the gestures in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/layout/phone-shell.tsx"><code translate="no">phone-shell.tsx</code></a>. Above 760px nothing changes.</p>
@@ -15,11 +15,16 @@
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">On a phone</th></tr></thead>
 <tbody>
 <tr><th scope="row">Sidebar</th><td>A drawer, <code translate="no">min(86vw, 320px)</code> wide, over a <code translate="no">--scrim</code>. Opened by the button at the start of the tab row or of a page header, or by a swipe from the left 24px; closed by its own toggle, the scrim, a swipe left, or choosing a chat, page or tab. A drag follows the finger and settles by distance or flick speed. It stays mounted, so it reopens where it was scrolled. No icon rail when closed.</td></tr>
-<tr><th scope="row">Conversation</th><td>The centre card fills the screen; the transcript keeps a 12px margin and the composer lines up with it. The message rail, which lives in the side margin, is not shown; the view controls keep their narrow column, 8px from the top-right corner. Code blocks and tables scroll inside themselves.</td></tr>
-<tr><th scope="row">Right panel</th><td>A full-screen sheet sliding in from the right, opened by the button at the end of the tab row and closed by its toggle or by choosing a tab. Tool details, files, activity and resources use the whole width.</td></tr>
+<tr><th scope="row">Conversation</th><td>The centre card fills the screen; the transcript keeps a 12px margin and the composer lines up with it. The message rail, which lives in the side margin, is not shown, nor are the floating view controls: their actions are in the title's menu. Code blocks and tables scroll inside themselves.</td></tr>
+<tr><th scope="row">Navigation bar</th><td>The tab row becomes a 48px bar with two buttons, like the Claude and ChatGPT phone apps: a two-line menu mark on the left opens the left drawer, a compose mark on the right starts a new chat. The open page's title sits in the middle; on a conversation it carries a chevron and opens the conversation's menu. Tabs, history arrows, window overview and the main menu are not shown.</td></tr>
+<tr><th scope="row">Conversation menu</th><td>Files, Activity and Resources open the right drawer at that view; Context graph switches the perspective; then the chat pane's session actions (<code translate="no">components/chat/pane/session-actions-menu.tsx</code>): how it is shown, rename, auto rename, pin, copy link, copy conversation, archive, delete. "Use this view by default" stays on the desktop.</td></tr>
+<tr><th scope="row">Menus</th><td>Every menu on a phone has 40px rows at 16px, 22px corners, no keyboard letters, and may use the screen's height below the bar.</td></tr>
+<tr><th scope="row">One page at a time</th><td>On a touch phone (the app, a phone's browser) opening a page closes the one before it, so tabs never pile up out of sight; the compose button starts a chat in place instead of opening the new tab page. A narrow desktop window keeps its tabs.</td></tr>
+<tr><th scope="row">Right panel</th><td>The left drawer's mirror: <code translate="no">min(86vw, 340px)</code> wide from the right edge, over the same scrim. Opened from the conversation menu or a swipe from the right 24px; closed by its toggle, the scrim, a swipe right, or choosing a tab. A drag follows the finger like the left drawer's.</td></tr>
+<tr><th scope="row">Messages</th><td>The user's messages are bubbles in the theme's accent fill with white text, the corner nearest the sender tighter; the assistant's replies stay plain text.</td></tr>
 <tr><th scope="row">Settings, History, Projects, Agents</th><td>The secondary rail is the page's section list, full width; a row opens its content. The list page's header has only the sidebar button; the content page's only a back chevron to the list.</td></tr>
 <tr><th scope="row">Management pages</th><td>Drawer button, rail toggle and title share the first header row; tabs and the toolbar wrap below. The 62px reserve for the collapsed rail is gone.</td></tr>
-<tr><th scope="row">Composer and question cards</th><td>The three-part composer keeps its layout and spans the column; question and approval cards live in it, so they are full width too.</td></tr>
+<tr><th scope="row">Composer and question cards</th><td>The three-part composer keeps its layout and spans the column; question and approval cards live in it, so they are full width too. On a touch phone, while a reply runs, its hint reads "Add to this turn" instead of the keyboard shortcuts.</td></tr>
 </tbody>
 </table>
 
@@ -27,13 +32,14 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">How</th></tr></thead>
 <tbody>
-<tr><th scope="row">Keyboard</th><td>The shell is <code translate="no">position: fixed</code> at the visual viewport's top and height (<code translate="no">--phone-viewport-top</code>, <code translate="no">--phone-viewport-h</code> from <code translate="no">visualViewport</code>), falling back to <code translate="no">100dvh</code>, so the composer rides above the on-screen keyboard in Safari too.</td></tr>
-<tr><th scope="row">Notch and home indicator</th><td>The shell pads by <code translate="no">env(safe-area-inset-*)</code>; the drawer and the sheet pad by at least 8px or the inset.</td></tr>
-<tr><th scope="row">Touch targets</th><td>Header buttons, drawer and sheet rows, and section-list rows are 44px.</td></tr>
+<tr><th scope="row">Keyboard</th><td>The shell is <code translate="no">position: fixed</code> at the visual viewport's top and height (<code translate="no">--phone-viewport-top</code>, <code translate="no">--phone-viewport-h</code> from <code translate="no">visualViewport</code>), falling back to <code translate="no">100dvh</code>, so the composer rides above the on-screen keyboard in Safari too. While the keyboard is up the shell drops its bottom safe-area padding, so the composer sits right on the keyboard; the phone app also removes the previous, next and done bar a web form puts above it.</td></tr>
+<tr><th scope="row">Corners</th><td>What floats over the page keeps an even gap to the screen's edge, 8px for the drawers and 16px for dialogs, and rounds its corners by the screen's radius less that gap, so the corners run parallel to the screen's. The phone app writes the screen's radius into <code translate="no">--phone-screen-radius</code>; a browser assumes 55px when the screen has a home indicator, else 24px. The drawers run under the status bar and the home indicator, and their content keeps clear of both.</td></tr>
+<tr><th scope="row">Notch and home indicator</th><td>The shell pads by <code translate="no">env(safe-area-inset-*)</code>; the drawers keep their content inside it (Corners, above).</tr>
+<tr><th scope="row">Touch targets</th><td>Header buttons, drawer rows and section-list rows are 44px. On a touch phone the composer's two chip rows (computer, channel, folders; tools, effort, model) and the marks in menus are drawn 1.2 times larger, so the logos read at arm's length and the chips are 34px.</td></tr>
 <tr><th scope="row">Inputs</th><td>At least 16px, so focusing one does not zoom the page.</td></tr>
 <tr><th scope="row">Hover</th><td>Hover tips never open from a touch; message actions are already visible without hover.</td></tr>
-<tr><th scope="row">Stored choices</th><td>Opening the drawer, the sheet or a section page on a phone stores nothing, and a stored open right panel starts closed: a wider window keeps its own choices.</td></tr>
-<tr><th scope="row">Motion</th><td>Drawer and sheet slide in 220ms; a drag follows the finger; reduced motion removes the slides.</td></tr>
+<tr><th scope="row">Stored choices</th><td>Opening either drawer or a section page on a phone stores nothing, and a stored open right panel starts closed: a wider window keeps its own choices.</td></tr>
+<tr><th scope="row">Motion</th><td>Both drawers slide in 220ms; a drag follows the finger, and on release the drawer carries on from where the finger left it; reduced motion removes the slides.</td></tr>
 </tbody>
 </table>
 
@@ -43,7 +49,7 @@
 <thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
 <tbody>
 <tr><th scope="row">Session list as an overlay drawer with scrim</th><td>The conversation keeps the whole width; the list is one swipe away and keeps its scroll position.</td></tr>
-<tr><th scope="row">Right panel as a full-screen sheet</th><td>A 300px column leaves no room for text on a phone; a sheet shows details at full width.</td></tr>
+<tr><th scope="row">Right panel as a drawer from the right edge</th><td>dsh-mobile uses a full-screen sheet; a drawer from the right edge, which phone chat apps open with the same swipe as the left one, keeps the conversation in view at its edge.</td></tr>
 <tr><th scope="row">Settings sections as a list page with a way back</th><td>The section list and its content cannot share 390px.</td></tr>
 <tr><th scope="row">Keyboard-following height, safe-area padding, 44px targets, 16px inputs</th><td>The checklist from its design system: primary actions above the keyboard, nothing under the notch, no focus zoom.</td></tr>
 <tr><th scope="row">No page-level sideways scroll; wide content scrolls in place</th><td>Same.</td></tr>
