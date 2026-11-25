@@ -102,6 +102,7 @@ class ClaudeProcess:
         self._answers: dict[str, "queue.Queue[dict]"] = {}
         self._write_lock = threading.Lock()
         self.exited = threading.Event()
+        self.withdrawn: set[str] = set()  # requests Claude Code took back (``control_cancel_request``)
 
     def start(self) -> None:
         from openprogram.host._platform.process_ownership import process_tree_popen_kwargs
@@ -188,6 +189,7 @@ class ClaudeProcess:
 
     def drop_pending(self) -> None:
         """Forget messages no turn is waiting for (a turn starts on an empty queue)."""
+        self.withdrawn.clear()  # requests withdrawn in an earlier turn are long settled
         while True:
             try:
                 message = self.messages.get_nowait()
@@ -216,6 +218,8 @@ class ClaudeProcess:
                     if waiting is not None:
                         waiting.put(response)
                     continue
+                if message.get("type") == "control_cancel_request" and message.get("request_id"):
+                    self.withdrawn.add(str(message["request_id"]))
                 self.messages.put(message)
         except (OSError, ValueError):
             _log.debug("Claude Code output not read", exc_info=True)

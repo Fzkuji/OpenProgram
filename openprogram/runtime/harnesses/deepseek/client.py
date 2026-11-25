@@ -51,6 +51,10 @@ def app_version() -> str:
         return ""
 
 
+#: Whether the installed DeepSeek Harness reads images in a prompt (its ``initialize`` says).
+_takes_images = False
+
+
 class AcpServer(AppServer):
     """``dsh --profile acp``: JSON-RPC 2.0 lines and ACP's handshake."""
 
@@ -78,6 +82,9 @@ class AcpServer(AppServer):
             "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False},
             "clientInfo": {"name": "OpenProgram", "version": "1"},
         }, timeout=120)
+        global _takes_images
+        capabilities = ((answer or {}).get("agentCapabilities") or {}).get("promptCapabilities") or {}
+        self.takes_images = _takes_images = bool(capabilities.get("image"))
         return answer or {}
 
     def _write(self, message: dict) -> None:
@@ -151,5 +158,5 @@ def read_options(config_options: list) -> tuple[list[dict], list[str], Optional[
             efforts = [str(o.get("value")) for o in option.get("options") or [] if isinstance(o, dict) and o.get("value")]
             default_effort = option.get("currentValue")
     for model in models:
-        model.update(efforts=efforts, default_effort=default_effort, images=False, personality=False)
+        model.update(efforts=efforts, default_effort=default_effort, images=_takes_images, personality=False)
     return models, efforts, default_effort

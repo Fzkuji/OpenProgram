@@ -92,6 +92,7 @@
 </tbody>
 </table>
 <p>这些事件和智能体循环的事件走同一条流记录，所以刷新后仍能看到这一轮；能转发提问的 channel 也会转发 Codex 的审批。</p>
+<p>授权卡片在请求内容上方显示代理给出的理由；Codex 的补丁还写明本对话内允许后会一并开放写入的文件夹。代理退出，或者自己了结了请求（在 Codex App 里打断、Claude Code 撤回请求），卡片随即撤回。</p>
 
 <h2 id="threads">线程、机器与切换</h2>
 <dl class="pairs">
@@ -130,6 +131,7 @@
 <dt>分支</dt><dd>记下会话 id、文件夹、会话看到的最后一条消息，以及它在这里写的消息 id。</dd>
 <dt>新分支</dt><dd>ACP 没有分叉，所以开一个新会话并带上交接记录，恢复不了的会话也一样。会话只能在创建它的文件夹里恢复。</dd>
 <dt>App 里</dt><dd>在这里新开的会话 DeepSeek Harness 会保存，但它的 App 不列出，App 只列自己工作区建的会话。</dd>
+<dt>图片</dt><dd>DeepSeek Harness 在 <code translate="no">initialize</code> 里说能读图片时，作为图片块发送；否则在消息里注明有几张图片没能送达，让代理告诉用户。</dd>
 </dl>
 
 <h2 id="claude-code">Claude Code</h2>

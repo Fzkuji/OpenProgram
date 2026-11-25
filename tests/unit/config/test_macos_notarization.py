@@ -12,7 +12,7 @@ def test_nonaccepted_submission_stops_publication(monkeypatch, capsys, status):
     notarize = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))['notarize']
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         if 'submit' in args:
             return '{"id":"submission-123"}'
@@ -36,7 +36,7 @@ def test_accepted_status_after_wait_error_allows_publication(monkeypatch):
     notarize = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))['notarize']
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         if 'submit' in args:
             return '{"id":"submission-123"}'
@@ -54,7 +54,7 @@ def test_missing_submission_id_stops_before_wait(monkeypatch):
     notarize = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))['notarize']
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         return '{}'
 
@@ -68,7 +68,7 @@ def test_codesign_passes_ci_keychain(monkeypatch):
     ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         return ''
 
@@ -141,7 +141,7 @@ def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
     app, _main, _extras = _staged_app(tmp_path)
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         return ''
 
@@ -170,7 +170,7 @@ def test_sign_nested_framework_before_outer_app(monkeypatch, tmp_path):
     app, main_binary, extras = _staged_app(tmp_path, nested_framework=True)
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         return ''
 
@@ -224,7 +224,7 @@ def test_create_dmg_retries_resource_busy(monkeypatch, tmp_path):
     ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         if len(calls) < 3:
             raise RuntimeError('hdiutil failed (exit 1): hdiutil: create failed - Resource busy')
@@ -266,7 +266,7 @@ def test_resign_tar_gz_signs_packed_dylib_and_updates_manifest(monkeypatch, tmp_
     }))
     calls = []
 
-    def command(*args):
+    def command(*args, **options):
         calls.append(args)
         if args and args[0] == 'codesign':
             path = Path(args[-1])

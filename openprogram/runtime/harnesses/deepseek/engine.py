@@ -262,11 +262,10 @@ class DshTurn:
         self.session_id, self.cwd = session_id, cwd
         record = {"thread_id": session_id, "cwd": cwd}
         if (records.get(key) or {}).get("thread_id") != session_id:
-            # This branch's first record of the session: a resumed one has seen what its
-            # record said (an app's), a new one nothing yet.
-            resumed = next((r for r in records.values()
-                            if isinstance(r, dict) and r.get("thread_id") == session_id), {}) if not created else {}
-            record.update(seen=resumed.get("seen"), own_turns=[], shared=False)
+            # This branch's first record of the session: a resumed one holds this branch's
+            # history up to the handoff it has yet to read, a new one nothing yet.
+            record.update(seen=None if created else handoff.resumed_position(self.history, plan),
+                          own_turns=[], shared=False)
         handoff.write_record(db, self.req.session_id, PROVIDER, key, record)
         if created:
             # A new session's current model is the harness's default; a resumed one's is its own.
@@ -314,6 +313,32 @@ class DshTurn:
             pass
         return f"{note}\n\n{text}" if note else text
 
+    def _prompt(self, server: AppServer, note: Optional[str]) -> list[dict]:
+        """The prompt's blocks: the text, and the attached images where DeepSeek Harness reads them."""
+        images = [a for a in self.req.attachments or [] if isinstance(a, dict) and a.get("type") == "image"]
+        blocks: list[dict] = []
+        left = 0
+        for image in images:
+            data = image.get("data")
+            if not data and image.get("path"):
+                try:
+                    import base64
+                    from pathlib import Path
+                    data = base64.b64encode(Path(str(image["path"])).read_bytes()).decode("ascii")
+                except OSError:
+                    data = None
+            if getattr(server, "takes_images", False) and isinstance(data, str) and data:
+                blocks.append({"type": "image", "data": data,
+                               "mimeType": str(image.get("media_type") or "image/png").partition(";")[0]})
+            else:
+                left += 1
+        text = self._prompt_text(note)
+        if left:
+            # Never dropped unsaid: the agent can tell the person it did not see them.
+            text += (f"\n\n[{left} attached image{'s' if left > 1 else ''} could not be passed on "
+                     "to DeepSeek Harness.]")
+        return [{"type": "text", "text": text}, *blocks]
+
     # -- the turn ---------------------------------------------------------
 
     def run(self) -> tuple[str, dict, list[dict]]:
@@ -338,7 +363,7 @@ class DshTurn:
                     self.prompt_sent.set()
                     outcome["answer"] = server.request("session/prompt", {
                         "sessionId": self.session_id,
-                        "prompt": [{"type": "text", "text": self._prompt_text(note)}],
+                        "prompt": self._prompt(server, note),
                     }, timeout=PROMPT_TIMEOUT_SECONDS)
                 except AppServerError as exc:
                     outcome["error"] = exc
@@ -501,6 +526,7 @@ class DshTurn:
             owner, tool=tool, arguments=arguments, prompt=f"允许执行 {tool}？", detail="",
             allowed_scopes=("once",), risk_level="high" if call.get("kind") == "execute" else "medium",
             publish=self.on_event, cancel_event=self.cancel_event,
+            ended=lambda server=self.server: server is None or not server.alive,
         )
         if decision.allowed:
             self.server.respond(message["id"], allow)

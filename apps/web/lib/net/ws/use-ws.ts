@@ -634,6 +634,8 @@ export function useWS(): void {
               allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
               askedBy: typeof dd.asked_by === "string" && dd.asked_by ? dd.asked_by : undefined,
+              reason: typeof dd.reason === "string" && dd.reason ? dd.reason : undefined,
+              writeRoot: typeof dd.write_root === "string" && dd.write_root ? dd.write_root : undefined,
               schema:
                 dd.schema && typeof dd.schema === "object"
                   ? (dd.schema as PendingDecision["schema"])
@@ -816,6 +818,8 @@ export function useWS(): void {
               allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
               askedBy: typeof dd.asked_by === "string" && dd.asked_by ? dd.asked_by : undefined,
+              reason: typeof dd.reason === "string" && dd.reason ? dd.reason : undefined,
+              writeRoot: typeof dd.write_root === "string" && dd.write_root ? dd.write_root : undefined,
                         schema:
                           dd.schema && typeof dd.schema === "object"
                             ? (dd.schema as PendingDecision["schema"])

@@ -156,6 +156,7 @@ class CodexTurn:
         #: The thread this turn writes into while it runs, for the app sync to wait on.
         self.marked: Optional[tuple[str, str]] = None
         self.items: dict[str, dict] = {}
+        self.resolved_requests: set[str] = set()  # Codex settled them itself (``serverRequest/resolved``)
         self.open_cards: dict[str, dict] = {}
         self.streamed: set[str] = set()
         self.text_item: Optional[str] = None
@@ -435,12 +436,10 @@ class CodexTurn:
         self.thread_id = thread_id
         # What the thread holds of the conversation before this turn: a new thread got all of it
         # with its instructions; a resumed one what came before the handoff it has yet to read.
-        ids = [str(m.get("id") or "") for m in self.history]
         if plan.action == "start":
-            self.base_seen = ids[-1] if ids else None
+            self.base_seen = str(self.history[-1].get("id") or "") or None if self.history else None
         else:
-            missed = {str(m.get("id") or "") for m in plan.missed}
-            self.base_seen = next((i for i in reversed(ids) if i and i not in missed), None)
+            self.base_seen = handoff.resumed_position(self.history, plan)
         # The record starts where the thread is, so a turn that ends before Codex begins
         # leaves it resumable from there.
         # A thread resumed from this branch's own record already has its position (a sync may
@@ -587,6 +586,9 @@ class CodexTurn:
         if thread and self.thread_id and thread != self.thread_id:
             return False
         method = message.get("method")
+        if method == "serverRequest/resolved" and "requestId" in params:
+            # Settled elsewhere (the turn was interrupted in the Codex app): its card is taken back.
+            self.resolved_requests.add(str(params["requestId"]))
         if "id" in message and method not in _ANSWERED_REQUESTS:
             return False  # the client's default answer
         self.messages.put(message)
@@ -732,9 +734,12 @@ class CodexTurn:
                                                   if params.get("grantRoot") else "") if part)
         decision = ask_live_approval(
             owner, tool=tool, arguments=arguments, prompt=f"允许执行 {tool}？", detail=detail,
+            reason=reason, write_root=str(params.get("grantRoot") or "") if tool == "apply_patch" else "",
             allowed_scopes=("once", "session"), risk_level="high" if tool == "bash" else "medium",
-            publish=self.on_event, cancel_event=self.cancel_event,
+            publish=self.on_event, cancel_event=self.cancel_event, ended=self._gone(message["id"]),
         )
+        if str(message["id"]) in self.resolved_requests:
+            return  # Codex settled it itself
         if decision.allowed:
             answer = "acceptForSession" if decision.scope in ("session", "always") else "accept"
         elif decision.outcome == "deny":
@@ -742,6 +747,11 @@ class CodexTurn:
         else:
             answer = "cancel"
         self.server.respond(message["id"], {"decision": answer})
+
+    def _gone(self, request_id: Any):
+        """Whether a request waiting on the person is gone: Codex stopped, or settled it itself."""
+        server = self.server
+        return lambda: server is None or not server.alive or str(request_id) in self.resolved_requests
 
     def _ask_questions(self, owner, request_id: Any, params: dict) -> None:
         """Codex's questions on OpenProgram's question card; answers go back by question id."""
@@ -764,7 +774,10 @@ class CodexTurn:
                                     if isinstance(o, dict) and o.get("label") and o.get("description")},
             "multi": False, "allow_custom": bool(q.get("isOther")) or not q.get("options"),
         } for q in asked]
-        reply = ask_live_questions(owner, cards, publish=self.on_event, cancel_event=self.cancel_event)
+        reply = ask_live_questions(owner, cards, publish=self.on_event, cancel_event=self.cancel_event,
+                                   ended=self._gone(request_id))
+        if str(request_id) in self.resolved_requests:
+            return  # Codex settled it itself
         answers: dict = {}
         if reply.outcome == "answered":
             for q, a in zip(asked, reply.value):
@@ -786,8 +799,10 @@ class CodexTurn:
         decision = ask_live_approval(
             owner, tool="permissions", arguments=wanted, prompt="允许额外权限？",
             detail=str(params.get("reason") or ""), allowed_scopes=("once", "session"), risk_level="high",
-            publish=self.on_event, cancel_event=self.cancel_event,
+            publish=self.on_event, cancel_event=self.cancel_event, ended=self._gone(request_id),
         )
+        if str(request_id) in self.resolved_requests:
+            return  # Codex settled it itself
         if decision.allowed:
             self.server.respond(request_id, {"permissions": wanted,
                                              "scope": "session" if decision.scope in ("session", "always") else "turn"})

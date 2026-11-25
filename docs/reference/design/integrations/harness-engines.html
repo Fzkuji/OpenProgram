@@ -92,6 +92,7 @@
 </tbody>
 </table>
 <p>The events go through the same stream tap as the agent loop's, so a reload shows the turn, and a channel that relays questions relays Codex's approvals too.</p>
+<p>An approval card shows the agent's reason above what it asks. For a Codex patch it also names the folder that allowing it for the chat opens for writing. When the agent stops, or settles a request itself (an interrupt in the Codex app, a request Claude Code withdraws), the card is taken back.</p>
 
 <h2 id="threads">Threads, machines and switching</h2>
 <dl class="pairs">
@@ -130,6 +131,7 @@
 <dt>Branch</dt><dd>Keeps its session id, folder, the last message the session saw and the ids of the messages it wrote here.</dd>
 <dt>New branch</dt><dd>ACP has no fork, so it starts a session with the handoff transcript, as does a session that no longer resumes. A session resumes only in the folder it was made in.</dd>
 <dt>In the app</dt><dd>Sessions started here are saved by DeepSeek Harness but not listed in its app, which lists only those its own workspaces made.</dd>
+<dt>Images</dt><dd>Sent as image blocks when DeepSeek Harness says at <code translate="no">initialize</code> that it reads them. Otherwise the message says how many images could not be passed on, so the agent can tell the person.</dd>
 </dl>
 
 <h2 id="claude-code">Claude Code</h2>

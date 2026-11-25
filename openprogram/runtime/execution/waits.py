@@ -123,6 +123,9 @@ def question_frame_data(wait: WaitRecord, *, session_id: str | None,
         "tool": request.get("tool"),
         "args": request.get("shown_args", request.get("args")),
         "risk_level": request.get("risk_level"),
+        # An outside agent's approval: why it asks, and a folder it would also write to.
+        **({"reason": request["reason"]} if request.get("reason") else {}),
+        **({"write_root": request["write_root"]} if request.get("write_root") else {}),
         # A foreground sub-agent's card in its caller's conversation names it.
         **({"asked_by": request["asked_by"]} if request.get("asked_by") else {}),
         "created_at": wait.created_at,

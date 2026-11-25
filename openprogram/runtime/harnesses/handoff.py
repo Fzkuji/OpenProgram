@@ -62,6 +62,14 @@ def _digest(text: Optional[str]) -> str:
     return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()[:16]
 
 
+def resumed_position(history: list[dict], plan: "ThreadPlan") -> Optional[str]:
+    """What a resumed thread holds of ``history`` before this turn: the last message before
+    the handoff it has yet to read. A branch taking up another record's thread records this,
+    not that record's position, which may lie on the other branch."""
+    missed = set(_ids(plan.missed))
+    return next((i for i in reversed(_ids(history)) if i and i not in missed), None)
+
+
 def plan_thread(records: dict, key: str, history: list[dict], text: Optional[str] = None) -> ThreadPlan:
     """How a turn on branch ``key`` with ``history`` (before its message ``text``) reaches its thread."""
     ids = set(_ids(history))

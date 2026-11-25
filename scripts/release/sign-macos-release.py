@@ -21,8 +21,14 @@ MACHO = {bytes.fromhex(value) for value in (
 )}
 
 
-def run(*args: str) -> str:
-    result = subprocess.run(args, capture_output=True, text=True, timeout=3600 if "notarytool" in args else 600)
+def run(*args: str, timeout: int = 600) -> str:
+    if "notarytool" in args:
+        timeout = 3600
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'{Path(args[0]).name} {args[1] if len(args) > 1 else ""} '
+                           f'did not finish in {timeout} s') from None
     if result.returncode:
         # Arguments can contain credentials. Never echo them.
         detail = ''
@@ -39,7 +45,8 @@ def run(*args: str) -> str:
 def create_dmg(image: Path, dmg_path: Path) -> None:
     # LZMA (ULMO) opens on macOS 10.15 and later; the 1.5.1 image was 729 MB
     # as UDZO and 420 MB as ULMO. electron-builder's own DMG target cannot
-    # make ULMO, which is why the release builds the App with --dir.
+    # make ULMO, which is why the release builds the App with --dir. LZMA is
+    # slow: on the Intel runner it takes over ten minutes.
     args = (
         'hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
         '-format', 'ULMO', str(dmg_path),
@@ -47,7 +54,7 @@ def create_dmg(image: Path, dmg_path: Path) -> None:
     last_error: RuntimeError | None = None
     for attempt in range(1, 6):
         try:
-            run(*args)
+            run(*args, timeout=2700)
             return
         except RuntimeError as exc:
             last_error = exc

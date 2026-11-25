@@ -93,6 +93,9 @@ export interface PendingDecision {
   allowedScopes?: string[];
   /** The sub-agent that asks, when it is not the conversation's own agent. */
   askedBy?: string;
+  /** approval-only, an outside agent's: why it asks, and a folder allowing it for the session also opens for writing. */
+  reason?: string;
+  writeRoot?: string;
   /** form-only: flat-object field schema (field name → {type, title,
    *  description, enum, default, …}). The answer is an object (field → value).
    *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */

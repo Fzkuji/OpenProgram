@@ -264,8 +264,8 @@ class ClaudeTurn:
         own_effort = self._wanted()[1] is None
         if plan.action == "resume" and plan.thread_id:
             self.session_id = plan.thread_id
-            # What the session it goes on in has seen, for this branch's first record of it.
-            self.resumed_seen = record.get("seen")
+            # What the session it goes on in holds of this branch, for the branch's first record of it.
+            self.resumed_seen = handoff.resumed_position(self.history, plan)
             return (plan.thread_id, cwd, agent, own_effort), ["--resume", plan.thread_id], note
         if plan.action == "fork" and plan.thread_id:
             # Its own id comes in the session's ``init`` message.
@@ -750,10 +750,13 @@ class ClaudeTurn:
             prompt, detail, shown_arguments = "批准这个计划？", str(arguments.get("plan") or detail), {}
         decision = ask_live_approval(
             owner, tool=shown_tool, arguments=shown_arguments, prompt=prompt, detail=detail,
+            reason=detail if tool != "ExitPlanMode" else "",
             allowed_scopes=("once", "session") if suggestions else ("once",),
             risk_level="high" if tool == "Bash" else "medium",
-            publish=self.on_event, cancel_event=self.cancel_event,
+            publish=self.on_event, cancel_event=self.cancel_event, ended=self._gone(request_id),
         )
+        if self._taken_back(request_id):
+            return  # Claude Code took it back: an answer now would only interrupt what it went on with
         if decision.allowed:
             answer: dict = {"behavior": "allow", "updatedInput": arguments}
             if decision.scope in ("session", "always") and suggestions:
@@ -764,6 +767,20 @@ class ClaudeTurn:
         else:
             self.process.respond(request_id, {**deny, "interrupt": decision.outcome != "deny"})
 
+
+    def _taken_back(self, request_id: str) -> bool:
+        """Whether Claude Code withdrew the request; its id is forgotten, so a kept process
+        reusing it later is answered."""
+        withdrawn = self.process.withdrawn if self.process is not None else set()
+        if request_id in withdrawn:
+            withdrawn.discard(request_id)
+            return True
+        return False
+
+    def _gone(self, request_id: str):
+        """Whether a request waiting on the person is gone: Claude Code stopped, or took it back."""
+        process = self.process
+        return lambda: process is None or not process.alive or request_id in process.withdrawn
 
     def _ask_questions(self, owner, request_id: str, arguments: dict) -> None:
         """Claude Code's questions on OpenProgram's question card; the answers go back
@@ -777,7 +794,10 @@ class ClaudeTurn:
             return
         asked = [q for q in arguments["questions"] if isinstance(q, dict) and q.get("question")]
         reply = ask_live_questions(owner, [_card_question(q) for q in asked],
-                                   publish=self.on_event, cancel_event=self.cancel_event)
+                                   publish=self.on_event, cancel_event=self.cancel_event,
+                                   ended=self._gone(request_id))
+        if self._taken_back(request_id):
+            return  # taken back by Claude Code: nothing to answer
         if reply.outcome == "answered":
             answers = {str(q["question"]): ", ".join(a) if isinstance(a, list) else str(a)
                        for q, a in zip(asked, reply.value)}

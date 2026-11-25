@@ -60,6 +60,8 @@ type Step =
       allowedScopes?: string[];
       tool?: string;
       args?: Record<string, unknown>;
+      reason?: string;
+      writeRoot?: string;
     }
   | { kind: "form"; prompt: string; detail?: string; schema: Record<string, FormFieldSchema> };
 
@@ -82,6 +84,8 @@ function toSteps(q: PendingDecision): Step[] {
       allowedScopes: q.allowedScopes,
       tool: q.tool,
       args: q.args,
+      reason: q.reason,
+      writeRoot: q.writeRoot,
     }];
   }
   if (q.kind === "ask_many") {
@@ -466,8 +470,14 @@ function StepBody({
       <>
         <div className={styles.prompt}>{prompt}</div>
         {command ? <OperationCode value={command} language="bash" /> : null}
-        {/* An outside agent asking for more access says why above what it asks for. */}
+        {/* An outside agent says why it asks, and what else allowing it opens, above what it asks for. */}
         {summary && (esc || tool === "permissions") ? <pre className={approvalStyles.summary}>{summary}</pre> : null}
+        {!esc && tool !== "permissions" && step.args && Object.keys(step.args).length > 0 && (step.reason || step.writeRoot) ? (
+          <pre className={approvalStyles.summary}>{[
+            step.reason ?? "",
+            step.writeRoot ? text(`Allowing it for this conversation also lets it write to ${step.writeRoot}`, `本会话允许后，它还可以写入 ${step.writeRoot}`) : "",
+          ].filter(Boolean).join("\n")}</pre>
+        ) : null}
         {step.args && Object.keys(step.args).length > 0 ? (
           command ? (
             <details className={approvalStyles.executionDetails}>

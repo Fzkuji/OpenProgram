@@ -54,18 +54,24 @@ def ask_live_approval(
     arguments: Mapping[str, Any],
     prompt: str,
     detail: str = "",
+    reason: str = "",
+    write_root: str = "",
     allowed_scopes: Sequence[str] = ("once", "session"),
     risk_level: str = "medium",
     publish: Callable[[dict], None],
     cancel_event: Optional[threading.Event] = None,
     timeout: Optional[float] = None,
+    ended: Optional[Callable[[], bool]] = None,
 ) -> LiveDecision:
     """Open an approval wait, show it, and block until it is settled.
 
     ``publish`` sends the ``question.asked`` frame (the turn's event sink);
     the bus also gets the event, so a channel bound to the conversation
     relays it. A Stop (``cancel_event``) closes the wait and returns
-    ``cancelled``.
+    ``cancelled``. ``reason`` is why the agent asks, ``write_root`` a folder an
+    allowance for the session also opens for writing: the card shows both above
+    what is asked. ``ended`` says the request is gone (the agent stopped, or
+    withdrew it): the card is taken back and the wait ends ``cancelled``.
     """
     from openprogram.runtime.execution.waits import WaitStatus
 
@@ -75,9 +81,10 @@ def ask_live_approval(
         "detail": detail, "schema": {}, "questions": [],
         "tool": tool, "args": dict(arguments), "risk_level": risk_level,
         "allowed_scopes": scopes,
+        **({"reason": reason} if reason else {}), **({"write_root": write_root} if write_root else {}),
     }
     status, answer = _live_wait(owner, "approval", request, {"allowed_scopes": scopes},
-                                publish=publish, cancel_event=cancel_event, timeout=timeout)
+                                publish=publish, cancel_event=cancel_event, timeout=timeout, ended=ended)
     if status is WaitStatus.RESOLVED:
         answer = answer if isinstance(answer, Mapping) else {}
         return LiveDecision("allow", str(answer.get("scope") or "once"))
@@ -102,6 +109,7 @@ def ask_live_questions(
     publish: Callable[[dict], None],
     cancel_event: Optional[threading.Event] = None,
     timeout: Optional[float] = None,
+    ended: Optional[Callable[[], bool]] = None,
 ) -> LiveAnswer:
     """Ask the person an outside agent's questions (``runtime.ask``'s shape: prompt, options,
     multi, allow_custom) on the same card OpenProgram's own agent asks with, and block until
@@ -111,7 +119,7 @@ def ask_live_questions(
     request = {"prompt": "", "options": [], "multi": False, "allow_custom": False, "detail": "",
                "schema": {}, "questions": [dict(question) for question in questions]}
     status, answer = _live_wait(owner, "ask_many", request, {}, publish=publish,
-                                cancel_event=cancel_event, timeout=timeout)
+                                cancel_event=cancel_event, timeout=timeout, ended=ended)
     if status is WaitStatus.RESOLVED:
         return LiveAnswer("answered", answer if isinstance(answer, list) else [])
     if status is WaitStatus.DECLINED:
@@ -121,7 +129,7 @@ def ask_live_questions(
 
 def _live_wait(owner: LiveOwner, kind: str, request: dict, policy: dict, *,
                publish: Callable[[dict], None], cancel_event: Optional[threading.Event],
-               timeout: Optional[float]):
+               timeout: Optional[float], ended: Optional[Callable[[], bool]] = None):
     """Open a live wait on the running attempt, show it, and block until it is settled:
     its final status and answer. A Stop (``cancel_event``) closes it."""
     from openprogram.runtime.execution import default_store
@@ -169,6 +177,8 @@ def _live_wait(owner: LiveOwner, kind: str, request: dict, policy: dict, *,
             return current.status, current.answer
         if 0 < current.expires_at <= time.time():
             return close("timeout")
+        if ended is not None and ended():
+            return close("cancelled")
         if cancel_event is not None:
             cancel_event.wait(_POLL_SECONDS)
         else:
