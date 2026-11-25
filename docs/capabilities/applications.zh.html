@@ -106,6 +106,10 @@
 <tr><th scope="row"><code translate="no">files.project.read</code></th><td>绑定项目内的 <code translate="no">context.read_file(relative_path)</code></td></tr>
 <tr><th scope="row"><code translate="no">files.project.write</code></th><td>绑定项目内的 <code translate="no">context.write_file(relative_path, content)</code>；需要 Python 后端和 <code translate="no">--trust</code></td></tr>
 <tr><th scope="row"><code translate="no">chat</code></th><td>给页面而不是后端：自己的 <code translate="no">chat.*</code> 对话，用你的输入框显示，代替右侧栏</td></tr>
+<tr><th scope="row"><code translate="no">storage.files</code></th><td><code translate="no">context.files</code>：实例自己的目录，放录音等大文件</td></tr>
+<tr><th scope="row"><code translate="no">speech</code></th><td><code translate="no">context.transcribe(path)</code>、<code translate="no">context.diarize(chunks)</code> 和 <code translate="no">context.speech_readiness()</code>，用<strong>设置 → 语音</strong>的引擎处理 <code translate="no">context.files</code> 里的文件；需要 <code translate="no">storage.files</code></td></tr>
+<tr><th scope="row"><code translate="no">conversation</code></th><td><code translate="no">context.open_conversation(title)</code> 和 <code translate="no">context.converse(session_id, text)</code>：在应用打开的对话里让默认 Agent 不带工具回答一轮；页面可用 <code translate="no">conversations.show(id)</code> 显示它</td></tr>
+<tr><th scope="row"><code translate="no">audio.record</code></th><td>给页面：<code translate="no">audio.start</code>、<code translate="no">audio.stop</code>、<code translate="no">audio.status</code>。App 录麦克风和电脑声音直到停止，关掉窗口也不停，把每个 30 秒分段交给 <code translate="no">recording.ingest</code> 指定的操作，最后运行 <code translate="no">recording.finish</code>；需要 <code translate="no">storage.files</code></td></tr>
 </tbody>
 </table>
 <p class="note">能力限制的是宿主桥，不是受信任 Python 的操作系统权限。后端注册前在独立进程中检查；仅列出应用不会导入其代码。</p>
@@ -190,7 +194,26 @@ print(status(job["id"]))</code></pre>
 <tr><th scope="row"><code translate="no">PATCH /api/applications/{id}</code></th><td><code translate="no">enabled</code>、<code translate="no">hidden</code>、<code translate="no">display_title</code>。隐藏不取消任务，禁用会取消。</td></tr>
 </tbody>
 </table>
-<p class="note">未实现：独立部署、非 Python 后端适配器、MCP Apps 兼容、嵌入原生 GUI 窗口。</p>
+<h2 id="run-on-its-own">单独运行一个应用</h2>
+<ol class="flow fig-narrow">
+<li>在<strong>应用</strong>页打开这个应用的 <strong>⋯</strong> 菜单，选<strong>导出为独立应用…</strong>。</li>
+<li>选保存位置（默认“下载”，可点“浏览”换），点<strong>导出</strong>。大约半分钟后，点<strong>在访达中显示</strong>就能看到 <strong>Meetings.app</strong>。</li>
+<li>打开它：应用在自己的窗口里打开，窗口和操作与 App 里相同。</li>
+<li>关掉窗口：十分钟后自行退出；还在录音或处理时不会退出。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">回答</th></tr></thead>
+<tbody>
+<tr><th scope="row">需要装 OpenProgram 吗？</th><td>不需要：导出物自带 Python 和 OpenProgram（会议：287 MB）。每次启动从这台电脑的 OpenProgram 设置取模型和语音；导出物里没有密钥。</td></tr>
+<tr><th scope="row">它的数据</th><td><code translate="no">~/Library/Application Support/OpenProgram Applications/&lt;id&gt;</code>，与 App 的数据分开</td></tr>
+<tr><th scope="row">会话</th><td>应用打开的会话显示在侧边面板里，可以继续提问</td></tr>
+<tr><th scope="row">不能导出</th><td>声明了 <code translate="no">chat</code> 或项目范围的应用：菜单里没有导出</td></tr>
+<tr><th scope="row">用终端</th><td><code translate="no">openprogram programs export meeting --output 文件夹</code></td></tr>
+<tr><th scope="row">其他系统</th><td><code translate="no">--format dir</code> 写出带 <code translate="no" data-claim="example">run.sh</code> 和 <code translate="no" data-claim="example">run.cmd</code> 的文件夹</td></tr>
+<tr><th scope="row">在别的 Mac 上</th><td>没有签名：第一次在右键菜单里选“打开”</td></tr>
+</tbody>
+</table>
+<p class="note">未实现：非 Python 后端适配器、MCP Apps 兼容、嵌入原生 GUI 窗口。</p>
 <h2 id="use-an-application-as-a-resource">将应用作为资源使用</h2>
 <p>已启用的应用以 <code translate="no">application.&lt;id&gt;</code> 出现在 <code translate="no">resource(action="describe")</code> 中，安装、禁用、更新、卸载无需重启即生效。资源视图和顶部标签页在同一沙箱 frame 中打开同一实例。</p>
 <table class="stack fixed">

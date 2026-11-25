@@ -26,7 +26,7 @@
 <a id="models-and-integrations"></a>
 <a id="acknowledgements"></a>
 
-<p align="center"><b>開源 Agent Harness：Agent 就是能自我改進的 Python 程式。</b></p>
+<p align="center"><b>Agent 可以編寫任何程式。</b><br>工作流程、內建 AI 的應用，以及 Agent 自己。開源 Agent Harness，Agent 本身就是 Python 程式。</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="版本" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
@@ -46,9 +46,9 @@
 <p align="center">
   <a href="https://fzkuji.github.io/OpenProgram/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
-      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
-      <img src="../docs/images/chat_hero.png" alt="OpenProgram 工作區：一個執行了兩個子 Agent 的對話" width="100%">
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/openprogram-tour-dark.webp">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/openprogram-tour-light.webp">
+      <img src="../docs/images/openprogram-tour-light.webp" alt="OpenProgram 導覽：一個任務從頭到尾、常駐 Agent、多裝置，以及能編寫任何程式的 Agent" width="100%">
     </picture>
   </a>
 </p>

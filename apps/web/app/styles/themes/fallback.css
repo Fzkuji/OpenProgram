@@ -3,6 +3,11 @@
    这里留一份完整取值，是为了 data-theme 是未知值（用户自定义主题
    片段没写全、或存量 localStorage 里的旧值）时页面仍然画得出来。 */
 :root {
+  /* The seed Vivid derives its accent and strip colours from: Settings sets
+     the user's pick inline on <html>; this is the default. It belongs to the
+     theme layer, so an application frame that loads only the themes still
+     gets Vivid's colours. */
+  --tabrow-seed: #3d475c;
   --bg-primary: #191918;
   --bg-secondary: #141413;
   --bg-tertiary: #252523;

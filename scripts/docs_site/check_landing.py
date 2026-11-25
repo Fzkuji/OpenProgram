@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import re
-import struct
 import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
@@ -30,9 +29,7 @@ DOCS_README_ZH = next((p for p in (DOCS_DIR / "README.zh.md", DOCS_DIR / "README
 PYPROJECT = ROOT / "pyproject.toml"
 BUILT_SITE = ROOT / "docs" / "_site"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
-README_HERO = (
-    "An open-source agent harness where agents are Python programs that improve themselves."
-)
+README_HERO = "Agents program anything."
 SITE_DESCRIPTION = (
     "Build self-programming AI agents that create and refine their own "
     "workflows with an open-source runtime for models, tools, memory, "
@@ -40,9 +37,10 @@ SITE_DESCRIPTION = (
 )
 SOCIAL_IMAGE = DOCS_URL + "images/openprogram-social-card.png"
 RELEASE_FEED = "https://github.com/Fzkuji/OpenProgram/releases.atom"
-HERO_ALT = "OpenProgram workspace showing an agent session that ran two sub-agents"
-HERO_AVIFS = ("chat_hero-home.avif", "chat_hero-home-light.avif")
-HERO_AVIF_SIZE = (1600, 1000)
+# The hero is the product tour video, one rendering per theme; the page picks
+# the one that matches data-theme and uses its first frame as the poster.
+HERO_VIDEOS = ("openprogram-tour-light", "openprogram-tour-dark")
+HERO_VIDEO_LIMIT = 8_000_000
 THEME_COLORS = {
     "(prefers-color-scheme: dark)": "#171719",
     "(prefers-color-scheme: light)": "#f5f5f7",
@@ -63,6 +61,7 @@ class LandingParser(HTMLParser):
         self.source_attrs: list[dict[str, str]] = []
         self.buttons: list[dict[str, str]] = []
         self.pictures: list[dict[str, list[dict[str, str]]]] = []
+        self.videos: list[dict[str, str]] = []
         self.anchors: set[str] = set()
         self.links: list[dict[str, str]] = []
         self.meta: list[dict[str, str]] = []
@@ -88,6 +87,8 @@ class LandingParser(HTMLParser):
             self.source_attrs.append(values)
             if self._picture is not None:
                 self._picture["sources"].append(values)
+        if tag == "video":
+            self.videos.append(values)
         if tag == "button":
             self.buttons.append(values)
         if tag == "a" and (href := values.get("href")):
@@ -138,99 +139,6 @@ def _contrast_ratio(foreground: str, background: str) -> float:
 
     light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
     return (light + 0.05) / (dark + 0.05)
-
-
-def _isobmff_boxes(data: bytes, start: int, end: int):
-    position = start
-    while position + 8 <= end:
-        size, box_type = struct.unpack(">I4s", data[position : position + 8])
-        header_size = 8
-        if size == 1:
-            if position + 16 > end:
-                return
-            size = struct.unpack(">Q", data[position + 8 : position + 16])[0]
-            header_size = 16
-        elif size == 0:
-            size = end - position
-        box_end = position + size
-        if size < header_size or box_end > end:
-            return
-        yield box_type, position + header_size, box_end
-        position = box_end
-
-
-def _avif_dimensions(path: Path) -> tuple[int, int] | None:
-    """Read the primary AVIF item's associated spatial extents using stdlib."""
-    data = path.read_bytes()
-    top_level = list(_isobmff_boxes(data, 0, len(data)))
-    ftyp = next((box for box in top_level if box[0] == b"ftyp"), None)
-    if ftyp is None or b"avif" not in data[ftyp[1] : ftyp[2]]:
-        return None
-    for box_type, meta_start, meta_end in top_level:
-        if box_type != b"meta" or meta_start + 4 > meta_end:
-            continue
-        children = list(_isobmff_boxes(data, meta_start + 4, meta_end))
-        primary_item = None
-        for child_type, child_start, child_end in children:
-            if child_type != b"pitm" or child_start + 6 > child_end:
-                continue
-            version = data[child_start]
-            item_size = 2 if version == 0 else 4
-            if child_start + 4 + item_size <= child_end:
-                primary_item = int.from_bytes(
-                    data[child_start + 4 : child_start + 4 + item_size], "big"
-                )
-        for child_type, child_start, child_end in children:
-            if child_type != b"iprp" or primary_item is None:
-                continue
-            properties: list[tuple[int, int] | None] = [None]
-            associations: dict[int, list[int]] = {}
-            for property_type, property_start, property_end in _isobmff_boxes(
-                data, child_start, child_end
-            ):
-                if property_type == b"ipco":
-                    for item_type, item_start, item_end in _isobmff_boxes(
-                        data, property_start, property_end
-                    ):
-                        dimensions = None
-                        if item_type == b"ispe" and item_start + 12 <= item_end:
-                            dimensions = struct.unpack(
-                                ">II", data[item_start + 4 : item_start + 12]
-                            )
-                        properties.append(dimensions)
-                elif property_type == b"ipma" and property_start + 8 <= property_end:
-                    version = data[property_start]
-                    wide_index = int.from_bytes(
-                        data[property_start + 1 : property_start + 4], "big"
-                    ) & 1
-                    position = property_start + 4
-                    entry_count = int.from_bytes(data[position : position + 4], "big")
-                    position += 4
-                    for _ in range(entry_count):
-                        item_size = 2 if version == 0 else 4
-                        if position + item_size + 1 > property_end:
-                            return None
-                        item_id = int.from_bytes(
-                            data[position : position + item_size], "big"
-                        )
-                        position += item_size
-                        association_count = data[position]
-                        position += 1
-                        indexes = associations.setdefault(item_id, [])
-                        association_size = 2 if wide_index else 1
-                        index_mask = 0x7FFF if wide_index else 0x7F
-                        for _ in range(association_count):
-                            if position + association_size > property_end:
-                                return None
-                            association = int.from_bytes(
-                                data[position : position + association_size], "big"
-                            )
-                            position += association_size
-                            indexes.append(association & index_mask)
-            for property_index in associations.get(primary_item, []):
-                if property_index < len(properties) and properties[property_index]:
-                    return properties[property_index]
-    return None
 
 
 def main() -> int:
@@ -309,43 +217,20 @@ def main() -> int:
     for media, color in THEME_COLORS.items():
         require((media, color) in theme_colors,
                 f"missing {media} browser theme color", failures)
-    # The dark and light screenshots are separate pictures; the dark one comes
-    # first and is the page's one high-priority image.
-    heroes = [
-        image
-        for image in page.image_attrs
-        if image.get("alt") == HERO_ALT
-    ]
-    hero = heroes[0] if heroes else None
-    require(len(heroes) == len(HERO_AVIFS),
-            "landing hero needs one picture per theme", failures)
-    for image, avif in zip(heroes, HERO_AVIFS):
-        hero_picture = next(
-            (picture for picture in page.pictures if image in picture["images"]),
-            None,
-        )
-        require(
-            hero_picture is not None
-            and any(
-                item.get("srcset") == "docs/images/" + avif
-                and item.get("type") == "image/avif"
-                and item.get("width") == str(HERO_AVIF_SIZE[0])
-                and item.get("height") == str(HERO_AVIF_SIZE[1])
-                for item in hero_picture["sources"]
-            ),
-            f"landing hero does not offer the optimized AVIF image {avif}",
-            failures,
-        )
-        require(
-            image.get("width") == "3024" and image.get("height") == "1890",
-            "landing PNG fallback dimensions differ from its intrinsic dimensions",
-            failures,
-        )
-    require(hero is not None and hero.get("fetchpriority") == "high",
-            "landing LCP image is not high priority", failures)
-    require(sum(image.get("fetchpriority") == "high"
-                for image in page.image_attrs) == 1,
-            "landing must have exactly one high-priority image", failures)
+    hero_videos = [video for video in page.videos if "hero-video" in video.get("class", "").split()]
+    require(len(hero_videos) == 1, "landing hero needs exactly one tour video", failures)
+    if hero_videos:
+        video = hero_videos[0]
+        require(all(name in video for name in ("muted", "loop", "playsinline")),
+                "landing tour video must be muted, looping and inline", failures)
+        require(video.get("width") == "1920" and video.get("height") == "1080",
+                "landing tour video dimensions differ from the rendering", failures)
+        require(video.get("aria-label"), "landing tour video has no accessible name", failures)
+        require((video.get("data-light"), video.get("data-dark"))
+                == tuple("docs/images/" + name for name in HERO_VIDEOS),
+                "landing tour video does not name both theme renderings", failures)
+        require(video.get("poster") == "docs/images/" + HERO_VIDEOS[0] + ".jpg",
+                "landing tour video has no poster", failures)
     require(all(image.get("width") and image.get("height")
                 for image in page.image_attrs),
             "landing image is missing explicit dimensions", failures)
@@ -398,7 +283,7 @@ def main() -> int:
         require(section_id in page.ids, f"missing #{section_id} section", failures)
 
     for phrase in (
-        "Agents that program themselves.",
+        "Agents program anything.",
         "The model decides.",
         "Everything an agent needs, in one place.",
     ):
@@ -438,8 +323,8 @@ def main() -> int:
 
     for image in (
         "docs/images/openprogram-app-icon.svg",
-        "docs/images/chat_hero.png",
-        "docs/images/chat_hero_light.png",
+        "docs/images/code_hero.png",
+        "docs/images/code_hero_light.png",
     ):
         require(image in page.images, f"missing product image {image}", failures)
 
@@ -476,21 +361,18 @@ def main() -> int:
         require(built_social_card.read_bytes()
                 == (ROOT / "docs/images/openprogram-social-card.png").read_bytes(),
                 "built social card differs from the source asset", failures)
-    for avif in HERO_AVIFS:
-        optimized_hero = ROOT / "docs/images" / avif
-        require(optimized_hero.is_file(), f"optimized landing hero {avif} is missing", failures)
-        if not optimized_hero.is_file():
-            continue
-        require(optimized_hero.stat().st_size < 150_000,
-                f"optimized landing hero {avif} exceeds 150 KiB", failures)
-        require(_avif_dimensions(optimized_hero) == HERO_AVIF_SIZE,
-                f"optimized landing hero {avif} dimensions differ from 1600x1000", failures)
-        built_optimized_hero = BUILT_SITE / "images" / avif
-        require(built_optimized_hero.is_file(),
-                f"docs build did not copy the optimized landing hero {avif}", failures)
-        if built_optimized_hero.is_file():
-            require(built_optimized_hero.read_bytes() == optimized_hero.read_bytes(),
-                    f"built optimized hero {avif} differs from its source", failures)
+    for name in HERO_VIDEOS:
+        for suffix in (".mp4", ".jpg"):
+            asset = ROOT / "docs/images" / (name + suffix)
+            require(asset.is_file(), f"landing tour asset {asset.name} is missing", failures)
+            if not asset.is_file():
+                continue
+            if suffix == ".mp4":
+                require(asset.stat().st_size < HERO_VIDEO_LIMIT,
+                        f"landing tour video {asset.name} exceeds 8 MB", failures)
+            built = BUILT_SITE / "images" / asset.name
+            require(built.is_file() and built.read_bytes() == asset.read_bytes(),
+                    f"docs build did not copy {asset.name}", failures)
 
     redirect_source = BUILT_SITE.parent / "redirects.json"
     redirects = json.loads(redirect_source.read_text(encoding="utf-8")) if redirect_source.exists() else {}

@@ -1,0 +1,210 @@
+{
+  "id": "meeting",
+  "title": "Meetings",
+  "description": "Record what everyone says in a call on this computer, transcribe it and summarize the meeting.",
+  "icon": "meeting",
+  "version": "1.0.0",
+  "scope": "global",
+  "dataSchema": 1,
+  "ui": {
+    "root": "ui",
+    "entry": "index.html"
+  },
+  "capabilities": [
+    "storage.app",
+    "storage.files",
+    "speech",
+    "conversation",
+    "audio.record"
+  ],
+  "backend": {
+    "kind": "python",
+    "entry": "backend.operations:operations"
+  },
+  "recording": {
+    "ingest": "ingest",
+    "finish": "finish"
+  },
+  "operations": {
+    "readiness": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Whether recordings can be converted and transcribed on this computer."
+    },
+    "start": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 16
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Add a new meeting that is being recorded."
+    },
+    "ingest": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          },
+          "track": {
+            "enum": [
+              "mic",
+              "system"
+            ]
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "t_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "track",
+          "seq",
+          "t_ms",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Transcribe one recorded chunk (called by the host)."
+    },
+    "finish": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          },
+          "recording": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "key",
+          "recording"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Tell apart the speakers, write the transcript and the summary once a recording stops (called by the host)."
+    },
+    "transcript": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "The merged transcript of one meeting."
+    },
+    "summary": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "The summary of one meeting."
+    },
+    "summarize": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Write the summary of one meeting again."
+    },
+    "delete": {
+      "agent": false,
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "description": "Delete one meeting's audio, transcript and summary."
+    }
+  }
+}

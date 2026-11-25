@@ -1,6 +1,6 @@
 // Reads that fail are asked again quietly, but a permanent answer ends them:
 // a conversation the server does not have, an archive it cannot list, a
-// meeting text it refuses, a sub-agent read it refuses, a file that is gone.
+// sub-agent read it refuses, a file that is gone.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -18,7 +18,6 @@ const {
   TranscriptReadStatus, permanentLoadFailure, transcriptReadSettled,
 } = await import("../../components/chat/messages/list/transcript-read-status.tsx");
 const { archiveListRefused } = await import("../../components/chat/messages/attachments/file-card-previews.tsx");
-const { readQuietly } = await import("../../components/applications/windows/meeting-window.tsx");
 const { subAgentReadRefused } = await import("../../lib/chat/transcript/sub-agent-transcripts.ts");
 const { documentReadOutcome } = await import("../../components/files/surfaces/document-window.tsx");
 const { reviewScopeIsEmpty } = await import("../../components/center-tabs/review/review-tab-pane.tsx");
@@ -69,32 +68,6 @@ test("an archive the server refuses is a fact; a failed transfer is not", () => 
   assert.equal(archiveListRefused(new Error("ARCHIVE_LIST_404")), true);
   assert.equal(archiveListRefused(new Error("ARCHIVE_LIST_503")), false);
   assert.equal(archiveListRefused(new TypeError("Failed to fetch")), false);
-});
-
-test("a meeting read stops on a 4xx and keeps going otherwise", async () => {
-  let reads = 0;
-  let refused = 0;
-  await quietly(async () => {
-    const stop = readQuietly("t", async () => { reads += 1; throw Object.assign(new Error("HTTP 404"), { status: 404 }); }, () => {}, () => { refused += 1; });
-    await wait(700);
-    stop();
-  });
-  assert.equal(reads, 1);
-  assert.equal(refused, 1);
-
-  let tries = 0;
-  let answer = null;
-  await quietly(async () => {
-    const stop = readQuietly("t", async () => {
-      tries += 1;
-      if (tries === 1) throw Object.assign(new Error("HTTP 503"), { status: 503 });
-      return "text";
-    }, (value) => { answer = value; }, () => assert.fail("not refused"));
-    await wait(700);
-    stop();
-  });
-  assert.equal(tries, 2);
-  assert.equal(answer, "text");
 });
 
 test("a sub-agent read refused by the server is final; a failed read is asked again", () => {

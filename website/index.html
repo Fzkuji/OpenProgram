@@ -260,6 +260,7 @@ section{padding:112px 0;scroll-margin-top:84px}
 .install .chips{justify-content:center}
 .frame{position:relative;max-width:1140px;margin:80px auto 0;padding:8px;border-radius:24px;background:var(--frame);box-shadow:var(--hero-shadow),0 0 0 1px var(--line)}
 .frame .screen{border-radius:16px;overflow:hidden;background:var(--bg-primary);box-shadow:0 0 0 1px var(--line)}
+.hero-video{display:block;width:100%;height:auto;aspect-ratio:16/9}
 .frame img{width:100%}
 
 /* model strip */
@@ -469,8 +470,8 @@ footer{padding:72px 0 48px}
   <section class="hero">
     <div class="wrap">
       <a class="eyebrow" href="https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0"><span class="new">v1.4.0</span><span>Several keys per provider<span class="wide">, switched at a limit</span></span><span class="go">→</span></a>
-      <h1>Agents that <span class="program-word">program</span> themselves.</h1>
-      <p class="lead">OpenProgram agents are Python classes that write new methods into their own code. Run them in one workspace with chat, files, a terminal and a browser.</p>
+      <h1>Agents <span class="program-word">program</span> anything.</h1>
+      <p class="lead">Workflows, apps with AI inside, and the agents themselves. OpenProgram agents are Python programs that write and rewrite all of them, in one workspace with chat, files, a terminal and a browser.</p>
       <div class="actions">
         <div class="split" data-split>
           <a class="btn btn-primary btn-lg split-main" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-primary><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg><span data-primary-label>Download for macOS</span></a><button class="btn btn-primary btn-lg split-more" type="button" aria-label="Other downloads" aria-haspopup="menu" aria-expanded="false" aria-controls="download-menu"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
@@ -495,14 +496,19 @@ footer{padding:72px 0 48px}
       <p class="alt-path">Live in the terminal, or installing on a server? <a href="#cli">Use the command line →</a></p>
       <div class="frame">
         <div class="screen">
-          <picture class="when-dark">
-            <source srcset="docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
-            <img src="docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
-          </picture>
-          <picture class="when-light">
-            <source srcset="docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
-            <img src="docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
-          </picture>
+          <video class="hero-video" muted loop playsinline preload="auto" width="1920" height="1080" poster="docs/images/openprogram-tour-light.jpg" data-light="docs/images/openprogram-tour-light" data-dark="docs/images/openprogram-tour-dark" aria-label="OpenProgram tour: one task from start to finish, always-on agents, every device, and agents that program anything"></video>
+          <script>
+          (function(){
+            var v=document.currentScript.previousElementSibling,root=document.documentElement,still=window.matchMedia("(prefers-reduced-motion: reduce)").matches,cur;
+            function load(){
+              var base=v.dataset[root.dataset.theme==="dark"?"dark":"light"];
+              if(base===cur)return;cur=base;
+              v.poster=base+".jpg";v.src=base+".mp4";
+              if(still){v.controls=true}else{var p=v.play();if(p&&p.catch)p.catch(function(){})}
+            }
+            load();new MutationObserver(load).observe(root,{attributes:true,attributeFilter:["data-theme"]});
+          })();
+          </script>
         </div>
       </div>
     </div>

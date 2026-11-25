@@ -24,5 +24,42 @@ class SpeechToText:
         from openprogram.interfaces.speech import stt
         return stt.transcribe_segments(audio, language or "auto")
 
+    def transcribe_file(self, path: str, language: str = "") -> dict:
+        from pathlib import Path
+        from openprogram.interfaces.speech import audio, stt
+        try:
+            wav = audio.to_wav(Path(path))
+        except audio.AudioError as exc:
+            raise speech_link.TranscriptionError(str(exc)) from exc
+        duration, peak = audio.wav_info(wav)
+        if peak < audio.SILENCE_PEAK:
+            # Whisper invents text ("Thank you.") for silent audio.
+            return {"duration_ms": duration, "silent": True, "segments": [], "engine": "", "model": ""}
+        result = stt.transcribe_segments(wav, language or "auto")
+        return {"duration_ms": duration, "silent": False, **result}
+
+    def diarize(self, chunks: list[tuple[int, str]]) -> list[tuple[int, int, int]]:
+        from pathlib import Path
+        from openprogram.interfaces.speech import audio, diarize
+
+        def converted():
+            for t_ms, path in chunks:
+                try:
+                    yield int(t_ms), audio.to_wav(Path(path))
+                except (audio.AudioError, OSError):
+                    continue  # a chunk that does not convert was not transcribed either
+        try:
+            return diarize.run(converted())
+        except diarize.Unavailable as exc:
+            raise speech_link.DiarizationUnavailable(exc.reason, str(exc)) from exc
+
+    def readiness(self) -> dict:
+        from openprogram.interfaces.speech import audio, stt
+        try:
+            speech = stt.resolve_engine() is not None
+        except Exception:
+            speech = False
+        return {"speech": speech, "ffmpeg": audio.ffmpeg() is not None, "ffmpeg_missing": audio.MISSING}
+
 
 speech_link.register(SpeechToText())

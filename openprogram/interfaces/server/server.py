@@ -936,10 +936,6 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.interfaces.server.routes import screenshot as _routes_screenshot
     _routes_screenshot.register(app)
 
-    # Meetings: call audio from the App, transcribed and summarized.
-    from openprogram.interfaces.server.routes.execution import meetings as _routes_meetings
-    _routes_meetings.register(app)
-
     # Global running-work snapshot for the right-sidebar Running panel.
     from openprogram.interfaces.server.routes.execution import running as _routes_running
     _routes_running.register(app)

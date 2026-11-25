@@ -26,7 +26,7 @@
 <a id="models-and-integrations"></a>
 <a id="acknowledgements"></a>
 
-<p align="center"><b>Открытый harness для агентов, где агенты — это программы на Python, которые сами себя улучшают.</b></p>
+<p align="center"><b>Агенты программируют что угодно.</b><br>Рабочие процессы, приложения со встроенным ИИ и сами агенты. Открытый harness для агентов, где агенты — это программы на Python.</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Версия" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
@@ -46,9 +46,9 @@
 <p align="center">
   <a href="https://fzkuji.github.io/OpenProgram/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
-      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
-      <img src="../docs/images/chat_hero.png" alt="Рабочее пространство OpenProgram: сессия агента, запустившая двух субагентов" width="100%">
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/openprogram-tour-dark.webp">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/openprogram-tour-light.webp">
+      <img src="../docs/images/openprogram-tour-light.webp" alt="Обзор OpenProgram: задача от начала до конца, постоянно работающие агенты, любые устройства и агенты, которые программируют что угодно" width="100%">
     </picture>
   </a>
 </p>

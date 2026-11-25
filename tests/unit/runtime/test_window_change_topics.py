@@ -1,6 +1,6 @@
 """Open windows read again when told: each producer signals its topic.
 
-The Programs, Applications, MCP, Channels and Meetings pages no longer
+The Programs, Applications, MCP and Channels pages and application windows no longer
 re-read on a timer; these are the places that tell them.
 """
 from __future__ import annotations
@@ -107,15 +107,14 @@ def test_an_mcp_server_added_or_removed_signals_its_name() -> None:
         assert _marks(listener) == {"mcp:topic-test"}
 
 
-# -- meetings ---------------------------------------------------------------
+# -- application state ------------------------------------------------------
 
-def test_a_meeting_writing_its_status_signals_its_id(tmp_path) -> None:
-    from openprogram.programs.applications.meeting import session
-    meeting = session.Meeting.__new__(session.Meeting)
-    meeting.state = "transcribing"
-    meeting.directory = tmp_path
-    meeting.id = "m1"
-    meeting.meta = lambda: {"id": "m1"}
-    with changes.listen("meetings") as listener:
-        meeting._write_meta()
-        assert _marks(listener) == {"meetings:m1"}
+def test_saving_an_application_state_signals_its_instance(tmp_path, monkeypatch) -> None:
+    from openprogram.programs._host.ui import state
+    monkeypatch.setattr(state, "home", lambda: tmp_path)
+    instance_id = "a" * 64
+    with changes.listen("application-state") as listener:
+        state.data(instance_id)
+        assert _marks(listener) == set()                     # a read tells nobody
+        state.data(instance_id, {"x": 1}, expected_version=0)
+        assert _marks(listener) == {f"application-state:{instance_id}"}

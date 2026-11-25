@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
 
-import {
-  captureErrorMessage, chunkProgress, clock, createChunkClock, languageLabel, recordingNote, speakerLabel, stateLabel,
-  systemAudioOf, transcriptText,
-} from "../../lib/meetings/meeting-format.ts";
 import { applicationRows, BUILTIN_TABS } from "../../components/applications/application-rows.ts";
+
+// The Meetings window's sources live in its application package and import the
+// web app's modules by its "@/" alias, so they are bundled before they are read.
+const root = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
+const source = join(root, "../../openprogram/programs/applications/meeting/web/src/meeting-format.ts");
+const dir = await mkdtemp(join(root, ".meeting-format-"));
+after(() => rm(dir, { recursive: true, force: true }));
+await build({
+  absWorkingDir: root, entryPoints: [source], bundle: true, format: "esm", platform: "node",
+  packages: "external", tsconfig: join(root, "tsconfig.json"), outfile: join(dir, "probe.mjs"),
+  plugins: [{ name: "alias", setup(b) {
+    b.onResolve({ filter: /^@\// }, args => b.resolve("./" + args.path.slice(2), { resolveDir: root, kind: args.kind }));
+  } }],
+});
+const {
+  captureErrorMessage, chunkProgress, clock, languageLabel, recordingNote, shownState, speakerLabel, stateLabel,
+  systemAudioOf, transcriptText,
+} = await import(pathToFileURL(join(dir, "probe.mjs")));
 
 const en = (english) => english;
 const zh = (_english, chinese) => chinese;
@@ -47,13 +65,6 @@ test("chunk progress counts both tracks and what still waits", () => {
     { received: 0, processed: 0, pending: 0 });
 });
 
-test("each chunk carries its number and its offset from the meeting start", () => {
-  const chunks = createChunkClock(1000);
-  assert.deepEqual(chunks.next(1000), { seq: 0, t_ms: 0 });
-  assert.deepEqual(chunks.next(31_000.4), { seq: 1, t_ms: 30_000 });
-  assert.deepEqual(chunks.next(500), { seq: 2, t_ms: 0 });
-});
-
 test("a refused microphone names the System Settings pane", () => {
   assert.match(captureErrorMessage("NotAllowedError", en), /Privacy & Security → Microphone/);
   assert.match(captureErrorMessage("NotFoundError", zh), /麦克风/);
@@ -72,9 +83,20 @@ test("the recording note says whether the server records the computer's sound, a
   assert.deepEqual(systemAudioOf({}), { state: "", reason: "", message: "" });
 });
 
-test("Meetings opens as one of the App's own tabs", () => {
-  assert.equal(BUILTIN_TABS.meeting, "meeting");
+test("a meeting the document calls live that nothing works on any more reads as interrupted", () => {
+  const live = { id: "m1", state: "recording" };
+  assert.equal(shownState(live, { key: "m1", state: "recording" }, false), "recording");
+  assert.equal(shownState(live, { key: "m1", state: "processing" }, false), "transcribing");
+  assert.equal(shownState(live, { key: "m2", state: "recording" }, false), "interrupted");
+  assert.equal(shownState(live, null, false), "interrupted");
+  assert.equal(shownState({ id: "m1", state: "summarizing" }, null, true), "summarizing");
+  assert.equal(shownState({ id: "m1", state: "summarizing" }, null, false), "interrupted");
+  assert.equal(shownState({ id: "m1", state: "done" }, null, false), "done");
+});
+
+test("Meetings opens as an application window, not one of the App's own tabs", () => {
+  assert.equal(BUILTIN_TABS.meeting, undefined);
   const [row] = applicationRows([], [{ id: "meeting", title: "Meetings", description: "", icon: "meeting", enabled: true, loaded: true, entries: [] }]);
-  assert.equal(row.builtinTab, "meeting");
+  assert.equal(row.builtinTab, undefined);
   assert.equal(row.title, "Meetings");
 });

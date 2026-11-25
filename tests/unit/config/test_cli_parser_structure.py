@@ -68,7 +68,7 @@ def test_programs_is_the_one_command_group_for_programs():
     programs_parser = group.choices["programs"]
     verbs = next(a for a in programs_parser._subparsers._group_actions).choices
     assert set(verbs) == {"list", "run", "status", "cancel", "check", "install",
-                          "uninstall", "enable", "disable"}
+                          "uninstall", "enable", "disable", "export"}
 
     args = parser.parse_args(["programs", "install", "/tmp/software", "--trust", "--replace"])
     assert (args.source, args.trust, args.replace) == ("/tmp/software", True, True)

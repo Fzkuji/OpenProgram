@@ -12,7 +12,7 @@ import { WindowTabIcon } from "../window/window-tab-icon";
  * not independently selectable from the strip.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bookmark, CircleDot, CirclePlus, Download, FilePen, FileText, History, Mic, TerminalSquare, X } from "lucide-react";
+import { Bookmark, CircleDot, CirclePlus, Download, FilePen, FileText, History, TerminalSquare, X } from "lucide-react";
 
 import {
   ChromeIcon,
@@ -102,8 +102,6 @@ export function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: 
             ? <FilePen size={14} />
           : tab.page === "recording"
             ? <CircleDot size={14} />
-          : tab.page === "meeting"
-            ? <Mic size={14} />
           : tab.page === "browser"
             ? <ChromeIcon size={14} />
             : tab.page === "terminal" || tab.page === "claude"
@@ -414,8 +412,6 @@ export function TabItem({
                 ? <FilePen size={14} />
               : tab.page === "recording"
                 ? <CircleDot size={14} />
-              : tab.page === "meeting"
-                ? <Mic size={14} />
               : tab.page === "browser"
                 ? <ChromeIcon size={14} />
                 : tab.page === "terminal" || tab.page === "claude"

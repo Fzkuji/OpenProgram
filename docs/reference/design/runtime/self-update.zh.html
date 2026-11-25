@@ -277,7 +277,7 @@ writer=controller</pre>
 <tbody>
 <tr><th scope="row">SQLite</th><td>在线备份 API。超过 4 GB 时最大的数据库只取结构和样本。迁移时间按全量折算；超过 30 分钟则停止更新，无法抽样的数据库以 “migration untested” 停止。</td></tr>
 <tr><th scope="row">复制</th><td>去掉钩子的 <code translate="no">config.json</code>、agents、项目元数据、最近 3 个会话、<code translate="no">programs/</code>、skills、程序源码；去掉密钥的模型列表和一个回环默认模型；新生成的 <code translate="no">owner.json</code></td></tr>
-<tr><th scope="row">绝不复制</th><td><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">mcp_servers.json</code>、频道状态、<code translate="no">chrome-profile/</code>、<code translate="no">runtime/</code>、<code translate="no">self-updates/</code>、<code translate="no">worktrees/</code>、日志、录音、会议、<code translate="no">*.pid</code>、<code translate="no">*.port</code>、<code translate="no">*.lock</code></td></tr>
+<tr><th scope="row">绝不复制</th><td><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">mcp_servers.json</code>、频道状态、<code translate="no">chrome-profile/</code>、<code translate="no">runtime/</code>、<code translate="no">self-updates/</code>、<code translate="no">worktrees/</code>、日志、录音、应用保存的文件（<code translate="no">programs/.runtime/files/</code>，包括会议）、<code translate="no">*.pid</code>、<code translate="no">*.port</code>、<code translate="no">*.lock</code></td></tr>
 <tr><th scope="row">净化</th><td>运行状态是各日志 <code translate="no">turn.rows</code> 行上的运行表行。用 worker 的运行表折叠复制的日志并追加收尾行：执行变 <code translate="no">interrupted</code>，尝试结束，等待和命令关闭，effect、intent、admission、finalization、reservation 结清，未结清的重启意图删除。排队和运行中的 job 在 <code translate="no">jobs.json</code> 结束；<code translate="no">execution.auto_resume_window_seconds</code> = 0。读回必须没有未结束项；没有会话日志的会话使试运行停止。</td></tr>
 </tbody>
 </table>

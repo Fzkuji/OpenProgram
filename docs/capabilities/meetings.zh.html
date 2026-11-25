@@ -95,19 +95,19 @@
 </tbody>
 </table>
 <h2 id="where-meetings-are-stored">存储</h2>
-<pre translate="no" tabindex="0"><code>~/.openprogram/meetings/&lt;id&gt;/
-  meta.json          名称、开始时间、时长、进度、摘要会话、
-                     是否录到电脑声音、是否区分了说话人
-  tracks/mic/…       麦克风，30 秒 WebM 分段
-  tracks/system/…    电脑声音，30 秒 WAV 分段
+<pre translate="no" tabindex="0"><code>~/.openprogram/programs/.runtime/files/&lt;instance&gt;/recordings/&lt;id&gt;/
+  mic/…              麦克风，30 秒 WebM 分段，每段附带时间轴文字
+  system/…           电脑声音，30 秒 WAV 分段，每段附带时间轴文字
   transcript.json    合并后的转写稿
   summary.md         摘要，末尾附完整转写稿</code></pre>
-<p class="note">位于状态目录下，默认 <code translate="no">~/.openprogram</code>。OpenAI 或 Groq：每段发送给该服务。whisper.cpp：音频留在本机。区分说话人始终在本机进行。</p>
+<p class="note">音频和转写稿是应用的文件，会议列表是它保存的状态。两者都在状态目录下，默认 <code translate="no">~/.openprogram</code>。OpenAI 或 Groq：每段发送给该服务。whisper.cpp：音频留在本机。区分说话人始终在本机进行。</p>
 <h2 id="limits">限制</h2>
 <ul>
 <li>同时只能录一场，最长 4 小时，到时自动停止。</li>
 <li>只在停止后区分说话人。声音相近的人可能共用编号；同一人声音变化大时可能有两个编号。</li>
 <li>静音分段跳过。无法转换或转写的分段在转写稿下报告，其余继续。</li>
 </ul>
+<h2 id="on-its-own">不开 App 也能用</h2>
+<p>在<strong>应用</strong>页选 <strong>⋯</strong> → <strong>导出为独立应用…</strong>，写出 <strong>Meetings.app</strong>：同样的窗口、录音和摘要，在自己的窗口里运行，不需要打开 OpenProgram。摘要在侧边面板里打开，可以继续提问。见<a href="applications.zh.html#run-on-its-own">单独运行一个应用</a>。</p>
 <h2 id="turn-meetings-off">关闭会议</h2>
 <p><strong>应用</strong>页的开关，或 <code translate="no">openprogram programs disable meeting</code>，会停止正在进行的录制。<code translate="no">openprogram programs enable meeting</code> 重新开启。见<a href="applications.zh.html">应用</a>。</p>

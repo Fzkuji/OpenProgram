@@ -30,7 +30,12 @@ ID = re.compile(r"[a-z][a-z0-9._-]{0,95}\Z")
 ICON = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
 #: ``chat`` lets the window show the owner's composer for conversations it keeps
 #: (``state.conversation``), each working in a folder the window names.
-CAPABILITIES = {"model.invoke", "storage.app", "files.project.read", "files.project.write", "chat"}
+#: ``storage.files`` gives the backend a directory of its own (``state.files_root``);
+#: ``speech`` and ``conversation`` are what the backend asks the host for
+#: (``host_calls``); ``audio.record`` lets the window have the host record the
+#: microphone and the computer's sound into those files (``audio``).
+CAPABILITIES = {"model.invoke", "storage.app", "storage.files", "files.project.read", "files.project.write",
+                "chat", "speech", "conversation", "audio.record"}
 #: Capabilities that need the owner's explicit trust at install, besides a Python backend.
 TRUSTED_CAPABILITIES = {"files.project.write"}
 #: Directories that are never part of an application's content.
@@ -145,6 +150,14 @@ def manifest(root: Path) -> dict:
         raise ValueError("operations require a backend")
     elif TRUSTED_CAPABILITIES & set(raw["capabilities"]):
         raise ValueError("files.project.write requires a Python backend")
+    if {"speech", "audio.record"} & set(raw["capabilities"]) and "storage.files" not in raw["capabilities"]:
+        raise ValueError("speech and audio.record work on the application's files; declare storage.files")
+    if "audio.record" in raw["capabilities"]:
+        recording = raw.get("recording")
+        if not isinstance(recording, dict) or not isinstance(recording.get("ingest"), str) \
+                or recording["ingest"] not in raw["operations"] \
+                or ("finish" in recording and recording["finish"] not in raw["operations"]):
+            raise ValueError("audio.record needs recording.ingest (and optional recording.finish) naming operations")
     return raw
 
 

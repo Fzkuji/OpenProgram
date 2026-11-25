@@ -10,6 +10,7 @@
 .appMeta { flex: none; color: var(--text-secondary); font-size: var(--fs-xs); }
 .description { margin: 3px 0 0; overflow: hidden; color: var(--text-secondary); font-size: var(--fs-sm); line-height: 1.45; white-space: nowrap; text-overflow: ellipsis; }
 .fieldLabel { margin-top: 4px; color: var(--text-primary); font-size: var(--fs-sm); font-weight: 500; }
+.exportNote { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
 .checks label { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: var(--fs-sm); cursor: pointer; }
 .dialogError { margin: 0; color: var(--accent-red); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 

@@ -5,7 +5,7 @@ pixels for anyone and without touching the output device. A stream opened
 here asks for 16 kHz mono float32 samples (what speech recognition wants)
 and passes each buffer's bytes to a ``sink``; :func:`wav` turns collected
 samples into 16-bit WAV. Callers choose the filter: computer use records
-one application, Meetings everything the display plays. PyObjC is imported
+one application, ``system_sound`` everything the display plays. PyObjC is imported
 only when a stream opens, so importing this module costs nothing elsewhere.
 """
 from __future__ import annotations

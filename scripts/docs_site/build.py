@@ -626,9 +626,10 @@ def _build_into_out_root() -> int:
     (out_assets / "pygments-dark.css").write_text(
         _pyg_css("github-dark"), encoding="utf-8")
 
-    # copy image/static assets referenced by docs (svg/png/jpg/gif/webp/avif),
-    # preserving their relative path so in-doc <img>/![] links resolve.
-    IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico"}
+    # copy image/static assets referenced by docs (svg/png/jpg/gif/webp/avif,
+    # and the landing page's tour video), preserving their relative path so
+    # in-doc <img>/![] links resolve.
+    IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".mp4"}
     for path in DOCS_ROOT.rglob("*"):
         if path.suffix.lower() not in IMG_EXT or not path.is_file():
             continue

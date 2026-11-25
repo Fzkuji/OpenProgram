@@ -11,9 +11,12 @@ from contextlib import asynccontextmanager
 from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from openprogram.programs._host.ui import catalog, loader, state
+from openprogram.programs._host.ui import audio, catalog, loader, state
 from openprogram.programs._host.ui.service import ApplicationService
 
+
+# Application windows ship their own fonts (font-src 'self'); not every system maps the type.
+mimetypes.add_type("font/woff2", ".woff2")
 
 CSP = "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
 
@@ -31,11 +34,15 @@ def register(app):
     async def lifespan(current):
         async with previous_lifespan(current) as value:
             service.recover()
+            # Recordings hand their chunks to operations through this service.
+            audio.attach(service, asyncio.get_running_loop())
             # Installed applications load in the worker, from their sources.
             await asyncio.to_thread(loader.sync)
             try:
                 yield value
             finally:
+                await asyncio.to_thread(audio.stop_all)
+                audio.detach()
                 await service.close()
                 await asyncio.to_thread(loader.unload_all)
     app.router.lifespan_context = lifespan
@@ -90,6 +97,42 @@ def register(app):
                 catalog.remove(app_id)
                 await asyncio.to_thread(loader.unload, app_id)
                 return {"ok": True}
+        return await guarded(apply)
+
+    # Software of its own (interfaces/standalone/export.py): the window
+    # writes it into a folder the owner chose and may then show it there.
+    exported: set[str] = set()
+
+    @app.post("/api/applications/{app_id}/export")
+    async def export_application(app_id: str, body: dict):
+        async def apply():
+            import sys
+            from pathlib import Path
+            from openprogram.interfaces.standalone.export import export
+            folder = str(body.get("output") or "").strip() or "~/Downloads"
+            if not Path(folder).expanduser().is_dir():
+                raise ValueError(f"{folder} is not a folder")
+            try:
+                result = await asyncio.to_thread(
+                    export, app_id, Path(folder), format="app" if sys.platform == "darwin" else "dir", next_free=True)
+            except (PermissionError, FileExistsError) as exc:  # the folder chosen: say so beside the form
+                raise ValueError(str(exc)) from None
+            exported.add(result["path"])
+            return result
+        return await guarded(apply)
+
+    @app.post("/api/applications/exports/reveal")
+    async def reveal_export(body: dict):
+        """Show an export this worker wrote in the file manager; no other path."""
+        async def apply():
+            path = str(body.get("path") or "")
+            if path not in exported:
+                raise FileNotFoundError("not an export of this session")
+            from openprogram.interfaces.server.ws_actions.files.mutations import reveal_in_file_manager
+            result = await asyncio.to_thread(reveal_in_file_manager, path)
+            if result.get("error"):
+                raise ValueError(result["error"])
+            return {"ok": True}
         return await guarded(apply)
 
     def ui_url(key, definition):
@@ -188,6 +231,54 @@ def register(app):
         ``body.folder`` (``state.conversation``)."""
         return await guarded(lambda: asyncio.to_thread(
             state.conversation, key, body.get("key"), body.get("folder") or ""))
+
+    @app.post("/api/application-instances/{key}/conversations/{session_id}/show")
+    async def show_conversation(key: str, session_id: str):
+        """Whether the window may show ``session_id``: only a conversation its backend opened."""
+        async def apply():
+            definition = catalog.get(state.get_instance(key)["app_id"])
+            if "conversation" not in definition["capabilities"]:
+                raise ValueError("application does not declare conversation")
+            if not state.started_conversation(key, session_id):
+                raise FileNotFoundError("the application did not open this conversation")
+            return {"session_id": session_id}
+        return await guarded(apply)
+
+    # Recordings (capability audio.record): the host records, the application's operations take the chunks.
+    @app.get("/api/application-instances/{key}/audio")
+    async def audio_status(key: str):
+        async def apply():
+            return {"recording": await asyncio.to_thread(audio.status, key), "system_audio": audio.support()}
+        return await guarded(apply)
+
+    @app.post("/api/application-instances/{key}/audio")
+    async def audio_start(key: str, body: dict):
+        async def apply():
+            return await asyncio.to_thread(audio.start, key, body.get("key"),
+                                           tracks=body.get("tracks") or audio.TRACKS,
+                                           max_seconds=body.get("max_seconds") or audio.MAX_SECONDS)
+        return await guarded(apply)
+
+    @app.post("/api/application-instances/{key}/audio/{recording_id}/chunks")
+    async def audio_chunk(key: str, recording_id: str, request: Request):
+        async def apply():
+            params = request.query_params
+            try:
+                seq = int(params.get("seq", ""))
+                t_ms = int(float(params.get("t_ms", "")))
+            except ValueError:
+                raise ValueError("seq and t_ms must be numbers") from None
+            content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+            suffix = {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4",
+                      "audio/wav": "wav", "audio/x-wav": "wav"}.get(content_type, "webm")
+            data = await request.body()
+            return await asyncio.to_thread(audio.take, key, recording_id, params.get("track", ""), seq, t_ms,
+                                           data, suffix)
+        return await guarded(apply)
+
+    @app.post("/api/application-instances/{key}/audio/{recording_id}/stop")
+    async def audio_stop(key: str, recording_id: str):
+        return await guarded(lambda: asyncio.to_thread(audio.stop, key, recording_id, "done"))
 
     @app.get("/api/application-runs/{run_id}")
     async def run(run_id: str, after: int = 0):

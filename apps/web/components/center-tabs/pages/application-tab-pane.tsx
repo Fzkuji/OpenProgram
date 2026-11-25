@@ -8,9 +8,32 @@ import { HISTORY_PROTOCOL } from "@/lib/chat/history/session-history";
 import { setApplicationNote } from "@/lib/chat/send/application-notes";
 import { enqueueMessage, useSendQueue } from "@/lib/chat/send/send-queue";
 import { openSession } from "@/lib/tabs/navigation/open-session";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { pushPath } from "@/lib/nav/shallow-nav";
+import { useChanged } from "@/lib/net/ws/changes";
+import { useAudioRecorder } from "@/lib/applications/audio-recorder";
 import {
   ApplicationComposer, type ComposerPlace, setOwnConversation, useConversationFeed,
 } from "@/components/applications/application-conversation";
+
+/**
+ * The host's look as an application frame applies it to its own <html>:
+ * the root's data-* attributes and lang (theme, mode, style, locale) and the
+ * custom properties set on it (the chosen font).
+ */
+function appearance(): { attributes: Record<string, string>; properties: Record<string, string> } {
+  const root = document.documentElement;
+  const attributes: Record<string, string> = {};
+  for (const name of root.getAttributeNames()) {
+    if (name.startsWith("data-") || name === "lang") attributes[name] = root.getAttribute(name) ?? "";
+  }
+  const properties: Record<string, string> = {};
+  for (let index = 0; index < root.style.length; index++) {
+    const name = root.style.item(index);
+    if (name.startsWith("--")) properties[name] = root.style.getPropertyValue(name);
+  }
+  return { attributes, properties };
+}
 
 /** Instances already read, so a tab shown again draws its frame at once. */
 const instancesRead = new Map<string, ApplicationInstance>();
@@ -64,6 +87,16 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
   }, []);
   useConversationFeed(conversation, post);
 
+  // What the frame hears without asking: its state document was saved, the
+  // host's recording changed, the App's look changed.
+  useChanged("application-state", () => post("state", null), [instanceId]);
+  useChanged("application-audio", () => post("audio", null), [instanceId]);
+  const microphone = useAudioRecorder(state => state.microphones[instanceId]);
+  useEffect(() => { post("audio", null); }, [microphone, post]);
+  // The App's look is followed only while a frame is connected (see connect).
+  const look = useRef<MutationObserver | null>(null);
+  useEffect(() => () => look.current?.disconnect(), []);
+
   function connect(frame: HTMLIFrameElement) {
     if (!instance || !frame.contentWindow) return;
     channel.current?.port1.close();
@@ -73,6 +106,9 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
     const definition = instance.application;
     const chatAllowed = () => {
       if (!definition.capabilities?.includes("chat")) throw new Error("application does not declare chat");
+    };
+    const audioAllowed = () => {
+      if (!definition.capabilities?.includes("audio.record")) throw new Error("application does not declare audio.record");
     };
     connection.port1.onmessage = async ({ data }) => {
       if (!data || typeof data.id !== "string" || data.id.length > 128) return;
@@ -99,6 +135,28 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
           } else result = await applicationRequest(`${runUrl}/${method === "run.cancel" ? "cancel" : "answer"}`, "POST", {
             request_id: params.request_id, answer: params.answer,
           });
+        } else if (method === "audio.start") {
+          audioAllowed();
+          if (typeof params.key !== "string") throw new Error("A recording key is required");
+          result = await useAudioRecorder.getState().start(instanceId, {
+            key: params.key,
+            tracks: Array.isArray(params.tracks) ? params.tracks.filter((track: unknown) => track === "mic" || track === "system") : undefined,
+            max_seconds: Number.isFinite(params.max_seconds) ? params.max_seconds : undefined,
+          });
+        } else if (method === "audio.stop") {
+          audioAllowed();
+          result = await useAudioRecorder.getState().stop(instanceId);
+        } else if (method === "audio.status") {
+          audioAllowed();
+          result = await useAudioRecorder.getState().status(instanceId);
+        } else if (method === "conversation.show") {
+          // A conversation the application's backend opened (capability `conversation`).
+          if (typeof params.session_id !== "string" || !params.session_id) throw new Error("A conversation is required");
+          const sid = params.session_id;
+          await applicationRequest(`${base}/conversations/${encodeURIComponent(sid)}/show`, "POST", {});
+          useCenterTabs.getState().openSessionTab(sid, useSessionStore.getState().conversations[sid]?.title ?? "");
+          pushPath(`/s/${sid}`);
+          result = true;
         } else if (method === "chat.open") {
           chatAllowed();
           const opened = await applicationRequest<{ session_id: string; project_id: string; folder: string }>(
@@ -151,6 +209,10 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
       }
     };
     frame.contentWindow.postMessage({ type: "openprogram.application.connect" }, "*", [connection.port2]);
+    connection.port1.postMessage({ event: "appearance", value: appearance() });
+    look.current?.disconnect();
+    look.current = new MutationObserver(() => post("appearance", appearance()));
+    look.current.observe(document.documentElement, { attributes: true });
   }
 
   if (!instance) return null;

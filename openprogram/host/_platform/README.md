@@ -12,6 +12,7 @@ owner-only permissions, directory handles), ``locking`` (``flock``),
 command runs in), ``terminal`` (shell invocations, PTYs, bundled tools),
 ``environment`` (browser, WSL, release and service backends),
 ``screen_capture_audio`` (audio-only ScreenCaptureKit streams on macOS),
+``system_sound`` (the computer's sound cut into chunks for an application's recording),
 ``architecture`` (the CPU architecture the interpreter runs as, which
 picks packages), ``front`` (giving the front back to the application the user is in),
 ``power`` (holding the system awake during an execution), ``clipboard``
@@ -35,6 +36,7 @@ picks packages), ``front`` (giving the front back to the application the user is
 - **`processes.py`** — Platform processes
 - **`screen_capture_audio.py`** — Audio-only ScreenCaptureKit streams on macOS, and the WAV their samples become
 - **`screen_windows.py`** — The windows on screen, front to back, with their frames: what a screenshot snaps to
+- **`system_sound.py`** — The computer's sound, recorded in the worker and cut into chunks
 - **`terminal.py`** — Platform terminal
 - **`windows_ocr.py`** — Text in an image, read by the OCR engine Windows ships (``Windows.Media.Ocr``)
 

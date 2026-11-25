@@ -79,8 +79,9 @@ _CAPABILITY_SPECS = (
         request_method='CGRequestScreenCaptureAccess',
         settings_pane='Privacy_ScreenCapture',
         settings_label='Screen & System Audio Recording', settings_list=True,
-        # Meetings records the call's sound through the same grant: the
-        # worker's ScreenCaptureKit audio stream needs no other declaration.
+        # Applications record the computer's sound through the same grant
+        # (``audio.record``): the worker's ScreenCaptureKit audio stream
+        # needs no other declaration.
         identity_role='runtime',
         identity_application='/Applications/OpenProgram.app/Contents/Resources/runtime/OpenProgram.app',
         identity_bundle_id='ai.openprogram.runtime', tcc_service='ScreenCapture',

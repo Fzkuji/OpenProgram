@@ -183,7 +183,8 @@
 <tr><th scope="row"><code translate="no">programs</code>、<code translate="no">applications</code></th><td>程序重扫或卸载；应用加载、卸载或目录变化</td><td>程序页、新标签页和侧边栏，代替每 5、10、30 秒</td></tr>
 <tr><th scope="row"><code translate="no">mcp</code></th><td>MCP 服务启动、连上、出错、停止或被移除</td><td>MCP 页，代替每 4 秒</td></tr>
 <tr><th scope="row"><code translate="no">channels</code></th><td>账号变化，适配器启动、停止或重试，或运行标记出现、清除</td><td>渠道设置和渠道状态点，代替每 5 秒和 30 秒</td></tr>
-<tr><th scope="row"><code translate="no">meetings</code></th><td>会议记录写入、丢弃或删除</td><td>会议窗口，代替录音时每 4 秒</td></tr>
+<tr><th scope="row"><code translate="no">application-state</code></th><td>应用实例的状态文档被保存（key：实例）</td><td>该应用的窗口，作为它的 <code translate="no">state</code> 事件</td></tr>
+<tr><th scope="row"><code translate="no">application-audio</code></th><td>宿主为实例做的录制开始、收到或交出一段、结束</td><td>该应用的窗口，作为它的 <code translate="no">audio</code> 事件；会议录音时不再每 4 秒读取</td></tr>
 <tr><th scope="row"><code translate="no">documents</code></th><td>窗口打开着的文件在磁盘上变了。键是文件路径的哈希；窗口用 <code translate="no">/api/documents/stat</code> 开始跟这个文件，Worker 监视它</td><td>文档窗口的文件元数据</td></tr>
 <tr><th scope="row"><code translate="no">processes</code></th><td>命令的监管进程写 <code translate="no">processes.db</code> 或它的 <code translate="no">-wal</code></td><td>对话的程序面板</td></tr>
 <tr><th scope="row"><code translate="no">routing</code></th><td>用量账本记下一次模型调用或路由事件、一个冷会话打开完毕，或凭据变化</td><td>模型服务设置里的路由概览</td></tr>

@@ -176,9 +176,10 @@ embedding = [
     "sentence-transformers>=6.1,<7; sys_platform != 'darwin' or platform_machine != 'x86_64'",
     "torch>=2.13,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",
 ]
-# Speaker separation in Meetings (programs/applications/meeting/diarize.py):
-# sherpa-onnx's offline speaker diarization tells the other people in a call
-# apart. Imported only when a meeting stops; without it the computer's sound
+# Speaker separation for applications with the ``speech`` capability, such as
+# Meetings (interfaces/speech/diarize.py): sherpa-onnx's offline speaker
+# diarization tells the other people in a call apart. Imported only when a
+# recording is finished; without it the computer's sound
 # stays one "Others" speaker. The two ONNX models download on first use.
 meetings = [
     "sherpa-onnx>=1.10",
@@ -263,6 +264,15 @@ include = ["openprogram", "openprogram.*"]
     "host/sandbox/shims/*.cjs",
     "host/sandbox/shims/*.py",
     "programs/applications/browser/*.cjs",
+    # The Meetings application package: manifest, backend and its built window
+    # (the folder is not a Python package; the runner loads it from its path).
+    "programs/applications/meeting/application.json",
+    "programs/applications/meeting/backend/*.py",
+    "programs/applications/meeting/ui/*",
+    "programs/applications/meeting/ui/fonts/*",
+    # The page of a standalone application (interfaces/standalone).
+    "interfaces/standalone/shell/*",
+    "interfaces/standalone/shell/fonts/*",
     # computer_use target guides, sent on a target's first call.
     "programs/tools/computer_use/computer_use/guides/*.md",
     # Base prompt and on-demand channel guides (runtime/context/prompt_assembly/components.py).

@@ -18,6 +18,5 @@ export function builtinPageLabel(
   if (page === "review") return text("Review", "审阅");
   if (page === "office") return "ONLYOFFICE";
   if (page === "recording") return text("Workflow Recording", "录制 Workflow");
-  if (page === "meeting") return text("Meetings", "会议");
   return text("Browser", "浏览器");
 }

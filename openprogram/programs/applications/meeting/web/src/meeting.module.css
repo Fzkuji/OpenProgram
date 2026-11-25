@@ -1,0 +1,23 @@
+/* The Meetings window: one centred column (layout in the JSX), the same cards
+   and notes as the App's other application windows, the live recording line,
+   the summary and the transcript. */
+.heading { margin:0 0 10px; color:var(--text-secondary); font-size:var(--fs-sm); font-weight:500; }
+.notice { margin:0; padding:10px 14px; border-radius:var(--radius-lg); background:var(--bg-input); color:var(--text-secondary); font-size:var(--fs-sm); }
+.rowDir { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted); font-size:var(--fs-xs); }
+.recordCard { display:flex; flex-direction:column; gap:16px; padding:20px; border-radius:var(--radius-2xl); background:var(--bg-input); box-shadow:var(--composer-shadow); }
+.lead { margin:0; color:var(--text-secondary); font-size:var(--fs-sm); line-height:1.6; }
+.liveDot { flex-shrink:0; width:10px; height:10px; border-radius:var(--radius-full); background:var(--accent-red); animation:livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion: reduce) { .liveDot { animation:none; } }
+.liveClock { color:var(--text-primary); font-size:var(--fs-lg); font-weight:600; }
+.meetingSummary { padding-top:12px; color:var(--text-primary); font-size:var(--fs-sm); line-height:1.65; overflow-wrap:anywhere; }
+.meetingSummary :is(h1, h2, h3) { margin:1.2em 0 .4em; color:var(--text-bright); font-size:var(--fs-base); font-weight:600; }
+.meetingSummary :is(h1, h2, h3):first-child { margin-top:0; }
+.meetingSummary :is(p, ul, ol) { margin:0 0 .8em; }
+.meetingSummary :is(ul, ol) { padding-left:1.4em; }
+.transcript { display:flex; flex-direction:column; gap:6px; margin:0; padding:12px 0 0; list-style:none; max-height:480px; overflow:auto; }
+.transcriptLine { display:grid; grid-template-columns:52px 64px 1fr; gap:8px; font-size:var(--fs-sm); line-height:1.55; }
+.transcriptTime { color:var(--text-muted); }
+.transcriptSpeaker { color:var(--text-secondary); font-weight:500; }
+.transcriptLine[data-speaker="me"] .transcriptSpeaker { color:var(--accent-blue); }
+.transcriptText { min-width:0; color:var(--text-primary); overflow-wrap:anywhere; }

@@ -1,4 +1,11 @@
-"""Persistent application bindings and operation metadata; executions stay canonical."""
+"""Persistent application bindings and operation metadata; executions stay canonical.
+
+Per instance it also keeps what the instance stores: its state document
+(``storage.app``, :func:`data`) and its files (``storage.files``,
+:func:`files_root`). A saved state document signals the topic
+``application-state`` under the instance id, so its open window reads it
+again.
+"""
 from __future__ import annotations
 
 from contextlib import closing, contextmanager
@@ -6,8 +13,14 @@ import hashlib
 import json
 import re
 import sqlite3
+from pathlib import Path
+
+from openprogram.host._platform.changes import publish, signal
 
 from .catalog import home
+
+#: An instance's state document was saved (key: the instance id); its window reads it again.
+publish("application-state")
 
 
 @contextmanager
@@ -32,6 +45,9 @@ def connect():
         CREATE TABLE IF NOT EXISTS conversations (
           instance_id TEXT NOT NULL, key TEXT NOT NULL, session_id TEXT NOT NULL UNIQUE,
           PRIMARY KEY(instance_id, key));
+        CREATE TABLE IF NOT EXISTS started_conversations (
+          instance_id TEXT NOT NULL, session_id TEXT NOT NULL UNIQUE,
+          PRIMARY KEY(instance_id, session_id));
         """)
         with db:
             yield db
@@ -129,6 +145,35 @@ def conversation(instance_id: str, key: str, folder: str) -> dict:
     return {"session_id": session_id, "project_id": project.id, "folder": project.path}
 
 
+def remember_conversation(instance_id: str, session_id: str) -> None:
+    """``session_id`` is a conversation the instance's backend opened (``conversation``)."""
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO started_conversations VALUES(?,?)", (instance_id, session_id))
+
+
+def started_conversation(instance_id: str, session_id: str) -> bool:
+    """Whether the instance's backend opened ``session_id``: only those it may use or show."""
+    if not session_id:
+        return False
+    with connect() as db:
+        return db.execute("SELECT 1 FROM started_conversations WHERE instance_id=? AND session_id=?",
+                          (instance_id, session_id)).fetchone() is not None
+
+
+def _checked(instance_id: str) -> str:
+    # Instance keys are generated hashes, never user-provided directory names.
+    if not isinstance(instance_id, str) or len(instance_id) != 64 or any(c not in "0123456789abcdef" for c in instance_id):
+        raise ValueError("invalid instance id")
+    return instance_id
+
+
+def files_root(instance_id: str) -> Path:
+    """The directory an instance keeps its files in (``storage.files``); created on first use."""
+    directory = home() / "files" / _checked(instance_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def emit(run_id: str, payload: dict):
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
     if len(encoded.encode()) > 1024 * 1024:
@@ -138,10 +183,7 @@ def emit(run_id: str, payload: dict):
 
 
 def data(instance_id: str, value=None, *, expected_version=None) -> dict:
-    # Instance keys are generated hashes, never user-provided directory names.
-    if len(instance_id) != 64 or any(c not in "0123456789abcdef" for c in instance_id):
-        raise ValueError("invalid instance id")
-    directory = home() / "data" / instance_id
+    directory = home() / "data" / _checked(instance_id)
     directory.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(directory / "data.sqlite", timeout=30)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY, version INTEGER, value TEXT)")
@@ -154,7 +196,9 @@ def data(instance_id: str, value=None, *, expected_version=None) -> dict:
             if not changed:
                 raise ValueError("application state changed; reload before saving")
         version, raw = db.execute("SELECT version,value FROM state WHERE id=1").fetchone()
-        return {"version": version, "value": json.loads(raw)}
+    if expected_version is not None:
+        signal("application-state", instance_id)
+    return {"version": version, "value": json.loads(raw)}
 
 
 def asset_token(instance_id: str, digest: str) -> str:

@@ -3,7 +3,8 @@
 What is copied is an allowlist, so a new credential file can never slip in the
 way it could past a denylist. ``auth/``, ``mcp_tokens/``, ``mcp_servers.json``,
 channel state, ``chrome-profile/``, ``runtime/``, ``self-updates/``,
-``worktrees/``, logs, recordings and meetings are not on it. A fresh
+``worktrees/``, logs, recordings and the files applications keep
+(``programs/.runtime/files/``, meeting audio among them) are not on it. A fresh
 ``owner.json`` is generated.
 
 Sanitizing is what stops anything live from repeating: tool paths are absolute
@@ -218,8 +219,9 @@ def _copy_entry(source: Path, target: Path) -> None:
     if source.is_dir():
         target.mkdir(parents=True, exist_ok=True)
         for child in source.iterdir():
-            if child.name not in _SKIPPED_NAMES:
-                _copy_entry(child, target / child.name)
+            if child.name in _SKIPPED_NAMES or (source.name == ".runtime" and child.name == "files"):
+                continue  # applications' own files: recordings and documents, not what a trial runs on
+            _copy_entry(child, target / child.name)
     elif source.is_file() and not source.name.endswith(_SKIPPED_SUFFIXES):
         target.parent.mkdir(parents=True, exist_ok=True)
         if is_database(source):

@@ -62,7 +62,7 @@ def test_a_bare_windows_refuses_each_missing_feature_by_name(host):
     assert "macOS only" in rows["sandbox_network_domains"]["reason"]
     assert "macOS" in rows["computer_use_code"]["reason"]
     assert rows["workflow_recording"]["reason"] == "Recording is available on macOS only."
-    assert rows["meeting_system_audio"]["reason"] == "The computer's sound is recorded on macOS only."
+    assert rows["application_system_audio"]["reason"] == "The computer's sound is recorded on macOS only."
     assert "UI Automation is not available" in rows["computer_use_app"]["reason"]
     assert rows["computer_use_screen"]["reason"] == rows["computer_use_app"]["reason"]
     assert "powershell.exe" in rows["system_notifications"]["reason"]
@@ -140,7 +140,6 @@ def test_a_disabled_application_is_reported_as_not_enabled(monkeypatch):
     monkeypatch.setattr(host_features, "_application", lambda _name: None)
     rows = {row["id"]: row for row in host_features.report()["features"]}
     assert rows["workflow_recording"]["reason"] == "Workflow recording is not enabled."
-    assert rows["meeting_system_audio"]["reason"] == "Meetings is not enabled."
 
 
 def test_the_command_shell_row_names_the_shell_and_its_promises(host, monkeypatch):

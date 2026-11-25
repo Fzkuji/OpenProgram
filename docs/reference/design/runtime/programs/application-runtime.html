@@ -69,7 +69,7 @@
 <tr><th scope="row">Install software</th><td>Applications → Install…</td><td>Shows declarations, source, version, enabled state. Python backends need the explicit trust checkbox. Duplicate IDs, invalid entries and failed dependency preparation return errors without overwriting.</td></tr>
 <tr><th scope="row">Open</th><td>New tab button, or Open on Applications</td><td>Own tab, same instance. Project applications bind to the current project or a picker. Programs without UI gain no button.</td></tr>
 <tr><th scope="row">Manage</th><td>Applications: enable, show or hide, update, uninstall</td><td>Disabling stops new opens and operations and cancels active ones; hiding removes only the button. Errors stay beside the action. Refresh and reopen read the latest catalog.</td></tr>
-<tr><th scope="row">Call from CLI or Agent</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>, <code translate="no">run</code>, <code translate="no">status</code>, <code translate="no">cancel</code>, <code translate="no">check</code>, <code translate="no">install</code>, <code translate="no">uninstall</code>, <code translate="no">enable</code>, <code translate="no">disable</code></td><td>Same group as every Program; no separate application command.</td></tr>
+<tr><th scope="row">Call from CLI or Agent</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>, <code translate="no">run</code>, <code translate="no">status</code>, <code translate="no">cancel</code>, <code translate="no">check</code>, <code translate="no">install</code>, <code translate="no">uninstall</code>, <code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">export</code></td><td>Same group as every Program; no separate application command.</td></tr>
 </tbody>
 </table>
 <details>
@@ -153,6 +153,36 @@
 </tbody>
 </table>
 
+<h2 id="host-services">Host services</h2>
+<p>What only the host can do, a package asks for through a capability, so its backend imports nothing of OpenProgram and the same package can later run on a trimmed runtime that answers the same calls. Meetings is the first built-in application built this way (<a href="meetings.html#host">Meetings</a>).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Host calls</th><td>The runner writes <code translate="no">{"type": "host", request_id, method, params}</code> on stdout and waits for the answer on stdin; the service answers in the worker (<code translate="no">host_calls.py</code>) after checking the method's capability. Methods: <code translate="no">speech.transcribe</code>, <code translate="no">speech.diarize</code>, <code translate="no">speech.readiness</code>, <code translate="no">conversation.open</code>, <code translate="no">conversation.ask</code>. Paths are relative to the instance's files.</td></tr>
+<tr><th scope="row">Recordings</th><td>Owned by the host (<code translate="no">audio.py</code>), one per instance: the App's page records the microphone for the sandboxed window, the worker the computer's sound; chunks go to <code translate="no">recording.ingest</code> in order, then <code translate="no">recording.finish</code>. Disabling cancels.</td></tr>
+<tr><th scope="row">Change events</th><td>A saved state document signals <code translate="no">application-state</code>, a recording <code translate="no">application-audio</code>; the window gets them as <code translate="no">state</code> and <code translate="no">audio</code> events.</td></tr>
+<tr><th scope="row">Appearance</th><td>The host posts its theme attributes, colour scheme, language and custom properties; <code translate="no">openprogramApp.appearance</code> resolves once they are on the page, so a window built from the App's kit looks like the App.</td></tr>
+</tbody>
+</table>
+
+<h2 id="standalone">Running on its own</h2>
+<p>The Applications page's <strong>Export as an application of its own…</strong> (<code translate="no">POST /api/applications/{id}/export</code>) writes into a folder the owner chooses, numbering it beside an earlier export; only an export the worker wrote can then be shown in the file manager. <code translate="no">openprogram programs export &lt;id|folder&gt;</code> does the same from a terminal.</p>
+<p>The result is a macOS <code translate="no">.app</code>, or a folder with <code translate="no">run.sh</code> and <code translate="no">run.cmd</code>. Opening it runs the same window and the same backend as in the App, with no worker, web app, chat, channel or scheduler.</p>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">What runs</th><td>The application runtime the worker runs (catalog, runners, state, recordings, host calls), for this one package. <code translate="no">OPENPROGRAM_STANDALONE_APPLICATION</code> keeps every other Program from loading; <code translate="no">OPENPROGRAM_STATE_DIR</code> makes the application's data folder the state folder.</td><td>LangGraph, AgentOS and OpenHands show that leaving a desktop client does not remove the runtime an application needs. Shipping that runtime keeps the package contract unchanged: the window and backend are not rewritten for a second host.</td></tr>
+<tr><th scope="row">Bundle</th><td><code translate="no">app/</code> holds the package. <code translate="no">python/</code> holds the App's standalone CPython with OpenProgram, minus the App's web front end, the other built-in applications, Playwright, CPython's tests and Tk (Meetings: 287 MB, from 575 MB). Without a copyable Python, the launcher names the exporting interpreter (<code translate="no">--python reference</code>).</td><td>A copy of the runtime that already runs the App needs no new build pipeline. Trimming removes only what a single application cannot reach.</td></tr>
+<tr><th scope="row">Window</th><td>A local server on 127.0.0.1 serves a page that frames the window in the same sandboxed iframe and answers the same bridge as the App's tab. The page records the microphone with the App's recorder. It uses the App's default theme in the computer's light or dark mode and the browser's language. A Chromium browser opens it as an app window (<code translate="no">--app</code>); otherwise the default browser opens it.</td><td>Chainlit and DeerFlow deploy a service with its own web front end; MCP Apps keep the sandboxed iframe and postMessage bridge. A native shell such as Electron or Tauri would need a build per export and per platform.</td></tr>
+<tr><th scope="row">Sign-in</th><td>The launcher's link carries a token after <code translate="no">#</code>. The page exchanges it for an HttpOnly, SameSite=Strict cookie, and every route except the page, its assets and the window's resources requires that cookie. A Host header other than 127.0.0.1 or localhost is refused. The token sits in the data folder with mode 0600.</td><td>Any local program can reach a loopback port; the cookie and the Host check also stop other web pages and DNS rebinding.</td></tr>
+<tr><th scope="row">Models and voice</th><td>Each launch copies <code translate="no">config.json</code> and <code translate="no">auth/</code> from the computer's OpenProgram (the exporting profile, else <code translate="no">~/.openprogram</code>) and links <code translate="no">voice/</code>. The bundle carries no settings or keys.</td><td>A bundle may be passed on. As in the App, the page never sees provider keys; a key changed in OpenProgram reaches the application on its next launch.</td></tr>
+<tr><th scope="row">Conversations</th><td><code translate="no">conversation.open</code> and <code translate="no">conversation.ask</code> are answered by the standalone host. It keeps each conversation as a file in the data folder and answers with the configured model, without tools, with earlier messages as context. <code translate="no">conversation.show</code> opens a panel drawn with the App's message styles and a follow-up composer.</td><td>The same semantics as the App, where a backend's conversation turn runs without tools; only the storage differs.</td></tr>
+<tr><th scope="row">Refused</th><td>Applications that declare <code translate="no">chat</code> (they need the App's composer and agent) or have project scope (they need the App's projects)</td><td>Neither can be answered faithfully without the App</td></tr>
+<tr><th scope="row">Lifetime</th><td>The launcher starts the server unless one answers for the same data folder, then opens a window. The server stops after ten minutes with no open window, recording or running operation.</td><td>Closing the window leaves no process running, and a recording or a summary still being written is not cut off.</td></tr>
+<tr><th scope="row">Signing</th><td>The bundle is not signed or notarized. An export made on the same Mac opens directly; a copied one needs Open from the context menu once.</td><td>No certificate is bought</td></tr>
+</tbody>
+</table>
+
 <h2 id="lifecycle">Lifecycle</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Path</th><th scope="col">Sequence</th></tr></thead>
@@ -178,7 +208,7 @@
 <tbody>
 <tr><th scope="row">Pure static</th><td>Browser and own resources</td><td>Independently hostable; data migration is the application's job</td></tr>
 <tr><th scope="row">Inside OpenProgram</th><td>UI, backend, OpenProgram Runtime</td><td>Current implementation</td></tr>
-<tr><th scope="row">Independent, same runtime</th><td>Package, minimal runtime, configuration, storage</td><td>Boundary reserved; unavailable until adapters and acceptance exist</td></tr>
+<tr><th scope="row">Independent, same runtime</th><td>Package, trimmed runtime, settings from the computer's OpenProgram, own data folder</td><td>Implemented: <a href="#standalone">Running on its own</a></td></tr>
 <tr><th scope="row">Cross-host MCP Apps</th><td>MCP server, compatible host</td><td>Shared UI and tool contract; OpenProgram background APIs are not portable</td></tr>
 <tr><th scope="row">No OpenProgram dependency</th><td>Replacement models, tasks, storage</td><td>No guarantee; build and test separately</td></tr>
 </tbody>
@@ -331,7 +361,8 @@
 <tr><th scope="row">2. Menu and pages</th><td>Static applications open, reuse tabs, bind instances, isolate resources</td><td>Implemented</td></tr>
 <tr><th scope="row">3. Business operations and Runtime</th><td>Python operations on model and Workflow contracts; cancellation, questions, results persist</td><td>Implemented</td></tr>
 <tr><th scope="row">4. Complete lifecycle</th><td>Dependencies, background tasks, restart interruption, digest checks, uninstall</td><td>Implemented</td></tr>
-<tr><th scope="row">5. Compatibility and independent deployment</th><td>MCP Apps adapter, minimal-runtime deployment; other-language runners later. Acceptance: the same UI and operations actually run on a second host</td><td>Not built</td></tr>
+<tr><th scope="row">5. Independent deployment</th><td><code translate="no">programs export</code>: the same window and operations run outside the App with a trimmed runtime. Accepted with Meetings: window, operations, conversation panel and a model follow-up</td><td>Implemented</td></tr>
+<tr><th scope="row">6. Compatibility</th><td>MCP Apps adapter; other-language runners later. Acceptance: the same UI and operations run on another vendor's host</td><td>Not built</td></tr>
 </tbody>
 </table>
 <p class="note">Also not built: attachment APIs, automatic schema migration, conversation-context import, manual menu order, PDF import in the paper-reader sample, automatic plugin-to-Application adaptation.</p>
@@ -347,7 +378,9 @@
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/service.py</code></th><td>Operations on <code translate="no">ExecutionStore</code>, Attempts and Drivers; shared cancellation cleanup</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/runner.py</code></th><td>One trusted operation per process; Runtime and <code translate="no">context</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/state.py</code></th><td>Instances, operation metadata, events, instance data</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/host_calls.py</code>, <code translate="no">audio.py</code></th><td>Host calls and recordings for packages</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/applications.py</code></th><td><code translate="no">/api/applications</code>, instance, run and asset routes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/standalone/</code></th><td>Running on its own: <code translate="no">server.py</code> (server, launcher), <code translate="no">shell/</code> (page, built from <code translate="no">web/</code>), <code translate="no">conversations.py</code>, <code translate="no">settings.py</code>, <code translate="no">export.py</code></td></tr>
 </tbody>
 </table>
 <p>Follows <a href="programs-architecture.html">Programs code structure</a>; broader comparison in <a href="../../framework-comparison/overview.html">Framework comparison</a>.</p>

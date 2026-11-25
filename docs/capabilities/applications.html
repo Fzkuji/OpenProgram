@@ -106,6 +106,10 @@
 <tr><th scope="row"><code translate="no">files.project.read</code></th><td><code translate="no">context.read_file(relative_path)</code> inside the bound project</td></tr>
 <tr><th scope="row"><code translate="no">files.project.write</code></th><td><code translate="no">context.write_file(relative_path, content)</code> inside the bound project; needs a Python backend and <code translate="no">--trust</code></td></tr>
 <tr><th scope="row"><code translate="no">chat</code></th><td>The page, not the backend: <code translate="no">chat.*</code> conversations of its own, shown with your composer in place of the right sidebar</td></tr>
+<tr><th scope="row"><code translate="no">storage.files</code></th><td><code translate="no">context.files</code>: a directory of the instance's own, for recordings and other large files</td></tr>
+<tr><th scope="row"><code translate="no">speech</code></th><td><code translate="no">context.transcribe(path)</code>, <code translate="no">context.diarize(chunks)</code> and <code translate="no">context.speech_readiness()</code> with the engine of <strong>Settings → Voice</strong>, on files in <code translate="no">context.files</code>; needs <code translate="no">storage.files</code></td></tr>
+<tr><th scope="row"><code translate="no">conversation</code></th><td><code translate="no">context.open_conversation(title)</code> and <code translate="no">context.converse(session_id, text)</code>: a turn of your default Agent without tools, in a conversation the application opened; the page can show it with <code translate="no">conversations.show(id)</code></td></tr>
+<tr><th scope="row"><code translate="no">audio.record</code></th><td>The page: <code translate="no">audio.start</code>, <code translate="no">audio.stop</code>, <code translate="no">audio.status</code>. The App records the microphone and the computer's sound until stopped, even with the window closed, and hands each 30-second chunk to the operation named in <code translate="no">recording.ingest</code>, then runs <code translate="no">recording.finish</code>; needs <code translate="no">storage.files</code></td></tr>
 </tbody>
 </table>
 <p class="note">Capabilities restrict the host bridge, not the operating-system permissions of trusted Python. Backends are checked in a separate process before registration; listing applications does not import their code.</p>
@@ -190,7 +194,26 @@ print(status(job["id"]))</code></pre>
 <tr><th scope="row"><code translate="no">PATCH /api/applications/{id}</code></th><td><code translate="no">enabled</code>, <code translate="no">hidden</code>, <code translate="no">display_title</code>. Hiding does not cancel a task; disabling does.</td></tr>
 </tbody>
 </table>
-<p class="note">Not implemented: standalone deployment, non-Python backend adapters, MCP Apps compatibility, embedding native GUI windows.</p>
+<h2 id="run-on-its-own">Run one on its own</h2>
+<ol class="flow fig-narrow">
+<li>On the <strong>Applications</strong> page, open the application's <strong>⋯</strong> menu and choose <strong>Export as an application of its own…</strong>.</li>
+<li>Choose where to save it (Downloads unless you browse elsewhere) and click <strong>Export</strong>. It takes about half a minute; then <strong>Show in Finder</strong> shows <strong>Meetings.app</strong>.</li>
+<li>Open it: the application opens in a window of its own, with the same window and operations as in the App.</li>
+<li>Close the window: it stops by itself ten minutes later, unless it is still recording or working.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Question</th><th scope="col">Answer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Needs OpenProgram?</th><td>No: the export carries its own Python and OpenProgram (Meetings: 287 MB). Models and voice come from this computer's OpenProgram settings at each launch; the export holds no keys.</td></tr>
+<tr><th scope="row">Its data</th><td><code translate="no">~/Library/Application Support/OpenProgram Applications/&lt;id&gt;</code>, separate from the App's</td></tr>
+<tr><th scope="row">Conversations</th><td>A conversation the application opens shows in a side panel, where you can ask follow-up questions</td></tr>
+<tr><th scope="row">Not exportable</th><td>Applications that declare <code translate="no">chat</code> or have project scope: their menu has no Export</td></tr>
+<tr><th scope="row">From the terminal</th><td><code translate="no">openprogram programs export meeting --output FOLDER</code></td></tr>
+<tr><th scope="row">Other systems</th><td><code translate="no">--format dir</code> writes a folder with <code translate="no" data-claim="example">run.sh</code> and <code translate="no" data-claim="example">run.cmd</code></td></tr>
+<tr><th scope="row">On another Mac</th><td>It is unsigned: the first time, choose Open from its context menu</td></tr>
+</tbody>
+</table>
+<p class="note">Not implemented: non-Python backend adapters, MCP Apps compatibility, embedding native GUI windows.</p>
 <h2 id="use-an-application-as-a-resource">Use an application as a resource</h2>
 <p>Enabled applications appear as <code translate="no">application.&lt;id&gt;</code> in <code translate="no">resource(action="describe")</code>, reflecting install, disable, update and uninstall without a restart. The Resources view and top tab open the same instance in the same sandboxed frame.</p>
 <table class="stack fixed">

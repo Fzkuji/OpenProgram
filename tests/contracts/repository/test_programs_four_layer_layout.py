@@ -33,8 +33,8 @@ HOST = {
     "watcher.py", "meta_storage.py", "identity.py", "lower_layers.py", "tool_rank.py", "ui", "framework",
 }
 HOST_UI = {
-    "__init__.py", "bindings.py", "catalog.py", "catalog_store.py", "driver.py",
-    "loader.py", "resource_provider.py", "runner.py", "scaffold.py", "service.py",
+    "__init__.py", "audio.py", "bindings.py", "catalog.py", "catalog_store.py", "driver.py",
+    "host_calls.py", "loader.py", "resource_provider.py", "runner.py", "scaffold.py", "service.py",
     "state.py",
 }
 
@@ -90,7 +90,7 @@ def test_builtin_programs_load_from_tools_and_applications() -> None:
     assert modules["browser"] == "openprogram.programs.applications.browser"
     assert modules["workflow_recording"] == "openprogram.programs.applications.workflow_recording"
     assert modules["office_editor"] == "openprogram.programs.applications.office_editor"
-    assert modules["meeting"] == "openprogram.programs.applications.meeting"
+    assert "meeting" not in modules                 # an application package, not a Python program
     assert registry.builtin_application_names() == sorted(["browser", "meeting", "office_editor", "workflow_recording"])
 
 

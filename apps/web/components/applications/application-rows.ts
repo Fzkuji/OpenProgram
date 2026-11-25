@@ -29,7 +29,7 @@ export interface ApplicationRow {
 
 /** Built-in applications that are one of the App's own tabs. */
 export const BUILTIN_TABS: Partial<Record<string, BuiltinPage>> = {
-  browser: "browser", office_editor: "office", workflow_recording: "recording", meeting: "meeting",
+  browser: "browser", office_editor: "office", workflow_recording: "recording",
 };
 
 function words(id: string): string {

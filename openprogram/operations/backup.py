@@ -72,7 +72,6 @@ INCLUDED: tuple[str, ...] = (
     "scheduler",  # scheduled jobs
     "always_on",  # always-on agents and their handoffs
     "memory-spaces",  # memory kept per agent
-    "meetings",  # meeting recordings and transcripts
     "output-styles",
     "plugin-trust.json",
     "plugins-enabled.json",
@@ -111,6 +110,7 @@ REGENERATED: tuple[str, ...] = (
     "worker-service.cmd",
     "web-port",  # the free port this machine had at the first start; chosen again
     "tailnet",  # this computer's Tailscale node key; another computer signs in as itself
+    "standalone",  # only in an exported application's own data folder (interfaces/standalone)
     ".restore.lock", ".restore-journal.d", ".restore-journal.json", ".write-test",
 )
 

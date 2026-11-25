@@ -112,3 +112,38 @@ def _fresh_registration(module_name: str):
         speech_link.register(registered[1])
     assert type(link).__module__ == module.__name__
     return link
+
+
+# -- what applications reach through the link (capability ``speech``) --------
+
+def test_without_speech_files_cannot_be_transcribed_and_readiness_says_so(no_speech):
+    with pytest.raises(speech_link.SpeechUnavailable):
+        speech_link.transcribe_file("/nowhere.webm")
+    with pytest.raises(speech_link.SpeechUnavailable):
+        speech_link.diarize([(0, "/nowhere.wav")])
+    assert speech_link.readiness() == {"speech": False, "ffmpeg": False, "ffmpeg_missing": ""}
+
+
+def test_a_silent_recording_file_is_not_sent_to_speech_to_text(tmp_path, monkeypatch):
+    import wave
+    from openprogram.interfaces.speech import audio, stt
+    from openprogram.interfaces.speech.link_registration import SpeechToText
+
+    path = tmp_path / "quiet.wav"
+    with wave.open(str(path), "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(16000)
+        writer.writeframes(b"\0\0" * 16000)
+    monkeypatch.setattr(audio, "ffmpeg", lambda: None)              # speech-form WAV needs no ffmpeg
+    monkeypatch.setattr(stt, "transcribe_segments", lambda *a, **k: pytest.fail("silence must not be transcribed"))
+    assert SpeechToText().transcribe_file(str(path)) == {
+        "duration_ms": 1000, "silent": True, "segments": [], "engine": "", "model": ""}
+
+
+def test_speaker_turns_are_placed_on_the_tracks_clock_and_split_at_chunk_gaps():
+    from openprogram.interfaces.speech import diarize
+    # Two chunks, concatenated back to back: 0–2 s is the track's 0–2 s, 2–4 s is its 30–32 s.
+    spans = [(0, 0, 2000), (2000, 30_000, 2000)]
+    assert diarize.to_track_clock([(1.0, 3.0, 4), (3.5, 4.0, 2)], spans) == [
+        (1000, 2000, 4), (30_000, 31_000, 4), (31_500, 32_000, 2)]

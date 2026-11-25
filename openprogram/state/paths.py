@@ -34,6 +34,9 @@ from typing import Optional
 _log = logging.getLogger(__name__)
 
 _ENV_PROFILE = "OPENPROGRAM_PROFILE"
+# An exported application (interfaces/standalone) keeps all of its state
+# in one folder of its own, named by its launcher; it wins over a profile.
+_ENV_STATE_DIR = "OPENPROGRAM_STATE_DIR"
 
 # pytest sets this in its own process for the length of each test, and every
 # child that process starts inherits it.
@@ -95,6 +98,12 @@ def get_state_dir() -> Path:
     call for the default profile we migrate any legacy ``~/.agentic/``
     data into it — once, guarded by a marker file.
     """
+    explicit = os.environ.get(_ENV_STATE_DIR)
+    if explicit:
+        canonical = Path(explicit).expanduser()
+        _refuse_real_state_under_test(canonical)
+        _restrict_profile_root_once(canonical)
+        return canonical
     profile = get_active_profile()
     if profile:
         canonical = Path.home() / f"{_CANONICAL_BASENAME}-{profile}"

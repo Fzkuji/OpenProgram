@@ -65,6 +65,9 @@ KNOWN_BARE_REPLACE = {
     "openprogram/programs/_host/packages.py": 1,
     # Log rotation under the log lock: a held log is appended to and rotated later.
     "openprogram/runtime/events/event_log.py": 1,
+    # An application package imports nothing of the host, so it retries a
+    # sharing violation itself (meeting/backend/meetings.py write_json).
+    "openprogram/programs/applications/meeting/backend/meetings.py": 1,
 }
 KNOWN_TEXT_DESCRIPTORS = {
     # Lock files (2) and the recording's header and rows (3).

@@ -571,7 +571,7 @@ def _voice_message(text="the caption") -> ChannelMessage:
 def test_voice_with_caption_keeps_caption_transcript_and_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    from openprogram.programs.applications.meeting import audio
+    from openprogram.interfaces.speech import audio
     from openprogram.runtime import speech_link
 
     _voice_saved(monkeypatch, tmp_path)
@@ -602,7 +602,7 @@ def test_voice_with_caption_keeps_caption_transcript_and_file(
 def test_voice_failure_says_why_and_keeps_the_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: str,
 ) -> None:
-    from openprogram.programs.applications.meeting import audio
+    from openprogram.interfaces.speech import audio
     from openprogram.runtime import speech_link
 
     _voice_saved(monkeypatch, tmp_path)
@@ -625,7 +625,7 @@ def test_voice_failure_says_why_and_keeps_the_file(
 def test_silent_voice_is_not_sent_to_speech_to_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    from openprogram.programs.applications.meeting import audio
+    from openprogram.interfaces.speech import audio
     from openprogram.runtime import speech_link
 
     _voice_saved(monkeypatch, tmp_path)

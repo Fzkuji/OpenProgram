@@ -26,7 +26,7 @@
 <a id="models-and-integrations"></a>
 <a id="acknowledgements"></a>
 
-<p align="center"><b>Ein Open-Source-Agent-Harness, in dem Agenten Python-Programme sind, die sich selbst verbessern.</b></p>
+<p align="center"><b>Agenten programmieren alles.</b><br>Workflows, Apps mit eingebauter KI und die Agenten selbst. Ein Open-Source-Agent-Harness, in dem Agenten Python-Programme sind.</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
@@ -46,9 +46,9 @@
 <p align="center">
   <a href="https://fzkuji.github.io/OpenProgram/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
-      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
-      <img src="../docs/images/chat_hero.png" alt="OpenProgram-Arbeitsbereich: eine Agenten-Sitzung, die zwei Sub-Agenten ausgeführt hat" width="100%">
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/openprogram-tour-dark.webp">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/openprogram-tour-light.webp">
+      <img src="../docs/images/openprogram-tour-light.webp" alt="OpenProgram-Rundgang: eine Aufgabe von Anfang bis Ende, dauerhaft aktive Agenten, jedes Gerät und Agenten, die alles programmieren" width="100%">
     </picture>
   </a>
 </p>

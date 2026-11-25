@@ -193,6 +193,13 @@ BOUNDARY_MANIFEST = (
         call_counts=(("urllib.request.urlopen", 1),),
     ),
     BoundaryExclusion(
+        path="interfaces/standalone/server.py",
+        boundary_owner="owner-control-plane",
+        reason="a standalone application's launcher probes its own server's health on a 127.0.0.1 port it wrote, with no proxy",
+        kinds=frozenset({"urllib.request.build_opener"}),
+        call_counts=(("urllib.request.build_opener", 1),),
+    ),
+    BoundaryExclusion(
         path="operations/worker/runner.py",
         boundary_owner="owner-control-plane",
         reason="the worker probes its own /healthz on a fixed numeric 127.0.0.1 port, with no proxy",

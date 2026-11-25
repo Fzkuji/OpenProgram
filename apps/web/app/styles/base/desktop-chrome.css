@@ -14,12 +14,11 @@
    --tabrow-tint share: 0% everywhere except the vivid pair (100%), so
    only Vivid shows a coloured strip. --tabrow-seed is the colour the
    user picked in Settings (an inline var on <html>, one of Chrome's
-   dark-mode frame colours); dark mode uses it as is, light mode a pale
+   dark-mode frame colours; the default is in themes/fallback.css); dark mode uses it as is, light mode a pale
    tone of the same hue, like Chrome's light frame. Declared on html
    (same element as [data-theme]), so the vars resolve per theme. */
 :root {
   --tabrow-base: var(--bg-secondary);
-  --tabrow-seed: #3d475c;
   --tabrow-color: var(--tabrow-seed);
   /* oklab, not oklch: the frame's warm hue and a blue strip colour sit
      far apart on the hue wheel, and oklch's shorter-arc hue blend swings

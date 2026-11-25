@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from openprogram.host._platform.filesystem import replace_file
 
 
@@ -549,6 +550,24 @@ def _cmd_enable(app_id: str, enabled: bool) -> None:
     result = applications.request("/api/applications/" + quote(app_id, safe=""), method="PATCH",
                                   body={"enabled": enabled})
     print(f"[ok] {app_id} {'enabled' if result.get('enabled') else 'disabled'}.")
+
+
+def _cmd_export(name: str, output: str, *, format: str | None = None, python: str = "auto",
+                as_json: bool = False) -> int:
+    """Write ``name`` as a standalone application (interfaces/standalone/export.py)."""
+    from openprogram.interfaces.standalone.export import export
+    try:
+        result = export(name, Path(output), format=format or ("app" if sys.platform == "darwin" else "dir"),
+                        python=python)
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    how = "with its own Python" if result["python"] == "bundle" else f"using {sys.executable}"
+    print(f"Exported {result['application']} to {result['path']} ({result['size'] / 1e6:.0f} MB, {how})")
+    return 0
 
 
 def _cmd_run(name, arg_list, provider=None, model=None):

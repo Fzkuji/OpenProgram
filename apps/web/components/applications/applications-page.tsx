@@ -23,6 +23,7 @@ import { useFolderPicker } from "@/components/ui/folder-picker";
 import { requestProgramSelection } from "@/components/programs/programs-selection";
 import { ApplicationIcon } from "./application-icon";
 import { useApplicationLauncher } from "./use-application-launcher";
+import { ExportDialog, exportable } from "./export-dialog";
 import { applicationRows, type ApplicationFilter, type ApplicationRow } from "./application-rows";
 import styles from "./applications-page.module.css";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ export function ApplicationsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [uninstalling, setUninstalling] = useState<ApplicationRow | null>(null);
+  const [exporting, setExporting] = useState<ApplicationRow | null>(null);
   const refresh = useCallback(() => refreshApplications({ fresh: true }), []);
   // The kept list (localStorage) draws at once and is read again behind it;
   // a failed read keeps it and is tried again quietly.
@@ -154,6 +156,9 @@ export function ApplicationsPage() {
                     {row.definition && <Menu.Item className={menuItem} disabled={busy} onSelect={() => update(row, { hidden: !row.definition?.hidden })}>
                       <MenuRow label={row.definition.hidden ? text("Show in new tab", "在新标签页显示") : text("Hide from new tab", "从新标签页隐藏")} />
                     </Menu.Item>}
+                    {exportable(row) && <Menu.Item className={menuItem} disabled={busy} onSelect={() => setExporting(row)}>
+                      <MenuRow label={text("Export as an application of its own…", "导出为独立应用…")} />
+                    </Menu.Item>}
                     {!row.builtin && row.source && <Menu.Item className={menuItem + " " + ITEM_TWO_LINE} disabled={busy} onSelect={() => { openInstall(row.source); setNotice(text("Review the source, then install to update.", "请审查来源，然后安装以完成更新。")); }}>
                       <span className="min-w-0 flex-1 text-left">
                         <span className={ITEM_TITLE}>{text("Update from source", "从来源更新")}</span>
@@ -202,6 +207,8 @@ export function ApplicationsPage() {
         </form>
       </DialogContent>
     </Dialog>
+
+    <ExportDialog row={exporting} onClose={() => setExporting(null)} pickFolder={pickFolder} />
 
     {uninstalling && <ConfirmDialog
       destructive

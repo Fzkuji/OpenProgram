@@ -26,7 +26,7 @@
 <a id="models-and-integrations"></a>
 <a id="acknowledgements"></a>
 
-<p align="center"><b>オープンソースのエージェントハーネス。エージェントは自らを改良する Python プログラムです。</b></p>
+<p align="center"><b>エージェントは、何でもプログラムできる。</b><br>ワークフロー、AI を内蔵したアプリ、そしてエージェント自身。エージェントが Python プログラムであるオープンソースのエージェントハーネスです。</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="バージョン" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
@@ -46,9 +46,9 @@
 <p align="center">
   <a href="https://fzkuji.github.io/OpenProgram/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
-      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
-      <img src="../docs/images/chat_hero.png" alt="OpenProgram ワークスペース：2 つのサブエージェントを動かしたエージェントセッション" width="100%">
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/openprogram-tour-dark.webp">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/openprogram-tour-light.webp">
+      <img src="../docs/images/openprogram-tour-light.webp" alt="OpenProgram ツアー：タスクの開始から完了まで、常駐エージェント、あらゆるデバイス、何でもプログラムするエージェント" width="100%">
     </picture>
   </a>
 </p>

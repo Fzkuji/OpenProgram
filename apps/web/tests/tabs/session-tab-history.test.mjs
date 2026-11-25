@@ -624,12 +624,12 @@ test("a page that already has a tab is focused instead of opened again", () => {
 
 test("opening a built-in tab again after it went on to a management page shows its own page", () => {
   reset(); state().openSessionTab("A", "Alpha");
-  state().openBuiltinTab("meeting"); const meeting = active().id;
+  state().openBuiltinTab("recording"); const recording = active().id;
   state().recordRouteNavigation("/tasks");
   assert.equal(active().navigationRoute, "/tasks");
   state().openSessionTab("A", "Alpha");
-  state().openBuiltinTab("meeting");
-  assert.equal(active().id, meeting);
+  state().openBuiltinTab("recording");
+  assert.equal(active().id, recording);
   assert.equal(active().navigationRoute, undefined);
   assert.equal(state().navigationRoute, undefined);
   state().navigateHistory(-1);

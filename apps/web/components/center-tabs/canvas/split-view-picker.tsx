@@ -15,7 +15,7 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
  * move a tab that another operation has already grouped.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, CircleDot, Download, FilePen, FileText, History, MessageCircle, Mic, CirclePlus, TerminalSquare, X } from "lucide-react";
+import { Bookmark, CircleDot, Download, FilePen, FileText, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
 
 import { ChromeIcon, FeatherIcon } from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,6 @@ function IconFor({ tab }: { tab: CenterTab }) {
     if (tab.page === "downloads") return <Download size={16} aria-hidden="true" />;
     if (tab.page === "office") return <FilePen size={16} aria-hidden="true" />;
     if (tab.page === "recording") return <CircleDot size={16} aria-hidden="true" />;
-    if (tab.page === "meeting") return <Mic size={16} aria-hidden="true" />;
     if (tab.page === "browser") return <ChromeIcon size={16} aria-hidden="true" />;
     if (tab.page === "terminal" || tab.page === "claude") return <TerminalSquare size={16} aria-hidden="true" />;
     return <Bookmark size={16} aria-hidden="true" />;

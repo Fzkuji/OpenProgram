@@ -401,6 +401,27 @@ def _add_programs_command(sub):
         ),
     )
     p_p_un.add_argument("name", help="Application id or directory name")
+    p_p_exp = programs_sub.add_parser(
+        "export",
+        help="Export an application as software of its own",
+        description=(
+            "Writes the application package, a launcher and, when this OpenProgram runs on a "
+            "Python that can be copied (the App's runtime), that Python trimmed to what one "
+            "application needs, into a macOS .app or a folder. Launched, it runs the "
+            "application's operations, state and recordings without the App, in its own "
+            "window and data folder, and takes model and voice settings from this "
+            "computer's OpenProgram. No settings, keys or data are copied. Applications "
+            "that declare chat or have project scope cannot run on their own."
+        ),
+    )
+    p_p_exp.add_argument("name", help="Application id (built in or installed) or application folder")
+    p_p_exp.add_argument("--output", "-o", default=".", help="Folder to write into (default: here)")
+    p_p_exp.add_argument("--format", choices=("app", "dir"), default=None,
+        help="A macOS .app (default on macOS) or a folder with run.sh and run.cmd")
+    p_p_exp.add_argument("--python", choices=("auto", "bundle", "reference"), default="auto",
+        help="Copy the Python runtime into the export (bundle), name this one (reference), "
+             "or copy it when it can be copied (auto)")
+    p_p_exp.add_argument("--json", action="store_true", help="Emit JSON")
     for verb, text in (("enable", "Enable an application, built in or installed: its UI, resource, "
                                   "services and entries load"),
                        ("disable", "Disable an application, built in or installed: its UI, resource, "

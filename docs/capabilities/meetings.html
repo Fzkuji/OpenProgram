@@ -95,19 +95,19 @@
 </tbody>
 </table>
 <h2 id="where-meetings-are-stored">Storage</h2>
-<pre translate="no" tabindex="0"><code>~/.openprogram/meetings/&lt;id&gt;/
-  meta.json          name, start, length, progress, summary chat, whether
-                     computer sound was recorded and speakers told apart
-  tracks/mic/…       microphone, 30-second WebM pieces
-  tracks/system/…    computer's sound, 30-second WAV pieces
+<pre translate="no" tabindex="0"><code>~/.openprogram/programs/.runtime/files/&lt;instance&gt;/recordings/&lt;id&gt;/
+  mic/…              microphone, 30-second WebM pieces, each with its timed lines
+  system/…           computer's sound, 30-second WAV pieces, each with its timed lines
   transcript.json    merged transcript
   summary.md         summary, full transcript at the end</code></pre>
-<p class="note">Under the state directory, <code translate="no">~/.openprogram</code> by default. OpenAI or Groq: each piece goes to that service. whisper.cpp: audio stays here. Telling speakers apart always runs here.</p>
+<p class="note">Audio and transcripts are the application's files; the list of meetings is its saved state. Both are under the state directory, <code translate="no">~/.openprogram</code> by default. OpenAI or Groq: each piece goes to that service. whisper.cpp: audio stays here. Telling speakers apart always runs here.</p>
 <h2 id="limits">Limits</h2>
 <ul>
 <li>One meeting at a time, at most 4 hours; it stops itself at the limit.</li>
 <li>Speakers are separated only after stopping. Similar voices can share a number; one person can get two when their sound changes a lot.</li>
 <li>Silent pieces are skipped. A piece that cannot be converted or transcribed is reported under the transcript; the rest goes on.</li>
 </ul>
+<h2 id="on-its-own">Use it without the App</h2>
+<p>On the <strong>Applications</strong> page, <strong>⋯</strong> → <strong>Export as an application of its own…</strong> writes <strong>Meetings.app</strong>: the same window, recordings and summaries, in a window of its own, with no OpenProgram window open. A summary opens in a side panel where you can ask follow-up questions. See <a href="applications.html#run-on-its-own">Run one on its own</a>.</p>
 <h2 id="turn-meetings-off">Turn Meetings off</h2>
 <p>Its switch on the <strong>Applications</strong> page, or <code translate="no">openprogram programs disable meeting</code>, which stops a recording in progress. <code translate="no">openprogram programs enable meeting</code> turns it back on. See <a href="applications.html">Applications</a>.</p>

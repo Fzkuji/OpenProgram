@@ -91,6 +91,10 @@ def program_tools(owner: str) -> list[str]:
         return list(ctx.contributions.get("tools", ())) if ctx is not None else []
 
 
+#: Set (to the package folder) in a standalone application's process; see
+#: :func:`load_program_modules`.
+STANDALONE_ENV = "OPENPROGRAM_STANDALONE_APPLICATION"
+
 # Tool packages whose ``PROGRAM_ENTRIES`` register through a context owned
 # by ``tool:<name>``, by name and import path.
 TOOL_PROGRAMS: dict[str, str] = {
@@ -228,6 +232,9 @@ def load_program_modules(programs_dir: str | None = None) -> None:
     failed in the latest pass is in :func:`load_errors`.
     """
     _load_errors.clear()
+    # A standalone application (interfaces/standalone) runs its one
+    # package: no other application, user package or harness loads there.
+    standalone = bool(os.environ.get(STANDALONE_ENV))
     # 1. Tool packages with PROGRAM_ENTRIES.
     for mod_name, module_path in TOOL_PROGRAMS.items():
         try:
@@ -237,6 +244,9 @@ def load_program_modules(programs_dir: str | None = None) -> None:
         except Exception as e:
             _debug_registry_error(mod_name, e)
             continue
+
+    if standalone:
+        return
 
     # 1b. Built-in applications: plain packages under programs/applications/.
     try:

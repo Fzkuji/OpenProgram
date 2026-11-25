@@ -81,7 +81,48 @@ def main():
         def save(self, value, *, expected_version):
             self._require("storage.app")
             from .state import data
-            return data(self.instance_id, value, expected_version=expected_version)
+            saved = data(self.instance_id, value, expected_version=expected_version)
+            # The worker tells the instance's window; a signal here reaches only this process.
+            send({"type": "saved"})
+            return saved
+
+        @property
+        def files(self):
+            """The instance's own directory (``storage.files``)."""
+            self._require("storage.files")
+            from .state import files_root
+            return files_root(self.instance_id)
+
+        def transcribe(self, path, *, language=""):
+            """One recording under ``files``: ``{duration_ms, silent, segments, engine, model}``."""
+            return self._host("speech.transcribe", {"path": str(path), "language": language})
+
+        def diarize(self, chunks):
+            """Speaker turns of one track, ``chunks`` its ``{t_ms, path}`` in order:
+            ``{available, reason, message, turns: [{start_ms, end_ms, speaker}]}``."""
+            return self._host("speech.diarize", {"chunks": list(chunks)})
+
+        def speech_readiness(self):
+            """``{speech, ffmpeg, ffmpeg_missing}``: whether recordings can be transcribed here."""
+            return self._host("speech.readiness", {})
+
+        def open_conversation(self, title):
+            """A new conversation with the owner's default Agent: ``{session_id}``."""
+            return self._host("conversation.open", {"title": str(title)})
+
+        def converse(self, session_id, text):
+            """One turn without tools in a conversation this application opened: ``{answer, error}``."""
+            return self._host("conversation.ask", {"session_id": session_id, "text": str(text)})
+
+        def _host(self, method, params):
+            request_id = uuid.uuid4().hex
+            send({"type": "host", "request_id": request_id, "method": method, "params": params})
+            reply = json.loads(sys.stdin.readline() or "{}")
+            if reply.get("request_id") != request_id:
+                raise ValueError("host call response mismatch")
+            if reply.get("error"):
+                raise RuntimeError(reply["error"])
+            return reply.get("result")
 
         def read_file(self, relative):
             self._require("files.project.read")

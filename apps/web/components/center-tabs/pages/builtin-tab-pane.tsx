@@ -23,13 +23,11 @@ import { HistoryPage } from "./library/history-page";
 import { DownloadsPage } from "./library/downloads-page";
 import { OfficeWindow } from "@/components/applications/windows/office-window";
 import { RecordingWindow } from "@/components/applications/windows/recording-window";
-import { MeetingWindow } from "@/components/applications/windows/meeting-window";
 
 export function BuiltinTabPane({ page }: { page: BuiltinPage }) {
   if (page === "bookmarks") return <BookmarksPage />;
   if (page === "downloads") return <DownloadsPage />;
   if (page === "office") return <OfficeWindow />;
   if (page === "recording") return <RecordingWindow />;
-  if (page === "meeting") return <MeetingWindow />;
   return <HistoryPage />;
 }

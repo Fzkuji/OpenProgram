@@ -294,7 +294,7 @@ def _voice_note(row: dict) -> str:
 
 def _transcribe_file(source: Path) -> tuple[str, bool]:
     """``(text, silent)`` of one audio file; speech to text takes WAV only."""
-    from openprogram.programs.applications.meeting import audio
+    from openprogram.interfaces.speech import audio
     from openprogram.runtime import speech_link
 
     if audio.ffmpeg() is None:

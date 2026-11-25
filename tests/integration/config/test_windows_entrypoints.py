@@ -31,7 +31,7 @@ assert callable(process_user_turn)
 @pytest.mark.skipif(shutil.which('bash') is None, reason='site publishes on Linux with bash')
 def test_site_assembly_publishes_both_root_installers(tmp_path):
     workflow = yaml.safe_load((ROOT / '.github/workflows/docs-pages.yml').read_text())
-    assembly = next(step['run'] for step in workflow['jobs']['publish']['steps']
+    assembly = next(step['run'] for job in workflow['jobs'].values() for step in job['steps']
                     if step.get('name') == 'Assemble the site')
     site = tmp_path / 'docs/_site'
     shutil.copytree(ROOT / 'docs/_static_root', site)

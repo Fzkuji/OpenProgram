@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 import uuid
 
+from openprogram.host._platform.changes import signal
 from openprogram.runtime.execution.model import ExecutionStatus as Status, TERMINAL_EXECUTION_STATUSES
 from openprogram.runtime.execution.store import default_store
 from . import catalog, state
@@ -92,20 +93,26 @@ class ApplicationService:
                 await asyncio.to_thread(loader.reload, app["id"])
                 raise ValueError("application source changed; reopen it before starting a new operation")
             instance = await asyncio.to_thread(state.refresh_instance_location, instance_id)
-            store = default_store()
-            revision = store.create_revision(manifest={"application": app["id"], "digest": app["digest"], "operation": operation})
             run_id = "app_" + uuid.uuid4().hex
-            store.create_execution(session_id="app:" + instance_id, revision_id=revision.revision_id, execution_id=run_id)
-            with state.connect() as db:
-                db.execute("INSERT INTO operations(id,instance_id,request_key,fingerprint,definition,operation,input) VALUES(?,?,?,?,?,?,?)",
-                           (run_id, instance_id, request_key, fingerprint, json.dumps(app), operation, json.dumps(value)))
+
+            def admit():
+                # The execution store takes the conversation's lock: never on the event loop.
+                store = default_store()
+                revision = store.create_revision(manifest={"application": app["id"], "digest": app["digest"], "operation": operation})
+                store.create_execution(session_id="app:" + instance_id, revision_id=revision.revision_id, execution_id=run_id)
+                with state.connect() as db:
+                    db.execute("INSERT INTO operations(id,instance_id,request_key,fingerprint,definition,operation,input) VALUES(?,?,?,?,?,?,?)",
+                               (run_id, instance_id, request_key, fingerprint, json.dumps(app), operation, json.dumps(value)))
+                record = store.get_execution(run_id)
+                attempt, leased = self.control.attempts.lease(run_id, expected_version=record.status_version,
+                                                            owner_id="application-worker")
+                attempt, _ = self.control.attempts.activate(attempt.attempt_id, generation=attempt.generation,
+                                                           expected_execution_version=leased.status_version)
+                self.control.attempts.set_process_owner(attempt.attempt_id, generation=attempt.generation, active=True)
+                return attempt
+
             from openprogram.runtime.execution.driver import DriverBinding
-            record = store.get_execution(run_id)
-            attempt, leased = self.control.attempts.lease(run_id, expected_version=record.status_version,
-                                                        owner_id="application-worker")
-            attempt, _ = self.control.attempts.activate(attempt.attempt_id, generation=attempt.generation,
-                                                       expected_execution_version=leased.status_version)
-            self.control.attempts.set_process_owner(attempt.attempt_id, generation=attempt.generation, active=True)
+            attempt = await asyncio.to_thread(admit)
             self.attempts[run_id] = attempt
             self.control.registry.bind(DriverBinding(run_id, attempt.attempt_id, attempt.generation, self.driver, attempt))
             state.emit(run_id, {"type": "accepted"})
@@ -159,6 +166,12 @@ class ApplicationService:
                 if len(line) > 1024 * 1024:
                     raise ValueError("application event exceeds 1 MiB")
                 event = json.loads(line)
+                if event.get("type") == "host":
+                    await self._answer_host(process, instance, app, event)
+                    continue
+                if event.get("type") == "saved":
+                    signal("application-state", instance["id"])
+                    continue
                 if event.get("type") not in {"progress", "question", "result", "error"}:
                     raise ValueError("invalid application event")
                 state.emit(run_id, event)
@@ -204,6 +217,16 @@ class ApplicationService:
             self.processes.pop(run_id, None)
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
+
+    async def _answer_host(self, process, instance, app, event):
+        """A host call of the running operation (``host_calls``), answered on its stdin."""
+        from .host_calls import handle
+        reply = {"request_id": event.get("request_id")}
+        try:
+            reply["result"] = await asyncio.to_thread(handle, instance, app, event.get("method"), event.get("params"))
+        except Exception as exc:  # noqa: BLE001 — the backend hears why and decides
+            reply["error"] = str(exc) or type(exc).__name__
+        await asyncio.to_thread(self._send, process, reply)
 
     #: Runners kept ready per application: enough for a page that asks for a
     #: few things at once, few enough that an idle application costs little.
@@ -329,6 +352,8 @@ class ApplicationService:
             return self.describe(run_id)
 
     async def revoke(self, app_id: str):
+        from . import audio
+        await asyncio.to_thread(audio.cancel_application, app_id)
         self.drop_ready(app_id)
         for run_id in list(self.tasks):
             run = self.describe(run_id)

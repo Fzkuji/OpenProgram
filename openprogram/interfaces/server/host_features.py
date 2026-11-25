@@ -57,11 +57,9 @@ def _workflow_recording() -> dict:
     return recorder.support()
 
 
-def _meeting_system_audio() -> dict:
-    meetings = _application("meeting")
-    if meetings is None:
-        return {"available": False, "reason": "Meetings is not enabled."}
-    return meetings.system_audio_support()
+def _application_system_audio() -> dict:
+    from openprogram.programs._host.ui import audio
+    return audio.support()
 
 
 def _keep_awake() -> dict:
@@ -134,7 +132,8 @@ FEATURES: tuple[tuple[str, str, str, str | None, Probe], ...] = (
      _computer_use_app),
     ("computer_use_code", "Computer use: code", "电脑操作：代码", None, _computer_use_code),
     ("workflow_recording", "Workflow recording", "工作流录制", None, _workflow_recording),
-    ("meeting_system_audio", "Meetings: the computer's sound", "会议：电脑声音", None, _meeting_system_audio),
+    ("application_system_audio", "Applications: recording the computer's sound", "应用：录制电脑声音", None,
+     _application_system_audio),
     ("keep_awake", "Prevent idle system sleep", "阻止空闲睡眠", "execution.prevent_idle_sleep", _keep_awake),
     ("system_notifications", "Notifications from the worker", "Worker 系统通知", None, _notifications),
     ("reveal_in_file_manager", "Show in file manager", "在文件管理器中显示", None, _reveal),

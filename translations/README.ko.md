@@ -26,7 +26,7 @@
 <a id="models-and-integrations"></a>
 <a id="acknowledgements"></a>
 
-<p align="center"><b>오픈소스 에이전트 하네스. 에이전트는 스스로 개선하는 Python 프로그램입니다.</b></p>
+<p align="center"><b>에이전트는 무엇이든 프로그래밍합니다.</b><br>워크플로, AI가 내장된 앱, 그리고 에이전트 자신까지. 에이전트가 Python 프로그램인 오픈소스 에이전트 하네스입니다.</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="버전" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
@@ -46,9 +46,9 @@
 <p align="center">
   <a href="https://fzkuji.github.io/OpenProgram/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
-      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
-      <img src="../docs/images/chat_hero.png" alt="OpenProgram 작업 공간: 하위 에이전트 두 개를 실행한 에이전트 세션" width="100%">
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/openprogram-tour-dark.webp">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/openprogram-tour-light.webp">
+      <img src="../docs/images/openprogram-tour-light.webp" alt="OpenProgram 둘러보기: 처음부터 끝까지 하나의 작업, 상주 에이전트, 모든 기기, 무엇이든 프로그래밍하는 에이전트" width="100%">
     </picture>
   </a>
 </p>

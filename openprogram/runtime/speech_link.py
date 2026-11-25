@@ -1,7 +1,9 @@
 """The link between the core and the speech interface's speech to text.
 
-Core code (the computer-use tool transcribing a recording it made, the
-meeting recorder transcribing call audio with timestamps) turns audio into text without importing the speech interface. The speech package
+Core code (the computer-use tool transcribing a recording it made, an
+application transcribing and diarizing what it recorded through its
+``speech`` capability) turns audio into text without importing the speech
+interface. The speech package
 (``openprogram.interfaces.speech``) registers its implementation with
 :func:`register` when it is imported; the worker, the Server and the CLI's
 in-process turns import it at start.
@@ -36,6 +38,25 @@ class SpeechLink(Protocol):
         an ISO code, or ``""`` to detect it (never the voice-input setting).
         Optional: a link without it is reached through :func:`transcribe_segments`'s
         fallback."""
+
+    def transcribe_file(self, path: str, language: str = "") -> dict[str, Any]:
+        """One recording file in any format ffmpeg reads: ``{"duration_ms", "silent",
+        "segments", "engine", "model"}``. A silent recording is not transcribed."""
+
+    def diarize(self, chunks: list[tuple[int, str]]) -> list[tuple[int, int, int]]:
+        """Speaker turns ``(start_ms, end_ms, speaker)`` of one track given as its
+        ``(t_ms, path)`` chunks in order; raises :class:`DiarizationUnavailable`."""
+
+    def readiness(self) -> dict[str, Any]:
+        """``{"speech": bool, "ffmpeg": bool, "ffmpeg_missing": str}``."""
+
+
+class DiarizationUnavailable(RuntimeError):
+    """Speakers cannot be told apart here; ``reason`` is ``not_installed`` or ``no_model``."""
+
+    def __init__(self, reason: str, message: str = ""):
+        super().__init__(message or reason)
+        self.reason = reason
 
 
 _link: SpeechLink | Any | None = None
@@ -85,7 +106,31 @@ def transcribe_segments(audio: bytes, duration_ms: int = 0, language: str = "") 
     return {"segments": segments, "engine": result.get("engine", ""), "model": result.get("model", "")}
 
 
+def _require() -> SpeechLink | Any:
+    if _link is None:
+        transcribe(b"")  # raises SpeechUnavailable
+    return _link
+
+
+def transcribe_file(path: str, language: str = "") -> dict[str, Any]:
+    """A recording file's timed segments; see :meth:`SpeechLink.transcribe_file`."""
+    return _require().transcribe_file(path, language=language)
+
+
+def diarize(chunks: list[tuple[int, str]]) -> list[tuple[int, int, int]]:
+    """Speaker turns of one track; see :meth:`SpeechLink.diarize`."""
+    return _require().diarize(chunks)
+
+
+def readiness() -> dict[str, Any]:
+    """Whether speech to text and ffmpeg are there; everything false without a link."""
+    if _link is None:
+        return {"speech": False, "ffmpeg": False, "ffmpeg_missing": ""}
+    return _link.readiness()
+
+
 __all__ = [
-    "SpeechLink", "SpeechUnavailable", "TranscriptionError",
+    "DiarizationUnavailable", "SpeechLink", "SpeechUnavailable", "TranscriptionError",
     "register", "unregister", "current", "transcribe", "transcribe_segments",
+    "transcribe_file", "diarize", "readiness",
 ]

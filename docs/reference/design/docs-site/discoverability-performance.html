@@ -10,7 +10,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Item</th><th scope="col">Emits</th><th scope="col">Basis</th></tr></thead>
 <tbody>
-<tr><th scope="row">Hero image</th><td>Dedicated AVIF in initial HTML with intrinsic dimensions, the only <code translate="no">fetchpriority="high"</code> image. The original PNG stays for docs and existing links.</td><td><a href="https://web.dev/articles/optimize-lcp">Optimize LCP</a>, <a href="https://web.dev/learn/design/responsive-images">Responsive images</a></td></tr>
+<tr><th scope="row">Hero video</th><td>A muted, looping 1280×720 tour video (about 3 MB) with intrinsic dimensions and a JPEG poster from its title card. One rendering per theme; a small inline script picks the one that matches <code translate="no">data-theme</code>, so only one downloads. With reduced motion it shows the poster and controls instead of playing.</td><td><a href="https://web.dev/articles/optimize-lcp">Optimize LCP</a>, <a href="https://web.dev/learn/design/responsive-images">Responsive images</a></td></tr>
 <tr><th scope="row">Landing images and text</th><td>Explicit width and height. Secondary text meets WCAG AA. The icon-only copy button has an accessible name. The word <code translate="no">program</code> in the App's blue-to-violet brand gradient.</td><td>Lighthouse</td></tr>
 <tr><th scope="row">Language pairs</th><td>Identical reciprocal <code translate="no">en</code>, <code translate="no">zh-Hans</code> and <code translate="no">x-default</code> links, English as fallback, from the same origin and base as canonicals. Unpaired pages emit none.</td><td><a href="https://developers.google.com/search/docs/specialty/international/localized-versions">Localized versions</a></td></tr>
 <tr><th scope="row">Canonicals</th><td>Self-referential; language toggle unchanged</td><td></td></tr>
@@ -24,7 +24,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Check</th><th scope="col">Requires</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">python -m scripts.docs_site.check_landing</code></th><td>Rejects old markup and old bilingual builds, duplicate or unrelated Atom feeds; validates the primary AVIF, its <code translate="no">&lt;picture&gt;</code>, fallback dimensions and semantic <code translate="no">hreflang</code></td></tr>
+<tr><th scope="row"><code translate="no">python -m scripts.docs_site.check_landing</code></th><td>Rejects old markup and old bilingual builds, duplicate or unrelated Atom feeds; validates the tour video (one element, both theme renderings, poster, dimensions, under 8 MB, copied by the build) and semantic <code translate="no">hreflang</code></td></tr>
 <tr><th scope="row"><code translate="no">python -m scripts.docs_site.build</code>, <code translate="no">checklinks</code></th><td>Pass</td></tr>
 <tr><th scope="row">Hero</th><td>Materially smaller than the PNG, declared intrinsic dimensions</td></tr>
 <tr><th scope="row">Mobile Lighthouse</th><td>No failures for unsized images, contrast, label-content-name mismatch, image delivery or LCP discovery; SEO and Best Practices stay 100</td></tr>
@@ -34,4 +34,4 @@
 </table>
 
 <h2>Implementation status</h2>
-<p>Implemented. Last mobile Lighthouse of the deployed site: 100 for Performance, Accessibility, Best Practices and SEO, LCP 1.0 s.</p>
+<p>Implemented. The hero changed from a still image to the tour video, so the Lighthouse figures need a fresh mobile run against the deployed site.</p>

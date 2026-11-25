@@ -72,7 +72,7 @@ def live(tmp_path: Path) -> Path:
         "auth/profile.json": SECRET, "mcp_tokens/server.json": SECRET, "mcp_servers.json": SECRET,
         "channels/wechat/state.json": SECRET, "chrome-profile/Cookies": SECRET, "runtime/current": SECRET,
         "self-updates/active.json": SECRET, "worktrees/x/file": SECRET, "logs/worker.log": SECRET,
-        "recordings/a.wav": SECRET, "meetings/a.json": SECRET, "worker.pid": "1", "worker.port": "18100",
+        "recordings/a.wav": SECRET, "programs/.runtime/files/i/recordings/m/mic/00000.webm": SECRET, "worker.pid": "1", "worker.port": "18100",
         "owner.json": json.dumps({"version": 1, "principal_id": "owner/install/real"}),
         "programs/mine/program.py": "x = 1\n", "skills/s/SKILL.md": "skill\n", "program-sources.json": "{}\n",
         "agents.json": "{}\n", "projects/projects.json": "{}\n", "projects/default/settings.json": "{}\n",
@@ -108,7 +108,7 @@ def test_credentials_and_live_state_are_never_copied(live, tmp_path):
     target = tmp_path / "copy"
     data_copy.copy_state(live, target, model_base_url=MODEL_URL)
     for name in ("auth", "mcp_tokens", "mcp_servers.json", "channels", "chrome-profile", "runtime", "self-updates",
-                 "worktrees", "logs", "recordings", "meetings", "worker.pid", "worker.port"):
+                 "worktrees", "logs", "recordings", "programs/.runtime/files", "worker.pid", "worker.port"):
         assert not (target / name).exists(), name
     everything = "".join(path.read_text(errors="replace") for path in target.rglob("*")
                          if path.is_file() and not path.name.endswith(".db"))

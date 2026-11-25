@@ -681,6 +681,9 @@ def _dispatch_catalog_command(args) -> None:
             _cmd_uninstall(args.name)
         elif verb in ("enable", "disable"):
             _cmd_enable(args.id, verb == "enable")
+        elif verb == "export":
+            sys.exit(_cmd_export(args.name, args.output, format=args.format, python=args.python,
+                                 as_json=args.json))
         else:
             _need_subcommand(args._cmd_parser)
         return
@@ -1400,6 +1403,7 @@ from openprogram.interfaces.cli.commands.capabilities.programs import (  # noqa:
     _cmd_check,
     _cmd_configure,
     _cmd_enable,
+    _cmd_export,
     _cmd_install,
     _cmd_list,
     _cmd_run,

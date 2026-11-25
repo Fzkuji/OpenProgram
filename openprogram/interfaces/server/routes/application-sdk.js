@@ -5,11 +5,35 @@
   const listeners = new Map();
   let resolveReady;
   const ready = new Promise(resolve => { resolveReady = resolve; });
+  // The host's theme and language, applied to this page's <html>: its data-*
+  // attributes, lang and the custom properties set on the host's root, so the
+  // kit's styles draw as they do in the App.
+  let appearanceApplied;
+  const appearance = new Promise(resolve => { appearanceApplied = resolve; });
+  setTimeout(() => appearanceApplied(), 1500);
+  function applyAppearance(value) {
+    if (!value || typeof value !== 'object') return;
+    const root = document.documentElement;
+    const attributes = value.attributes && typeof value.attributes === 'object' ? value.attributes : {};
+    for (const name of [...root.getAttributeNames()]) {
+      if (name.startsWith('data-') && !(name in attributes)) root.removeAttribute(name);
+    }
+    for (const [name, text] of Object.entries(attributes)) {
+      if ((name.startsWith('data-') || name === 'lang') && typeof text === 'string') root.setAttribute(name, text);
+    }
+    const properties = value.properties && typeof value.properties === 'object' ? value.properties : {};
+    for (const [name, text] of Object.entries(properties)) {
+      if (name.startsWith('--') && typeof text === 'string') root.style.setProperty(name, text);
+    }
+    appearanceApplied();
+  }
   window.addEventListener('message', event => {
     if (event.source !== parent || event.data?.type !== 'openprogram.application.connect' || port || !event.ports[0]) return;
     port = event.ports[0];
     port.onmessage = ({ data }) => {
-      // The host's own word, not an answer: a conversation changed, the composer moved.
+      if (data?.event === 'appearance') applyAppearance(data.value);
+      // The host's own word, not an answer: a conversation changed, the composer moved,
+      // the state document was saved ('state'), the host's recording changed ('audio').
       if (typeof data?.event === 'string') {
         for (const listener of listeners.get(data.event) || []) {
           try { listener(data.value); } catch (error) { console.error(error); }
@@ -53,6 +77,20 @@
        folder it works in; the window then hears `chat` (its messages and whether a reply
        is running) and `composer` (the composer's height) through `on`. */
     on,
+    /* Resolves once the host's theme and language are applied (or after 1.5 s). */
+    appearance,
+    /* Applications that declare `audio.record`: the host records the microphone and the
+       computer's sound under `key`, hands each chunk to the manifest's recording.ingest
+       operation and runs recording.finish once it stops. Closing the window does not stop it. */
+    audio: Object.freeze({
+      start: (options = {}) => call('audio.start', options),
+      stop: () => call('audio.stop'),
+      status: () => call('audio.status'),
+    }),
+    /* Applications that declare `conversation`: show a conversation the backend opened. */
+    conversations: Object.freeze({
+      show: sessionId => call('conversation.show', { session_id: sessionId }),
+    }),
     chat: Object.freeze({
       open: (key, folder = '') => call('chat.open', { key, folder }),
       note: text => call('chat.note', { text }),

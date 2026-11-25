@@ -69,7 +69,7 @@
 <tr><th scope="row">安装软件</th><td>Applications → Install…</td><td>显示声明、来源、版本、启用状态。Python 后端需要勾选明确信任。重复 ID、无效入口、依赖准备失败都返回错误，不覆盖现有内容。</td></tr>
 <tr><th scope="row">打开</th><td>新标签页按钮，或 Applications 上的 Open</td><td>独立标签页，同一实例。项目应用绑定当前项目或选择器。没有 UI 的 Program 不增加按钮。</td></tr>
 <tr><th scope="row">管理</th><td>Applications：启用、显示或隐藏、更新、卸载</td><td>停用阻止新的打开和操作，并取消进行中的操作；隐藏只移除按钮。错误显示在对应操作旁。刷新和重新打开读取最新目录。</td></tr>
-<tr><th scope="row">从 CLI 或 Agent 调用</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>、<code translate="no">run</code>、<code translate="no">status</code>、<code translate="no">cancel</code>、<code translate="no">check</code>、<code translate="no">install</code>、<code translate="no">uninstall</code>、<code translate="no">enable</code>、<code translate="no">disable</code></td><td>与所有 Program 同一命令组，没有单独的应用命令。</td></tr>
+<tr><th scope="row">从 CLI 或 Agent 调用</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>、<code translate="no">run</code>、<code translate="no">status</code>、<code translate="no">cancel</code>、<code translate="no">check</code>、<code translate="no">install</code>、<code translate="no">uninstall</code>、<code translate="no">enable</code>、<code translate="no">disable</code>、<code translate="no">export</code></td><td>与所有 Program 同一命令组，没有单独的应用命令。</td></tr>
 </tbody>
 </table>
 <details>
@@ -153,6 +153,36 @@
 </tbody>
 </table>
 
+<h2 id="host-services">宿主服务</h2>
+<p>只有宿主能做的事，包通过能力去要，所以后端不导入 OpenProgram 的任何代码，同一个包日后可以跑在能回答同样调用的精简运行时上。会议是第一个这样构建的内置应用（<a href="meetings.zh.html#host">会议</a>）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">宿主调用</th><td>runner 在标准输出写 <code translate="no">{"type": "host", request_id, method, params}</code>，在标准输入等回答；服务检查方法所需能力后在 worker 里回答（<code translate="no">host_calls.py</code>）。方法：<code translate="no">speech.transcribe</code>、<code translate="no">speech.diarize</code>、<code translate="no">speech.readiness</code>、<code translate="no">conversation.open</code>、<code translate="no">conversation.ask</code>。路径相对于实例的文件目录。</td></tr>
+<tr><th scope="row">录制</th><td>归宿主所有（<code translate="no">audio.py</code>），每个实例一个：App 的页面替沙箱窗口录麦克风，worker 录电脑声音；分段按顺序交给 <code translate="no">recording.ingest</code>，最后 <code translate="no">recording.finish</code>。停用即取消。</td></tr>
+<tr><th scope="row">变化事件</th><td>保存状态文档发出 <code translate="no">application-state</code>，录制发出 <code translate="no">application-audio</code>；窗口收到 <code translate="no">state</code> 和 <code translate="no">audio</code> 事件。</td></tr>
+<tr><th scope="row">外观</th><td>宿主发来主题属性、配色、语言和自定义属性；它们落到页面上后 <code translate="no">openprogramApp.appearance</code> 才完成，所以用 App 组件构建的窗口和 App 一个样子。</td></tr>
+</tbody>
+</table>
+
+<h2 id="standalone">独立运行</h2>
+<p>应用页的<strong>导出为独立应用…</strong>（<code translate="no">POST /api/applications/{id}/export</code>）写到用户选的文件夹，已有同名导出时按序编号；之后只能在文件管理器中显示 worker 自己写出的导出。终端里用 <code translate="no">openprogram programs export &lt;id|文件夹&gt;</code> 效果相同。</p>
+<p>导出结果在 macOS 上是 <code translate="no">.app</code>，或者一个带 <code translate="no">run.sh</code> 和 <code translate="no">run.cmd</code> 的文件夹。打开后运行的窗口和后端与 App 里完全相同，不启动 worker、网页 App、聊天、渠道或调度器。</p>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行什么</th><td>worker 运行的那套应用运行时（目录、runner、状态、录音、宿主调用），只服务这一个包。<code translate="no">OPENPROGRAM_STANDALONE_APPLICATION</code> 让其他 Program 都不加载；<code translate="no">OPENPROGRAM_STATE_DIR</code> 把应用自己的数据文件夹设为状态文件夹。</td><td>LangGraph、AgentOS、OpenHands 说明：离开桌面客户端并不等于去掉应用需要的运行时。把运行时一起带上，包契约就不用变：窗口和后端不为第二个宿主重写。</td></tr>
+<tr><th scope="row">打包内容</th><td><code translate="no">app/</code> 放应用包。<code translate="no">python/</code> 放 App 自带的独立 CPython 和 OpenProgram，去掉 App 的网页前端、其他内置应用、Playwright、CPython 的测试和 Tk（会议：从 575 MB 减到 287 MB）。没有可复制的 Python 时，启动器指向执行导出的解释器（<code translate="no">--python reference</code>）。</td><td>复制已经在运行 App 的运行时，不需要新的构建流程。精简只去掉单个应用碰不到的部分。</td></tr>
+<tr><th scope="row">窗口</th><td>127.0.0.1 上的本地服务器提供一个页面，用与 App 标签页相同的沙箱 iframe 装窗口，并回答同一套桥接。页面用 App 的录音器录麦克风；外观用 App 的默认主题，跟随电脑的浅色或深色模式，语言跟随浏览器。有 Chromium 系浏览器时以应用窗口（<code translate="no">--app</code>）打开，否则用默认浏览器。</td><td>Chainlit 和 DeerFlow 都是服务加自己的网页前端；MCP Apps 保留沙箱 iframe 和 postMessage 桥接。Electron、Tauri 这类原生外壳每次导出、每个平台都要构建。</td></tr>
+<tr><th scope="row">登录</th><td>启动器的链接在 <code translate="no">#</code> 后带一个令牌，页面用它换一个 HttpOnly、SameSite=Strict 的 cookie；除页面、页面资源和窗口资源外，所有路由都要这个 cookie。Host 不是 127.0.0.1 或 localhost 的请求一律拒绝。令牌存在数据文件夹里，权限 0600。</td><td>本机任何程序都能访问回环端口；cookie 和 Host 检查还能挡住其他网页和 DNS 重绑定。</td></tr>
+<tr><th scope="row">模型与语音</th><td>每次启动从这台电脑的 OpenProgram（导出时的 profile，没有则 <code translate="no">~/.openprogram</code>）复制 <code translate="no">config.json</code> 和 <code translate="no">auth/</code>，并链接 <code translate="no">voice/</code>。安装包里不带任何设置或密钥。</td><td>安装包可能会转给别人。和 App 一样，页面永远拿不到服务商密钥；在 OpenProgram 里改了密钥，应用下次启动就生效。</td></tr>
+<tr><th scope="row">会话</th><td><code translate="no">conversation.open</code> 和 <code translate="no">conversation.ask</code> 由独立宿主回答：每个会话存成数据文件夹里的一个文件，用配置的模型回答，不带工具，之前的消息作为上下文。<code translate="no">conversation.show</code> 打开一个面板，用 App 的消息样式显示，并可继续提问。</td><td>语义与 App 相同（后端发起的会话轮次在 App 里也不带工具），只是存储位置不同。</td></tr>
+<tr><th scope="row">拒绝导出</th><td>声明了 <code translate="no">chat</code> 的应用（需要 App 的输入框和智能体），以及项目范围的应用（需要 App 的项目）</td><td>离开 App 无法如实回答这两者</td></tr>
+<tr><th scope="row">生命周期</th><td>启动器先看同一数据文件夹的服务器是否在运行，不在就启动，然后打开窗口。没有打开的窗口、录音或正在运行的操作满十分钟后，服务器自行退出。</td><td>关掉窗口不留进程，同时不会打断还在录的音或还在写的摘要。</td></tr>
+<tr><th scope="row">签名</th><td>安装包不签名、不公证。在同一台 Mac 上导出的可以直接打开；复制到别的电脑的，第一次要在右键菜单里选“打开”。</td><td>不购买证书</td></tr>
+</tbody>
+</table>
+
 <h2 id="lifecycle">生命周期</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">路径</th><th scope="col">顺序</th></tr></thead>
@@ -178,7 +208,7 @@
 <tbody>
 <tr><th scope="row">纯静态</th><td>浏览器和自身资源</td><td>可独立托管；数据迁移由应用负责</td></tr>
 <tr><th scope="row">在 OpenProgram 内</th><td>UI、后端、OpenProgram Runtime</td><td>当前实现</td></tr>
-<tr><th scope="row">独立部署，同一运行时</th><td>包、最小运行时、配置、存储</td><td>边界已预留；适配器和验收完成前不可用</td></tr>
+<tr><th scope="row">独立部署，同一运行时</th><td>包、精简运行时、取自本机 OpenProgram 的设置、自己的数据文件夹</td><td>已实现：<a href="#standalone">独立运行</a></td></tr>
 <tr><th scope="row">跨宿主 MCP Apps</th><td>MCP 服务器、兼容宿主</td><td>共享 UI 和工具契约；OpenProgram 后台 API 不可移植</td></tr>
 <tr><th scope="row">完全不依赖 OpenProgram</th><td>替换模型、任务、存储</td><td>不保证；单独构建和测试</td></tr>
 </tbody>
@@ -331,7 +361,8 @@
 <tr><th scope="row">2. 菜单与页面</th><td>静态应用打开、复用标签页、绑定实例、隔离资源</td><td>已实现</td></tr>
 <tr><th scope="row">3. 业务操作与 Runtime</th><td>Python 操作使用模型和 Workflow 契约；取消、问题、结果持久化</td><td>已实现</td></tr>
 <tr><th scope="row">4. 完整生命周期</th><td>依赖、后台任务、重启中断、摘要检查、卸载</td><td>已实现</td></tr>
-<tr><th scope="row">5. 兼容与独立部署</th><td>MCP Apps 适配器、最小运行时部署；其他语言 runner 以后再做。验收：同一 UI 和操作真正在第二个宿主上运行</td><td>未实现</td></tr>
+<tr><th scope="row">5. 独立部署</th><td><code translate="no">programs export</code>：同一窗口和操作带着精简运行时在 App 之外运行。已用会议验收：窗口、操作、会话面板和一次模型追问</td><td>已实现</td></tr>
+<tr><th scope="row">6. 兼容</th><td>MCP Apps 适配器；其他语言 runner 以后再做。验收：同一 UI 和操作在其他厂商的宿主上运行</td><td>未实现</td></tr>
 </tbody>
 </table>
 <p class="note">同样未实现：附件 API、自动 schema 迁移、对话上下文导入、手动菜单排序、论文阅读示例的 PDF 导入、插件自动适配 Application。</p>
@@ -347,7 +378,9 @@
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/service.py</code></th><td>基于 <code translate="no">ExecutionStore</code>、Attempt 和 Driver 的操作；共享取消清理</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/runner.py</code></th><td>每个进程一个受信任操作；Runtime 和 <code translate="no">context</code></td></tr>
 <tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/state.py</code></th><td>实例、操作元数据、事件、实例数据</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/host_calls.py</code>、<code translate="no">audio.py</code></th><td>给包的宿主调用和录制</td></tr>
 <tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/applications.py</code></th><td><code translate="no">/api/applications</code>、实例、运行和资源路由</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/standalone/</code></th><td>独立运行：<code translate="no">server.py</code>（服务器、启动器）、<code translate="no">shell/</code>（页面，由 <code translate="no">web/</code> 构建）、<code translate="no">conversations.py</code>、<code translate="no">settings.py</code>、<code translate="no">export.py</code></td></tr>
 </tbody>
 </table>
 <p>遵循 <a href="programs-architecture.zh.html">Programs 代码结构</a>；更广的比较见<a href="../../framework-comparison/overview.zh.html">框架对比</a>。</p>
