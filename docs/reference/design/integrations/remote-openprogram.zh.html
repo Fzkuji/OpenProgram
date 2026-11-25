@@ -41,7 +41,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">术语</th><th scope="col">含义</th></tr></thead>
 <tbody>
-<tr><th scope="row">远程 OpenProgram 机器</th><td>机器登记表（<a href="computer-use/machines-and-targets.zh.html">机器与目标</a>）里带 OpenProgram 连接的机器：另一台电脑 Worker 的地址，以及让 B 在那里登录的设备凭据</td></tr>
+<tr><th scope="row">远程 OpenProgram 机器</th><td>机器登记表（<a href="computer-use/machines-and-targets.zh.html">机器与目标</a>）里连接方式为 <code translate="no">openprogram</code> 的机器：另一台电脑 Worker 的地址，以及让 B 在那里登录的设备凭据</td></tr>
 <tr><th scope="row">对话的归属</th><td>日志里存着它的那个 Worker。每一轮都在那里运行：它的模型账号、工具、记忆和文件。在别处被查看不会改变归属</td></tr>
 <tr><th scope="row">设备</th><td>与某个 Worker 配对的任何东西：手机、浏览器，或另一台电脑的 Worker（<a href="../ui/remote-web-access.zh.html#paired-devices">配对设备</a>）</td></tr>
 </tbody>
@@ -77,12 +77,26 @@
 </tbody>
 </table>
 
+<h2 id="computer-use">从 B 操作 A</h2>
+<p>B 上的对话可以用 <code translate="no">computer_use</code> 加 <code translate="no">device="&lt;A&gt;"</code> 操作 A 的窗口、整屏和浏览器（<a href="computer-use/machines-and-targets.zh.html#另一台电脑">机器与目标</a>）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">一端</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">B，发送</th><td>把整个调用（type、app、display、title、action、args、actions、code、timeout；从不带 <code translate="no">device</code>）带着 A 的设备凭据作为 Bearer 令牌发到 <code translate="no">POST /api/computer-use/call</code>，依次试每个配对地址，连接限时 6 秒。在 A 的回答前加上 <code translate="no">[device=..., type=...]</code>。每个目标问自己的用户一次，规则键里带 A 的名字（<code translate="no">studio window safari</code>、<code translate="no">studio screen</code>、<code translate="no">studio browser chrome</code>）；只列出的调用不问</td></tr>
+<tr><th scope="row">A，接收</th><td>只在 A 上运行 <code translate="no">computer_use</code>，不会再转到 A 能够到的别的设备，回答 <code translate="no">{text, images, is_error}</code>，图片为 base64。A 自己的设置照样生效：整屏除非在那边打开否则关闭，用 A 的操作系统权限，A 上 <code translate="no">computer_use</code> 的 <code translate="no">tools.permission_rules</code> 也生效：拒绝规则会拒绝，询问规则同样拒绝，因为 A 上没人被问</td></tr>
+<tr><th scope="row">开关</th><td>允许已配对设备操作这台电脑（<code translate="no">computer_use.paired_devices</code>），默认关闭，在 A 的 设置 → 设备 → 这台电脑。关闭时 A 回答 403 <code translate="no">paired_devices_off</code>，B 的调用失败，并写明去哪里打开</td></tr>
+<tr><th scope="row">错误</th><td>检查已连续失败 45 秒的 A：立刻回答，什么都不发，并再查一次；刚失败一次的 A 照样去试。B 的 <code translate="no">&lt;devices&gt;</code> 会说 A 什么时候连不上、什么时候恢复。401：B 在 A 上被吊销，重新配对。404：A 上的 OpenProgram 较旧，去更新</td></tr>
+<tr><th scope="row">列出</th><td>只要 A 启用着，B 就列出 A 的 window、screen 和 browser，不在每一轮去问 A：那样每一轮都要和每台配对的电脑往返一次，常常是睡着的那台；而 A 会准确拒绝，并附上它确实有的目标</td></tr>
+</tbody>
+</table>
+
 <h2 id="settings">设置</h2>
 <p>这里的一切都在 App 里配置；命令行仍是同等的另一种方式。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">位置</th><th scope="col">作用</th></tr></thead>
 <tbody>
 <tr><th scope="row">A 上的设置 → 设备</th><td>一个列表：OpenProgram 操作的电脑，以及与它配对的手机和浏览器，每台手机可改名、可吊销，并显示最近使用时间。<strong>添加设备</strong>先问是什么设备（照搬 Codex 和 Claude 的流程）：<em>手机或平板</em>或<em>另一台电脑 → 让它用这台</em>显示二维码和链接，链接带着所有已打开的地址，十分钟有效，过期后自动换新。列表下方是<em>从哪里打开这台电脑</em>：同一 Wi-Fi 和任何地方（见下）</td></tr>
+<tr><th scope="row">A 上的设置 → 设备 → 这台电脑</th><td><strong>允许已配对设备操作这台电脑</strong>：默认关闭；打开后，配对电脑上的对话可以用 <code translate="no">computer_use</code> 操作 A</td></tr>
 <tr><th scope="row">B 上的设置 → 设备</th><td><strong>添加设备 → 另一台电脑 → 在这里看它的对话</strong>：粘贴 A 的链接。B 在 A 第一个有响应的地址上兑换，这台机器带着连接点出现。它的菜单里没有编辑：只能通过配对添加</td></tr>
 <tr><th scope="row">手机或浏览器</th><td>扫 A 的二维码即登录 A；无需安装</td></tr>
 <tr><th scope="row">设置 → 渠道 → 添加 bot → 微信</th><td>在窗口里画出微信二维码，并显示等待扫码、已扫、已确认、已过期几种状态，用的是现有的 <code translate="no">start_channel_login</code> 操作。终端命令不再是唯一方式</td></tr>
@@ -93,7 +107,7 @@
 <thead><tr><th scope="col"></th><th scope="col">做法</th><th scope="col">生效</th></tr></thead>
 <tbody>
 <tr><th scope="row">同一 Wi-Fi</th><td>在 Worker 进程里、用同一个应用再开一个监听，绑定这台电脑的私有网络地址，运行中的服务器随之接受这个地址的 Origin；<code translate="no">web.lan</code> 记住这个选择（<code translate="no">interfaces/server/lan_listener.py</code>）。地址取路由所走的网卡；代理隧道占着路由时，改取这台电脑自己的名字在本地解析出的地址；只算 10/8、172.16/12 和 192.168/16。换了网络，下次读取时监听会跟着换地址</td><td>立即；主监听仍是回环</td></tr>
-<tr><th scope="row">任何地方</th><td>运行时 <code translate="no">bin/</code> 里的 <code translate="no">openprogram-tailnet</code>（Go，<a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>）通过 <code translate="no">tsnet</code> 内嵌 Tailscale，用 Tailscale Funnel 在 <code translate="no">https://&lt;名字&gt;.&lt;tailnet&gt;.ts.net</code> 上监听，这是带正式证书的公开地址。它把每个请求（包括 WebSocket）代理到 Worker 的回环端口，保留 Host 并设置 <code translate="no">X-Forwarded-Proto: https</code>，所有者认证信任来自回环地址的这一头。<code translate="no">web.anywhere</code> 记住开关</td><td>立即；监听地址仍是回环</td></tr>
+<tr><th scope="row">任何地方</th><td>运行时 <code translate="no">bin/</code> 里的 <code translate="no">openprogram-tailnet</code>；命令行安装时放在每个封存版本的 <code translate="no">bin/</code> 里，每次构建版本时沿用或重新构建（Go，<a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>）通过 <code translate="no">tsnet</code> 内嵌 Tailscale，用 Tailscale Funnel 在 <code translate="no">https://&lt;名字&gt;.&lt;tailnet&gt;.ts.net</code> 上监听，这是带正式证书的公开地址。它把每个请求（包括 WebSocket）代理到 Worker 的回环端口，保留 Host 并设置 <code translate="no">X-Forwarded-Proto: https</code>，所有者认证信任来自回环地址的这一头。<code translate="no">web.anywhere</code> 记住开关</td><td>立即；监听地址仍是回环</td></tr>
 </tbody>
 </table>
 <p>Worker 把它作为子进程运行，这个 profile 的 Tailscale 身份放在 <code translate="no">&lt;state&gt;/tailnet</code>，并逐行读取 JSON 状态：</p>
@@ -110,12 +124,28 @@
 <p>同类做法：Claude Code Remote Control 和 Codex remote control 经它们自己的服务器中转，手机通过厂商连到电脑。OpenProgram 没有可中转的服务器，所以内嵌 <code translate="no">tsnet</code>。</p>
 <p>OpenClaw 和 T3 Code 也借 Tailscale 从别处连到电脑，但要所有者自己安装它。</p>
 
+<h2 id="phone">手机上</h2>
+<p>手机运行同一套网页界面，作为网页应用添加到主屏幕（<code translate="no">app/manifest.ts</code>，<code translate="no">app/layout.tsx</code> 里的 <code translate="no">appleWebApp</code>）。通知由这台电脑直接通过 Web Push 发出，中间没有 OpenProgram 的服务器。</p>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">密钥</th><td>每个 profile 生成一次 VAPID 密钥对（P-256），存于 <code translate="no">&lt;state&gt;/web_push/vapid.pem</code>；每次 POST 带一个面向推送服务来源的 ES256 JWT（RFC 8292）</td></tr>
+<tr><th scope="row">订阅</th><td><code translate="no">PUT /api/push/subscription</code> 把浏览器的地址和密钥连同已配对设备、语言和类别存进 <code translate="no">subscriptions.json</code>（0600）。只接受 Apple、Google、Mozilla、Microsoft 推送服务的 https 地址。吊销设备会删掉它的订阅；推送服务回 404 或 410 时删掉那一条</td></tr>
+<tr><th scope="row">何时</th><td>运行时事件总线上的顶层 <code translate="no">execution.updated</code> 帧：暂停等回答或权限（在等你）、完成（回复好了）、失败（出错停下）。每个执行状态版本只发一条</td></tr>
+<tr><th scope="row">内容</th><td>设备语言的一句固定文字和对话的 <code translate="no">/s/&lt;id&gt;</code>，用 <code translate="no">aes128gcm</code> 加密（RFC 8291）。对话内容不离开电脑，推送服务看不到</td></tr>
+<tr><th scope="row">点开</th><td><code translate="no">public/sw.js</code> 聚焦已打开的 OpenProgram 窗口并让它打开该对话，没有就新开一个</td></tr>
+</tbody>
+</table>
+<p>推送需要 https，所以通过“任何地方”可用，“同一 Wi-Fi”不行。在 iPhone 和 iPad 上，Safari 只允许从主屏幕打开的网页应用接收推送（iOS 16.4 及以上）；设置里会说明缺了哪一项。</p>
+<p>同类做法：DSH Mobile 由电脑直接向主屏幕网页应用发 Web Push，VAPID 密钥留在电脑上，不经中转。整套采用。它的原生外壳留到以后：除了上架 App Store，外壳能加的网页应用都已经有了。</p>
+
 <h2 id="status">实现状态</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td>配对和设备凭据、配对与设备路由、<code translate="no">openprogram web pair</code> 和 <code translate="no">openprogram web devices</code>。<code translate="no">openprogram</code> 连接类型（<code translate="no">host/machines/peer.py</code>）、B 到 A 的连接、合并列表、按对话转发、在 A 上新建对话（<code translate="no">interfaces/server/remote_machines/</code>）。设置 → 设备，包括添加设备、列表里的已配对手机和两种连接方式（<code translate="no">/api/auth/remote-access</code>）、为 macOS、Linux 和 Windows 构建的内嵌 Tailscale 子进程、微信二维码</td></tr>
-<tr><th scope="row">未开始</th><td>文件、@ 搜索和终端：指明对话的 WebSocket 请求会像其他请求一样转发，但 HTTP 路由仍读 B 自己的磁盘。手机应用（先 PWA，再带推送的原生外壳）</td></tr>
+<tr><th scope="row">已实现</th><td>配对和设备凭据、配对与设备路由、<code translate="no">openprogram web pair</code> 和 <code translate="no">openprogram web devices</code>。<code translate="no">openprogram</code> 连接方式（<code translate="no">host/machines/peer.py</code>）、B 到 A 的连接、合并列表、按对话转发、在 A 上新建对话（<code translate="no">interfaces/server/remote_machines/</code>）。用 <code translate="no">computer_use</code> 操作 A，两端和开关（<code translate="no">computer_use/providers/paired.py</code>）。设置 → 设备，包括添加设备、列表里的已配对手机和两种连接方式（<code translate="no">/api/auth/remote-access</code>）、为 macOS、Linux 和 Windows 构建的内嵌 Tailscale 子进程、微信二维码</td></tr>
+<tr><th scope="row">已实现：手机</th><td>主屏幕网页应用，由这台电脑发 Web Push（<code translate="no">interfaces/server/web_push.py</code>、<code translate="no">public/sw.js</code>、设置 → 通用 → 通知）</td></tr>
+<tr><th scope="row">未开始</th><td>文件、@ 搜索和终端：指明对话的 WebSocket 请求会像其他请求一样转发，但 HTTP 路由仍读 B 自己的磁盘。原生手机外壳</td></tr>
 </tbody>
 </table>
 

@@ -998,33 +998,25 @@ def _add_machines_command(sub):
     p_list = machines_sub.add_parser("list",
         help="List machines")
     p_list.add_argument("--kinds", action="store_true",
-        help="Also list the connection kinds and their settings")
+        help="Also list the connection methods and their settings")
     p_add = machines_sub.add_parser("add",
         help="Add or replace a machine")
     p_add.add_argument("id",
         help="Short id: lowercase letters, digits, '-' or '_'; it never changes")
     p_add.add_argument("--name", default="",
         help="Display name (default: the id)")
-    p_add.add_argument("--shell", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
-        help="The shell connection, where commands and files run: its kind, "
-             "then its settings; `machines list --kinds` shows them")
-    p_add.add_argument("--window", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
-        help="The window connection, how its application windows are operated (target app): its kind, "
-             "then its settings")
-    p_add.add_argument("--screen", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
-        help="The screen connection, how its whole display is operated (target screen): its kind, "
-             "then its settings")
-    p_add.add_argument("--browser", nargs="+", default=None, metavar=("KIND", "KEY=VALUE"),
-        help="The browser connection, a browser OpenProgram runs there: its kind, then its settings")
+    p_add.add_argument("connection", nargs="+", metavar="METHOD [KEY=VALUE ...]",
+        help="How the machine is reached: its connection method (ssh, docker, osworld, ...), then its "
+             "settings as KEY=VALUE; `machines list --kinds` shows them")
     p_remove = machines_sub.add_parser("remove", help="Remove a machine")
     p_remove.add_argument("id", help="Machine id")
     p_enable = machines_sub.add_parser("enable", help="Switch a machine on")
     p_enable.add_argument("id", help="Machine id")
     p_disable = machines_sub.add_parser("disable",
-        help="Switch a machine off: it offers no targets and its projects do not run")
+        help="Switch a machine off: no feature uses it and its projects do not run")
     p_disable.add_argument("id", help="Machine id")
     p_test = machines_sub.add_parser("test",
-        help="Check that each connection of a machine answers")
+        help="Check that a machine answers")
     p_test.add_argument("id", help="Machine id")
 
 

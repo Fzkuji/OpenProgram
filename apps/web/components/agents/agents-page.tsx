@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ManageEmptyState, ManagePageHeader, managePageStyles } from "@/components/ui/manage-page";
 import { isAbort, readUntilAnswered } from "@/lib/abilities/kept-read";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SECTION_BAR } from "@/components/ui/capsule";
 import { Button } from "@/components/ui/button";
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -334,7 +335,7 @@ export function AgentsPage() {
           </DropdownMenu></div></div>
           <AgentChips draft={draft} catalog={models} text={text} onTab={setTab} />
         </div>
-        <Tabs orientation="horizontal" className={styles.configTabs} value={tab} onValueChange={(value) => setTab(value as TabId)}><div className={styles.configTabsBar}><TabsList variant="line" aria-label={text("Agent configuration", "Agent 配置")}>{TABS.map((item) => <TabsTrigger value={item.id} key={item.id}>{text(item.en, item.zh)}</TabsTrigger>)}</TabsList></div>
+        <Tabs orientation="horizontal" className={styles.configTabs} value={tab} onValueChange={(value) => setTab(value as TabId)}><div className={SECTION_BAR}><TabsList variant="section" aria-label={text("Agent configuration", "Agent 配置")}>{TABS.map((item) => <TabsTrigger value={item.id} key={item.id}>{text(item.en, item.zh)}</TabsTrigger>)}</TabsList></div>
           <div className={`${settingsStyles.pageBody} ${styles.editorBody}`}><fieldset className={styles.editorFields} disabled={busy}>
             <TabsContent className={styles.tabPanel} value="overview"><OverviewPanel draft={draft} update={updateDraft} text={text} catalog={models} dirty={dirty} /></TabsContent>
             {(["programs", "skills", "mcp"] as const).map((kind) => <TabsContent className={styles.tabPanel} value={kind} key={kind}><CapabilityPanel kind={kind} draft={draft} update={updateDraft} text={text} /></TabsContent>)}

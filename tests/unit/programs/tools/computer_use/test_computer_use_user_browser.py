@@ -7,10 +7,12 @@ import pytest
 
 from openprogram.host.machines import local_machine
 from openprogram.programs.applications.browser import extension as extension_browser
-from openprogram.programs.tools.computer_use.computer_use import dispatch, locks
+from openprogram.programs.tools.computer_use.computer_use.routing import dispatch, locks
 from openprogram.programs.tools.computer_use.computer_use.contract import Approval, Call
-from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser, user_browser
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import (built_in as built_in_browser,
+    user as user_browser)
 from tests.support.screen_targets import user_browsers
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import tabs as browser_tabs
 
 
 def _reply(text, error=False, image=None):
@@ -85,10 +87,10 @@ class FakeExtension:
 
 @pytest.fixture
 def connect(monkeypatch):
-    monkeypatch.setattr(user_browser, "_tables", {})
-    monkeypatch.setattr(user_browser, "_current", {})
-    monkeypatch.setattr(user_browser, "_users", {})
-    monkeypatch.setattr(user_browser, "_turns", {})
+    monkeypatch.setattr(browser_tabs, "_tables", {})
+    monkeypatch.setattr(browser_tabs, "_current", {})
+    monkeypatch.setattr(browser_tabs, "_users", {})
+    monkeypatch.setattr(browser_tabs, "_turns", {})
     # Ending a connection runs on a thread of its own; here it runs in place.
     monkeypatch.setattr(user_browser, "_in_background", lambda target, *args: target(*args))
     monkeypatch.setattr(extension_browser.shutil, "which", lambda name: "/usr/local/bin/npx")
@@ -109,7 +111,7 @@ def _run(provider, steps, subject=None, agent="a1", images=True):
 def test_a_browser_is_listed_where_its_extension_is_installed_without_connecting(monkeypatch):
     service = SimpleNamespace(extension=user_browsers("edge"))
     monkeypatch.setattr(built_in_browser, "service", lambda: service)
-    found = built_in_browser.KIND.open(local_machine(), "s")
+    found = built_in_browser._open(local_machine(), "s")
     assert [provider.target for provider in found] == ["browser", "browser edge"]
     assert found[1].address() == 'type="browser", app="edge"'
     assert found[1].describe().line.startswith("the user's own Microsoft Edge with their sign-ins")
@@ -147,7 +149,7 @@ def test_a_chromium_browser_without_a_channel_is_started_from_its_executable_and
 
 def test_every_browser_app_is_in_the_catalog_with_a_label_and_an_engine():
     from openprogram.programs.applications.browser import catalog
-    from openprogram.programs.tools.computer_use.computer_use import registry
+    from openprogram.programs.tools.computer_use.computer_use.routing import registry
     assert registry.BROWSER_APPS == catalog.NAMES
     for name in catalog.NAMES:
         browser = catalog.get(name)
@@ -296,7 +298,7 @@ def test_a_tab_lost_while_selecting_or_after_create_tab_is_coded(connect, monkey
 def test_a_call_waiting_for_another_agents_turn_answers_screen_busy(connect, monkeypatch):
     chrome, fake = connect()
     monkeypatch.setattr(user_browser.locks, "WAIT_SECONDS", 0.0)
-    turn = user_browser._turn("s", "chrome")
+    turn = browser_tabs._turn("s", "chrome")
     turn.acquire()
     try:
         result = _run(chrome, [("click", {"element": "e1"})], agent="a2")
@@ -412,7 +414,7 @@ def test_the_last_agent_ending_closes_the_connection(connect, monkeypatch):
     assert closed == []
     chrome.close(Call("s", "a2"))
     assert closed == [("s", "chrome")]
-    assert ("s", "chrome") not in user_browser._tables and ("s", "chrome") not in user_browser._users
+    assert ("s", "chrome") not in browser_tabs._tables and ("s", "chrome") not in browser_tabs._users
 
 
 class _TurnTaken:
@@ -429,12 +431,12 @@ def test_ending_an_agent_never_waits_for_another_agents_step(connect, monkeypatc
     monkeypatch.setattr(user_browser, "_in_background", lambda target, *args: queued.append((target, args)))
     _run(chrome, [("get_state", {})], agent="a1")
     _run(chrome, [("get_state", {})], agent="a2")
-    turn = user_browser._turns[("s", "chrome")]
-    user_browser._turns[("s", "chrome")] = _TurnTaken()
+    turn = browser_tabs._turns[("s", "chrome")]
+    browser_tabs._turns[("s", "chrome")] = _TurnTaken()
     chrome.close(Call("s", "a1"))
     chrome.close(Call("s", "a2"))
     assert len(queued) == 1 and closed == []
-    user_browser._turns[("s", "chrome")] = turn
+    browser_tabs._turns[("s", "chrome")] = turn
     # An agent that starts using the connection before the turn comes keeps it.
     _run(chrome, [("get_state", {})], agent="a3")
     target, args = queued.pop()

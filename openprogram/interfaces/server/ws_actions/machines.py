@@ -5,12 +5,13 @@ test_machine / connect_openprogram
 
 ``connect_openprogram`` takes the pairing ``link`` another computer's
 Settings → Devices → Add device shows, redeems it there and adds that computer as
-a machine with an ``openprogram`` connection (``host.machines.peer``); its
+a machine reached by the method ``openprogram`` (``host.machines.peer``); its
 conversations then appear in this computer's lists.
 
-Replies: ``machines`` (the snapshot: ``items``, each with its connection
-``status``, and ``kinds`` with every kind of every connection, this
-computer's own included), ``machine_result`` (``ok``, ``id``, ``error`` or ``machine``)
+Replies: ``machines`` (the snapshot: ``items``, each with its one
+``connection``, its connection ``status`` and, when commands run on it,
+``shell`` with what the shell feature says of it; and ``kinds`` with every
+connection method, this computer's own included), ``machine_result`` (``ok``, ``id``, ``error`` or ``machine``)
 and ``machine_test`` (``id``, ``ok``, ``message``); both carry the request's
 ``action`` and ``request_id``.
 
@@ -37,9 +38,19 @@ def _snapshot() -> dict:
     except Exception:
         pass
     return {
-        "items": [{**machine.public(), "status": state_of(machine)} for machine in items],
+        "items": [_item(machine, state_of(machine)) for machine in items],
         "kinds": [kind.public() for kind in machines.kinds.all_kinds()],
     }
+
+
+def _item(machine, status: dict) -> dict:
+    """One machine as Settings and the pickers read it: the device, then what the shell feature says of it."""
+    from openprogram.host.backend import shell_for
+    data = {**machine.public(), "status": status}
+    shell = shell_for(machine)
+    if shell is not None:
+        data["shell"] = {"remote_files": shell.remote_files, "instance_scope": shell.instance_scope}
+    return data
 
 
 def _broadcast() -> None:
@@ -86,18 +97,9 @@ async def handle_list_machines(ws, cmd: dict):
     await _reply(ws, "machines", await asyncio.to_thread(_snapshot))
 
 
-def _save(payload: dict):
-    """One machine from Settings. This computer is built in: only its window, screen and browser connections
-    are edited, a null one puts the built-in connection back, and its name and shell stay as they are."""
-    from openprogram.host import machines
-    if str(payload.get("id") or "").strip().lower() != machines.LOCAL_ID:
-        return machines.save_machine(payload)
-    machine = machines.local_machine()
-    for name in ("window", "screen", "browser"):
-        if name in payload:
-            raw = payload.get(name)
-            machine = machines.set_local_connection(name, raw if isinstance(raw, dict) and raw else None)
-    return machine
+def _save_machine(payload: dict):
+    from openprogram.host.machines import save_machine
+    return save_machine(payload)
 
 
 async def handle_save_machine(ws, cmd: dict):
@@ -105,7 +107,7 @@ async def handle_save_machine(ws, cmd: dict):
     payload = cmd.get("machine") if isinstance(cmd.get("machine"), dict) else {}
     try:
         # A kind may check its connection with one round trip before it is saved.
-        machine = await asyncio.to_thread(_save, payload)
+        machine = await asyncio.to_thread(_save_machine, payload)
     except MachineError as exc:
         await _reply(ws, "machine_result", {"ok": False, "error": str(exc), "id": payload.get("id")}, cmd)
         return
@@ -166,7 +168,7 @@ def _connect(link: str, name: str):
                   "device_id": paired["device_id"]}
     if paired["routes"]:
         connection["routes"] = paired["routes"]
-    return machines.save_machine({"name": name, "openprogram": connection})
+    return machines.save_machine({"name": name, "connection": connection})
 
 
 async def handle_connect_openprogram(ws, cmd: dict):

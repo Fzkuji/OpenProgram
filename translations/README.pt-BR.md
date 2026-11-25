@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://fuzzykuji.github.io/openprogram-site/">Site</a> · <a href="#install">Instalação</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">Documentação</a>
+  <a href="https://fzkuji.github.io/OpenProgram/">Site</a> · <a href="#install">Instalação</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">Documentação</a>
 </p>
 
 <p align="center">
@@ -51,10 +51,10 @@
 ## Instalação
 
 ```bash
-curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-No Windows (a partir da v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. O App de desktop para macOS é um DMG na [página de versões](https://github.com/Fzkuji/OpenProgram/releases); o App para Linux está lá como deb e AppImage, e o App para Windows chega com a v1.1.1. Se o site não responder: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Mais opções no [guia de instalação](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (em inglês).
+No Windows (a partir da v1.2.0): `irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`. O App de desktop para macOS é um DMG na [página de versões](https://github.com/Fzkuji/OpenProgram/releases); o App para Linux está lá como deb e AppImage, e o App para Windows chega com a v1.1.1. Se o site não responder: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Mais opções no [guia de instalação](https://fzkuji.github.io/OpenProgram/docs/install/install.html) (em inglês).
 
 ## Início rápido
 
@@ -90,48 +90,48 @@ Cada item leva ao seu documento de design (em inglês).
 
 | | |
 |---|---|
-| **[Classes de agentes](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | Um agente é uma classe Python; ramificações, novas tentativas e verificações são código, `self(...)` é uma chamada ao modelo. |
-| **[DAG de execução](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | Cada turno do usuário, chamada ao modelo e chamada de função é um nó que você pode inspecionar, ramificar e reproduzir. |
-| **[Contexto](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | Cada chamada lê uma seleção de nós em vez de um histórico que só cresce, com compactação automática. |
-| **[Autoprogramação](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | Os agentes escrevem novos métodos na própria classe; eles viram ferramentas no turno seguinte. |
-| **[Decisões verificadas](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.html)** | O modelo escolhe em um menu fixo e o código valida a escolha antes de qualquer execução. |
-| **[Subagentes](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Subagentes rodam no próprio ramo, opcionalmente em um worktree do Git, e devolvem só o resultado. |
-| **[Eventos](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | Um barramento de eventos tipado; plugins observam eventos ou bloqueiam chamadas de ferramentas. |
-| **[Agentes sempre ativos](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | Agentes que continuam rodando em segundo plano e reagem a eventos. |
-| **[Objetivos e recuperação](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Objetivos de longa duração sobrevivem a reinícios e continuam de onde pararam. |
-| **[Tolerância a falhas](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Novas tentativas, tempos limite e classificação de erros em toda chamada ao modelo. |
+| **[Classes de agentes](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | Um agente é uma classe Python; ramificações, novas tentativas e verificações são código, `self(...)` é uma chamada ao modelo. |
+| **[DAG de execução](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | Cada turno do usuário, chamada ao modelo e chamada de função é um nó que você pode inspecionar, ramificar e reproduzir. |
+| **[Contexto](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | Cada chamada lê uma seleção de nós em vez de um histórico que só cresce, com compactação automática. |
+| **[Autoprogramação](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | Os agentes escrevem novos métodos na própria classe; eles viram ferramentas no turno seguinte. |
+| **[Decisões verificadas](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | O modelo escolhe em um menu fixo e o código valida a escolha antes de qualquer execução. |
+| **[Subagentes](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Subagentes rodam no próprio ramo, opcionalmente em um worktree do Git, e devolvem só o resultado. |
+| **[Eventos](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | Um barramento de eventos tipado; plugins observam eventos ou bloqueiam chamadas de ferramentas. |
+| **[Agentes sempre ativos](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | Agentes que continuam rodando em segundo plano e reagem a eventos. |
+| **[Objetivos e recuperação](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Objetivos de longa duração sobrevivem a reinícios e continuam de onde pararam. |
+| **[Tolerância a falhas](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Novas tentativas, tempos limite e classificação de erros em toda chamada ao modelo. |
 
 ### Espaço de trabalho
 
 | | |
 |---|---|
-| **[Desktop e interface web](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | O App no macOS e no Linux e, a partir da v1.2.0, também no Windows; a interface web em qualquer um deles ou em um servidor. |
-| **[Painéis divididos](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Chats, arquivos, terminais e páginas web lado a lado. |
-| **[Navegador embutido](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | Um navegador que o agente lê e controla enquanto você acompanha. |
-| **[Terminal integrado](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | Terminais no espaço de trabalho, compartilhados com o agente. |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Controle apps de desktop, páginas do navegador ou uma VM remota. |
-| **[CLI e TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | O mesmo agente pelo terminal. |
-| **[Acesso remoto](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | Acesse sua própria instância de outro dispositivo, só você. |
+| **[Desktop e interface web](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | O App no macOS e no Linux e, a partir da v1.2.0, também no Windows; a interface web em qualquer um deles ou em um servidor. |
+| **[Painéis divididos](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Chats, arquivos, terminais e páginas web lado a lado. |
+| **[Navegador embutido](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | Um navegador que o agente lê e controla enquanto você acompanha. |
+| **[Terminal integrado](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | Terminais no espaço de trabalho, compartilhados com o agente. |
+| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Controle apps de desktop, páginas do navegador ou uma VM remota. |
+| **[CLI e TUI](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | O mesmo agente pelo terminal. |
+| **[Acesso remoto](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | Acesse sua própria instância de outro dispositivo, só você. |
 
 ### Agentes e segurança
 
 | | |
 |---|---|
-| **[Agentes configuráveis](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Salve modelo, instruções, ferramentas e acesso à memória como um Agente reutilizável. |
-| **[Memória](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | Memória com fontes, busca e escrita em segundo plano. |
-| **[Permissões e sandbox](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | Aprove ou negue chamadas de ferramentas com uma nota; os comandos rodam em um sandbox. |
-| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | Ferramentas e aplicativos como Programs instaláveis. |
+| **[Agentes configuráveis](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Salve modelo, instruções, ferramentas e acesso à memória como um Agente reutilizável. |
+| **[Memória](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | Memória com fontes, busca e escrita em segundo plano. |
+| **[Permissões e sandbox](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | Aprove ou negue chamadas de ferramentas com uma nota; os comandos rodam em um sandbox. |
+| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | Ferramentas e aplicativos como Programs instaláveis. |
 
 ### Modelos e integrações
 
 | | |
 |---|---|
-| **[Provedores](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini e outros, com várias contas por provedor. |
-| **[Modelos locais](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.html)** | Servidores de inferência locais, com autenticação opcional. |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.html)** | Use servidores MCP ou exponha o OpenProgram como um. |
-| **[Skills e plugins](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Amplie o que o agente sabe e o que ele pode chamar. |
-| **[Canais](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Converse com seus agentes pelo Telegram, Discord, Slack e WeChat. |
-| **[Atualizações automáticas](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | Versões assinadas que se atualizam no lugar. |
+| **[Provedores](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini e outros, com várias contas por provedor. |
+| **[Modelos locais](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | Servidores de inferência locais, com autenticação opcional. |
+| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | Use servidores MCP ou exponha o OpenProgram como um. |
+| **[Skills e plugins](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Amplie o que o agente sabe e o que ele pode chamar. |
+| **[Canais](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | Converse com seus agentes pelo Telegram, Discord, Slack e WeChat. |
+| **[Atualizações automáticas](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | Versões assinadas que se atualizam no lugar. |
 
 ## Citação
 

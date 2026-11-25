@@ -9,7 +9,7 @@ import pytest
 from openprogram.programs.tools.computer_use.computer_use.desktop import embedding
 from openprogram.programs.tools.computer_use.computer_use.desktop.embedding import keycodes, linux, windows
 from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.macos import candidate_rows
-from openprogram.programs.tools.computer_use.computer_use.desktop.keys import COMMAND, OPTION, SHIFT
+from openprogram.programs.tools.computer_use.computer_use.desktop.common.keys import COMMAND, OPTION, SHIFT
 
 
 def test_host_is_validated():
@@ -229,24 +229,24 @@ def test_embedded_children_are_other_processes_in_app_windows():
 
 
 def test_windows_backend_lists_embedded_windows(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import windows as backend
+    from openprogram.programs.tools.computer_use.computer_use.desktop.windows import computer as backend, win32
     pids = {1: 100, 2: 200, 11: 300, 12: 100}
-    monkeypatch.setattr(backend, "_pid", pids.get)
-    monkeypatch.setattr(backend, "_exe", lambda pid: {100: r"C:\Apps\OpenProgram.exe"}.get(pid, r"C:\Windows\notepad.exe"))
-    monkeypatch.setattr(backend, "_children", lambda hwnd: {1: [11, 12]}.get(hwnd, []))
-    monkeypatch.setattr(backend, "_top_windows", lambda: [1, 2])
-    monkeypatch.setattr(backend, "_window_pid", pids.get)
-    assert backend._embedded_windows([1, 2]) == [11]
+    monkeypatch.setattr(win32, "_pid", pids.get)
+    monkeypatch.setattr(win32, "_exe", lambda pid: {100: r"C:\Apps\OpenProgram.exe"}.get(pid, r"C:\Windows\notepad.exe"))
+    monkeypatch.setattr(win32, "_children", lambda hwnd: {1: [11, 12]}.get(hwnd, []))
+    monkeypatch.setattr(win32, "_top_windows", lambda: [1, 2])
+    monkeypatch.setattr(win32, "_window_pid", pids.get)
+    assert win32._embedded_windows([1, 2]) == [11]
     assert backend.WindowsComputer()._apps_by_pid() == {100: [1], 200: [2], 300: [11]}
 
 
 def test_linux_backend_lists_embedded_windows(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import linux as backend
+    from openprogram.programs.tools.computer_use.computer_use.desktop.linux import computer as backend, x11
     pids = {"1": "100", "2": "200", "11": "300", "12": "100"}
-    monkeypatch.setattr(backend, "_clients", lambda: [1, 2])
-    monkeypatch.setattr(backend, "_x", lambda command, xid, check=True: pids.get(str(xid), ""))
-    monkeypatch.setattr(backend, "_window_classes", lambda xid: ["openprogram", "OpenProgram"] if xid == "1" else ["gedit"])
-    monkeypatch.setattr(backend, "_x_children", lambda xid: {1: [11, 12]}.get(xid, []))
+    monkeypatch.setattr(x11, "_clients", lambda: [1, 2])
+    monkeypatch.setattr(x11, "_x", lambda command, xid, check=True: pids.get(str(xid), ""))
+    monkeypatch.setattr(x11, "_window_classes", lambda xid: ["openprogram", "OpenProgram"] if xid == "1" else ["gedit"])
+    monkeypatch.setattr(x11, "_x_children", lambda xid: {1: [11, 12]}.get(xid, []))
     assert backend.LinuxComputer()._x_pids() == {100: [1], 200: [2], 300: [11]}
 
 

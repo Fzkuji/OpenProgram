@@ -43,10 +43,15 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Separator } from "@/components/ui/separator";
 import { HoverTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { isPhoneViewport, PHONE_QUERY, usePhoneViewport } from "@/lib/layout/phone";
+import { ChevronLeft } from "lucide-react";
 
 import styles from "./secondary-rail.module.css";
 
-const NARROW = "(max-width: 760px)";
+// The phone layout's breakpoint. There the split is one column: an open rail
+// is the page's section list, a collapsed one shows the content, and the
+// header toggle goes back to the list (secondary-rail.module.css).
+const NARROW = PHONE_QUERY;
 /** Indent per tree level, on top of the row's own 8px padding. */
 const DEPTH_INDENT = 16;
 
@@ -61,6 +66,8 @@ function storageKey(railKey: string) {
 
 function readOpen(railKey: string): boolean {
   if (typeof window === "undefined") return true;
+  // A phone opens the page on its section list.
+  if (isPhoneViewport()) return true;
   try {
     const stored = localStorage.getItem(storageKey(railKey));
     if (stored === null) return !window.matchMedia?.(NARROW).matches;
@@ -99,7 +106,8 @@ export function useRailOpen(railKey: string | undefined): [boolean, () => void] 
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
   }, [railKey]);
-  const toggle = () => { if (railKey) publish(railKey, !(openByKey.get(railKey) ?? true), true); };
+  // A phone's list page and content page are not a choice to keep.
+  const toggle = () => { if (railKey) publish(railKey, !(openByKey.get(railKey) ?? true), !isPhoneViewport()); };
   return [railKey ? open : true, toggle];
 }
 
@@ -115,18 +123,25 @@ export function RailToggle({
   controls?: string;
 }) {
   const [open, toggle] = useRailOpen(railKey);
+  const phone = usePhoneViewport();
   const name = open ? label.collapse : label.expand;
+  // A phone's list page has nothing to collapse: the header keeps only the
+  // sidebar drawer's button. Its content page has only this back arrow.
+  if (phone && open) return null;
   return (
     <HoverTip label={name} side="bottom">
       <button
         type="button"
         className={sidebarToggleClass}
+        data-phone-back={phone ? "" : undefined}
         onClick={toggle}
         aria-expanded={open}
         aria-controls={controls}
         aria-label={name}
       >
-        {open ? <PanelLeftCloseIcon size={20} /> : <PanelLeftOpenIcon size={20} />}
+        {/* On a phone the collapsed rail is the content page, and this goes
+            back to the section list. */}
+        {phone ? <ChevronLeft size={20} /> : open ? <PanelLeftCloseIcon size={20} /> : <PanelLeftOpenIcon size={20} />}
       </button>
     </HoverTip>
   );
@@ -146,13 +161,20 @@ export function RailSplit({
 }) {
   const [open] = useRailOpen(railKey);
   return (
-    <div className={cn(styles.split, className)} data-rail={open ? "open" : "collapsed"}>
+    <div
+      className={cn(styles.split, className)}
+      data-rail={open ? "open" : "collapsed"}
+      data-collapsible={railKey ? "" : undefined}
+    >
       {children}
     </div>
   );
 }
 
 const CollapsedContext = createContext(false);
+/** The rail a row belongs to, so a row chosen on a phone's list page can
+ *  show its content page. */
+const RailKeyContext = createContext<string | undefined>(undefined);
 
 export const SecondaryRail = forwardRef<HTMLElement, {
   railKey?: string;
@@ -169,6 +191,7 @@ export const SecondaryRail = forwardRef<HTMLElement, {
   const Tag = as;
   return (
     <CollapsedContext.Provider value={!open}>
+      <RailKeyContext.Provider value={railKey}>
       <Tag
         ref={ref}
         id={id}
@@ -180,6 +203,7 @@ export const SecondaryRail = forwardRef<HTMLElement, {
       >
         {children}
       </Tag>
+      </RailKeyContext.Provider>
     </CollapsedContext.Provider>
   );
 });
@@ -276,6 +300,11 @@ export function RailItem({
   ...rest
 }: RailItemProps) {
   const collapsed = useContext(CollapsedContext);
+  const railKey = useContext(RailKeyContext);
+  // On a phone's list page, choosing a row turns to its content page.
+  const choose = () => {
+    if (railKey && isPhoneViewport()) publish(railKey, false, false);
+  };
   const classes = cn(
     styles.item,
     active && styles.active,
@@ -305,6 +334,7 @@ export function RailItem({
       className={classes}
       style={style}
       aria-current={active ? "page" : undefined}
+      onClick={choose}
       {...rest}
       aria-label={collapsed ? accessibleName : rest["aria-label"]}
     >
@@ -315,7 +345,7 @@ export function RailItem({
       type="button"
       className={classes}
       style={style}
-      onClick={onClick}
+      onClick={() => { onClick?.(); choose(); }}
       aria-current={active ? "true" : undefined}
       {...rest}
       aria-label={collapsed ? accessibleName : rest["aria-label"]}
@@ -323,5 +353,7 @@ export function RailItem({
       {body}
     </button>
   );
-  return collapsed && accessibleName ? <HoverTip label={accessibleName} side="right">{row}</HoverTip> : row;
+  // The same wrapper open or collapsed: swapping it would remount the row,
+  // which flashes while the rail narrows. Only a collapsed row shows the tip.
+  return accessibleName ? <HoverTip label={accessibleName} side="right" disabled={!collapsed}>{row}</HoverTip> : row;
 }

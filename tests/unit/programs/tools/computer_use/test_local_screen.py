@@ -7,20 +7,26 @@ be shown to have sent nothing.
 from __future__ import annotations
 
 from pathlib import Path
+import platform
 import re
+import time
 
 import pytest
 
 from openprogram.host.machines import Machine
-from openprogram.programs.tools.computer_use.computer_use import errors, locks, vocabulary
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
+from openprogram.programs.tools.computer_use.computer_use.actions import vocabulary
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.desktop import base
-from openprogram.programs.tools.computer_use.computer_use.desktop.screen_macos import (
-    Display, Owner, hit_row, scroll_ticks)
-from openprogram.programs.tools.computer_use.computer_use.dispatch import run_steps
-from openprogram.programs.tools.computer_use.computer_use.providers import local_screen
-from openprogram.programs.tools.computer_use.computer_use.providers.local_screen import LocalScreen, Policy
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import base
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos.screen import (Display, Owner, hit_row,
+    scroll_ticks)
+from openprogram.programs.tools.computer_use.computer_use.routing.dispatch import run_steps
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import local as local_screen
+from openprogram.programs.tools.computer_use.computer_use.providers.screen.local import LocalScreen
+from openprogram.programs.tools.computer_use.computer_use.providers.screen.step_args import Policy
 from openprogram.runtime.permissions.refusal import Refused
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import (local as screen_local, shots as screen_shots)
 
 MAIN = Display(1, (0.0, 0.0), (1512.0, 982.0), backing=2.0, main=True)
 SIDE = Display(7, (1512.0, -200.0), (2560.0, 1440.0), backing=1.0, main=False)
@@ -105,11 +111,11 @@ class FakeDriver:
 
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch):
-    monkeypatch.setattr(local_screen, "SETTLE_SECONDS", 0)
-    monkeypatch.setattr(local_screen.time, "sleep", lambda seconds: None)
-    local_screen._shots.clear()
+    monkeypatch.setattr(screen_local, "SETTLE_SECONDS", 0)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    screen_shots._shots.clear()
     yield
-    local_screen._shots.clear()
+    screen_shots._shots.clear()
 
 
 @pytest.fixture
@@ -145,9 +151,9 @@ def _look(screen, display=None):
 
 def test_off_until_the_owner_turns_it_on(monkeypatch):
     from openprogram.host import machines
-    from openprogram.programs.tools.computer_use.computer_use import registry
-    monkeypatch.setattr(local_screen, "_driver_for", lambda system: FakeDriver)
-    monkeypatch.setattr("openprogram.programs.tools.computer_use.computer_use.providers.desktop.supported",
+    from openprogram.programs.tools.computer_use.computer_use.routing import registry
+    monkeypatch.setattr(screen_shots, "_driver_for", lambda system: FakeDriver)
+    monkeypatch.setattr("openprogram.programs.tools.computer_use.computer_use.providers.window.platforms.supported",
                         lambda: False)
     config: dict = {}
     monkeypatch.setattr(machines.user_config, "read_config_value", lambda key: config.get(key))
@@ -161,11 +167,11 @@ def test_off_until_the_owner_turns_it_on(monkeypatch):
 
 def test_providers_only_where_a_driver_exists(monkeypatch):
     machine = Machine("local", "This computer")
-    monkeypatch.setattr(local_screen.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     assert local_screen.providers(machine, "conv") == []
-    monkeypatch.setattr(local_screen.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
     assert local_screen.providers(machine, "conv") == []
-    monkeypatch.setattr(local_screen, "_driver_for", lambda system: FakeDriver)
+    monkeypatch.setattr(screen_shots, "_driver_for", lambda system: FakeDriver)
     found = local_screen.providers(machine, "conv")
     assert [provider.target for provider in found] == ["screen"]
 
@@ -315,7 +321,7 @@ def test_carried_over_names_reach_the_driver(screen, driver):
 
 def test_a_point_on_openprogram_is_refused_outside_bypass(screen, driver, policy):
     _look(screen)
-    shot = local_screen._shots[("agent-1", 1)]
+    shot = screen_shots._shots[("agent-1", 1)]
     for app in (APP, DEV_APP):
         driver.under[tuple(round(v, 3) for v in shot.point(100, 100))] = app
         with pytest.raises(Refused) as refused:
@@ -340,7 +346,7 @@ def test_a_point_on_a_refused_application_is_refused(screen, driver, policy):
 
 def test_a_drag_onto_openprogram_is_refused(screen, driver):
     _look(screen)
-    shot = local_screen._shots[("agent-1", 1)]
+    shot = screen_shots._shots[("agent-1", 1)]
     driver.under[tuple(round(v, 3) for v in shot.point(500, 500))] = APP
     with pytest.raises(Refused):
         _run(screen, [("drag", {"x": 10, "y": 10, "to_x": 500, "to_y": 500})])
@@ -455,7 +461,7 @@ def test_a_get_state_among_the_steps_counts_as_a_step(screen, driver):
 
 
 def test_an_unknown_key_name_is_a_bad_argument(screen, driver, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import screen_macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import screen as screen_macos
     monkeypatch.setattr(screen_macos, "_frameworks", lambda: (None, None, None, None))
     with pytest.raises(base.BadArgument, match="Hyper_L"):
         object.__new__(screen_macos.MacScreen).press("Hyper_L")
@@ -524,7 +530,7 @@ def test_scroll_ticks_reveal_content_in_the_direction_asked():
 # -- the guide --------------------------------------------------------------------
 
 def test_the_guide_has_one_line_per_action_in_the_spec_names():
-    guide = (Path(base.__file__).parent.parent / "guides" / "screen.md").read_text(encoding="utf-8")
+    guide = (Path(base.__file__).parents[2] / "guides" / "screen.md").read_text(encoding="utf-8")
     lines = re.findall(r"^- (\w+)(?:\(|:)", guide, flags=re.MULTILINE)
     family = vocabulary.FAMILIES["screen"]
     wanted = [name for name in vocabulary.CORE if name not in ("find", "set_value")] + list(family.extras)

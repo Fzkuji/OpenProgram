@@ -61,9 +61,33 @@ if test "$dry_run" -eq 0; then
   "$repo_root/scripts/git-hooks/install.sh"
 fi
 
-publish_name="FzKuji"
-publish_email="fzkuji@gmail.com"
+publish_name="FuzzyKuji"
+publish_email="9404270+FuzzyKuji@users.noreply.github.com"
+# GitHub is reached as this account only, the collaborator that publishes,
+# whichever gh account is active, so the owner's own token never uploads.
+publish_account="FuzzyKuji"
 zero=0000000000000000000000000000000000000000
+
+# Every git and gh call to GitHub below uses publish_account's token: gh reads
+# GH_TOKEN, and git asks gh for credentials instead of the keychain.
+use_publish_account() {
+  case "$(git remote get-url origin 2>/dev/null)" in
+    https://github.com/*) ;;
+    *) return 0 ;;
+  esac
+  local token
+  if ! token="$(gh auth token --hostname github.com --user "$publish_account" 2>/dev/null)" || test -z "$token"; then
+    printf 'refusing to publish: gh has no token for %s; run gh auth login and sign in as %s\n' "$publish_account" "$publish_account" >&2
+    exit 1
+  fi
+  export GH_TOKEN="$token"
+  export GIT_CONFIG_COUNT=2
+  export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=""
+  export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="!gh auth git-credential"
+}
+if test "$dry_run" -eq 0; then
+  use_publish_account
+fi
 empty_tree="$(git hash-object -t tree /dev/null)"
 source_commit="$(git rev-parse "$source_ref^{commit}")"
 main_head="$(git rev-parse --verify --quiet 'refs/heads/main^{commit}' || true)"

@@ -33,16 +33,17 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram machines add devbox --name "Dev box" --shell ssh target=me@devbox workdir=~/work</code></th><td><code translate="no">target</code> 是 <code translate="no">user@host</code> 或 <code translate="no">~/.ssh/config</code> 里的主机名。<code translate="no">workdir</code> 是绝对路径或 <code translate="no">~</code> 路径；留空为远程 home。22 端口上的这台电脑会被拒绝；换成别的端口，如 <code translate="no">ssh://me@127.0.0.1:2222</code>，连到的是端口转发过来的虚拟机或容器。</td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines add sandbox --shell docker image=python:3.12</code></th><td>默认镜像 <code translate="no">ubuntu:24.04</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines list --kinds</code></th><td>列出全部机器（含已关闭的）；<code translate="no">--kinds</code> 另列出每种连接类型及其设置</td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines test devbox</code></th><td>检查每个连接能否响应</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add devbox --name "Dev box" ssh target=me@devbox workdir=~/work</code></th><td><code translate="no">target</code> 是 <code translate="no">user@host</code> 或 <code translate="no">~/.ssh/config</code> 里的主机名。<code translate="no">workdir</code> 是绝对路径或 <code translate="no">~</code> 路径；留空为远程 home。22 端口上的这台电脑会被拒绝；换成别的端口，如 <code translate="no">ssh://me@127.0.0.1:2222</code>，连到的是端口转发过来的虚拟机或容器。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add sandbox docker image=python:3.12</code></th><td>默认镜像 <code translate="no">ubuntu:24.04</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines list --kinds</code></th><td>列出全部机器（含已关闭的）；<code translate="no">--kinds</code> 另列出每种连接方式及其设置</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines test devbox</code></th><td>检查机器能否响应</td></tr>
 <tr><th scope="row"><code translate="no">openprogram machines disable devbox</code></th><td>关闭它：它上面的项目变灰、不能开新会话，这些会话下一条命令和文件调用报错停止，命令返回之前它的容器连同其中的文件被删除。在设置里关闭时，先让已经在运行的命令结束（最多 5 分钟），其间重新打开则保留它的容器。<code translate="no">enable</code> 重新打开。</td></tr>
 <tr><th scope="row"><code translate="no">openprogram machines remove devbox</code></th><td>删除，过程相同</td></tr>
 </tbody>
 </table>
 <p class="note">ID 由小写字母、数字、<code translate="no">-</code> 或 <code translate="no">_</code> 组成，不会改变；只能改名称。旧配置里的 <code translate="no" data-claim="example">environments</code> 部分不再读取：请把那些地方重新添加为机器。</p>
-<p>机器还可以有窗口、整屏和浏览器连接，每种给<a href="computer-use.zh.html">操控电脑</a>一种类型的目标，调用写成 <code translate="no">device="devbox", type="window"</code>、<code translate="no">device="lab", type="screen"</code> 或 <code translate="no">type="browser"</code>。这台电脑自己的这些连接是内置的；OSWorld 服务只给出整屏，总是作为单独的机器添加。</p>
+<p>每台机器只有一种连接方式，它决定这台机器用来做什么。SSH 主机和 Docker 容器跑命令。OSWorld 虚拟机（<code translate="no">openprogram machines add lab osworld url=http://192.168.64.2:5000</code>）给<a href="computer-use.zh.html">操控电脑</a>提供它的屏幕。</p>
+<p>另一台电脑的 OpenProgram 通过配对添加，它的对话显示在这里、在那边运行。那边打开<strong>允许已配对设备操作这台电脑</strong>后，操控电脑还能操作它的窗口、整屏和浏览器。</p>
 <h2 id="ssh-requirements">要求</h2>
 <span id="docker-requirements"></span>
 <table class="stack fixed">
@@ -60,5 +61,5 @@
 <li>SSH 主机上的项目没有 git 标签、工作树、自动提交和<strong>在文件管理器中显示</strong>；文件面板和 <code translate="no">@</code> 文件搜索读的是主机上的文件夹。</li>
 <li>在 SSH 主机上文件必须先读取再编辑；读取后主机上有变化时，编辑被拒绝。</li>
 <li>本地沙箱只作用于这台电脑。SSH 和 Docker 的权限是远程账号或容器的权限。</li>
-<li>机器被删除、关闭或失去 Shell 后，即使在回合中途，会话的下一条命令或文件调用也会报错停止，绝不回退到这台电脑。用相同 ID 加回来、重新打开，或在另一台机器上打开项目的文件夹。</li>
+<li>机器被删除或关闭后，即使在回合中途，会话的下一条命令或文件调用也会报错停止，绝不回退到这台电脑。用相同 ID 加回来、重新打开，或在另一台机器上打开项目的文件夹。</li>
 </ul>

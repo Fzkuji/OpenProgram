@@ -100,7 +100,7 @@ export function ApplicationsPage() {
       toolbar={<>
         {loaded && rows.length > 0 && <ManageSummary>{text(`${enabledCount} of ${rows.length} enabled`, `${enabledCount}/${rows.length} 个已启用`)}</ManageSummary>}
         <ToggleGroup
-          type="single" variant="elevated" spacing={1}
+          type="single" variant="segmented"
           value={filter}
           onValueChange={value => { if (value) setFilter(value as ApplicationFilter); }}
           aria-label={text("Show applications", "显示的应用")}

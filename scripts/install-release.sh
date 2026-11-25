@@ -36,7 +36,7 @@ fi
 
 if [ -z "$OPENPROGRAM_VERSION" ]; then
   printf 'No OpenProgram version was given. Set OPENPROGRAM_VERSION to a release number such as 1.2.3 and run this again,\n' >&2
-  printf 'or use the short install command, which finds the latest release: curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh\n' >&2
+  printf 'or use the short install command, which finds the latest release: curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh\n' >&2
   exit 1
 fi
 command -v curl >/dev/null 2>&1 || {

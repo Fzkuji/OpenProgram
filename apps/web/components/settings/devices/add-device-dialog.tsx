@@ -238,7 +238,7 @@ function SshServer({ onDone }: { onDone: () => void }) {
     if (!value) return;
     setState({ busy: true, error: "" });
     const res = await machineRequest(
-      "save_machine", { machine: { name: value, shell: { kind: "ssh", target: value } } }, text, SAVE_WAIT_MS,
+      "save_machine", { machine: { name: value, connection: { kind: "ssh", target: value } } }, text, SAVE_WAIT_MS,
     );
     if (!res.ok || !res.id) {
       setState({ busy: false, error: res.error || "" });

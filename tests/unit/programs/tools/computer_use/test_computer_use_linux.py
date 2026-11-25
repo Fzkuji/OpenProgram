@@ -3,15 +3,20 @@ paths themselves run against real apps in an X11 container (see the design recor
 from __future__ import annotations
 
 import os
+import platform
 from types import SimpleNamespace
 
 import pytest
 
 from openprogram.host import machines
 
-from openprogram.programs.tools.computer_use.computer_use.desktop import backends, linux, ocr
-from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop as provider
+from openprogram.programs.tools.computer_use.computer_use.desktop import backends
+from openprogram.programs.tools.computer_use.computer_use.desktop.linux import computer as linux
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import ocr
+from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import ComputerUseError
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider
+from openprogram.programs.tools.computer_use.computer_use.desktop.linux import x11 as lin_x11
+from openprogram.programs.tools.computer_use.computer_use.desktop.linux import recording as lin_recording
 
 
 def test_tesseract_words_are_joined_into_lines_in_reading_order():
@@ -60,13 +65,13 @@ def test_gtk4_class_names_are_not_labels():
 
 
 def test_support_needs_linux_with_x11(monkeypatch):
-    monkeypatch.setattr(linux.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     monkeypatch.delenv("DISPLAY", raising=False)
-    assert "X11" in linux.support()["reason"]
+    assert "X11" in lin_x11.support()["reason"]
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     monkeypatch.delenv("OPENPROGRAM_ALLOW_XWAYLAND", raising=False)
-    state = linux.support()
+    state = lin_x11.support()
     assert not state["available"] and "Wayland" in state["reason"]
 
 
@@ -94,7 +99,7 @@ Sink Input #13
 \tProperties:
 \t\tapplication.process.id = "999"
 """
-    monkeypatch.setattr(linux.subprocess, "run",
+    monkeypatch.setattr(lin_recording.subprocess, "run",
                         lambda *a, **k: SimpleNamespace(returncode=0, stdout=listed, stderr=""))
     assert linux.LinuxComputer._streams({300, 301}) == [12]
     assert linux.LinuxComputer._streams({5}) == []
@@ -113,11 +118,11 @@ def test_refused_apps_are_the_owners_list_and_openprogram(monkeypatch):
 
 def test_windows_that_stood_over_the_operated_one_are_raised_again_lowest_first(monkeypatch):
     ran: list[tuple] = []
-    monkeypatch.setattr(linux, "_x", lambda *args, **kwargs: ran.append(args) or "")
-    linux._put_under(30, ["10", "30", "40", "50"])
+    monkeypatch.setattr(lin_x11, "_x", lambda *args, **kwargs: ran.append(args) or "")
+    lin_x11._put_under(30, ["10", "30", "40", "50"])
     assert ran == [("windowraise", "40"), ("windowraise", "50")]
     ran.clear()
-    linux._put_under(99, ["10", "30"])
+    lin_x11._put_under(99, ["10", "30"])
     assert not ran
 
 
@@ -140,8 +145,8 @@ def _linux_apps(monkeypatch, running):
 
 
 def test_a_running_app_without_a_desktop_entry_is_named_for_itself_not_for_a_match_in_part(monkeypatch):
-    computer = _linux_apps(monkeypatch, [linux.App(pid=300, name="xterm")])
-    monkeypatch.setattr(linux, "_proc_name", lambda pid: "xterm")
+    computer = _linux_apps(monkeypatch, [lin_x11.App(pid=300, name="xterm")])
+    monkeypatch.setattr(lin_x11, "_proc_name", lambda pid: "xterm")
     info = computer.app_info("term")
     assert info["running"] and info["name"] == "xterm" and not info["installed"]
     assert computer.app_info("calc")["name"] == "Calculator"  # not running: the row a launch would start
@@ -150,8 +155,8 @@ def test_a_running_app_without_a_desktop_entry_is_named_for_itself_not_for_a_mat
 def test_the_rule_name_matches_desktop_entries_exactly_and_reads_no_bus(monkeypatch):
     computer = _linux_apps(monkeypatch, [])
     monkeypatch.setattr(computer, "_running", lambda: pytest.fail("the accessibility bus is slow"), raising=False)
-    monkeypatch.setattr(linux, "_proc_name", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
-    monkeypatch.setattr(linux, "_proc_exe", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
+    monkeypatch.setattr(lin_x11, "_proc_name", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
+    monkeypatch.setattr(lin_x11, "_proc_exe", lambda pid: {300: "xterm", 301: "gnome-calculator"}.get(pid, ""))
     assert computer.app_name("org.gnome.Calculator") == "Calculator"
     assert computer.app_name("gnome-calculator") == "Calculator"
     assert computer.app_name("301") == "Calculator" and computer.app_name("300") == "xterm"

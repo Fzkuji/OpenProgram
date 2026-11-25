@@ -750,8 +750,8 @@ def test_main_whose_history_names_a_retired_account_is_not_pushed(publishing) ->
     repository, origin = publishing
     identity = {
         **os.environ,
-        "GIT_AUTHOR_NAME": "FzKuji", "GIT_AUTHOR_EMAIL": "fzkuji@gmail.com",
-        "GIT_COMMITTER_NAME": "FzKuji", "GIT_COMMITTER_EMAIL": "fzkuji@gmail.com",
+        "GIT_AUTHOR_NAME": "FuzzyKuji", "GIT_AUTHOR_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
+        "GIT_COMMITTER_NAME": "FuzzyKuji", "GIT_COMMITTER_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
     }
     old = _git(
         repository, "commit-tree", "dev^{tree}", "-m", f"Earlier version by {RETIRED_STAND_IN}",
@@ -789,4 +789,4 @@ def test_history_github_already_has_is_not_checked_again(publishing) -> None:
     result = _publish(repository, "-m", "Version")
     assert result.returncode == 0, result.stderr
     pushed = _git(origin, "log", "--format=%ae", "refs/heads/main", check=True).stdout.split()
-    assert pushed == ["fzkuji@gmail.com", "else@example.com"]
+    assert pushed == ["9404270+FuzzyKuji@users.noreply.github.com", "else@example.com"]

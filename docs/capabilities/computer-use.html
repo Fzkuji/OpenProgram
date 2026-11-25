@@ -10,7 +10,8 @@
 <tr><th scope="row"><code translate="no">type="screen"</code></th><td>A whole display of this computer, by pixels: the desktop, the menu bar, system dialogs, drags across windows. It moves your pointer.</td><td>macOS, after you turn on <code translate="no">computer_use.whole_screen</code>; off by default</td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td>This conversation's pages in the App's built-in browser; with the App closed, a background browser without the App's sign-ins</td><td>The browser application is enabled</td></tr>
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code>, …</th><td>Your own browser, with your tabs and sign-ins</td><td>The browser is installed; Chromium browsers also need the <a href="#your-own-browser">extension</a></td></tr>
-<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>The screen of a device you set up, here one named <code translate="no">lab</code></td><td>The device has a screen connection and is switched on. See <a href="#another-machine">Another device</a>.</td></tr>
+<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>The screen of a device you set up, here one named <code translate="no">lab</code></td><td>The device is an OSWorld virtual machine or a paired computer, and is switched on. See <a href="#another-machine">Another device</a>.</td></tr>
+<tr><th scope="row"><code translate="no">device="studio", type="window"</code>, <code translate="no">"screen"</code>, <code translate="no">"browser"</code></th><td>Windows, screen and browsers of another computer running OpenProgram, here one named <code translate="no">studio</code>; the call runs there</td><td>The computer is paired and switched on. See <a href="#another-computer">Another computer</a>.</td></tr>
 </tbody>
 </table>
 <p class="note">A call without <code translate="no">device</code> is always this computer, also in a conversation whose commands run on an SSH host or in Docker. A window, browser or application you name without a device is on this computer.</p>
@@ -19,7 +20,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">What can be operated</th><td>A <code translate="no">&lt;devices&gt;</code> note beside your message lists it by device, this computer first: the whole list at the start and after compaction, then only what was added, changed or removed. The tool's own description never changes, so connecting a device keeps the prompt cache. A target missing a system permission stays listed with what to grant. With no target the tool is not offered.</td></tr>
+<tr><th scope="row">What can be operated</th><td>A <code translate="no">&lt;devices&gt;</code> note beside your message lists it by device, this computer first: the whole list at the start and after compaction, then only the changes. Connecting a device leaves the tool's description, and so the prompt cache, unchanged. A target lacking a permission is listed with what to grant. A computer that has not answered for about a minute says so, and later says when it is back. With no target the tool is not offered.</td></tr>
 <tr><th scope="row">First call to a target</th><td>Returns the guide of its type (<code translate="no">window</code>, <code translate="no">screen</code> or <code translate="no">browser</code>), a short note on that target (its system, what it lacks, its keys) and its current state. Where code can run, the code guide comes too.</td></tr>
 <tr><th scope="row">Guide delivery</th><td>No call is turned back for a guide. A guide counts as read while it is in the model's context; after compaction the next call delivers it again. <code translate="no">action="guide"</code> or <code translate="no">help("computer_use.window")</code> shows one.</td></tr>
 <tr><th scope="row">One spelling</th><td>An action has one name and one set of arguments on every target. Names from other tools are rewritten, not refused: <code translate="no">left_click</code> to <code translate="no">click</code>, <code translate="no">double_click</code> to <code translate="no">click</code> with <code translate="no">click_count=2</code>, <code translate="no">element_index</code> and <code translate="no">ref</code> to <code translate="no">element</code>, <code translate="no">tabs</code> to <code translate="no">list_tabs</code>.</td></tr>
@@ -215,8 +216,8 @@ computer_use(type="browser", app="safari", title="tq7mb", action="click", args={
 </tbody>
 </table>
 <h2 id="another-machine">Another device</h2>
-<p>A virtual machine running an <a href="https://os-world.github.io/">OSWorld</a>-compatible server is set up as a device with a screen connection, in <strong>Settings → Devices</strong> or from the terminal:</p>
-<pre translate="no" tabindex="0"><code>openprogram machines add lab --name "Lab VM" --screen osworld url=http://192.168.64.2:5000
+<p>A virtual machine running an <a href="https://os-world.github.io/">OSWorld</a>-compatible server is set up as a device reached by OSWorld, in <strong>Settings → Devices</strong> or from the terminal:</p>
+<pre translate="no" tabindex="0"><code>openprogram machines add lab --name "Lab VM" osworld url=http://192.168.64.2:5000
 openprogram machines test lab
 
 computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 412})</code></pre>
@@ -231,6 +232,17 @@ computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 4
 <tr><th scope="row">Approval</th><td>None: setting the device up is the consent. A rule can still deny it.</td></tr>
 </tbody>
 </table>
+<h3 id="another-computer">Another computer</h3>
+<p>A computer paired with this one (<a href="environments.html">Run conversations on another machine</a>) can be operated too: <code translate="no">computer_use(device="studio", type="window", app="Safari", …)</code>. The call is sent there and runs on that computer.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">On the other computer</th><td>Turn on <strong>Settings → Devices → This computer → Let paired devices operate this computer</strong>. It is off by default; until then each call fails and says where to turn it on.</td></tr>
+<tr><th scope="row">Its rules apply</th><td>Its whole screen stays off unless turned on there, its system permissions apply, and its own computer use rules apply: a rule that denies or asks refuses the call, since nobody there is asked.</td></tr>
+<tr><th scope="row">Here</th><td>You are asked once per application, screen or browser, with a key that names the computer: <code translate="no">studio window safari</code>, <code translate="no">studio screen</code>, <code translate="no">studio browser chrome</code>.</td></tr>
+<tr><th scope="row">When it fails</th><td>Offline: answered at once, nothing sent. Revoked there: pair again. An older OpenProgram there: update it.</td></tr>
+</tbody>
+</table>
 <h2 id="approval">Approval</h2>
 <p>The first touch of an application shows a card with its icon, name and bundle id and what this step does ("Click element #7"), noting it runs in the background. Raw arguments are under "Execution details".</p>
 <table class="stack fixed">
@@ -241,6 +253,7 @@ computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 4
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code></th><td>Per browser: <code translate="no">browser chrome</code>, <code translate="no">browser safari</code>, <code translate="no">browser firefox</code>, …</td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td>Nothing, except <code translate="no">upload_file</code>, which asks each time, or in Auto is reviewed each time</td></tr>
 <tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>Nothing. Its key, <code translate="no">lab screen</code>, lets your own rules deny it.</td></tr>
+<tr><th scope="row"><code translate="no">device="studio"</code>, a paired computer</th><td>As on this computer, with the device in the key: <code translate="no">studio window safari</code>, <code translate="no">studio screen</code>, <code translate="no">studio browser chrome</code>. Listing never asks.</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

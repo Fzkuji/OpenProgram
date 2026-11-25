@@ -48,7 +48,6 @@ export function ProjectGroupHeader({
 }) {
   const remote = !!machineId && machineId !== LOCAL_ID;
   const machines = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const machine = remote ? findMachine(machines, machineId) : null;
   useEffect(() => {
     if (remote) void ensureMachines();
@@ -84,7 +83,7 @@ export function ProjectGroupHeader({
       <span className={sidebarNavLabelClass}>{name}</span>
       {remote ? (
         <span className="flex min-w-0 max-w-[45%] shrink items-center gap-[4px] text-fs-xs text-text-muted" data-project-machine={machineId}>
-          <MachineIcon machine={machine} kinds={kinds} size={20} />
+          <MachineIcon machine={machine} size={20} />
           <span className="truncate">{machine?.name ?? machineId}</span>
         </span>
       ) : null}

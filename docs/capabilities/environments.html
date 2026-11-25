@@ -33,16 +33,17 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram machines add devbox --name "Dev box" --shell ssh target=me@devbox workdir=~/work</code></th><td><code translate="no">target</code> is <code translate="no">user@host</code> or a host from <code translate="no">~/.ssh/config</code>. <code translate="no">workdir</code> is an absolute or <code translate="no">~</code> path; blank is the remote home. This computer on port 22 is refused; on another port, as in <code translate="no">ssh://me@127.0.0.1:2222</code>, it reaches a virtual machine or container whose port is forwarded.</td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines add sandbox --shell docker image=python:3.12</code></th><td>Default image <code translate="no">ubuntu:24.04</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines list --kinds</code></th><td>All machines, on or off; <code translate="no">--kinds</code> adds each connection kind and its settings</td></tr>
-<tr><th scope="row"><code translate="no">openprogram machines test devbox</code></th><td>Checks that each connection answers</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add devbox --name "Dev box" ssh target=me@devbox workdir=~/work</code></th><td><code translate="no">target</code> is <code translate="no">user@host</code> or a host from <code translate="no">~/.ssh/config</code>. <code translate="no">workdir</code> is an absolute or <code translate="no">~</code> path; blank is the remote home. This computer on port 22 is refused; on another port, as in <code translate="no">ssh://me@127.0.0.1:2222</code>, it reaches a virtual machine or container whose port is forwarded.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines add sandbox docker image=python:3.12</code></th><td>Default image <code translate="no">ubuntu:24.04</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines list --kinds</code></th><td>All machines, on or off; <code translate="no">--kinds</code> adds each connection method and its settings</td></tr>
+<tr><th scope="row"><code translate="no">openprogram machines test devbox</code></th><td>Checks that the machine answers</td></tr>
 <tr><th scope="row"><code translate="no">openprogram machines disable devbox</code></th><td>Switches it off: its projects are greyed and take no new conversation, their conversations' next commands and file calls stop with an error, and its containers are removed with the files in them before the command returns. Switched off in Settings, the machine first lets the commands already running there finish (up to 5 minutes), and switching it back on meanwhile keeps its containers. <code translate="no">enable</code> switches it back on.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram machines remove devbox</code></th><td>Removes it, in the same way</td></tr>
 </tbody>
 </table>
 <p class="note">IDs are lowercase letters, digits, <code translate="no">-</code> or <code translate="no">_</code>, and never change; only the name is edited. The <code translate="no" data-claim="example">environments</code> section of an older configuration is not read: add those places again as machines.</p>
-<p>A machine can also have window, screen and browser connections, each giving <a href="computer-use.html">computer use</a> one type of target, called as <code translate="no">device="devbox", type="window"</code>, <code translate="no">device="lab", type="screen"</code> or <code translate="no">type="browser"</code>. This computer's own are built in; an OSWorld server, which gives a screen only, is always added as a machine of its own.</p>
+<p>Each machine is reached one way, and that decides what it is for. SSH hosts and Docker containers run commands. An OSWorld virtual machine (<code translate="no">openprogram machines add lab osworld url=http://192.168.64.2:5000</code>) gives <a href="computer-use.html">computer use</a> its screen.</p>
+<p>Another computer's OpenProgram, added by pairing, shows its conversations here and runs them there. When <strong>Let paired devices operate this computer</strong> is on over there, computer use can also operate its windows, screen and browsers.</p>
 <h2 id="ssh-requirements">Requirements</h2>
 <span id="docker-requirements"></span>
 <table class="stack fixed">
@@ -60,5 +61,5 @@
 <li>A project on an SSH host has no git pill, worktrees, automatic commits or <strong>Reveal in file manager</strong>; the Files panel and <code translate="no">@</code> file search read the folder on the host.</li>
 <li>On an SSH host a file must be read before it is edited, and an edit is refused if it changed since that read.</li>
 <li>The local sandbox applies only to this computer. SSH and Docker have the permissions of the remote account or container.</li>
-<li>If the machine is removed, switched off or loses its shell, even during a turn, the conversation's next command or file call stops with an error, never falling back to this computer. Add it back with the same ID, switch it on, or open the project's folder on another machine.</li>
+<li>If the machine is removed or switched off, even during a turn, the conversation's next command or file call stops with an error, never falling back to this computer. Add it back with the same ID, switch it on, or open the project's folder on another machine.</li>
 </ul>

@@ -1,19 +1,24 @@
 """computer_use under several agents and long pages: lookups, reach, and what an error leaves behind."""
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from openprogram.host import machines
 from openprogram.programs._authoring import guides
-from openprogram.programs.tools.computer_use.computer_use import code as code_mode
-from openprogram.programs.tools.computer_use.computer_use import locks
+from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code_mode
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
 from openprogram.programs.tools.computer_use.computer_use import tool as entry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.desktop import macos
-from openprogram.programs.tools.computer_use.computer_use.desktop.base import NotAnswering, NotDispatched
-from openprogram.programs.tools.computer_use.computer_use.dispatch import run_steps
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
+from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import NotAnswering, NotDispatched
+from openprogram.programs.tools.computer_use.computer_use.routing.dispatch import run_steps
+from openprogram.programs.tools.computer_use.computer_use.providers.window import agents as window_agents
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider as desktop
 from tests.support import screen_targets
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import (accessibility as mac_accessibility, frameworks as mac_frameworks)
+from openprogram.programs.tools.computer_use.computer_use import context as cu_context, type_guides as cu_type_guides
 
 
 def _app() -> desktop.AppProvider:
@@ -30,7 +35,7 @@ def test_a_running_app_missed_by_one_scan_is_still_found(monkeypatch):
     computer = macos.MacComputer()
     answers = iter([None, "chrome"])
     monkeypatch.setattr(computer, "_running_match_once", lambda query: next(answers))
-    monkeypatch.setattr(macos.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     assert computer._running_match("Google Chrome") == "chrome"
 
 
@@ -38,15 +43,15 @@ def test_an_app_missed_by_every_scan_is_not_running(monkeypatch):
     computer = macos.MacComputer()
     scans = []
     monkeypatch.setattr(computer, "_running_match_once", lambda query: scans.append(query))
-    monkeypatch.setattr(macos.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     assert computer._running_match("Ghost") is None
-    assert len(scans) == macos._MATCH_ATTEMPTS
+    assert len(scans) == mac_frameworks._MATCH_ATTEMPTS
 
 
 def _page(monkeypatch, frames, actions=("AXScrollToVisible",)):
     """A web page 800x600 at the origin; the element's frame is read from ``frames`` in turn."""
     computer = macos.MacComputer()
-    state = macos.WindowState(pid=1, window_title="Form", origin=(0.0, 0.0), size=(800.0, 600.0))
+    state = mac_frameworks.WindowState(pid=1, window_title="Form", origin=(0.0, 0.0), size=(800.0, 600.0))
     performed = []
     reads = iter(frames)
     last = [None]
@@ -64,7 +69,7 @@ def _page(monkeypatch, frames, actions=("AXScrollToVisible",)):
     monkeypatch.setattr(computer, "_actions", lambda element: list(actions))
     monkeypatch.setattr(computer, "_perform", lambda element, action: performed.append(action) or 0)
     monkeypatch.setattr(computer, "_follow_window", lambda state: None)
-    monkeypatch.setattr(macos.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     return computer, state, performed
 
 
@@ -85,7 +90,7 @@ def test_an_element_scrolled_under_the_toolbar_is_scrolled_into_view_first(monke
 def test_a_row_of_a_native_list_is_scrolled_by_its_scroll_bar(monkeypatch):
     # A list 300 pt tall over 2000 pt of rows, without AXScrollToVisible: row 35 sits at 1760-1790.
     computer = macos.MacComputer()
-    state = macos.WindowState(pid=1, window_title="Form", origin=(0.0, 0.0), size=(360.0, 300.0))
+    state = mac_frameworks.WindowState(pid=1, window_title="Form", origin=(0.0, 0.0), size=(360.0, 300.0))
     rows = {"row": (10.0, 1760.0, 300.0, 30.0), "area": (0.0, 0.0, 360.0, 300.0), "contents": (0.0, 0.0, 340.0, 2000.0)}
     attrs = {("row", "AXParent"): "contents", ("contents", "AXParent"): "area", ("area", "AXRole"): "AXScrollArea",
              ("area", "AXContents"): ["contents"], ("area", "AXVerticalScrollBar"): "bar"}
@@ -103,7 +108,7 @@ def test_a_row_of_a_native_list_is_scrolled_by_its_scroll_bar(monkeypatch):
     monkeypatch.setattr(computer, "_settable", lambda element, name: element == "bar")
     monkeypatch.setattr(computer, "_set", set_value)
     monkeypatch.setattr(computer, "_follow_window", lambda state: None)
-    monkeypatch.setattr(macos.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     x, y = computer._reachable_center(state, "row")
     assert moved == [("bar", round((1775.0 - 150.0) / 1700.0, 3))]
     assert 0 <= y <= 300 and x == 160.0
@@ -137,14 +142,14 @@ def test_each_agent_of_a_conversation_reads_the_screen_under_its_own_key():
     for turn in ("exec_first", "exec_second"):
         token = run_control.set_current_execution_id(turn)
         try:
-            keys.append(entry.operator("chat"))
+            keys.append(cu_context.operator("chat"))
         finally:
             run_control.reset_current_execution_id(token)
     assert keys == ["chat", "chat"]
     # An agent started in the conversation runs as a job beside them.
     token = _current_job_id.set("j_child")
     try:
-        child = entry.operator("chat")
+        child = cu_context.operator("chat")
     finally:
         _current_job_id.reset(token)
     assert child != "chat" and child.startswith("chat")
@@ -172,8 +177,8 @@ def test_one_agents_code_keeps_its_interpreter_when_another_agent_runs_code(monk
         def bind_invocation(self, invocation):
             pass
 
-    import openprogram.programs.tools.computer_use.computer_use.sandbox.broker as broker_module
-    import openprogram.programs.tools.computer_use.computer_use.sandbox.runner as runner_module
+    import openprogram.programs.tools.computer_use.computer_use.code_mode.sandbox.broker as broker_module
+    import openprogram.programs.tools.computer_use.computer_use.code_mode.sandbox.runner as runner_module
     import openprogram.runtime.execution.control.shared as shared
     monkeypatch.setattr(broker_module, "GuiBroker", Broker)
     monkeypatch.setattr(runner_module, "GuiPythonRunner", lambda broker: Runner(broker.execution))
@@ -192,7 +197,7 @@ def test_a_guide_in_a_prompt_from_another_agent_counts_as_read(monkeypatch):
 
     screen_targets.install(monkeypatch, _app())
 
-    prompt = "Fill the form.\n\n" + entry.guide({"type": "window"})
+    prompt = "Fill the form.\n\n" + cu_type_guides.guide({"type": "window"})
     wrapped = render_model_input(prompt, speaker_kind="runtime", speaker_id="runtime/agent%2Fmain",
                                  speaker_display="agent/main")
     token = guides.begin_loop()
@@ -223,7 +228,7 @@ class _Desk:
         self.log.append((session, "settle", None))
 
     def get_state(self, session, app, **kwargs):
-        from openprogram.programs.tools.computer_use.computer_use.desktop.base import Observation
+        from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import Observation
         self.log.append((session, "state", None))
         return Observation(text="tree", image=None, app=app)
 
@@ -234,7 +239,7 @@ def desk(monkeypatch, tmp_path):
     monkeypatch.setattr("openprogram.programs.tools.computer_use.computer_use.desktop.backends.backend",
                         lambda: computer)
     for name in ("_acted", "_seen"):
-        monkeypatch.setattr(desktop, name, {})
+        monkeypatch.setattr(window_agents, name, {})
     monkeypatch.setattr(locks, "_root", lambda: tmp_path / "locks")
     return computer
 
@@ -316,16 +321,16 @@ def test_listing_applications_waits_for_no_one(desk, monkeypatch):
 # --- an element the app replaced since it was read
 
 def _nodes(*rows):
-    from openprogram.programs.tools.computer_use.computer_use.desktop.tree import Node
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common.tree import Node
     return [Node(role=role, depth=depth, label=label, value=value) for depth, role, label, value in rows]
 
 
 def _read(rows, handles):
     """A window state as get_state leaves it: numbered, with the app's element handles."""
-    from openprogram.programs.tools.computer_use.computer_use.desktop import tree
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import tree
     nodes = _nodes(*rows)
     fresh = tree.number(nodes, None)
-    return macos.WindowState(pid=1, window_title="Form", window_id=7,
+    return mac_frameworks.WindowState(pid=1, window_title="Form", window_id=7,
                              elements={node.index: handle for node, handle in zip(nodes, handles)},
                              nodes=nodes, by_index={node.index: node for node in nodes},
                              snapshot=tree.snapshot(nodes, fresh))
@@ -336,7 +341,7 @@ _FORM = [(0, "AXWindow", "Form", ""), (1, "AXTextField", "Name", ""), (1, "AXTex
 
 
 def test_a_replaced_element_is_found_again_under_its_index():
-    from openprogram.programs.tools.computer_use.computer_use.desktop import tree
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import tree
     state = _read(_FORM, ["w", "name", "school", "save"])
     seen = state.snapshot
     # The page drew itself again: a new line above, a value typed by another agent, new handles throughout.
@@ -350,7 +355,7 @@ def test_a_replaced_element_is_found_again_under_its_index():
 
 
 def test_an_index_whose_line_now_reads_something_else_is_not_taken():
-    from openprogram.programs.tools.computer_use.computer_use.desktop import tree
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import tree
     state = _read(_FORM, ["w", "name", "school", "save"])
     before = dict(state.elements)
     again = _nodes((0, "AXWindow", "Form", ""), (1, "AXTextField", "Name", ""), (1, "AXTextField", "Company", ""),
@@ -362,7 +367,7 @@ def test_an_index_whose_line_now_reads_something_else_is_not_taken():
 
 
 def test_an_unnamed_control_that_changed_is_left_to_a_fresh_read():
-    from openprogram.programs.tools.computer_use.computer_use.desktop import tree
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import tree
     rows = [(0, "AXWindow", "Form", ""), (1, "AXTextField", "", "a"), (1, "AXTextField", "", "b")]
     state = _read(rows, ["w", "first", "second"])
     # Read again exactly as it was, the field is the same one.
@@ -379,7 +384,7 @@ class _Ax:
         self.dead = set(dead)
 
     def AXUIElementCopyAttributeValue(self, element, name, _):
-        return (macos._INVALID_ELEMENT, None) if element in self.dead else (0, "AXButton")
+        return (mac_frameworks._INVALID_ELEMENT, None) if element in self.dead else (0, "AXButton")
 
     def AXUIElementCreateApplication(self, pid):
         return "root"
@@ -390,7 +395,7 @@ class _Ax:
 
 def _mac(monkeypatch, dead, rows, handles, windows=("window",)):
     computer = macos.MacComputer()
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, _Ax(dead), None, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, _Ax(dead), None, None))
     monkeypatch.setattr(computer, "_windows", lambda root: list(windows))
     monkeypatch.setattr(computer, "_ax_window_id", lambda window: 7)
     reads = []
@@ -457,7 +462,7 @@ class _BusyAx:
         if self.busy > wait:
             self.clock.now += wait
             self.busy -= wait
-            return macos._NOT_ANSWERED
+            return mac_frameworks._NOT_ANSWERED
         self.clock.now += self.busy
         self.busy = 0.0
         return 0
@@ -475,10 +480,10 @@ class _BusyAx:
 def _busy(monkeypatch, busy=0.0, refuses=None):
     clock = _Clock()
     ax = _BusyAx(clock, busy, refuses)
-    monkeypatch.setattr(macos, "_frameworks_cached", lambda: (None, ax, None, None))
-    monkeypatch.setattr(macos.time, "monotonic", clock.monotonic)
-    monkeypatch.setattr(macos.time, "sleep", clock.sleep)
-    monkeypatch.setattr(macos, "_check_cancelled", lambda: None)
+    monkeypatch.setattr(mac_frameworks, "_frameworks_cached", lambda: (None, ax, None, None))
+    monkeypatch.setattr(time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(time, "sleep", clock.sleep)
+    monkeypatch.setattr(mac_accessibility, "_check_cancelled", lambda: None)
     return macos.MacComputer(), ax, clock
 
 
@@ -494,12 +499,12 @@ def test_a_press_the_app_is_still_carrying_out_counts_as_taken(monkeypatch):
     # A button that saves for 4 s: macOS gives up waiting for the answer, the app got the press once.
     computer, ax, _ = _busy(monkeypatch, busy=4.0)
     assert computer._perform("save", "AXPress") == 0
-    assert ax.timeouts["save"] == macos.ACTION_TIMEOUT and ax.requests == [("save", "AXPress")]
+    assert ax.timeouts["save"] == mac_frameworks.ACTION_TIMEOUT and ax.requests == [("save", "AXPress")]
     # A value the app is slow to take is the same.
     computer, ax, _ = _busy(monkeypatch, busy=4.0)
     assert computer._set("field", "AXValue", "Ada") == 0
     # The same code at once is a request that could not be made, and other codes are refusals.
-    for code in (macos._NOT_ANSWERED, -25205):
+    for code in (mac_frameworks._NOT_ANSWERED, -25205):
         computer, _, _ = _busy(monkeypatch, refuses=code)
         assert computer._perform("save", "AXPress") == code
         assert computer._set("field", "AXValue", "Ada") == code
@@ -507,7 +512,7 @@ def test_a_press_the_app_is_still_carrying_out_counts_as_taken(monkeypatch):
 
 def test_a_slow_button_is_pressed_once_and_never_clicked_as_well(monkeypatch):
     computer, ax, _ = _busy(monkeypatch, busy=2.0)
-    state = macos.WindowState(pid=7, window_title="Form", origin=(0.0, 0.0), size=(800.0, 600.0))
+    state = mac_frameworks.WindowState(pid=7, window_title="Form", origin=(0.0, 0.0), size=(800.0, 600.0))
     monkeypatch.setattr(computer, "_element", lambda state, index: "save")
     monkeypatch.setattr(computer, "_node_at", lambda state, index: type("Node", (), {
         "role": "AXButton", "body": lambda self: 'button "Save"'})())
@@ -546,7 +551,7 @@ def _message_cell(monkeypatch, computer, *, press, selected_after_press=False):
 
 def test_a_message_in_a_list_is_selected_through_its_row_and_never_with_the_mouse(monkeypatch):
     """A mouse-down lets the app bring its window over the user's; selecting the row does not."""
-    state = macos.WindowState(pid=7, window_title="Inbox", origin=(0.0, 0.0), size=(800.0, 600.0))
+    state = mac_frameworks.WindowState(pid=7, window_title="Inbox", origin=(0.0, 0.0), size=(800.0, 600.0))
     # The press is refused and changes nothing: the row is selected instead.
     computer = macos.MacComputer.__new__(macos.MacComputer)
     calls = _message_cell(monkeypatch, computer, press=-25205)
@@ -561,11 +566,11 @@ def test_a_message_in_a_list_is_selected_through_its_row_and_never_with_the_mous
 
 def test_only_a_request_left_unanswered_means_the_app_is_busy(monkeypatch):
     computer, ax, _ = _busy(monkeypatch, busy=3.0)
-    assert computer._answers(7) is False and ax.timeouts["app 7"] == macos.ANSWER_TIMEOUT
+    assert computer._answers(7) is False and ax.timeouts["app 7"] == mac_frameworks.ANSWER_TIMEOUT
     computer, _, _ = _busy(monkeypatch)
     assert computer._answers(7) is True
     # A process that cannot be asked (no Accessibility in it, access not granted) is not a busy one.
-    for code in (macos._NOT_ANSWERED, -25211):
+    for code in (mac_frameworks._NOT_ANSWERED, -25211):
         computer, _, _ = _busy(monkeypatch, refuses=code)
         assert computer._answers(7) is True
 
@@ -573,17 +578,17 @@ def test_only_a_request_left_unanswered_means_the_app_is_busy(monkeypatch):
 def test_a_busy_app_is_waited_for_and_one_that_stays_silent_is_reported(monkeypatch):
     computer, _, clock = _busy(monkeypatch, busy=3.2)
     computer._await_answer(_App())
-    assert 3.2 <= clock.now - 100.0 < 3.2 + macos.ANSWER_TIMEOUT
+    assert 3.2 <= clock.now - 100.0 < 3.2 + mac_frameworks.ANSWER_TIMEOUT
     computer, _, clock = _busy(monkeypatch, busy=600.0)
     with pytest.raises(NotAnswering, match=r"Notes has not answered for 10 s.*Nothing was sent") as failure:
         computer._await_answer(_App())
     assert isinstance(failure.value, NotDispatched)
-    assert macos.UNANSWERED_MAX <= clock.now - 100.0 < macos.UNANSWERED_MAX + macos.ANSWER_TIMEOUT
+    assert mac_frameworks.UNANSWERED_MAX <= clock.now - 100.0 < mac_frameworks.UNANSWERED_MAX + mac_frameworks.ANSWER_TIMEOUT
 
 
 def test_reads_and_steps_wait_for_the_app_before_asking_it_anything(monkeypatch):
     computer, _, clock = _busy(monkeypatch, busy=600.0)
-    monkeypatch.setattr(macos, "_frameworks", lambda: macos._frameworks_cached())
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: mac_frameworks._frameworks_cached())
     monkeypatch.setattr(computer, "resolve_app", lambda query, launch=True: _App())
     monkeypatch.setattr(computer, "_windows", lambda root: pytest.fail("a busy app's windows read as closed"))
     monkeypatch.setattr(computer, "_do_click", lambda *args: pytest.fail("a step sent now runs whenever it comes back"))
@@ -591,7 +596,7 @@ def test_reads_and_steps_wait_for_the_app_before_asking_it_anything(monkeypatch)
     with pytest.raises(NotDispatched, match="Call get_state"):
         computer.act("s", "click", {"app": "Notes", "element": 1})
     assert clock.now == 100.0
-    computer._states[("s", 7)] = macos.WindowState(pid=7, window_title="Form")
+    computer._states[("s", 7)] = mac_frameworks.WindowState(pid=7, window_title="Form")
     for call in (lambda: computer.get_state("s", "Notes"),
                  lambda: computer.list_windows("Notes"),
                  lambda: computer.act("s", "click", {"app": "Notes", "element": 1}),
@@ -652,7 +657,7 @@ def test_a_step_that_was_sent_stays_done_when_its_result_cannot_be_read(desk, mo
 
 @pytest.mark.parametrize("prior", [False, True])
 def test_stale_control_returns_fresh_state_without_replaying_steps(prior, desk, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop.base import StaleElement, Observation
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import StaleElement, Observation
     calls = []
     def act(session, action, args):
         calls.append(action)

@@ -2,7 +2,7 @@
 <meta name="description" content="每次站点发布成功后如何把全部 sitemap URL 通知搜索引擎。">
 <h1>IndexNow 部署发现</h1>
 
-<p>每次成功发布到站点仓库后，<code translate="no">scripts/docs_site/indexnow.py</code> 把全部规范 sitemap URL 提交到 <code translate="no">https://api.indexnow.org/indexnow</code>。</p>
+<p>每次 GitHub Pages 部署成功后，<code translate="no">scripts/docs_site/indexnow.py</code> 把全部规范 sitemap URL 提交到 <code translate="no">https://api.indexnow.org/indexnow</code>。</p>
 
 <figure>
 <ol class="flow">
@@ -19,7 +19,7 @@
 <tr><th scope="row">请求</th><td>主机、公钥、公钥位置、URL 列表</td></tr>
 <tr><th scope="row">所有权</th><td>公开密钥文件 <code translate="no">7c5062acbc32b8a88d2e6b627d65cbfa.txt</code>；无需仓库密钥</td></tr>
 <tr><th scope="row">失败</th><td><code translate="no">continue-on-error</code>：绝不阻塞或回滚发布</td></tr>
-<tr><th scope="row">顺序</th><td>等待站点仓库的发布动作，不等下游 Pages 部署，因此通知可能早于 Pages 处理完成</td></tr>
+<tr><th scope="row">顺序</th><td>在 Pages 部署步骤确认站点上线之后运行</td></tr>
 <tr><th scope="row">依赖</th><td>只用 Python 3.12 标准库</td></tr>
 <tr><th scope="row">Sitemap、robots、Google 验证</th><td>不变</td></tr>
 </tbody>

@@ -1,0 +1,122 @@
+/* The annotation tools: a floating bar by a screenshot's selection, or one
+   row along the top of the composer's image annotator. Surfaces are the
+   App's popover; controls are its ghost icon buttons. */
+
+.surface,
+.inline {
+  --selected-fill: color-mix(in oklab, var(--foreground) 14%, transparent);
+}
+
+.surface {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--popover-shadow), 0 0 0 1px var(--popover-ring);
+  border-radius: var(--radius-lg);
+}
+
+.floating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.styleBar {
+  padding: 6px 8px;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+  flex: none;
+}
+
+.style {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.colors,
+.widths {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-bright) 22%, transparent);
+  cursor: pointer;
+}
+
+.swatch[aria-checked="true"] {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.width {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.width:hover {
+  background: var(--muted);
+}
+
+.width[aria-checked="true"] {
+  background: var(--selected-fill);
+}
+
+.width i {
+  display: block;
+  width: 14px;
+  border-radius: 9px;
+  background: currentColor;
+}
+
+.button svg {
+  fill: currentColor;
+}
+
+/* The chosen tool and width: one fill, plain enough to read on the
+   light and the dark popover alike. */
+.active,
+.active:hover {
+  background: var(--selected-fill);
+  color: var(--foreground);
+}

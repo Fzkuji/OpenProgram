@@ -27,6 +27,8 @@ import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
 import { dragCoordinator } from "@/lib/tabs/transfer/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { MainMenu } from "./main-menu";
+import { PhoneDrawerButton } from "../../layout/phone-drawer-button";
+import { PhonePanelButton } from "../../layout/phone-shell";
 import { dismissOverview, useCanvasOverview } from "@/lib/tabs/canvas/canvas-overview";
 import { SplitViewPicker } from "../canvas/split-view-picker";
 import { useTranslation } from "@/lib/i18n";
@@ -322,6 +324,8 @@ export const CenterTabStrip = memo(function CenterTabStrip() {
         unfreezeTimerRef.current = null;
       }}
     >
+      {/* Phone only: the sidebar drawer's button (layout/phone-shell.tsx). */}
+      <PhoneDrawerButton />
       <PageNavigation />
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
@@ -406,6 +410,8 @@ export const CenterTabStrip = memo(function CenterTabStrip() {
          end of the strip; the ＋ above is therefore free to sit
          naturally after the last tab. */}
       <MainMenu />
+      {/* Phone only: opens the right panel as a full-screen sheet. */}
+      <PhonePanelButton />
       {tabMenu ? (
         <TabContextMenu
           tabMenu={tabMenu}

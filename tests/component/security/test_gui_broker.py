@@ -5,8 +5,9 @@ import time
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use.sandbox.broker import GuiBroker
-from openprogram.programs.tools.computer_use.computer_use.sandbox.runner import GuiPythonRunner, GuiRunnerError
+from openprogram.programs.tools.computer_use.computer_use.code_mode.sandbox.broker import GuiBroker
+from openprogram.programs.tools.computer_use.computer_use.code_mode.sandbox.runner import (GuiPythonRunner,
+    GuiRunnerError)
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.recovery.effects import EffectStatus, EffectStore
 from openprogram.runtime.execution.model import CapabilitySet

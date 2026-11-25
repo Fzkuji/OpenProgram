@@ -27,7 +27,7 @@ def test_this_computer_gets_no_machine_line(monkeypatch, tmp_path):
 
 
 def test_a_remote_shell_with_remote_files(monkeypatch, tmp_path):
-    devbox = Machine("devbox", "Dev box", shell=Connection("ssh", {"target": "me@devbox"}))
+    devbox = Machine("devbox", "Dev box", Connection("ssh", {"target": "me@devbox"}))
     block = _block(monkeypatch, tmp_path, devbox)
     assert ("Environment: machine devbox (Dev box; SSH host me@devbox). This conversation's shell and file "
             "tools act on that machine, and paths are its paths.") in block
@@ -37,7 +37,7 @@ def test_a_remote_shell_with_remote_files(monkeypatch, tmp_path):
 
 
 def test_a_shell_that_mounts_the_working_directories(monkeypatch, tmp_path):
-    box = Machine("builder", "Builder", shell=Connection("docker", {"image": "me/desktop:24.04"}))
+    box = Machine("builder", "Builder", Connection("docker", {"image": "me/desktop:24.04"}))
     block = _block(monkeypatch, tmp_path, box)
     assert ("Environment: machine builder (Builder; Docker container me/desktop:24.04). This "
             "conversation's shell commands run there; its working directories are mounted there at the same "
@@ -46,7 +46,7 @@ def test_a_shell_that_mounts_the_working_directories(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("tool", ["computer_use", types.SimpleNamespace(name="computer_use")])
 def test_with_computer_use_a_call_without_device_is_this_computer(monkeypatch, tmp_path, tool):
-    devbox = Machine("devbox", "Dev box", shell=Connection("ssh", {"target": "me@devbox"}))
+    devbox = Machine("devbox", "Dev box", Connection("ssh", {"target": "me@devbox"}))
     block = _block(monkeypatch, tmp_path, devbox, tools=[tool])
     # Named outright: "it" would read as devbox, the nearest noun.
     assert ("The chat itself and OpenProgram run on this computer, not on devbox; computer_use calls "

@@ -1,6 +1,6 @@
 <title>Linux and Windows backends</title>
 <meta name="description" content="What the Linux and Windows computer-use backends call, and how cua-driver relates to them.">
-<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/linux.py openprogram/programs/tools/computer_use/computer_use/desktop/windows.py">
+<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/linux/ openprogram/programs/tools/computer_use/computer_use/desktop/windows/">
 <h1>Linux and Windows backends</h1>
 
 
@@ -30,7 +30,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">Target note</th><td>The <code translate="no">app</code> target's note on Linux (<code translate="no">_NOTES</code> in <code translate="no">providers/desktop.py</code>) arrives with the first call to it: which steps bring the window forward, plain-text <code translate="no">paste</code>, clipboard-free <code translate="no">copy</code>, no <code translate="no">open_file</code> (a call to it answers <code translate="no">NOT_SUPPORTED:</code> naming File &gt; Open or ctrl+o), applications without accessibility.</td></tr>
+<tr><th scope="row">Target note</th><td>The <code translate="no">app</code> target's note on Linux (<code translate="no">_NOTES</code> in <code translate="no">providers/window/platforms.py</code>) arrives with the first call to it: which steps bring the window forward, plain-text <code translate="no">paste</code>, clipboard-free <code translate="no">copy</code>, no <code translate="no">open_file</code> (a call to it answers <code translate="no">NOT_SUPPORTED:</code> naming File &gt; Open or ctrl+o), applications without accessibility.</td></tr>
 <tr><th scope="row">Apps reply</th><td>The <code translate="no">computer_use_apps</code> WebSocket reply carries the worker's <code translate="no">platform</code>, and on Linux the approval card states for coordinate input, drags, hovers and keys other than Return (<code translate="no">needsForeground</code>) that the window comes forward for that step.</td></tr>
 </tbody>
 </table>
@@ -73,7 +73,7 @@
 <tr><th scope="row">Above the driver</th><td>The behaviour these backends are tuned for (stable indices, replaced elements found again, a busy application, settling, the window marker, refusals) sits above the driver and would stay ours either way.</td></tr>
 </tbody>
 </table>
-<p>cua-driver joins as a connection kind of its own, <code translate="no">cua_driver</code>, behind one adapter (<a href="machines-and-targets.html">Machines and targets</a>): <code translate="no">machines.local.window</code> and <code translate="no">machines.local.screen</code> may name it in place of <code translate="no">desktop</code>, and <code translate="no">app</code> and <code translate="no">screen</code> keep their names. A local Wayland session, which the Linux backend refuses, is operated as <code translate="no">screen</code> through the desktop portal, by pixels.</p>
+<p>cua-driver joins as a provider of its own, <code translate="no">cua_driver</code>, behind one adapter (<a href="machines-and-targets.html">Machines and targets</a>): offered for <code translate="no">local</code> in place of <code translate="no">desktop</code>, and <code translate="no">app</code> and <code translate="no">screen</code> keep their names. A local Wayland session, which the Linux backend refuses, is operated as <code translate="no">screen</code> through the desktop portal, by pixels.</p>
 
 <h2 id="implementation-status">Implementation status</h2>
 

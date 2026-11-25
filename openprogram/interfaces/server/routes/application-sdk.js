@@ -56,6 +56,7 @@
     chat: Object.freeze({
       open: (key, folder = '') => call('chat.open', { key, folder }),
       note: text => call('chat.note', { text }),
+      send: text => call('chat.send', { text }),
       place: rect => call('chat.place', { rect }),
       reveal: () => call('chat.reveal'),
       close: () => call('chat.close'),

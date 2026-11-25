@@ -17,6 +17,7 @@ import {
 } from "../runtime-bridge/actions/draft-channel-choice";
 import type { SessionTransferSnapshot } from "../tabs/transfer/tab-transfer-journal";
 import { forgetTakeLatestSession } from "@/lib/chat/history/chat-scroll";
+import { isPhoneViewport } from "@/lib/layout/phone";
 import { setRunningConversations } from "@/lib/browser/control/browser-control";
 import { noteMessageArrival, rekeyMessageArrival } from "./messages/message-arrivals";
 import {
@@ -414,7 +415,8 @@ function readRightDock(): { open: boolean; view: string } {
   let open = false;
   try {
     const o = localStorage.getItem(RIGHT_LS_OPEN);
-    if (o === "1") open = true;
+    // A phone starts on the conversation, never under the full-screen sheet.
+    if (o === "1") open = !isPhoneViewport();
     else if (o === "0") open = false;
   } catch {
     /* ignore */
@@ -437,7 +439,9 @@ function readRightDock(): { open: boolean; view: string } {
 function persistRightDock(state: { open: boolean; view: string }) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(RIGHT_LS_OPEN, state.open ? "1" : "0");
+    // On a phone the panel is a full-screen sheet opened for a moment;
+    // a wider window keeps the stored choice.
+    if (!isPhoneViewport()) localStorage.setItem(RIGHT_LS_OPEN, state.open ? "1" : "0");
     if (VALID_VIEWS.has(state.view)) {
       localStorage.setItem(RIGHT_LS_VIEW, state.view);
     }

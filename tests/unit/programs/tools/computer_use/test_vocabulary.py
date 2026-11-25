@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use import errors, vocabulary
-from openprogram.programs.tools.computer_use.computer_use.vocabulary import Surface, check, check_step
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.actions import vocabulary
+from openprogram.programs.tools.computer_use.computer_use.actions.vocabulary import Surface, check, check_step
 
 TREE = frozenset({"pixels", "tree", "pointer", "hover", "keyboard"})
 PIXELS = frozenset({"pixels", "pointer", "hover", "keyboard"})
@@ -323,7 +324,7 @@ def _guide_steps(family: str):
     import re
     from pathlib import Path
 
-    path = Path(vocabulary.__file__).parent / "guides" / f"{family}.md"
+    path = Path(vocabulary.__file__).parents[1] / "guides" / f"{family}.md"
     if not path.exists():
         return
     for match in re.finditer(r"(?m)^- ([a-z_]+)\(([^)]*)\)", path.read_text(encoding="utf-8")):

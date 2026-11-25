@@ -42,11 +42,11 @@ def wire(tmp_path, monkeypatch):
     from openprogram.interfaces.server import server
     monkeypatch.setattr(server, "_broadcast", lambda text: broadcasts.append(json.loads(text)))
     kinds.register(kinds.Kind(
-        name="test_vnc", connection="screen", label="Test VNC",
+        name="test_vnc", label="Test VNC",
         settings={"type": "object", "properties": {"address": {"type": "string"},
                                                    "password": {"type": "string", "secret": True}}}))
     yield broadcasts
-    kinds._kinds.pop(("screen", "test_vnc"), None)
+    kinds._kinds.pop("test_vnc", None)
 
 
 def _call(action, **cmd):
@@ -60,41 +60,43 @@ def _echo(action):
     return {"action": action, "request_id": "r-1"}
 
 
-def test_the_snapshot_lists_machines_and_every_kind(wire):
+def test_the_snapshot_lists_machines_and_every_method(wire):
     [reply] = _call("list_machines")
     assert reply["type"] == "machines"
     data = reply["data"]
     assert "default_environment" not in data
     assert [item["id"] for item in data["items"]] == ["local"]
     assert data["items"][0]["status"] == {"state": "connected", "message": ""}
-    names = {(kind["connection"], kind["name"]) for kind in data["kinds"]}
-    assert {("shell", "ssh"), ("shell", "docker"), ("screen", "test_vnc")} <= names
+    assert {"local", "ssh", "docker", "openprogram", "test_vnc"} <= {kind["name"] for kind in data["kinds"]}
+    # What runs commands is the shell feature's to say, not the method's.
+    assert data["items"][0]["connection"]["kind"] == "local"
+    assert data["items"][0]["shell"] == {"remote_files": False, "instance_scope": "machine"}
 
 
 def test_save_replies_and_broadcasts_without_the_secret(wire):
     [reply] = _call("save_machine", machine={
-        "name": "Office PC", "screen": {"kind": "test_vnc", "address": "10.0.0.5:5900", "password": "hunter2"}})
+        "name": "Office PC", "connection": {"kind": "test_vnc", "address": "10.0.0.5:5900", "password": "hunter2"}})
     assert reply["type"] == "machine_result" and reply["data"]["ok"] is True
     assert reply["data"]["id"] == "office-pc"
-    assert reply["data"]["machine"]["screen"]["password"] == machines.SECRET_MARKER
+    assert reply["data"]["machine"]["connection"]["password"] == machines.SECRET_MARKER
     [snapshot] = wire
     assert snapshot["type"] == "machines"
     assert "hunter2" not in json.dumps(snapshot) and "hunter2" not in json.dumps(reply)
 
     # Sending the machine back as it was read keeps the secret.
     _call("save_machine", machine={**reply["data"]["machine"], "name": "Office"})
-    assert machines.secret(machines.get_machine("office-pc"), "screen", "password") == "hunter2"
+    assert machines.secret(machines.get_machine("office-pc"), "password") == "hunter2"
 
 
 def test_a_refused_save_says_why_and_broadcasts_nothing(wire):
-    [reply] = _call("save_machine", machine={"id": "x", "shell": {"kind": "telnet"}})
+    [reply] = _call("save_machine", machine={"id": "x", "connection": {"kind": "telnet"}})
     assert reply["data"] == {"ok": False, "error": reply["data"]["error"], "id": "x", **_echo("save_machine")}
-    assert "unknown shell kind" in reply["data"]["error"]
+    assert "unknown connection method" in reply["data"]["error"]
     assert wire == []
 
 
 def test_switch_off_and_delete(wire):
-    _call("save_machine", machine={"id": "box", "shell": {"kind": "docker"}})
+    _call("save_machine", machine={"id": "box", "connection": {"kind": "docker"}})
     [reply] = _call("set_machine_enabled", id="box", enabled=False)
     assert reply["data"]["ok"] and reply["data"]["machine"]["enabled"] is False
     [box] = [item for item in wire[-1]["data"]["items"] if item["id"] == "box"]
@@ -114,7 +116,7 @@ def test_test_machine_answers_with_a_message(wire):
     assert reply == {"type": "machine_test", "data": {"id": "ghost", "ok": False,
                                                       "message": "Unknown machine 'ghost'",
                                                       **_echo("test_machine")}}
-    _call("save_machine", machine={"id": "lab", "screen": {"kind": "test_vnc", "address": "a:1"}})
+    _call("save_machine", machine={"id": "lab", "connection": {"kind": "test_vnc", "address": "a:1"}})
     [reply] = _call("test_machine", id="lab")
     assert reply["data"] == {"id": "lab", "ok": True, "message": "Nothing to check", **_echo("test_machine")}
 
@@ -133,7 +135,7 @@ def test_a_machines_state_follows_what_was_seen_and_is_broadcast(wire, monkeypat
     from openprogram.host.machines import status
     checked = []
     monkeypatch.setattr(status, "_check", lambda machine: checked.append(machine.id))
-    _call("save_machine", machine={"id": "devbox", "shell": {"kind": "ssh", "target": "me@devbox"}})
+    _call("save_machine", machine={"id": "devbox", "connection": {"kind": "ssh", "target": "me@devbox"}})
     wire.clear()
     [reply] = _call("list_machines")
     [devbox] = [item for item in reply["data"]["items"] if item["id"] == "devbox"]

@@ -39,8 +39,13 @@ _QUEUE_LIMIT = 2000
 
 
 def _desktop():
-    from .. import macos
-    return macos
+    from ..macos import frameworks
+    return frameworks
+
+
+def _computer():
+    from ..macos import computer
+    return computer.backend()
 
 
 def _ax_value(kind: str, a: float, b: float):
@@ -87,7 +92,7 @@ class MacEmbedder:
     def list_windows(self, exclude_pids: set[int]) -> list[dict[str, Any]]:
         macos = _desktop()
         appkit, _, cg, _ = macos._frameworks_cached()
-        computer = macos.backend() if hasattr(macos, "backend") else None
+        computer = _computer()
         excluded = set(exclude_pids) | {os.getpid()}
         out = []
         apps: dict[int, Any] = {}
@@ -118,7 +123,7 @@ class MacEmbedder:
     def _element(self, pid: int, window_id: int):
         macos = _desktop()
         _, ax, _, _ = macos._frameworks()
-        computer = macos.backend()
+        computer = _computer()
         for window in computer._windows(ax.AXUIElementCreateApplication(pid)):
             if computer._window_id(window, pid, computer._frame(window)) == window_id:
                 return computer, window
@@ -176,7 +181,7 @@ class MacEmbedder:
         x, y, width, height = host["rect"]
         if width < 1 or height < 1:
             return
-        computer = _desktop().backend()
+        computer = _computer()
         element = record["element"]
         frame = computer._frame(element)
         target = (round(x), round(y), round(width), round(height))
@@ -192,7 +197,7 @@ class MacEmbedder:
 
     def _describe(self, window_id: int, record: dict[str, Any]) -> dict[str, Any]:
         frame = record.get("frame")
-        title = _desktop().backend()._attr(record["element"], "AXTitle")
+        title = _computer()._attr(record["element"], "AXTitle")
         return {"mode": self.mode, "id": window_id, "pid": record["pid"], "app": record.get("app", ""),
                 "title": str(title or ""), "frame": list(frame) if frame else None, "open": True,
                 "placed": not record.get("watched"), "input": True}
@@ -221,7 +226,7 @@ class MacEmbedder:
         with self._lock:
             record = self.attached.get(window_id)
             if record is not None:
-                record["frame"] = _desktop().backend()._frame(record["element"]) or record.get("frame")
+                record["frame"] = _computer()._frame(record["element"]) or record.get("frame")
                 return self._describe(window_id, record)
         return {"id": window_id, "open": True, "title": str(rows[0].get("kCGWindowName") or "")}
 
@@ -231,7 +236,7 @@ class MacEmbedder:
         if record is None or record.get("watched") or not record.get("original"):
             return
         x, y, width, height = record["original"]
-        computer = _desktop().backend()
+        computer = _computer()
         try:
             computer._set(record["element"], "AXSize", _ax_value("size", width, height))
             computer._set(record["element"], "AXPosition", _ax_value("point", x, y))
@@ -274,7 +279,7 @@ class MacEmbedder:
                 pass
 
     def _post(self, window_id: int, record: dict[str, Any], event: dict[str, Any]) -> None:
-        from ..skylight import SUBTYPE_DEFAULT, SUBTYPE_TOUCH, skylight
+        from ..macos.skylight import SUBTYPE_DEFAULT, SUBTYPE_TOUCH, skylight
         macos = _desktop()
         _, _, cg, _ = macos._frameworks_cached()
         sky = skylight()
@@ -316,7 +321,7 @@ class MacEmbedder:
             return
         if kind == "down":
             # The window may have moved on its own since the last layout.
-            record["frame"] = macos.backend()._frame(record["element"]) or record.get("frame")
+            record["frame"] = _computer()._frame(record["element"]) or record.get("frame")
             sky.focus_without_raise(pid, window_id)
             # The same pacing as the computer_use background click: the focus
             # settles first, and AppKit hit-tests against the last pointer move.

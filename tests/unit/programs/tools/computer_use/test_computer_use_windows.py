@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import ctypes
 import json
+import platform
 import struct
+import time
 import zlib
 
 import pytest
 
 from openprogram.host import machines
 
-from openprogram.programs.tools.computer_use.computer_use.desktop import backends, windows, windows_audio
-from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop as provider
+from openprogram.programs.tools.computer_use.computer_use.desktop import backends
+from openprogram.programs.tools.computer_use.computer_use.desktop.windows import (computer as windows,
+    audio as windows_audio)
+from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import ComputerUseError
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider
+from openprogram.programs.tools.computer_use.computer_use.desktop.windows import formats as win_formats
+from openprogram.programs.tools.computer_use.computer_use.desktop.windows import send_input as win_send_input
+from openprogram.programs.tools.computer_use.computer_use.desktop.windows import win32 as win_win32
 
 
 def _png_pixels(png: bytes) -> tuple[int, int, bytes]:
@@ -26,27 +33,27 @@ def _png_pixels(png: bytes) -> tuple[int, int, bytes]:
 
 def test_png_turns_gdi_bgra_rows_into_rgb():
     blue_red = bytes([255, 0, 0, 255, 0, 0, 255, 255])  # BGRA: blue, then red
-    width, height, raw = _png_pixels(windows.png_encode(2, 1, blue_red))
+    width, height, raw = _png_pixels(win_formats.png_encode(2, 1, blue_red))
     assert (width, height) == (2, 1)
     assert raw == bytes([0, 0, 0, 255, 255, 0, 0])  # filter byte, then RGB blue, RGB red
 
 
 def test_key_chords_map_to_virtual_keys():
-    assert windows.key_chord("Return") == ([], 0x0D, "")
-    assert windows.key_chord("ctrl+shift+Tab") == ([0x11, 0x10], 0x09, "")
-    assert windows.key_chord("cmd+a") == ([0x5B], ord("A"), "a")
-    assert windows.key_chord("F5") == ([], 0x74, "")
-    assert windows.key_chord("ctrl++") == ([0x11], 0, "+")
-    assert windows.key_chord("plus") == ([], 0, "+")
-    assert windows.key_chord("shift") == ([], 0x10, "")
+    assert win_formats.key_chord("Return") == ([], 0x0D, "")
+    assert win_formats.key_chord("ctrl+shift+Tab") == ([0x11, 0x10], 0x09, "")
+    assert win_formats.key_chord("cmd+a") == ([0x5B], ord("A"), "a")
+    assert win_formats.key_chord("F5") == ([], 0x74, "")
+    assert win_formats.key_chord("ctrl++") == ([0x11], 0, "+")
+    assert win_formats.key_chord("plus") == ([], 0, "+")
+    assert win_formats.key_chord("shift") == ([], 0x10, "")
     with pytest.raises(ComputerUseError):
-        windows.key_chord("hyper+x")
+        win_formats.key_chord("hyper+x")
     with pytest.raises(ComputerUseError):
-        windows.key_chord("ctrl+nosuchkey")
+        win_formats.key_chord("ctrl+nosuchkey")
 
 
 def test_html_clipboard_offsets_point_at_the_fragment():
-    payload = windows.cf_html("<b>héllo</b>")
+    payload = win_formats.cf_html("<b>héllo</b>")
     header = dict(line.split(":", 1) for line in payload.split(b"\r\n")[1:5] for line in [line.decode()])
     start, end = int(header["StartFragment"]), int(header["EndFragment"])
     assert payload[start:end].decode() == "<b>héllo</b>"
@@ -58,36 +65,36 @@ def test_start_apps_are_read_from_powershell_json():
     rows = [{"Name": "Notepad", "AppID": "{1AC14E77}\\notepad.exe"},
             {"Name": "Calculator", "AppID": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"},
             {"Name": "", "AppID": "x"}]
-    assert windows.parse_start_apps(json.dumps(rows)) == [
+    assert win_formats.parse_start_apps(json.dumps(rows)) == [
         {"name": "Calculator", "app_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"},
         {"name": "Notepad", "app_id": "{1AC14E77}\\notepad.exe"},
     ]
-    assert windows.parse_start_apps(json.dumps(rows[0])) == [{"name": "Notepad", "app_id": rows[0]["AppID"]}]
-    assert windows.parse_start_apps("not json") == []
+    assert win_formats.parse_start_apps(json.dumps(rows[0])) == [{"name": "Notepad", "app_id": rows[0]["AppID"]}]
+    assert win_formats.parse_start_apps("not json") == []
 
 
 def test_control_types_cover_the_uia_range_with_tree_role_names():
-    assert set(windows.CONTROL_TYPES) == set(range(50000, 50041))
-    assert windows.CONTROL_TYPES[50000] == "button" and windows.CONTROL_TYPES[50004] == "edit"
+    assert set(win_win32.CONTROL_TYPES) == set(range(50000, 50041))
+    assert win_win32.CONTROL_TYPES[50000] == "button" and win_win32.CONTROL_TYPES[50004] == "edit"
 
 
 def test_refused_apps_are_the_owners_list_and_openprogram(monkeypatch):
     refused = windows.WindowsComputer._refused
     monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
-    assert not refused(windows.App(pid=2, name="consent", exe=r"C:\Windows\System32\consent.exe"))
+    assert not refused(win_win32.App(pid=2, name="consent", exe=r"C:\Windows\System32\consent.exe"))
     monkeypatch.setattr("openprogram.state.config.read_config",
                         lambda: {"computer_use": {"refused_apps": ["credentialuibroker", "consent"]}})
-    assert refused(windows.App(pid=1, name="Windows Security", exe=r"C:\Windows\System32\CredentialUIBroker.exe"))
-    assert refused(windows.App(pid=2, name="consent", exe=r"C:\Windows\System32\consent.exe"))
+    assert refused(win_win32.App(pid=1, name="Windows Security", exe=r"C:\Windows\System32\CredentialUIBroker.exe"))
+    assert refused(win_win32.App(pid=2, name="consent", exe=r"C:\Windows\System32\consent.exe"))
     assert refused({"name": "OpenProgram", "app_id": "ai.openprogram.desktop"})
-    assert not refused(windows.App(pid=3, name="Notepad", exe=r"C:\Windows\notepad.exe"))
+    assert not refused(win_win32.App(pid=3, name="Notepad", exe=r"C:\Windows\notepad.exe"))
 
 
 def test_support_reports_hosts_other_than_windows(monkeypatch):
-    monkeypatch.setattr(windows.platform, "system", lambda: "Darwin")
-    assert not windows.support()["available"]
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    assert not win_win32.support()["available"]
     monkeypatch.setattr(backends.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(windows, "support", lambda: {"available": False, "reason": "no UIA"})
+    monkeypatch.setattr(win_win32, "support", lambda: {"available": False, "reason": "no UIA"})
     assert backends.support() == {"available": False, "reason": "no UIA"}
     with pytest.raises(ComputerUseError, match="no UIA"):
         backends.backend()
@@ -139,16 +146,16 @@ def test_a_window_brought_forward_for_input_goes_back_under_the_window_it_stood_
             return True
 
     user32 = User32()
-    monkeypatch.setattr(windows, "_user32", lambda: user32)
-    monkeypatch.setattr(windows._Forward, "restore", staticmethod(
+    monkeypatch.setattr(win_win32, "_user32", lambda: user32)
+    monkeypatch.setattr(win_send_input._Forward, "restore", staticmethod(
         lambda hwnd: (calls.append(("front", hwnd)), setattr(user32, "foreground", hwnd))))
-    monkeypatch.setattr(windows.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(windows.ctypes, "byref", lambda value: value, raising=False)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(ctypes, "byref", lambda value: value, raising=False)
     wintypes = type("wintypes", (), {"POINT": lambda: type("P", (), {"x": 5, "y": 6})()})
     monkeypatch.setitem(__import__("sys").modules, "ctypes.wintypes", wintypes)
-    monkeypatch.setattr(windows.ctypes, "wintypes", wintypes, raising=False)
+    monkeypatch.setattr(ctypes, "wintypes", wintypes, raising=False)
 
-    with windows._Forward(OPERATED):
+    with win_send_input._Forward(OPERATED):
         assert front._standing["forward"] == 1
     assert front._standing["forward"] == 0
     # Forward, the user's window back in front, then the operated one under its old neighbour without activating.
@@ -175,9 +182,9 @@ def test_a_drag_posted_to_the_window_names_where_it_dropped(monkeypatch):
     monkeypatch.setattr(computer, "_drag_end", lambda state, args, *names: next(ends), raising=False)
     monkeypatch.setattr(computer, "_foreground_only", lambda state: False, raising=False)
     monkeypatch.setattr(computer, "_target_child", lambda hwnd, x, y: (1312456, 1, 1), raising=False)
-    monkeypatch.setattr(windows, "_user32", lambda: _User32())
-    monkeypatch.setattr(windows.time, "sleep", lambda seconds: None)
-    state = windows.WindowState(pid=1, window_title="Mail", window_id=7, origin=(0, 0), size=(100, 100))
+    monkeypatch.setattr(win_win32, "_user32", lambda: _User32())
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    state = win_win32.WindowState(pid=1, window_title="Mail", window_id=7, origin=(0, 0), size=(100, 100))
     said = computer._do_drag(None, state, {"element": 1, "to_element": 2})
     assert said == 'dragged from button "A" to list "Inbox"'
     assert set(posted) == {1312456}
@@ -187,7 +194,7 @@ def test_a_running_app_takes_its_own_start_menu_row_not_a_match_in_part(monkeypa
     computer = object.__new__(windows.WindowsComputer)
     installed = [{"name": "Notepad++", "app_id": "notepad++"}, {"name": "Notepad", "app_id": "Microsoft.Notepad!App"}]
     monkeypatch.setattr(computer, "_installed", lambda: installed, raising=False)
-    monkeypatch.setattr(computer, "_running", lambda: [windows.App(pid=7, name="note", exe="C:\\Tools\\note.exe")],
+    monkeypatch.setattr(computer, "_running", lambda: [win_win32.App(pid=7, name="note", exe="C:\\Tools\\note.exe")],
                         raising=False)
     monkeypatch.setattr(windows.WindowsComputer, "_refused", classmethod(lambda cls, app: False))
     info = computer.app_info("note")
@@ -199,7 +206,7 @@ def test_a_running_app_takes_its_own_start_menu_row_not_a_match_in_part(monkeypa
 def test_the_rule_name_comes_from_the_process_and_never_from_powershell(monkeypatch):
     computer = object.__new__(windows.WindowsComputer)
     monkeypatch.setattr(computer, "_installed", lambda: pytest.fail("Get-StartApps takes seconds"), raising=False)
-    monkeypatch.setattr(windows, "_exe", lambda pid: "C:\\Program Files\\App\\Code.exe" if pid == 7 else "")
+    monkeypatch.setattr(win_win32, "_exe", lambda pid: "C:\\Program Files\\App\\Code.exe" if pid == 7 else "")
     assert computer.app_name("7") == "Code"
     assert computer.app_name("C:\\Program Files\\App\\Code.exe") == "Code" and computer.app_name("code.exe") == "code"
     assert computer.app_name("Visual Studio Code") == "" and computer.app_name("8") == ""

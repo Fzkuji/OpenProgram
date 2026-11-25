@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://fuzzykuji.github.io/openprogram-site/">官网</a> · <a href="#install">安装</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/README.zh.html">文档</a>
+  <a href="https://fzkuji.github.io/OpenProgram/">官网</a> · <a href="#install">安装</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/README.zh.html">文档</a>
 </p>
 
 <p align="center">
@@ -38,10 +38,10 @@
 ## 安装
 
 ```bash
-curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，在[发行页](https://github.com/Fzkuji/OpenProgram/releases)下载；Linux App 是同一页上的 deb 和 AppImage，Windows App 从 v1.2.0 起提供。网站打不开时：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式见[安装说明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.zh.html)。
+Windows（v1.2.0 起）：`irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`。macOS 桌面 App 是 DMG，在[发行页](https://github.com/Fzkuji/OpenProgram/releases)下载；Linux App 是同一页上的 deb 和 AppImage，Windows App 从 v1.2.0 起提供。网站打不开时：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式见[安装说明](https://fzkuji.github.io/OpenProgram/docs/install/install.zh.html)。
 
 ## 快速开始
 
@@ -77,48 +77,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[Agent 类](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.zh.html)** | Agent 是一个 Python 类；分支、重试和检查都是代码，`self(...)` 是一次模型调用。 |
-| **[执行 DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.zh.html)** | 每条用户消息、模型调用和函数调用都是节点，可以查看、分支和重放。 |
-| **[上下文](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.zh.html)** | 每次调用读取选出的节点，而不是不断变长的聊天记录，并自动压缩。 |
-| **[自我编程](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.zh.html)** | Agent 往自己的类里写新方法，下一轮起就能当工具用。 |
-| **[受检查的决策](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.zh.html)** | 模型从固定选项里选，代码先验证再执行。 |
-| **[子 Agent](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.zh.html)** | 子 Agent 在自己的分支上运行，可用独立 Git worktree，只交回结果。 |
-| **[事件](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.zh.html)** | 类型化事件总线；插件可以观察事件或拦截工具调用。 |
-| **[常驻 Agent](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.zh.html)** | 在后台持续运行、对事件做出反应的 Agent。 |
-| **[目标与恢复](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.zh.html)** | 长期目标在重启后继续，从中断处恢复。 |
-| **[容错](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.zh.html)** | 每次模型调用都有重试、超时和错误分类。 |
+| **[Agent 类](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.zh.html)** | Agent 是一个 Python 类；分支、重试和检查都是代码，`self(...)` 是一次模型调用。 |
+| **[执行 DAG](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.zh.html)** | 每条用户消息、模型调用和函数调用都是节点，可以查看、分支和重放。 |
+| **[上下文](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.zh.html)** | 每次调用读取选出的节点，而不是不断变长的聊天记录，并自动压缩。 |
+| **[自我编程](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.zh.html)** | Agent 往自己的类里写新方法，下一轮起就能当工具用。 |
+| **[受检查的决策](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.zh.html)** | 模型从固定选项里选，代码先验证再执行。 |
+| **[子 Agent](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.zh.html)** | 子 Agent 在自己的分支上运行，可用独立 Git worktree，只交回结果。 |
+| **[事件](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.zh.html)** | 类型化事件总线；插件可以观察事件或拦截工具调用。 |
+| **[常驻 Agent](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.zh.html)** | 在后台持续运行、对事件做出反应的 Agent。 |
+| **[目标与恢复](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.zh.html)** | 长期目标在重启后继续，从中断处恢复。 |
+| **[容错](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.zh.html)** | 每次模型调用都有重试、超时和错误分类。 |
 
 ### 工作区
 
 | | |
 |---|---|
-| **[桌面与网页界面](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.zh.html)** | macOS 和 Linux 上用 App，v1.2.0 起 Windows 也有 App；网页界面可在这些系统或服务器上使用。 |
-| **[分屏](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.zh.html)** | 聊天、文件、终端和网页并排摆开。 |
-| **[内置浏览器](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.zh.html)** | Agent 能读取和操作网页，你在旁边看着。 |
-| **[集成终端](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.zh.html)** | 工作区里的终端，和 Agent 共用。 |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.zh.html)** | 操作桌面应用、浏览器页面或远程虚拟机。 |
-| **[CLI 与终端界面](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.zh.html)** | 在终端里使用同一个 Agent。 |
-| **[远程访问](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.zh.html)** | 从其他设备访问你自己的实例，仅限本人。 |
+| **[桌面与网页界面](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.zh.html)** | macOS 和 Linux 上用 App，v1.2.0 起 Windows 也有 App；网页界面可在这些系统或服务器上使用。 |
+| **[分屏](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.zh.html)** | 聊天、文件、终端和网页并排摆开。 |
+| **[内置浏览器](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.zh.html)** | Agent 能读取和操作网页，你在旁边看着。 |
+| **[集成终端](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.zh.html)** | 工作区里的终端，和 Agent 共用。 |
+| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.zh.html)** | 操作桌面应用、浏览器页面或远程虚拟机。 |
+| **[CLI 与终端界面](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.zh.html)** | 在终端里使用同一个 Agent。 |
+| **[远程访问](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.zh.html)** | 从其他设备访问你自己的实例，仅限本人。 |
 
 ### Agent 与安全
 
 | | |
 |---|---|
-| **[Agent 配置](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.zh.html)** | 把模型、指令、工具和记忆权限保存成可复用的 Agent。 |
-| **[记忆](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.zh.html)** | 带来源的记忆，支持检索和后台写入。 |
-| **[权限与沙箱](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.zh.html)** | 批准或拒绝工具调用并附上说明；命令在沙箱里运行。 |
-| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.zh.html)** | 工具和应用都是可安装的 Program。 |
+| **[Agent 配置](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.zh.html)** | 把模型、指令、工具和记忆权限保存成可复用的 Agent。 |
+| **[记忆](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.zh.html)** | 带来源的记忆，支持检索和后台写入。 |
+| **[权限与沙箱](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.zh.html)** | 批准或拒绝工具调用并附上说明；命令在沙箱里运行。 |
+| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.zh.html)** | 工具和应用都是可安装的 Program。 |
 
 ### 模型与集成
 
 | | |
 |---|---|
-| **[模型服务](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.zh.html)** | Anthropic、OpenAI、Gemini 等，每个服务商可配多个账号。 |
-| **[本地模型](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.zh.html)** | 本地推理服务，可选身份验证。 |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.zh.html)** | 使用 MCP 服务，或把 OpenProgram 作为 MCP 服务提供出去。 |
-| **[Skills 与插件](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.zh.html)** | 扩展 Agent 的知识和可调用的工具。 |
-| **[聊天渠道](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.zh.html)** | 在 Telegram、Discord、Slack 和微信里和 Agent 对话。 |
-| **[自动更新](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.zh.html)** | 签名发布，原地更新。 |
+| **[模型服务](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.zh.html)** | Anthropic、OpenAI、Gemini 等，每个服务商可配多个账号。 |
+| **[本地模型](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.zh.html)** | 本地推理服务，可选身份验证。 |
+| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.zh.html)** | 使用 MCP 服务，或把 OpenProgram 作为 MCP 服务提供出去。 |
+| **[Skills 与插件](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.zh.html)** | 扩展 Agent 的知识和可调用的工具。 |
+| **[聊天渠道](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.zh.html)** | 在 Telegram、Discord、Slack 和微信里和 Agent 对话。 |
+| **[自动更新](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.zh.html)** | 签名发布，原地更新。 |
 
 ## 引用
 

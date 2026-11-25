@@ -12,12 +12,14 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        // The app's raised face, as on Button: no border, the composer
-        // shadow pair, an accent ring when on.
-        elevated: "bg-bg-input shadow-raised hover:bg-bg-input hover:shadow-raised-hover aria-pressed:bg-bg-input data-[state=on]:bg-bg-input aria-pressed:ring-[1.5px] aria-pressed:ring-primary data-[state=on]:ring-[1.5px] data-[state=on]:ring-primary",
-        // One choice of a few on a muted track (ToggleGroup draws the
-        // track): the chosen one is the raised face, the rest plain text.
-        segmented: "bg-transparent text-text-secondary hover:bg-transparent hover:text-text-bright data-[state=on]:bg-bg-input data-[state=on]:text-text-bright data-[state=on]:shadow-raised",
+        // Switches that are each on or off on their own (the days of a
+        // week, a tool that stays armed): the app's raised face, as on
+        // Button, filled with a tint of the accent while on.
+        elevated: "bg-bg-input shadow-raised hover:bg-bg-input hover:shadow-raised-hover aria-pressed:bg-primary/12 aria-pressed:text-primary data-[state=on]:bg-primary/12 data-[state=on]:text-primary",
+        // One choice of a few: a groove (ToggleGroup draws it and
+        // the raised face that slides under the chosen option); the options
+        // are plain text, the chosen one bright.
+        segmented: "relative z-10 rounded-md bg-transparent text-text-secondary hover:bg-transparent hover:text-text-bright aria-pressed:bg-transparent data-[state=on]:bg-transparent data-[state=on]:text-text-bright",
       },
       size: {
         default:
@@ -27,6 +29,16 @@ const toggleVariants = cva(
         lg: "h-(--ui-button-h-lg) min-w-(--ui-button-h-lg) px-[10px] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
       },
     },
+    // Inside a groove an option is the groove's height less its padding:
+    // default 26 + 3 + 3 = 32, sm 24 + 2 + 2 = 28, xs 20 + 2 + 2 = 24,
+    // lg 30 + 3 + 3 = 36. The groove's corner is the option's plus the
+    // padding, so the two curves stay concentric.
+    compoundVariants: [
+      { variant: "segmented", size: "default", className: "h-(--ui-choice-h) min-w-0 px-3 text-fs-sm" },
+      { variant: "segmented", size: "sm", className: "h-(--ui-button-h-xs) min-w-0 px-3" },
+      { variant: "segmented", size: "xs", className: "h-(--ui-control-inline) min-w-0 rounded-sm px-2.5" },
+      { variant: "segmented", size: "lg", className: "h-(--ui-button-h) min-w-0 px-3.5" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

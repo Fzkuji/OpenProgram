@@ -10,7 +10,8 @@
 <tr><th scope="row"><code translate="no">type="screen"</code></th><td>这台电脑的一整块显示器，按像素操作：桌面、菜单栏、系统对话框、跨窗口拖动。会移动你的指针。</td><td>macOS，且打开了 <code translate="no">computer_use.whole_screen</code>；默认关闭</td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td>本会话在 App 内置浏览器里的页面；App 关闭时用没有 App 登录状态的后台浏览器</td><td>浏览器应用已启用</td></tr>
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>、<code translate="no">"safari"</code>、<code translate="no">"firefox"</code> 等</th><td>你自己的浏览器，带你的标签页和登录状态</td><td>装了这个浏览器；Chromium 系浏览器还要装<a href="#your-own-browser">扩展</a></td></tr>
-<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>你设置的一台设备的屏幕，这里是名为 <code translate="no">lab</code> 的设备</td><td>该设备有屏幕连接且已开启。见<a href="#another-machine">另一台设备</a>。</td></tr>
+<tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>你设置的一台设备的屏幕，这里是名为 <code translate="no">lab</code> 的设备</td><td>该设备是 OSWorld 虚拟机或已配对的电脑，且已开启。见<a href="#another-machine">另一台设备</a>。</td></tr>
+<tr><th scope="row"><code translate="no">device="studio", type="window"</code>、<code translate="no">"screen"</code>、<code translate="no">"browser"</code></th><td>另一台运行 OpenProgram 的电脑的窗口、整屏和浏览器，这里是名为 <code translate="no">studio</code> 的电脑；调用在那边运行</td><td>该电脑已配对且已开启。见<a href="#another-computer">另一台电脑</a>。</td></tr>
 </tbody>
 </table>
 <p class="note">不写 <code translate="no">device</code> 的调用总是这台电脑，会话的命令在 SSH 主机或 Docker 里运行时也一样。你点名却没写设备的窗口、浏览器或应用都在这台电脑上。</p>
@@ -19,7 +20,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">能操作什么</th><td>你的消息旁边有一段 <code translate="no">&lt;devices&gt;</code> 说明，按设备列出，这台电脑在前：开始时和压缩后发整张列表，之后只发新增、变化和移除的。工具自己的描述从不改变，所以连上设备不会让提示缓存失效。缺少系统权限的目标仍列出，并写明要授予什么。没有任何目标时不提供该工具。</td></tr>
+<tr><th scope="row">能操作什么</th><td>你的消息旁边有一段 <code translate="no">&lt;devices&gt;</code> 说明，按设备列出，这台电脑在前：开始时和压缩后发整张列表，之后只发变化。连上设备不改变工具的描述，提示缓存因此保留。缺少权限的目标仍列出，并写明要授予什么。一台电脑约一分钟没有回应时会写明，恢复后也会说明。没有任何目标时不提供该工具。</td></tr>
 <tr><th scope="row">首次调用某目标</th><td>返回其类型的指南（<code translate="no">window</code>、<code translate="no">screen</code> 或 <code translate="no">browser</code>）、该目标的简短说明（系统、缺什么、按键）和当前状态。能运行代码时，代码指南一并送达。</td></tr>
 <tr><th scope="row">指南送达</th><td>不会因指南退回调用。指南留在模型上下文中才算读过；压缩后下一次调用重新送达。<code translate="no">action="guide"</code> 或 <code translate="no">help("computer_use.window")</code> 可查看。</td></tr>
 <tr><th scope="row">一种写法</th><td>一个动作在每个目标上只有一个名字和一组参数。其他工具的名字会被改写而不是拒绝：<code translate="no">left_click</code> 改为 <code translate="no">click</code>，<code translate="no">double_click</code> 改为带 <code translate="no">click_count=2</code> 的 <code translate="no">click</code>，<code translate="no">element_index</code> 和 <code translate="no">ref</code> 改为 <code translate="no">element</code>，<code translate="no">tabs</code> 改为 <code translate="no">list_tabs</code>。</td></tr>
@@ -215,8 +216,8 @@ computer_use(type="browser", app="safari", title="tq7mb", action="click", args={
 </tbody>
 </table>
 <h2 id="another-machine">另一台设备</h2>
-<p>运行 <a href="https://os-world.github.io/">OSWorld</a> 兼容服务器的虚拟机，设置成一台带屏幕连接的设备，在<strong>设置 → 设备</strong>里或从终端：</p>
-<pre translate="no" tabindex="0"><code>openprogram machines add lab --name "Lab VM" --screen osworld url=http://192.168.64.2:5000
+<p>运行 <a href="https://os-world.github.io/">OSWorld</a> 兼容服务器的虚拟机，设置成一台经 OSWorld 连接的设备，在<strong>设置 → 设备</strong>里或从终端：</p>
+<pre translate="no" tabindex="0"><code>openprogram machines add lab --name "Lab VM" osworld url=http://192.168.64.2:5000
 openprogram machines test lab
 
 computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 412})</code></pre>
@@ -231,6 +232,17 @@ computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 4
 <tr><th scope="row">审批</th><td>不询问：设置这台设备就是同意。规则仍可拒绝它。</td></tr>
 </tbody>
 </table>
+<h3 id="another-computer">另一台电脑</h3>
+<p>和这台配对的电脑（<a href="environments.zh.html">在另一台机器上运行对话</a>）也能被操作：<code translate="no">computer_use(device="studio", type="window", app="Safari", …)</code>。调用发到那边，在那台电脑上运行。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">在另一台电脑上</th><td>打开<strong>设置 → 设备 → 这台电脑 → 允许已配对设备操作这台电脑</strong>。默认关闭；关闭时每次调用都会失败，并说明去哪里打开。</td></tr>
+<tr><th scope="row">它的规则生效</th><td>整屏除非在那边打开否则关闭，用它的系统权限，它自己的操控电脑规则也生效：拒绝或询问的规则都会拒绝这次调用，因为那边没人被问。</td></tr>
+<tr><th scope="row">在这里</th><td>每个应用、整屏或浏览器问你一次，键里带电脑名：<code translate="no">studio window safari</code>、<code translate="no">studio screen</code>、<code translate="no">studio browser chrome</code>。</td></tr>
+<tr><th scope="row">失败时</th><td>离线：立刻回答，什么都不发。在那边被吊销：重新配对。那边的 OpenProgram 较旧：去更新。</td></tr>
+</tbody>
+</table>
 <h2 id="approval">审批</h2>
 <p>首次接触应用时显示卡片，含图标、名称、bundle id 和这一步做什么（“点击元素 #7”），并说明在后台运行。原始参数在“执行详情”下。</p>
 <table class="stack fixed">
@@ -241,6 +253,7 @@ computer_use(device="lab", type="screen", action="click", args={"x": 640, "y": 4
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code></th><td>每个浏览器：<code translate="no">browser chrome</code>、<code translate="no">browser safari</code>、<code translate="no">browser firefox</code> 等</td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td>不询问，<code translate="no">upload_file</code> 除外，它每次都询问，在 Auto 下每次都审查</td></tr>
 <tr><th scope="row"><code translate="no">device="lab", type="screen"</code></th><td>不询问。它的键 <code translate="no">lab screen</code> 让你自己的规则能拒绝它。</td></tr>
+<tr><th scope="row"><code translate="no">device="studio"</code>，已配对的电脑</th><td>和这台电脑一样，键里带设备名：<code translate="no">studio window safari</code>、<code translate="no">studio screen</code>、<code translate="no">studio browser chrome</code>。只列出时从不询问。</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">

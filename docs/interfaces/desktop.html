@@ -1,5 +1,5 @@
 <title>Desktop App and built-in browser</title>
-<meta name="description" content="Windows, panes and tabs in the Desktop App, its built-in browser, session resources, restart behavior and notifications.">
+<meta name="description" content="Windows, panes and tabs in the Desktop App, its built-in browser, screenshots, session resources, restart behavior and notifications.">
 <h1>Desktop App and built-in browser</h1>
 <p>Each pane holds Files, a chat, the Browser or a Terminal. Panes split and move between windows without changing the session or browser tab.</p>
 <table class="stack">
@@ -217,6 +217,39 @@
 <p>To hand a window in a tab to the Agent, type <code translate="no">@</code> in the message box and pick it under <strong>Windows in tabs</strong>; the message names the window so the Agent operates exactly that one.</p>
 <p class="note">Quitting the App gives every window back first. If the window closes, the tab offers the open windows again. On macOS, system shortcuts such as Command+Tab stay with the system, and protected video shows black.</p>
 <p class="next">Design: <a href="../reference/design/ui/desktop/embedded-windows.html">Embedded application windows</a></p>
+<h2 id="screenshots">Screenshots</h2>
+<p>Press <kbd>Shift</kbd>+<kbd>Command</kbd>+<kbd>2</kbd> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> on Windows and Linux), or choose <strong>Take a screenshot</strong> in the message box's <strong>+</strong> menu or <strong>Take Screenshot</strong> in the tray menu. The screen freezes; pick what to keep, mark it up, and choose where it goes.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="A frozen screen, dimmed except for the selected area. The toolbar sits under the selection; when there is no room below it moves above, and inside when neither side fits.">
+<rect class="tone-gray" x="0" y="0" width="420" height="190" rx="8"/>
+<rect class="gate" x="90" y="30" width="220" height="100" rx="2"/>
+<text class="mid" x="200" y="85">Selection</text>
+<rect class="gate" x="87" y="27" width="6" height="6"/><rect class="gate" x="307" y="27" width="6" height="6"/><rect class="gate" x="87" y="127" width="6" height="6"/><rect class="gate" x="307" y="127" width="6" height="6"/>
+<rect class="tone-purple" x="118" y="140" width="192" height="28" rx="6"/>
+<rect class="tone-plain" x="126" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="148" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="170" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="192" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="214" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="236" y="146" width="16" height="16" rx="3"/>
+<rect class="ln-acc" x="262" y="146" width="40" height="16" rx="3"/>
+<text class="t-soft" x="450" y="50">Click</text><text x="450" y="72">a window, or the screen</text>
+<text class="t-soft" x="450" y="110">Drag</text><text x="450" y="132">any area</text>
+<text class="t-soft" x="450" y="170">No room below: toolbar above</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Click</dt><dd>a window, or the whole screen</dd>
+<dt>Drag</dt><dd>any area; handles resize it, arrow keys nudge it</dd>
+<dt>Toolbar</dt><dd>under the selection; above it when there is no room, inside when neither fits</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Marks</th><td>Rectangle <kbd>R</kbd>, ellipse <kbd>E</kbd>, arrow <kbd>A</kbd>, pen <kbd>P</kbd>, highlighter <kbd>H</kbd>, mosaic <kbd>M</kbd>, text <kbd>T</kbd>, numbered step <kbd>N</kbd>; seven colours, three widths, undo and redo. The same tools annotate an image already in the message box.</td></tr>
+<tr><th scope="row">Text in the picture</th><td><strong>OCR</strong> finds the words in the selection and lists them to copy. macOS uses Vision, Windows its built-in OCR, Linux <code translate="no">tesseract</code> if installed.</td></tr>
+<tr><th scope="row">Colour</th><td>Before selecting, a magnifier follows the pointer; <kbd>C</kbd> copies the colour under it.</td></tr>
+<tr><th scope="row">Where it goes</th><td><strong>Send to chat</strong> attaches it to the message box; also copy (<kbd>Enter</kbd> or a double-click), save, or pin. <kbd>Esc</kbd> cancels.</td></tr>
+<tr><th scope="row">Pinned picture</th><td>Stays above every window. Drag to move, scroll to zoom, <kbd>Command</kbd>/<kbd>Ctrl</kbd> + scroll for transparency, right-click for copy and save, double-click or <kbd>Esc</kbd> to close.</td></tr>
+</tbody>
+</table>
+<p class="note">macOS asks for Screen Recording access the first time. On Linux with Wayland the system asks which screen to share, and clicking a window takes the whole screen, since Wayland does not tell applications where other windows are.</p>
+<p class="next">Design: <a href="../reference/design/ui/desktop/screenshots.html">Screenshots</a></p>
 <h2>Session resources</h2>
 <p><strong>Resources</strong> in the right sidebar lists what the selected session owns. Clicking a chat in a split selects it for Files, Activity and Resources; clicking a webpage keeps the last chat.</p>
 <table class="stack fixed">

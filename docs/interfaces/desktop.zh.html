@@ -1,5 +1,5 @@
 <title>桌面 App 与内置浏览器</title>
-<meta name="description" content="桌面 App 的窗口、窗格和标签页，内置浏览器，会话资源，重启行为和通知。">
+<meta name="description" content="桌面 App 的窗口、窗格和标签页，内置浏览器，截图，会话资源，重启行为和通知。">
 <h1>桌面 App 与内置浏览器</h1>
 <p>每个窗格可放 Files、聊天、Browser 或 Terminal。窗格可分屏，可在窗口间移动，不改变会话或浏览器标签页。</p>
 <table class="stack">
@@ -217,6 +217,39 @@
 <p>要把标签页里的窗口交给 Agent，在输入框里输入 <code translate="no">@</code>，在<strong>标签页里的窗口</strong>下选中它；消息会写明这个窗口，Agent 就操作这一个。</p>
 <p class="note">退出 App 时会先把所有窗口还回去。窗口被关掉后，标签页会重新列出打开的窗口。macOS 上 Command+Tab 这类系统快捷键仍由系统处理，受版权保护的视频显示为黑色。</p>
 <p class="next">设计：<a href="../reference/design/ui/desktop/embedded-windows.zh.html">嵌入其他应用的窗口</a></p>
+<h2 id="screenshots">截图</h2>
+<p>按 <kbd>Shift</kbd>+<kbd>Command</kbd>+<kbd>2</kbd>（Windows 和 Linux 上是 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>），或在输入框的 <strong>+</strong> 菜单里选 <strong>截图</strong>，或在托盘菜单里选 <strong>Take Screenshot</strong>。屏幕定格，选好范围，标注，再决定放到哪里。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="定格的屏幕，选区以外变暗。工具栏在选区下方；下方放不下就到上方，两边都放不下就放在选区里面。">
+<rect class="tone-gray" x="0" y="0" width="420" height="190" rx="8"/>
+<rect class="gate" x="90" y="30" width="220" height="100" rx="2"/>
+<text class="mid" x="200" y="85">选区</text>
+<rect class="gate" x="87" y="27" width="6" height="6"/><rect class="gate" x="307" y="27" width="6" height="6"/><rect class="gate" x="87" y="127" width="6" height="6"/><rect class="gate" x="307" y="127" width="6" height="6"/>
+<rect class="tone-purple" x="118" y="140" width="192" height="28" rx="6"/>
+<rect class="tone-plain" x="126" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="148" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="170" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="192" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="214" y="146" width="16" height="16" rx="3"/><rect class="tone-plain" x="236" y="146" width="16" height="16" rx="3"/>
+<rect class="ln-acc" x="262" y="146" width="40" height="16" rx="3"/>
+<text class="t-soft" x="450" y="50">单击</text><text x="450" y="72">一个窗口，或整个屏幕</text>
+<text class="t-soft" x="450" y="110">拖动</text><text x="450" y="132">任意区域</text>
+<text class="t-soft" x="450" y="170">下方放不下：工具栏到上方</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>单击</dt><dd>一个窗口，或整个屏幕</dd>
+<dt>拖动</dt><dd>任意区域；拖手柄调大小，方向键微调</dd>
+<dt>工具栏</dt><dd>在选区下方；放不下就到上方，两边都放不下就在里面</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">标注</th><td>矩形 <kbd>R</kbd>、椭圆 <kbd>E</kbd>、箭头 <kbd>A</kbd>、画笔 <kbd>P</kbd>、荧光笔 <kbd>H</kbd>、马赛克 <kbd>M</kbd>、文字 <kbd>T</kbd>、序号 <kbd>N</kbd>；七种颜色、三种粗细，可撤销重做。输入框里已有的图片也用这套工具标注。</td></tr>
+<tr><th scope="row">图中文字</th><td><strong>OCR</strong> 识别选区里的文字，列出来可复制。macOS 用 Vision，Windows 用系统自带的 OCR，Linux 用已安装的 <code translate="no">tesseract</code>。</td></tr>
+<tr><th scope="row">取色</th><td>选区之前放大镜跟着指针；按 <kbd>C</kbd> 复制指针下的颜色。</td></tr>
+<tr><th scope="row">放到哪里</th><td><strong>发送到对话</strong> 把它附到输入框；也可以复制（<kbd>Enter</kbd> 或双击）、保存或贴到屏幕上。<kbd>Esc</kbd> 取消。</td></tr>
+<tr><th scope="row">贴图</th><td>浮在所有窗口之上。拖动移动，滚轮缩放，<kbd>Command</kbd>/<kbd>Ctrl</kbd> + 滚轮调透明度，右键复制和保存，双击或 <kbd>Esc</kbd> 关闭。</td></tr>
+</tbody>
+</table>
+<p class="note">macOS 第一次会要屏幕录制权限。Linux 的 Wayland 下系统会先问共享哪个屏幕，单击窗口取的是整个屏幕，因为 Wayland 不告诉应用其他窗口在哪里。</p>
+<p class="next">设计：<a href="../reference/design/ui/desktop/screenshots.zh.html">截图</a></p>
 <h2>会话资源</h2>
 <p>右侧栏的 <strong>资源</strong> 列出所选会话拥有的内容。分屏中点聊天，Files、Activity 和资源都切到它；点网页则保留上次的聊天。</p>
 <table class="stack fixed">

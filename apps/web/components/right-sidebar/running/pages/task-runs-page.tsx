@@ -117,10 +117,10 @@ export function TaskRunsPage({ target, context }: ActivityPageProps<"task">) {
   return <ActivityPageFrame kind={null} title={null} backLabel={task.title} axis={null}>
     <div className={styles.kv}>{facts.flatMap((part, index) => index ? [<span key={`sep${index}`} aria-hidden="true">·</span>, part] : [part])}</div>
     <Tabs value={filter} onValueChange={value => setFilter(value as TaskRunFilter)} className="mx-2 mt-1.5 mb-1 gap-0">
-      <TabsList aria-label={text("Which runs", "显示哪些运行")} className={styles.filterList}>
-        <TabsTrigger value="all" className={styles.filterTab}>{text("All", "全部")}</TabsTrigger>
-        <TabsTrigger value="unfinished" className={styles.filterTab}>{unfinished ? text(`Unfinished · ${unfinished}`, `没完成 · ${unfinished}`) : text("Unfinished", "没完成")}</TabsTrigger>
-        <TabsTrigger value="notified" className={styles.filterTab}>{text("Notified", "已通知")}</TabsTrigger>
+      <TabsList aria-label={text("Which runs", "显示哪些运行")} className="w-full">
+        <TabsTrigger value="all" className="flex-1">{text("All", "全部")}</TabsTrigger>
+        <TabsTrigger value="unfinished" className="flex-1">{unfinished ? text(`Unfinished · ${unfinished}`, `没完成 · ${unfinished}`) : text("Unfinished", "没完成")}</TabsTrigger>
+        <TabsTrigger value="notified" className="flex-1">{text("Notified", "已通知")}</TabsTrigger>
       </TabsList>
     </Tabs>
     {rows}

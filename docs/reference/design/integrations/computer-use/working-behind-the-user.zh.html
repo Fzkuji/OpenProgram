@@ -65,7 +65,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">入口</th><th scope="col">使用者</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">kept(operated)</code></th><td>窗口、内置浏览器和用户浏览器的 provider（<code translate="no">providers/desktop.py</code>、<code translate="no">built_in_browser.py</code>、<code translate="no">user_browser.py</code>）包住每一次调用，结构化步骤和代码模式都覆盖。</td></tr>
+<tr><th scope="row"><code translate="no">kept(operated)</code></th><td>窗口、内置浏览器和用户浏览器的 provider（<code translate="no">providers/window/provider.py</code>、<code translate="no">providers/browser/built_in.py</code>、<code translate="no">providers/browser/user.py</code>）包住每一次调用，结构化步骤和代码模式都覆盖。</td></tr>
 <tr><th scope="row"><code translate="no">watch_for(operated, seconds)</code></th><td>自更新切换，在桌面外壳重新启动的 30 s 内。</td></tr>
 <tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/local-instances/install-dev-app.sh</code> 单独运行这个文件；这时它只需要标准库，没有辅助功能授权时每 50 ms 读一次前台。</td></tr>
 </tbody>

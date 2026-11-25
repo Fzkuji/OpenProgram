@@ -62,6 +62,10 @@ test('files sent to a conversation wait until its composer takes them', () => {
   assert.deepEqual(takeComposerFiles('chat-b'), []);
   assert.deepEqual(takeComposerFiles('chat-a'), [file, file]);
   assert.deepEqual(takeComposerFiles('chat-a'), []);
+  // A new chat has no key yet; its files wait under null.
+  queueComposerFiles(null, [file]);
+  assert.deepEqual(takeComposerFiles('chat-a'), []);
+  assert.deepEqual(takeComposerFiles(null), [file]);
 });
 
 test('a region screenshot is named after its site and size', () => {

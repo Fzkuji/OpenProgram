@@ -30,10 +30,10 @@ from typing import Any, Callable
 
 from . import EmbedError
 from .keycodes import WINDOWS_SCAN, windows_key
-from ..windows import (MK_CONTROL, MK_LBUTTON, MK_MBUTTON, MK_RBUTTON, MK_SHIFT, WHEEL_DELTA, WM_CHAR,
-                       WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-                       WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
-                       PIXELS_PER_NOTCH, WindowsComputer)
+from ..windows.win32 import (MK_CONTROL, MK_LBUTTON, MK_MBUTTON, MK_RBUTTON, MK_SHIFT, WHEEL_DELTA, WM_CHAR,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, PIXELS_PER_NOTCH)
+from ..windows.computer import WindowsComputer
 
 GWL_STYLE = -16
 GWL_EXSTYLE = -20
@@ -489,12 +489,12 @@ class WindowsEmbedder:
 
 
 def _desktop_user32():
-    from ..windows import _user32
+    from ..windows.win32 import _user32
     return _user32()
 
 
 def _desktop_backend():
-    from ..windows import backend
+    from ..windows.computer import backend
     return backend()
 
 

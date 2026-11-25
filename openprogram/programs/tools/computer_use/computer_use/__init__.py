@@ -1,15 +1,20 @@
 """``computer_use``: one tool that operates screens, application windows and browsers on any machine.
 
-- ``tool.py`` — the tool: its description, routing, guides on first use, what permission code asks
-- ``contract.py`` — what every target is operated through (``Provider``)
-- ``registry.py`` — which targets exist now: the machines registry and what each connection kind yields
-- ``vocabulary.py`` — one set of actions and arguments, the families, the carried-over names
-- ``providers/`` — one module per connection kind; the only place a target is named
-- ``locks.py`` — who may act on a machine, an application or a tab at a time, across processes
-- ``errors.py`` — the coded failures a model reads
-- ``code.py`` — Python in the isolated GUI interpreter, with ``cu`` bound to the call's target
-- ``desktop/`` — the platform backends that read and operate application windows and the display
-- ``sandbox/`` — the isolated interpreter ``code`` runs in, and the broker it calls through
+Dependencies point one way: the tool, through routing, to the providers, to the platform backends.
+
+- ``tool.py`` — the tool: its fixed description and parameters, a call checked and run, what permission asks
+- ``devices.py`` — ``<devices>``: what can be operated now, beside the conversation's messages
+- ``type_guides.py`` — each type's guide and each target's note, delivered with the first call that needs them
+- ``context.py`` — the conversation, agent and environment a call is served for
+- ``contract.py`` — what every target is operated through (``Provider``); ``errors.py`` — the coded failures
+- ``routing/`` — which targets exist (``registry``), one path for steps (``dispatch``), the locks (``locks``)
+- ``actions/`` — the one vocabulary of actions and arguments, and key names in one spelling
+- ``code_mode/`` — Python with ``cu`` bound to the call's target, in the isolated interpreter (``sandbox/``)
+- ``providers/`` — the targets: ``window/``, ``screen/`` (this computer's, a virtual machine's),
+  ``browser/`` (OpenProgram's own, the user's), ``paired.py`` (another computer's OpenProgram)
+- ``desktop/`` — the platform backends: ``macos/``, ``windows/``, ``linux/``, what they share in
+  ``common/``, and ``embedding/`` (another application's window shown in an App tab)
+- ``guides/`` — the guide text of each type and of code
 """
 from .tool import DESCRIPTION, NAME, computer_use
 

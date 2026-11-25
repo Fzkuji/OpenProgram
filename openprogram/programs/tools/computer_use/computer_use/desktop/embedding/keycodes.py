@@ -7,7 +7,7 @@ keyboard layout. Modifier names come from the page as ``shift``, ``ctrl``,
 """
 from __future__ import annotations
 
-from ..keys import COMMAND, CONTROL, OPTION, SHIFT
+from ..common.keys import COMMAND, CONTROL, OPTION, SHIFT
 
 _LETTERS = {
     "A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7, "C": 8, "V": 9,

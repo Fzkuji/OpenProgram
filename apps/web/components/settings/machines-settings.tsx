@@ -7,8 +7,9 @@
  * button asks what the device is and then one thing (``devices/add-device-dialog``);
  * Open this computer from switches the ways in (``devices/access-section``).
  *
- * This computer's row opens what OpenProgram may use on it
- * (``devices/this-computer-dialog``). Each other row's menu edits, tests,
+ * This computer's row opens what OpenProgram may use on it, and whether
+ * paired devices may operate it (``devices/this-computer-dialog``). Each
+ * other row's menu edits, tests,
  * switches off or removes a computer, or renames or revokes a phone.
  * Same registry as ``openprogram machines``; every change is broadcast so
  * open composers refresh their picker.
@@ -41,14 +42,12 @@ import {
   LOCAL_ID,
   connectionSummary,
   ensureMachines,
-  findKind,
   hasUnknownConnection,
   isRemoteOpenProgram,
-  machineConnections,
   useMachines,
   type MachineInfo,
 } from "@/lib/machines/store";
-import { SettingsPage } from "./settings-ui";
+import { SettingsHeading, SettingsPage } from "./settings-ui";
 import styles from "./settings-page.module.css";
 import { AccessSection, useWays } from "./devices/access-section";
 import { AddDeviceDialog } from "./devices/add-device-dialog";
@@ -61,10 +60,7 @@ function summary(machine: MachineInfo, kinds: ReturnType<typeof useMachines.getS
   if (isRemoteOpenProgram(machine)) {
     return text("Another OpenProgram · its projects are in your sidebar", "另一台 OpenProgram · 它的项目在侧边栏里");
   }
-  const [first] = machineConnections(machine);
-  if (!first) return "";
-  const [name, connection] = first;
-  return connectionSummary(connection, kinds, locale, name);
+  return machine.connection ? connectionSummary(machine.connection, kinds, locale) : "";
 }
 
 function stateText(machine: MachineInfo, text: Text): string {
@@ -128,7 +124,7 @@ export function MachinesSettings() {
 
   /** Each conversation gets its own instance there, which switching it off or removing it deletes. */
   function perConversation(machine: MachineInfo): boolean {
-    return machine.shell ? findKind(kinds, "shell", machine.shell.kind)?.instance_scope === "conversation" : false;
+    return machine.shell?.instance_scope === "conversation";
   }
 
   async function setEnabled(machine: MachineInfo, enabled: boolean) {
@@ -198,11 +194,11 @@ export function MachinesSettings() {
         "OpenProgram 操作的电脑，以及能打开这台电脑的手机和电脑。",
       )}
     >
-      <section>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className={styles.sectionTitle}>{text("Devices", "设备列表")}</h3>
-          <Button onClick={() => setAdding(true)}>{text("Add device", "添加设备")}</Button>
-        </div>
+      <section className="flex flex-col gap-4">
+        <SettingsHeading
+          title={text("Devices", "设备列表")}
+          action={<Button onClick={() => setAdding(true)}>{text("Add device", "添加设备")}</Button>}
+        />
         <div className={styles.card}>
           {!loaded ? <div className={styles.row} aria-hidden="true" /> : null}
           {loaded ? items.map((machine) => {
@@ -218,7 +214,7 @@ export function MachinesSettings() {
                 data-machine={machine.id}
                 onClick={local ? () => setThisComputer(true) : undefined}
               >
-                <MachineIcon machine={machine} kinds={kinds} size={20} />
+                <MachineIcon machine={machine} size={20} />
                 <div className={`${styles.label} min-w-0 flex-1`}>
                   <div>{local ? text("This computer", "这台电脑") : machine.name}</div>
                   <div className={`${styles.rowHelp} truncate`}>{summary(machine, kinds, locale, text)}</div>
@@ -237,11 +233,6 @@ export function MachinesSettings() {
                           {text(`${missing} permission${missing === 1 ? "" : "s"} to turn on`, `${missing} 项权限未打开`)}
                         </span>
                       )}
-                      <span onClick={(event) => event.stopPropagation()}>
-                        <RowMenu label={text("More", "更多")}>
-                          <Item glyph="pen" label={text("Edit connections", "编辑连接")} onSelect={() => setManual(machine)} />
-                        </RowMenu>
-                      </span>
                       <ChevronRight className="size-4 text-text-muted" aria-hidden="true" />
                     </>
                   ) : (

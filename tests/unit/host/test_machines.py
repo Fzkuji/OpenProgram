@@ -1,4 +1,4 @@
-"""Machines: the registry, the environment role, the shell kinds and their backends.
+"""Machines: the registry, the environment role, the connection methods and the shell's backends.
 
 The registry lives in config.json under "machines"; a conversation runs on
 its project's machine; the active backend and the file tools follow it and
@@ -63,22 +63,22 @@ def _read(p):
 
 
 @pytest.fixture
-def screen_kind():
-    """A screen kind with a secret setting, standing in for one a provider module registers."""
+def vnc_method():
+    """A connection method with a secret setting that runs no commands, standing in for one a provider
+    module registers."""
     kind = kinds.register(kinds.Kind(
-        name="test_vnc", connection="screen", label="Test VNC",
+        name="test_vnc", label="Test VNC",
         settings={"type": "object",
                   "properties": {"address": {"type": "string"},
                                  "password": {"type": "string", "secret": True}},
                   "required": ["address", "password"]},
-        capabilities=frozenset({"pixels"}),
         where=lambda settings: f"VNC at {settings.get('address', '')}"))
     yield kind
-    kinds._kinds.pop(("screen", "test_vnc"), None)
+    kinds._kinds.pop("test_vnc", None)
 
 
 def _ssh(machine_id="devbox", **shell):
-    return {"id": machine_id, "shell": {"kind": "ssh", "target": "me@devbox", **shell}}
+    return {"id": machine_id, "connection": {"kind": "ssh", "target": "me@devbox", **shell}}
 
 
 # ---- registry ---------------------------------------------------------------
@@ -89,15 +89,15 @@ def test_fresh_install_has_only_this_computer(cfg_path):
     assert [m.id for m in machines.list_environments()] == ["local"]
     local = machines.local_machine()
     assert local.is_local and not local.remote_shell and not local.remote_files
-    assert local.shell.kind == "local"
+    assert local.method == "local" and local.has_shell
 
 
 def test_save_and_delete(cfg_path, removed):
     machines.save_machine(_ssh(workdir="~/work"))
-    machines.save_machine({"id": "box", "name": "Box", "shell": {"kind": "docker"}})
+    machines.save_machine({"id": "box", "name": "Box", "connection": {"kind": "docker"}})
     assert [m.id for m in machines.list_environments()] == ["local", "devbox", "box"]
     box = machines.get_environment("box")
-    assert box.shell.get("image") == DEFAULT_DOCKER_IMAGE
+    assert box.connection.get("image") == DEFAULT_DOCKER_IMAGE
     assert box.instance_scope == "conversation" and box.instance("c1") == "box/c1"
     devbox = machines.get_environment("devbox")
     assert devbox.remote_shell and devbox.remote_files and devbox.instance("c1") == "devbox"
@@ -115,16 +115,16 @@ def test_only_the_machines_section_is_read(cfg_path):
 
 
 @pytest.mark.parametrize("payload", [
-    {"id": "local", "shell": {"kind": "ssh", "target": "h"}},
-    {"id": "Bad Id", "shell": {"kind": "ssh", "target": "h"}},
-    {"id": "x", "shell": {"kind": "vm"}},
-    {"id": "x", "shell": {"kind": "local"}},
-    {"id": "x", "shell": {"kind": "ssh"}},
-    {"id": "x", "shell": {"kind": "ssh", "target": "-oProxyCommand=evil"}},
-    {"id": "x", "shell": {"kind": "ssh", "target": "h", "workdir": "relative/dir"}},
-    {"id": "x", "shell": {"kind": "ssh", "target": "h", "port": "22"}},
-    {"id": "x", "shell": {"kind": "docker", "image": "--privileged"}},
-    {"id": "x", "shell": "ssh"},
+    {"id": "local", "connection": {"kind": "ssh", "target": "h"}},
+    {"id": "Bad Id", "connection": {"kind": "ssh", "target": "h"}},
+    {"id": "x", "connection": {"kind": "vm"}},
+    {"id": "x", "connection": {"kind": "local"}},
+    {"id": "x", "connection": {"kind": "ssh"}},
+    {"id": "x", "connection": {"kind": "ssh", "target": "-oProxyCommand=evil"}},
+    {"id": "x", "connection": {"kind": "ssh", "target": "h", "workdir": "relative/dir"}},
+    {"id": "x", "connection": {"kind": "ssh", "target": "h", "port": "22"}},
+    {"id": "x", "connection": {"kind": "docker", "image": "--privileged"}},
+    {"id": "x", "connection": "ssh"},
     {"id": "x", "name": "Nothing"},
     {"name": ""},
 ])
@@ -134,8 +134,8 @@ def test_invalid_payloads_are_refused(cfg_path, payload):
 
 
 def test_a_machine_without_an_id_gets_one_from_its_name(cfg_path):
-    first = machines.save_machine({"name": "Dev Box", "shell": {"kind": "docker"}})
-    second = machines.save_machine({"name": "Dev Box", "shell": {"kind": "docker"}})
+    first = machines.save_machine({"name": "Dev Box", "connection": {"kind": "docker"}})
+    second = machines.save_machine({"name": "Dev Box", "connection": {"kind": "docker"}})
     assert (first.id, second.id) == ("dev-box", "dev-box-2")
     assert first.name == "Dev Box"
 
@@ -143,9 +143,9 @@ def test_a_machine_without_an_id_gets_one_from_its_name(cfg_path):
 def test_saving_keeps_the_position_and_replaces_the_whole_machine(cfg_path):
     machines.save_machine(_ssh("a"))
     machines.save_machine(_ssh("b"))
-    machines.save_machine({"id": "a", "name": "A again", "shell": {"kind": "docker"}})
+    machines.save_machine({"id": "a", "name": "A again", "connection": {"kind": "docker"}})
     assert [m.id for m in machines.list_machines()] == ["local", "a", "b"]
-    assert machines.get_machine("a").shell == Connection("docker")
+    assert machines.get_machine("a").connection == Connection("docker")
 
 
 def test_this_computer_cannot_be_removed_or_switched_off(cfg_path):
@@ -158,126 +158,134 @@ def test_this_computer_cannot_be_removed_or_switched_off(cfg_path):
 def test_display_fields_from_public_are_not_stored(cfg_path):
     saved = machines.save_machine(_ssh())
     machines.save_machine(saved.public())
-    assert _read(cfg_path)["machines"]["items"][0]["shell"] == {"kind": "ssh", "target": "me@devbox"}
+    assert _read(cfg_path)["machines"]["items"][0]["connection"] == {"kind": "ssh", "target": "me@devbox"}
 
 
 # ---- machines that are not environments ----------------------------------------
 
 
-def test_a_machine_without_a_shell_is_never_an_environment(cfg_path, screen_kind):
-    machines.save_machine({"id": "lab", "screen": {"kind": "test_vnc", "address": "10.0.0.5:5900",
+def test_a_machine_commands_cannot_run_on_is_never_an_environment(cfg_path, vnc_method):
+    machines.save_machine({"id": "lab", "connection": {"kind": "test_vnc", "address": "10.0.0.5:5900",
                                                    "password": "pw"}})
     assert [m.id for m in machines.list_machines()] == ["local", "lab"]
     assert [m.id for m in machines.list_environments()] == ["local"]
     assert machines.get_environment("lab") is None
-    with pytest.raises(MachineError, match="no shell"):
+    with pytest.raises(MachineError, match="runs no commands"):
         machines.resolve_for_project(_project("lab"))
 
 
 # ---- secrets and kinds this process does not know ---------------------------------
 
 
-def test_a_secret_is_stored_outside_the_configuration_and_never_sent(cfg_path, screen_kind, tmp_path):
-    saved = machines.save_machine({"id": "office", "screen": {"kind": "test_vnc", "address": "10.0.0.5:5900",
+def test_a_secret_is_stored_outside_the_configuration_and_never_sent(cfg_path, vnc_method, tmp_path):
+    saved = machines.save_machine({"id": "office", "connection": {"kind": "test_vnc", "address": "10.0.0.5:5900",
                                                               "password": "hunter2"}})
-    stored = _read(cfg_path)["machines"]["items"][0]["screen"]
+    stored = _read(cfg_path)["machines"]["items"][0]["connection"]
     assert stored == {"kind": "test_vnc", "address": "10.0.0.5:5900", "password": machines.SECRET_MARKER}
     assert "hunter2" not in cfg_path.read_text()
     secret_file = tmp_path / "state" / "auth" / "machines" / "office.json"
-    assert json.loads(secret_file.read_text()) == {"screen.password": "hunter2"}
+    assert json.loads(secret_file.read_text()) == {"password": "hunter2"}
     if os.name != "nt":
         assert secret_file.stat().st_mode & 0o077 == 0
     public = saved.public()
-    assert public["screen"]["password"] == machines.SECRET_MARKER
+    assert public["connection"]["password"] == machines.SECRET_MARKER
     assert "hunter2" not in json.dumps(public)
-    assert machines.secret(saved, "screen", "password") == "hunter2"
+    assert machines.secret(saved, "password") == "hunter2"
 
 
 @pytest.mark.parametrize("sent", [machines.SECRET_MARKER, None, ""])
-def test_a_save_without_the_secret_keeps_the_stored_one(cfg_path, screen_kind, sent):
-    machines.save_machine({"id": "office", "screen": {"kind": "test_vnc", "address": "a:1", "password": "pw"}})
-    screen = {"kind": "test_vnc", "address": "b:2"}
+def test_a_save_without_the_secret_keeps_the_stored_one(cfg_path, vnc_method, sent):
+    machines.save_machine({"id": "office", "connection": {"kind": "test_vnc", "address": "a:1", "password": "pw"}})
+    connection = {"kind": "test_vnc", "address": "b:2"}
     if sent is not None:
-        screen["password"] = sent
-    saved = machines.save_machine({"id": "office", "name": "Office", "screen": screen})
-    assert saved.screen.get("address") == "b:2"
-    assert machines.secret(saved, "screen", "password") == "pw"
+        connection["password"] = sent
+    saved = machines.save_machine({"id": "office", "name": "Office", "connection": connection})
+    assert saved.connection.get("address") == "b:2"
+    assert machines.secret(saved, "password") == "pw"
 
 
-def test_a_new_secret_replaces_the_old_and_deleting_removes_it(cfg_path, screen_kind, tmp_path):
-    machines.save_machine({"id": "office", "screen": {"kind": "test_vnc", "address": "a:1", "password": "pw"}})
-    saved = machines.save_machine({"id": "office", "screen": {"kind": "test_vnc", "address": "a:1",
+def test_a_new_secret_replaces_the_old_and_deleting_removes_it(cfg_path, vnc_method, tmp_path):
+    machines.save_machine({"id": "office", "connection": {"kind": "test_vnc", "address": "a:1", "password": "pw"}})
+    saved = machines.save_machine({"id": "office", "connection": {"kind": "test_vnc", "address": "a:1",
                                                               "password": "new"}})
-    assert machines.secret(saved, "screen", "password") == "new"
+    assert machines.secret(saved, "password") == "new"
     machines.delete_machine("office")
     assert not (tmp_path / "state" / "auth" / "machines" / "office.json").exists()
 
 
-def test_a_required_secret_is_still_required(cfg_path, screen_kind):
+def test_a_required_secret_is_still_required(cfg_path, vnc_method):
     with pytest.raises(MachineError, match="password"):
-        machines.save_machine({"id": "office", "screen": {"kind": "test_vnc", "address": "a:1"}})
+        machines.save_machine({"id": "office", "connection": {"kind": "test_vnc", "address": "a:1"}})
 
 
-def test_a_kind_this_process_does_not_know_is_kept_verbatim(cfg_path):
+def test_a_method_this_process_does_not_know_is_kept_verbatim(cfg_path):
     raw = {"kind": "from_elsewhere", "url": "http://lab:5000", "token": {"secret": True}, "extra": [1, 2]}
-    _write(cfg_path, {"machines": {"items": [{"id": "lab", "name": "Lab", "screen": raw}]}})
+    _write(cfg_path, {"machines": {"items": [{"id": "lab", "name": "Lab", "connection": raw}]}})
     lab = machines.get_machine("lab")
-    assert lab.screen.kind == "from_elsewhere" and lab.kind("screen") is None
-    assert lab.public()["screen"]["known"] is False
+    assert lab.method == "from_elsewhere" and lab.kind is None and not lab.has_shell
+    assert lab.public()["connection"]["known"] is False
 
     # Another machine changing leaves it alone, and sending it back unchanged keeps it.
     machines.save_machine(_ssh())
     machines.save_machine({**lab.public(), "name": "Lab VM"})
     item = next(i for i in _read(cfg_path)["machines"]["items"] if i["id"] == "lab")
-    assert item == {"id": "lab", "name": "Lab VM", "screen": raw}
+    assert item == {"id": "lab", "name": "Lab VM", "connection": raw}
 
     # A changed one cannot be checked, so it is refused.
-    with pytest.raises(MachineError, match="unknown screen kind"):
-        machines.save_machine({"id": "lab", "screen": {**raw, "url": "http://other"}})
+    with pytest.raises(MachineError, match="unknown connection method"):
+        machines.save_machine({"id": "lab", "connection": {**raw, "url": "http://other"}})
 
 
 def test_a_connection_is_named_in_any_language():
-    """A kind has a label in English and Chinese; where() is only the detail, the same in both."""
+    """A method has a label in English and Chinese; where() is only the detail, the same in both."""
     devbox = _machine("devbox", kind="ssh", target="me@devbox")
     box = _machine("box", kind="docker", image="alpine:3")
-    assert devbox.where("shell") == "me@devbox" and box.where("shell") == "alpine:3"
-    assert machines.local_machine({}).where("shell") == ""
-    assert devbox.describe("shell") == "SSH host me@devbox"
-    assert machines.local_machine({}).describe("shell") == "This computer"
-    shell = devbox.public()["shell"]
-    assert (shell["label"], shell["label_zh"], shell["where"]) == ("SSH host", "SSH 主机", "me@devbox")
+    assert devbox.where() == "me@devbox" and box.where() == "alpine:3"
+    assert machines.local_machine({}).where() == ""
+    assert devbox.describe() == "SSH host me@devbox"
+    assert machines.local_machine({}).describe() == "This computer"
+    connection = devbox.public()["connection"]
+    assert (connection["label"], connection["label_zh"], connection["where"]) == ("SSH host", "SSH 主机", "me@devbox")
     for name in ("ssh", "docker"):
-        kind = kinds.get("shell", name).public()
+        kind = kinds.get(name).public()
         assert kind["label_zh"] and kind["settings"]["description"] and kind["settings"]["x-zh"]["description"]
         for spec in kind["settings"]["properties"].values():
             assert spec["x-zh"]["title"] and spec["x-zh"]["description"]
-    assert "password prompts are not supported" in kinds.get("shell", "ssh").settings["description"]
+    assert "password prompts are not supported" in kinds.get("ssh").settings["description"]
 
 
-def test_kinds_name_their_settings_and_validate_them():
-    ssh = kinds.get("shell", "ssh")
+def test_methods_name_their_settings_and_validate_them():
+    ssh = kinds.get("ssh")
     assert ssh.public()["settings"]["required"] == ["target"]
-    assert ssh.remote_files and ssh.instance_scope == "machine"
-    assert kinds.get("shell", "docker").instance_scope == "conversation"
-    assert {k.name for k in kinds.all_kinds("shell")} >= {"local", "ssh", "docker"}
-    assert kinds.validated("shell", {"kind": "SSH", "target": "me@h", "workdir": ""}) == {
-        "kind": "ssh", "target": "me@h"}
-    assert kinds.validated("shell", {"kind": "docker"}) == {"kind": "docker", "image": DEFAULT_DOCKER_IMAGE}
-    with pytest.raises(kinds.KindError, match="kinds: docker, ssh"):
-        kinds.validated("shell", {"kind": "telnet"})
-    with pytest.raises(ValueError):
-        kinds.register(kinds.Kind(name="x", connection="sound", label="X"))
+    assert {k.name for k in kinds.all_kinds()} >= {"local", "ssh", "docker", "openprogram"}
+    assert kinds.validated({"kind": "SSH", "target": "me@h", "workdir": ""}) == {"kind": "ssh", "target": "me@h"}
+    assert kinds.validated({"kind": "docker"}) == {"kind": "docker", "image": DEFAULT_DOCKER_IMAGE}
+    with pytest.raises(kinds.KindError, match="unknown connection method 'telnet'"):
+        kinds.validated({"kind": "telnet"})
+    # A method says how a device is reached, never what can be done there.
+    assert set(ssh.public()) == {"name", "label", "label_zh", "settings", "local_only", "paired"}
+
+
+def test_the_shell_feature_decides_which_methods_run_commands():
+    """The device layer knows no feature: the shell feature maps methods to how commands run."""
+    from openprogram.host.backend import SHELLS
+    assert set(SHELLS) == {"local", "ssh", "docker"}
+    assert SHELLS["ssh"].remote_files and SHELLS["ssh"].instance_scope == "machine"
+    assert SHELLS["docker"].instance_scope == "conversation" and not SHELLS["docker"].remote_files
+    paired = Machine("studio", "Studio", Connection("openprogram", {"url": "http://10.0.0.9:18100"}))
+    lab = Machine("lab", "Lab", Connection("osworld", {"url": "http://10.0.0.5:5000"}))
+    assert not paired.has_shell and not lab.has_shell
+    assert not machines.usable_as_environment(paired) and not machines.usable_as_environment(lab)
 
 
 # ---- discovery -----------------------------------------------------------------
 
 
 def test_discovered_machines_are_marked_and_never_take_a_configured_id(cfg_path, monkeypatch):
-    found = [Machine("iphone-16-9f3a", "iPhone 16", screen=Connection("test_sim")),
-             Machine("devbox", "Clash", screen=Connection("test_sim"))]
+    found = [Machine("iphone-16-9f3a", "iPhone 16", Connection("test_sim")),
+             Machine("devbox", "Clash", Connection("test_sim"))]
     machines.save_machine(_ssh())
-    kind = kinds.register(kinds.Kind(name="test_sim", connection="screen", label="Simulator",
-                                     discover=lambda: found))
+    kind = kinds.register(kinds.Kind(name="test_sim", label="Simulator", discover=lambda: found))
     try:
         discovered = machines.discovered_machines()
         assert [m.id for m in discovered] == ["iphone-16-9f3a"]
@@ -287,7 +295,7 @@ def test_discovered_machines_are_marked_and_never_take_a_configured_id(cfg_path,
         with pytest.raises(MachineError, match="discovered"):
             machines.save_machine(_ssh("iphone-16-9f3a"))
     finally:
-        kinds._kinds.pop(("screen", kind.name), None)
+        kinds._kinds.pop(kind.name, None)
 
 
 # ---- projects decide ----------------------------------------------------------
@@ -326,7 +334,7 @@ def test_the_home_project_and_a_project_naming_no_machine_run_here(cfg_path, pro
 
 def test_removed_machine_never_falls_back(cfg_path, project_of, monkeypatch):
     project_of(_project("gone"))
-    with pytest.raises(MachineError, match="Settings > Machines"):
+    with pytest.raises(MachineError, match="Settings > Devices"):
         machines.resolve_for_session("s1")
     monkeypatch.setattr("openprogram.state.execution_facts.current_session_id", lambda: "s1")
     backend = get_active_backend()
@@ -343,7 +351,7 @@ def test_switched_off_machine_never_falls_back(cfg_path, project_of):
 
 
 @pytest.mark.parametrize("change", ["switch_off", "remove", "lose_shell"])
-def test_a_machine_switched_off_mid_turn_takes_no_more_work(cfg_path, screen_kind, change):
+def test_a_machine_switched_off_mid_turn_takes_no_more_work(cfg_path, vnc_method, change):
     """The turn bound the machine at its start; every later command and file call reads it again."""
     from openprogram.host.machines import remote
     devbox = machines.save_machine(_ssh())
@@ -355,7 +363,7 @@ def test_a_machine_switched_off_mid_turn_takes_no_more_work(cfg_path, screen_kin
         elif change == "remove":
             machines.delete_machine("devbox")
         else:
-            machines.save_machine({"id": "devbox", "screen": {"kind": "test_vnc", "address": "a", "password": "p"}})
+            machines.save_machine({"id": "devbox", "connection": {"kind": "test_vnc", "address": "a", "password": "p"}})
         with pytest.raises(MachineError, match="devbox"):
             machines.current_environment()
         backend = get_active_backend()
@@ -401,11 +409,11 @@ def test_still_usable_reads_the_machine_again(cfg_path):
 # ---- backends ---------------------------------------------------------------
 
 
-def _machine(machine_id, **shell):
-    return Machine(machine_id, machine_id, shell=Connection(shell.pop("kind"), shell))
+def _machine(machine_id, **settings):
+    return Machine(machine_id, machine_id, Connection(settings.pop("kind"), settings))
 
 
-def test_backend_for_each_shell_kind():
+def test_backend_for_each_method_commands_run_through():
     assert isinstance(backend_for(machines.local_machine({})), LocalBackend)
     b = backend_for(_machine("devbox", kind="ssh", target="me@devbox", workdir="/srv/app"))
     assert isinstance(b, SshBackend) and b.target == "me@devbox" and b.workdir == "/srv/app"
@@ -418,13 +426,13 @@ def test_backend_for_each_shell_kind():
 
 def test_a_machine_without_a_shell_runs_nothing():
     with pytest.raises(RuntimeError, match="no shell"):
-        backend_for(Machine("lab", "Lab", screen=Connection("osworld", {"url": "http://x"})))
+        backend_for(Machine("lab", "Lab", Connection("osworld", {"url": "http://x"})))
     with pytest.raises(RuntimeError, match="no shell"):
         backend_for(_machine("odd", kind="not_loaded"))
 
 
 def test_turn_binding_routes_active_backend(cfg_path):
-    token = machines.bind_turn_environment(machines.save_machine({"id": "box", "shell": {"kind": "docker"}}))
+    token = machines.bind_turn_environment(machines.save_machine({"id": "box", "connection": {"kind": "docker"}}))
     try:
         assert isinstance(get_active_backend(), DockerBackend)
     finally:
@@ -541,7 +549,7 @@ def test_no_container_starts_for_a_machine_switched_off_meanwhile(cfg_path, monk
                                                                                           stderr=""))
     monkeypatch.setattr(docker, "_ready", {})
     # Its backend was made while it was on; it was switched off before the command ran.
-    d = backend_for(machines.save_machine({"id": "box", "shell": {"kind": "docker"}}), "s1")
+    d = backend_for(machines.save_machine({"id": "box", "connection": {"kind": "docker"}}), "s1")
     machines.set_enabled("box", False)
     result = d.run("ls", 5)
     assert result.exit_code == 1 and "switched off" in result.stderr
@@ -555,7 +563,7 @@ def test_no_container_starts_for_a_machine_switched_off_meanwhile(cfg_path, monk
 def test_a_container_removed_with_its_machine_is_not_started_again(cfg_path, monkeypatch):
     from openprogram.host.backend import docker
     calls = []
-    d = backend_for(machines.save_machine({"id": "box", "shell": {"kind": "docker"}}), "s1")
+    d = backend_for(machines.save_machine({"id": "box", "connection": {"kind": "docker"}}), "s1")
 
     def run(argv, **kwargs):
         calls.append(argv[1])
@@ -601,7 +609,7 @@ def test_a_container_removed_behind_the_cache_is_started_again(monkeypatch):
 
 def test_instances_are_removed_by_label(cfg_path, monkeypatch):
     from openprogram.host.backend import docker
-    machines.save_machine({"id": "box", "enabled": False, "shell": {"kind": "docker"}})
+    machines.save_machine({"id": "box", "enabled": False, "connection": {"kind": "docker"}})
     calls = []
 
     def run(argv, **kwargs):
@@ -638,9 +646,9 @@ def test_a_machine_switched_on_again_keeps_its_instances(cfg_path, monkeypatch):
     from openprogram.host.backend import docker
     order = []
     monkeypatch.setattr(docker, "remove_containers", lambda **kw: order.append("remove"))
-    machines.save_machine({"id": "box", "shell": {"kind": "docker"}})
-    kind = kinds.register(kinds.Kind(name="test_scoped", connection="shell", label="Scoped",
-                                     remove_instances=lambda machine, conversation: order.append("remove")))
+    machines.save_machine({"id": "box", "connection": {"kind": "docker"}})
+    monkeypatch.setitem(backend.SHELLS, "test_scoped", backend.Shell(
+        lambda machine, session: None, remove_instances=lambda machine, conversation: order.append("remove")))
     monkeypatch.setattr(machines, "releasers", [lambda **kw: order.append("release")])
     try:
         # Switched on again before the removal began: nothing is released or removed.
@@ -656,7 +664,7 @@ def test_a_machine_switched_on_again_keeps_its_instances(cfg_path, monkeypatch):
         monkeypatch.setattr(backend, "wait_idle", finished)
         machines.remove_instances(machine="box")
     finally:
-        kinds._kinds.pop(("shell", kind.name), None)
+        pass
     assert order == ["release"]
 
 
@@ -666,13 +674,10 @@ def test_running_commands_finish_before_a_machines_instances_go(cfg_path, monkey
     order = []
     monkeypatch.setattr(backend, "wait_idle", lambda machine_id, timeout: order.append(("wait", machine_id, timeout))
                         or True)
-    kind = kinds.register(kinds.Kind(name="test_scoped", connection="shell", label="Scoped",
-                                     remove_instances=lambda machine, conversation: order.append(("remove", machine))))
-    try:
-        machines.remove_instances(machine="box")
-        machines.remove_instances(conversation="c1")
-    finally:
-        kinds._kinds.pop(("shell", kind.name), None)
+    monkeypatch.setitem(backend.SHELLS, "test_scoped", backend.Shell(
+        lambda machine, session: None, remove_instances=lambda machine, conversation: order.append(("remove", machine))))
+    machines.remove_instances(machine="box")
+    machines.remove_instances(conversation="c1")
     assert order[:2] == [("wait", "box", machines.RELEASE_WAIT), ("remove", "box")]
     # A conversation's removal waits for nothing: its turn was stopped before.
     assert ("wait", None, machines.RELEASE_WAIT) not in order
@@ -749,7 +754,7 @@ def test_a_background_command_counts_on_its_machine_while_its_supervisor_lives(m
 
 def test_no_docker_means_nothing_to_remove(cfg_path, monkeypatch):
     from openprogram.host.backend import docker
-    machines.save_machine({"id": "box", "shell": {"kind": "docker"}})
+    machines.save_machine({"id": "box", "connection": {"kind": "docker"}})
 
     def run(argv, **kwargs):
         raise FileNotFoundError("docker")
@@ -761,10 +766,10 @@ def test_no_docker_means_nothing_to_remove(cfg_path, monkeypatch):
 # ---- checks -------------------------------------------------------------------
 
 
-def test_check_walks_every_connection_and_names_an_unknown_kind():
+def test_check_asks_the_method_and_names_an_unknown_one():
     from openprogram.host.machines.check import check_machine
-    assert check_machine(Machine("local", "This computer", shell=Connection("local"))) == (True, "This computer")
-    ok, message = check_machine(Machine("lab", "Lab", screen=Connection("not_loaded")))
+    assert check_machine(Machine("local", "This computer", Connection("local"))) == (True, "This computer")
+    ok, message = check_machine(Machine("lab", "Lab", Connection("not_loaded")))
     assert not ok and "not_loaded" in message
 
 
@@ -871,7 +876,7 @@ def test_the_remote_folder_follows_an_edited_target(monkeypatch):
         def run(self, command, timeout):
             return types.SimpleNamespace(exit_code=0, stdout=homes[self.target] + "\n")
 
-    monkeypatch.setattr(backend, "backend_for", lambda machine: _Shell(machine.shell.get("target")))
+    monkeypatch.setattr(backend, "backend_for", lambda machine: _Shell(machine.connection.get("target")))
     monkeypatch.setattr(remote, "_workdirs", {})
     assert remote.remote_workdir(_machine("devbox", kind="ssh", target="me@host-a")) == "/home/me"
     # Same id, another target: the folder is resolved again.

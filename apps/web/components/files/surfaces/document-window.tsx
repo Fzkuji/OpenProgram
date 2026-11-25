@@ -9,6 +9,8 @@ import { EditorArea, FileViewer } from "../file-viewer";
 import { getOrCreateDocumentController } from "@/lib/files/document/document-controller";
 import type { DocumentHistoryEntry, DocumentHistoryPage } from "@/lib/files/document/document-types";
 import styles from "./document-window.module.css";
+import { CAPSULE_GROOVE, CAPSULE_OPTION, CHOSEN_OPTION } from "@/components/ui/capsule";
+import { SlidingThumb } from "@/components/ui/sliding-thumb";
 
 import { fileCapabilities } from "@/lib/documents/file-formats";
 import { canBrowseLocalFiles, isHtmlPath } from "@/lib/files/local-file-url";
@@ -334,13 +336,16 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false, s
         onClick={() => void refresh()} {...refreshIcon.handlers}>
         <RefreshCwIcon ref={refreshIcon.ref} size={14} aria-hidden />{text("Refresh", "刷新")}
       </button>
-      {!isOffice && <button className={`${BUTTON} ${mode === "preview" && !selected ? styles.active : ""}`}
-        aria-pressed={mode === "preview" && !selected} onClick={() => void showCurrent()}>{isHtml ? text("Source", "源代码") : text("Preview", "预览")}</button>}
+      {(!isOffice || (!readOnly && (isText || isRaster))) && <div className={CAPSULE_GROOVE} role="group" aria-label={text("View", "视图")}>
+        {!isOffice && <button type="button" className={CAPSULE_OPTION}
+          aria-pressed={mode === "preview" && !selected} onClick={() => void showCurrent()}>{isHtml ? text("Source", "源代码") : text("Preview", "预览")}</button>}
+        {!readOnly && (isText || isRaster) && <button type="button" className={CAPSULE_OPTION}
+          disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
+          onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
+        <SlidingThumb selector={CHOSEN_OPTION} />
+      </div>}
       {canOpenPage && <button type="button" className={BUTTON} disabled={state.restoring || state.renaming}
         onClick={() => void openPage()}>{text("View page", "网页预览")}</button>}
-      {!readOnly && (isText || isRaster) && <button className={`${BUTTON} ${mode === "edit" && !selected ? styles.active : ""}`}
-        disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
-        onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
       {!readOnly && office?.conversionRequired && !selected && <button className={BUTTON}
         disabled={!currentBytes || converting} onClick={() => void convert()}>
         {text(`Convert to ${office.format.toUpperCase()}`, `转换为 ${office.format.toUpperCase()}`)}</button>}

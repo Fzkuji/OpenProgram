@@ -9,14 +9,14 @@ def support() -> dict[str, Any]:
     """Whether this host can run computer_use, and why not."""
     system = platform.system()
     if system == "Darwin":
-        from . import macos
-        return macos.support()
+        from .macos import frameworks
+        return frameworks.support()
     if system == "Linux":
-        from . import linux
-        return linux.support()
+        from .linux import x11
+        return x11.support()
     if system == "Windows":
-        from . import windows
-        return windows.support()
+        from .windows import win32
+        return win32.support()
     return {"available": False, "reason": "computer_use supports macOS, Linux (X11) and Windows"}
 
 
@@ -25,13 +25,15 @@ def backend():
     system = platform.system()
     if system in ("Linux", "Windows"):
         if system == "Linux":
-            from . import linux as module
+            from .linux import computer as module
+            from .linux.x11 import support
         else:
-            from . import windows as module
-        state = module.support()
+            from .windows import computer as module
+            from .windows.win32 import support
+        state = support()
         if not state["available"]:
-            from .base import ComputerUseError
+            from .common.base import ComputerUseError
             raise ComputerUseError(state["reason"])
         return module.backend()
-    from . import macos
-    return macos.backend()
+    from .macos import computer
+    return computer.backend()

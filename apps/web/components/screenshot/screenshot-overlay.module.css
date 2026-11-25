@@ -1,0 +1,200 @@
+/* The screenshot overlay: the frozen display, dimmed outside the selection. */
+
+.root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  background: #000;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Everything but the selection is dimmed by the selection's own shadow. */
+.selection {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.45);
+  outline: 1.5px solid var(--accent-blue);
+  pointer-events: none;
+}
+
+.selection[data-hover] {
+  outline-width: 2px;
+}
+
+.dimAll {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+.handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 1.5px solid var(--accent-blue);
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+}
+
+.handle[data-handle="nw"] { left: 0; top: 0; }
+.handle[data-handle="n"] { left: 50%; top: 0; }
+.handle[data-handle="ne"] { left: 100%; top: 0; }
+.handle[data-handle="e"] { left: 100%; top: 50%; }
+.handle[data-handle="se"] { left: 100%; top: 100%; }
+.handle[data-handle="s"] { left: 50%; top: 100%; }
+.handle[data-handle="sw"] { left: 0; top: 100%; }
+.handle[data-handle="w"] { left: 0; top: 50%; }
+
+/* Fixed dark chips: they sit on the picture, whatever the App's theme. */
+.size {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  background: rgb(20 20 22 / 0.88);
+  color: #eee;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.size[data-below] {
+  bottom: auto;
+  top: 6px;
+  left: 6px;
+}
+
+.toolbar {
+  position: absolute;
+  z-index: 2;
+}
+
+.magnifier {
+  position: absolute;
+  z-index: 3;
+  width: 120px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgb(20 20 22 / 0.92);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.1);
+  color: #ddd;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.magnifier canvas {
+  display: block;
+}
+
+.magnifierRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 8px;
+}
+
+.magnifierRow:last-child {
+  padding-bottom: 5px;
+}
+
+.chip {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+}
+
+.muted {
+  color: #888;
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: rgb(20 20 22 / 0.88);
+  color: #ccc;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.textInput {
+  position: absolute;
+  z-index: 2;
+  min-width: 120px;
+  padding: 0 2px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  line-height: 1.25;
+  background: rgb(0 0 0 / 0.25);
+  border: 1px dashed currentColor;
+  border-radius: var(--radius-xs);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.ocrBox {
+  position: absolute;
+  border: 1px solid color-mix(in oklab, var(--accent-blue) 85%, transparent);
+  background: color-mix(in oklab, var(--accent-blue) 14%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.ocr {
+  position: absolute;
+  z-index: 2;
+  width: 300px;
+  padding: 10px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--popover-shadow), 0 0 0 1px var(--popover-ring);
+}
+
+.ocrText {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  outline: none;
+  user-select: text;
+}
+
+.ocrEmpty {
+  margin: 4px 2px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.ocrActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}

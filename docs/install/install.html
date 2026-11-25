@@ -7,9 +7,9 @@
 <table class="stack" id="choose">
 <thead><tr><th scope="col">Your computer</th><th scope="col">App</th><th scope="col">Terminal and server</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS 13.5 or later</th><td><a href="../latest.html?OpenProgram-mac-arm64.dmg">Apple Silicon DMG</a> · <a href="../latest.html?OpenProgram-mac-x64.dmg">Intel DMG</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
-<tr><th scope="row">Linux with glibc 2.35 or later<span class="arg">Ubuntu 22.04, Debian 12 or newer</span></th><td><a href="#linux">deb or AppImage</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
-<tr><th scope="row">Windows 10 or 11, x64</th><td><a href="../latest.html?OpenProgram-win-x64.exe">Installer</a></td><td><code translate="no">irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
+<tr><th scope="row">macOS 13.5 or later</th><td><a href="../latest.html?OpenProgram-mac-arm64.dmg">Apple Silicon DMG</a> · <a href="../latest.html?OpenProgram-mac-x64.dmg">Intel DMG</a></td><td><code translate="no">curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh</code></td></tr>
+<tr><th scope="row">Linux with glibc 2.35 or later<span class="arg">Ubuntu 22.04, Debian 12 or newer</span></th><td><a href="#linux">deb or AppImage</a></td><td><code translate="no">curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh</code></td></tr>
+<tr><th scope="row">Windows 10 or 11, x64</th><td><a href="../latest.html?OpenProgram-win-x64.exe">Installer</a></td><td><code translate="no">irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</code></td></tr>
 </tbody>
 </table>
 <p class="note">If the website does not answer, the same scripts come straight from GitHub:</p>
@@ -85,7 +85,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <tr><th scope="row">Blocked by <strong>Smart App Control</strong></th><td>Windows has no per-app exception. Use the terminal install; if Windows stops that too, the only choice left is turning Smart App Control off in <strong>Windows Security → App &amp; browser control</strong>.</td></tr>
 </tbody>
 </table>
-<p class="note">From Command Prompt: <code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install.cmd -o install.cmd &amp;&amp; install.cmd</code></p>
+<p class="note">From Command Prompt: <code translate="no">curl -fsSL https://fzkuji.github.io/OpenProgram/install.cmd -o install.cmd &amp;&amp; install.cmd</code></p>
 
 <h2 id="proxy">Behind a proxy</h2>
 <table class="stack fixed">
@@ -105,8 +105,8 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Shell</th><th scope="col">Command</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS, Linux</th><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | OPENPROGRAM_VERSION=X.Y.Z sh</code></td></tr>
-<tr><th scope="row">Windows</th><td><code translate="no">$env:OPENPROGRAM_VERSION = "X.Y.Z"; irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
+<tr><th scope="row">macOS, Linux</th><td><code translate="no">curl -fsSL https://fzkuji.github.io/OpenProgram/install | OPENPROGRAM_VERSION=X.Y.Z sh</code></td></tr>
+<tr><th scope="row">Windows</th><td><code translate="no">$env:OPENPROGRAM_VERSION = "X.Y.Z"; irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</code></td></tr>
 </tbody>
 </table>
 </details>

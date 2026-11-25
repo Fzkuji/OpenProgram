@@ -92,14 +92,13 @@ class Upstream:
             return False
 
     async def _open(self) -> bool:
-        from openprogram.host.machines import get_machine, secret
-        from openprogram.host.machines.peer import routes_of
+        from openprogram.host.machines import get_machine
+        from openprogram.host.machines.peer import credential, is_paired
 
         machine = get_machine(self.machine_id)
-        if machine is None or not machine.enabled or machine.connection("openprogram") is None:
+        if machine is None or not machine.enabled or not is_paired(machine):
             return False
-        token = secret(machine, "openprogram", "token")
-        routes = routes_of(machine.connection("openprogram").settings)
+        routes, token = credential(machine)
         known = links.route_of(self.machine_id)
         if known in routes:
             routes = [known] + [route for route in routes if route != known]

@@ -6,7 +6,6 @@
 .button { gap:6px; }
 /* The pressed mode (Preview / Edit) sits flat and a step darker than the
    raised buttons beside it. */
-.active { background:color-mix(in srgb, var(--text-bright) 9%, var(--bg-input)); color:var(--text-bright); box-shadow:none; }
 .history { border-top:1px solid var(--border-subtle); max-height:220px; overflow:auto; padding:8px 12px; }
 .historyTitle { font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:6px; }
 .entry { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:var(--fs-xs); }

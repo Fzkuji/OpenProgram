@@ -8,7 +8,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">快照</th><td><code translate="no">get_state</code> 返回 Playwright 的 AI 快照：ARIA 树，每个元素带一个 ref（<code translate="no">e12</code>，框架内为 <code translate="no">f1e3</code>）。不写 <code translate="no">include</code> 时，提供方要 <code translate="no">all</code>，即大纲加截图；调用不收图片时（如代码模式）要 <code translate="no">tree</code>（<code translate="no">built_in_browser.with_include</code>），内置浏览器和 Chrome、Edge 都一样。</td></tr>
+<tr><th scope="row">快照</th><td><code translate="no">get_state</code> 返回 Playwright 的 AI 快照：ARIA 树，每个元素带一个 ref（<code translate="no">e12</code>，框架内为 <code translate="no">f1e3</code>）。不写 <code translate="no">include</code> 时，提供方要 <code translate="no">all</code>，即大纲加截图；调用不收图片时（如代码模式）要 <code translate="no">tree</code>（<code translate="no">browser.built_in.with_include</code>），内置浏览器和 Chrome、Edge 都一样。</td></tr>
 <tr><th scope="row">Playwright 版本</th><td>Playwright 1.60 以 <code translate="no">Frame.ariaSnapshot(mode="ai", track)</code> 提供它，返回一段文本：同一文档已有被跟踪的快照时是增量；更早的版本以 <code translate="no">Page.snapshotForAI</code> 提供，两者一并返回。</td></tr>
 <tr><th scope="row">全量或增量</th><td>文档是新的或需要整页时，驱动请求整页，否则只请求变化。</td></tr>
 <tr><th scope="row">标记</th><td>变化的行标为 <code translate="no">&lt;changed&gt;</code>，<code translate="no">[unchanged]</code> 代表已经发送过的部分。</td></tr>

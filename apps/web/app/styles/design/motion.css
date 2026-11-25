@@ -13,3 +13,25 @@
   --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
+
+/* Content entering after a page's section switch moved (useSectionEnter in
+   components/ui/section-slide.tsx): it slides in from the side the switch
+   moved towards. A CSS animation, so content a route change hides for a
+   moment starts again when it shows. */
+[data-section-enter] {
+  animation: section-enter var(--motion-slow) var(--ease-standard) both;
+}
+[data-section-enter="back"] {
+  --section-enter-from: -8.333%;
+}
+@keyframes section-enter {
+  from {
+    opacity: 0;
+    transform: translateX(var(--section-enter-from, 8.333%));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-section-enter] {
+    animation: none;
+  }
+}

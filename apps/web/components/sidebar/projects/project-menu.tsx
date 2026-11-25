@@ -37,7 +37,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   const pinned = view.pinnedProjects.includes(project.id);
   // The file manager and git worktrees work on this computer's folders only:
   // a project on an SSH host does not offer them.
-  const folderHere = projectFolderHere(project, useMachines((s) => s.items), useMachines((s) => s.kinds));
+  const folderHere = projectFolderHere(project, useMachines((s) => s.items));
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
   }

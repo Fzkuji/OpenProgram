@@ -223,7 +223,7 @@ def test_an_application_name_the_matcher_reads_as_a_wildcard_is_allowed_once_onl
 
 def test_a_target_that_does_not_resolve_is_never_free(decide, monkeypatch):
     from openprogram.programs._authoring.prechecks import call_problem
-    from openprogram.programs.tools.computer_use.computer_use import registry
+    from openprogram.programs.tools.computer_use.computer_use.routing import registry
     unknown = {"type": "printer", "action": "click"}
     # The model hears of it before any decision: no card, no review, no refusal for nobody to approve.
     problem = call_problem(NAME, unknown)

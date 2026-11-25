@@ -16,6 +16,7 @@ import { ProgramsPage } from "@/components/programs/programs-page";
 import { SkillsPage } from "@/components/skills/skills-page";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManagePage, ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+
 import { useTranslation } from "@/lib/i18n";
 import { pushPath } from "@/lib/nav/shallow-nav";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";

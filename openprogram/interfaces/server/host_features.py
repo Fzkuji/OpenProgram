@@ -37,7 +37,7 @@ def _computer_use_app() -> dict:
 
 
 def _computer_use_code() -> dict:
-    from openprogram.programs.tools.computer_use.computer_use import code
+    from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code
     if code.available():
         return {"available": True, "reason": ""}
     if sys.platform != "darwin":

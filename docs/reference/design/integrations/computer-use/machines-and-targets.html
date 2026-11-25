@@ -1,10 +1,10 @@
 <title>Machines and targets</title>
-<meta name="description" content="How computer use names what it operates: one registry of machines, a call that names its device and type, the devices note beside the conversation, one vocabulary of actions, and the contract a new kind of device implements.">
+<meta name="description" content="How computer use names what it operates: one registry of machines, each reached by one connection method, a call that names its device and type, the devices note beside the conversation, one vocabulary of actions, and the contract a new kind of device implements.">
 <meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/">
 <h1>Machines and targets</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 558" role="img" aria-label="Shell and file tools run on the conversation's environment, the machine its project's folder is on. Every computer_use call names a device and a type; without a device it is this computer. Both read one registry of machines. Each machine has connections, shell, window, screen and browser, and each connection other than the shell gives one type of target with the same name: window, screen, browser. On this computer the browser connection also gives the user's Chrome and Edge. A phone would have a mobile connection. Every connection kind is one module behind one contract.">
+<svg class="fig-wide" viewBox="0 0 680 558" role="img" aria-label="Shell and file tools run on the conversation's environment, the machine its project's folder is on. Every computer_use call names a device and a type; without a device it is this computer. Both read one registry of devices, and each device has one connection method. Each feature decides what it does with a method. This computer (local): commands and files; window, browser and the user's browsers, and screen while Whole screen is on. An SSH host (ssh): commands and its own files; nothing for computer_use. A Docker machine (docker): commands in one container per conversation; nothing for computer_use. A virtual machine (osworld): its screen. Another computer's OpenProgram (openprogram): its conversations listed here and run there; window, screen and browser, run there. The device layer keeps only id, name and one connection; the shell feature maps methods in SHELLS and computer_use offers openers by method.">
   <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <rect class="tile" x="120" y="0" width="160" height="56" rx="8"/>
   <text class="t-cmd mid" x="200" y="24" translate="no">bash, read, edit</text><text class="t-soft mid" x="200" y="44">shell and file tools</text>
@@ -19,33 +19,33 @@
   <line class="ln" x1="200" y1="160" x2="200" y2="192" marker-end="url(#mt-a)"/>
   <line class="ln" x1="490" y1="160" x2="490" y2="192" marker-end="url(#mt-a)"/>
   <rect class="tile" x="0" y="196" width="680" height="274" rx="8"/>
-  <text x="16" y="219">machines</text>
-  <text class="t-soft mid" x="162" y="219" translate="no">shell</text><text class="t-soft mid" x="257" y="219" translate="no">window</text><text class="t-soft mid" x="392" y="219" translate="no">screen</text><text class="t-soft mid" x="568" y="219" translate="no">browser</text>
-  <line class="ln-faint" x1="130" y1="230" x2="130" y2="462"/><line class="ln-faint" x1="195" y1="230" x2="195" y2="462"/><line class="ln-faint" x1="320" y1="230" x2="320" y2="414"/><line class="ln-faint" x1="465" y1="230" x2="465" y2="462"/>
+  <text x="16" y="219">devices</text>
+  <text class="t-soft mid" x="195" y="219">method</text><text class="t-soft mid" x="355" y="219">shell feature</text><text class="t-soft mid" x="565" y="219" translate="no">computer_use</text>
+  <line class="ln-faint" x1="130" y1="230" x2="130" y2="462"/><line class="ln-faint" x1="260" y1="230" x2="260" y2="462"/><line class="ln-faint" x1="450" y1="230" x2="450" y2="462"/>
   <line class="ln-faint" x1="10" y1="230" x2="670" y2="230"/>
   <text class="t-note" x="16" y="250">This computer</text><text class="t-soft" x="16" y="268">device left out</text>
-  <text class="t-soft mid" x="162" y="258" translate="no">local</text><text class="t-cmd mid" x="257" y="258" translate="no">window</text><text class="t-cmd mid" x="392" y="250" translate="no">screen</text><text class="t-soft mid" x="392" y="268">whole screen on</text><text class="t-cmd mid" x="568" y="250" translate="no">browser</text><text class="t-cmd mid" x="568" y="268" translate="no">browser chrome</text>
+  <text class="t-cmd mid" x="195" y="258" translate="no">local</text><text class="t-soft mid" x="355" y="258">commands, files</text><text class="t-cmd mid" x="565" y="250" translate="no">window, browser, browser chrome</text><text class="t-soft mid" x="565" y="268"><tspan class="t-cmd" translate="no">screen</tspan> while Whole screen is on</text>
   <line class="ln-faint" x1="10" y1="276" x2="670" y2="276"/>
   <text class="t-note" x="16" y="296">devbox</text><text class="t-soft" x="16" y="314">SSH host</text>
-  <text class="t-soft mid" x="162" y="304" translate="no">ssh</text><text class="t-cmd mid" x="257" y="304" translate="no">window</text><text class="t-cmd mid" x="392" y="304" translate="no">screen</text><text class="t-cmd mid" x="568" y="304" translate="no">browser</text>
+  <text class="t-cmd mid" x="195" y="304" translate="no">ssh</text><text class="t-soft mid" x="355" y="304">commands, its own files</text><text class="t-soft mid" x="565" y="304">—</text>
   <line class="ln-faint" x1="10" y1="322" x2="670" y2="322"/>
   <text class="t-note" x="16" y="342">builder</text><text class="t-soft" x="16" y="360">Docker</text>
-  <text class="t-soft mid" x="162" y="350" translate="no">docker</text><text class="t-cmd mid" x="257" y="350" translate="no">window</text><text class="t-cmd mid" x="392" y="350" translate="no">screen</text><text class="t-cmd mid" x="568" y="350" translate="no">—</text>
+  <text class="t-cmd mid" x="195" y="350" translate="no">docker</text><text class="t-soft mid" x="355" y="342">commands, one container</text><text class="t-soft mid" x="355" y="360">per conversation</text><text class="t-soft mid" x="565" y="350">—</text>
   <line class="ln-faint" x1="10" y1="368" x2="670" y2="368"/>
   <text class="t-note" x="16" y="388">lab</text><text class="t-soft" x="16" y="406">virtual machine</text>
-  <text class="t-soft mid" x="162" y="396" translate="no">—</text><text class="t-cmd mid" x="257" y="396" translate="no">—</text><text class="t-cmd mid" x="392" y="396" translate="no">screen</text><text class="t-cmd mid" x="568" y="396" translate="no">—</text>
+  <text class="t-cmd mid" x="195" y="396" translate="no">osworld</text><text class="t-soft mid" x="355" y="396">—</text><text class="t-cmd mid" x="565" y="396" translate="no">screen</text>
   <line class="ln-faint" x1="10" y1="414" x2="670" y2="414"/>
-  <text class="t-note" x="16" y="434">pixel-8</text><text class="t-soft" x="16" y="452">phone</text>
-  <text class="t-soft mid" x="162" y="442" translate="no">—</text><text class="t-cmd mid" x="330" y="434" translate="no">mobile</text><text class="t-soft mid" x="330" y="452">its own mobile connection</text><text class="t-cmd mid" x="568" y="442" translate="no">—</text>
+  <text class="t-note" x="16" y="434">studio</text><text class="t-soft" x="16" y="452">another computer</text>
+  <text class="t-cmd mid" x="195" y="442" translate="no">openprogram</text><text class="t-soft mid" x="355" y="434">its conversations,</text><text class="t-soft mid" x="355" y="452">listed here, run there</text><text class="t-cmd mid" x="565" y="434" translate="no">window, screen, browser</text><text class="t-soft mid" x="565" y="452">run there, when it allows</text>
   <line class="ln" x1="340" y1="470" x2="340" y2="490" marker-end="url(#mt-a)"/>
   <rect class="tile" x="0" y="494" width="680" height="64" rx="8"/>
-  <text x="16" y="520">one module per connection kind, one contract</text><text class="t-soft" x="16" y="542" translate="no">describe · list · get_state · act · approval · lock · resource</text>
+  <text x="16" y="520">a device: id, name, one connection; each feature maps methods</text><text class="t-soft" x="16" y="542" translate="no">host.backend.SHELLS · registry.offer(method, opener)</text>
 </svg>
 <ol class="flow fig-narrow">
   <li><strong><code translate="no">bash</code>, <code translate="no">read</code>, <code translate="no">edit</code></strong><small>run on the conversation's environment: the machine its project's folder is on</small></li>
   <li><strong><code translate="no">computer_use</code></strong><small>every call names a device and a type; without a device it is this computer</small></li>
-  <li><strong>Machines</strong><small>this computer, SSH hosts, Docker machines, virtual machines; each with shell, window, screen or browser connections, each giving the type of the same name</small></li>
-  <li class="flow-end"><strong>Providers</strong><small>one module per connection kind, all behind one contract</small></li>
+  <li><strong>Devices</strong><small>this computer, SSH hosts, Docker machines, virtual machines, other computers' OpenProgram; each reached by one connection method</small></li>
+  <li class="flow-end"><strong>Features</strong><small>each decides what it does with a method: commands through <code translate="no">local</code>, <code translate="no">ssh</code>, <code translate="no">docker</code>; targets through <code translate="no">local</code>, <code translate="no">osworld</code>, <code translate="no">openprogram</code></small></li>
 </ol>
 </figure>
 
@@ -63,60 +63,70 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Concept</th><th scope="col">Is</th></tr></thead>
 <tbody>
-<tr><th scope="row">Machine</th><td>A computer with its own operating system: this computer, an SSH host, a Docker machine, a virtual machine, a remote desktop, a phone, a simulator. One registry. Connections: <code translate="no">shell</code>, <code translate="no">window</code>, <code translate="no">screen</code>, <code translate="no">browser</code>; a phone or simulator has <code translate="no">mobile</code>.</td></tr>
-<tr><th scope="row">This computer</th><td>Built in as <code translate="no">local</code>, never stored; a call names it by leaving <code translate="no">device</code> out.</td></tr>
+<tr><th scope="row">Machine</th><td>A computer with its own operating system: this computer, an SSH host, a Docker machine, a virtual machine, another computer with its own OpenProgram. One registry. A machine is an id, a name, an enabled switch and one connection.</td></tr>
+<tr><th scope="row">This computer</th><td>Built in, with the method <code translate="no">local</code>, never stored; a call names it by leaving <code translate="no">device</code> out.</td></tr>
 <tr><th scope="row">Device</th><td>How a call names a machine: its id (its name is accepted too). The operating system is a property of the device, shown in <code translate="no">&lt;devices&gt;</code>, never a call argument.</td></tr>
-<tr><th scope="row">Connection</th><td>How one capability of a machine is reached; each one other than <code translate="no">shell</code> gives the type of the same name (<a href="#connections">Connections</a>). Its <code translate="no">kind</code> picks the code.</td></tr>
+<tr><th scope="row">Connection</th><td>How a machine is reached: one method (its <code translate="no">kind</code>) and that method's settings (<a href="#methods">Connection methods</a>). It says nothing about what is done there.</td></tr>
 <tr><th scope="row">Project</th><td>A folder on one machine: (machine, folder). Its conversations run on that machine, in that folder.</td></tr>
-<tr><th scope="row">Environment</th><td>A role: the machine a conversation's commands and file tools run on, its project's machine. It needs a <code translate="no">shell</code>.</td></tr>
-<tr><th scope="row">Type</th><td>What kind of thing is operated; it fixes the vocabulary. <code translate="no">window</code>: application windows by element tree. <code translate="no">screen</code>: a whole display. <code translate="no">browser</code>: web pages; without <code translate="no">app</code> a browser OpenProgram runs, with <code translate="no">app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code> or another of the user's own (<a href="user-browsers.html">User browsers</a>).</td></tr>
+<tr><th scope="row">Environment</th><td>A role: the machine a conversation's commands and file tools run on, its project's machine. Its method must be one commands run through: <code translate="no">local</code>, <code translate="no">ssh</code> or <code translate="no">docker</code>.</td></tr>
+<tr><th scope="row">Type</th><td>What kind of thing is operated; it fixes the vocabulary. <code translate="no">window</code>: application windows by element tree. <code translate="no">screen</code>: a whole display. <code translate="no">browser</code>: web pages; without <code translate="no">app</code> a browser OpenProgram runs, with <code translate="no">app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code> or another of the user's own (<a href="user-browsers.html">User browsers</a>). Types belong to <code translate="no">computer_use</code>, not to machines.</td></tr>
 <tr><th scope="row">Target</th><td>What a call's <code translate="no">device</code>, <code translate="no">type</code> and, for a browser, <code translate="no">app</code> name. Its key joins the three, leaving out this computer and OpenProgram's own browser: <code translate="no">window</code>, <code translate="no">browser chrome</code>, <code translate="no">lab screen</code>. Locks, permission rules and Resources use the key; the model never writes it.</td></tr>
 <tr><th scope="row">Subject</th><td>What inside the target: <code translate="no">app</code> and <code translate="no">title</code> (a window title, or a <code translate="no">window_id</code> when it is digits) for a window, <code translate="no">title</code> (a tab id or title) for a browser, <code translate="no">display</code> for a screen.</td></tr>
-<tr><th scope="row">Provider</th><td>The module for one connection kind.</td></tr>
+<tr><th scope="row">Provider</th><td>The module that yields one kind of target over a method.</td></tr>
 </tbody>
 </table>
-<h3 id="connections">Connections</h3>
+<h3 id="methods">Connection methods</h3>
 <table class="stack">
-<thead><tr><th scope="col">Connection</th><th scope="col">Gives</th><th scope="col">Kinds</th></tr></thead>
+<thead><tr><th scope="col">Method</th><th scope="col">Reaches</th><th scope="col">Registered by</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">shell</code></th><td>commands and files; no target</td><td><code translate="no">local</code> (this computer), <code translate="no">ssh</code>, <code translate="no">docker</code></td></tr>
-<tr><th scope="row"><code translate="no">window</code></th><td><code translate="no">type="window"</code>: application windows by element tree, in the background; <code translate="no">app</code> names the application</td><td><code translate="no">desktop</code> (this computer), <code translate="no">screen_server</code>, <code translate="no">cua_driver</code></td></tr>
-<tr><th scope="row"><code translate="no">screen</code></th><td><code translate="no">type="screen"</code>: a whole display, with the real pointer</td><td><code translate="no">desktop</code> (this computer, only while <code translate="no">computer_use.whole_screen</code> is on), <code translate="no">osworld</code>, <code translate="no">vnc</code>, <code translate="no">screen_server</code>, <code translate="no">cua_driver</code>, <code translate="no">wayland_portal</code></td></tr>
-<tr><th scope="row"><code translate="no">browser</code></th><td><code translate="no">type="browser"</code>: a browser OpenProgram runs; on this computer also the user's own browsers (<code translate="no">app="chrome"</code>, <code translate="no">app="safari"</code>, <code translate="no">app="firefox"</code>, …)</td><td><code translate="no">built_in</code> (this computer), <code translate="no">chromium</code></td></tr>
-<tr><th scope="row"><code translate="no">openprogram</code></th><td>another OpenProgram's projects and conversations, listed here and run there (<a href="../remote-openprogram.html">Remote OpenProgram</a>); no target</td><td><code translate="no">openprogram</code></td></tr>
-<tr><th scope="row"><code translate="no">mobile</code></th><td><code translate="no">type="mobile"</code>: a phone, simulator or emulator (not built)</td><td><code translate="no">android</code>, <code translate="no">ios_simulator</code></td></tr>
+<tr><th scope="row"><code translate="no">local</code></th><td>this computer; built in, never added</td><td><code translate="no">host/machines/kinds.py</code></td></tr>
+<tr><th scope="row"><code translate="no">ssh</code></th><td>a host over SSH: <code translate="no">target</code>, <code translate="no">workdir</code></td><td><code translate="no">host/backend</code></td></tr>
+<tr><th scope="row"><code translate="no">docker</code></th><td>an image, one container per conversation</td><td><code translate="no">host/backend</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>another computer's own OpenProgram, added by pairing (<a href="../remote-openprogram.html">Remote OpenProgram</a>)</td><td><code translate="no">host/machines/peer.py</code></td></tr>
+<tr><th scope="row"><code translate="no">osworld</code></th><td>a virtual machine behind an OSWorld server: <code translate="no">url</code></td><td>the <code translate="no">computer_use</code> provider <code translate="no">providers/screen/osworld.py</code></td></tr>
+</tbody>
+</table>
+<table class="stack even">
+<thead><tr><th scope="col">Method</th><th scope="col">Shell feature (commands, files, projects, terminal)</th><th scope="col"><code translate="no">computer_use</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td>commands and files here</td><td><code translate="no">window</code>; <code translate="no">screen</code> while Whole screen (<code translate="no">computer_use.whole_screen</code>) is on, off by default; <code translate="no">browser</code>, OpenProgram's and the user's</td></tr>
+<tr><th scope="row"><code translate="no">ssh</code></th><td>commands on the host, its own files</td><td>nothing</td></tr>
+<tr><th scope="row"><code translate="no">docker</code></th><td>commands in the conversation's container</td><td>nothing</td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>none here; the other computer's conversations are listed here and run there</td><td><code translate="no">window</code>, <code translate="no">screen</code>, <code translate="no">browser</code> of that computer, run there (<a href="#paired">Another computer's OpenProgram</a>)</td></tr>
+<tr><th scope="row"><code translate="no">osworld</code></th><td>none</td><td><code translate="no">screen</code> of the virtual machine</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
 <tbody>
-<tr><th scope="row">One kind, several connections</th><td>A kind registers once for each connection it serves. <code translate="no">desktop</code> serves <code translate="no">window</code> and <code translate="no">screen</code> on this computer; <code translate="no">screen_server</code> and <code translate="no">cua_driver</code> serve both on any machine. <code translate="no">osworld</code> has no element tree, so it serves <code translate="no">screen</code> only, and a <code translate="no">window</code> connection naming it is refused: <code translate="no">Refused: the OSWorld server (osworld) cannot be a window connection; it serves screen only.</code></td></tr>
-<tr><th scope="row">One client</th><td>Where two connections of one machine name the same kind and address, the runtime keeps one driver client or session for both, so the address and the sign-in are set up once. <code translate="no">desktop</code> runs in the worker's process and has no client to share.</td></tr>
-<tr><th scope="row">This computer</th><td><code translate="no">shell: local</code>, <code translate="no">window: desktop</code>, <code translate="no">browser: built_in</code>. It has <code translate="no">screen: desktop</code> only while the owner has <code translate="no">computer_use.whole_screen</code> on, which it is not by default.</td></tr>
+<tr><th scope="row">The device layer knows no feature</th><td>A method registers a name, a label, a settings schema, a reachability check, what tells two connections apart and the address it reaches. Nothing in <code translate="no">host/machines</code> says what is done over it.</td></tr>
+<tr><th scope="row">Each feature maps methods</th><td>The shell feature: <code translate="no">host.backend.SHELLS</code>, from <code translate="no">local</code>, <code translate="no">ssh</code> and <code translate="no">docker</code> to how commands run. <code translate="no">computer_use</code>: <code translate="no">registry.offer(method, opener)</code>, one opener per provider module; a method nobody offers yields no target. A new feature adds its own mapping and touches no device.</td></tr>
+<tr><th scope="row">This computer</th><td>Has no settings to edit. Whether it gives a screen is the setting <code translate="no">computer_use.whole_screen</code>, not part of its connection.</td></tr>
+<tr><th scope="row">Secrets</th><td>A setting marked secret (the pairing credential <code translate="no">token</code>) is stored in <code translate="no">state/auth/machines/&lt;id&gt;.json</code> under the setting's name.</td></tr>
 </tbody>
 </table>
-<p class="note">A host reached only by <code translate="no">shell</code> has no target. A virtual machine is a machine: <code translate="no" data-claim="example">vm</code> is not a type and <code data-claim="example" translate="no">computer_use.vm_url</code> is gone.</p>
+<p class="note">A virtual machine is a machine: <code translate="no" data-claim="example">vm</code> is not a type and <code data-claim="example" translate="no">computer_use.vm_url</code> is gone.</p>
 
 <h2 id="machines-and-environments">Machines and environments</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Question</th><th scope="col">Decision</th></tr></thead>
 <tbody>
-<tr><th scope="row">Registries</th><td>One, <code translate="no">machines</code>. It replaces the environments registry. Identity, configuration and the shell connection are shared.</td></tr>
+<tr><th scope="row">Registries</th><td>One, <code translate="no">machines</code>. It replaces the environments registry. Identity, configuration and the connection are shared by every feature.</td></tr>
 <tr><th scope="row">Bindings</th><td>Two, kept apart. The environment comes from the project (<code translate="no">machine_id</code> on the project record, <code translate="no">resolve_for_project</code>), never from the conversation: a conversation's project is frozen once it has a session, so its machine never changes and it promises where commands take effect. Targets are listed per turn and chosen per call.</td></tr>
 <tr><th scope="row">In an SSH or Docker conversation</th><td>A call without <code translate="no">device</code> still acts on this computer. The tool description, <code translate="no">&lt;devices&gt;</code> and the <code translate="no">&lt;environment&gt;</code> block say so, and the built-in browser's line says its <code translate="no">localhost</code> is this computer's.</td></tr>
-<tr><th scope="row">A machine with a shell and a desktop</th><td>Operated with <code translate="no">device="&lt;m&gt;"</code> and <code translate="no">type="window"</code> through its window connection or <code translate="no">type="screen"</code> through its screen connection. Being the environment never makes it the default.</td></tr>
-<tr><th scope="row">Instances</th><td>A shell kind declares <code translate="no">instance_scope</code>. <code translate="no">machine</code>: one instance. <code translate="no">conversation</code> (Docker): one per conversation, created on first use and removed with the conversation. State, locks and screen-server processes are keyed by the instance.</td></tr>
+<tr><th scope="row">A machine that runs commands and is operated</th><td>Only this computer. An SSH host or Docker machine is an environment and gives <code translate="no">computer_use</code> nothing; another computer's OpenProgram is operated with <code translate="no">device="&lt;m&gt;"</code> and runs no commands here. Being the environment never makes a machine the default.</td></tr>
+<tr><th scope="row">Instances</th><td>A shell declares <code translate="no">instance_scope</code>. <code translate="no">machine</code>: one instance. <code translate="no">conversation</code> (Docker): one per conversation, created on first use and removed with the conversation. State, locks and screen-server processes are keyed by the instance.</td></tr>
 <tr><th scope="row">Identity</th><td>A machine id never changes; only its name is edited. A machine added without an id gets one made from its name (Dev Box becomes <code translate="no">dev-box</code>, then <code translate="no">dev-box-2</code>). Deleting or disabling a machine lets running calls finish, then closes its providers and removes its instances by label.</td></tr>
 <tr><th scope="row">Choosing the machine</th><td>When a project is opened: <strong>Open folder on…</strong> picks the machine, then the folder on it. This computer and a Docker machine (which mounts this computer's folders) use the folder picker; an SSH host is browsed through its shell (<code translate="no">list_machine_folder</code>), starting at its remote folder setting, and the folder is made absolute there (<code translate="no">resolve_folder</code>).</td></tr>
 <tr><th scope="row">One folder, one project</th><td>One folder on one machine is one project; a folder on this computer belongs to one project whatever machine runs it. The home project is always this computer. There is no default environment and no per-conversation choice.</td></tr>
-<tr><th scope="row">A project's machine is gone</th><td>Switched off, without a shell or removed: its conversations' commands and file calls are refused, never replaced by this computer. The picker greys its projects.</td></tr>
+<tr><th scope="row">A project's machine is gone</th><td>Switched off, reached by a method commands do not run through, or removed: its conversations' commands and file calls are refused, never replaced by this computer. The picker greys its projects.</td></tr>
 <tr><th scope="row">Connection state</th><td><code translate="no">host/machines/status.py</code>: connected, connecting (no answer yet), disconnected (switched off) or error. A listing checks a machine behind its answer when the last word is over 60 s old; every shell file call on it reports what it saw. Each machine in the <code translate="no">machines</code> frame carries its <code translate="no">status</code>, and a change broadcasts the frame. The App shows it as a dot on the machine's icon: green, a turning ring, grey, red.</td></tr>
 <tr><th scope="row">Where the App shows the machine</th><td>The project picker groups projects under machine headers, this computer first. The sidebar's project header shows a project on another machine with that machine's icon (Solar <code translate="no">server-2</code> for a machine on another computer, drawn at the folder icon's size), dot and name; chat rows never show a machine. The composer's machine chip shows the project's machine and cannot switch it; its menu says it is set by the project.</td></tr>
 <tr><th scope="row">A project's folder on an SSH host</th><td>Read and changed on the host: the Files panel, its search, <code translate="no">@</code> file search and the file tools go through its shell; a deleted entry moves into <code translate="no">~/.openprogram/trash</code> on the host. Snapshots, automatic commits, worktrees and the branch pill need the folder on this computer, so they are not offered for it.</td></tr>
 <tr><th scope="row">Never this computer</th><td>Refused: an SSH target that resolves to this computer on port 22 (a loopback address on another port is a forwarded virtual machine or container, and is accepted), a screen server or cua-driver that reports this computer's identity, and a loopback address whose screenshot, taken when the machine is added, is this computer's own display. This computer is reached by leaving <code translate="no">device</code> out.</td></tr>
-<tr><th scope="row">One address, one machine</th><td>Two machines may not share one window or screen address; the window and the screen connection of one machine may.</td></tr>
-<tr><th scope="row">Words</th><td>Settings → Devices uses the word the model writes in <code translate="no">device</code>. <code translate="no">openprogram machines</code> (<code translate="no">list</code>, <code translate="no">add</code>, <code translate="no">remove</code>, <code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">test</code>) and the configuration key <code translate="no">machines</code> keep their names. <code translate="no">add</code> takes each connection as an option, its kind then its settings (<code translate="no">--shell ssh target=me@devbox</code>; <code translate="no">--window</code>, <code translate="no">--screen</code>, <code translate="no">--browser</code> likewise), typed as the kind's schema says. Settings → Devices shows the same connections as sections: Shell, Window, Screen, Browser. The project picker says <strong>Open folder on…</strong>.</td></tr>
-<tr><th scope="row">Code</th><td><code data-claim="example" translate="no">host/environments</code> becomes <code translate="no">host/machines</code>. Connection kinds register a name and a settings schema there; shell kinds add a backend, the other kinds add a provider. The parser, validator, Settings and CLI name no kind.</td></tr>
+<tr><th scope="row">One address, one machine</th><td>Two machines may not share one address their method reaches, such as one OSWorld server's URL.</td></tr>
+<tr><th scope="row">Words</th><td>Settings → Devices uses the word the model writes in <code translate="no">device</code>. <code translate="no">openprogram machines</code> (<code translate="no">list</code>, <code translate="no">add</code>, <code translate="no">remove</code>, <code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">test</code>) and the configuration key <code translate="no">machines</code> keep their names. <code translate="no">add ID [--name NAME] METHOD [KEY=VALUE ...]</code>; <code translate="no">list --kinds</code> prints the methods and their settings. Settings → Devices shows one Connection per device: a method picker, then its fields. The project picker says <strong>Open folder on…</strong>.</td></tr>
+<tr><th scope="row">Code</th><td><code data-claim="example" translate="no">host/environments</code> becomes <code translate="no">host/machines</code>. Connection methods register there (<code translate="no">kinds.py</code>); the parser, validator, Settings and CLI name no method.</td></tr>
 </tbody>
 </table>
 
@@ -124,29 +134,30 @@
 <table class="stack">
 <thead><tr><th scope="col">Call names</th><th scope="col">Lands on</th><th scope="col">Listed when</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">type="window"</code></th><td>application windows of this computer, by element tree, in the background where the driver can</td><td>this computer's window connection is <code translate="no">desktop</code> (the default) and the local driver is supported: macOS, Windows, Linux X11</td></tr>
-<tr><th scope="row"><code translate="no">type="screen"</code></th><td>one whole display of this computer; moves the real pointer</td><td>this computer has a screen connection, which it has only while the owner has <code translate="no">computer_use.whole_screen</code> on (off by default), and the local driver is supported or a Wayland session has the desktop portal</td></tr>
-<tr><th scope="row"><code translate="no">type="browser"</code></th><td>this conversation's pages in OpenProgram's browser</td><td>this computer's browser connection is <code translate="no">built_in</code> (the default) and the browser application is enabled</td></tr>
-<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code>, …</th><td>the user's own browser with their sign-ins</td><td>the browser connection is <code translate="no">built_in</code> and the browser is installed, a Chromium browser with the extension</td></tr>
-<tr><th scope="row"><code translate="no">device="m", type="window"</code></th><td>application windows on machine m</td><td>m has a window connection</td></tr>
-<tr><th scope="row"><code translate="no">device="m", type="screen"</code></th><td>the whole screen of m</td><td>m has a screen connection</td></tr>
-<tr><th scope="row"><code translate="no">device="m", type="browser"</code></th><td>a windowless browser OpenProgram runs on m; its <code translate="no">localhost</code> is m's</td><td>m has a browser connection</td></tr>
+<tr><th scope="row"><code translate="no">type="window"</code></th><td>application windows of this computer, by element tree, in the background where the driver can</td><td>the local driver is supported: macOS, Windows, Linux X11</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td>one whole display of this computer; moves the real pointer</td><td>the owner has Whole screen (<code translate="no">computer_use.whole_screen</code>) on, off by default, and the local driver is supported or a Wayland session has the desktop portal</td></tr>
+<tr><th scope="row"><code translate="no">type="browser"</code></th><td>this conversation's pages in OpenProgram's browser</td><td>the browser application is enabled</td></tr>
+<tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>, <code translate="no">"safari"</code>, <code translate="no">"firefox"</code>, …</th><td>the user's own browser with their sign-ins</td><td>the browser is installed, a Chromium browser with the extension</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="window"</code></th><td>application windows on m, run there</td><td>m is reached by <code translate="no">openprogram</code> and switched on</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="screen"</code></th><td>the whole screen of m</td><td>m is reached by <code translate="no">osworld</code>, or by <code translate="no">openprogram</code> and switched on</td></tr>
+<tr><th scope="row"><code translate="no">device="m", type="browser"</code>, any <code translate="no">app</code></th><td>OpenProgram's browser or one of the user's browsers on m, run there; its <code translate="no">localhost</code> is m's</td><td>m is reached by <code translate="no">openprogram</code> and switched on</td></tr>
 </tbody>
 </table>
-<p class="note">A target is listed exactly when one of the machine's providers yields it. The user's Chrome or Edge on another device is never listed, so it cannot be called; a kind without a tree cannot be a window connection, so it never gives <code translate="no">type="window"</code>.</p>
+<p class="note">A target is listed exactly when an opener offered for the machine's method yields it. An SSH host or Docker machine yields none.</p>
 <h3 id="target-rules">Rules for the list</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
 <tbody>
-<tr><th scope="row">Listed means set up</th><td>The list changes when the set-up changes: settings, an installed extension. Capabilities are declared per kind and never probed. A machine that is off stays listed and the call answers <code translate="no">MACHINE_UNREACHABLE:</code>. No network probe delays a turn.</td></tr>
+<tr><th scope="row">Listed means set up</th><td>The list changes when the set-up changes: settings, an installed extension. Capabilities are declared per provider and never probed. A machine that is off stays listed and the call answers <code translate="no">MACHINE_UNREACHABLE:</code>; one the checks cannot reach says so in its block (<a href="#model-surface">What the model reads</a>). No network probe delays a turn.</td></tr>
+<tr><th scope="row">A paired computer</th><td>Its <code translate="no">window</code>, <code translate="no">screen</code> and <code translate="no">browser</code> are listed while it is switched on, without asking it. Asking would cost a round trip to every paired computer on every turn, often to a laptop that is asleep; and the other computer already refuses precisely, with the targets it does have: a type it lacks, a browser it cannot reach, a screen it keeps off.</td></tr>
 <tr><th scope="row">Names</th><td>A configured machine is named by its id; its name is accepted too, without regard to case. <code translate="no">local</code>, <code translate="no">localhost</code> and <code translate="no">this computer</code> as a device mean this computer.</td></tr>
 <tr><th scope="row">Window titles</th><td><code translate="no">title</code> picks a window by part of its title, or by its <code translate="no">window_id</code> when it is digits. A title that matches several windows is refused with the candidates and their ids, so a call never lands on a window it did not mean. A tab title that matches several tabs is refused the same way.</td></tr>
 <tr><th scope="row">One route</th><td>A surface with its own target is not also operated through the local window that shows it. A provider may claim such windows for the conversation that asks: a Chrome or Edge page whose tab this conversation's connection has attached (a window that does not report its address, as on Linux and Windows, stays with <code translate="no">type="window"</code>).</td></tr>
-<tr><th scope="row">Claimed windows</th><td><code translate="no">type="window"</code> keeps the window's own controls, leaves the claimed content out and names the call that reaches it. A window or screen connection may name its <code translate="no">viewer</code>, the local application and window that show the machine. Unclaimed content stays with <code translate="no">type="window"</code>.</td></tr>
+<tr><th scope="row">Claimed windows</th><td><code translate="no">type="window"</code> keeps the window's own controls, leaves the claimed content out and names the call that reaches it. A machine may name its <code translate="no">viewer</code>, the local application and window that show the machine. Unclaimed content stays with <code translate="no">type="window"</code>.</td></tr>
 <tr><th scope="row"><code translate="no">window</code> or <code translate="no">screen</code></th><td><code translate="no">window</code> is for one application's window. <code translate="no">screen</code> is for the desktop, menu bar, system dialogs, drags across windows and windows that ignore background input. Both exist on purpose: refusing <code translate="no">screen</code> inside a window would leave such windows unreachable.</td></tr>
-<tr><th scope="row"><code translate="no">screen</code> off by default</th><td>Off until the owner turns on <code translate="no">computer_use.whole_screen</code>: until then this computer has no screen connection, so <code translate="no">type="screen"</code> is neither listed nor callable, and a call gets <code translate="no">UNKNOWN_TARGET:</code> before any approval.</td></tr>
+<tr><th scope="row"><code translate="no">screen</code> off by default</th><td>Off until the owner turns on <code translate="no">computer_use.whole_screen</code>: until then <code translate="no">local</code> opens no screen, so <code translate="no">type="screen"</code> is neither listed nor callable, and a call gets <code translate="no">UNKNOWN_TARGET:</code> before any approval.</td></tr>
 <tr><th scope="row">Why off</th><td>An ordinary task needs one application, and the owner decided the agent is not given the whole screen by default. Codex Computer Use has no whole-screen surface (every call names an app; keys go to that app), so off keeps the same reach and the route stays for tasks that need it.</td></tr>
-<tr><th scope="row">Replacing the local driver</th><td><code translate="no">machines.local.window</code>, <code translate="no">machines.local.screen</code> and <code translate="no">machines.local.browser</code> may name another kind that is this computer's own, such as <code translate="no">cua_driver</code> for window and screen. The calls, keys and locks stay the same; this computer never gets a second name.</td></tr>
+<tr><th scope="row">Replacing the local driver</th><td>Another driver of this computer's own, such as <code translate="no">cua_driver</code> for window and screen, would be another opener offered for <code translate="no">local</code>. The calls, keys and locks stay the same; this computer never gets a second name.</td></tr>
 <tr><th scope="row">Switching off</th><td>A machine has an enabled switch. Nothing trims the list automatically.</td></tr>
 </tbody>
 </table>
@@ -168,11 +179,13 @@ Where a call lands
 What computer_use can operate now, by device:
 - this computer (device left out): the user's Mac, where OpenProgram runs; calls may send code.
   - type="window": application windows, read and operated in the background; app names the application.
-  - type="browser": OpenProgram's built-in browser, this conversation's pages. Its http://localhost is this computer's; for devbox's use device="devbox", type="browser".
+  - type="browser": OpenProgram's built-in browser, this conversation's pages. Its http://localhost is this computer's.
   - type="browser", app="chrome": the user's own Google Chrome with their sign-ins; only when the user names it or the task needs their sign-in.
 - devbox (device="devbox"): SSH host me@devbox; this conversation's shell and files are here.
-  - device="devbox", type="window": …
-  - device="devbox", type="browser": …
+- studio (device="studio"): another computer running its own OpenProgram.
+  - device="studio", type="window": application windows of that computer (it lists its own with list_apps)
+  - device="studio", type="screen": its whole screen, when that computer has Whole screen on
+  - device="studio", type="browser": OpenProgram's browser there, or with app one of the user's browsers there
 - lab (device="lab"): virtual machine, pixels only.
   - device="lab", type="screen": virtual machine, pixels only
 A target not listed here is refused. A later message says what changes.
@@ -183,6 +196,20 @@ Changed devices, as they are now:
 - this computer (device left out): …
   - type="browser", app="edge": the user's own Microsoft Edge with their sign-ins; …
 &lt;/devices&gt;</code></pre>
+<p>When studio's checks have failed for 45 s, and again once one succeeds:</p>
+<pre translate="no" tabindex="0"><code>&lt;devices&gt;
+Changed devices, as they are now:
+- studio (device="studio"): another computer running its own OpenProgram.
+  Cannot be reached right now (last check: ConnectError); calls to it will most likely fail. A later message says when it is back.
+  - device="studio", type="window": …
+&lt;/devices&gt;
+
+&lt;devices&gt;
+Changed devices, as they are now:
+- studio (device="studio"): another computer running its own OpenProgram.
+  Reachable again: calls to it go through.
+  - device="studio", type="window": …
+&lt;/devices&gt;</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
@@ -192,6 +219,9 @@ Changed devices, as they are now:
 <tr><th scope="row">The definition is fixed</th><td>The description and the JSON schema never mention what is set up; there is no enum of targets. A request is sent as tools, then system prompt, then messages, so a definition rewritten when a device connected or a permission changed broke the whole prompt cache.</td></tr>
 <tr><th scope="row"><code translate="no">&lt;devices&gt;</code></th><td>A section of its own beside the user's message, never in the system prompt (<code translate="no">devices</code> in <code translate="no">BESIDE_ONLY_SECTIONS</code>, just before <code translate="no">deferred_catalog</code>). Grouped by device: this computer, then the others; a device with nothing to operate is listed only when the conversation's shell runs there. Each target line is how the call names it, then what it is, then what permission is missing ("Not usable yet: …").</td></tr>
 <tr><th scope="row">Whole list, then changes</th><td>The whole list when no earlier note is in view: the conversation's first turn and the first turn after a summary. Afterwards only <strong>Added devices</strong>, <strong>Changed devices, as they are now</strong> and <strong>Removed devices</strong>, and nothing when nothing changed. The list each turn saw is kept on its user message, so the next turn compares against what is in view, the same mechanism as the deferred-tool catalog (<code translate="no">catalog_shown</code>, <code translate="no">catalog_stored</code> with the list's id).</td></tr>
+<tr><th scope="row">Reachability</th><td>Another computer whose connection checks have failed for 45 s with no success between (<code translate="no">status.OFFLINE_AFTER</code>; two failed checks at least, that far apart) carries a line in its block: unreachable now, the last check's reason (at most 80 characters), calls will likely fail, a later message says when it is back. Its targets stay listed. The first successful check takes the line away, and the next note's <strong>Changed devices</strong> entry says "Reachable again" under its first line.</td></tr>
+<tr><th scope="row">No probe for it</th><td>The line comes from what the checks Settings, the sidebar and calls already make (<code translate="no">host/machines/status.py</code>, <code translate="no">unreachable</code>); building the note never waits on the network. A failing device whose last check is older than <code translate="no">STALE_AFTER</code> is checked again behind the answer, one check at a time, so its return is noticed without anyone opening Settings; a device that answers costs nothing.</td></tr>
+<tr><th scope="row">Why debounce</th><td>One failed check on a busy network or a laptop waking up would otherwise mark the device offline and back within a turn or two, each a Changed entry the model reads and acts on. The debounce lives in <code translate="no">status.py</code>, the one place that records checks; the icon beside a device still shows the latest check at once.</td></tr>
 <tr><th scope="row">Turns with their own prompt</th><td>A check-in, a verification or an agent started for a task has no earlier note to compare with, so the whole list goes inside its system prompt's capabilities section (<code translate="no">components._build_devices</code>).</td></tr>
 <tr><th scope="row">A device connected mid-turn</th><td>Shows up beside the next user message. A call that names it before then is refused with the targets listed now, as any unknown target is.</td></tr>
 <tr><th scope="row">Guides</th><td>A type guide (<code translate="no">window</code>, <code translate="no">screen</code>, <code translate="no">browser</code>) arrives with the first call that operates a target of that type. A target note of a few lines arrives the first time that target is: its machine, operating system, what it lacks, its shortcut keys.</td></tr>
@@ -264,23 +294,29 @@ Changed devices, as they are now:
 <tr><th scope="row">User browser tab gone</th><td>When another agent closes this agent's tab, its next step without <code translate="no">tab</code> answers <code translate="no">BAD_ARGUMENT:</code> naming it. <code translate="no">list_tabs</code> marks as current the tab a step would act on; once the agent's tab is gone it says so, asks for <code translate="no">tab</code> on every step and marks none. An extension left with no attached tab while a tab is chosen or listed answers <code translate="no">MACHINE_UNREACHABLE:</code> with nothing sent, and <code translate="no">OUTCOME_UNKNOWN:</code> right after <code translate="no">create_tab</code>.</td></tr>
 <tr><th scope="row">Mobile (not built)</th><td><code translate="no">click</code> is a tap. <code translate="no">scroll</code> keeps its meaning: show what lies further that way. <code translate="no">swipe</code> takes two points. <code translate="no">press_button</code> takes a name the provider declares; <code translate="no">home</code>, <code translate="no">back</code> and volume keys given to <code translate="no">press_key</code> go there.</td></tr>
 <tr><th scope="row">Applications</th><td><code translate="no">app</code> names an application on a window. Without it the call lists the running applications; <code translate="no">get_state</code> with it opens the application if it is closed. <code translate="no">open</code>, <code translate="no">open_app</code> and <code translate="no">launch_app</code> are carried-over names for that.</td></tr>
-<tr><th scope="row">Types</th><td>A new kind joins a type and touches only its module. A new type, for a device with neither pointer nor touch, adds one table to <code translate="no">vocabulary.py</code>, one guide and one value of <code translate="no">type</code>. An Android television would be <code translate="no">mobile</code> with pointer input narrowed off.</td></tr>
+<tr><th scope="row">Types</th><td>A new kind joins a type and touches only its module. A new type, for a device with neither pointer nor touch, adds one table to <code translate="no">actions/vocabulary.py</code>, one guide and one value of <code translate="no">type</code>. An Android television would be <code translate="no">mobile</code> with pointer input narrowed off.</td></tr>
 <tr><th scope="row">Displays</th><td><code translate="no">display</code> is the operating system's display id, as <code translate="no">list_displays</code> prints it; without it, the main display. A screenshot is at most 1568 pixels on its long side, and x,y are pixels of the last one of that display.</td></tr>
 <tr><th scope="row">Paths</th><td>A path in <code translate="no">upload_file</code> or <code translate="no">open_file</code> is on the target's machine.</td></tr>
-<tr><th scope="row">Carried-over names</th><td>Rewritten inside the target's type. A rewrite sets the argument it implies (<code translate="no">double_click</code> sets <code translate="no">click_count=2</code>) and never drops items: a list of keys becomes one chord. <code translate="no">vocabulary.py</code> holds the whole table.</td></tr>
+<tr><th scope="row">Carried-over names</th><td>Rewritten inside the target's type. A rewrite sets the argument it implies (<code translate="no">double_click</code> sets <code translate="no">click_count=2</code>) and never drops items: a list of keys becomes one chord. <code translate="no">actions/vocabulary.py</code> holds the whole table.</td></tr>
 <tr><th scope="row">Carried-over arguments</th><td>Rewritten too: <code translate="no">click</code>'s <code translate="no">text</code> or <code translate="no">key</code> becomes <code translate="no">modifiers</code> when it is empty or names modifiers only, and any other text answers <code translate="no">BAD_ARGUMENT:</code> with <code translate="no">click</code>'s signature; <code translate="no">scroll_amount</code> becomes <code translate="no">pixels</code> at 100 per wheel click; <code translate="no">zoom</code>'s <code translate="no">region=[x0,y0,x1,y1]</code> of four finite numbers or numeric strings becomes x, y, width, height, and any other corner, a boolean, NaN or infinity included, answers <code translate="no">BAD_ARGUMENT: region is [x0, y0, x1, y1] in screenshot pixels.</code></td></tr>
 </tbody>
 </table>
 
 <h2 id="contract">The contract</h2>
 <table class="stack fixed">
-<thead><tr><th scope="col">A kind declares</th><th scope="col">Meaning</th></tr></thead>
+<thead><tr><th scope="col">A method declares (<code translate="no">kinds.Kind</code>)</th><th scope="col">Meaning</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">kind</code>, <code translate="no">connection</code></th><td>its name in configuration and the connection it serves: <code translate="no">shell</code>, <code translate="no">window</code>, <code translate="no">screen</code> or <code translate="no">browser</code>; a kind serving several registers once for each</td></tr>
+<tr><th scope="row"><code translate="no">name</code>, <code translate="no">label</code></th><td>its name in configuration and what a person calls it</td></tr>
 <tr><th scope="row"><code translate="no">settings</code></th><td>a JSON Schema of the connection object; a property may be marked secret</td></tr>
-<tr><th scope="row"><code translate="no">capabilities</code></th><td>what it gives, declared and never probed</td></tr>
+<tr><th scope="row"><code translate="no">check</code>, <code translate="no">where</code>, <code translate="no">address</code>, <code translate="no">admit</code></th><td>one round trip that says whether it answers; what tells two connections apart; the screen address two machines may not share; the refusal of a connection that reaches this computer</td></tr>
 <tr><th scope="row"><code translate="no">discover()</code></th><td>optional: machines found without configuration</td></tr>
-<tr><th scope="row"><code translate="no">open(machine, conversation)</code></th><td>the providers of that connection's one kind of target; one module may register several kinds</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">computer_use</code> offers</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">registry.offer(method, opener)</code></th><td><code translate="no">opener(machine, conversation)</code> returns the providers it yields on a machine of that method; several modules may offer for one method (<code translate="no">local</code>: <code translate="no">desktop</code>, <code translate="no">built_in_browser</code>)</td></tr>
+<tr><th scope="row"><code translate="no">capabilities</code></th><td>what a provider gives, declared and never probed</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
@@ -319,36 +355,29 @@ Changed devices, as they are now:
 <table class="stack fixed">
 <thead><tr><th scope="col">Outside</th><th scope="col">Where it lives</th></tr></thead>
 <tbody>
-<tr><th scope="row">Shell and files</th><td>the machine's shell connection and the file tools</td></tr>
+<tr><th scope="row">Shell and files</th><td>the shell feature (<code translate="no">host.backend.SHELLS</code>) and the file tools</td></tr>
 <tr><th scope="row">Moving files between machines</th><td>not provided</td></tr>
 <tr><th scope="row">Sensors and personal data</th><td>not provided</td></tr>
-<tr><th scope="row">Creating, starting or stopping machines</th><td>the user; only an instance of a shell kind scoped to the conversation is created (Docker today)</td></tr>
+<tr><th scope="row">Creating, starting or stopping machines</th><td>the user; only an instance of a shell scoped to the conversation is created (Docker today)</td></tr>
 <tr><th scope="row">Showing it in the App</th><td>Resources and the preview, from what providers report</td></tr>
 <tr><th scope="row">An MCP server added as ordinary tools</th><td>not computer use: no lock, no Resources row, no shared vocabulary</td></tr>
 </tbody>
 </table>
 <h3 id="configuration">Configuration</h3>
 <pre translate="no" tabindex="0"><code>"machines": {
-  "local": {"window": {"kind": "desktop"}, "browser": {"kind": "built_in"}},
   "items": [
     {"id": "devbox", "name": "Dev box",
-     "shell":   {"kind": "ssh", "target": "me@devbox", "workdir": "/srv/app"},
-     "window":  {"kind": "screen_server"},
-     "screen":  {"kind": "screen_server"},
-     "browser": {"kind": "chromium"}},
+     "connection": {"kind": "ssh", "target": "me@devbox", "workdir": "/srv/app"}},
     {"id": "builder", "name": "Builder",
-     "shell":  {"kind": "docker", "image": "me/desktop:24.04"},
-     "window": {"kind": "screen_server", "start_display": "Xvfb :99 -screen 0 1280x800x24"},
-     "screen": {"kind": "screen_server", "start_display": "Xvfb :99 -screen 0 1280x800x24"}},
+     "connection": {"kind": "docker", "image": "me/desktop:24.04"}},
     {"id": "lab", "name": "Lab VM",
-     "screen": {"kind": "osworld", "url": "http://192.168.64.2:5000"}},
-    {"id": "office-pc", "name": "Office PC",
-     "screen": {"kind": "vnc", "address": "10.0.0.5:5900", "password": {"secret": true}}},
-    {"id": "pixel-8", "name": "Pixel 8",
-     "mobile": {"kind": "android", "serial": "35221FDH2004QZ"}}
+     "connection": {"kind": "osworld", "url": "http://192.168.64.2:5000"}},
+    {"id": "studio", "name": "Studio", "enabled": true,
+     "connection": {"kind": "openprogram", "url": "http://192.168.1.20:18100",
+                    "token": {"secret": true}}}
   ]
 }</code></pre>
-<p class="note">A secret is stored under the state directory's <code translate="no">auth/machines/</code>, which sandboxed commands cannot read; the configuration keeps a marker and replies mask it. A connection may set <code translate="no">via</code> to a machine with a shell: its address is then reached through that shell. <code translate="no">computer_use.refused_apps</code>, <code translate="no">refuse_password_fields</code> and <code translate="no">chrome_extension_token</code> stay where they are.</p>
+<p class="note">This computer is not in the list. A secret is stored in <code translate="no">auth/machines/&lt;id&gt;.json</code> under the state directory, out of sandboxed commands' reach; the configuration keeps a marker. A connection may set <code translate="no">via</code> to a machine with a shell: its address is then reached through that shell. <code translate="no">computer_use.refused_apps</code>, <code translate="no">refuse_password_fields</code> and <code translate="no">chrome_extension_token</code> stay where they are.</p>
 
 <h2 id="state-locks-approval">State, locks and approval</h2>
 <table class="stack fixed">
@@ -374,7 +403,7 @@ Changed devices, as they are now:
 <tr><th scope="row">Pointer or foreground</th><td>Decided per platform before any step runs, by action: the driver picks foreground delivery while the step runs, so every action that has such a path holds the machine, an element step included. macOS: no step. X11: <code translate="no">click</code>, <code translate="no">scroll</code>, <code translate="no">press_key</code>, <code translate="no">type_text</code>, <code translate="no">hover</code>, <code translate="no">drag</code>. Windows: <code translate="no">click</code>, <code translate="no">drag</code>, <code translate="no">press_key</code>, <code translate="no">type_text</code>, <code translate="no">paste</code>, and <code translate="no">focus</code>, since UI Automation's SetFocus can bring the window to the front; <code translate="no">scroll</code> and <code translate="no">hover</code> are posted messages. Lists take no lock.</td></tr>
 <tr><th scope="row">Order</th><td>First come, first served across processes: a waiting request, shared or exclusive, goes before every later one, also one queued behind another request of its own process. From its arrival each waiting request holds a ticket file <code translate="no">q-*</code> in the key's folder, and goes to the gate only when no earlier ticket of another process is still held. A call's waits share one 60 s deadline; after it the call answers <code translate="no">SCREEN_BUSY:</code>.</td></tr>
 <tr><th scope="row">Reach</th><td>Locks are files under the state directory, so they hold across the worker's processes. A call holds the locks of its target's machine, and of a local window it drives: a simulator operated through the Simulator window also takes that window's locks.</td></tr>
-<tr><th scope="row">Window and screen</th><td>The locks follow the step, not the connection: the only thing a window and a screen connection of one machine contend for is the physical pointer.</td></tr>
+<tr><th scope="row">Window and screen</th><td>The locks follow the step: the only thing a window and a screen call on one machine contend for is the physical pointer.</td></tr>
 <tr><th scope="row">Unknown system</th><td>Until a machine's screen server has described its operating system, pointer and key steps on its windows take the machine exclusively.</td></tr>
 <tr><th scope="row">Cancelling</th><td>A cancelled remote call keeps its lock until the machine answers or 10 s pass.</td></tr>
 </tbody>
@@ -386,7 +415,8 @@ Changed devices, as they are now:
 <tr><th scope="row"><code translate="no">type="screen"</code></th><td><code translate="no">computer_use controls the whole screen of this computer</code>; <code translate="no">list_displays</code> asks nothing</td><td><code translate="no">screen</code></td></tr>
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code></th><td><code translate="no">computer_use controls your Google Chrome</code></td><td><code translate="no">browser chrome</code>, <code translate="no">browser edge</code></td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td>nothing where the conversation has Pages, except <code translate="no">upload_file</code>, which the Pages grant never covers: Ask and Plan ask and Auto reviews it, each time; without Pages the mode decides</td><td>none</td></tr>
-<tr><th scope="row">a call with <code translate="no">device</code></th><td>nothing: setting the machine up is the consent. A call that does not resolve answers <code translate="no">UNKNOWN_TARGET:</code> before the decision; one that stops resolving between that check and the decision goes through the mode (Ask and Plan ask, Auto reviews)</td><td><code translate="no">&lt;device&gt; &lt;type&gt;</code> (<code translate="no">lab screen</code>), so the user's own rules can match one device or all of them</td></tr>
+<tr><th scope="row">a call with <code translate="no">device</code> on another computer's OpenProgram</th><td>once per target, as on this computer (<code translate="no">computer_use controls safari on Studio</code>); listing calls ask nothing</td><td><code translate="no">&lt;device&gt; &lt;type&gt;</code> plus the application or browser: <code translate="no">studio window safari</code>, <code translate="no">studio screen</code>, <code translate="no">studio browser chrome</code></td></tr>
+<tr><th scope="row">any other call with <code translate="no">device</code></th><td>nothing: setting the machine up is the consent. A call that does not resolve answers <code translate="no">UNKNOWN_TARGET:</code> before the decision; one that stops resolving between that check and the decision goes through the mode (Ask and Plan ask, Auto reviews)</td><td><code translate="no">&lt;device&gt; &lt;type&gt;</code> (<code translate="no">lab screen</code>), so the user's own rules can match one device or all of them</td></tr>
 </tbody>
 </table>
 <p class="note">A rule key whose application name contains <code translate="no">*</code>, <code translate="no">?</code> or <code translate="no">[</code>, or ends in <code translate="no">:*</code>, is never saved: such a call is allowed once only.</p>
@@ -403,16 +433,28 @@ Changed devices, as they are now:
 
 <h2 id="reaching-a-screen">Reaching another machine</h2>
 <table class="stack">
-<thead><tr><th scope="col">Kind</th><th scope="col">Serves</th><th scope="col">Reached through</th><th scope="col">Gives</th></tr></thead>
+<thead><tr><th scope="col">Provider</th><th scope="col">Offered for</th><th scope="col">Reached through</th><th scope="col">Gives</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">osworld</code></th><td><code translate="no">screen</code></td><td>HTTP: <code translate="no">GET /screenshot</code>, <code translate="no">POST /execute</code></td><td>pixels</td></tr>
-<tr><th scope="row"><code translate="no">vnc</code></th><td><code translate="no">screen</code></td><td>the remote framebuffer protocol, from the worker</td><td>pixels, clipboard, live frames</td></tr>
-<tr><th scope="row"><code translate="no">screen_server</code></th><td><code translate="no">window</code>, <code translate="no">screen</code></td><td>OpenProgram's driver inside the machine, speaking MCP over the machine's shell, or over HTTP with a token</td><td>tree, pixels, windows, background input, displays, launch, live frames</td></tr>
-<tr><th scope="row"><code translate="no">cua_driver</code></th><td><code translate="no">window</code>, <code translate="no">screen</code></td><td>the cua-driver MCP server, through one adapter</td><td>tree, pixels, windows, background input</td></tr>
-<tr><th scope="row"><code translate="no">android</code></th><td><code translate="no">mobile</code></td><td><code translate="no">adb</code> from the worker</td><td>tree, pixels, launch, buttons</td></tr>
-<tr><th scope="row"><code translate="no">ios_simulator</code></th><td><code translate="no">mobile</code></td><td><code translate="no">xcrun simctl</code>; input and tree through <code translate="no">idb</code>, else through the local driver on the Simulator window</td><td>pixels, launch, buttons; a tree when one of the two gives it</td></tr>
-<tr><th scope="row"><code translate="no">chromium</code></th><td><code translate="no">browser</code></td><td>Chromium started over the machine's shell with a fresh profile per conversation; its debugging port reaches the worker through a relay on that shell</td><td>tabs, tree, pixels, script, upload</td></tr>
-<tr><th scope="row"><code translate="no">wayland_portal</code></th><td><code translate="no">screen</code></td><td>the desktop portal of a local Wayland session, with its own consent dialog</td><td>pixels</td></tr>
+<tr><th scope="row"><code translate="no">paired</code></th><td>method <code translate="no">openprogram</code>: <code translate="no">window</code>, <code translate="no">screen</code>, <code translate="no">browser</code></td><td>the other Worker's <code translate="no">POST /api/computer-use/call</code>, with the pairing credential</td><td>whatever that computer gives</td></tr>
+<tr><th scope="row"><code translate="no">osworld</code></th><td>method <code translate="no">osworld</code>: <code translate="no">screen</code></td><td>HTTP: <code translate="no">GET /screenshot</code>, <code translate="no">POST /execute</code></td><td>pixels</td></tr>
+<tr><th scope="row"><code translate="no">vnc</code></th><td>a method of its own: <code translate="no">screen</code></td><td>the remote framebuffer protocol, from the worker</td><td>pixels, clipboard, live frames</td></tr>
+<tr><th scope="row"><code translate="no">screen_server</code></th><td>methods <code translate="no">ssh</code>, <code translate="no">docker</code>: <code translate="no">window</code>, <code translate="no">screen</code></td><td>OpenProgram's driver inside the machine, speaking MCP over the machine's shell, or over HTTP with a token</td><td>tree, pixels, windows, background input, displays, launch, live frames</td></tr>
+<tr><th scope="row"><code translate="no">cua_driver</code></th><td><code translate="no">local</code> or a method of its own: <code translate="no">window</code>, <code translate="no">screen</code></td><td>the cua-driver MCP server, through one adapter</td><td>tree, pixels, windows, background input</td></tr>
+<tr><th scope="row"><code translate="no">android</code></th><td>a method of its own: <code translate="no">mobile</code></td><td><code translate="no">adb</code> from the worker</td><td>tree, pixels, launch, buttons</td></tr>
+<tr><th scope="row"><code translate="no">ios_simulator</code></th><td>a method of its own: <code translate="no">mobile</code></td><td><code translate="no">xcrun simctl</code>; input and tree through <code translate="no">idb</code>, else through the local driver on the Simulator window</td><td>pixels, launch, buttons; a tree when one of the two gives it</td></tr>
+<tr><th scope="row"><code translate="no">chromium</code></th><td>method <code translate="no">ssh</code>: <code translate="no">browser</code></td><td>Chromium started over the machine's shell with a fresh profile per conversation; its debugging port reaches the worker through a relay on that shell</td><td>tabs, tree, pixels, script, upload</td></tr>
+<tr><th scope="row"><code translate="no">wayland_portal</code></th><td><code translate="no">local</code>: <code translate="no">screen</code></td><td>the desktop portal of a local Wayland session, with its own consent dialog</td><td>pixels</td></tr>
+</tbody>
+</table>
+<h3 id="paired">Another computer's OpenProgram</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sending</th><td>The call is not checked or run here. Its <code translate="no">type</code>, <code translate="no">app</code>, <code translate="no">display</code>, <code translate="no">title</code>, <code translate="no">action</code>, <code translate="no">args</code>, <code translate="no">actions</code>, <code translate="no">code</code> and <code translate="no">timeout</code>, never <code translate="no">device</code>, go with the pairing's Bearer token to <code translate="no">POST /api/computer-use/call</code>, each pairing address in turn, 6 s to connect to each. The answer is <code translate="no">{text, images, is_error}</code>, images in base64; this side puts <code translate="no">[device="studio", type="window"]</code> in front.</td></tr>
+<tr><th scope="row">Receiving</th><td>Runs <code translate="no">computer_use</code> on that computer only: the device is forced to that computer and never hops on. Its own settings apply: the whole screen stays off unless turned on there, its operating-system permissions are its own, and its <code translate="no">tools.permission_rules</code> for <code translate="no">computer_use</code> are read there: a deny rule refuses, and an ask rule refuses too, since nobody there is asked.</td></tr>
+<tr><th scope="row">The switch</th><td>Let paired devices operate this computer (<code translate="no">computer_use.paired_devices</code>, off by default), in Settings → Devices → This computer on the receiving computer. While off, the endpoint answers 403 <code translate="no">paired_devices_off</code> and the sender gets <code translate="no">PERMISSION_MISSING:</code> naming where to turn it on.</td></tr>
+<tr><th scope="row">Other answers</th><td>A device whose checks have failed for 45 s (the same state that puts the line in <code translate="no">&lt;devices&gt;</code>) is answered at once, nothing sent, and checked again behind the answer unless a check is running or is under 10 s old (<code translate="no">RECHECK_AFTER</code>). A device that has only just failed is still tried, so a lost packet turns no call away. 401: this computer was revoked there; pair again. 404: the OpenProgram there is older; update it.</td></tr>
+<tr><th scope="row">Asking</th><td>This side asks its user once per target, with a rule key naming the device (<a href="#state-locks-approval">State, locks and approval</a>).</td></tr>
 </tbody>
 </table>
 <h3 id="screen-server">The screen server</h3>
@@ -424,7 +466,7 @@ Changed devices, as they are now:
 <tr><th scope="row">Code</th><td>All of <code translate="no">computer_use/desktop/</code> moves to <code translate="no">host/desktop/</code>. The drivers take a policy object (refused applications, password fields, permission mode, cancellation, recordings directory) and a reporter (<code translate="no">action</code>, <code translate="no">control</code>, <code translate="no">window</code>) in place of their runtime and Resources imports. The Linux and Windows drivers, which report nothing today, call it at the same points as macOS.</td></tr>
 <tr><th scope="row">Shipping</th><td>A zipapp of that code without the embedding part. Over a shell it is piped to the machine's cache directory on first use and started there; a new digest is sent again. For a server reached by address, <code translate="no">machines add</code> writes the zipapp, a token and the start command for the user to copy; an old one answers <code translate="no">DEPENDENCY_MISSING:</code>.</td></tr>
 <tr><th scope="row">Finding the session</th><td>On Linux it uses the configured display, else the environment of the user's graphical session. No X session answers <code translate="no">DEPENDENCY_MISSING:</code>; a Wayland session answers <code translate="no">NOT_SUPPORTED:</code>; without an accessibility service its window type answers <code translate="no">DEPENDENCY_MISSING:</code> and its screen works by pixels.</td></tr>
-<tr><th scope="row">Process</th><td>One per machine instance in each worker process, closed after five idle minutes, shared by the machine's window and screen connections; the file locks keep the processes apart. It installs nothing.</td></tr>
+<tr><th scope="row">Process</th><td>One per machine instance in each worker process, closed after five idle minutes, shared by the machine's window and screen; the file locks keep the processes apart. It installs nothing.</td></tr>
 </tbody>
 </table>
 
@@ -455,14 +497,15 @@ Changed devices, as they are now:
 <tr><th scope="row">One of several windows</th><td><code translate="no">action="list_windows"</code> with <code translate="no">app</code>, then <code translate="no">title</code> set to the window's id</td></tr>
 <tr><th scope="row">A page in the built-in browser</th><td><code translate="no">type="browser"</code>: <code translate="no">create_tab</code> with <code translate="no">url</code>, then <code translate="no">click</code> with <code translate="no">element</code></td></tr>
 <tr><th scope="row">A page in the user's Chrome</th><td><code translate="no">type="browser", app="chrome"</code>: <code translate="no">list_tabs</code>, then <code translate="no">click</code> with <code translate="no">title</code> set to the tab's id and <code translate="no">element</code></td></tr>
-<tr><th scope="row">A virtual machine with an OSWorld server</th><td>machine <code translate="no">lab</code> with <code translate="no">screen: osworld</code>: <code translate="no">device="lab", type="screen"</code>, <code translate="no">click</code> with <code translate="no">x</code>, <code translate="no">y</code></td></tr>
-<tr><th scope="row">The same machine with the screen server</th><td><code translate="no">window: screen_server</code> and <code translate="no">screen: screen_server</code>: <code translate="no">device="lab", type="window"</code>, and <code translate="no">type="screen"</code> from the same server process. A machine has one screen connection, so its screen is either the OSWorld server or the screen server, never both.</td></tr>
+<tr><th scope="row">A virtual machine with an OSWorld server</th><td>machine <code translate="no">lab</code> reached by <code translate="no">osworld</code>: <code translate="no">device="lab", type="screen"</code>, <code translate="no">click</code> with <code translate="no">x</code>, <code translate="no">y</code></td></tr>
+<tr><th scope="row">The same machine with the screen server</th><td>reached by <code translate="no">ssh</code> instead, the screen server offered for it: <code translate="no">device="lab", type="window"</code>, and <code translate="no">type="screen"</code> from the same server process. A machine has one method, so its screen is either the OSWorld server or the screen server, never both.</td></tr>
+<tr><th scope="row">An application on another Mac</th><td>machine <code translate="no">studio</code>, paired, with Let paired devices operate this computer on there: <code translate="no">device="studio", type="window", app="Safari"</code>, run on studio</td></tr>
 <tr><th scope="row">A remote Windows desktop</th><td>a VNC server there: <code translate="no">device="office-pc", type="screen"</code>. With the screen server instead, it is the row above.</td></tr>
 <tr><th scope="row">A web app on an SSH host's <code translate="no">localhost</code></th><td><code translate="no">device="devbox", type="browser"</code>: <code translate="no">create_tab</code> with <code translate="no">http://localhost:3000</code></td></tr>
 <tr><th scope="row">A desktop in a Docker container</th><td>machine <code translate="no">builder</code>: <code translate="no">device="builder", type="window"</code>, in this conversation's instance</td></tr>
 <tr><th scope="row">Commands on an SSH host, a click here</th><td><code translate="no">bash</code> runs on the host; a call without <code translate="no">device</code> acts on this computer</td></tr>
 <tr><th scope="row">Two virtual machines</th><td><code translate="no">device="lab"</code> and <code translate="no">device="lab-2"</code>, both <code translate="no">type="screen"</code></td></tr>
-<tr><th scope="row">Someone else's computer-use server</th><td>a kind of its own (<code translate="no">cua_driver</code>), or <code translate="no">screen_server</code> when it speaks that protocol. On this computer it replaces the local driver as the window and screen connections, and the calls stay the same.</td></tr>
+<tr><th scope="row">Someone else's computer-use server</th><td>a provider of its own (<code translate="no">cua_driver</code>), or <code translate="no">screen_server</code> when it speaks that protocol. On this computer it is offered for <code translate="no">local</code> in place of the local driver, and the calls stay the same.</td></tr>
 <tr><th scope="row">A window handed over with <code translate="no">@</code></th><td><code translate="no">type="window"</code> with the application and the <code translate="no">window_id</code> the mention gives, as <code translate="no">title</code></td></tr>
 <tr><th scope="row">A worker with no desktop</th><td>the built-in browser runs windowless; <code translate="no">window</code> and <code translate="no">screen</code> are not listed</td></tr>
 <tr><th scope="row">The whole screen or a second display</th><td><code translate="no">type="screen"</code>: <code translate="no">list_displays</code>, then <code translate="no">display</code></td></tr>
@@ -480,7 +523,7 @@ Changed devices, as they are now:
 <tr><th scope="row">No default environment</th><td>the same; Codex has no default host either</td><td>a default is what lands a new conversation on the wrong computer; the home project is this computer</td></tr>
 <tr><th scope="row">Machine first, then folder</th><td>Codex's remote project flow: choose the host, then the folder on it</td><td>the folder picker can only show the chosen machine's folders</td></tr>
 <tr><th scope="row">Hide what cannot work on a host</th><td>the owner's rule: no error pages</td><td>snapshots and worktrees run on this computer's disk; offering them for a host's folder would only fail</td></tr>
-<tr><th scope="row">One connection per type</th><td>the owner's decision</td><td>a single connection named <code translate="no">screen</code> that also gives windows reads as windows living under the whole screen; with one connection per family, the configuration says what can be operated, and a kind serving several shares one client</td></tr>
+<tr><th scope="row">A device says how it is reached; each feature decides what it does with each method</th><td>the owner's decision</td><td>connections per capability (shell, window, screen, browser) mixed two questions, how to reach a machine and what to do there, and allowed contradictions: an SSH shell and an OSWorld screen on one device, this computer's connections edited by hand. One connection makes every device one thing, keeps the device layer free of feature knowledge, and lets a new feature (operating a paired computer) add a mapping without touching devices</td></tr>
 <tr><th scope="row">Machine and screen on one record</th><td>cua <code translate="no">Sandbox</code>, Claude remote devices, E2B desktop</td><td>one identity for the machine that runs commands and is clicked on</td></tr>
 <tr><th scope="row">The device is named in each call</th><td>OpenClaw (<code translate="no">node</code> per call, refuses to guess). Anthropic's computer-use tool and OpenAI's <code translate="no">computer_use_preview</code> put the display or environment in the tool definition, one tool per screen; Claude in Chrome selects a browser with list and select tools</td><td>a definition per screen changes the tools whenever a screen comes or goes, and a selected browser is state a later call cannot see; a call that names its device stands alone</td></tr>
 <tr><th scope="row">What can be operated goes in a message</th><td>Claude Code's deferred-tool delta: the catalog sent whole once, then what was added and removed</td><td>tools come first in a request, so any change to a tool definition re-reads the whole prompt; a note beside the user's message changes only the end</td></tr>
@@ -496,13 +539,16 @@ Changed devices, as they are now:
 <tr><th scope="row">Browser extras</th><td><code translate="no">create_tab</code>: Codex and Claude agree; console and network names: Claude</td><td>names models already carry</td></tr>
 <tr><th scope="row">Listed means set up</th><td>the old <code translate="no" data-claim="example">vm</code> availability</td><td>no probe per turn</td></tr>
 <tr><th scope="row">No approval for a set-up machine</th><td>the owner's rule: fewer prompts</td><td>adding it is the consent</td></tr>
+<tr><th scope="row">A paired computer is asked like this one</th><td>this computer's own window, screen and browser grants</td><td>it is a real computer with someone's applications and sign-ins; the other side asks nobody, so the question is asked here, once per target</td></tr>
+<tr><th scope="row">A paired computer's types listed without asking it</th><td>listed means set up</td><td>a round trip to every paired computer each turn, often to a sleeping laptop, would delay turns; the other computer refuses precisely with the targets it has</td></tr>
+<tr><th scope="row">Operating another computer is off there by default</th><td>Whole screen off by default</td><td>pairing lets that computer's conversations be used from here; being operated is a further step its owner takes there</td></tr>
 <tr><th scope="row">A phone must be added</th><td>the same rule</td><td>a phone plugged in to charge is never operable by accident</td></tr>
 <tr><th scope="row">Whole-screen grant</th><td>Claude asks once for its screen access</td><td>the surface that contains every application</td></tr>
 <tr><th scope="row">Permission state and error codes as text</th><td>OpenClaw</td><td>the model can tell the user what to grant</td></tr>
 <tr><th scope="row">Declared and effective capabilities</th><td>OpenClaw</td><td>a provider cannot widen itself</td></tr>
 <tr><th scope="row">The screen server speaks MCP</th><td>OpenClaw registers cua-driver as an MCP server</td><td>our own server and outside servers share one door</td></tr>
 <tr><th scope="row">The worker reaches every machine</th><td>the product's scope</td><td>devices that dial in solve a network this product does not have</td></tr>
-<tr><th scope="row">Only the screen server on SSH and Docker desktops</th><td>one window and one screen connection per machine</td><td>a shell path by pixels would be a second route, and command output is text</td></tr>
+<tr><th scope="row">Only the screen server on SSH and Docker desktops</th><td>one route per type on a machine</td><td>a shell path by pixels would be a second route, and command output is text</td></tr>
 </tbody>
 </table>
 
@@ -510,9 +556,9 @@ Changed devices, as they are now:
 <table class="stack fixed">
 <thead><tr><th scope="col">Not provided</th><th scope="col">Why</th></tr></thead>
 <tbody>
-<tr><th scope="row">A host reached only by shell, as a target</th><td>it has no window, screen or browser connection; it is an environment</td></tr>
+<tr><th scope="row">An SSH host or Docker machine as a target</th><td><code translate="no">computer_use</code> offers nothing for <code translate="no">ssh</code> and <code translate="no">docker</code> until the screen server; such a machine is an environment</td></tr>
 <tr><th scope="row">RDP</th><td>no reference has a client; a Windows desktop is reached by VNC or the screen server</td></tr>
-<tr><th scope="row">Devices that dial in, pairing</th><td>the worker reaches every machine</td></tr>
+<tr><th scope="row">Devices that dial in</th><td>the worker reaches every machine; another OpenProgram is paired and reached at its addresses</td></tr>
 <tr><th scope="row">A physical iPhone</th><td>it needs a signed test agent on the phone; no kind yet</td></tr>
 <tr><th scope="row">Remote Wayland sessions; XWayland by tree</th><td>no input path without the portal's dialog</td></tr>
 <tr><th scope="row">Simulators of watchOS, tvOS, visionOS</th><td>no vocabulary for them</td></tr>
@@ -530,9 +576,9 @@ Changed devices, as they are now:
 <tr><th scope="row">Finding a live X session over SSH on GNOME and KDE</th><td>the display is set in the machine's settings</td></tr>
 <tr><th scope="row">Starting the screen server in a Windows session from afar</th><td>the user starts it there; Python and comtypes must be present</td></tr>
 <tr><th scope="row">Relay throughput for a remote browser</th><td>a browser on another device is slower; nothing else depends on it</td></tr>
-<tr><th scope="row">Which VNC client library; the Wayland portal's saved consent per compositor</th><td>the kind ships later; the dialog shows again</td></tr>
+<tr><th scope="row">Which VNC client library; the Wayland portal's saved consent per compositor</th><td>the method ships later; the dialog shows again</td></tr>
 <tr><th scope="row">A model facing more than about eight machines</th><td>machines are switched off in Settings</td></tr>
-<tr><th scope="row">One tab driver per connection</th><td>the remote browser gets a driver process of its own</td></tr>
+<tr><th scope="row">One tab driver per machine</th><td>the remote browser gets a driver process of its own</td></tr>
 </tbody>
 </table>
 
@@ -540,14 +586,14 @@ Changed devices, as they are now:
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented: the tool</th><td>Under <code translate="no">openprogram/programs/tools/computer_use/computer_use/</code>: the contract (<code translate="no">contract.py</code>), the registry and call resolution (<code translate="no">registry.py</code>), one path for steps (<code translate="no">dispatch.py</code>), the locks (<code translate="no">locks.py</code>), the vocabulary (<code translate="no">vocabulary.py</code>, <code translate="no">keynames.py</code>, <code translate="no">errors.py</code>), the guides <code translate="no">guides/window.md</code>, <code translate="no">screen.md</code>, <code translate="no">browser.md</code>, <code translate="no">code.md</code>, and code mode (<code translate="no">code.py</code>). The fixed description and schema, <code translate="no">devices()</code> and <code translate="no">devices_note()</code> are in <code translate="no">tool.py</code>.</td></tr>
+<tr><th scope="row">Implemented: the tool</th><td>Under <code translate="no">openprogram/programs/tools/computer_use/computer_use/</code>, one way down from the tool through routing to the providers and the platform backends: the tool, its fixed description and schema (<code translate="no">tool.py</code>), <code translate="no">devices()</code> and <code translate="no">devices_note()</code> (<code translate="no">devices.py</code>), guide and note delivery (<code translate="no">type_guides.py</code>), the contract (<code translate="no">contract.py</code>), the registry and call resolution, one path for steps and the locks (<code translate="no">routing/</code>), the vocabulary (<code translate="no">actions/</code>, <code translate="no">errors.py</code>), the guides <code translate="no">guides/window.md</code>, <code translate="no">screen.md</code>, <code translate="no">browser.md</code>, <code translate="no">code.md</code>, code mode (<code translate="no">code_mode/</code>), and the backends, one package per platform (<code translate="no">desktop/</code>).</td></tr>
 <tr><th scope="row">Implemented: <code translate="no">&lt;devices&gt;</code></th><td>The section <code translate="no">devices</code> in <code translate="no">runtime/context/prompt_assembly/turn_context.py</code> (<code translate="no">BESIDE_ONLY_SECTIONS</code>, <code translate="no">LISTS</code>), filled by <code translate="no">_devices</code> in <code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code>; the whole list in a prompt of its own by <code translate="no">components._build_devices</code>.</td></tr>
-<tr><th scope="row">Implemented: providers</th><td><code translate="no">providers/desktop.py</code> (window), <code translate="no">local_screen.py</code> (screen on macOS, off until <code translate="no">computer_use.whole_screen</code>), <code translate="no">built_in_browser.py</code>, <code translate="no">user_browser.py</code> (Chrome and Edge with stable tab ids; the one-route rule through <code translate="no">registry.claim</code>), <code translate="no">osworld.py</code> (a screen on another device).</td></tr>
-<tr><th scope="row">Implemented: machines</th><td><code translate="no">openprogram/host/machines/</code> (the registry, <code translate="no">kinds.py</code>, <code translate="no">check.py</code>, <code translate="no">remote.py</code>, <code translate="no">here.py</code>, <code translate="no">status.py</code>) with the shell kinds <code translate="no">local</code>, <code translate="no">ssh</code> and <code translate="no">docker</code>; secrets under <code translate="no">auth/machines/</code>; one connection per type; removing or switching off a machine (<code translate="no">registry.release</code>, <code translate="no">registry.operating</code>); projects on machines, the grouped picker, <strong>Open folder on…</strong>, the Files panel on a host; Settings → Devices and <code translate="no">openprogram machines</code>.</td></tr>
-<tr><th scope="row">Not implemented: device kinds</th><td>The screen server (a window and screen on an SSH or Docker machine), a browser on another device and its relay, Android phones over <code translate="no">adb</code>, iOS simulators over <code translate="no">simctl</code> and the <code translate="no">mobile</code> type, <code translate="no">vnc</code>, <code translate="no">cua_driver</code>, <code translate="no">wayland_portal</code>, a remote OpenProgram agent, <code translate="no">via</code> (a connection reached through another machine's SSH), and live frames.</td></tr>
-<tr><th scope="row">Not implemented: names</th><td>This computer's window and screen kind is still called <code translate="no">desktop</code>; it is to be renamed <code translate="no">local</code>, like its shell.</td></tr>
+<tr><th scope="row">Implemented: providers</th><td><code translate="no">providers/window/</code> (window), <code translate="no">providers/screen/local.py</code> (screen on macOS, off until <code translate="no">computer_use.whole_screen</code>), <code translate="no">providers/browser/</code> (Chrome and Edge with stable tab ids; the one-route rule through <code translate="no">registry.claim</code>), <code translate="no">providers/screen/osworld.py</code> (a virtual machine's screen, and the method <code translate="no">osworld</code>), <code translate="no">providers/paired.py</code> (another computer's OpenProgram, both sides, with the endpoint <code translate="no">POST /api/computer-use/call</code>).</td></tr>
+<tr><th scope="row">Implemented: machines</th><td><code translate="no">openprogram/host/machines/</code> (the registry, <code translate="no">kinds.py</code>, <code translate="no">check.py</code>, <code translate="no">peer.py</code>, <code translate="no">remote.py</code>, <code translate="no">here.py</code>, <code translate="no">status.py</code>) with the methods <code translate="no">local</code>, <code translate="no">ssh</code>, <code translate="no">docker</code>, <code translate="no">openprogram</code> and <code translate="no">osworld</code>; one connection per device; secrets under <code translate="no">auth/machines/</code> by setting name; removing or switching off a machine (<code translate="no">registry.release</code>, <code translate="no">registry.operating</code>); projects on machines, the grouped picker, <strong>Open folder on…</strong>, the Files panel on a host; Settings → Devices and <code translate="no">openprogram machines</code>.</td></tr>
+<tr><th scope="row">Implemented: migration</th><td>Once at Worker start (<code translate="no">operations/migrations/machines_one_connection.py</code>): a stored device keeps its <code translate="no">openprogram</code>, else its shell, else a screen, window or browser that reaches a machine of its own; this computer's own entries and devices left with nothing are dropped.</td></tr>
+<tr><th scope="row">Not implemented: device kinds</th><td>The screen server (a window and screen on an SSH or Docker machine), a browser on another device and its relay, Android phones over <code translate="no">adb</code>, iOS simulators over <code translate="no">simctl</code> and the <code translate="no">mobile</code> type, <code translate="no">vnc</code>, <code translate="no">cua_driver</code>, <code translate="no">wayland_portal</code>, <code translate="no">via</code> (a connection reached through another machine's SSH), and live frames.</td></tr>
 <tr><th scope="row">Not implemented: elsewhere</th><td><code translate="no">screen</code> on Linux and Windows, where no driver yet leaves refused windows out of a whole-display capture. <code translate="no">ELEMENT_GONE:</code> for a page ref printed by another target. A missing operating-system grant still pauses an attended call in the system-access wait (see <a href="../../../../capabilities/computer-use.html">Computer use</a>); only a call nobody can answer returns <code translate="no">PERMISSION_MISSING:</code>.</td></tr>
-<tr><th scope="row">Not implemented: machines and showing</th><td>Policy narrowing by a per-machine list; replacing the local driver; one client for two connections of a machine. Nothing calls <code translate="no">created()</code> or <code translate="no">frames()</code>: Resources lists pages from the browser application, lists no row for a conversation's own instance, and has no preview of another machine.</td></tr>
+<tr><th scope="row">Not implemented: machines and showing</th><td>Policy narrowing by a per-machine list; replacing the local driver. Nothing calls <code translate="no">created()</code> or <code translate="no">frames()</code>: Resources lists pages from the browser application, lists no row for a conversation's own instance, and has no preview of another machine.</td></tr>
 </tbody>
 </table>
 

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "@xterm/xterm/css/xterm.css";
 import "katex/dist/katex.min.css";
@@ -22,7 +22,19 @@ export const metadata: Metadata = {
       { url: "/favicon.ico", sizes: "any" },
     ],
     shortcut: "/favicon.ico",
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
+  // Added to an iPhone's Home Screen, OpenProgram opens full screen under
+  // its own name.
+  appleWebApp: { capable: true, title: "OpenProgram", statusBarStyle: "default" },
+};
+
+// The page reaches under the notch and home indicator; the layout keeps its
+// controls inside env(safe-area-inset-*).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover", interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

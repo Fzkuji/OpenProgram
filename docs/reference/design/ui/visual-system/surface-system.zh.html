@@ -46,7 +46,6 @@
 <tr><th scope="row">分屏</th><td><code translate="no">.center-col[data-split]</code>：中间卡片消失，每格是同材质的卡片，距侧栏和窗口边 7px，格间 8px。空格自己画卡片。</td></tr>
 <tr><th scope="row">收起的侧栏</th><td><code translate="no">--rail-collapsed-w</code> 62px；<code translate="no">components/layout/use-resizable-rail.ts</code> 用同一数值</td></tr>
 <tr><th scope="row">焦点</th><td>鼠标点击按钮无焦点环；键盘焦点只有轻微亮度变化。顶部标签栏的 <code translate="no">role="tab"</code> 用各主题的 <code translate="no">--focus-ring</code>。</td></tr>
-<tr><th scope="row">标签胶囊</th><td>管理页（Abilities、Programs、Plugins、Skills）选中的胶囊用 <code translate="no">--bg-input</code>，像搜索框；仅限此处</td></tr>
 </tbody>
 </table>
 </details>
@@ -69,24 +68,50 @@
 <thead><tr><th scope="col">变体</th><th scope="col">外观、悬停</th><th scope="col">用途</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">default</code></th><td><code translate="no">bg-primary</code>；<code translate="no">primary/90</code></td><td>每个区域一个主操作：Run、Save、Test、Apply、Send、New</td></tr>
-<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>；阴影加深。按下、选中或开启：1.5px <code translate="no">primary</code> 环。</td><td>其余操作、筛选和选择；输入框触发器、环境胶囊</td></tr>
+<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>；阴影加深。按下、选中或开启：1.5px <code translate="no">primary</code> 环。</td><td>其余操作；输入框触发器、环境胶囊。几项里选一项用槽（<a href="#choices">见下</a>）。</td></tr>
 <tr><th scope="row"><code translate="no">destructive</code></th><td><code translate="no">bg-destructive/10</code>；<code translate="no">/20</code></td><td>Delete、Remove、Stop、Clear history</td></tr>
 <tr><th scope="row"><code translate="no">ghost</code></th><td>透明无阴影；<code translate="no">bg-muted</code>（深色 <code translate="no">/50</code>）</td><td>悬停才显现的图标工具：关闭、更多、重命名</td></tr>
 <tr><th scope="row"><code translate="no">link</code></th><td>主色文字；下划线</td><td>行内</td></tr>
 </tbody>
 </table>
-<p class="note">按下时都下沉 1px，键盘焦点 3px <code translate="no">ring/50</code>，禁用 50% 透明度。侧栏行不是 Button：用 <code translate="no">.ui-list-item</code> 或 <code translate="no">nav-classes.ts</code>。不提供 <code translate="no">outline</code> 和 <code translate="no">secondary</code>。<code translate="no">Toggle</code>、<code translate="no">ToggleGroup</code> 有与 <code translate="no">elevated</code> 相同的外观。</p>
+<p class="note">按下时都下沉 1px，键盘焦点 3px <code translate="no">ring/50</code>，禁用 50% 透明度。侧栏行不是 Button：用 <code translate="no">.ui-list-item</code> 或 <code translate="no">nav-classes.ts</code>。不提供 <code translate="no">outline</code> 和 <code translate="no">secondary</code>。<code translate="no">Toggle</code>、<code translate="no">ToggleGroup</code> 有与 <code translate="no">elevated</code> 相同的面，开启时着色，另有 <code translate="no">segmented</code> 槽。</p>
 <ul>
 <li>不能做成 <code translate="no">&lt;Button&gt;</code> 的元素（自带 ✕ 的 span、渲染成 span 的 Radix 触发器）用 <code translate="no">cn(buttonVariants({ variant, size }))</code>；<code translate="no">cn()</code> 合并才能解决 <code translate="no">border-transparent</code> 与变体边框的冲突。</li>
 <li>标题行（搜索、胶囊、图标按钮）里 1 到 2px 的高度差是 bug。</li>
 </ul>
+
+<h2 id="choices">多选一</h2>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="一个圆角矩形的槽里有列表、看板、日历三项，选中的看板下面垫着一块凸起的白色面。">
+  <rect class="tile" x="190" y="20" width="300" height="40" rx="13"/>
+  <rect class="tile" x="294" y="25" width="92" height="30" rx="8"/>
+  <text class="t-soft mid" x="242" y="45">列表</text>
+  <text class="t-big mid" x="340" y="45">看板</text>
+  <text class="t-soft mid" x="438" y="45">日历</text>
+  <text class="t-soft mid" x="340" y="92">槽：--groove 加内阴影。面：--bg-input 加 shadow-raised。</text>
+  <text class="t-soft mid" x="340" y="114">面滑到选中的那一项；槽的圆角 = 面的圆角 + 内边距。</text>
+</svg>
+<p>所有控件只用两种材质：<b>面</b>（<code translate="no">--bg-input</code>、<code translate="no">shadow-raised</code>：卡片、按钮、输入框、菜单）和<b>槽</b>（<code translate="no">bg-groove</code>：浅色主题比所在表面低一级，深色主题用最底层的页面色；<code translate="no">shadow-groove</code>），槽只用来装“多选一”。不用毛玻璃。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">视图、筛选、设置</th><td>32px 高的槽（选项 <code translate="no">--ui-choice-h</code> 26px，四周 3px），看着和旁边浮起来的 30px 控件一样大；选项是纯文字，一块面（<code translate="no">SlidingThumb</code>）滑到选中项下面，冲过头移动距离的 8%（最多 8px），回摆一次再停住；到两端时被槽壁挡住。用 <code translate="no">ToggleGroup variant="segmented"</code>、<code translate="no">Tabs</code>，页面自己拼的一排用 <code translate="no">components/ui/capsule.ts</code> 的 <code translate="no">CAPSULE_GROOVE</code> 和 <code translate="no">CAPSULE_OPTION</code>。</td></tr>
+<tr><th scope="row">尺寸</th><td>页面上的选择一律默认 32px，并排时一样大。<code translate="no">sm</code> 只用于紧凑的工具栏（图片标注），<code translate="no">xs</code> 只用于列表行里。</td></tr>
+<tr><th scope="row">计数</th><td>标签后一个安静的数字，不用小药丸：药丸会让选项右边变重，面滑过去后看着不居中。</td></tr>
+<tr><th scope="row">拖动</th><td>像手指一样：在槽里任何位置按下，面马上滑到指针下面，按住时一直跟着走（每帧追上三分之一的距离）；松手时选中指针下面的那一项。</td></tr>
+<tr><th scope="row">页面分区</th><td>大一号（<code translate="no">TabsList variant="section"</code>，或 <code translate="no">SECTION_GROOVE</code>、<code translate="no">SECTION_OPTION</code>），居中压在标题和内容之间的分隔线上（<code translate="no">SECTION_BAR</code>）。新内容从切换方向那一侧滑入（<code translate="no">SectionSlide</code>，<code translate="no">TabsContent</code> 自带）。</td></tr>
+<tr><th scope="row">圆角</th><td>和其他控件一样是圆角矩形，且同心：面用按钮的 8px（<code translate="no">rounded-md</code>），槽是它加内边距（<code translate="no">rounded-groove</code>，11px；页面分区 8 + 4 = <code translate="no">rounded-xl</code>）。小号一起缩（sm：10 里套 8，xs：8 里套 6）。不用胶囊：它会是页面上唯一的圆头形状。</td></tr>
+<tr><th scope="row">可同时开多个</th><td><code translate="no">ToggleGroup variant="elevated"</code>：每项是一块面；开启是 <code translate="no">primary/12</code> 的着色加主色文字</td></tr>
+<tr><th scope="row">颜色或形状色块</th><td>唯一保留 1.5px 主色环的选择：色块本身就是内容</td></tr>
+<tr><th scope="row">长列表或会变的列表</th><td><code translate="no">Select</code>（<a href="#selects-and-menus">见下</a>）</td></tr>
+</tbody>
+</table>
 
 <h2 id="selects-and-menus">选择器和菜单</h2>
 <p>固定列表选择都用 radix-nova <code translate="no">Select</code>（<code translate="no">components/ui/select.tsx</code>）。没有原生 <code translate="no">&lt;select&gt;</code>，没有手写 listbox。<code translate="no">SimpleSelect</code> 是一行写法（<code translate="no">value</code>、<code translate="no">onValueChange</code>、<code translate="no">options</code>、<code translate="no">label</code>、<code translate="no">placeholder</code>、<code translate="no">size</code>；分组用 <code translate="no">{label, options}</code>）。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">触发器</th><td>Nova 字段：<code translate="no">rounded-lg</code>、<code translate="no">border-input</code>、<code translate="no">bg-transparent</code>、<code translate="no">dark:bg-input/30</code>、<code translate="no">h-8</code> 或 <code translate="no">h-7</code>。默认 <code translate="no">w-full max-w-48</code>；调用处只加宽度或错误边框。</td></tr>
+<tr><th scope="row">触发器</th><td>一块面：<code translate="no">rounded-lg</code>、<code translate="no">bg-input</code>、<code translate="no">shadow-raised</code>（悬停和展开时加深），无边框，<code translate="no">--ui-button-h</code> 或 <code translate="no">-sm</code>。默认 <code translate="no">w-full max-w-48</code>；调用处只加宽度；出错是红色环。</td></tr>
 <tr><th scope="row">弹层</th><td>菜单框架内实色 <code translate="no">bg-popover</code>，<code translate="no">item-aligned</code>，<code translate="no">z-[130]</code> 高于对话框。淡色标题写明选什么（<code translate="no">label</code>，否则 <code translate="no">aria-label</code>），每组一个。选中行一个普通勾。</td></tr>
 <tr><th scope="row">空值</th><td>Radix 保留 <code translate="no">""</code>：取该值的选项在 <code translate="no">SimpleSelect</code> 内用哨兵值；否则 <code translate="no">""</code> 显示占位</td></tr>
 <tr><th scope="row">其他菜单</th><td>DropdownMenu、弹层选择器、侧栏底部、标签和函数上下文菜单都用 <code translate="no">components/ui/menu/menu-styles.ts</code> 的 <code translate="no">MENU_PANEL</code>、<code translate="no">itemCls</code>、<code translate="no">GROUP_LABEL</code>、<code translate="no">MENU_SEPARATOR</code>。CSS 模块只留定位。</td></tr>
@@ -213,7 +238,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">禁止</th><th scope="col">原因或替代</th></tr></thead>
 <tbody>
-<tr><th scope="row">新增悬停、选中、边框或胶囊样式</th><td>先写进本页。预算：底层灰色悬停、面板、品牌填充、标题标签的 <code translate="no">--bg-input</code>。</td></tr>
+<tr><th scope="row">新增悬停、选中、边框或胶囊样式</th><td>先写进本页。预算：底层灰色悬停、面板、品牌填充、面和槽。</td></tr>
 <tr><th scope="row">在底层表面用品牌填充</th><td>品牌色胶囊看起来像警告</td></tr>
 <tr><th scope="row">MCP 或其他内容区列表用不同尺寸</th><td>所有内容区列表用同一套尺寸</td></tr>
 <tr><th scope="row">悬停位移（<code translate="no">translate-y</code>、<code translate="no">scale-105</code>）</th><td>任一表面都不用</td></tr>
@@ -226,7 +251,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td><code translate="no">components/ui</code> 全部是 radix-nova，原有 <code translate="no">&lt;select&gt;</code> 和下拉都已替换：<code translate="no">Command</code>、<code translate="no">Popover</code>、<code translate="no">Tooltip</code>（<code translate="no">--surface-tooltip</code>、<code translate="no">--text-on-tooltip</code> 是 <code translate="no">--foreground</code>、<code translate="no">--background</code> 的别名）、<code translate="no">Tabs</code>（Agent 编辑器用 <code translate="no">line</code>）、<code translate="no">Kbd</code>、<code translate="no">ScrollArea</code>、<code translate="no">Sidebar</code>。所有模态和确认。菜单面板和行、设置通用页、桌面注意力分区、输入框各部分、预览、浏览器工具栏。</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">components/ui</code> 全部是 radix-nova，原有 <code translate="no">&lt;select&gt;</code> 和下拉都已替换：<code translate="no">Command</code>、<code translate="no">Popover</code>、<code translate="no">Tooltip</code>（<code translate="no">--surface-tooltip</code>、<code translate="no">--text-on-tooltip</code> 是 <code translate="no">--foreground</code>、<code translate="no">--background</code> 的别名）、<code translate="no">Tabs</code>（胶囊槽）、<code translate="no">Kbd</code>、<code translate="no">ScrollArea</code>、<code translate="no">Sidebar</code>。所有模态和确认。菜单面板和行、设置通用页、桌面注意力分区、输入框各部分、预览、浏览器工具栏。</td></tr>
 <tr><th scope="row">例外</th><td>附件灯箱保留自己的全屏查看器</td></tr>
 <tr><th scope="row">未完成</th><td>其他设置页（<code translate="no">settings-page.module.css</code> 的行）；设置以外的表单输入框在迁到 shadcn input 前保持 1px 规则</td></tr>
 </tbody>

@@ -61,6 +61,7 @@ import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { runningApps } from "@/lib/net/computer-use-apps";
 import { loadResourcePages } from "@/lib/chat/resources/session-resources";
 import { onComposerFiles, takeComposerFiles } from "@/lib/chat/composer-inbox";
+import { desktopBridge } from "@/lib/desktop/bridge/bridge-api";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
@@ -193,7 +194,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // Files sent here from elsewhere in the window (a web tab's region
   // screenshot) arrive as if dropped on this composer.
   useEffect(() => {
-    if (!activeChatKey) return;
     const take = () => {
       const files = takeComposerFiles(activeChatKey);
       if (files.length) void addFiles(files);
@@ -620,6 +620,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       setPlusMenuOpen={setPlusMenuOpen}
       onPickImages={onPickImages}
       onRecord={canRecord && recordingOn ? openRecordDialog : undefined}
+      onScreenshot={desktopBridge()?.screenshot ? () => { void desktopBridge()?.screenshot?.start(); } : undefined}
       recordingActive={!!activeRecording}
       pendingImagesCount={pendingImages.length}
       pendingDocsCount={pendingDocs.length}

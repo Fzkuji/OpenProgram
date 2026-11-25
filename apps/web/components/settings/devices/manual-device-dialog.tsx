@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Edit a device, or set one up by hand: its ID, name and up to four
- * connections (shell, window, screen, browser), each rendered from its
- * kind's settings schema as the worker sends it. Add device offers the
- * common cases in one step each; this is the full form behind Edit and
- * Add device → Set up by hand.
+ * Edit a device, or set one up by hand: its ID, name and its connection
+ * (how it is reached), rendered from the connection method's settings
+ * schema as the worker sends it. Add device offers the common cases in one
+ * step each; this is the full form behind Edit and Add device → Set up by
+ * hand.
  */
 import { useState, type FormEvent, type ReactNode } from "react";
 
@@ -18,7 +18,6 @@ import { Switch } from "@/components/ui/switch";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import {
-  CONNECTIONS,
   connectionDraft,
   draftFromMachine,
   draftPayload,
@@ -31,7 +30,6 @@ import {
   settingFields,
   useMachines,
   withEnabled,
-  type ConnectionName,
   type DraftProblem,
   type MachineDraft,
   type MachineInfo,
@@ -40,25 +38,6 @@ import {
 import styles from "../settings-page.module.css";
 import { machineRequest, SAVE_WAIT_MS, type Text } from "./device-requests";
 
-export function connectionName(name: ConnectionName | "openprogram", text: Text): string {
-  if (name === "shell") return text("Shell", "Shell");
-  if (name === "window") return text("Window", "窗口");
-  if (name === "screen") return text("Screen", "整屏");
-  if (name === "openprogram") return "OpenProgram";
-  return text("Browser", "浏览器");
-}
-
-function connectionHint(name: ConnectionName, text: Text): string {
-  if (name === "shell") {
-    return text(
-      "Runs commands and reads files. A device with a shell can be a conversation's environment.",
-      "执行命令、读写文件。有 Shell 的设备可以作为会话的环境。",
-    );
-  }
-  if (name === "window") return text("Operates its application windows, in the background.", "在后台操作它的应用窗口。");
-  if (name === "screen") return text("Operates its whole screen with the real pointer.", "用真实指针操作它的整个屏幕。");
-  return text("A browser OpenProgram runs there.", "OpenProgram 在那里运行的浏览器。");
-}
 
 function problemText(problem: DraftProblem, draft: MachineDraft, text: Text): string {
   if (problem.field === "id") {
@@ -67,11 +46,8 @@ function problemText(problem: DraftProblem, draft: MachineDraft, text: Text): st
       ? text(`A device with the ID "${id}" already exists. Pick another ID.`, `ID 为“${id}”的设备已存在，请换一个 ID。`)
       : text("Give the device a name or an ID.", "请填写设备名称或 ID。");
   }
-  if (problem.field === "connections") {
-    return text(
-      "A device needs at least one connection: a shell, a window, a screen or a browser.",
-      "设备至少要有一个连接：Shell、窗口、整屏或浏览器。",
-    );
+  if (problem.field === "connection") {
+    return text("Choose how the device is reached.", "请选择怎样连接这台设备。");
   }
   const label = "label" in problem ? problem.label : problem.field;
   if (problem.problem === "required") return text(`${label} is required.`, `请填写${label}。`);
@@ -89,12 +65,12 @@ export function ManualDeviceDialog({ machine, onClose }: { machine: MachineInfo 
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function pickKind(name: ConnectionName, kind: string) {
-    setDraft((d) => ({ ...d, [name]: connectionDraft(kinds, name, kind) }));
+  function pickKind(kind: string) {
+    setDraft((d) => ({ ...d, connection: connectionDraft(kinds, kind) }));
   }
 
-  function setValue(name: ConnectionName, key: string, value: string | boolean) {
-    setDraft((d) => ({ ...d, [name]: { ...d[name], values: { ...d[name].values, [key]: value } } }));
+  function setValue(key: string, value: string | boolean) {
+    setDraft((d) => ({ ...d, connection: { ...d.connection, values: { ...d.connection.values, [key]: value } } }));
   }
 
   async function onSubmit(e: FormEvent) {
@@ -117,7 +93,7 @@ export function ManualDeviceDialog({ machine, onClose }: { machine: MachineInfo 
   }
 
   const invalid = (path: string) => problems.some((problem) => problem.field === path) || undefined;
-  const editingName = draft.local ? text("This computer", "这台电脑") : draft.name || draft.id;
+  const editingName = draft.name || draft.id;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -129,41 +105,28 @@ export function ManualDeviceDialog({ machine, onClose }: { machine: MachineInfo 
             </DialogTitle>
           </DialogHeader>
           <div className={styles.authForm}>
-            {!draft.local ? (
-              <>
-                <label className={styles.authField}>
-                  {draft.editing ? text("ID", "ID") : text("ID (optional)", "ID（可选）")}
-                  <HoverTip label={draft.editing
-                    ? text("A device's ID never changes.", "设备的 ID 不能修改。")
-                    : text("Left blank, it is made from the name.", "留空时根据名称生成。")}>
-                    <div className="min-w-0">
-                      <Input
-                        placeholder="devbox"
-                        spellCheck={false}
-                        value={draft.id}
-                        disabled={draft.editing}
-                        aria-invalid={invalid("id")}
-                        onChange={(e) => setDraft((d) => ({ ...d, id: e.target.value }))}
-                      />
-                    </div>
-                  </HoverTip>
-                </label>
-                <label className={styles.authField}>
-                  {text("Name (optional)", "名称（可选）")}
-                  <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
-                </label>
-              </>
-            ) : null}
-            {CONNECTIONS.map((name) => (
-              <ConnectionFields
-                key={name}
-                name={name}
-                draft={draft}
-                invalid={invalid}
-                onPick={(kind) => pickKind(name, kind)}
-                onValue={(key, value) => setValue(name, key, value)}
-              />
-            ))}
+            <label className={styles.authField}>
+              {draft.editing ? text("ID", "ID") : text("ID (optional)", "ID（可选）")}
+              <HoverTip label={draft.editing
+                ? text("A device's ID never changes.", "设备的 ID 不能修改。")
+                : text("Left blank, it is made from the name.", "留空时根据名称生成。")}>
+                <div className="min-w-0">
+                  <Input
+                    placeholder="devbox"
+                    spellCheck={false}
+                    value={draft.id}
+                    disabled={draft.editing}
+                    aria-invalid={invalid("id")}
+                    onChange={(e) => setDraft((d) => ({ ...d, id: e.target.value }))}
+                  />
+                </div>
+              </HoverTip>
+            </label>
+            <label className={styles.authField}>
+              {text("Name (optional)", "名称（可选）")}
+              <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
+            </label>
+            <ConnectionFields draft={draft} invalid={invalid} onPick={pickKind} onValue={setValue} />
           </div>
           {formError ? <p className={styles.rowStatusError}>{formError}</p> : null}
           <DialogFooter>
@@ -176,15 +139,13 @@ export function ManualDeviceDialog({ machine, onClose }: { machine: MachineInfo 
   );
 }
 
-/** One connection: its kind picker, then that kind's settings. */
+/** The connection: its method picker, then that method's settings. */
 function ConnectionFields({
-  name,
   draft,
   invalid,
   onPick,
   onValue,
 }: {
-  name: ConnectionName;
   draft: MachineDraft;
   invalid: (path: string) => true | undefined;
   onPick: (kind: string) => void;
@@ -192,45 +153,40 @@ function ConnectionFields({
 }) {
   const { text, locale } = useTranslation();
   const kinds = useMachines((s) => s.kinds);
-  const connection = draft[name];
-  const title = connectionName(name, text);
-  // This computer's shell is its own and fixed; its window and browser fall back to the built-in
-  // ones, so they always have a kind. It has a screen only while the whole screen is on in Settings.
-  const fixed = draft.local && name === "shell";
-  const offered = kindOptions(kinds, name, draft.local);
-  const current = findKind(kinds, name, connection.kind);
+  const connection = draft.connection;
+  const title = text("Connection", "连接方式");
+  const offered = kindOptions(kinds);
+  const current = findKind(kinds, connection.kind);
   const options = [
-    ...(draft.local ? [] : [{ value: "", label: text("None", "无") }]),
     ...offered.map((kind) => ({ value: kind.name, label: kindLabel(kind, locale) })),
     ...(connection.kind && !offered.some((kind) => kind.name === connection.kind)
       ? [{ value: connection.kind, label: current ? kindLabel(current, locale) : connection.kind }]
       : []),
   ];
-  if (draft.local && !connection.kind) return null;
   return (
     <>
       <label className={`${styles.authField} col-start-1`}>
         {title}
-        <HoverTip label={kindHint(current, locale) || connectionHint(name, text)}>
+        <HoverTip label={kindHint(current, locale) || text("How OpenProgram reaches the device.", "OpenProgram 怎样连接这台设备。")}>
           <div className="min-w-0">
             <SimpleSelect
               label={title}
               className="max-w-none"
               value={connection.kind}
-              disabled={fixed}
+              placeholder={text("Choose…", "请选择…")}
               onValueChange={onPick}
               options={options}
             />
           </div>
         </HoverTip>
       </label>
-      {fixed ? null : settingFields(current, locale).map((field) => (
+      {settingFields(current, locale).map((field) => (
         <SettingControl
           key={field.key}
           field={field}
           value={connection.values[field.key]}
           held={connection.held.includes(field.key)}
-          invalid={invalid(`${name}.${field.key}`)}
+          invalid={invalid(`connection.${field.key}`)}
           onChange={(value) => onValue(field.key, value)}
         />
       ))}

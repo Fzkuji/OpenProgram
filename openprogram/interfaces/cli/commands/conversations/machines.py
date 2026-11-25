@@ -1,8 +1,9 @@
 """``openprogram machines`` — the computers OpenProgram reaches.
 
-A machine has up to four connections (shell, window, screen, browser), each
-of a kind. This command names no kind: ``add`` takes each connection as its kind
-followed by ``KEY=VALUE`` settings, and the kind's own schema checks them.
+A machine has one connection: how it is reached. Its kind is the
+connection method (ssh, docker, osworld, ...). This command names no
+method: ``add`` takes the method followed by ``KEY=VALUE`` settings, and
+the method's own schema checks them.
 """
 from __future__ import annotations
 
@@ -10,37 +11,30 @@ import json
 
 
 def _load_kinds() -> None:
-    """Make the window, screen and browser kinds known: they register when Programs load."""
+    """Make the methods registered above the host known (osworld): they register when Programs load."""
     try:
         import openprogram.programs  # noqa: F401
     except Exception:
         pass
 
 
-def _connections(machine) -> str:
-    from openprogram.host.machines import CONNECTIONS
-    parts = [f"{name}: {machine.describe(name)}" for name in CONNECTIONS
-             if machine.connection(name) is not None]
-    return "; ".join(parts)
-
-
 def _print_list(show_kinds: bool) -> int:
     from openprogram.host import machines
-    print(f"{'id':16} {'state':5} {'name':20} connections")
+    print(f"{'id':16} {'state':5} {'name':20} connection")
     for machine in machines.list_machines() + machines.discovered_machines():
         state = "on" if machine.enabled else "off"
-        print(f"{machine.id:16} {state:5} {machine.name[:20]:20} {_connections(machine)}")
+        print(f"{machine.id:16} {state:5} {machine.name[:20]:20} {machine.describe()}")
     if show_kinds:
-        print("\nKinds:")
+        print("\nConnection methods:")
         for kind in machines.kinds.all_kinds():
-            if kind.local_only:
+            if kind.local_only or kind.paired:
                 continue
             properties = kind.settings.get("properties") or {}
             required = set(kind.settings.get("required") or ())
             fields = ", ".join(
                 f"{key}{'' if key in required else '?'}" + (" (secret)" if spec.get("secret") else "")
                 for key, spec in properties.items() if isinstance(spec, dict))
-            print(f"  --{kind.connection} {kind.name:14} {kind.label}" + (f": {fields}" if fields else ""))
+            print(f"  {kind.name:14} {kind.label}" + (f": {fields}" if fields else ""))
     return 0
 
 
@@ -55,27 +49,21 @@ def _value(raw: str, spec: dict):
     return raw
 
 
-def connections_from_args(**given) -> dict:
-    """The connection objects ``add`` builds: each option is its kind, then ``KEY=VALUE`` settings."""
-    from openprogram.host.machines import CONNECTIONS, MachineError, kinds
-    out: dict = {}
-    for connection in CONNECTIONS:
-        words = given.get(connection) or []
-        if not words:
-            continue
-        kind_name, settings = words[0].strip().lower(), words[1:]
-        stored: dict = {"kind": kind_name}
-        kind = kinds.get(connection, kind_name)
-        properties = (kind.settings.get("properties") or {}) if kind is not None else {}
-        for item in settings:
-            key, sep, raw = item.partition("=")
-            if not sep or not key.strip():
-                raise MachineError(f"--{connection} settings are KEY=VALUE, not {item!r}")
-            stored[key.strip()] = _value(raw, properties.get(key.strip()) or {})
-        out[connection] = stored
-    if not out:
-        raise MachineError("name at least one connection: --shell, --window, --screen or --browser KIND")
-    return out
+def connection_from_args(words: list[str] | None) -> dict:
+    """The connection object ``add`` builds: the method, then ``KEY=VALUE`` settings."""
+    from openprogram.host.machines import MachineError, kinds
+    if not words:
+        raise MachineError("name how the machine is reached: METHOD, then its KEY=VALUE settings")
+    kind_name, settings = words[0].strip().lower(), words[1:]
+    stored: dict = {"kind": kind_name}
+    kind = kinds.get(kind_name)
+    properties = (kind.settings.get("properties") or {}) if kind is not None else {}
+    for item in settings:
+        key, sep, raw = item.partition("=")
+        if not sep or not key.strip():
+            raise MachineError(f"settings are KEY=VALUE, not {item!r}")
+        stored[key.strip()] = _value(raw, properties.get(key.strip()) or {})
+    return stored
 
 
 def dispatch(args) -> int:
@@ -92,11 +80,9 @@ def dispatch(args) -> int:
         return _print_list(bool(getattr(args, "kinds", False)))
     try:
         if verb == "add":
-            payload = {"id": args.id, "name": args.name,
-                       **connections_from_args(shell=args.shell, window=args.window, screen=args.screen,
-                                               browser=args.browser)}
+            payload = {"id": args.id, "name": args.name, "connection": connection_from_args(args.connection)}
             machine = save_machine(payload)
-            print(f"Saved machine {machine.id!r}: {_connections(machine)}")
+            print(f"Saved machine {machine.id!r}: {machine.describe()}")
             return 0
         if verb in ("remove", "enable", "disable", "test") and get_machine(args.id) is None:
             print(f"[error] unknown machine {args.id!r}")

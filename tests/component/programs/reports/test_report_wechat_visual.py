@@ -386,7 +386,7 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(
             ),
         ),
     )
-    from openprogram.programs.tools.computer_use.computer_use.desktop import processes
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import processes
 
     monkeypatch.setattr(processes, "all_pids", lambda: [1, *pids, 999])
     monkeypatch.setitem(

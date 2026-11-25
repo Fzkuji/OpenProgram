@@ -6,6 +6,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { requestSessionLoad } from "@/lib/runtime-bridge/session/session-load";
 import { HISTORY_PROTOCOL } from "@/lib/chat/history/session-history";
 import { setApplicationNote } from "@/lib/chat/send/application-notes";
+import { enqueueMessage, useSendQueue } from "@/lib/chat/send/send-queue";
 import { openSession } from "@/lib/tabs/navigation/open-session";
 import {
   ApplicationComposer, type ComposerPlace, setOwnConversation, useConversationFeed,
@@ -116,6 +117,17 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
           chatAllowed();
           if (!conversationRef.current) throw new Error("No conversation is open");
           setApplicationNote(conversationRef.current, typeof params.text === "string" ? params.text.slice(0, 16_000) : null);
+          result = true;
+        } else if (method === "chat.send") {
+          // A button of the window that says something for the owner, such as
+          // "draft this task": sent as their message, after a running reply.
+          chatAllowed();
+          const sid = conversationRef.current;
+          if (!sid) throw new Error("No conversation is open");
+          const text = typeof params.text === "string" ? params.text.trim().slice(0, 16_000) : "";
+          if (!text) throw new Error("A message is required");
+          if (!enqueueMessage(sid, { text, thinking: "", webSearchEnabled: false, background: true })) throw new Error("The message was not queued");
+          useSendQueue.getState().drain(sid);
           result = true;
         } else if (method === "chat.place") {
           chatAllowed();

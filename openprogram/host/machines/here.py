@@ -1,8 +1,8 @@
 """Whether an address reaches this computer.
 
-This computer is built in as ``local`` and operated as ``app`` and
-``screen``; a machine that is this computer under another name would give
-it a second address. Kinds ask here when a machine is saved. Only the local
+This computer is built in as ``local``; a machine that is this computer
+under another name would give it a second address. Connection methods ask
+here when a machine is saved. Only the local
 resolver is asked: nothing goes out on the network, and a name the resolver
 cannot answer for is not taken to be this computer.
 """

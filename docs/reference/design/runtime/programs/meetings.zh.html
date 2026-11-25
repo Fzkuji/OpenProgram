@@ -69,7 +69,7 @@
 <summary>电脑声音，在服务器上录</summary>
 <ul>
 <li><code translate="no">POST /api/meetings</code> 在 <code translate="no">Meeting.begin</code> 里开始采集。<code translate="no">ScreenCaptureSource</code> 读取可共享内容，为第一块显示器构造 <code translate="no">SCContentFilter.initWithDisplay_excludingWindows_(display, [])</code>，不排除任何窗口。</li>
-<li><code translate="no">screen_capture_audio.open_audio</code> 打开流：<code translate="no">capturesAudio</code>、16 kHz、单声道、<code translate="no">excludesCurrentProcessAudio</code>、每秒一帧 2×2、不接屏幕输出。电脑操作的按应用录制（<code translate="no">desktop/audio.py</code>）共用这个模块，只有过滤器不同。</li>
+<li><code translate="no">screen_capture_audio.open_audio</code> 打开流：<code translate="no">capturesAudio</code>、16 kHz、单声道、<code translate="no">excludesCurrentProcessAudio</code>、每秒一帧 2×2、不接屏幕输出。电脑操作的按应用录制（<code translate="no">desktop/common/audio.py</code>）共用这个模块，只有过滤器不同。</li>
 <li>macOS 首次会询问“屏幕与系统音频录制”。worker 运行在 App 的运行时包内（<code translate="no">openprogram/host/system_access</code> 的 <code translate="no">screen_recording</code> 能力），所以提示和系统设置里的条目显示 App 的名字。ScreenCaptureKit 音频不需要其他声明。</li>
 <li><code translate="no">SystemAudio</code> 不依赖 ScreenCaptureKit。来源推入 float32 缓冲，按采样数切成 30 秒一段。每段的 <code translate="no">t_ms</code> 是第一个采样的会议时钟：起始缓冲的到达时间减去它的剩余长度。</li>
 <li>独立线程把每段转成 16 位 WAV，调用 <code translate="no">Meeting.append("system", seq, t_ms, wav, "wav")</code>，即音频路由使用的入口。</li>

@@ -108,7 +108,7 @@ def test_a_remote_read_pages_the_same_way(monkeypatch):
     from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     class _FS:
-        machine = Machine("devbox", "devbox", shell=Connection("ssh", {"target": "me@devbox"}))
+        machine = Machine("devbox", "devbox", Connection("ssh", {"target": "me@devbox"}))
         label = "devbox"
 
         def read_bytes(self, path):

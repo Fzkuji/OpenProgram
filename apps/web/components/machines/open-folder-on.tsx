@@ -35,13 +35,12 @@ export function useOpenFolderOn(): {
   dialogs: ReactNode;
   dialogOpen: boolean;
 } {
-  const kinds = useMachines((s) => s.kinds);
   const { pickFolder, folderPickerDialog, manualOpen } = useFolderPicker();
   const { pickRemoteFolder, remoteFolderDialog, remoteOpen } = useRemoteFolderPicker();
   const openOn = useCallback(async (machine: MachineInfo) => {
-    const path = machineKeepsFiles(machine, kinds) ? await pickRemoteFolder(machine) : await pickFolder();
+    const path = machineKeepsFiles(machine) ? await pickRemoteFolder(machine) : await pickFolder();
     return path ? { path, machineId: machine.id } : null;
-  }, [kinds, pickFolder, pickRemoteFolder]);
+  }, [pickFolder, pickRemoteFolder]);
   return {
     openOn,
     pickFolder,
@@ -60,7 +59,6 @@ export function useFolderPickerOn(machineId: string | null | undefined): {
   dialogOpen: boolean;
 } {
   const items = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const { pickFolder: pickHere, folderPickerDialog, manualOpen } = useFolderPicker();
   const { pickRemoteFolder, remoteFolderDialog, remoteOpen } = useRemoteFolderPicker();
   const remote = !!machineId && machineId !== LOCAL_ID;
@@ -68,7 +66,7 @@ export function useFolderPickerOn(machineId: string | null | undefined): {
     if (remote) void ensureMachines();
   }, [remote]);
   const machine = remote ? findMachine(items, machineId) : null;
-  const keepsFiles = machineKeepsFiles(machine, kinds);
+  const keepsFiles = machineKeepsFiles(machine);
   const pickFolder = useCallback(async (start?: string) => {
     if (keepsFiles && machine) return pickRemoteFolder(machine, start ?? "");
     // A machine no longer configured has no folders to choose from.
@@ -94,7 +92,6 @@ export function MachineChoiceRows({
 }) {
   const { text } = useTranslation();
   const items = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const machineName = useMachineName();
   return (
     <>
@@ -108,7 +105,7 @@ export function MachineChoiceRows({
             data-machine-choice={machine.id}
             onClick={() => { if (!offline) onPick(machine); }}
           >
-            {machine.id === LOCAL_ID ? null : <MachineIcon machine={machine} kinds={kinds} />}
+            {machine.id === LOCAL_ID ? null : <MachineIcon machine={machine} />}
             <span className="flex-1 truncate">{machineName(machine)}</span>
           </div>
         );

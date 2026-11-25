@@ -18,7 +18,7 @@ function Assert-AllowedUrl {
     $AllowedHosts = @(
         "github.com",
         "release-assets.githubusercontent.com",
-        "fuzzykuji.github.io"
+        "fzkuji.github.io"
     )
     if ($Parsed.Scheme -ne "https" -or $Parsed.UserInfo -or $Parsed.Host -notin $AllowedHosts) {
         throw "release URL is not allowed: $Url"

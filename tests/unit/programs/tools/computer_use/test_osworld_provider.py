@@ -6,12 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use import errors, locks, registry, tool
+from openprogram.programs.tools.computer_use.computer_use import errors, tool
+from openprogram.programs.tools.computer_use.computer_use.routing import locks, registry
 from openprogram.programs.tools.computer_use.computer_use.contract import Approval, Call
-from openprogram.programs.tools.computer_use.computer_use.providers import osworld
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import osworld
 from openprogram.programs.tools.computer_use.computer_use.tool import computer_use
 
 from tests.support.screen_targets import PNG, environment, install_machines, local, machine
+from openprogram.programs.tools.computer_use.computer_use import context as cu_context, devices as cu_devices
 
 URL = "http://192.168.64.2:5000"
 
@@ -79,9 +81,9 @@ def server(monkeypatch, tmp_path):
     # Requests run in this thread; the thread that lets a cancelled call go is tested as a component.
     monkeypatch.setattr(osworld, "_bounded", lambda fn, call: fn())
     monkeypatch.setattr(locks, "_root", lambda: tmp_path / "locks")
-    install_machines(monkeypatch, [local(), machine("lab", "Lab VM", screen={"kind": "osworld", "url": URL})])
+    install_machines(monkeypatch, [local(), machine("lab", "Lab VM", "osworld", url=URL)])
     environment(monkeypatch, local())
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
     return found
 
 
@@ -232,7 +234,7 @@ def test_its_description_and_note_say_what_it_lacks(server):
     note = provider.note()
     assert 'device="lab" is the whole screen of a machine (Lab VM)' in note and "pixels only" in note
     assert "super" in note
-    assert '  - device="lab", type="screen": virtual machine, pixels only' in tool.devices()["lab"]
+    assert '  - device="lab", type="screen": virtual machine, pixels only' in cu_devices.devices()["lab"]
 
 
 def test_one_display_only(server):
@@ -243,9 +245,9 @@ def test_one_display_only(server):
 
 def test_the_url_is_checked_when_the_machine_is_saved():
     from openprogram.host.machines import kinds
-    assert kinds.validated("screen", {"kind": "osworld", "url": URL + "/"}) == {"kind": "osworld", "url": URL}
+    assert kinds.validated({"kind": "osworld", "url": URL + "/"}) == {"kind": "osworld", "url": URL}
     with pytest.raises(kinds.KindError):
-        kinds.validated("screen", {"kind": "osworld", "url": "ftp://lab"})
+        kinds.validated({"kind": "osworld", "url": "ftp://lab"})
 
 
 def test_a_call_out_of_time_names_the_steps_that_took_effect(server):

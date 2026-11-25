@@ -35,6 +35,7 @@
 <tr><th scope="row">menu</th><td>28px</td><td><code translate="no">--ui-button-h-sm</code></td><td>sm、icon-sm</td><td>13px</td></tr>
 <tr><th scope="row">standard</th><td>30px</td><td><code translate="no">--ui-button-h</code></td><td>default、icon</td><td>14px</td></tr>
 <tr><th scope="row">composer</th><td>32px</td><td><code translate="no">--ui-button-h-lg</code></td><td>lg、icon-lg</td><td>14px</td></tr>
+<tr><th scope="row">choice</th><td>26px</td><td><code translate="no">--ui-choice-h</code></td><td>32px 选择槽里的一个选项</td><td>13px</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">--ui-button-h</code> 即 <code translate="no">--ui-list-h</code>：普通按钮和侧栏对话行一样高。</p>
@@ -110,6 +111,7 @@
 <tr><th scope="row">lg</th><td>10px</td><td>列表行、菜单、弹层、Select 弹出、卡片</td></tr>
 <tr><th scope="row">xl</th><td>12px</td><td>中间卡片、分栏面板、页面面板、对话框</td></tr>
 <tr><th scope="row">2xl</th><td>16px</td><td>用户气泡、大型浮层</td></tr>
+<tr><th scope="row">groove</th><td>11px</td><td>选择槽：md 加面四周的 3px</td></tr>
 <tr><th scope="row">full</th><td>9999px</td><td>胶囊、头像、圆点</td></tr>
 </tbody>
 </table>
@@ -185,7 +187,7 @@
 <tr><th scope="row"><code translate="no">--motion-slow</code></th><td>240ms</td><td>面板、抽屉、大幅移动</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">transition: opacity var(--motion-medium) var(--ease-standard)</code>。<code translate="no">--ease-standard</code> 是唯一缓动。循环动画和弹簧曲线保持自己的时序。脚本等待过渡时，超时不短于所等档位。</p>
+<p class="note"><code translate="no">transition: opacity var(--motion-medium) var(--ease-standard)</code>。<code translate="no">--ease-standard</code> 是唯一缓动。多选一槽里的面有自己的滑动（见表面系统）。循环动画和弹簧曲线保持自己的时序。脚本等待过渡时，超时不短于所等档位。</p>
 
 <h2 id="shadows">阴影</h2>
 <table class="stack fixed">
@@ -196,6 +198,7 @@
 <tr><th scope="row"><code translate="no">--shadow-popover</code></th><td>菜单、浮动条、拖动预览</td></tr>
 <tr><th scope="row"><code translate="no">--shadow-dialog</code></th><td>对话框、全窗口覆盖层</td></tr>
 <tr><th scope="row"><code translate="no">--shadow-raised</code>、<code translate="no">--shadow-raised-hover</code></th><td>输入框、浮起按钮。悬停阴影三层：四周均匀的淡环境阴影（顶边靠它显出来）、贴底的接触阴影、往下散开的柔和投影。深色主题在顶边内侧加 6% 白色高光。不描边。</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-groove</code></th><td>很淡的内阴影，底色 <code translate="no">--groove</code>（<code translate="no">bg-groove</code>）：多选一控件的槽，浅色主题比所在表面低一级，深色主题用最底层的页面色</td></tr>
 </tbody>
 </table>
 <p class="note">组件里不写 <code translate="no">rgba</code>。内嵌线和焦点环是边框，不算高度。</p>

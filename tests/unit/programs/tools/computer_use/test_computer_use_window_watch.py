@@ -1,7 +1,7 @@
 """The operated window stays under a live capture so macOS marks it, then is released."""
 import threading
 
-from openprogram.programs.tools.computer_use.computer_use.desktop import window_watch
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import window_watch
 
 
 # Threads alive before a test's watch started; _settle waits for the rest.
@@ -163,7 +163,7 @@ def test_without_accessibility_the_reader_looks_on_its_own():
 
 
 def test_the_windows_that_can_cover_are_the_ordinary_ones_of_other_processes():
-    from openprogram.programs.tools.computer_use.computer_use.desktop.ax_events import window_owners
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos.ax_events import window_owners
     rows = [{"kCGWindowOwnerPID": 5, "kCGWindowLayer": 0}, {"kCGWindowOwnerPID": 6, "kCGWindowLayer": 25},
             {"kCGWindowOwnerPID": 9, "kCGWindowLayer": 0}, {"kCGWindowOwnerPID": 0, "kCGWindowLayer": 0}]
     assert window_owners(rows, own_pid=9) == {5}

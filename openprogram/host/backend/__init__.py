@@ -11,15 +11,20 @@ Three backends ship out of the box:
     ssh      — ``ssh <target> "..."`` per call, one shared connection
 
 Which one runs is decided by the session's environment
-(``openprogram.host.machines``): every conversation picks a machine when it
-is created, and the backend follows that machine's shell kind. Each backend
-registers as a shell kind at the end of this module.
+(``openprogram.host.machines``): a conversation runs on its project's
+machine, and the backend follows that machine's connection method. This
+module registers the methods ``ssh`` and ``docker`` with the device layer
+(their settings, check and labels) and keeps, in ``SHELLS``, which methods
+commands run through: ``local``, ``ssh`` and ``docker``. The device layer
+knows nothing of shells; it asks ``shell_for``.
 """
 from __future__ import annotations
 
 import contextlib
 import re
 import subprocess
+from dataclasses import dataclass
+from typing import Callable
 
 from openprogram.host.backend.base import Backend, RunResult, wait_idle
 from openprogram.host.backend.local import LocalBackend
@@ -80,13 +85,37 @@ def _session_mounts(session_id: str | None) -> tuple[str, ...]:
     return tuple(out)
 
 
+@dataclass(frozen=True)
+class Shell:
+    """How commands run on a device reached by one connection method."""
+    # ``backend(machine, conversation) -> Backend``.
+    backend: Callable[..., Backend]
+    # One instance for the machine, or one per conversation.
+    instance_scope: str = "machine"
+    # File tools go through the shell rather than this computer's disk.
+    remote_files: bool = False
+    # Scoped to the conversation: ``remove_instances(machine_id, conversation_id)`` removes the instances
+    # labelled with either (both may be given; one is None), whether or not the machine is still configured.
+    remove_instances: Callable[[str | None, str | None], None] | None = None
+
+
+# The connection methods commands run through, by method name. A device reached any other way
+# (another computer's OpenProgram, a virtual machine's screen) runs no commands.
+SHELLS: dict[str, Shell] = {}
+
+
+def shell_for(machine) -> Shell | None:
+    """The shell of ``machine``'s connection method, or None when commands cannot run through it."""
+    return SHELLS.get(machine.method) if machine is not None and machine.connection is not None else None
+
+
 def backend_for(machine, session_id: str | None = None) -> Backend:
-    """Build the backend that runs commands on ``machine`` for ``session_id``: its shell kind's."""
-    kind = machine.kind("shell")
-    if kind is None or kind.backend is None:
+    """Build the backend that runs commands on ``machine`` for ``session_id``: its connection method's."""
+    shell = shell_for(machine)
+    if shell is None:
         # Never this computer in its place: a machine without a usable shell runs nothing.
         raise RuntimeError(f"machine {machine.id!r} has no shell commands can run through")
-    backend = kind.backend(machine, session_id)
+    backend = shell.backend(machine, session_id)
     if not machine.is_local:
         backend.machine_id = machine.id
     return backend
@@ -104,11 +133,10 @@ def get_active_backend() -> Backend:
     try:
         return backend_for(machine, session_id)
     except Exception as exc:
-        return UnavailableBackend(machine.shell.kind if machine.shell else "unavailable",
-                                  f"machine {machine.id!r}: {exc}")
+        return UnavailableBackend(machine.method or "unavailable", f"machine {machine.id!r}: {exc}")
 
 
-# -- the shell kinds ------------------------------------------------------------
+# -- the shells ----------------------------------------------------------------
 
 DEFAULT_DOCKER_IMAGE = "ubuntu:24.04"
 
@@ -118,12 +146,12 @@ def _local_backend(machine, session_id: str | None) -> Backend:
 
 
 def _ssh_backend(machine, session_id: str | None) -> Backend:
-    return SshBackend(target=machine.shell.get("target"), workdir=machine.shell.get("workdir"))
+    return SshBackend(target=machine.connection.get("target"), workdir=machine.connection.get("workdir"))
 
 
 def _docker_backend(machine, session_id: str | None) -> Backend:
     from openprogram.host.backend.docker import CONVERSATION_LABEL, MACHINE_LABEL
-    image = machine.shell.get("image", DEFAULT_DOCKER_IMAGE)
+    image = machine.connection.get("image", DEFAULT_DOCKER_IMAGE)
     if not session_id:
         return DockerBackend(image=image)
     return DockerBackend(image=image, container=container_name(machine.id, session_id),
@@ -140,12 +168,8 @@ def _docker_settings(settings: dict) -> dict:
     return {**settings, "image": str(settings.get("image") or "").strip() or DEFAULT_DOCKER_IMAGE}
 
 
-def _check_local(machine) -> tuple[bool, str]:
-    return True, "This computer"
-
-
 def _check_ssh(machine) -> tuple[bool, str]:
-    result = SshBackend(machine.shell.get("target"), machine.shell.get("workdir")).run("pwd", timeout=20)
+    result = SshBackend(machine.connection.get("target"), machine.connection.get("workdir")).run("pwd", timeout=20)
     if result.exit_code == 0:
         lines = result.stdout.strip().splitlines()
         return True, "Connected" + (f" · {lines[-1]}" if lines else "")
@@ -162,7 +186,7 @@ def _check_docker(machine) -> tuple[bool, str]:
         return False, "Docker did not answer within 20s"
     if proc.returncode != 0:
         return False, (proc.stderr.strip() or "Docker is not running")[:500]
-    return True, f"Docker {proc.stdout.strip()} · image {machine.shell.get('image')}"
+    return True, f"Docker {proc.stdout.strip()} · image {machine.connection.get('image')}"
 
 
 def ssh_host(target: str) -> str:
@@ -204,14 +228,11 @@ def _ssh_where(settings: dict) -> str:
     return f"{target}:{workdir}" if target and workdir else target
 
 
-def _register_kinds() -> None:
+def _register_methods() -> None:
     from openprogram.host.machines.kinds import Kind, register
 
     register(Kind(
-        name="local", connection="shell", label="This computer", label_zh="这台电脑", local_only=True,
-        backend=_local_backend, check=_check_local))
-    register(Kind(
-        name="ssh", connection="shell", label="SSH host", label_zh="SSH 主机",
+        name="ssh", label="SSH host", label_zh="SSH 主机",
         settings={
             "type": "object",
             "description": "Uses your ssh config and keys; password prompts are not supported.",
@@ -228,10 +249,9 @@ def _register_kinds() -> None:
             },
             "required": ["target"],
         },
-        remote_files=True, backend=_ssh_backend, check=_check_ssh, admit=_admit_ssh,
-        where=_ssh_where))
+        check=_check_ssh, admit=_admit_ssh, where=_ssh_where))
     register(Kind(
-        name="docker", connection="shell", label="Docker container", label_zh="Docker 容器",
+        name="docker", label="Docker container", label_zh="Docker 容器",
         settings={
             "type": "object",
             "description": "Each conversation gets its own container; the conversation's folders are mounted "
@@ -244,18 +264,24 @@ def _register_kinds() -> None:
                           "default": DEFAULT_DOCKER_IMAGE, "examples": [DEFAULT_DOCKER_IMAGE]},
             },
         },
-        instance_scope="conversation", backend=_docker_backend, check=_check_docker,
-        remove_instances=_remove_docker_instances,
-        normalize=_docker_settings,
+        check=_check_docker, normalize=_docker_settings,
         where=lambda settings: str(settings.get("image") or DEFAULT_DOCKER_IMAGE)))
 
 
-_register_kinds()
+SHELLS.update({
+    "local": Shell(_local_backend),
+    "ssh": Shell(_ssh_backend, remote_files=True),
+    "docker": Shell(_docker_backend, instance_scope="conversation", remove_instances=_remove_docker_instances),
+})
+_register_methods()
 
 
 __all__ = [
     "Backend",
     "RunResult",
+    "SHELLS",
+    "Shell",
+    "shell_for",
     "DEFAULT_DOCKER_IMAGE",
     "LocalBackend",
     "DockerBackend",

@@ -53,7 +53,7 @@ def host(tmp_path, monkeypatch):
     backend = _ShellHere(home)
     monkeypatch.setattr("openprogram.host.backend.backend_for", lambda machine: backend)
     machines.save_machine({"id": "devbox", "name": "Dev box",
-                           "shell": {"kind": "ssh", "target": "me@devbox", "workdir": str(home)}})
+                           "connection": {"kind": "ssh", "target": "me@devbox", "workdir": str(home)}})
     yield backend
     status.forget()
 
@@ -89,7 +89,7 @@ def test_a_machine_that_is_off_or_unknown_takes_no_project(host):
 
 
 def test_a_local_folder_is_one_project_whatever_machine_runs_it(host, tmp_path):
-    machines.save_machine({"id": "box", "shell": {"kind": "docker"}})
+    machines.save_machine({"id": "box", "connection": {"kind": "docker"}})
     folder = tmp_path / "work"
     folder.mkdir()
     project = projects.resolve_project(folder, machine_id="box")

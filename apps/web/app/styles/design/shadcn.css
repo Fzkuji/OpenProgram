@@ -25,6 +25,9 @@
   --secondary-foreground: var(--text-primary);
   --muted: var(--bg-tertiary);
   --muted-foreground: var(--text-muted);
+  /* The groove of a choice control: a step below the surface in light
+     themes; in dark ones the deep page, so the lighter face reads on it. */
+  --groove: light-dark(var(--muted), var(--bg-secondary));
   /* The highlighted row of every menu and Select (shadcn focus:bg-accent):
      the ink at 9%, so it shows on the solid popover in every theme
      (--bg-hover is too faint there). */

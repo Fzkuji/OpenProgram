@@ -236,7 +236,7 @@ resolve_release_url() {
     case "$resolved_url" in
       # The same fixed hosts as _RELEASE_HOSTS in github_release/github.py. A signed
       # update source can add hosts for the fetcher; this script cannot check one.
-      https://github.com/*|https://release-assets.githubusercontent.com/*|https://fuzzykuji.github.io/*) ;;
+      https://github.com/*|https://release-assets.githubusercontent.com/*|https://fzkuji.github.io/*) ;;
       *) printf 'release URL is not allowed: %s\n' "$resolved_url" >&2; exit 1 ;;
     esac
     headers="$(mktemp "$header_directory/.openprogram-headers.XXXXXX")"

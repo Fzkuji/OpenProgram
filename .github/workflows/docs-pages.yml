@@ -11,9 +11,17 @@ concurrency:
   group: publish-site
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     # The site address is openprogram.operations.project_site.SITE_URL. The
     # landing page owns its root, so the documentation lives one level down,
     # and the links the build writes carry the address's path plus docs/.
@@ -51,7 +59,7 @@ jobs:
           mkdir -p _publish/docs
           cp -R docs/_site/. _publish/docs/
           cp website/index.html _publish/index.html
-          for f in CNAME favicon.ico robots.txt sitemap.xml llms.txt .nojekyll README.md google01b0015fda12129e.html 7c5062acbc32b8a88d2e6b627d65cbfa.txt; do
+          for f in CNAME favicon.ico robots.txt sitemap.xml llms.txt .nojekyll google01b0015fda12129e.html 7c5062acbc32b8a88d2e6b627d65cbfa.txt; do
             [ -e "_publish/docs/$f" ] && mv "_publish/docs/$f" "_publish/$f"
           done
           mv _publish/docs/install.sh _publish/install
@@ -61,14 +69,14 @@ jobs:
             _publish/google01b0015fda12129e.html
           ls -la _publish
 
-      - name: Publish to the site repository
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
         with:
-          deploy_key: ${{ secrets.SITE_DEPLOY_KEY }}
-          external_repository: FuzzyKuji/openprogram-site
-          publish_branch: main
-          publish_dir: ./_publish
-          commit_message: "Publish the website (${{ github.sha }})"
+          path: ./_publish
+
+      - name: Publish to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
 
       - name: Submit sitemap to IndexNow
         continue-on-error: true

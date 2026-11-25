@@ -29,6 +29,9 @@ import { onReconnected } from "@/lib/net/ws/changes";
 import { canConfirmInPlace, confirmProjectFolder, locationMessage, locationProblem, notifyProjectLocationChanged, relocateProject, type RelocateReply } from "@/lib/projects/project-location";
 import { ProjectEditor, type EditableProject } from "@/components/sidebar/projects/project-editor";
 import { Button } from "@/components/ui/button";
+import { CHOSEN_OPTION, SECTION_BAR, SECTION_GROOVE, SECTION_OPTION } from "@/components/ui/capsule";
+import { SectionSlide } from "@/components/ui/section-slide";
+import { SlidingThumb } from "@/components/ui/sliding-thumb";
 import { ChatsPage } from "@/components/chats/chats-page";
 import { MemoryPage } from "@/components/memory";
 import { useSessionStore, type ConvSummary } from "@/lib/session-store";
@@ -351,7 +354,8 @@ export function ProjectsPage({
                   </div>
                 )}
 
-                <div className={styles.tabs} role="tablist" aria-label={text("Project sections", "项目分区")}>
+                <div className={cls(SECTION_BAR, "-mx-6 mt-2 max-[760px]:-mx-4 max-[760px]:px-4")}>
+                <div className={SECTION_GROOVE} role="tablist" aria-label={text("Project sections", "项目分区")}>
                   {PROJECT_TABS.map((tk, index) => (
                     <button
                       key={tk}
@@ -363,10 +367,10 @@ export function ProjectsPage({
                       tabIndex={tab === tk ? 0 : -1}
                       onClick={() => setTab(tk)}
                       onKeyDown={(event) => moveProjectTab(event, index)}
-                      className={cls(styles.tab, tab === tk && styles.tabActive)}
+                      className={SECTION_OPTION}
                     >
                       {tk === "chats"
-                        ? <>{text("Chats", "会话")} <span className={shared.tabCount}>{chatCounts.get(selected.id) ?? 0}</span></>
+                        ? <>{text("Chats", "会话")} <span className={shared.tabCountQuiet}>{chatCounts.get(selected.id) ?? 0}</span></>
                         : tk === "memory"
                           ? text("Memory", "记忆")
                           : tk === "settings"
@@ -374,9 +378,13 @@ export function ProjectsPage({
                             : text("Info", "信息")}
                     </button>
                   ))}
+                  <SlidingThumb selector={CHOSEN_OPTION} />
+                </div>
                 </div>
 
-                <div
+                <SectionSlide
+                  index={PROJECT_TABS.indexOf(tab)}
+                  memory="project-sections"
                   id="project-tabpanel"
                   role="tabpanel"
                   aria-labelledby={`project-tab-${tab}`}
@@ -429,7 +437,7 @@ export function ProjectsPage({
                     </SettingsSection>
                   </div>
                 )}
-                </div>
+                </SectionSlide>
               </>
             )}
           </div>

@@ -413,6 +413,40 @@ def _copy_desktop(worktree: Path, commit: str, staging: Path) -> None:
         filesystem.replace_file(Path(scratch) / "apps" / "desktop", staging / "desktop")
 
 
+TAILNET = "openprogram-tailnet"
+
+
+def _stage_tailnet(worktree: Path, staging: Path, previous: Path | None, changed: list[str] | None,
+                   environment: dict[str, str]) -> None:
+    """Put the embedded Tailscale sidecar in the version's ``bin/``.
+
+    The parent's copy is kept while ``apps/tailnet`` is unchanged; otherwise it
+    is built with Go. Without Go a changed sidecar falls back to the parent's
+    copy, and a version with neither runs without Open from anywhere.
+    """
+    name = TAILNET + (".exe" if os.name == "nt" else "")
+    target = staging / "bin" / name
+    kept = previous / "bin" / name if previous is not None else None
+    unchanged = changed is not None and not any(path.startswith("apps/tailnet/") for path in changed)
+    script = worktree / "scripts" / "release" / "build-tailnet.py"
+    if kept is not None and kept.is_file() and unchanged:
+        built = kept
+    elif script.is_file() and shutil.which("go", path=environment.get("PATH")):
+        _run([sys.executable, "-I", str(script)], environment=environment, cwd=worktree,
+             timeout=FRONTEND_TIMEOUT, what="building the Tailscale sidecar")
+        found = list((worktree / "apps" / "tailnet" / "dist").glob(f"*/{name}"))
+        if not found:
+            raise BuildError("the Tailscale sidecar build produced no binary")
+        built = max(found, key=lambda path: path.stat().st_mtime)
+    elif kept is not None and kept.is_file():
+        built = kept
+    else:
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(built, target)
+    target.chmod(0o755)
+
+
 def _read_shell_compat(layout: Layout, worktree: Path) -> object:
     """This commit's shell contract; refuse it if the installed shell cannot host it."""
     try:
@@ -602,6 +636,8 @@ def _build(
         _clone_tree(previous_bundle, bundle)  # type: ignore[arg-type]
 
     _copy_desktop(worktree, request.commit, staging)
+    previous_version = layout.version(str(parent["id"])) if parent is not None else None
+    _stage_tailnet(worktree, staging, previous_version, changed, environment)
     shell_compat = _read_shell_compat(layout, worktree)
 
     if new_base:

@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 import os
+import time
 from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use.desktop import base
-from openprogram.programs.tools.computer_use.computer_use.desktop import keys
-from openprogram.programs.tools.computer_use.computer_use.desktop import macos
-from openprogram.programs.tools.computer_use.computer_use.desktop import ocr
-from openprogram.programs.tools.computer_use.computer_use.desktop.tree import Node, diff, number, render, role_name, snapshot
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import base
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import keys
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import ocr
+from openprogram.programs.tools.computer_use.computer_use.desktop.common.tree import (Node, diff, number, render,
+    role_name, snapshot)
 from openprogram.host import machines
 from openprogram.programs.tools.computer_use.computer_use import tool as entry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.dispatch import run_steps
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop
+from openprogram.programs.tools.computer_use.computer_use.routing.dispatch import run_steps
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider as desktop
 from tests.support.screen_targets import environment, install_machines, local
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import (actions as mac_actions, apps as mac_apps, frameworks as mac_frameworks, geometry as mac_geometry, processes as mac_processes, skylight as mac_skylight)
+from openprogram.programs.tools.computer_use.computer_use import devices as cu_devices
+from openprogram.programs.tools.computer_use.computer_use.providers.window import answers as window_answers
 
 
 def _decided(decision):
@@ -36,7 +41,7 @@ def _run(steps, subject):
 @pytest.fixture
 def listed(monkeypatch):
     """This computer's app target is the one target set up, as the tool lists it."""
-    install_machines(monkeypatch, [local(window="fake")], {"local": [_app()]})
+    install_machines(monkeypatch, [local()], {"local": [_app()]})
     environment(monkeypatch, None)
 
 
@@ -271,13 +276,13 @@ def test_vision_outlines_icons_that_carry_no_text():
 
 def test_only_the_window_walk_counts_towards_a_sparse_tree():
     nodes = [Node("AXWindow", 0), Node("AXButton", 1), Node("AXButton", 1), Node("AXMenuBar", 0), Node("AXMenuBarItem", 1)]
-    assert macos._window_node_count(nodes) == 3
-    assert macos._window_node_count(nodes[:3]) == 3
+    assert base.window_node_count(nodes) == 3
+    assert base.window_node_count(nodes[:3]) == 3
 
 
 def test_find_falls_back_to_text_on_the_screenshot(monkeypatch):
     computer = macos.MacComputer()
-    state = macos.WindowState(pid=1, window_title="Game", nodes=[Node("AXWindow", 0, label="Game", index=0)],
+    state = mac_frameworks.WindowState(pid=1, window_title="Game", nodes=[Node("AXWindow", 0, label="Game", index=0)],
                               has_screenshot=True, scale=2.0, size=(400, 300),
                               text_boxes=[ocr.TextBox("New Game", 100, 200, 120, 30)])
     monkeypatch.setattr(computer, "_state_for", lambda session, query: (None, state))
@@ -321,7 +326,7 @@ def test_running_apps_are_looked_up_per_process_so_a_new_launch_is_seen():
             def runningApplicationWithProcessIdentifier_(pid):
                 return me if pid == os.getpid() else None
 
-    from openprogram.programs.tools.computer_use.computer_use.desktop.processes import running_applications
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos.processes import running_applications
     assert running_applications(FakeAppKit) == [me]
 
 
@@ -349,15 +354,15 @@ def test_the_tree_walk_stops_at_a_cycle_back_to_the_app_or_an_element_seen_befor
 
 
 def test_menu_titles_match_case_insensitively_without_the_ellipsis():
-    assert macos._menu_key("Export…") == macos._menu_key("export") == macos._menu_key(" EXPORT... ")
-    assert macos._menu_key("Export as PDF…") != macos._menu_key("Export")
+    assert base.menu_key("Export…") == base.menu_key("export") == base.menu_key(" EXPORT... ")
+    assert base.menu_key("Export as PDF…") != base.menu_key("Export")
 
 
 def test_hold_durations_are_bounded():
-    assert macos._seconds(None, "duration") == 0 and macos._seconds("1.5", "duration") == 1.5
+    assert base.seconds_arg(None, "duration") == 0 and base.seconds_arg("1.5", "duration") == 1.5
     for bad in (-1, 11, "soon"):
-        with pytest.raises(macos.ComputerUseError):
-            macos._seconds(bad, "duration")
+        with pytest.raises(base.ComputerUseError):
+            base.seconds_arg(bad, "duration")
 
 
 # ----------------------------------------------------------------- the tool
@@ -379,12 +384,12 @@ def test_tool_is_a_resident_default_offered_to_chat_channels():
 
 def test_the_targets_a_turn_lists_are_the_ones_set_up(monkeypatch):
     from tests.support.screen_targets import PIXELS, FakeProvider, machine
-    install_machines(monkeypatch, [local(window="fake", browser="fake"), machine("lab", screen="fake")],
+    install_machines(monkeypatch, [local(), machine("lab")],
                      {"local": [_app(), FakeProvider("browser")],
                       "lab": [FakeProvider("screen", "lab", capabilities=PIXELS)]})
     environment(monkeypatch, None)
-    assert entry.available_targets() == ["window", "browser", "lab screen"]
-    assert list(entry.devices()) == [entry.THIS_COMPUTER, "lab"]
+    assert cu_devices.available_targets() == ["window", "browser", "lab screen"]
+    assert list(cu_devices.devices()) == [cu_devices.THIS_COMPUTER, "lab"]
 
 
 def test_unknown_action_is_an_error_without_touching_the_host(fake, listed):
@@ -396,7 +401,7 @@ def test_unknown_action_is_an_error_without_touching_the_host(fake, listed):
 
 
 def test_opening_a_site_in_the_built_in_browser_asks_nothing_and_an_upload_does():
-    from openprogram.programs.tools.computer_use.computer_use.providers.built_in_browser import BuiltInBrowser
+    from openprogram.programs.tools.computer_use.computer_use.providers.browser.built_in import BuiltInBrowser
     browser = BuiltInBrowser(None)
     assert browser.approval({}, [("create_tab", {"url": "https://example.com"})]) is None
     assert browser.approval({}, [("navigate", {"url": "https://example.com"})]) is None
@@ -406,7 +411,7 @@ def test_opening_a_site_in_the_built_in_browser_asks_nothing_and_an_upload_does(
 
 @pytest.mark.parametrize("launch", [True, False])
 def test_refused_apps_are_refused_before_launch_whether_or_not_running(monkeypatch, launch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
     from openprogram.runtime.permissions.refusal import Refused
     monkeypatch.setattr("openprogram.state.config.read_config",
                         lambda: {"computer_use": {"refused_apps": ["com.apple.Passwords"]}})
@@ -415,14 +420,14 @@ def test_refused_apps_are_refused_before_launch_whether_or_not_running(monkeypat
     monkeypatch.setattr(computer, "_running_match", lambda _q: None)
     monkeypatch.setattr(computer, "_installed_match", lambda _q: {
         "bundle_id": "com.apple.Passwords", "display_name": "Passwords", "name": "Passwords", "path": ""})
-    monkeypatch.setattr(macos.subprocess, "run", lambda *a, **k: launched.append(a))
+    monkeypatch.setattr(mac_apps.subprocess, "run", lambda *a, **k: launched.append(a))
     with pytest.raises(Refused, match="computer_use.refused_apps"):
         computer.resolve_app("Passwords", launch=launch)
     assert launched == []
 
 
 def test_the_rule_name_of_an_app_is_its_display_name_looked_up_once_without_an_icon(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
 
     class _URL:
         def path(self):
@@ -441,7 +446,7 @@ def test_the_rule_name_of_an_app_is_its_display_name_looked_up_once_without_an_i
                     "/Applications/Visual Studio Code.app": "Visual Studio Code"}[path]
 
     appkit = SimpleNamespace(NSFileManager=SimpleNamespace(defaultManager=lambda: _Manager()))
-    monkeypatch.setattr(macos, "_appkit", lambda: appkit)
+    monkeypatch.setattr(mac_frameworks, "_appkit", lambda: appkit)
     computer = macos.MacComputer()
     monkeypatch.setattr(computer, "_running_match", lambda q: pytest.fail("the lookup with retries sleeps"))
     monkeypatch.setattr(computer, "_icon", lambda path: pytest.fail("an icon is not part of a rule"))
@@ -455,8 +460,8 @@ def test_the_rule_name_of_an_app_is_its_display_name_looked_up_once_without_an_i
 
 
 def test_the_installed_apps_are_read_again_only_when_a_folder_changes(monkeypatch, tmp_path):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
-    monkeypatch.setattr(macos, "APP_DIRECTORIES", (str(tmp_path),))
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
+    monkeypatch.setattr(mac_frameworks, "APP_DIRECTORIES", (str(tmp_path),))
     computer = macos.MacComputer()
     scans = []
     monkeypatch.setattr(computer, "_scan_installed", lambda: scans.append(1) or [{"name": "A"}])
@@ -469,7 +474,7 @@ def test_the_installed_apps_are_read_again_only_when_a_folder_changes(monkeypatc
 
 
 def test_a_name_read_off_a_running_app_finds_its_bundle_once_it_has_quit(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
     computer = macos.MacComputer()
     rows = [{"name": "Visual Studio Code", "display_name": "Visual Studio Code", "bundle_id": "com.microsoft.VSCode",
              "path": "/Applications/Visual Studio Code.app", "bundle_name": "Code"},
@@ -485,7 +490,7 @@ def test_a_name_read_off_a_running_app_finds_its_bundle_once_it_has_quit(monkeyp
 
 def test_no_application_is_refused_by_default_and_own_windows_only_where_cards_show():
     from types import SimpleNamespace
-    from openprogram.programs.tools.computer_use.computer_use.desktop.base import RefusedApps
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import RefusedApps
     from openprogram.runtime.agent.turn_request import reset_turn_request, set_turn_request
     own = frozenset({"ai.openprogram.desktop"})
     assert not RefusedApps(own).hits("com.apple.Passwords")
@@ -499,7 +504,7 @@ def test_no_application_is_refused_by_default_and_own_windows_only_where_cards_s
 
 
 def test_password_fields_are_refused_only_when_the_owner_turns_that_on(monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.desktop.base import refuse_password_field
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import refuse_password_field
     from openprogram.runtime.permissions.refusal import Refused
     monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
     refuse_password_field("typing")
@@ -512,7 +517,8 @@ def test_password_fields_are_refused_only_when_the_owner_turns_that_on(monkeypat
 # ----------------------------------------------------------------- text helpers
 
 def test_find_text_honours_prefix_and_suffix_and_utf16_offsets():
-    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import find_text, utf16_len
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import find_text
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos.clipboard import utf16_len
     value = "the cat sat on the mat"
     assert find_text(value, "the") == 0
     assert find_text(value, "the", suffix=" mat") == 15
@@ -541,7 +547,7 @@ class _FakeComputer:
     def get_state(self, session, app, **kwargs):
         # After steps the state comes back as what changed.
         assert kwargs["as_diff"] is True and not kwargs["full"]
-        return macos.Observation(text="+ 4 button \"=\"", image=None, app=app)
+        return base.Observation(text="+ 4 button \"=\"", image=None, app=app)
 
 
 @pytest.fixture
@@ -562,13 +568,13 @@ def test_an_action_settles_once_and_returns_the_changed_tree(fake):
 
 
 def test_a_read_only_result_comes_back_without_a_new_state(fake):
-    computer = fake(macos.Report("menu bar: File | Edit"))
+    computer = fake(base.Report("menu bar: File | Edit"))
     result = _run([("menu", {})], {"app": "Calculator"})
     assert result.text == "menu bar: File | Edit" and computer.settled == 0
 
 
 def test_a_batch_runs_in_order_stops_at_the_first_error_and_reports_the_state_once(fake):
-    computer = fake("typed 3 character(s)", macos.ComputerUseError("element 9 no longer exists"), "unused")
+    computer = fake("typed 3 character(s)", base.ComputerUseError("element 9 no longer exists"), "unused")
     result = _run([("type_text", {"text": "abc"}), ("click", {"element": 9}), ("press_key", {"key": "Return"})],
                   {"app": "Notes"})
     assert result.is_error and computer.settled == 1 and len(computer.calls) == 2
@@ -599,7 +605,7 @@ def test_the_first_call_to_a_target_carries_its_guide_once(fake, listed, monkeyp
     computer.list_apps = lambda: "Notes (running)"
     args = {"type": "window", "action": "list_apps"}
     # Each turn reads <devices>, which registers the guides of the targets listed now.
-    entry.devices()
+    cu_devices.devices()
 
     def call():
         result = entry.computer_use(**args)
@@ -630,7 +636,7 @@ def test_no_call_is_turned_back_for_a_guide(listed, monkeypatch):
     """A call that sends code before any guide was seen runs, and its result carries the guides."""
     from openprogram.programs._authoring import guides
     monkeypatch.setattr(entry.code_mode, "available", lambda: True)
-    entry.devices()
+    cu_devices.devices()
     call = {"type": "window", "app": "Notes", "code": "pass"}
     token = guides.begin_loop()
     try:
@@ -710,8 +716,8 @@ def test_the_mention_menu_lists_running_regular_apps_but_not_refused_ones(monkey
             _App("Me", "com.example.me", os.getpid())]
     monkeypatch.setattr("openprogram.state.config.read_config",
                         lambda: {"computer_use": {"refused_apps": ["com.apple.Passwords"]}})
-    monkeypatch.setattr(macos, "_appkit", lambda: _AppKit)
-    monkeypatch.setattr(macos, "running_applications", lambda appkit: apps)
+    monkeypatch.setattr(mac_frameworks, "_appkit", lambda: _AppKit)
+    monkeypatch.setattr(mac_processes, "running_applications", lambda appkit: apps)
     computer = macos.MacComputer.__new__(macos.MacComputer)
     listed = computer.running_apps()
     assert [(a["name"], a["bundle_id"]) for a in listed] == [("Calculator", "com.apple.calculator"),
@@ -730,7 +736,7 @@ def test_app_lookup_rejects_anything_but_a_short_list_of_names():
 # ----------------------------------------------------------------- audio
 
 def test_recording_limits_default_to_a_minute_and_stop_at_five():
-    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import audio
     assert audio.seconds(None) == 60 and audio.seconds("12.5") == 12.5
     for bad in (0, -1, 301, "long"):
         with pytest.raises(ValueError):
@@ -741,7 +747,7 @@ def test_float_samples_become_a_16_bit_mono_wav_with_their_peak():
     import io
     import wave
     from array import array
-    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import audio
     data, peak = audio.wav(array("f", [0.0, 0.5, -1.5, 0.25]).tobytes())
     clip = wave.open(io.BytesIO(data))
     assert (clip.getnchannels(), clip.getsampwidth(), clip.getframerate(), clip.getnframes()) == (1, 2, 16000, 4)
@@ -749,7 +755,7 @@ def test_float_samples_become_a_16_bit_mono_wav_with_their_peak():
 
 
 def test_a_recording_keeps_samples_only_up_to_its_limit():
-    from openprogram.programs.tools.computer_use.computer_use.desktop import audio
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import audio
     recording = audio.Recording(app="Music", pid=1, limit=1.0)
     recording.take(b"\0" * 4 * 12_000)
     recording.take(b"\0" * 4 * 12_000)
@@ -757,27 +763,27 @@ def test_a_recording_keeps_samples_only_up_to_its_limit():
 
 
 def _clip(peak, tmp_path):
-    return macos.AudioClip(app="Music", path=tmp_path / "a.wav", data=b"RIFF", seconds=2.0, peak=peak)
+    return base.AudioClip(app="Music", path=tmp_path / "a.wav", data=b"RIFF", seconds=2.0, peak=peak)
 
 
 def test_a_stopped_recording_reports_its_file_and_transcript(monkeypatch, tmp_path):
     from openprogram.interfaces.speech import stt as voice
     monkeypatch.setattr(voice, "transcribe", lambda data: {"text": " 你好 ", "engine": "local", "model": "m"})
-    text = desktop._clip_text(_clip(0.3, tmp_path), transcribe=True)
+    text = window_answers._clip_text(_clip(0.3, tmp_path), transcribe=True)
     assert text == f"Recorded 2 seconds of Music, saved to {tmp_path / 'a.wav'}.\nTranscript (local, m):\n你好"
-    assert "silent" in desktop._clip_text(_clip(0.0, tmp_path), transcribe=True)
-    assert "Transcript" not in desktop._clip_text(_clip(0.3, tmp_path), transcribe=False)
+    assert "silent" in window_answers._clip_text(_clip(0.0, tmp_path), transcribe=True)
+    assert "Transcript" not in window_answers._clip_text(_clip(0.3, tmp_path), transcribe=False)
 
     def broken(data):
         raise voice.VoiceError("No speech engine is set up.")
     monkeypatch.setattr(voice, "transcribe", broken)
-    assert desktop._clip_text(_clip(0.3, tmp_path), transcribe=True).endswith("Not transcribed: No speech engine is set up.")
+    assert window_answers._clip_text(_clip(0.3, tmp_path), transcribe=True).endswith("Not transcribed: No speech engine is set up.")
 
 
 def test_audio_actions_reach_the_backend_without_a_state_read(fake):
     computer = fake()
     started = []
-    computer.start_audio = lambda session, app, limit: started.append((app, limit)) or macos.Report("Recording Music")
+    computer.start_audio = lambda session, app, limit: started.append((app, limit)) or base.Report("Recording Music")
     assert _run([("start_audio_recording", {"max_duration": 30})], {"app": "Music"}).text == "Recording Music"
     assert started == [("Music", 30)] and computer.settled == 0
     stopped = _run([("stop_audio_recording", {})], {})  # the approval names the app
@@ -800,7 +806,7 @@ def test_wait_needs_no_state_and_is_bounded(monkeypatch):
     monkeypatch.setattr(computer, "resolve_app", lambda query, launch=True: type(
         "App", (), {"processIdentifier": lambda self: 7})())
     assert computer.act("s", "wait", {"app": "Music", "seconds": 0.05}) == "waited 0.05s"
-    with pytest.raises(macos.ComputerUseError):
+    with pytest.raises(base.ComputerUseError):
         computer.act("s", "wait", {"app": "Music", "seconds": 11})
     assert {"hover", "wait"} <= desktop.ACTING
 
@@ -868,7 +874,7 @@ def test_chat_completions_models_see_tool_result_screenshots_and_hear_recordings
 def _off_space(monkeypatch, insert_result=True):
     computer = macos.MacComputer()
     inserted = []
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, None, None, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, None, None, None))
     monkeypatch.setattr(computer, "_keys_reach", lambda pid, state: False)
     monkeypatch.setattr(computer, "_insert", lambda pid, text: inserted.append(text) or insert_result)
     monkeypatch.setattr(computer, "_focused_element", lambda pid: None)
@@ -924,8 +930,8 @@ def test_windows_on_other_spaces_are_found_once_per_set_of_window_ids(monkeypatc
         {"kCGWindowNumber": 12, "kCGWindowOwnerPID": 7, "kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 1512, "Height": 37}},
         {"kCGWindowNumber": 13, "kCGWindowOwnerPID": 8, "kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 500, "Height": 400}},
     ]
-    monkeypatch.setattr(macos, "skylight", lambda: sky)
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, _Ax, _Cg, None))
+    monkeypatch.setattr(mac_skylight, "skylight", lambda: sky)
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, _Ax, _Cg, None))
     monkeypatch.setattr(computer, "_window_rows", lambda: rows)
     monkeypatch.setattr(computer, "_ax_window_id", lambda window: 0)
     # 10 is on screen (listed by AXWindows already), 12 is a menu-bar strip, 13 is another app's.
@@ -942,12 +948,12 @@ def test_a_step_reports_its_screen_point_for_the_agent_cursor(monkeypatch):
     from types import SimpleNamespace
     import openprogram.host.resources.native_window as nw
     computer = macos.MacComputer()
-    state = macos.WindowState(pid=1, window_title="Calc", window_id=70, has_screenshot=True, scale=2.0,
+    state = mac_frameworks.WindowState(pid=1, window_title="Calc", window_id=70, has_screenshot=True, scale=2.0,
                               origin=(800.0, 400.0), size=(500, 300))
     app = SimpleNamespace(processIdentifier=lambda: 1, localizedName=lambda: "Calculator")
     points = []
     monkeypatch.setattr(nw, "note_action_point", lambda name, point, action: points.append((name, point, action)))
-    monkeypatch.setattr(macos, "CUE_LEAD_SECONDS", 0)
+    monkeypatch.setattr(mac_actions, "CUE_LEAD_SECONDS", 0)
     monkeypatch.setattr(computer, "_onscreen_ids", lambda pid: {70})
 
     computer._cue(app, state, "click", {"x": 100, "y": 60})
@@ -964,17 +970,17 @@ def test_a_step_reports_its_screen_point_for_the_agent_cursor(monkeypatch):
 def test_a_screenshot_pixel_lands_on_the_same_place_in_the_window_wherever_it_is(monkeypatch):
     """Retina scale, window offset, a window that moved, and the window-relative point stamped on the event."""
     # A 2x screenshot of a window at (800, 400): pixel (100, 60) is 50, 30 points into it.
-    assert macos.screen_point(100, 60, origin=(800.0, 400.0), scale=2.0) == (850.0, 430.0)
+    assert mac_geometry.screen_point(100, 60, origin=(800.0, 400.0), scale=2.0) == (850.0, 430.0)
     # A large window captured below full density (scale 1.5); a window on a display left of the main one.
-    assert macos.screen_point(300, 150, origin=(-1440.0, 120.0), scale=1.5) == (-1240.0, 220.0)
-    assert macos.window_location((850.0, 430.0), (800.0, 400.0)) == (50.0, 30.0)
-    assert macos.window_location((-1240.0, 220.0), (-1440.0, 120.0)) == (200.0, 100.0)
-    assert macos.live_origin([_row(5, 1, x=10, y=20), _row(70, 1, x=640, y=90, w=500, h=300)], 70) == (640.0, 90.0)
-    assert macos.live_origin([_row(70, 1, w=0, h=0)], 70) is None, "a window with no size has no place"
-    assert macos.live_origin([], 70) is None
+    assert mac_geometry.screen_point(300, 150, origin=(-1440.0, 120.0), scale=1.5) == (-1240.0, 220.0)
+    assert mac_geometry.window_location((850.0, 430.0), (800.0, 400.0)) == (50.0, 30.0)
+    assert mac_geometry.window_location((-1240.0, 220.0), (-1440.0, 120.0)) == (200.0, 100.0)
+    assert mac_geometry.live_origin([_row(5, 1, x=10, y=20), _row(70, 1, x=640, y=90, w=500, h=300)], 70) == (640.0, 90.0)
+    assert mac_geometry.live_origin([_row(70, 1, w=0, h=0)], 70) is None, "a window with no size has no place"
+    assert mac_geometry.live_origin([], 70) is None
 
     computer = macos.MacComputer.__new__(macos.MacComputer)
-    state = macos.WindowState(pid=1, window_title="Calc", window_id=70, has_screenshot=True, scale=2.0,
+    state = mac_frameworks.WindowState(pid=1, window_title="Calc", window_id=70, has_screenshot=True, scale=2.0,
                               origin=(800.0, 400.0), size=(500, 300))
     rows = [_row(70, 1, x=640, y=90, w=500, h=300)]
 
@@ -986,7 +992,7 @@ def test_a_screenshot_pixel_lands_on_the_same_place_in_the_window_wherever_it_is
             assert (option, window_id) == (8, 70)
             return rows
 
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, None, _Cg, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, None, _Cg, None))
     # The user moved the window after it was read: the step follows it.
     computer._follow_window(state)
     assert state.origin == (640.0, 90.0)
@@ -1016,9 +1022,9 @@ def _row(wid, pid, x=0, y=0, w=100, h=100, layer=0):
 def test_the_windows_a_click_would_bring_forward_past_are_listed_deepest_first():
     rows = [_row(1, 10), _row(2, 20, layer=25), _row(3, 30), _row(4, 40, x=500), _row(5, 50), _row(6, 60)]
     # Front to back: 1 is the front app's, 2 a menu-bar layer, 4 lies beside the target, 6 lies below it.
-    assert [r["kCGWindowNumber"] for r in macos.covering_rows(rows, 5, front_pid=10)] == [3]
-    assert [r["kCGWindowNumber"] for r in macos.covering_rows(rows, 5, front_pid=99)] == [3, 1]
-    assert macos.covering_rows(rows, 77, front_pid=10) == []
+    assert [r["kCGWindowNumber"] for r in mac_geometry.covering_rows(rows, 5, front_pid=10)] == [3]
+    assert [r["kCGWindowNumber"] for r in mac_geometry.covering_rows(rows, 5, front_pid=99)] == [3, 1]
+    assert mac_geometry.covering_rows(rows, 77, front_pid=10) == []
 
 
 def test_a_background_click_restores_the_windows_it_brought_forward_past(monkeypatch):
@@ -1043,12 +1049,12 @@ def _windowed(monkeypatch, attrs, ids):
 def test_the_next_read_follows_a_window_that_opened_in_front_since_the_last_one(monkeypatch):
     attrs = {("app", "AXWindows"): ["doc", "open"], ("app", "AXFocusedWindow"): "open"}
     computer = _windowed(monkeypatch, attrs, {"doc": 10, "open": 11})
-    seen = macos.WindowState(pid=1, window_title="doc", window_id=10, window_keys=frozenset({10}))
+    seen = mac_frameworks.WindowState(pid=1, window_title="doc", window_id=10, window_keys=frozenset({10}))
     assert computer._new_front_window("app", seen) == "open"
     # A window the model already knew of, or a state with no record of windows, keeps the read where it was.
-    assert computer._new_front_window("app", macos.WindowState(
+    assert computer._new_front_window("app", mac_frameworks.WindowState(
         pid=1, window_title="doc", window_id=10, window_keys=frozenset({10, 11}))) is None
-    assert computer._new_front_window("app", macos.WindowState(pid=1, window_title="doc", window_id=10)) is None
+    assert computer._new_front_window("app", mac_frameworks.WindowState(pid=1, window_title="doc", window_id=10)) is None
 
 
 def test_file_dialogs_are_told_apart_and_refuse_keys_that_would_be_dropped(monkeypatch):
@@ -1061,7 +1067,7 @@ def test_file_dialogs_are_told_apart_and_refuse_keys_that_would_be_dropped(monke
 
     from types import SimpleNamespace
     ax = SimpleNamespace(AXUIElementCreateApplication=lambda pid: "app")
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, ax, None, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, ax, None, None))
     app = SimpleNamespace(localizedName=lambda: "Preview")
     attrs[("app", "AXFocusedWindow")] = "panel"
     with pytest.raises(base.ComputerUseError, match="system file dialog open.*open_file"):
@@ -1082,11 +1088,11 @@ def _panel_rows():
 
 
 def test_an_out_of_process_file_dialog_is_found_from_the_window_list():
-    assert macos.panel_hosts(_panel_rows(), 79143, {30701, 74864}) == [(30701, 9426, 9425, (356.0, 138.0, 800.0, 448.0))]
+    assert mac_geometry.panel_hosts(_panel_rows(), 79143, {30701, 74864}) == [(30701, 9426, 9425, (356.0, 138.0, 800.0, 448.0))]
     # Another app's window with the same bounds is not the dialog's; without a service there is none.
-    assert macos.panel_hosts(_panel_rows(), 236, {30701}) == [(30701, 9426, 500, (356.0, 138.0, 800.0, 448.0))]
-    assert macos.panel_hosts(_panel_rows(), 79143, set()) == []
-    assert macos.panel_hosts(_panel_rows(), 1, {30701}) == []
+    assert mac_geometry.panel_hosts(_panel_rows(), 236, {30701}) == [(30701, 9426, 500, (356.0, 138.0, 800.0, 448.0))]
+    assert mac_geometry.panel_hosts(_panel_rows(), 79143, set()) == []
+    assert mac_geometry.panel_hosts(_panel_rows(), 1, {30701}) == []
 
 
 def test_the_service_side_dialog_reports_the_window_id_the_app_shows_it_in(monkeypatch):
@@ -1095,7 +1101,7 @@ def test_the_service_side_dialog_reports_the_window_id_the_app_shows_it_in(monke
     monkeypatch.setattr(computer, "_window_rows", _panel_rows)
     monkeypatch.setattr(computer, "_is_panel_service", lambda pid: pid in (30701, 74864))
     assert computer._panels_for(79143) == [(30701, 9426, 9425, (356.0, 138.0, 800.0, 448.0))]
-    monkeypatch.setattr(macos, "skylight", lambda: SimpleNamespace(available=True, window_id=lambda w: {
+    monkeypatch.setattr(mac_skylight, "skylight", lambda: SimpleNamespace(available=True, window_id=lambda w: {
         "service open": 9426, "home": 9374}[w]))
     assert computer._ax_window_id("service open") == 9425 and computer._ax_window_id("home") == 9374
 
@@ -1105,8 +1111,8 @@ def test_the_dialog_is_read_from_the_service_when_the_app_no_longer_lists_it(mon
     computer = macos.MacComputer.__new__(macos.MacComputer)
     ax = SimpleNamespace(AXUIElementGetPid=lambda root, _: (0, 79143),
                          AXUIElementCreateApplication=lambda pid: f"app {pid}")
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, ax, None, None))
-    monkeypatch.setattr(macos, "skylight", lambda: SimpleNamespace(available=True, window_id=lambda w: {
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, ax, None, None))
+    monkeypatch.setattr(mac_skylight, "skylight", lambda: SimpleNamespace(available=True, window_id=lambda w: {
         "service open": 9426, "service other": 1, "home": 9374}.get(w)))
     monkeypatch.setattr(computer, "_window_rows", _panel_rows)
     monkeypatch.setattr(computer, "_is_panel_service", lambda pid: pid == 30701)
@@ -1125,7 +1131,7 @@ def test_the_next_read_follows_a_dialog_that_opened_without_taking_the_focus(mon
     attrs = {("app", "AXWindows"): ["doc", "open"], ("app", "AXFocusedWindow"): "doc",
              ("open", "AXSubrole"): "AXDialog"}
     computer = _windowed(monkeypatch, attrs, {"doc": 10})
-    seen = macos.WindowState(pid=1, window_title="doc", window_id=10, window_keys=frozenset({10}))
+    seen = mac_frameworks.WindowState(pid=1, window_title="doc", window_id=10, window_keys=frozenset({10}))
     assert computer._new_front_window("app", seen) == "open"
     attrs[("open", "AXSubrole")] = "AXStandardWindow"
     assert computer._new_front_window("app", seen) is None
@@ -1151,7 +1157,7 @@ def test_keys_are_refused_while_a_file_dialog_is_open_anywhere_it_takes_them(mon
              ("open", "AXIdentifier"): "open-panel"}
     computer = _windowed(monkeypatch, attrs, {})
     ax = SimpleNamespace(AXUIElementCreateApplication=lambda pid: "app")
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, ax, None, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, ax, None, None))
     app = SimpleNamespace(localizedName=lambda: "PDF Expert")
     # A dialog window of its own, though the document window has the focus.
     with pytest.raises(base.ComputerUseError, match="file dialog open.*open_file"):
@@ -1173,7 +1179,7 @@ def test_a_missing_window_title_lists_the_windows_and_points_at_open_file(monkey
     attrs = {("app", "AXWindows"): ["doc"], ("doc", "AXTitle"): "0main"}
     computer = _windowed(monkeypatch, attrs, {})
     ax = SimpleNamespace(AXUIElementGetPid=lambda root, _: (0, 7))
-    monkeypatch.setattr(macos, "_frameworks", lambda: (None, ax, None, None))
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: (None, ax, None, None))
     with pytest.raises(base.ComputerUseError, match='its windows are "0main"$'):
         computer._pick_window("app", "Open")
     computer._live_panels = {7: [(9425, (0.0, 0.0, 800.0, 448.0))]}
@@ -1184,7 +1190,7 @@ def test_a_missing_window_title_lists_the_windows_and_points_at_open_file(monkey
 def test_open_file_cancels_an_open_file_dialog_first(monkeypatch):
     computer = macos.MacComputer.__new__(macos.MacComputer)
     pressed, panels = [], ["panel"]
-    monkeypatch.setattr(macos.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     monkeypatch.setattr(computer, "_open_panel", lambda pid: panels[0] if panels else None)
     monkeypatch.setattr(computer, "_attr", lambda element, name: {
         ("panel", "AXChildren"): ["group"], ("group", "AXChildren"): ["ok", "cancel"],
@@ -1214,7 +1220,7 @@ def test_open_file_cancels_an_open_file_dialog_first(monkeypatch):
 def test_open_file_opens_existing_documents_only(monkeypatch, tmp_path, name, mode, bundle, message):
     from types import SimpleNamespace
     computer = macos.MacComputer.__new__(macos.MacComputer)
-    monkeypatch.setattr(macos, "_appkit", lambda: pytest.fail("nothing is opened"))
+    monkeypatch.setattr(mac_frameworks, "_appkit", lambda: pytest.fail("nothing is opened"))
     path = name
     if mode is not None:
         target = tmp_path / name
@@ -1229,7 +1235,7 @@ def test_open_file_opens_existing_documents_only(monkeypatch, tmp_path, name, mo
 
 
 def test_open_file_is_an_app_action_that_takes_a_path_and_only_macos_documents_it():
-    from openprogram.programs.tools.computer_use.computer_use import vocabulary
+    from openprogram.programs.tools.computer_use.computer_use.actions import vocabulary
     assert "open_file" in desktop.ACTING and "open_file" in macos.MacComputer.STATELESS
     assert vocabulary.FAMILIES["window"].arguments("open_file") == ("path",)
     assert "open_file" in _app("Darwin").extra_actions() and "open_file(path)" in _app("Darwin").note()
@@ -1239,7 +1245,7 @@ def test_open_file_is_an_app_action_that_takes_a_path_and_only_macos_documents_i
 
 
 # The suite's conftest makes the screen read as unlocked for every test; this is the function itself.
-_SCREEN_LOCKED = macos._screen_locked
+_SCREEN_LOCKED = mac_frameworks._screen_locked
 
 
 @pytest.mark.parametrize("session,locked", [
@@ -1250,7 +1256,7 @@ _SCREEN_LOCKED = macos._screen_locked
 def test_the_screen_lock_is_read_from_the_login_session(monkeypatch, session, locked):
     from types import SimpleNamespace
     cg = SimpleNamespace(CGSessionCopyCurrentDictionary=lambda: session)
-    monkeypatch.setattr(macos._Frameworks, "get", classmethod(lambda cls: (None, None, cg, None)))
+    monkeypatch.setattr(mac_frameworks._Frameworks, "get", classmethod(lambda cls: (None, None, cg, None)))
     assert _SCREEN_LOCKED() is locked
 
     def broken():
@@ -1261,8 +1267,8 @@ def test_the_screen_lock_is_read_from_the_login_session(monkeypatch, session, lo
 
 def test_a_locked_screen_stops_reads_and_steps_and_says_the_windows_are_still_open(monkeypatch):
     """Locked, macOS answers nothing about windows: every app read as "Window: none open"."""
-    monkeypatch.setattr(macos, "_screen_locked", lambda: True)
-    monkeypatch.setattr(macos, "_frameworks", lambda: pytest.fail("nothing is asked of the app"))
+    monkeypatch.setattr(mac_frameworks, "_screen_locked", lambda: True)
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: pytest.fail("nothing is asked of the app"))
     computer = macos.MacComputer.__new__(macos.MacComputer)
     for call in (lambda: computer.get_state("s", "Notes"),
                  lambda: computer.act("s", "click", {"app": "Notes", "element": 1}),
@@ -1273,8 +1279,8 @@ def test_a_locked_screen_stops_reads_and_steps_and_says_the_windows_are_still_op
 
 
 def test_a_locked_screen_is_reported_as_nothing_sent(monkeypatch):
-    monkeypatch.setattr(macos, "_screen_locked", lambda: True)
-    monkeypatch.setattr(macos, "_frameworks", lambda: pytest.fail("nothing is asked of the app"))
+    monkeypatch.setattr(mac_frameworks, "_screen_locked", lambda: True)
+    monkeypatch.setattr(mac_frameworks, "_frameworks", lambda: pytest.fail("nothing is asked of the app"))
     computer = macos.MacComputer.__new__(macos.MacComputer)
     computer.app_key = lambda query: "pid:1"
     monkeypatch.setattr(macos, "backend", lambda: computer)

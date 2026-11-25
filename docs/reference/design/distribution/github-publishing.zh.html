@@ -144,7 +144,8 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 
 <h2 id="publishing-identity">发布身份</h2>
 <p>仓库是 <code translate="no">Fzkuji/OpenProgram</code>，项目最初的仓库：<code translate="no">main</code> 上先是到 0.9.8 为止的历史，之后从 1.0.0 起是压缩提交。</p>
-<p>每个同步提交署名 <code translate="no">FzKuji</code>，<code translate="no">fzkuji@gmail.com</code>，和之前的历史一致；不论检出用什么身份提交，脚本都写这个署名，并拒绝上传含有其他署名的同步。只检查 GitHub 还没有的那一段 <code translate="no">main</code>，因为更早的历史有很多作者。</p>
+<p>每个同步提交署名 <code translate="no">FuzzyKuji</code>，<code translate="no">9404270+FuzzyKuji@users.noreply.github.com</code>，也就是上传它的账号，GitHub 上新提交不再带主账号的邮箱；不论检出用什么身份提交，脚本都写这个署名，并拒绝上传含有其他署名的同步。只检查 GitHub 还没有的那一段 <code translate="no">main</code>，因为更早的历史有很多作者。</p>
+<p>上传本身走协作者账号 <code translate="no">FuzzyKuji</code>，不管 <code translate="no">gh</code> 当前切到哪个账号：脚本从 <code translate="no">gh</code> 取这个账号的令牌，并让 git 向 <code translate="no">gh</code> 要凭据，主账号的令牌不会用来上传。没有登录 <code translate="no">FuzzyKuji</code> 时，脚本在动任何东西之前就拒绝。</p>
 <p>1.0.0 到 1.3.0 是在 <code translate="no">FuzzyKuji/OpenProgram</code> 构建的，安装包留在那里，它们的发布说明也链接到那里。从 1.4.0 起，版本在 <code translate="no">Fzkuji/OpenProgram</code> 构建：</p>
 <ul>
 <li>下载链接、安装脚本和 App 的更新检查都从它读取，和源码链接一致。</li>
@@ -166,7 +167,7 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <p><code translate="no">.github/release-notes/</code> 只保存这些版本的说明，1.0.0 的说明不链接任何更早的版本。</p>
 
 <h2 id="website">网站</h2>
-<p>落地页和文档由 docs-pages 工作流发布到 <code translate="no">FuzzyKuji/openprogram-site</code>，由 GitHub Pages 在 <code translate="no">https://fuzzykuji.github.io/openprogram-site/</code> 提供，文档在 <code translate="no">docs/</code> 下。地址只有一处设置：<code translate="no">openprogram/operations/project_site.py</code> 里的 <code translate="no">SITE_URL</code>。</p>
+<p>落地页和文档由 docs-pages 工作流发布为 <code translate="no">Fzkuji/OpenProgram</code> 自己的 GitHub Pages 站点，地址 <code translate="no">https://fzkuji.github.io/OpenProgram/</code>，文档在 <code translate="no">docs/</code> 下。放在另一个账号下的独立站点仓库会随那个账号一起失效，所以站点和代码放在一起。地址只有一处设置：<code translate="no">openprogram/operations/project_site.py</code> 里的 <code translate="no">SITE_URL</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">要点</th><th scope="col">决定</th></tr></thead>
 <tbody>
@@ -281,7 +282,6 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <tr><th scope="row">已实现</th><td><code translate="no">scripts/publishing/publish-github.sh</code>，含 dry run、<code translate="no">--no-push</code>、<code translate="no">--tag</code>、凭据扫描、停用账号扫描、发布身份检查和 <code translate="no">refs/publish/last</code>；两个 hook；除 Release 外的工作流都只能手动启动；<code translate="no">AGENTS.md</code> 中的规则；Release 工作流的独立分支；每个版本带 Office 归档，App 从自己版本的 release 下载</td></tr>
 <tr><th scope="row">切换</th><td>本机的稳定版 App 仍是本地构建。下一个版本发布后从它的 DMG 安装，才换成官方 Release；避免把旧的官方版本装到更新的本地构建写过的数据上，所以等到那个版本再切换。</td></tr>
 <tr><th scope="row">尚未运行</th><td>一次完整的 Release 运行。目前唯一的一次是 v1.1.0，发布了 macOS 和 Linux App 以及全部命令行运行时；Windows 安装包构建出来但没有带上，因为 Windows 更新文件失败。1.2.0 的演练跑过一次：发布任务的检查列出了没通过的三个 App（两个 macOS 任务卡在签名，Windows 卡在 App 冒烟）。Windows install smoke 工作流还没有运行过</td></tr>
-<tr><th scope="row">网站未重新发布</th><td>站点仍是地址改为设置之前的构建：链接指向主机根下的 <code translate="no">/docs/</code>，之后新增的页面（例如下载页）要等 docs-pages 工作流再运行一次才有。社交卡片图片上仍写着 <code translate="no">openprogram.io</code></td></tr>
 <tr><th scope="row">等待 1.3.0</th><td>还没有哪个版本带 Office 归档。固定的文件 <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code> 由已安装的资源包<a href="#rebuilding-the-office-archive">打包</a>而成，放在所有者机器的 <code translate="no">~/OpenProgram-release/office/</code>；1.3.0 打 tag 时用 <code translate="no">--office-archive</code> 指向它</td></tr>
 </tbody>
 </table>

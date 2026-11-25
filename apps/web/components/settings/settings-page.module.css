@@ -17,9 +17,15 @@
 
 /* At narrow app widths the main sidebar is position:fixed. Reserve only its
    collapsed 49px rail so Settings chrome is never covered; an expanded main
-   sidebar remains an intentional temporary overlay. */
-@media (max-width: 900px) {
+   sidebar remains an intentional temporary overlay. A phone's sidebar is
+   a drawer that leaves no rail (app/styles/base/phone.css). */
+@media (max-width: 900px) and (min-width: 761px) {
   .view { padding-left: var(--rail-collapsed-w); }
+}
+@media (max-width: 760px) {
+  .view { height: 100%; }
+  .pageHeader { padding: 16px 16px 12px; }
+  .pageBody { padding: 16px 16px max(24px, env(safe-area-inset-bottom)); gap: 22px; }
 }
 
 /* ─── Unified page shell ────────────────────────────────────────────────
@@ -68,7 +74,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 40px;
   padding: 24px 28px 32px;
 }
 .sectionTitle {
@@ -83,23 +89,20 @@
   padding: 8px;
 }
 
+/* A group of rows, laid out as the Claude app's settings: no box around
+   it, a line only between rows, so the first and last rows sit as far from
+   what is above and below as every row does from its neighbours. Labels
+   line up with the section title over them. */
 .card {
-  /* View is now bg-secondary; cards use bg-tertiary to lift visually.
-     No outer margin — the parent (`.pageBody`) supplies horizontal
-     padding so the card sits flush with the page-header divider above
-     and the page-body's 28px gutters. */
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px 18px;
+  min-width: 0;
 }
 .card + .card {
-  margin-top: 12px;
+  margin-top: 40px;
 }
 /* Section title used inside `.pageBody` — sits 8px above its card so
    the heading reads as the card's label. */
 .pageBody .sectionTitle {
-  padding: 0 0 12px;
+  padding: 0 0 16px;
   font-size: var(--fs-md);
   font-weight: 500;
   color: var(--text-primary);
@@ -110,8 +113,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 0;
+  padding: 14px 0;
   min-width: 0;
+}
+.card > .row:first-child {
+  padding-top: 0;
+}
+.card > .row:last-child {
+  padding-bottom: 0;
 }
 .row + .row {
   border-top: 1px solid var(--border);

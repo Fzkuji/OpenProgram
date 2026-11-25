@@ -4,8 +4,6 @@
 .kv { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px; font-size: var(--fs-xs); line-height: 18px; color: var(--text-secondary); }
 .kv b { font-weight: 400; color: var(--text-primary); }
 
-.filterList { width: 100%; height: auto; padding: 2px; border-radius: var(--radius-md); }
-.filterTab { flex: 1 1 auto; height: auto; padding: 3px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: 400; line-height: 18px; }
 
 .day { padding: 8px 8px 2px; font-size: var(--fs-2xs); line-height: 16px; letter-spacing: .02em; color: var(--text-muted); }
 

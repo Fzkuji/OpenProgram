@@ -372,7 +372,7 @@ def capture(frame: tuple[float, float, float, float], region: tuple[float, float
     """A PNG of the part ``region`` of Safari's window at ``frame``, with the window capture of the desktop
     driver (Screen Recording), and its pixels per point."""
     try:
-        from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+        from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
         image, scale = macos.backend().capture_window(_pid(), frame, region=region)
     except Unsupported:
         raise

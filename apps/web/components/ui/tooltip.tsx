@@ -51,12 +51,15 @@ interface HoverTipProps {
   /** false keeps the tip on `side` even when it is short of room, for
    *  controls whose other sides are covered (a native web view). */
   avoidCollisions?: boolean
+  /** true keeps the tip shut while the wrapper stays, so a control that only
+   *  sometimes needs a tip (a collapsed rail's rows) is never remounted. */
+  disabled?: boolean
 }
 /** Hover dwell before a tip shows: long enough that passing the pointer
  *  over the controls never flashes tips, short enough to still help. */
 const HOVER_TIP_DELAY_MS = 1500
 
-function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipProps) {
+function HoverTip({ label, children, side = "top", avoidCollisions, disabled = false }: HoverTipProps) {
   const [open, setOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLElement | null>(null)
   // 指针是否真的悬在 trigger 上。radix 在 trigger 拿到焦点时也会请求
@@ -74,7 +77,8 @@ function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipPr
           // 冒（轻量守卫，替代 modal 的全页交互屏蔽）。
           if (
             next &&
-            (triggerRef.current?.getAttribute("aria-expanded") === "true" ||
+            (disabled ||
+              triggerRef.current?.getAttribute("aria-expanded") === "true" ||
               // A tip on a wrapper (a Select keeps its own trigger) stays
               // away while the control inside has its popup open.
               triggerRef.current?.querySelector('[aria-expanded="true"]') != null ||
@@ -91,8 +95,9 @@ function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipPr
         <TooltipTrigger
           asChild
           ref={triggerRef as React.Ref<HTMLButtonElement>}
-          onPointerEnter={() => {
-            pointerInside.current = true
+          onPointerEnter={(event) => {
+            // A finger has no hover: a tap never leaves a tip standing.
+            pointerInside.current = event.pointerType !== "touch"
           }}
           onPointerLeave={() => {
             pointerInside.current = false
@@ -100,7 +105,7 @@ function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipPr
         >
           {children}
         </TooltipTrigger>
-        <TooltipContent side={side} avoidCollisions={avoidCollisions}>{label}</TooltipContent>
+        {disabled ? null : <TooltipContent side={side} avoidCollisions={avoidCollisions}>{label}</TooltipContent>}
       </Tooltip>
     </TooltipProvider>
   )

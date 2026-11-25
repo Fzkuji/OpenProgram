@@ -303,6 +303,11 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
+      # Every sealed version carries the embedded Tailscale sidecar (bin/openprogram-tailnet).
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/tailnet/go.mod
+          cache-dependency-path: apps/tailnet/go.sum
       - name: Verify version
         run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
       - name: Confirm zstd

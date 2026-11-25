@@ -7,7 +7,6 @@ import { useTranslation } from "@/lib/i18n";
 import {
   LOCAL_ID,
   machineIconName,
-  type KindInfo,
   type MachineInfo,
   type MachineState,
 } from "@/lib/machines/store";
@@ -22,14 +21,12 @@ import { cn } from "@/lib/utils";
  *  the composer's icon rule. */
 export function MachineIcon({
   machine,
-  kinds,
   size = 16,
   fill = false,
   className,
   style,
 }: {
   machine: MachineInfo | null | undefined;
-  kinds: KindInfo[];
   size?: number;
   /** Fill the icon box, as the composer's icons do. */
   fill?: boolean;
@@ -40,7 +37,7 @@ export function MachineIcon({
     machine && machine.id !== LOCAL_ID ? machine.status?.state ?? "connecting" : null;
   return (
     <span className={cn("relative inline-flex shrink-0", className)} style={style} aria-hidden="true">
-      <SolarIcon name={machineIconName(machine, kinds)} size={size} fit={fill ? "fill" : undefined} />
+      <SolarIcon name={machineIconName(machine)} size={size} fit={fill ? "fill" : undefined} />
       {state ? <StateDot state={state} /> : null}
     </span>
   );

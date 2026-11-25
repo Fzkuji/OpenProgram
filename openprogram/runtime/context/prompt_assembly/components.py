@@ -496,11 +496,11 @@ def worktree_notice(cwd: str) -> str:
 def _remote_environment_lines(env: Any, tools: Optional[list]) -> list[str]:
     """Where a conversation on another machine runs, and that everything else stays here.
 
-    The machine is named by its id and described by its shell kind, so the
-    text names no kind. The sentence about this computer keeps a target
+    The machine is named by its id and described by its connection method, so
+    the text names no method. The sentence about this computer keeps a target
     without a machine from being read as the environment's.
     """
-    where = env.describe("shell")
+    where = env.describe()
     if env.remote_files:
         place = (f"Environment: machine {env.id} ({env.name}; {where}). This conversation's shell and file "
                  "tools act on that machine, and paths are its paths.")
@@ -672,7 +672,7 @@ def _build_devices(agent: Any) -> str:
         return ""
     if not any(getattr(t, "name", None) == "computer_use" for t in tools):
         return ""
-    from openprogram.programs.tools.computer_use.computer_use.tool import devices_text
+    from openprogram.programs.tools.computer_use.computer_use.devices import devices_text
     try:
         return devices_text()
     except Exception:

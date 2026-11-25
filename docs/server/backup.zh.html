@@ -51,7 +51,7 @@
 <table class="grid">
 <thead><tr><th scope="col">数据</th><th scope="col">默认</th><th scope="col"><code translate="no">--include-credentials</code></th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">plugin-options/</code>、profile 的 AuthStore 和 <code translate="no">.env</code> 文件、Channel 的 <code translate="no">channels/*/credentials.json</code></th><td class="deny">排除</td><td class="ask">归档，明文</td></tr>
+<tr><th scope="row"><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">plugin-options/</code>、<code translate="no">web_push/</code>、profile 的 AuthStore 和 <code translate="no">.env</code> 文件、Channel 的 <code translate="no">channels/*/credentials.json</code></th><td class="deny">排除</td><td class="ask">归档，明文</td></tr>
 <tr><th scope="row"><code translate="no">config.json[api_keys]</code>；MCP 的 env、header、bearer token 和 OAuth client secret 字段</th><td class="review">移除，文件其余部分保留</td><td class="ask">归档，明文</td></tr>
 <tr><th scope="row">Web 运行时 token、待配对的 Channel 配对码、<code translate="no">tailnet/</code> 里的 Tailscale 节点密钥</th><td class="deny">排除</td><td class="deny">排除</td></tr>
 </tbody>

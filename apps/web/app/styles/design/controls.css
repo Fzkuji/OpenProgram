@@ -7,13 +7,19 @@
      --ui-button-h-sm     28px  menus, popovers, toolbars, chips
      --ui-button-h        30px  standard: page / dialog / settings
                                 buttons, inputs, selects, sidebar rows
-     --ui-button-h-lg     32px  the composer's corner buttons */
+     --ui-button-h-lg     32px  the composer's corner buttons
+
+   One more for choices: --ui-choice-h (26px) is an option inside a choice
+   groove; the groove (3px around it) is 32px, a hair above the 30px
+   controls beside it, so the flat groove reads as large as their raised
+   faces. */
 :root {
   /* The sidebar chat row is the standard height; --ui-button-h reads it. */
   --ui-list-h: 30px;
   --ui-control-inline: 20px;
   --ui-button-h-xs: 24px;
   --ui-button-h-sm: 28px;
+  --ui-choice-h: 26px;
   --ui-button-h: var(--ui-list-h);
   --ui-button-h-lg: var(--composer-button-size);
   /* List rows take the panel corner; every button, Button or hand-written,

@@ -22,8 +22,8 @@ ROOT = Path(__file__).resolve().parents[3]
 
 # Hosts and paths the site has been served from. A URL on one of them that is
 # not under the configured address is a stale site link.
-_FORMER_SITE_HOSTS = {"openprogram.io", "www.openprogram.io"}
-_SITE_REPOSITORY_PATH = "/openprogram-site"
+_FORMER_SITE_HOSTS = {"openprogram.io", "www.openprogram.io", "fuzzykuji.github.io"}
+_SITE_REPOSITORY_PATH = "/OpenProgram"
 _URL = re.compile(r"https?://[A-Za-z0-9.-]+(?:/[^\s\"'<>()`\]\\]*)?")
 # The former custom domain written without a scheme, in prose or in an e-mail
 # address: the project does not control it.
@@ -120,8 +120,9 @@ def test_the_app_reads_the_update_source_from_the_configured_address() -> None:
         "curl -fsSL https://openprogram.io/install | sh",
         "see openprogram.io for more",
         "maintainer: OpenProgram <noreply@openprogram.io>",
-        "https://someone-else.github.io/openprogram-site/docs/",
-        f"https://{project_site.SITE_HOST}/openprogram-site-old/",
+        "https://someone-else.github.io/OpenProgram/docs/",
+        "https://fuzzykuji.github.io/openprogram-site/install",
+        f"https://{project_site.SITE_HOST}/OpenProgram-old/",
     ],
 )
 def test_a_stale_address_is_found(text: str) -> None:

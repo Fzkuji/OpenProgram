@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use import registry
+from openprogram.programs.tools.computer_use.computer_use.routing import registry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
 
 from tests.support.screen_targets import FakeProvider, install_machines, local, machine
@@ -25,7 +25,7 @@ class Closing(FakeProvider):
 def clean(monkeypatch):
     monkeypatch.setattr(registry, "_operated", {})
     monkeypatch.setattr(registry, "_running", {})
-    install_machines(monkeypatch, [local(), machine("lab", screen="fake"), machine("devbox", screen="fake")])
+    install_machines(monkeypatch, [local(), machine("lab"), machine("devbox")])
 
 
 def test_closing_waits_for_the_running_call():

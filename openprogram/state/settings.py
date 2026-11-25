@@ -702,6 +702,14 @@ SETTINGS: list[SettingSpec] = [
              "application at a time.",
     ),
     SettingSpec(
+        key="computer_use.paired_devices", path=("computer_use", "paired_devices"),
+        group="Computer use", label="Let paired devices operate this computer", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="When on, a computer paired with this one can send computer_use calls here: they run on this "
+             "computer, under its own settings, permissions and rules (its whole screen stays off unless turned "
+             "on here). Off by default.",
+    ),
+    SettingSpec(
         key="computer_use.chrome_extension_token", path=("computer_use", "chrome_extension_token"),
         group="Computer use", label="Playwright Extension token", widget="text",
         apply=APPLY_LIVE, default="", secret=True,

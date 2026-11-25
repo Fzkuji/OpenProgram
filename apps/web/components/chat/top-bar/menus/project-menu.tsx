@@ -99,7 +99,6 @@ export function ProjectMenu({
 }) {
   const { text } = useTranslation();
   const machines = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const machineName = useMachineName();
   const [machineMenuOpen, setMachineMenuOpen] = useState(false);
   const machineMenuTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -370,7 +369,7 @@ export function ProjectMenu({
         return (
           <div key={group.id} className="flex flex-col" data-project-machine={group.id}>
             <div className={GROUP_LABEL}>
-              {group.id === LOCAL_ID ? null : <MachineIcon machine={group.machine} kinds={kinds} fill />}
+              {group.id === LOCAL_ID ? null : <MachineIcon machine={group.machine} fill />}
               <span className="truncate">{machineName(group.machine, group.id)}</span>
               {offline ? <span className="font-normal">{text("offline", "离线")}</span> : null}
             </div>
@@ -500,7 +499,6 @@ export function ProjectBadge() {
   const setPendingProject = useSessionStore((s) => s.setPendingProject);
   const { openOn, pickFolder, dialogs, dialogOpen } = useOpenFolderOn();
   const machines = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const [projectMachine, setProjectMachine] = useState<string>(LOCAL_ID);
 
   // Returns true once it has resolved a project (so the caller can stop
@@ -569,7 +567,7 @@ export function ProjectBadge() {
 
   const projectMachineInfo = findMachine(machines, projectMachine);
   const folderHere =
-    projectMachine === LOCAL_ID || (!!projectMachineInfo && !machineKeepsFiles(projectMachineInfo, kinds));
+    projectMachine === LOCAL_ID || (!!projectMachineInfo && !machineKeepsFiles(projectMachineInfo));
 
   function onOpenChange(next: boolean) {
     // The headless-host fallback and the remote folder browser are portaled

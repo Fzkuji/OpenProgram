@@ -18,7 +18,7 @@ cd OpenProgram
 uv sync --locked --extra dev
 ```
 
-The [documentation](https://fuzzykuji.github.io/openprogram-site/docs/) covers the architecture,
+The [documentation](https://fzkuji.github.io/OpenProgram/docs/) covers the architecture,
 public APIs, installation profiles, and current capabilities.
 
 ## Pull requests

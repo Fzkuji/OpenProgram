@@ -1,0 +1,182 @@
+/* ===== Phone layout =====
+   At or below 760px (lib/layout/phone.ts, PHONE_MAX_WIDTH) the shell is a
+   phone app, copied from saya-ch/dsh-mobile's dedicated touch layout
+   (docs/reference/design/ui/phone-layout.html):
+   - one column: the centre card loses its gutters, corners and shadow;
+   - the sidebar is a drawer over the page, opened by the header button or
+     a swipe from the left edge, closed by its toggle, the scrim or a swipe
+     back (components/layout/phone-shell.tsx); it stays mounted, so it
+     reopens at the same scroll position;
+   - the right panel is a full-screen sheet;
+   - the shell follows the visual viewport, so the composer stays above
+     the on-screen keyboard, and keeps every control inside the safe area;
+   - touch-sized rows and buttons (44px), inputs at 16px so focusing one
+     does not zoom the page.
+   Above 760px nothing here applies except hiding the phone-only parts. */
+
+.phone-only,
+.phone-scrim {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .phone-only { display: flex !important; }
+
+  /* --- The shell follows the visual viewport ------------------------- */
+  html, body { overscroll-behavior: none; }
+  .app {
+    position: fixed;
+    top: var(--phone-viewport-top, 0px);
+    left: 0;
+    width: 100%;
+    height: var(--phone-viewport-h, 100dvh);
+    box-sizing: border-box;
+    padding:
+      env(safe-area-inset-top)
+      env(safe-area-inset-right)
+      env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+    background: var(--bg-primary);
+  }
+  .app .center-col,
+  .app .page-col,
+  .app .center-col[data-right-rail-hidden] {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* --- Header buttons (the drawer's and the sheet's) ------------------ */
+  .phone-header-button.phone-header-button {
+    width: 44px;
+    height: 44px;
+    flex: none;
+  }
+  /* A section's page goes back with its arrow; the drawer opens from the list. */
+  .phone-header-button:has(~ [data-phone-back], ~ * [data-phone-back]) { display: none !important; }
+  .app [data-center-tab-strip] {
+    height: 44px;
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  /* --- The sidebar drawer --------------------------------------------- */
+  /* Two ids outweigh html[data-sidebar-closed] #sidebar's forced width. */
+  #sidebar#sidebar {
+    --phone-drawer-w: min(86vw, 320px);
+    --rail-open-w: var(--phone-drawer-w) !important;
+    --ui-list-h: 44px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--z-drawer);
+    width: var(--phone-drawer-w) !important;
+    min-width: var(--phone-drawer-w) !important;
+    padding:
+      max(8px, env(safe-area-inset-top))
+      8px
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    transform: translateX(0);
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+  #sidebar#sidebar.collapsed,
+  html[data-sidebar-closed] #sidebar#sidebar {
+    transform: translateX(calc(-100% - 16px));
+  }
+  /* A finger drags it (phone-shell.tsx writes the transform). */
+  #sidebar#sidebar[data-dragging] { transition: none !important; }
+  /* Off screen it is simply closed: none of the desktop rail's collapsed
+     look (faded labels, the avatar's collapsed place), so a drag shows the
+     whole drawer. */
+  #sidebar.collapsed :is(.rail-open-only, .rail-row > .sidebar-nav-label, .rail-row > .sidebar-nav-text, .user-menu-footer-info, .user-menu-footer-chevron),
+  html[data-sidebar-closed] #sidebar :is(.rail-open-only, .rail-row > .sidebar-nav-label, .rail-row > .sidebar-nav-text, .user-menu-footer-info, .user-menu-footer-chevron) {
+    opacity: 1;
+  }
+  #sidebar.collapsed .rail-header,
+  html[data-sidebar-closed] #sidebar .rail-header {
+    padding-right: 8px;
+  }
+  #sidebar .rail-header { height: auto; min-height: 48px; }
+  #sidebar.collapsed .user-menu-footer-trigger,
+  html[data-sidebar-closed] #sidebar .user-menu-footer-trigger {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  #sidebar.collapsed .rail-toggle-close,
+  html[data-sidebar-closed] #sidebar .rail-toggle-close { opacity: 1; }
+  #sidebar.collapsed .rail-toggle-open,
+  html[data-sidebar-closed] #sidebar .rail-toggle-open { opacity: 0; }
+  .app .rail-resize-handle { display: none; }
+
+  .phone-scrim {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-drawer) - 1);
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease-out;
+  }
+  html:not([data-sidebar-closed]) .app:has(#sidebar:not(.collapsed)) .phone-scrim,
+  .phone-scrim[data-dragging] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .phone-scrim[data-dragging] { transition: none; }
+
+  /* --- The right panel as a full-screen sheet ------------------------- */
+  .app .right-sidebar.right-sidebar {
+    --rail-open-w: 100vw !important;
+    --ui-list-h: 44px;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-drawer) + 1);
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0;
+    padding:
+      max(8px, env(safe-area-inset-top))
+      8px
+      max(8px, env(safe-area-inset-bottom));
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 220ms !important;
+  }
+  .app .right-sidebar.right-sidebar:not(.collapsed) {
+    transform: none;
+    visibility: visible;
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+  .right-sidebar .rail-header { height: auto; min-height: 48px; }
+
+  /* --- The conversation: one column ----------------------------------- */
+  :root { --chat-column-gutter: 12px; }
+  /* The message rail lives in the column's side margin, which a phone
+     does not have. */
+  .msg-rail-anchor { display: none; }
+  /* The pane's view controls have no side margin to float in: they keep
+     their narrow column, tucked 8px from the corner. */
+  .chat-view-controls {
+    top: 8px;
+    right: 8px;
+  }
+
+  /* Focusing a field under 16px makes iOS zoom the page. */
+  body :is(textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]) {
+    font-size: max(16px, 1em);
+  }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  #sidebar#sidebar,
+  .app .right-sidebar.right-sidebar,
+  .app .right-sidebar.right-sidebar:not(.collapsed),
+  .phone-scrim {
+    transition: none !important;
+  }
+}

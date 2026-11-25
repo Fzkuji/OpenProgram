@@ -2,7 +2,7 @@
 <meta name="description" content="Design of the environment role: a conversation runs on its project's machine, in its project's folder; what follows from that, shell backends, remote file tools, per-conversation containers and the composer chips.">
 <h1>Environments</h1>
 <p>The project decides which machine a conversation's shell and files are on: a project is a folder on one machine, and every conversation in it runs there.</p>
-<p>This page covers what follows from that. Machines themselves, their connections and kinds are one registry, designed in <a href="../../integrations/computer-use/machines-and-targets.html">Machines and targets</a>. A channel (WeChat, Telegram, …) only decides where messages are mirrored. Product page: <a href="../../../../capabilities/environments.html">Run conversations on another machine</a>.</p>
+<p>This page covers what follows from that. Machines themselves, each with one connection method, are one registry, designed in <a href="../../integrations/computer-use/machines-and-targets.html">Machines and targets</a>. A channel (WeChat, Telegram, …) only decides where messages are mirrored. Product page: <a href="../../../../capabilities/environments.html">Run conversations on another machine</a>.</p>
 
 <table class="stack">
 <thead><tr><th scope="col">Shell kind</th><th scope="col">Backend</th><th scope="col">Command form</th><th scope="col">Working folder</th><th scope="col">Host sandbox</th></tr></thead>
@@ -12,13 +12,13 @@
 <tr><th scope="row"><code translate="no">docker</code></th><td><code translate="no">DockerBackend(image, container, mounts, labels)</code></td><td><code translate="no">docker exec -i [-w cwd] &lt;container&gt; sh -c &lt;cmd&gt;</code></td><td>Host path, mounted at the same path</td><td>Off; isolation is the container</td></tr>
 </tbody>
 </table>
-<p class="note">Each shell kind registers in <code translate="no">openprogram/host/backend/__init__.py</code> with its settings schema, <code translate="no">backend</code>, <code translate="no">check</code> and, for Docker, <code translate="no">instance_scope="conversation"</code> and <code translate="no">remove_instances</code>. <code translate="no">backend_for(machine, session_id)</code> builds the backend from the machine's shell kind and names no kind.</p>
+<p class="note">The shell feature maps the connection methods commands run through in <code translate="no">SHELLS</code> (<code translate="no">openprogram/host/backend/__init__.py</code>): <code translate="no">local</code>, <code translate="no">ssh</code> and <code translate="no">docker</code>, each with its <code translate="no">backend</code> and, for Docker, <code translate="no">instance_scope="conversation"</code> and <code translate="no">remove_instances</code>. The same module registers the methods <code translate="no">ssh</code> and <code translate="no">docker</code> (settings schema, <code translate="no">check</code>) with the device layer. <code translate="no">backend_for(machine, session_id)</code> builds the backend from the machine's method and names no method.</p>
 
 <h2 id="registry">The environment role</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Question</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Which machines qualify</th><td><code translate="no">usable_as_environment</code>: switched on, with a shell whose kind this process has loaded. <code translate="no">list_environments()</code> lists them, this computer first</td></tr>
+<tr><th scope="row">Which machines qualify</th><td><code translate="no">usable_as_environment</code>: switched on, reached by a method in <code translate="no">SHELLS</code>. <code translate="no">list_environments()</code> lists them, this computer first</td></tr>
 <tr><th scope="row">Which one a conversation uses</th><td><code translate="no">resolve_for_session</code>: its project's (<code translate="no">resolve_for_project</code>, from <code translate="no">machine_id</code> on the project record). The home project and a record naming no machine are <code translate="no">local</code></td></tr>
 <tr><th scope="row">Default</th><td>None. A new conversation is in a project, and the project names the machine</td></tr>
 </tbody>
@@ -33,16 +33,16 @@
 <tr><th scope="row">First message</th><td>The project the first <code translate="no">chat</code> frame names binds the session, as before; nothing about the machine is sent or stored on the session</td></tr>
 <tr><th scope="row">After that</th><td>The session's project is frozen, so its machine is too</td></tr>
 <tr><th scope="row">Channel conversation</th><td>The home project: this computer</td></tr>
-<tr><th scope="row">Machine removed, switched off or without a shell</th><td><code translate="no">resolve_for_session</code> raises <code translate="no">MachineError</code> naming Settings &gt; Machines; the backend becomes <code translate="no">UnavailableBackend</code>: every command returns the same explanation, and a spawned process (<code translate="no">execute_code</code>, a background command) is refused with it. <code translate="no">current_environment()</code> reads a bound machine again at each tool call, so a machine switched off or removed during a turn refuses the next command and file call. Tools never fall back to this computer</td></tr>
+<tr><th scope="row">Machine removed, switched off or running no commands</th><td><code translate="no">resolve_for_session</code> raises <code translate="no">MachineError</code> naming Settings &gt; Machines; the backend becomes <code translate="no">UnavailableBackend</code>: every command returns the same explanation, and a spawned process (<code translate="no">execute_code</code>, a background command) is refused with it. <code translate="no">current_environment()</code> reads a bound machine again at each tool call, so a machine switched off or removed during a turn refuses the next command and file call. Tools never fall back to this computer</td></tr>
 </tbody>
 </table>
 <p class="note">Targets of <code translate="no">computer_use</code> are a separate binding, chosen per call; being the environment never makes a machine the default target.</p>
 
 <h2 id="turn-binding">Turn binding</h2>
 <p><code translate="no">TurnBindings.bind</code> sets the <code translate="no">_current_environment</code> ContextVar. <code translate="no">current_environment()</code> reads it first, then the current session's project's machine, then this computer when there is no session. <code translate="no">get_active_backend()</code> builds the backend from that and the current session.</p>
-<p>When the shell is not this computer's, the <code translate="no">&lt;environment&gt;</code> block names the machine by id, its name and what its shell kind says of it, and that the chat and OpenProgram stay on this computer; with <code translate="no">computer_use</code> offered it adds that calls without <code translate="no">device</code> act on this computer.</p>
+<p>When the shell is not this computer's, the <code translate="no">&lt;environment&gt;</code> block names the machine by id, its name and what its method says of it, and that the chat and OpenProgram stay on this computer; with <code translate="no">computer_use</code> offered it adds that calls without <code translate="no">device</code> act on this computer.</p>
 <ul>
-<li>A shell kind with <code translate="no">remote_files</code> (SSH): the worktree ContextVar is the project's folder on the host (<code translate="no">remote_project_folder</code>), so commands start there and the permission fence checks it too. The folder was made absolute on the host (<code translate="no">cd</code> then <code translate="no">pwd -P</code>) when the project was opened.</li>
+<li>A shell with <code translate="no">remote_files</code> (SSH): the worktree ContextVar is the project's folder on the host (<code translate="no">remote_project_folder</code>), so commands start there and the permission fence checks it too. The folder was made absolute on the host (<code translate="no">cd</code> then <code translate="no">pwd -P</code>) when the project was opened.</li>
 <li><code translate="no">remote_workdir</code>, the machine's remote folder setting, is only where browsing for a project folder starts. Relative tool paths join with <code translate="no">posixpath</code> and never touch this computer's filesystem.</li>
 </ul>
 
@@ -67,7 +67,7 @@
 <li>When the daemon refuses a command because the container is gone ("No such container") or stopped ("is not running", after a Docker restart or <code translate="no">docker stop</code>), the cache entry is dropped, the container is started or created again and the command runs once more: nothing reached the old one. Only a refusal that starts <code translate="no">Error response from daemon:</code> counts.</li>
 <li>A conversation's container is made only while its machine is configured and on. After the command is counted on the machine, and again before that retry, a machine switched off or removed since the backend was made refuses the command ("machine '&lt;id&gt;' was switched off" or "was removed"), and no container is created.</li>
 <li><code translate="no">remove_instances</code> finds this installation's containers by those labels, not by the machines configured now, and removes them in a background thread: by conversation when it is deleted, alone or by Clear all, whether or not it was opened since the worker started; by machine when the machine is removed, switched off or saved off.</li>
-<li>For conversations it asks only the shell kinds some configured machine uses, switched-off machines included, so nothing runs <code translate="no">docker ps</code> without a Docker machine. Clear all hands every deleted conversation to one thread, which takes them one after another.</li>
+<li>For conversations it asks only the shells some configured machine's method uses, switched-off machines included, so nothing runs <code translate="no">docker ps</code> without a Docker machine. Clear all hands every deleted conversation to one thread, which takes them one after another.</li>
 <li>Without a session ID the backend uses one-shot <code translate="no">docker run --rm</code>, as <code translate="no">machines test</code> does; it is not checked against the machine's state.</li>
 <li>For a machine, <code translate="no">remove_instances</code> first lets running <code translate="no">computer_use</code> calls finish (up to <code translate="no">registry.FINISH_SECONDS</code>, 300 s), then waits for the commands counted on it (<code translate="no">wait_idle</code>, up to <code translate="no">RELEASE_WAIT</code>, 300 s); <code translate="no">current_environment()</code> refuses new ones meanwhile.</li>
 <li>Counted are the <code translate="no">run</code> calls and spawned processes of its SSH and Docker backends, the supervisor of a background or supervised bash command for as long as it lives, and the check or creation of a container for a spawned process.</li>
@@ -106,7 +106,7 @@
 <p class="note">The chip is the only place the composer sets the channel. Menu and chip share <code translate="no">channel-choices.ts</code> and follow the composer's pane (<code translate="no">useBoundChat</code>). <code translate="no">statusBadge</code> and <code translate="no">channelHealth</code> are separate store slices.</p>
 
 <h2 id="implementation-status">Implementation status</h2>
-<p>Implemented: the environment as a role over the machines registry, decided by the project; local, SSH and Docker shell kinds; <code translate="no">openprogram machines</code>, wizard step, Settings → Devices, WebSocket actions; remote file tools; per-conversation Docker containers removed by label.</p>
+<p>Implemented: the environment as a role over the machines registry, decided by the project; shells for the methods <code translate="no">local</code>, <code translate="no">ssh</code> and <code translate="no">docker</code>; <code translate="no">openprogram machines</code>, wizard step, Settings → Devices, WebSocket actions; remote file tools; per-conversation Docker containers removed by label.</p>
 <p>Not implemented:</p>
 <ul>
 <li>WSL and cloud environments</li>

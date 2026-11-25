@@ -50,6 +50,12 @@ export const RecordIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
   },
 );
 
+export const ScreenshotIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
+  function ScreenshotIcon({ size = 16 }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name="crop" size={size} />;
+  },
+);
+
 export const WebSearchIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
   function WebSearchIcon({ size = 16 }, ref) {
     return <SolarIcon ref={ref} fit="fill" name="global" size={size} />;

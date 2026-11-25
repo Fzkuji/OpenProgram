@@ -7,7 +7,7 @@
  *  nowhere else: the rows, the group summaries, the Activity pages and the
  *  approval card take the target and a flat step in the present names of the
  *  tool's vocabulary
- *  (openprogram/programs/tools/computer_use/computer_use/vocabulary.py).
+ *  (openprogram/programs/tools/computer_use/computer_use/actions/vocabulary.py).
  *  Stored history keeps the names a model wrote, so the names that table
  *  rewrites are read here too and shown in the present wording. */
 import { browserOf } from "./browsers.ts";

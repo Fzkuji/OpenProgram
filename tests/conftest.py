@@ -478,9 +478,9 @@ def _screen_reads_as_unlocked(monkeypatch):
     locked. A run started before a break, or over SSH on a locked Mac,
     would otherwise fail every test that steps through the real backend.
     """
-    from openprogram.programs.tools.computer_use.computer_use.desktop import macos
+    from openprogram.programs.tools.computer_use.computer_use.desktop.macos import frameworks as mac_frameworks
 
-    monkeypatch.setattr(macos, "_screen_locked", lambda: False)
+    monkeypatch.setattr(mac_frameworks, "_screen_locked", lambda: False)
 
 
 @pytest.fixture(autouse=True)

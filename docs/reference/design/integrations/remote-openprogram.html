@@ -41,7 +41,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Term</th><th scope="col">Means</th></tr></thead>
 <tbody>
-<tr><th scope="row">Remote OpenProgram machine</th><td>A machine in the registry (<a href="computer-use/machines-and-targets.html">Machines and targets</a>) with an OpenProgram connection: the address of another computer's Worker and the device credential that signs B in there</td></tr>
+<tr><th scope="row">Remote OpenProgram machine</th><td>A machine in the registry (<a href="computer-use/machines-and-targets.html">Machines and targets</a>) whose connection method is <code translate="no">openprogram</code>: the addresses of another computer's Worker and the device credential that signs B in there</td></tr>
 <tr><th scope="row">Home of a conversation</th><td>The Worker whose log holds it. It runs every turn: its model accounts, tools, memory and files. Never changes by being viewed elsewhere</td></tr>
 <tr><th scope="row">Device</th><td>Anything paired with a Worker: a phone, a browser, or another computer's Worker (<a href="../ui/remote-web-access.html#paired-devices">Paired devices</a>)</td></tr>
 </tbody>
@@ -77,12 +77,26 @@
 </tbody>
 </table>
 
+<h2 id="computer-use">Operating A from B</h2>
+<p>A conversation on B can operate A's windows, screen and browsers with <code translate="no">computer_use</code> and <code translate="no">device="&lt;A&gt;"</code> (<a href="computer-use/machines-and-targets.html#paired">Machines and targets</a>).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Side</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">B, sending</th><td>Forwards the whole call (type, app, display, title, action, args, actions, code, timeout; never <code translate="no">device</code>) with A's device credential as a Bearer token to <code translate="no">POST /api/computer-use/call</code>, trying each pairing address in turn, 6 s to connect. Puts <code translate="no">[device=..., type=...]</code> before A's answer. Asks its own user once per target, with a rule key naming A (<code translate="no">studio window safari</code>, <code translate="no">studio screen</code>, <code translate="no">studio browser chrome</code>); listing calls ask nothing</td></tr>
+<tr><th scope="row">A, receiving</th><td>Runs <code translate="no">computer_use</code> on A only, never on a device A reaches in turn, and answers <code translate="no">{text, images, is_error}</code>, images in base64. A's own settings hold: its whole screen stays off unless turned on there, its operating-system permissions apply, and its <code translate="no">tools.permission_rules</code> for <code translate="no">computer_use</code> apply: a deny rule refuses, and an ask rule refuses too, since nobody on A is asked</td></tr>
+<tr><th scope="row">The switch</th><td>Let paired devices operate this computer (<code translate="no">computer_use.paired_devices</code>), off by default, in Settings → Devices → This computer on A. While off, A answers 403 <code translate="no">paired_devices_off</code> and B's call fails saying where to turn it on</td></tr>
+<tr><th scope="row">Errors</th><td>A whose checks have failed for 45 s: answered at once, nothing sent, and checked again; A that has only just failed is still tried. B's <code translate="no">&lt;devices&gt;</code> says when A cannot be reached and when it is back. 401: B was revoked on A; pair again. 404: A runs an older OpenProgram; update it</td></tr>
+<tr><th scope="row">Listing</th><td>B lists A's window, screen and browser while A is switched on, without asking A each turn: that would be a round trip to every paired computer on every turn, often to one asleep, and A refuses precisely with the targets it does have</td></tr>
+</tbody>
+</table>
+
 <h2 id="settings">Settings</h2>
 <p>Everything here is set up in the App; the command line stays as an equal alternative.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Where</th><th scope="col">Does</th></tr></thead>
 <tbody>
 <tr><th scope="row">Settings → Devices, on A</th><td>One list of computers and paired phones; a phone shows its last use and can be renamed or revoked. <strong>Add device</strong> asks what the device is first (Codex's and Claude's flows): <em>Phone or tablet</em> or <em>Another computer → Let it use this one</em> shows a QR code and the link carrying every address that is on, valid ten minutes and replaced when it runs out. Below the list, <em>Open this computer from</em>: Same Wi-Fi and Anywhere (below)</td></tr>
+<tr><th scope="row">Settings → Devices → This computer, on A</th><td><strong>Let paired devices operate this computer</strong>: off by default; on, a paired computer's conversations may operate A with <code translate="no">computer_use</code></td></tr>
 <tr><th scope="row">Settings → Devices, on B</th><td><strong>Add device → Another computer → Show its conversations here</strong>: paste A's link. B redeems it at the first of its addresses that answers and the machine appears with its dot. Its menu has no Edit: it is added by pairing only</td></tr>
 <tr><th scope="row">Phone or browser</th><td>Scans A's QR code and is signed in to A; nothing to install</td></tr>
 <tr><th scope="row">Settings → Channels → Add bot → WeChat</th><td>The WeChat QR code drawn in the dialog, with its waiting, scanned, confirmed and expired states, from the existing <code translate="no">start_channel_login</code> action. The terminal command is no longer the only way</td></tr>
@@ -93,7 +107,7 @@
 <thead><tr><th scope="col"></th><th scope="col">How</th><th scope="col">Applies</th></tr></thead>
 <tbody>
 <tr><th scope="row">Same Wi-Fi</th><td>A second listener, in the Worker's process and on the same app, bound to this computer's private network address, whose Origin the running server then answers; <code translate="no">web.lan</code> keeps the choice (<code translate="no">interfaces/server/lan_listener.py</code>). The address is the route's interface, or the addresses this computer's own name resolves to when a proxy tunnel holds the route; only 10/8, 172.16/12 and 192.168/16 count. A new network moves the listener on the next read</td><td>At once; the main bind stays loopback</td></tr>
-<tr><th scope="row">Anywhere</th><td><code translate="no">openprogram-tailnet</code> in the runtime's <code translate="no">bin/</code> (Go, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>) embeds Tailscale through <code translate="no">tsnet</code> and listens with Tailscale Funnel on <code translate="no">https://&lt;name&gt;.&lt;tailnet&gt;.ts.net</code>, a public address with a real certificate. It proxies every request, WebSockets included, to the Worker's loopback port, keeping the Host and setting <code translate="no">X-Forwarded-Proto: https</code>, which owner auth believes from a loopback peer. <code translate="no">web.anywhere</code> keeps the switch</td><td>At once; the bind stays loopback</td></tr>
+<tr><th scope="row">Anywhere</th><td><code translate="no">openprogram-tailnet</code> in the runtime's <code translate="no">bin/</code>, or in each sealed version's <code translate="no">bin/</code> for a command-line install, where every version build keeps or rebuilds it (Go, <a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/tailnet">apps/tailnet</a>) embeds Tailscale through <code translate="no">tsnet</code> and listens with Tailscale Funnel on <code translate="no">https://&lt;name&gt;.&lt;tailnet&gt;.ts.net</code>, a public address with a real certificate. It proxies every request, WebSockets included, to the Worker's loopback port, keeping the Host and setting <code translate="no">X-Forwarded-Proto: https</code>, which owner auth believes from a loopback peer. <code translate="no">web.anywhere</code> keeps the switch</td><td>At once; the bind stays loopback</td></tr>
 </tbody>
 </table>
 <p>The Worker runs the sidecar as a child, with this profile's Tailscale identity in <code translate="no">&lt;state&gt;/tailnet</code>, and reads its JSON state lines:</p>
@@ -110,12 +124,28 @@
 <p>Peers: Claude Code Remote Control and Codex remote control relay through their own servers, so a phone reaches the computer through the vendor. OpenProgram has no server to relay through, so it embeds <code translate="no">tsnet</code> instead.</p>
 <p>OpenClaw and T3 Code also reach a computer from elsewhere through Tailscale, but ask the owner to install it.</p>
 
+<h2 id="phone">On the phone</h2>
+<p>The phone runs the same web UI, added to the Home Screen as a web app (<code translate="no">app/manifest.ts</code>, <code translate="no">appleWebApp</code> in <code translate="no">app/layout.tsx</code>). Notices come by Web Push straight from this computer; there is no OpenProgram server in between.</p>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Keys</th><td>A VAPID key pair (P-256) made once per profile in <code translate="no">&lt;state&gt;/web_push/vapid.pem</code>; every POST carries an ES256 JWT for the push service's origin (RFC 8292)</td></tr>
+<tr><th scope="row">Subscriptions</th><td><code translate="no">PUT /api/push/subscription</code> stores the browser's endpoint and keys with the paired device, its language and its categories in <code translate="no">subscriptions.json</code> (0600). Only https endpoints on Apple, Google, Mozilla and Microsoft push hosts are accepted. Revoking the device drops them; a 404 or 410 from the push service drops one</td></tr>
+<tr><th scope="row">When</th><td>Top-level <code translate="no">execution.updated</code> frames on the runtime event bus: paused waiting for an answer or a permission (needs you), completed (reply ready), failed (stopped with an error). One notice per execution state version</td></tr>
+<tr><th scope="row">What</th><td>A fixed sentence in the device's language and the conversation's <code translate="no">/s/&lt;id&gt;</code>, encrypted with <code translate="no">aes128gcm</code> (RFC 8291). No conversation text leaves the computer, so the push service sees nothing of it</td></tr>
+<tr><th scope="row">Tap</th><td><code translate="no">public/sw.js</code> focuses an open OpenProgram window and asks it to open the conversation, or opens a new one</td></tr>
+</tbody>
+</table>
+<p>Push needs https, so it works through Anywhere and not on Same Wi-Fi. On iPhone and iPad Safari allows it only for a web app opened from the Home Screen (iOS 16.4 and later); Settings says which of these is missing.</p>
+<p>Peers: DSH Mobile sends Web Push from its computer to a Home Screen web app, with VAPID keys kept on the computer and no relay. Taken whole. Its native shell is left for later: the web app already has everything the shell would add except App Store presence.</p>
+
 <h2 id="status">Implementation status</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td>Pairing and device credentials, the pairing and device routes, <code translate="no">openprogram web pair</code> and <code translate="no">openprogram web devices</code>. The <code translate="no">openprogram</code> connection kind (<code translate="no">host/machines/peer.py</code>), B's connection to A, merged lists, forwarding by conversation and new conversations on A (<code translate="no">interfaces/server/remote_machines/</code>). Settings → Devices with Add device, the paired phones in the list and both ways in (<code translate="no">/api/auth/remote-access</code>), the embedded Tailscale sidecar built for macOS, Linux and Windows, the WeChat QR code</td></tr>
-<tr><th scope="row">Not started</th><td>Files, @ search and terminal: their WebSocket requests that name the conversation are forwarded like any other, but the HTTP routes still read B's own disk. The phone app (a PWA, then a native shell with push)</td></tr>
+<tr><th scope="row">Implemented</th><td>Pairing and device credentials, the pairing and device routes, <code translate="no">openprogram web pair</code> and <code translate="no">openprogram web devices</code>. The <code translate="no">openprogram</code> connection method (<code translate="no">host/machines/peer.py</code>), B's connection to A, merged lists, forwarding by conversation and new conversations on A (<code translate="no">interfaces/server/remote_machines/</code>). Operating A with <code translate="no">computer_use</code>, both sides and the switch (<code translate="no">computer_use/providers/paired.py</code>). Settings → Devices with Add device, the paired phones in the list and both ways in (<code translate="no">/api/auth/remote-access</code>), the embedded Tailscale sidecar built for macOS, Linux and Windows, the WeChat QR code</td></tr>
+<tr><th scope="row">Implemented: phone</th><td>The Home Screen web app with Web Push from this computer (<code translate="no">interfaces/server/web_push.py</code>, <code translate="no">public/sw.js</code>, Settings → General → Notifications)</td></tr>
+<tr><th scope="row">Not started</th><td>Files, @ search and terminal: their WebSocket requests that name the conversation are forwarded like any other, but the HTTP routes still read B's own disk. A native phone shell</td></tr>
 </tbody>
 </table>
 

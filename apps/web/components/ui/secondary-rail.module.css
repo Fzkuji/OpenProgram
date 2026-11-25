@@ -132,6 +132,10 @@
    keeps its full width so it is cut off rather than re-wrapped or ellipsized. */
 .rail[data-collapsible] .item {
   overflow: hidden;
+  /* The 20px glyph sits 1px right of its 16px slot, so 6px here puts it in
+     the middle of the collapsed 30px square (5px each side); open rows use
+     the same padding, so nothing moves when the rail opens. */
+  padding-left: 6px;
 }
 .rail[data-collapsible] .text {
   flex: none;
@@ -141,12 +145,84 @@
 /* Collapsed: an icon column like the main sidebar's. Search, group labels
    and nested rows go. */
 .rail[data-collapsed] .search,
-.rail[data-collapsed] .groupLabel,
 .rail[data-collapsed] .nested {
   display: none;
+}
+/* A collapsible rail keeps each group label's height whether open or
+   collapsed, so no icon moves. Collapsing fades the words out and a line in,
+   halfway between the rows above and below, while the column narrows; the
+   first group, with nothing above it, keeps only the space. */
+.rail[data-collapsible] .groupLabel {
+  position: relative;
+  white-space: nowrap;
+  transition: color var(--motion-medium) ease;
+}
+.rail[data-collapsible] .groupLabel > * {
+  transition: opacity var(--motion-medium) ease;
+}
+.rail[data-collapsible] .groupLabel:not(:first-child)::after {
+  content: "";
+  position: absolute;
+  /* Under the icons: as wide as a glyph (20px) and centred on it, in the
+     middle of the collapsed 30px row. */
+  left: 5px;
+  width: 20px;
+  top: 50%;
+  border-top: 1px solid var(--border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-medium) ease;
+}
+.rail[data-collapsed] .groupLabel {
+  color: transparent;
+  pointer-events: none;
+}
+.rail[data-collapsed] .groupLabel > * {
+  opacity: 0;
+}
+.rail[data-collapsed] .groupLabel:not(:first-child)::after {
+  opacity: 1;
+}
+/* Row names fade as the column covers them, and come back as it opens. */
+.rail[data-collapsible] .text,
+.rail[data-collapsible] .trailing {
+  transition: opacity var(--motion-medium) ease;
+}
+.rail[data-collapsed] .text,
+.rail[data-collapsed] .trailing {
+  opacity: 0;
 }
 .rail[data-collapsed] .item {
   height: var(--ui-list-h);
   min-height: 0;
   align-items: center;
+}
+
+/* Phone (lib/layout/phone.ts, 760px): a collapsible split is one column.
+   The open rail is the page's section list, full width with touch-sized
+   rows; choosing a row collapses it (secondary-rail.tsx) and the content
+   takes the column; the header toggle, a back chevron there, returns to
+   the list. Copied from dsh-mobile's single-column settings. */
+@media (max-width: 760px) {
+  .split[data-collapsible],
+  .split[data-collapsible][data-rail="collapsed"] {
+    grid-template-columns: minmax(0, 1fr);
+    transition: none;
+  }
+  .split[data-collapsible][data-rail="open"] > :not(.rail),
+  .split[data-collapsible][data-rail="collapsed"] > .rail {
+    display: none;
+  }
+  .split[data-collapsible] > .rail {
+    border-right: 0;
+    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+  }
+  .split[data-collapsible] .rail[data-collapsible] .text {
+    flex: 1;
+    width: auto;
+  }
+  .split[data-collapsible] .rail .item {
+    height: auto;
+    min-height: 44px;
+  }
 }

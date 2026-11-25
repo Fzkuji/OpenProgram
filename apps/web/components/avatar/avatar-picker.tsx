@@ -204,8 +204,8 @@ export function AvatarPicker({
     <div className="flex w-[440px] max-w-full min-w-0 flex-col items-start gap-4">
       <ToggleGroup
         type="single"
-        variant="elevated"
-                value={source}
+        variant="segmented"
+        value={source}
         onValueChange={(next) => {
           if (next) pickType(next as AvatarSource);
         }}

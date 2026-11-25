@@ -18,7 +18,7 @@
 <tr><th scope="row"><code translate="no">prompt.py</code></th><td>一次调用的 prompt 里关于已打开 Page 的段落</td></tr>
 </tbody>
 </table>
-<p>Agent 只用一个工具 <code translate="no">computer_use</code> 操作浏览器。应用自己不注册目标：这台电脑的浏览器连接种类 <code translate="no">built_in</code> 查到服务后给出目标 <code translate="no">type="browser"</code>（App 的标签页，走标签页驱动），再为每个装了扩展的用户浏览器给出 <code translate="no">app="chrome"</code> 和 <code translate="no">app="edge"</code>。动作见<a href="tab-actions.zh.html">浏览器标签页动作</a>。</p>
+<p>Agent 只用一个工具 <code translate="no">computer_use</code> 操作浏览器。应用自己不注册目标：为 <code translate="no">local</code> 登记的提供方 <code translate="no">built_in_browser</code> 查到服务后给出目标 <code translate="no">type="browser"</code>（App 的标签页，走标签页驱动），再为每个装了扩展的用户浏览器给出 <code translate="no">app="chrome"</code> 和 <code translate="no">app="edge"</code>。动作见<a href="tab-actions.zh.html">浏览器标签页动作</a>。</p>
 <p>服务的成员是 <code translate="no">pages</code>、<code translate="no">tabs</code>、<code translate="no">extension</code>、<code translate="no">open_tab(url)</code> 和 <code translate="no">authorized_page(arguments, window_id)</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">调用方</th><th scope="col">无服务时</th></tr></thead>

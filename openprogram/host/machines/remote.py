@@ -1,4 +1,4 @@
-"""File access on a machine whose shell kind keeps files there (``Kind.remote_files``).
+"""File access on a machine whose shell keeps files there (``Shell.remote_files`` in ``host.backend``).
 
 File tools in such a conversation read and write that machine's disk.
 Every operation is one shell command through the machine's backend, which
@@ -141,7 +141,7 @@ class RefusedFS(RemoteFS):
 
 def remote_fs() -> Optional[RemoteFS]:
     """The remote filesystem the current tool call must use, or None when
-    file tools act on this computer's disk (its own shell, or a shell kind
+    file tools act on this computer's disk (its own shell, or a shell
     that mounts the working directories). A conversation whose machine
     can't be used gets a :class:`RefusedFS`: None would mean this computer."""
     try:
@@ -157,9 +157,9 @@ def remote_workdir(machine: Machine) -> Optional[str]:
     ``~`` and an empty setting resolve through the machine's shell once per
     process. Returns None when the machine can't be reached.
     """
-    wanted = machine.shell.get("workdir") or "~"
+    wanted = machine.connection.get("workdir") or "~"
     # The whole connection is in the key: an edited target is another folder, though the id stays.
-    key = (machine.id, json.dumps(machine.shell.raw(), sort_keys=True, default=str))
+    key = (machine.id, json.dumps(machine.connection.raw(), sort_keys=True, default=str))
     with _workdirs_lock:
         cached = _workdirs.get(key)
     if cached:

@@ -18,7 +18,7 @@
 <tr><th scope="row"><code translate="no">prompt.py</code></th><td>the open-Pages section of a call's prompt</td></tr>
 </tbody>
 </table>
-<p>The Agent operates the browsers with one tool, <code translate="no">computer_use</code>. The application registers no target itself: the browser connection kind <code translate="no">built_in</code> of this computer looks the service up and yields the target <code translate="no">type="browser"</code>, the App's tabs through the tab driver, then <code translate="no">app="chrome"</code> and <code translate="no">app="edge"</code> for each of the user's browsers with the extension installed. Their actions are in <a href="tab-actions.html">Browser tab actions</a>.</p>
+<p>The Agent operates the browsers with one tool, <code translate="no">computer_use</code>. The application registers no target itself: the provider <code translate="no">built_in_browser</code>, offered for <code translate="no">local</code>, looks the service up and yields the target <code translate="no">type="browser"</code>, the App's tabs through the tab driver, then <code translate="no">app="chrome"</code> and <code translate="no">app="edge"</code> for each of the user's browsers with the extension installed. Their actions are in <a href="tab-actions.html">Browser tab actions</a>.</p>
 <p>The service's members are <code translate="no">pages</code>, <code translate="no">tabs</code>, <code translate="no">extension</code>, <code translate="no">open_tab(url)</code> and <code translate="no">authorized_page(arguments, window_id)</code>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Caller</th><th scope="col">Without the service</th></tr></thead>

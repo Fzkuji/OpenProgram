@@ -109,24 +109,29 @@
 .a2ui-tabs { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .a2ui-tab-bar {
   display: flex;
-  gap: 4px;
-  border-bottom: 1px solid light-dark(var(--border), var(--border-light));
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: var(--radius-groove);
+  background: var(--groove);
+  box-shadow: var(--shadow-groove);
   overflow-x: auto;
 }
 .a2ui-tab {
-  padding: 4px 10px 6px;
-  margin-bottom: -1px;
+  min-height: var(--ui-choice-h);
+  padding: 3px 12px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md);
   background: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: inherit;
   font-size: 0.9em;
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
 }
-.a2ui-tab:hover { color: var(--text-primary); }
-.a2ui-tab[aria-selected="true"] { color: var(--text-bright); border-bottom-color: var(--text-bright); }
+.a2ui-tab:hover { color: var(--text-bright); }
+.a2ui-tab[aria-selected="true"] { color: var(--text-bright); background: var(--bg-input); box-shadow: var(--shadow-raised); }
 
 .a2ui-pending .a2ui-card { gap: 10px; }
 .a2ui-skeleton {

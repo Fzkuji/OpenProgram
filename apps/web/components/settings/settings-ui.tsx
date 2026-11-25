@@ -9,7 +9,6 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Field,
   FieldContent,
@@ -50,7 +49,7 @@ export function SettingsPage({
       </header>
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-7 pt-6 pb-8",
+          "flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto px-7 pt-6 pb-8",
           bodyClassName
         )}
       >
@@ -96,13 +95,12 @@ export function SettingsSection({
   className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col gap-3", className)}>
+    <section className={cn("flex flex-col gap-4", className)}>
       {title || description || action ? (
         <SettingsHeading title={title} description={description} action={action} />
       ) : null}
-      <Card className="gap-0 py-0">
-        <CardContent className="divide-y divide-border">{children}</CardContent>
-      </Card>
+      {/* As the Claude app: no box, a line only between rows. */}
+      <div className="flex flex-col divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">{children}</div>
     </section>
   );
 }

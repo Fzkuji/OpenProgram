@@ -82,8 +82,9 @@ INCLUDED: tuple[str, ...] = (
 )
 
 # Whole top-level credential trees included only with --include-credentials.
-# plugin-options holds each plugin's settings, which can be its API keys.
-CREDENTIAL_ENTRIES: tuple[str, ...] = ("auth", "mcp_tokens", "plugin-options")
+# plugin-options holds each plugin's settings, which can be its API keys;
+# web_push holds the key phones' notifications are signed with.
+CREDENTIAL_ENTRIES: tuple[str, ...] = ("auth", "mcp_tokens", "plugin-options", "web_push")
 
 # Everything else the code writes at the top level: rebuilt on demand, only
 # meaningful to the running process, or a secret that is never archived.

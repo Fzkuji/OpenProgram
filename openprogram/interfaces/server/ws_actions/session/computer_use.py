@@ -15,7 +15,7 @@ def _computer_use_apps(queries: list[str]) -> list[dict]:
     host = platform.system().lower()
     try:
         from openprogram.programs.tools.computer_use.computer_use.desktop.backends import backend
-        from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
+        from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import ComputerUseError
         computer = backend()
     except Exception:
         return [{"query": q, "name": q, "bundle_id": "", "icon": "", "installed": False, "platform": host}
@@ -34,7 +34,7 @@ def _computer_use_running_apps() -> list[dict]:
     """The running apps the composer's @ menu offers; empty where there is no backend."""
     try:
         from openprogram.programs.tools.computer_use.computer_use.desktop.backends import backend
-        from openprogram.programs.tools.computer_use.computer_use.desktop.base import ComputerUseError
+        from openprogram.programs.tools.computer_use.computer_use.desktop.common.base import ComputerUseError
         return backend().running_apps()
     except (ComputerUseError, ImportError, OSError):
         return []

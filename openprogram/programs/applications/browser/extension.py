@@ -781,7 +781,7 @@ class ExtensionBrowser:
 
 
 def _playwright_key(chord: str) -> str:
-    from openprogram.programs.tools.computer_use.computer_use.keynames import playwright
+    from openprogram.programs.tools.computer_use.computer_use.actions.keynames import playwright
     return playwright(chord)
 
 

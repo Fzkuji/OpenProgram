@@ -79,7 +79,8 @@ def test_a_machine_target_reports_its_row_during_the_call(tmp_path, monkeypatch)
         reset_current_session_id,
     )
     from openprogram.programs._host.execution import ToolReturn
-    from openprogram.programs.tools.computer_use.computer_use import registry, tool
+    from openprogram.programs.tools.computer_use.computer_use.routing import registry
+    from openprogram.programs.tools.computer_use.computer_use import tool
     from openprogram.programs.tools.computer_use.computer_use.contract import Described, Provider, Row
 
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)

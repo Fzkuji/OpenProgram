@@ -325,7 +325,7 @@ function MeetingDetail({ meeting, onSummarize, onOpenConversation }: {
   return <section className={styles.recordCard} aria-label={meeting.title}>
     <Tabs defaultValue={meeting.has_summary ? "summary" : "transcript"}>
       <div className="flex items-center justify-between gap-3">
-        <TabsList variant="line" aria-label={text("Meeting details", "会议详情")}>
+        <TabsList aria-label={text("Meeting details", "会议详情")}>
           <TabsTrigger value="summary">{text("Summary", "摘要")}</TabsTrigger>
           <TabsTrigger value="transcript">{text("Transcript", "转写稿")}</TabsTrigger>
         </TabsList>

@@ -303,12 +303,12 @@ def _configure_screen_tool(tools, surface_context, *, enabled: bool | None = Non
     had the tool, since the Page inventory is transient).
     """
     from openprogram.runtime.conversation.surface_context import browser_pages_available, tool_enabled
-    from openprogram.programs.tools.computer_use.computer_use import tool as screen
+    from openprogram.programs.tools.computer_use.computer_use import devices, tool as screen
 
     current = list(tools or [])
     if isinstance(tools_override, list) and screen.NAME not in tools_override:
         return [tool for tool in current if tool.name != screen.NAME], False
-    if not screen.available_targets():
+    if not devices.available_targets():
         return current, False
     if enabled is None:
         enabled = tool_enabled(surface_context) or bool(current)
@@ -969,7 +969,7 @@ def _devices(tools: Any, session_id: str) -> Optional[dict]:
     """What computer_use can operate now, by device, when the turn has the tool; else None."""
     if not any(getattr(tool, "name", None) == "computer_use" for tool in tools or ()):
         return None
-    from openprogram.programs.tools.computer_use.computer_use.tool import devices
+    from openprogram.programs.tools.computer_use.computer_use.devices import devices
     try:
         return devices(session_id)
     except Exception:
@@ -1129,7 +1129,7 @@ def _new_turn_agent_context(
         # What computer_use can operate: the whole list when no earlier note
         # is in view, then each device added, changed and removed, so its
         # tool definition never changes (``computer_use.tool.devices_note``).
-        from openprogram.programs.tools.computer_use.computer_use.tool import devices_note
+        from openprogram.programs.tools.computer_use.computer_use.devices import devices_note
         ident = turn_context.DEVICES
         if reported is not None:
             devices_before = turn_context.catalog_shown(reported, ident)

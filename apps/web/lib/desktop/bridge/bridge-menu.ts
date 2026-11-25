@@ -1,4 +1,5 @@
 // Desktop bridge menu responsibilities.
+import { subscribeScreenshots } from "./bridge-screenshot";
 import { agentCanAccessWebTab } from "../../browser/web-tab/web-page-management";
 /**
  * Desktop bridge — typed accessor for the Electron preload API
@@ -90,6 +91,7 @@ export function installDesktopMenuHandlers(): void {
   });
   subscribeWebTabPopups(bridge);
   subscribeAgentPageGlow(bridge);
+  subscribeScreenshots(bridge);
   bridge.webTab.onState((state) => persistNativeWebTabState(state));
   window.addEventListener("op:browser-connection", (event: Event) => {
     if ((event as CustomEvent<{ connected: boolean }>).detail?.connected) {

@@ -5,10 +5,9 @@ reads a call only through its provider (permission rules, the authority
 table, system access, the turn's tool list); ``App``, ``Screen``,
 ``Browser``, ``UserBrowser`` and ``MachineScreen`` answer the way the real
 providers of each kind do. ``install_machines`` replaces the machines
-registry with the machines a test names and registers the test kind
-``fake`` for the window, screen and browser connections, whose ``open``
-yields the ``FakeProvider``s of that connection's family, for tests of the registry,
-the description and dispatch. Nothing reaches a real window, page, machine
+registry with the machines a test names and opens, on this computer and on
+devices reached by the test method ``fake``, the ``FakeProvider``s the test
+gives, for tests of the registry, the description and dispatch. Nothing reaches a real window, page, machine
 or network.
 """
 from __future__ import annotations
@@ -17,13 +16,14 @@ from typing import Any, Callable
 
 from openprogram.host import machines
 from openprogram.host.machines import Connection, Machine, kinds
-from openprogram.host.machines.kinds import Kind
 from openprogram.programs._host.execution import ToolReturn
-from openprogram.programs.tools.computer_use.computer_use import errors, registry
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.routing import registry
 from openprogram.programs.tools.computer_use.computer_use.contract import (
     Approval, Call, Described, Provider, Row, Steps,
 )
-from openprogram.programs.tools.computer_use.computer_use.locks import Locks
+from openprogram.programs.tools.computer_use.computer_use.routing.locks import Locks
+from openprogram.programs.tools.computer_use.computer_use import context as cu_context
 
 _INPUT = frozenset({"pointer", "hover", "keyboard"})
 
@@ -154,7 +154,7 @@ def every_kind() -> tuple[Provider, ...]:
         UserBrowser("edge", "Microsoft Edge"), MachineScreen("lab")
 
 
-# -- machines and the fake kind ---------------------------------------------------
+# -- machines and the fake method ---------------------------------------------------
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 16
 
@@ -228,52 +228,38 @@ def app_approval(subject: dict, steps: Steps) -> Approval | None:
     return Approval(f"computer_use controls {application}", f"window {application.lower()}")
 
 
-def machine(machine_id: str, name: str = "", *, shell: dict | None = None, window: str | dict | None = None,
-            screen: str | dict | None = None, browser: str | dict | None = None, enabled: bool = True) -> Machine:
-    def connection(raw):
-        if raw is None:
-            return None
-        if isinstance(raw, str):
-            return Connection(raw)
-        return Connection(raw["kind"], {key: value for key, value in raw.items() if key != "kind"})
-    return Machine(machine_id, name or machine_id, enabled=enabled, shell=connection(shell),
-                   window=connection(window), screen=connection(screen), browser=connection(browser))
+def machine(machine_id: str, name: str = "", method: str = "fake", *, enabled: bool = True, **settings) -> Machine:
+    """A device reached by ``method`` (the test method ``fake`` unless named), with ``settings``."""
+    return Machine(machine_id, name or machine_id, Connection(method, settings), enabled=enabled)
 
 
-def local(**connections) -> Machine:
-    return machine("local", "This computer", shell={"kind": "local"}, **connections)
-
-
-def _connection_of(family: str) -> str:
-    return family if family in ("window", "browser") else "screen"
+def local() -> Machine:
+    return machine("local", "This computer", "local")
 
 
 def install_machines(monkeypatch, listed: list[Machine], opened: dict[str, list[Provider]] | None = None,
             failing: tuple[str, ...] = ()) -> None:
-    """Make ``listed`` the machines that exist. Each connection of a machine that names the test kind ``fake``
-    yields the providers of ``opened[machine id]`` of its own family: ``window`` the window ones, ``browser``
-    the browser ones, ``screen`` the rest. A machine in ``failing`` raises when it is opened."""
+    """Make ``listed`` the machines that exist. A device reached by ``local`` or by the test method ``fake``
+    yields exactly the providers of ``opened[machine id]``; the other methods keep their real openers. A machine
+    in ``failing`` raises when it is opened."""
     opened = opened or {}
 
-    def opener(connection: str):
-        def open_providers(found: Machine, conversation: str) -> list[Provider]:
-            if found.id in failing:
-                raise RuntimeError("the machine's kind could not open")
-            return [provider for provider in opened.get(found.id, [])
-                    if _connection_of(provider.family) == connection]
-        return open_providers
+    def open_providers(found: Machine, conversation: str) -> list[Provider]:
+        if found.id in failing:
+            raise RuntimeError("the machine's method could not open")
+        return list(opened.get(found.id, []))
 
-    kinds.get("screen", "fake")  # loads the registered kinds first, so the test ones are not replaced
-    for connection in ("window", "screen", "browser"):
-        monkeypatch.setitem(kinds._kinds, (connection, "fake"),
-                            Kind("fake", connection, f"Fake {connection}", open=opener(connection)))
+    registry.load()  # the real openers and methods first, so the test ones are not replaced
+    kinds.all_kinds()
+    monkeypatch.setitem(kinds._kinds, "fake", kinds.Kind("fake", "Test device"))
+    monkeypatch.setattr(registry, "_openers", {**registry._openers, "local": [open_providers],
+                                               "fake": [open_providers]})
     monkeypatch.setattr(machines, "list_machines", lambda cfg=None: list(listed))
 
 
 def environment(monkeypatch, found: Machine | None) -> None:
     """The machine this conversation's commands run on, as the tool reads it."""
-    from openprogram.programs.tools.computer_use.computer_use import tool
-    monkeypatch.setattr(tool, "_environment", lambda: found)
+    monkeypatch.setattr(cu_context, "_environment", lambda: found)
 
 
 __all__ = ["App", "Browser", "FakeProvider", "MachineScreen", "PIXELS", "PNG", "Screen", "TREE", "UserBrowser",

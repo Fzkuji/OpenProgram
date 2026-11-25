@@ -2,7 +2,7 @@
 <meta name="description" content="How each successful site publication notifies search engines of every sitemap URL.">
 <h1>IndexNow deployment discovery</h1>
 
-<p>After each successful publication to the site repository, <code translate="no">scripts/docs_site/indexnow.py</code> submits every canonical sitemap URL to <code translate="no">https://api.indexnow.org/indexnow</code>.</p>
+<p>After each successful GitHub Pages deployment, <code translate="no">scripts/docs_site/indexnow.py</code> submits every canonical sitemap URL to <code translate="no">https://api.indexnow.org/indexnow</code>.</p>
 
 <figure>
 <ol class="flow">
@@ -19,7 +19,7 @@
 <tr><th scope="row">Request</th><td>Host, public key, key location, URL list</td></tr>
 <tr><th scope="row">Ownership</th><td>Public key file <code translate="no">7c5062acbc32b8a88d2e6b627d65cbfa.txt</code>; no repository secret</td></tr>
 <tr><th scope="row">Failure</th><td><code translate="no">continue-on-error</code>: never blocks or rolls back publication</td></tr>
-<tr><th scope="row">Ordering</th><td>Waits for the site-repository publish action, not the downstream Pages deployment, so a notice may arrive while Pages is still processing</td></tr>
+<tr><th scope="row">Ordering</th><td>Runs after the Pages deployment step reports the site live</td></tr>
 <tr><th scope="row">Dependencies</th><td>Python 3.12 standard library only</td></tr>
 <tr><th scope="row">Sitemap, robots, Google verification</th><td>Unchanged</td></tr>
 </tbody>

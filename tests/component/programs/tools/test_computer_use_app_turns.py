@@ -7,11 +7,12 @@ import threading
 import pytest
 
 from openprogram.host import machines
-from openprogram.programs.tools.computer_use.computer_use import locks
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.desktop import base
-from openprogram.programs.tools.computer_use.computer_use.dispatch import run_steps
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import base
+from openprogram.programs.tools.computer_use.computer_use.routing.dispatch import run_steps
+from openprogram.programs.tools.computer_use.computer_use.providers.window import agents as window_agents
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider as desktop
 
 
 class _Desk:
@@ -43,7 +44,7 @@ def desk(monkeypatch, tmp_path):
     monkeypatch.setattr("openprogram.programs.tools.computer_use.computer_use.desktop.backends.backend",
                         lambda: computer)
     for name in ("_acted", "_seen"):
-        monkeypatch.setattr(desktop, name, {})
+        monkeypatch.setattr(window_agents, name, {})
     monkeypatch.setattr(locks, "_root", lambda: tmp_path / "locks")
     return computer
 

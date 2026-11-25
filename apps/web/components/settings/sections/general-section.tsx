@@ -14,6 +14,7 @@ import {
   type AvatarConfig,
 } from "@/components/avatar";
 import { DesktopAttentionSection } from "./desktop-attention-section";
+import { WebPushSection } from "./web-push-section";
 import { SchemaSettings } from "./schema-settings";
 import { SimpleSelect } from "@/components/ui/select";
 import { setComposerPredictions, useComposerPredictions } from "@/lib/prefs/composer-predictions";
@@ -157,6 +158,8 @@ export function GeneralSection() {
       <UserSection />
 
       <DesktopAttentionSection />
+
+      <WebPushSection />
 
       <SchemaSettings group="Ports" title={text("Web server", "网页服务")} />
 

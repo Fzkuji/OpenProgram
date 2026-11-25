@@ -1,6 +1,6 @@
 <title>Linux 与 Windows 后端</title>
 <meta name="description" content="Linux 和 Windows 的操控电脑后端调用什么，以及 cua-driver 与它们的关系。">
-<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/linux.py openprogram/programs/tools/computer_use/computer_use/desktop/windows.py">
+<meta name="covers" content="openprogram/programs/tools/computer_use/computer_use/desktop/linux/ openprogram/programs/tools/computer_use/computer_use/desktop/windows/">
 <h1>Linux 与 Windows 后端</h1>
 
 
@@ -30,7 +30,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">目标说明</th><td><code translate="no">app</code> 目标在 Linux 上的说明（<code translate="no">providers/desktop.py</code> 的 <code translate="no">_NOTES</code>）随第一次调用它送达：哪些步骤会把窗口切到前台、纯文本 <code translate="no">paste</code>、不经剪贴板的 <code translate="no">copy</code>、没有 <code translate="no">open_file</code>（调用它回答 <code translate="no">NOT_SUPPORTED:</code>，写明用“文件 &gt; 打开”或 ctrl+o）、没开辅助功能的应用。</td></tr>
+<tr><th scope="row">目标说明</th><td><code translate="no">app</code> 目标在 Linux 上的说明（<code translate="no">providers/window/platforms.py</code> 的 <code translate="no">_NOTES</code>）随第一次调用它送达：哪些步骤会把窗口切到前台、纯文本 <code translate="no">paste</code>、不经剪贴板的 <code translate="no">copy</code>、没有 <code translate="no">open_file</code>（调用它回答 <code translate="no">NOT_SUPPORTED:</code>，写明用“文件 &gt; 打开”或 ctrl+o）、没开辅助功能的应用。</td></tr>
 <tr><th scope="row">应用列表回复</th><td><code translate="no">computer_use_apps</code> 的 WebSocket 回复带上 worker 的 <code translate="no">platform</code>；在 Linux 上，审批卡片对按坐标输入、拖拽、悬停和回车以外的按键（<code translate="no">needsForeground</code>）说明这一步会把窗口切到前台。</td></tr>
 </tbody>
 </table>
@@ -73,7 +73,7 @@
 <tr><th scope="row">驱动之上</th><td>这些后端调过的行为（稳定序号、找回被替换的元素、应用正忙、等待稳定、窗口标识、拒绝）在驱动之上，换不换都还是我们自己的。</td></tr>
 </tbody>
 </table>
-<p>cua-driver 作为一种独立的连接类型 <code translate="no">cua_driver</code> 接入，经一个适配器（<a href="machines-and-targets.zh.html">机器与目标</a>）：<code translate="no">machines.local.window</code> 和 <code translate="no">machines.local.screen</code> 可以用它代替 <code translate="no">desktop</code>，<code translate="no">app</code> 和 <code translate="no">screen</code> 名字不变。Linux 后端拒绝的本地 Wayland 会话，经桌面 portal 作为 <code translate="no">screen</code> 按像素操作。</p>
+<p>cua-driver 作为一个独立的提供方 <code translate="no">cua_driver</code> 接入，经一个适配器（<a href="machines-and-targets.zh.html">机器与目标</a>）：为 <code translate="no">local</code> 登记，代替 <code translate="no">desktop</code>，<code translate="no">app</code> 和 <code translate="no">screen</code> 名字不变。Linux 后端拒绝的本地 Wayland 会话，经桌面 portal 作为 <code translate="no">screen</code> 按像素操作。</p>
 
 <h2 id="实现状态">实现状态</h2>
 

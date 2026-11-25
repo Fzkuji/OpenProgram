@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://fuzzykuji.github.io/openprogram-site/">웹사이트</a> · <a href="#install">설치</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">문서</a>
+  <a href="https://fzkuji.github.io/OpenProgram/">웹사이트</a> · <a href="#install">설치</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">문서</a>
 </p>
 
 <p align="center">
@@ -51,10 +51,10 @@
 ## 설치
 
 ```bash
-curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-Windows(v1.2.0부터): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. macOS 데스크톱 App은 DMG로 [릴리스 페이지](https://github.com/Fzkuji/OpenProgram/releases)에서 받을 수 있습니다. Linux App은 같은 페이지에 deb와 AppImage로 있고, Windows App은 v1.2.0부터 제공됩니다. 웹사이트에 연결되지 않으면: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. 다른 방법은 [설치 안내](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)(영어)를 보세요.
+Windows(v1.2.0부터): `irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`. macOS 데스크톱 App은 DMG로 [릴리스 페이지](https://github.com/Fzkuji/OpenProgram/releases)에서 받을 수 있습니다. Linux App은 같은 페이지에 deb와 AppImage로 있고, Windows App은 v1.2.0부터 제공됩니다. 웹사이트에 연결되지 않으면: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. 다른 방법은 [설치 안내](https://fzkuji.github.io/OpenProgram/docs/install/install.html)(영어)를 보세요.
 
 ## 빠른 시작
 
@@ -90,48 +90,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[에이전트 클래스](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | 에이전트는 Python 클래스입니다. 분기, 재시도, 검사는 코드이고 `self(...)`가 모델 호출입니다. |
-| **[실행 DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | 사용자 턴, 모델 호출, 함수 호출이 모두 노드가 되어 살펴보고, 분기하고, 다시 실행할 수 있습니다. |
-| **[컨텍스트](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | 각 호출은 계속 늘어나는 대화 기록 대신 선택된 노드를 읽으며, 자동으로 압축됩니다. |
-| **[셀프 프로그래밍](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | 에이전트가 자기 클래스에 새 메서드를 쓰면 다음 턴부터 도구가 됩니다. |
-| **[검증된 결정](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.html)** | 모델은 정해진 선택지에서 고르고, 실행 전에 코드가 그 선택을 검증합니다. |
-| **[하위 에이전트](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | 하위 에이전트는 자기 브랜치(필요하면 Git worktree)에서 실행되고 결과만 돌려줍니다. |
-| **[이벤트](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | 타입이 있는 이벤트 버스. 플러그인은 이벤트를 관찰하거나 도구 호출을 막을 수 있습니다. |
-| **[상시 실행 에이전트](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | 백그라운드에서 계속 실행되며 이벤트에 반응하는 에이전트. |
-| **[목표와 복구](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 장기 목표는 재시작 후에도 남아 중단된 곳에서 이어집니다. |
-| **[장애 허용](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | 모든 모델 호출에 재시도, 시간 제한, 오류 분류가 있습니다. |
+| **[에이전트 클래스](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | 에이전트는 Python 클래스입니다. 분기, 재시도, 검사는 코드이고 `self(...)`가 모델 호출입니다. |
+| **[실행 DAG](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | 사용자 턴, 모델 호출, 함수 호출이 모두 노드가 되어 살펴보고, 분기하고, 다시 실행할 수 있습니다. |
+| **[컨텍스트](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | 각 호출은 계속 늘어나는 대화 기록 대신 선택된 노드를 읽으며, 자동으로 압축됩니다. |
+| **[셀프 프로그래밍](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | 에이전트가 자기 클래스에 새 메서드를 쓰면 다음 턴부터 도구가 됩니다. |
+| **[검증된 결정](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | 모델은 정해진 선택지에서 고르고, 실행 전에 코드가 그 선택을 검증합니다. |
+| **[하위 에이전트](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | 하위 에이전트는 자기 브랜치(필요하면 Git worktree)에서 실행되고 결과만 돌려줍니다. |
+| **[이벤트](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | 타입이 있는 이벤트 버스. 플러그인은 이벤트를 관찰하거나 도구 호출을 막을 수 있습니다. |
+| **[상시 실행 에이전트](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | 백그라운드에서 계속 실행되며 이벤트에 반응하는 에이전트. |
+| **[목표와 복구](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 장기 목표는 재시작 후에도 남아 중단된 곳에서 이어집니다. |
+| **[장애 허용](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | 모든 모델 호출에 재시도, 시간 제한, 오류 분류가 있습니다. |
 
 ### 작업 공간
 
 | | |
 |---|---|
-| **[데스크톱과 웹 UI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | macOS와 Linux에서는 App, v1.2.0부터는 Windows에서도 App을 씁니다. 웹 UI는 이 모든 시스템과 서버에서 쓸 수 있습니다. |
-| **[분할 창](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | 채팅, 파일, 터미널, 웹 페이지를 나란히 배치. |
-| **[내장 브라우저](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | 에이전트가 읽고 조작하는 브라우저를 옆에서 지켜볼 수 있습니다. |
-| **[통합 터미널](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | 작업 공간 안의 터미널을 에이전트와 함께 씁니다. |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | 데스크톱 앱, 브라우저 페이지, 원격 VM을 조작합니다. |
-| **[CLI와 TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | 같은 에이전트를 터미널에서. |
-| **[원격 접속](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | 다른 기기에서 내 인스턴스에 접속(본인만). |
+| **[데스크톱과 웹 UI](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | macOS와 Linux에서는 App, v1.2.0부터는 Windows에서도 App을 씁니다. 웹 UI는 이 모든 시스템과 서버에서 쓸 수 있습니다. |
+| **[분할 창](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | 채팅, 파일, 터미널, 웹 페이지를 나란히 배치. |
+| **[내장 브라우저](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | 에이전트가 읽고 조작하는 브라우저를 옆에서 지켜볼 수 있습니다. |
+| **[통합 터미널](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | 작업 공간 안의 터미널을 에이전트와 함께 씁니다. |
+| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | 데스크톱 앱, 브라우저 페이지, 원격 VM을 조작합니다. |
+| **[CLI와 TUI](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | 같은 에이전트를 터미널에서. |
+| **[원격 접속](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | 다른 기기에서 내 인스턴스에 접속(본인만). |
 
 ### 에이전트와 안전
 
 | | |
 |---|---|
-| **[에이전트 설정](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | 모델, 지시, 도구, 메모리 권한을 재사용 가능한 에이전트로 저장. |
-| **[메모리](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | 출처가 있는 메모리. 검색과 백그라운드 기록을 지원합니다. |
-| **[권한과 샌드박스](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | 메모와 함께 도구 호출을 승인하거나 거부합니다. 명령은 샌드박스에서 실행됩니다. |
-| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | 도구와 애플리케이션을 설치 가능한 Program으로 다룹니다. |
+| **[에이전트 설정](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | 모델, 지시, 도구, 메모리 권한을 재사용 가능한 에이전트로 저장. |
+| **[메모리](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | 출처가 있는 메모리. 검색과 백그라운드 기록을 지원합니다. |
+| **[권한과 샌드박스](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | 메모와 함께 도구 호출을 승인하거나 거부합니다. 명령은 샌드박스에서 실행됩니다. |
+| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | 도구와 애플리케이션을 설치 가능한 Program으로 다룹니다. |
 
 ### 모델과 연동
 
 | | |
 |---|---|
-| **[제공자](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini 등. 제공자마다 여러 계정. |
-| **[로컬 모델](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.html)** | 로컬 추론 서버, 인증은 선택 사항. |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.html)** | MCP 서버를 쓰거나 OpenProgram을 MCP 서버로 공개합니다. |
-| **[스킬과 플러그인](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | 에이전트의 지식과 호출할 수 있는 도구를 확장합니다. |
-| **[채널](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Telegram, Discord, Slack, WeChat에서 에이전트와 대화. |
-| **[자동 업데이트](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | 서명된 릴리스를 그 자리에서 업데이트. |
+| **[제공자](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini 등. 제공자마다 여러 계정. |
+| **[로컬 모델](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | 로컬 추론 서버, 인증은 선택 사항. |
+| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | MCP 서버를 쓰거나 OpenProgram을 MCP 서버로 공개합니다. |
+| **[스킬과 플러그인](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | 에이전트의 지식과 호출할 수 있는 도구를 확장합니다. |
+| **[채널](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | Telegram, Discord, Slack, WeChat에서 에이전트와 대화. |
+| **[자동 업데이트](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | 서명된 릴리스를 그 자리에서 업데이트. |
 
 ## 인용
 

@@ -28,6 +28,10 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { HoverTip } from "@/components/ui/tooltip";
 import { isManageActionIcon } from "./manage-action-icon";
+import { CAPSULE_GROOVE, CAPSULE_OPTION, CHOSEN_OPTION, SECTION_BAR, SECTION_GROOVE, SECTION_OPTION } from "./capsule";
+import { SlidingThumb } from "./sliding-thumb";
+import { useSectionEnter } from "./section-slide";
+import { PhoneDrawerButton } from "@/components/layout/phone-drawer-button";
 import styles from "./manage-page.module.css";
 
 export { styles as managePageStyles };
@@ -39,7 +43,8 @@ export type ManageTabIcon = ForwardRefExoticComponent<
 export interface ManageTab {
   id: string;
   label: string;
-  /** Optional trailing count: a quiet number after the label (a pill in a subnav). */
+  /** Optional trailing count: a quiet number after the label. A pill would
+   *  weigh the option's right side and pull it off centre under the face. */
   count?: number;
   /** Optional pqoqubbw animated icon; hover is driven by the pill. */
   icon?: ManageTabIcon;
@@ -84,15 +89,15 @@ function ManageTabButton({
       onKeyDown={onKeyDown}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      className={cn(styles.tabBtn, secondary && styles.subnavTab, active && styles.active)}
+      className={secondary ? CAPSULE_OPTION : SECTION_OPTION}
     >
       {Icon ? (
-        <span className={styles.tabIcon} aria-hidden>
+        <span className={cn(styles.tabIcon, "max-[760px]:hidden")} aria-hidden>
           <Icon ref={iconRef} size={16} />
         </span>
       ) : null}
       <span>{tab.label}</span>
-      {tab.count !== undefined && <span className={secondary ? styles.tabCount : styles.tabCountQuiet}>{tab.count}</span>}
+      {tab.count !== undefined && <span className={styles.tabCountQuiet}>{tab.count}</span>}
     </button>
   );
 }
@@ -256,41 +261,59 @@ export function ManagePageHeader({
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button[role=tab]")[next]?.focus();
   }
 
+  const sectioned = Boolean(tabs && tabs.length > 0);
+  // The sections are often routes of their own, so this header is drawn anew
+  // on each change; the switch remembers itself by its sections' names.
+  const memory = tabs?.map((tb) => tb.id).join("|");
+  const bar = useRef<HTMLDivElement>(null);
+  useSectionEnter(memory, tabs?.findIndex((tb) => tb.id === activeTab) ?? -1, () => {
+    const after: Element[] = [];
+    for (let next = bar.current?.nextElementSibling; next; next = next.nextElementSibling) after.push(next);
+    return after;
+  });
   return (
-    <div className={cn(styles.topbar, railToggle !== undefined && styles.topbarWithToggle)}>
-      {railToggle}
-      <span className={styles.title}>{title}</span>
-      {tabs && tabs.length > 0 && (
-        <div className={cn(styles.tabs, "max-[760px]:order-2 max-[760px]:w-full max-[760px]:ml-0 max-[760px]:overflow-x-auto")} role="tablist" aria-label={tabLabel}>
-          {tabs.map((tb, index) => (
-            <ManageTabButton
-              key={tb.id}
-              tab={tb}
-              active={activeTab === tb.id}
-              tabIndex={activeTab === tb.id ? 0 : -1}
-              onClick={() => onTabChange?.(tb.id)}
-              onKeyDown={(event) => moveTab(event, index)}
-              id={panelId ? `${panelId}-tab-${tb.id}` : undefined}
-              ariaControls={panelId}
-            />
-          ))}
+    <>
+      <div className={cn(styles.topbar, railToggle !== undefined && styles.topbarWithToggle, sectioned && styles.topbarSectioned)}>
+        {/* Phone only: the sidebar drawer's button (layout/phone-shell.tsx). */}
+        <PhoneDrawerButton />
+        {railToggle}
+        <span className={styles.title}>{title}</span>
+        {(toolbar || actions.length > 0) && (
+          <div className={styles.toolbar}>
+            {toolbar}
+            {actions.map((a) => (
+              <ManageActionButton key={a.label} a={a} />
+            ))}
+          </div>
+        )}
+      </div>
+      {/* The page's sections: a switch centred on the line under the header. */}
+      {sectioned && tabs && (
+        <div ref={bar} className={SECTION_BAR}>
+          <div className={SECTION_GROOVE} role="tablist" aria-label={tabLabel}>
+            {tabs.map((tb, index) => (
+              <ManageTabButton
+                key={tb.id}
+                tab={tb}
+                active={activeTab === tb.id}
+                tabIndex={activeTab === tb.id ? 0 : -1}
+                onClick={() => onTabChange?.(tb.id)}
+                onKeyDown={(event) => moveTab(event, index)}
+                id={panelId ? `${panelId}-tab-${tb.id}` : undefined}
+                ariaControls={panelId}
+              />
+            ))}
+            <SlidingThumb selector={CHOSEN_OPTION} memory={memory} />
+          </div>
         </div>
       )}
-      {(toolbar || actions.length > 0) && (
-        <div className={styles.toolbar}>
-          {toolbar}
-          {actions.map((a) => (
-            <ManageActionButton key={a.label} a={a} />
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
 /**
- * Slim inner tab row for a page embedded in a hub (no second 64px title).
- * Same pill styles as ManagePageHeader tabs.
+ * Slim inner row for a page embedded in a hub (no second 64px title): a
+ * view or filter switch in a button-tall capsule groove, a summary and an action.
  */
 export function ManageSubnav({
   tabs,
@@ -329,7 +352,7 @@ export function ManageSubnav({
 
   return (
     <div className={cn(styles.subnav, className)}>
-      <div className={styles.subnavTabs} role="tablist" aria-label={ariaLabel}>
+      <div className={CAPSULE_GROOVE} role="tablist" aria-label={ariaLabel}>
         {tabs.map((tb, index) => (
           <ManageTabButton
             key={tb.id}
@@ -343,6 +366,7 @@ export function ManageSubnav({
             ariaControls={panelId}
           />
         ))}
+        <SlidingThumb selector={CHOSEN_OPTION} />
       </div>
       {(summary !== undefined || action || end) && (
         <div className={styles.subnavEnd}>

@@ -302,7 +302,7 @@ export function ScheduledTasks({ header, onCountChange }: {
           panelId="scheduler-panel"
           end={(
             <ToggleGroup
-              type="single" variant="elevated" size="sm" spacing={1}
+              type="single" variant="segmented"
               value={view}
               onValueChange={(value) => { if (value) chooseView(value as SchedulerView); }}
               aria-label={text("Scheduled tasks view", "定时任务视图")}

@@ -97,6 +97,54 @@ export interface DesktopBridge {
   /** The floating bar of a demonstration recording. Absent in shells older
    *  than this build and on platforms without a recorder. */
   recording?: DesktopRecordingApi;
+  /** The screenshot tool. Absent in shells older than this build. */
+  screenshot?: DesktopScreenshotApi;
+}
+
+/** One display's frozen picture, as the overlay draws it. */
+export interface ScreenshotFrame {
+  started: number;
+  /** Pixels of the display. */
+  width: number;
+  height: number;
+  /** Pixels per CSS px. */
+  scale: number;
+  /** BGRA, rows of width * 4 bytes. */
+  pixels: Uint8Array;
+  /** Where the pointer was, in the overlay's CSS px; null on another display. */
+  cursor: { x: number; y: number } | null;
+  platform: string;
+}
+
+/** A window under the overlay, in its CSS px, front window first. */
+export interface ScreenshotWindow {
+  title: string;
+  app: string;
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+export type ScreenshotAction = "copy" | "save" | "pin" | "send" | "cancel";
+
+export interface DesktopScreenshotApi {
+  /** Start a screenshot from an App page (the composer's + menu). */
+  start(): Promise<boolean>;
+  /** A screenshot the user sent to the conversation of this window. */
+  onAttach(cb: (shot: { id: string; png: Uint8Array; name: string }) => void): () => void;
+  // The overlay page.
+  frame(): Promise<ScreenshotFrame | null>;
+  windows(): Promise<ScreenshotWindow[]>;
+  painted(started: number): void;
+  selecting(): void;
+  finish(result: { action: ScreenshotAction; png?: Uint8Array; rect?: { x: number; y: number; width: number; height: number } }): Promise<boolean>;
+  onBegin(cb: () => void): () => void;
+  onEnd(cb: () => void): () => void;
+  onRelease(cb: () => void): () => void;
+  // A pin.
+  pinImage(): Promise<{ png: Uint8Array; width: number; height: number } | null>;
+  pinDrag(phase: "start" | "end"): void;
+  pinWheel(wheel: { deltaY: number; opacity: boolean }): void;
+  pinMenu(labels: Record<string, string>): void;
+  pinClose(): void;
 }
 
 /** What the recording bar is opened with. */

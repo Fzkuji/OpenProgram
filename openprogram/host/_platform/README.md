@@ -34,6 +34,8 @@ picks packages), ``front`` (giving the front back to the application the user is
 - **`process_ownership.py`** — Platform process ownership
 - **`processes.py`** — Platform processes
 - **`screen_capture_audio.py`** — Audio-only ScreenCaptureKit streams on macOS, and the WAV their samples become
+- **`screen_windows.py`** — The windows on screen, front to back, with their frames: what a screenshot snaps to
 - **`terminal.py`** — Platform terminal
+- **`windows_ocr.py`** — Text in an image, read by the OCR engine Windows ships (``Windows.Media.Ocr``)
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

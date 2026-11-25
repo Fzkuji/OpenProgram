@@ -1,6 +1,7 @@
 /* Standalone /skills/<name> frame: reserve the collapsed main-sidebar
-   rail at narrow widths, like the shared management frame. */
-@media (max-width: 900px) {
+   rail at narrow widths, like the shared management frame. A phone's
+   sidebar is a drawer that leaves no rail (app/styles/base/phone.css). */
+@media (max-width: 900px) and (min-width: 761px) {
   .view { padding-left: var(--rail-collapsed-w); }
 }
 

@@ -51,7 +51,7 @@ function setup({ sessionId = null, current = null, replies = {}, machines = [] }
     setPendingProject: (key, id) => pending.push([key, id]),
   };
   globalThis.menuRequests = [];
-  useMachines.setState({ items: [LOCAL, ...machines], kinds: [{ id: "ssh", remote_files: true }], loaded: true });
+  useMachines.setState({ items: [LOCAL, ...machines], kinds: [], loaded: true });
   globalThis.menuReplies = {
     list_projects: () => ({ projects: PROJECTS, current_project_id: current, session_id: sessionId }),
     ...replies,
@@ -59,7 +59,7 @@ function setup({ sessionId = null, current = null, replies = {}, machines = [] }
   return { pending };
 }
 
-const LOCAL = { id: "local", name: "This computer", enabled: true, status: { state: "connected" }, shell: { kind: "", label: "", where: "", known: true } };
+const LOCAL = { id: "local", name: "This computer", enabled: true, status: { state: "connected" }, connection: { kind: "local", label: "", where: "", known: true }, shell: { remote_files: false, instance_scope: "machine" } };
 const openOnThisComputer = (path) => async (machine) => (path ? { path, machineId: machine.id } : null);
 
 const item = (container, label) =>
@@ -181,7 +181,7 @@ test("an open menu re-lists in place when a project changes elsewhere, keeping i
 });
 
 test("projects sit under their machine, this computer first; a project on a machine that is not connected is greyed", async () => {
-  const box = { id: "box", name: "Box", enabled: true, status: { state: "disconnected" }, shell: { kind: "ssh", label: "SSH", where: "me@box", known: true } };
+  const box = { id: "box", name: "Box", enabled: true, status: { state: "disconnected" }, connection: { kind: "ssh", label: "SSH", where: "me@box", known: true }, shell: { remote_files: true, instance_scope: "machine" } };
   const { pending } = setup({ machines: [box] });
   globalThis.menuReplies.list_projects = () => ({
     projects: [...PROJECTS, { id: "far", name: "Far", path: "/srv/far", is_default: false, session_count: 0, machine_id: "box" }],

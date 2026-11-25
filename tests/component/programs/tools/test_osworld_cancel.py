@@ -11,7 +11,7 @@ import pytest
 
 from openprogram.programs.tools.computer_use.computer_use import errors
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.providers import osworld
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import osworld
 
 from tests.support.screen_targets import machine
 
@@ -36,7 +36,7 @@ def test_a_cancelled_call_stops_waiting_for_a_machine_that_hangs(monkeypatch):
             hang.wait(5)
             raise ConnectionResetError("closed")
 
-    provider = osworld.OSWorldScreen(machine("lab", "Lab VM", screen={"kind": "osworld", "url": "http://10.0.0.9:5000"}))
+    provider = osworld.OSWorldScreen(machine("lab", "Lab VM", "osworld", url="http://10.0.0.9:5000"))
     monkeypatch.setattr(osworld.OSWorldScreen, "_client", lambda self: _Client())
 
     def check():

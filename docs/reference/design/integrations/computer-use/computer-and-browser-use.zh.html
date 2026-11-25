@@ -81,11 +81,11 @@
 <table class="stack">
 <thead><tr><th scope="col">层</th><th scope="col">代码</th><th scope="col">负责</th><th scope="col">交给下一层</th></tr></thead>
 <tbody>
-<tr><th scope="row"><span class="nb">工具</span></th><td><code translate="no">tool.py</code>、<code translate="no">vocabulary.py</code>、<code translate="no">guides/</code></td><td>本轮按机器生成的说明，按同一套词汇检查调用，指南和说明，权限代码读取的回答，调用使用谁的状态</td><td>检查过的、交给一个提供方的步骤</td></tr>
-<tr><th scope="row"><span class="nb">提供方</span></th><td><code translate="no">registry.py</code>、<code translate="no">contract.py</code>、<code translate="no">providers/</code></td><td>现在有哪些目标；一个目标的动作、审批、锁、资源行和结果的形态</td><td>对它后端的调用</td></tr>
-<tr><th scope="row"><span class="nb">锁</span></th><td><code translate="no">locks.py</code>、<code translate="no">dispatch.py</code></td><td>跨 worker 进程持有的共享键和独占键</td><td>持有这些键时运行的步骤</td></tr>
+<tr><th scope="row"><span class="nb">工具</span></th><td><code translate="no">tool.py</code>、<code translate="no">type_guides.py</code>、<code translate="no">devices.py</code>、<code translate="no">actions/</code>、<code translate="no">guides/</code></td><td>本轮按机器生成的说明，按同一套词汇检查调用，指南和说明，权限代码读取的回答，调用使用谁的状态</td><td>检查过的、交给一个提供方的步骤</td></tr>
+<tr><th scope="row"><span class="nb">提供方</span></th><td><code translate="no">routing/registry.py</code>、<code translate="no">contract.py</code>、<code translate="no">providers/</code></td><td>现在有哪些目标；一个目标的动作、审批、锁、资源行和结果的形态</td><td>对它后端的调用</td></tr>
+<tr><th scope="row"><span class="nb">锁</span></th><td><code translate="no">routing/locks.py</code>、<code translate="no">routing/dispatch.py</code></td><td>跨 worker 进程持有的共享键和独占键</td><td>持有这些键时运行的步骤</td></tr>
 <tr><th scope="row"><span class="nb">后端</span></th><td>按平台的 <code translate="no">desktop/</code>；浏览器应用的 <code translate="no">tabs.py</code> 和 <code translate="no">extension.py</code>；OSWorld 服务</td><td>在用户的工作后面读取和操作真实屏幕</td><td>结果，以及操作了什么：窗口、点、位置</td></tr>
-<tr><th scope="row"><span class="nb">代码</span></th><td><code translate="no">code.py</code>、<code translate="no">sandbox/</code></td><td>没有文件、网络和进程的 Python 解释器</td><td>同样的动作调用，经由 broker</td></tr>
+<tr><th scope="row"><span class="nb">代码</span></th><td><code translate="no">code_mode/calls.py</code>、<code translate="no">code_mode/sandbox/</code></td><td>没有文件、网络和进程的 Python 解释器</td><td>同样的动作调用，经由 broker</td></tr>
 <tr><th scope="row"><span class="nb">报告</span></th><td><code translate="no">host/resources/session.py</code>、<code translate="no">host/resources/native_window.py</code></td><td>谁用了什么：资源记录，以及每个对话的最新画面</td><td>发给每个 App 窗口的画面</td></tr>
 <tr><th scope="row"><span class="nb">嵌入</span></th><td><code translate="no">desktop/embedding/</code>、<code translate="no">ws_actions/embedded_window.py</code></td><td>标签页或视图里的另一个应用的窗口，以及谁持有它</td><td>被放置或被观看的窗口</td></tr>
 <tr><th scope="row"><span class="nb">App</span></th><td><code translate="no">apps/web/lib/chat/resources/</code>、<code translate="no">components/center-tabs/pip/</code>、<code translate="no">components/center-tabs/window/</code></td><td>资源列表、聊天小窗、标签页、桌面叠加层和 <code translate="no">@</code> 菜单</td><td>用户选中的东西，放进下一条提示</td></tr>
@@ -139,11 +139,11 @@
 <thead><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
 <tbody>
 <tr><th scope="row">所有屏幕一个工具</th><td>上下文里只留一份小 schema，而且从不改变，所以设备连上时提示缓存仍然有效。动作随首次结果、在类型指南里送达，模型不需要多一次调用，也不需要记住它们。</td></tr>
-<tr><th scope="row">目标是同一份约定后面的提供方</th><td>一种连接类型为它给出的每个目标打开一个提供方。工具、权限代码和代码模式都问提供方，不点名目标，所以新类型只是一个模块，只在 <code translate="no">&lt;devices&gt;</code> 里多一行，不改工具。</td></tr>
-<tr><th scope="row">后端共用结果类型和动作名</th><td><code translate="no">desktop/base.py</code>。指南和工具在每个平台上读起来一样，平台缺什么就在目标说明里写明，而不是悄悄不同。</td></tr>
+<tr><th scope="row">目标是同一份约定后面的提供方</th><td><code translate="no">computer_use</code> 为设备的连接方式登记的打开函数，给出的每个目标打开一个提供方。工具、权限代码和代码模式都问提供方，不点名目标，所以新提供方只是一个模块，只在 <code translate="no">&lt;devices&gt;</code> 里多一行，不改工具。</td></tr>
+<tr><th scope="row">后端共用结果类型和动作名</th><td><code translate="no">desktop/common/base.py</code>。指南和工具在每个平台上读起来一样，平台缺什么就在目标说明里写明，而不是悄悄不同。</td></tr>
 <tr><th scope="row">调用方自己操作</th><td>与 Codex 一样，知道任务的 agent 掌握屏幕。工具里没有任何东西会启动别的 agent，交接时不丢上下文。</td></tr>
 <tr><th scope="row">状态按 agent，标签页按对话</th><td>并行运行的 agent 不能互相替换元素编号（<code translate="no">state_scope</code>）。浏览器标签页对每一轮、每个 agent 保持同一个 id，所以有意共享。</td></tr>
-<tr><th scope="row">锁是文件</th><td>调用和代码里的一步从 <code translate="no">locks.py</code> 取同样的键，每个 worker 进程都看得到，所以两个 agent 不会同时操作同一个应用或同一整块屏幕。</td></tr>
+<tr><th scope="row">锁是文件</th><td>调用和代码里的一步从 <code translate="no">routing/locks.py</code> 取同样的键，每个 worker 进程都看得到，所以两个 agent 不会同时操作同一个应用或同一整块屏幕。</td></tr>
 <tr><th scope="row">页面属于对话，其他窗口不属于谁</th><td>页面是为这项工作打开的，留到关闭为止。另一个应用的窗口是用户的，每个对话都可以用，所以只在操作时显示。</td></tr>
 <tr><th scope="row">每一种都是同一个小窗框</th><td>页面、窗口、终端和应用共用框、手势和标题。新的一种只添加框里的内容。</td></tr>
 <tr><th scope="row">在标签页打开显示的是同一个对象</th><td>从不复制：标签页和小窗是同一个页面或窗口的两个持有者，不重新加载，也不会分叉。</td></tr>
@@ -156,8 +156,8 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">要添加</th><th scope="col">要写</th></tr></thead>
 <tbody>
-<tr><th scope="row">一种类型</th><td><code translate="no">providers/</code> 里的一个模块，写进 <code translate="no">_MODULES</code>，向机器注册表登记它的 <code translate="no">Kind</code>，并为每个目标打开一个 <code translate="no">Provider</code>；新的类型在 <code translate="no">vocabulary.py</code> 里加一张表，在 <code translate="no">guides/</code> 里加一份指南</td></tr>
-<tr><th scope="row">一个桌面平台</th><td><code translate="no">desktop/</code> 里带 <code translate="no">support()</code> 和 <code translate="no">backend()</code> 的模块，后端的方法（<code translate="no">list_apps</code>、<code translate="no">get_state</code>、<code translate="no">act</code> …），它在 <code translate="no">providers/desktop.py</code> 里的说明；窗口能嵌入时，再加 <code translate="no">desktop/embedding/</code> 里的嵌入器</td></tr>
+<tr><th scope="row">一种类型</th><td><code translate="no">providers/</code> 里的一个模块，写进 <code translate="no">_MODULES</code>，向机器注册表登记它的 <code translate="no">Kind</code>，并为每个目标打开一个 <code translate="no">Provider</code>；新的类型在 <code translate="no">actions/vocabulary.py</code> 里加一张表，在 <code translate="no">guides/</code> 里加一份指南</td></tr>
+<tr><th scope="row">一个桌面平台</th><td><code translate="no">desktop/</code> 里的一个包，<code translate="no">computer.py</code> 提供 <code translate="no">backend()</code>，最底层的模块提供 <code translate="no">support()</code>，后端的方法（<code translate="no">list_apps</code>、<code translate="no">get_state</code>、<code translate="no">act</code> …），它在 <code translate="no">providers/window/platforms.py</code> 里的说明；窗口能嵌入时，再加 <code translate="no">desktop/embedding/</code> 里的嵌入器</td></tr>
 <tr><th scope="row">小窗里的一种</th><td>与 <code translate="no">native:</code>、<code translate="no">terminal:</code>、<code translate="no">application:</code> 并列的目标前缀，它在 <code translate="no">app-preview-pip.tsx</code> 里的内容，以及“在标签页打开”打开什么</td></tr>
 </tbody>
 </table>
@@ -235,7 +235,7 @@
 <thead><tr><th scope="col">调用</th><th scope="col">后端</th><th scope="col">打开时返回</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">type="window"</code></th><td><code translate="no">openprogram/programs/tools/computer_use/computer_use/desktop/</code>（macOS、Linux X11、Windows）</td><td>给了 <code translate="no">app</code>：它的状态（树和截图）；否则应用列表</td></tr>
-<tr><th scope="row"><code translate="no">type="screen"</code></th><td><code translate="no">desktop/screen_macos.py</code></td><td>主显示器的截图，或 <code translate="no">display</code> 的截图</td></tr>
+<tr><th scope="row"><code translate="no">type="screen"</code></th><td><code translate="no">desktop/macos/screen.py</code></td><td>主显示器的截图，或 <code translate="no">display</code> 的截图</td></tr>
 <tr><th scope="row"><code translate="no">type="browser"</code></th><td><a href="../browser/tab-driver.zh.html">标签页驱动</a>：页面在 App 里以标签页打开；够不到 App 窗口时，在驱动自己的无窗口浏览器里打开</td><td>标签页列表</td></tr>
 <tr><th scope="row"><code translate="no">type="browser", app="chrome"</code>、<code translate="no">"safari"</code>、<code translate="no">"firefox"</code> 等</th><td>用户的浏览器：Chromium 系用扩展模式的 Playwright MCP，Safari 用 AppleScript，Firefox 用 WebDriver BiDi（<a href="user-browsers.zh.html">用户的浏览器</a>）</td><td>标签页列表</td></tr>
 <tr><th scope="row"><code translate="no">device="m", type="screen"</code></th><td>机器 <code translate="no">url</code> 上的 OSWorld 兼容服务</td><td>一张截图</td></tr>
@@ -248,7 +248,7 @@
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
 <tr><th scope="row">指南</th><td>每种类型有一份指南（<code translate="no">guides/&lt;type&gt;.md</code>：<code translate="no">window</code>、<code translate="no">screen</code>、<code translate="no">browser</code>）：它的动作、参数和结果的样子。每个目标再加几行说明（<code translate="no">Provider.note</code>）：它的机器、操作系统、缺什么、快捷键。</td></tr>
-<tr><th scope="row">投递</th><td><code translate="no">tool.py</code> 把它们登记为内含的工具指南：<code translate="no">computer_use.&lt;type&gt;</code> 随第一次操作该类型目标的调用结果送达，<code translate="no">computer_use.note.&lt;target&gt;</code> 随第一次调用该目标送达，<code translate="no">computer_use.code</code> 在能运行代码的主机上随第一次操作任何目标的调用送达，所以模型在发送代码之前已经读过代码怎么用。</td></tr>
+<tr><th scope="row">投递</th><td><code translate="no">type_guides.py</code> 把它们登记为内含的工具指南：<code translate="no">computer_use.&lt;type&gt;</code> 随第一次操作该类型目标的调用结果送达，<code translate="no">computer_use.note.&lt;target&gt;</code> 随第一次调用该目标送达，<code translate="no">computer_use.code</code> 在能运行代码的主机上随第一次操作任何目标的调用送达，所以模型在发送代码之前已经读过代码怎么用。</td></tr>
 <tr><th scope="row">不等待</th><td>没有调用会等指南：在看到任何一份指南之前就发代码的调用照样运行，指南随它的结果返回。</td></tr>
 <tr><th scope="row">已知的指南</th><td>指南是否已知，从 agent 循环最后发出的请求里读取，所以压缩、清除的工具结果和 worker 重启都会让指南重新发送；另一个 agent 写的提示里的指南，会包在发言者的 JSON 信封里到达模型，所以 <code translate="no">guides.known</code> 也匹配引号被转义的标记。</td></tr>
 <tr><th scope="row">按需</th><td><code translate="no">action: "guide"</code> 返回目标的类型指南、说明和代码指南；<code translate="no">help("computer_use.&lt;type&gt;")</code> 返回其中一份。</td></tr>
@@ -260,7 +260,7 @@
 <tr><th scope="row">动作</th><td>OpenProgram 的浏览器和用户自己的浏览器用浏览器类型的动作，参数相同（<a href="machines-and-targets.zh.html#动作">机器和目标</a>）；只有内置浏览器有窗格和视频。</td></tr>
 <tr><th scope="row">先选浏览器</th><td>与 Codex 一样，浏览器用 <code translate="no">app</code> 先选定，动作不随它变化。</td></tr>
 <tr><th scope="row">列出</th><td>无论扩展现在是否连上，用户的 Chromium 系浏览器都会列出；对连不上的那个调用会用错误码回答。没有扩展时，那个浏览器里的页面是它窗口的一部分，用 <code translate="no">type="window"</code> 操作。</td></tr>
-<tr><th scope="row">服务</th><td><code translate="no">providers/user_browser.py</code> 把每一步交给浏览器应用的 <code translate="no">extension.py</code>，它通过自己的 MCP 客户端运行固定版本的 <code translate="no">@playwright/mcp --extension</code>，<code translate="no">--browser</code> 设为渠道，没有渠道的浏览器用 <code translate="no">--executable-path</code>，每个对话和浏览器一个服务，在调用之间保留，只要用过它的 agent（哪怕只列过标签页）还有一个在运行就一直保留；最后一个结束时，连接和它的标签页表一起结束。</td></tr>
+<tr><th scope="row">服务</th><td><code translate="no">providers/browser/user.py</code> 把每一步交给浏览器应用的 <code translate="no">extension.py</code>，它通过自己的 MCP 客户端运行固定版本的 <code translate="no">@playwright/mcp --extension</code>，使用 <code translate="no">--browser &lt;渠道&gt;</code>，没有渠道的浏览器用 <code translate="no">--executable-path</code>，每个对话和浏览器一个服务，在调用之间保留，只要用过它的 agent（哪怕只列过标签页）还有一个在运行就一直保留；最后一个结束时，连接和它的标签页表一起结束。</td></tr>
 <tr><th scope="row">关闭</th><td>agent 结束时从不等待：连接在后台关闭，等其中仍在运行的步骤结束之后，并且只在这期间没有别的 agent 开始用它时才关闭。</td></tr>
 <tr><th scope="row">连接</th><td>服务在那个浏览器里打开 <code translate="no">chrome-extension://&lt;id&gt;/connect.html</code>，带上它中继的地址，Playwright Extension 连回来，为用户共享的标签页中继 CDP；设置了 <code translate="no">computer_use.chrome_extension_token</code> 时，服务传入 <code translate="no">PLAYWRIGHT_MCP_EXTENSION_TOKEN</code>，扩展连接时不再询问。</td></tr>
 <tr><th scope="row">动作映射</th><td><code translate="no">extension.py</code> 用标签页驱动读取的同样参数，把每个动作翻译成 Playwright MCP 的工具；元素是服务快照里的 ref，或 <code translate="no">role</code> 和 <code translate="no">name</code>，以 <code translate="no">getByRole(role, { name, exact: true })</code> 找到它。</td></tr>
@@ -285,8 +285,8 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">解释器</th><td><code translate="no">code</code> 在 <code translate="no">computer_use/sandbox/runner.py</code> 的常驻沙箱解释器里运行（macOS 上用 seatbelt，不能访问文件、网络和进程）。</td></tr>
-<tr><th scope="row">命名空间</th><td><code translate="no">cu</code> 就是调用的目标：<code translate="no">await cu.click(element=3)</code> 是在那个目标上带这个参数的 <code translate="no">click</code> 一步，由主机经同样的检查和锁派发（<code translate="no">dispatch.run_steps</code>），每一步一张效果回执（<code translate="no">computer_use/sandbox/broker.py</code>）。</td></tr>
+<tr><th scope="row">解释器</th><td><code translate="no">code</code> 在 <code translate="no">computer_use/code_mode/sandbox/runner.py</code> 的常驻沙箱解释器里运行（macOS 上用 seatbelt，不能访问文件、网络和进程）。</td></tr>
+<tr><th scope="row">命名空间</th><td><code translate="no">cu</code> 就是调用的目标：<code translate="no">await cu.click(element=3)</code> 是在那个目标上带这个参数的 <code translate="no">click</code> 一步，由主机经同样的检查和锁派发（<code translate="no">dispatch.run_steps</code>），每一步一张效果回执（<code translate="no">computer_use/code_mode/sandbox/broker.py</code>）。</td></tr>
 <tr><th scope="row">文档字符串</th><td>前导代码把类型指南里该动作的那一行作为每个 <code translate="no">cu</code> 方法的文档字符串，没有就用它的签名，所以解释器里 <code translate="no">dir(cu)</code> 和 <code translate="no">help(cu.click)</code> 都能用。</td></tr>
 <tr><th scope="row">参数说明</th><td><code translate="no">code</code> 参数自己的说明写着 <code translate="no">await cu.get_state()</code> 和 <code translate="no">await cu.click(element=3)</code>，所以看不到代码指南的模型仍会写 <code translate="no">cu.click(...)</code>，而不是光秃秃的 <code translate="no">click(...)</code>。</td></tr>
 </tbody>
@@ -340,14 +340,18 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">模块</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use/tool.py</code></th><td>登记的工具：按机器的说明、检查、路由、指南登记、权限代码读取的回答</td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/contract.py</code>、<code translate="no">registry.py</code>、<code translate="no">dispatch.py</code>、<code translate="no">locks.py</code></th><td>提供方约定、现在设置好的目标、步骤的唯一路径、锁</td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/vocabulary.py</code>、<code translate="no">keynames.py</code>、<code translate="no">errors.py</code></th><td>动作、族和沿用来的名字；按键写法；带编码的错误</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use/tool.py</code></th><td>登记的工具：固定的说明和 schema、检查调用、路由、权限代码读取的回答</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/devices.py</code>、<code translate="no">type_guides.py</code>、<code translate="no">context.py</code></th><td><code translate="no">&lt;devices&gt;</code> 及其变化；随第一次需要它们的调用送达的类型指南和目标说明；调用服务的对话、智能体和环境</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/contract.py</code>、<code translate="no">errors.py</code></th><td>提供方约定；带编码的错误</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/routing/</code> (<code translate="no">registry.py</code>、<code translate="no">dispatch.py</code>、<code translate="no">locks.py</code>)</th><td>现在设置好的目标、步骤的唯一路径、锁</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/actions/</code> (<code translate="no">vocabulary.py</code>、<code translate="no">keynames.py</code>)</th><td>动作、族和沿用来的名字；按键写法</td></tr>
 <tr><th scope="row"><code translate="no">…/computer_use/guides/</code></th><td>类型指南（<code translate="no">window.md</code>、<code translate="no">screen.md</code>、<code translate="no">browser.md</code>）和代码指南</td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/providers/desktop.py</code>、<code translate="no">local_screen.py</code></th><td><code translate="no">desktop</code> 类型：<code translate="no">window</code> 基于 <code translate="no">desktop/</code>，<code translate="no">screen</code> 基于 <code translate="no">desktop/screen_macos.py</code></td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/providers/built_in_browser.py</code>、<code translate="no">user_browser.py</code></th><td><code translate="no">built_in</code> 类型：OpenProgram 的浏览器基于标签页驱动，用户自己的浏览器基于扩展、Safari 的 Apple 事件或 Firefox 的 BiDi</td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/providers/osworld.py</code></th><td><code translate="no">osworld</code> 类型：经服务的 HTTP API 截图和 pyautogui 输入</td></tr>
-<tr><th scope="row"><code translate="no">…/computer_use/code.py</code></th><td>基于 <code translate="no">computer_use/sandbox/runner.py</code> 和 <code translate="no">sandbox/broker.py</code> 的代码模式</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/providers/window/</code>、<code translate="no">providers/screen/local.py</code></th><td><code translate="no">desktop</code> 类型：<code translate="no">window</code> 基于 <code translate="no">desktop/</code>（提供方、每个平台的说明和授权、调用读取谁的状态、回答的形态），<code translate="no">screen</code> 基于 <code translate="no">desktop/macos/screen.py</code>（旁边是它的截图和步骤参数）</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/providers/browser/</code> (<code translate="no">built_in.py</code>、<code translate="no">user.py</code>、<code translate="no">tabs.py</code>)</th><td><code translate="no">built_in</code> 类型：OpenProgram 的浏览器基于标签页驱动，用户自己的浏览器基于扩展、Safari 的 Apple 事件或 Firefox 的 BiDi，标签页 id 稳定</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/providers/screen/osworld.py</code></th><td><code translate="no">osworld</code> 类型：经服务的 HTTP API 截图和 pyautogui 输入</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/providers/paired.py</code></th><td><code translate="no">openprogram</code> 类型：另一台电脑的 OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/code_mode/</code> (<code translate="no">calls.py</code>、<code translate="no">sandbox/</code>)</th><td>基于沙盒解释器（<code translate="no">sandbox/runner.py</code>）和它的 broker（<code translate="no">sandbox/broker.py</code>）的代码模式</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use/desktop/</code></th><td>后端：每个平台一个包（<code translate="no">macos/</code>、<code translate="no">windows/</code>、<code translate="no">linux/</code>），各自的 <code translate="no">computer.py</code> 由每个关注点一个模块组合而成；共用的部分在 <code translate="no">common/</code>；<code translate="no">backends.py</code> 选出本机的那个；<code translate="no">embedding/</code> 把另一个应用的窗口放进标签页</td></tr>
 </tbody>
 </table>
 <p>没有单独的计划 → 决定 → 操作 → 验证循环：调用工具的 agent 把长任务做完，用代码在一次调用里完成许多步。</p>

@@ -12,6 +12,15 @@
      lines up with the transcript column. */
   --composer-column-gutter: calc(var(--chat-column-gutter) - 24px);
 }
+/* Phone (app/styles/base/phone.css): the box spans the column, lined up
+   with the transcript's 12px margin; the shell already keeps it above the
+   home indicator and the on-screen keyboard. Only the box's place changes. */
+@media (max-width: 760px) {
+  .inputArea {
+    padding: 8px 12px;
+    --composer-column-gutter: 0px;
+  }
+}
 /* 层级（从上到下）：输入框各组件 ≈ 弹出菜单 > 聊天遮罩 > 聊天内容。
    inputArea 本身不建层叠上下文（z-index: auto），遮罩（::before/::after，
    z 4）和组件（直接子元素，z 5）都直接排在聊天区的层叠里，所以遮罩永远

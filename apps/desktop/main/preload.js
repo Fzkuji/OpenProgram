@@ -81,6 +81,26 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     finish: (result) => ipcRenderer.send("recording:finish", result),
     onFinished: (cb) => fanOut("recording:finished", cb),
   } : undefined,
+  // The screenshot tool (main/windows/screenshot.js). An App page starts it
+  // and hears the screenshots sent to its conversation; the overlay and pin
+  // pages use the rest, and the main process answers only them.
+  screenshot: {
+    start: () => ipcRenderer.invoke("screenshot:start"),
+    onAttach: (cb) => fanOut("screenshot:attach", cb),
+    frame: () => ipcRenderer.invoke("screenshot:frame"),
+    windows: () => ipcRenderer.invoke("screenshot:windows"),
+    painted: (started) => ipcRenderer.send("screenshot:painted", started),
+    selecting: () => ipcRenderer.send("screenshot:selecting"),
+    finish: (result) => ipcRenderer.invoke("screenshot:finish", result),
+    onBegin: (cb) => fanOut("screenshot:begin", cb),
+    onEnd: (cb) => fanOut("screenshot:end", cb),
+    onRelease: (cb) => fanOut("screenshot:release", cb),
+    pinImage: () => ipcRenderer.invoke("screenshot:pin-image"),
+    pinDrag: (phase) => ipcRenderer.send("screenshot:pin-drag", phase),
+    pinWheel: (wheel) => ipcRenderer.send("screenshot:pin-wheel", wheel),
+    pinMenu: (labels) => ipcRenderer.send("screenshot:pin-menu", labels),
+    pinClose: () => ipcRenderer.send("screenshot:pin-close"),
+  },
   // Video of one pane of this page: `arm` lets the page's next request for
   // its own display stream through; the rest writes the encoded file.
   paneRecording: {

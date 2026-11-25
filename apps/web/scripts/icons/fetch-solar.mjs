@@ -161,6 +161,18 @@ const ICONS = {
   "notes": "bold-duotone",
   // sidebar Activity toggle (the bell beside the Projects filter)
   "bell": "bold-duotone",
+  // screenshot and image annotation toolbar (components/annotate); crop,
+  // pen, pin, copy, download-minimalistic, close-circle and plain-2 above
+  "stop": "bold-duotone",
+  "circle": "bold-duotone",
+  "arrow-right-up": "bold-duotone",
+  "highlighter": "bold-duotone",
+  "grid-3x3": "bold-duotone",
+  "text": "bold-duotone",
+  "hashtag-circle": "bold-duotone",
+  "undo-left-round": "bold-duotone",
+  "undo-right-round": "bold-duotone",
+  "text-selection": "bold-duotone",
 };
 
 // A few glyphs come from other Iconify sets where Solar has no good fit;

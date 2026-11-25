@@ -545,6 +545,13 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         worker_print(f"computer_use rename failed: {type(exc).__name__}: {exc}")
 
+    try:
+        from openprogram.operations.migrations.machines_one_connection import run as migrate_machines
+        if migrate_machines():
+            worker_print("machines: stored machines now have one connection each")
+    except Exception as exc:  # noqa: BLE001
+        worker_print(f"machines migration failed: {type(exc).__name__}: {exc}")
+
     # This process now owns the profile: read the sessions that were still
     # running before anything can ask about them.
     try:

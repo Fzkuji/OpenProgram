@@ -1,0 +1,14 @@
+.image {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  object-fit: fill;
+  user-select: none;
+  cursor: grab;
+}
+
+.image:active {
+  cursor: grabbing;
+}

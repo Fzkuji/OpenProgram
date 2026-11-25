@@ -130,7 +130,7 @@ def test_the_tool_list_of_a_turn_is_not_cut_by_its_starting_mode():
 
 
 def test_a_saved_rule_does_not_put_unrestricted_back_inside_the_grant(owner, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use import code
+    from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code
     from openprogram.runtime.agent import turn_request
     from openprogram.runtime.permissions.modes import PermissionRules
 

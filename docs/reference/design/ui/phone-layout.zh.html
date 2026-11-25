@@ -1,0 +1,56 @@
+<title>手机布局</title>
+<meta name="description" content="网页界面在 760px 及以下怎样变成手机 App：侧边栏抽屉、右侧面板整屏、分区列表单独成页、输入框在键盘之上，以及从 dsh-mobile 照搬了什么。">
+<meta name="covers" content="apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx apps/web/components/layout/phone-drawer-button.tsx apps/web/lib/layout/">
+<h1>手机布局</h1>
+<p>宽度在 760px 及以下时，外壳是单列的手机 App。断点只有一个常量 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/layout/phone.ts"><code translate="no">PHONE_MAX_WIDTH</code></a>，和<a href="sidebar/secondary-rail.zh.html">二级侧栏</a>原来用的是同一个。其余都是最后加载的 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/styles/base/phone.css"><code translate="no">styles/base/phone.css</code></a>，加上 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/layout/phone-shell.tsx"><code translate="no">phone-shell.tsx</code></a> 里的手势。760px 以上什么都不变。</p>
+
+<ol class="flow fig-narrow">
+  <li><strong>对话</strong><small>标签行、单列、输入框</small></li>
+  <li class="via"><strong>标题按钮或从左边缘滑入</strong><small>侧边栏盖到页面上</small></li>
+  <li class="flow-end"><strong>点一个对话、点遮罩或滑回去</strong><small>抽屉关上，停在选中的对话</small></li>
+</ol>
+
+<h2 id="screens">各个界面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">手机上</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧边栏</th><td>抽屉，宽 <code translate="no">min(86vw, 320px)</code>，下面盖一层 <code translate="no">--scrim</code>。用标签行或页面标题最前面的按钮、或从左边 24px 内滑动打开；用它自己的收起按钮、点遮罩、向左滑、或选中对话、页面、标签关上。拖动时跟手，松手按距离或甩动速度决定开关。它一直挂着，再打开时停在原来的滚动位置。关上后不留图标栏。</td></tr>
+<tr><th scope="row">对话</th><td>中间卡片占满屏幕；消息左右留 12px，输入框与之对齐。消息刻度条住在侧边留白里，手机上不显示；视图控件保持窄的竖条，离右上角 8px。代码块和表格在自身内部横向滚动。</td></tr>
+<tr><th scope="row">右侧面板</th><td>从右边滑进来的整屏面板，用标签行最后的按钮打开，用它的收起按钮或选中标签关上。工具详情、文件、活动和资源都占满宽度。</td></tr>
+<tr><th scope="row">设置、历史、项目、智能体</th><td>二级侧栏就是本页的分区列表，占满宽度；点一行打开内容。列表页标题前只有侧边栏按钮，内容页只有回到列表的返回箭头。</td></tr>
+<tr><th scope="row">管理页</th><td>抽屉按钮、侧栏按钮和标题在标题栏第一行；标签和工具栏换到下面。原来给收起图标栏留的 62px 去掉。</td></tr>
+<tr><th scope="row">输入框和提问卡片</th><td>三段式输入框布局不变，占满这一列；提问和审批卡片在输入框里，所以也是满宽。</td></tr>
+</tbody>
+</table>
+
+<h2 id="touch">触摸和屏幕边缘</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">键盘</th><td>外壳 <code translate="no">position: fixed</code>，顶部和高度跟随可视视口（<code translate="no">visualViewport</code> 写入的 <code translate="no">--phone-viewport-top</code>、<code translate="no">--phone-viewport-h</code>），没有时用 <code translate="no">100dvh</code>，所以在 Safari 里输入框也停在屏幕键盘之上。</td></tr>
+<tr><th scope="row">刘海和底部横条</th><td>外壳按 <code translate="no">env(safe-area-inset-*)</code> 留边；抽屉和整屏面板至少留 8px 或安全区。</td></tr>
+<tr><th scope="row">触摸目标</th><td>标题按钮、抽屉和面板里的行、分区列表的行都是 44px。</td></tr>
+<tr><th scope="row">输入框字号</th><td>至少 16px，聚焦时页面不放大。</td></tr>
+<tr><th scope="row">悬停</th><td>手指点按不会打开悬停提示；消息操作本来就不需要悬停就可见。</td></tr>
+<tr><th scope="row">保存的选择</th><td>在手机上开抽屉、面板或分区页都不保存；保存为打开的右侧面板在手机上启动时是关的。宽窗口保留自己的选择。</td></tr>
+<tr><th scope="row">动效</th><td>抽屉和面板滑动 220ms；拖动跟手；减少动态效果时不滑动。</td></tr>
+</tbody>
+</table>
+
+<h2 id="source">从 dsh-mobile 照搬的部分</h2>
+<p>设计照搬 <a href="https://github.com/saya-ch/dsh-mobile">saya-ch/dsh-mobile</a>（Apache-2.0），它是另一个框架网页界面的触摸布局，没有自己另想一套。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话列表做成带遮罩的覆盖抽屉</th><td>对话占满宽度；列表一滑就到，并保留滚动位置。</td></tr>
+<tr><th scope="row">右侧面板做成整屏</th><td>手机上 300px 的一列放不下正文；整屏能满宽看详情。</td></tr>
+<tr><th scope="row">设置分区做成可返回的列表页</th><td>分区列表和内容挤不进 390px。</td></tr>
+<tr><th scope="row">高度跟随键盘、安全区留边、44px 目标、16px 输入框</th><td>它的设计系统清单：主操作在键盘之上，刘海下不放东西，聚焦不放大。</td></tr>
+<tr><th scope="row">页面不横向滚动，宽内容在自身内部滚动</th><td>同上。</td></tr>
+</tbody>
+</table>
+<p class="note">没有照搬：它在对话旁边保留的 56px 折叠图标栏（OpenProgram 在手机上不留图标栏），以及平板停靠区间（761px 起本来就是桌面布局）。</p>
+
+<h2 id="status">实现状态</h2>
+<p>页面 viewport 声明了 <code translate="no">viewport-fit=cover</code>。<code translate="no">interactive-widget=resizes-content</code> 还没有声明；没有它，可视视口高度也能处理键盘。</p>
+<p class="next"><a href="sidebar/secondary-rail.zh.html">二级侧栏</a> · <a href="remote-web-access.zh.html">远程网页访问</a></p>

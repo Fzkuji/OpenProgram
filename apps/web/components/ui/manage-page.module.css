@@ -25,6 +25,11 @@
   flex-shrink: 0;
 }
 
+.topbarSectioned {
+  /* The section switch below draws the header's edge itself. */
+  border-bottom: 0;
+}
+
 .topbarWithToggle {
   /* The toggle's left edge lines up with the rail rows below it. */
   gap: 8px;
@@ -42,35 +47,6 @@
   flex-shrink: 0;
 }
 
-.tabs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 24px;
-}
-
-.tabBtn {
-  /* Same height + corner as every other control in the header row
-     (Button, SearchInput), so the pills don't read as a different
-     component family. */
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
-  height: var(--ui-button-h);
-  padding: 0 12px;
-  font-size: var(--fs-sm);
-  line-height: 1;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--ui-button-radius);
-  cursor: pointer;
-  transition: background var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard);
-  font-family: inherit;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 .tabIcon {
   display: inline-flex;
   align-items: center;
@@ -79,15 +55,6 @@
   height: 16px;
   flex-shrink: 0;
 }
-.tabBtn:hover {
-  color: var(--text-bright);
-}
-.tabBtn.active {
-  color: var(--text-bright);
-  border-color: var(--border);
-  background: var(--bg-input);
-}
-
 .toolbar {
   display: flex;
   align-items: center;
@@ -477,8 +444,8 @@
   background: color-mix(in srgb, var(--accent-red) 7%, transparent);
 }
 
-/* Secondary task bar. It is deliberately quieter than the capability pills
-   above it: text tabs, compact counts, and one task-local primary action. */
+/* Secondary task bar: a view or filter switch (components/ui/capsule.ts),
+   a summary and one task-local primary action. */
 .subnav {
   display: flex;
   align-items: center;
@@ -489,58 +456,9 @@
   flex-shrink: 0;
 }
 
-.subnavTabs {
-  display: flex;
-  align-items: stretch;
-  align-self: stretch;
-  gap: 24px;
-}
-
-.tabBtn.subnavTab {
-  position: relative;
-  height: 100%;
-  padding: 0;
-  gap: 7px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-secondary);
-}
-.tabBtn.subnavTab:hover {
-  color: var(--text-primary);
-  background: transparent;
-}
-.tabBtn.subnavTab.active {
-  color: var(--text-bright);
-  border: 0;
-  background: transparent;
-}
-.tabBtn.subnavTab.active::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: var(--radius-2xs) var(--radius-2xs) 0 0;
-  background: var(--accent-blue);
-}
-
-.tabCount {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: var(--radius-full);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: var(--fs-2xs);
-  line-height: 16px;
-  text-align: center;
-}
-
-/* A header tab's count: a quiet number after the label. */
+/* A tab's count: a quiet number after the label, in a header or a subnav. */
 .tabCountQuiet {
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .subnavEnd {
@@ -558,8 +476,9 @@
 
 /* At narrow app widths the main sidebar is position:fixed. Reserve its
    collapsed 49px rail so page chrome is never covered (same rule as the
-   Settings frame); an expanded sidebar stays a temporary overlay. */
-@media (max-width: 900px) {
+   Settings frame); an expanded sidebar stays a temporary overlay. A
+   phone's sidebar is a drawer that leaves no rail (app/styles/base/phone.css). */
+@media (max-width: 900px) and (min-width: 761px) {
   .view { padding-left: var(--rail-collapsed-w); }
 }
 
@@ -571,8 +490,10 @@
     gap: 8px;
     padding: 12px 16px;
   }
-  .title { width: 100%; }
-  .tabs .tabIcon { display: none; }
+  /* The title shares the first row with the phone's drawer button and the
+     rail toggle; the toolbar wraps below it. */
+  .title { flex: 1 1 0; min-width: 0; }
+  .topbarWithToggle { padding-left: 8px; }
   .toolbar {
     order: 3;
     width: 100%;
@@ -580,7 +501,7 @@
     gap: 6px;
   }
   .subnav { flex-wrap: wrap; }
-  .subnavTabs { min-height: 48px; overflow-x: auto; }
+  .subnav { padding-block: 10px; }
   .subnavEnd { width: 100%; margin-left: 0; padding-bottom: 10px; }
   .subnavSummary { margin-right: auto; white-space: normal; }
   .body { padding: 14px 16px 16px; }

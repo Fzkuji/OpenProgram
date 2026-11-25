@@ -15,9 +15,12 @@ Three backends ship out of the box:
     ssh      — ``ssh <target> "..."`` per call, one shared connection
 
 Which one runs is decided by the session's environment
-(``openprogram.host.machines``): every conversation picks a machine when it
-is created, and the backend follows that machine's shell kind. Each backend
-registers as a shell kind at the end of this module.
+(``openprogram.host.machines``): a conversation runs on its project's
+machine, and the backend follows that machine's connection method. This
+module registers the methods ``ssh`` and ``docker`` with the device layer
+(their settings, check and labels) and keeps, in ``SHELLS``, which methods
+commands run through: ``local``, ``ssh`` and ``docker``. The device layer
+knows nothing of shells; it asks ``shell_for``.
 
 ## Files in this directory
 

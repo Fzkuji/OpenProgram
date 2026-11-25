@@ -975,6 +975,7 @@ const {
 const tabTransfers = makeTransferCoordinator();
 // Other applications' windows inside tabs; made once the app is ready.
 let embeddedWindows = null;
+let screenshots = null;
 let appQuitting = false;
 
 function contextForSender(event) {
@@ -2385,6 +2386,22 @@ const registerMainWindow = () => registerSingleMainWindow({
       BrowserWindow, ipcMain, path, screen: require("electron").screen,
       uiOrigin: overlayUiOrigin,
     });
+    screenshots = require("./main/windows/screenshot").createScreenshot({
+      app, BrowserWindow, Menu, ipcMain, clipboard, dialog, path, fs,
+      globalShortcut: require("electron").globalShortcut,
+      desktopCapturer: require("electron").desktopCapturer,
+      screen: require("electron").screen,
+      nativeImage: require("electron").nativeImage,
+      uiOrigin: overlayUiOrigin,
+      fetchJson: async (route) => {
+        const token = ownerAuthTokenFromStartUrl(resolveWorkerStartUrl());
+        return readLocalJson(new URL(route, START_URL).toString(), token ? { Authorization: `Bearer ${token}` } : {}, 4000);
+      },
+      // The App window the user was last in gets a screenshot sent to its conversation.
+      targetWindow: () => focusedContext()?.win
+        || [...windows.values()].find((ctx) => !ctx.win.isDestroyed())?.win || null,
+    });
+    screenshots.registerShortcut();
     embeddedWindows = require("./main/windows/embedded-windows").createEmbeddedWindows({
       ipcMain, desktopCapturer: require("electron").desktopCapturer, screen: require("electron").screen,
       contextForSender, platform: process.platform, pid: process.pid, setTimeout, clearTimeout,
@@ -2456,6 +2473,7 @@ function createBackgroundTray() {
     iconRoot: path.join(__dirname, "main", "worker", "tray"),
     probe: async () => ({ running: await probe(HEALTH_URL, 1000) }),
     open: () => { void ensureMainWindow(); },
+    screenshot: () => { void screenshots?.start(); },
     stop: async () => {
       if (shellContext) await shellContext.stopWorker();
       else spawnWorker("stop");

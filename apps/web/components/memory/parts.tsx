@@ -123,7 +123,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
           </div>
         </div>
         <div className={styles.editorActions}>
-          <ToggleGroup type="single" variant="elevated" spacing={1} className="max-[720px]:flex-[1_1_150px]"
+          <ToggleGroup type="single" variant="segmented" className="max-[720px]:flex-[1_1_150px]"
             value={state.viewMode === "history" ? "" : state.viewMode}
             onValueChange={(value: string) => { if (value) onViewMode(value as EditorState["viewMode"]); }}>
             <ToggleGroupItem value="edit" className="max-[720px]:flex-1">{text("Edit", "编辑")}</ToggleGroupItem>

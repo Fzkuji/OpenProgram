@@ -62,3 +62,6 @@
 @import "./dag/panels/inspector.css";
 @import "./dag/panels/legend.css";
 @import "./dag/panels/tools.css";
+
+/* ── 手机布局（≤760px，lib/layout/phone.ts）：最后加载，覆盖上面各区 ── */
+@import "./base/phone.css";

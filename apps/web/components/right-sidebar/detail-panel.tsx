@@ -3,6 +3,9 @@
 import type { ReactNode } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { CAPSULE_GROOVE, CAPSULE_OPTION, CHOSEN_OPTION } from "@/components/ui/capsule";
+import { SlidingThumb } from "@/components/ui/sliding-thumb";
 import { renderMarkdown, useMarkdownReady } from "../chat/messages/bubbles/markdown";
 import { LlmNodeContent } from "../chat/messages/execution/llm-node-content";
 import type { TNode } from "../chat/messages/execution/tree-types";
@@ -23,26 +26,26 @@ export function SessionViewSwitch({ current }: { current: string }) {
     { view: VIEW_CONTEXT, label: text("Context", "上下文") },
   ];
   return (
-    <div
-      className="session-view-switch"
-      role="tablist"
-      aria-label={text("Selected node views", "选中节点的视图")}
-    >
-      {options.map((option) => (
-        <button
-          key={option.view}
-          type="button"
-          role="tab"
-          aria-selected={current === option.view}
-          className={
-            "session-view-switch-btn" +
-            (current === option.view ? " is-active" : "")
-          }
-          onClick={() => setRightDockView(option.view)}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div className="session-view-switch">
+      <div
+        className={cn(CAPSULE_GROOVE, "w-full")}
+        role="tablist"
+        aria-label={text("Selected node views", "选中节点的视图")}
+      >
+        {options.map((option) => (
+          <button
+            key={option.view}
+            type="button"
+            role="tab"
+            aria-selected={current === option.view}
+            className={cn(CAPSULE_OPTION, "flex-1")}
+            onClick={() => setRightDockView(option.view)}
+          >
+            {option.label}
+          </button>
+        ))}
+        <SlidingThumb selector={CHOSEN_OPTION} />
+      </div>
     </div>
   );
 }

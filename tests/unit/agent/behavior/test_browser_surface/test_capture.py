@@ -5,6 +5,7 @@ from openprogram.programs.applications.browser import prompt as browser_prompt
 import asyncio
 import pytest
 from ._support import _WS
+from openprogram.programs.tools.computer_use.computer_use import devices as cu_devices
 
 
 def test_surface_context_captures_preview_from_the_originating_socket(monkeypatch):
@@ -596,7 +597,7 @@ def test_registered_page_inventory_keeps_the_screen_tool_when_preview_is_unavail
     from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
     # The built-in browser is a target; which one is the providers' business.
-    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["browser"])
     monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
@@ -634,7 +635,7 @@ def test_explicitly_disabled_surface_does_not_expose_registered_page_inventory(
     from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
     # The built-in browser is a target; which one is the providers' business.
-    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["browser"])
     monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
@@ -664,7 +665,7 @@ def test_registered_page_inventory_does_not_override_tools_off(monkeypatch):
     from openprogram.programs.tools.computer_use.computer_use import tool as screen
 
     # The built-in browser is a target; which one is the providers' business.
-    monkeypatch.setattr(screen, "available_targets", lambda: ["browser"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["browser"])
     monkeypatch.setattr(screen, "page_surface_call", lambda: {"type": "browser"})
     monkeypatch.setattr(
         webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],

@@ -1,7 +1,7 @@
 """Project files on a machine that keeps its own files (an SSH host), through its shell.
 
-A project is a folder on one machine. When that machine's shell kind keeps
-files there (``Kind.remote_files``), the Files panel reads and changes the
+A project is a folder on one machine. When that machine's shell keeps
+files there (``Shell.remote_files`` in ``host.backend``), the Files panel reads and changes the
 folder on the machine: every operation here is one shell command through
 the machine's backend (``host.machines.remote.RemoteFS``), never a look at
 this computer's disk. The same answers come back as for a local folder, so

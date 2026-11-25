@@ -488,6 +488,17 @@ def create_app(*, owner_auth=None, port: int = 18100):
                     logger.debug("ws.frame forward failed", exc_info=True)
 
             get_event_bus().subscribe(_forward, types={WS_FRAME_EVENT})
+            # Web Push to the owner's phones: a conversation that needs them,
+            # has a reply ready or stopped with an error.
+            from openprogram.interfaces.server import web_push
+
+            def _push(event):
+                try:
+                    web_push.on_frame(event.payload.get("frame") or {})
+                except Exception:
+                    logger.debug("web push hook failed", exc_info=True)
+
+            get_event_bus().subscribe(_push, types={WS_FRAME_EVENT})
         except Exception as e:  # noqa: BLE001
             _log(f"[startup] event-bus WS forwarder failed: {e}")
         try:
@@ -787,6 +798,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     app.include_router(_devices_router)
     from openprogram.interfaces.server.routes.identity.remote_access import router as _remote_access_router
     app.include_router(_remote_access_router)
+    from openprogram.interfaces.server.routes.identity.web_push import router as _web_push_router
+    app.include_router(_web_push_router)
+    from openprogram.interfaces.server.remote_machines.computer_use import router as _paired_computer_use_router
+    app.include_router(_paired_computer_use_router)
 
     # Frontend: the Next.js static export (apps/web/out/) is served by this
     # same process — mount_frontend() is called LAST below so every API
@@ -916,6 +931,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # Recording a demonstration: start, stop, narration and screenshots.
     from openprogram.interfaces.server.routes.execution import recordings as _routes_recordings
     _routes_recordings.register(app)
+
+    # The App's screenshot tool: windows to snap to, and text read off a selection.
+    from openprogram.interfaces.server.routes import screenshot as _routes_screenshot
+    _routes_screenshot.register(app)
 
     # Meetings: call audio from the App, transcribed and summarized.
     from openprogram.interfaces.server.routes.execution import meetings as _routes_meetings
@@ -1063,6 +1082,11 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         _remote_access.start_anywhere_if_configured(port, _owner_auth_state.allow_origins)
     except Exception:
         logger.warning("could not start the anywhere sidecar", exc_info=True)
+    # A revoked phone stops getting notifications with it.
+    from openprogram.interfaces.server import web_push as _web_push
+    _devices = getattr(_owner_auth_state, "devices", None)
+    if _devices is not None:
+        _web_push.set_device_check(lambda device_id: any(d.get("id") == device_id for d in _devices.list()))
 
     # No conversation is read at start-up: each is read when first asked
     # for (``_get_or_create_session``), so opening one never waits behind a

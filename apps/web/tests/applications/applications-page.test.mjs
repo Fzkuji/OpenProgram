@@ -39,7 +39,7 @@ await build({
       : a.path.includes("center-tabs-store") ? 'export const useCenterTabs={getState:()=>({openBuiltinTab:(page)=>globalThis.tabs.push(page)})};'
       : a.path.includes("use-application-launcher") ? 'export const useApplicationLauncher=()=>({launch:async(app)=>{globalThis.launched.push(app.id)},error:"",dialog:null});'
       : a.path.includes("folder-picker") ? 'export const useFolderPicker=()=>({pickFolder:async()=>"",folderPickerDialog:null});'
-      : a.path.includes("animated-icons") ? 'const Icon=()=>null; export const BoxesIcon=Icon, FolderOpenIcon=Icon, RefreshCwIcon=Icon;'
+      : a.path.includes("animated-icons") ? 'const Icon=()=>null; export const BoxesIcon=Icon, FolderOpenIcon=Icon, RefreshCwIcon=Icon, PanelLeftOpenIcon=Icon;'
       : 'export const useRouter=()=>({push(path){globalThis.pushed.push(path)}});'
     }));
   } }],

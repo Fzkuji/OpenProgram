@@ -1,7 +1,7 @@
 """The contract every target is operated through.
 
-A connection kind (``openprogram.host.machines.kinds``) opens one provider
-per target it yields on a machine. The tool, the permission rules, code mode
+What ``computer_use`` offers on a device's connection method
+(``registry.offer``) opens one provider per target it yields there. The tool, the permission rules, code mode
 and the Resources panel reach a target only through its provider: no module
 outside ``providers/`` names a target or branches on one.
 
@@ -18,8 +18,8 @@ from typing import Any, Callable, Iterable
 from openprogram.programs._host.execution import ToolReturn
 
 from . import errors
-from .locks import Locks
-from .vocabulary import Surface
+from .routing.locks import Locks
+from .actions.vocabulary import Surface
 
 Steps = list[tuple[str, dict]]
 
@@ -104,6 +104,9 @@ class Provider:
     capabilities: frozenset[str] = frozenset()
     # Whether what the provider remembers between calls belongs to the agent or to the conversation.
     state_scope: str = "agent"
+    # The whole call goes to another computer, which checks and runs it there (``forward``): this side checks
+    # no action against the vocabulary and holds no lock.
+    forwards: bool = False
 
     @property
     def device(self) -> str:
@@ -210,6 +213,16 @@ class Provider:
 
     def close(self, call: Call) -> None:
         """The agent or the conversation ended: drop what was kept for it."""
+
+    # -- forwarding (``forwards``) ----------------------------------------------
+
+    def for_app(self, app: str) -> "Provider":
+        """The same target with the browser a call names (a forwarding provider takes any)."""
+        return self
+
+    def forward(self, call_args: dict, call: Call) -> ToolReturn:
+        """Run the whole call (type, app, display, title, action, args, actions, code, timeout) elsewhere."""
+        raise NotImplementedError
 
 
 @dataclass

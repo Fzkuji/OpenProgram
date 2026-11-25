@@ -17,25 +17,6 @@
   flex-wrap: wrap;
 }
 
-.colors {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.swatch {
-  width: var(--ui-control-inline);
-  height: var(--ui-control-inline);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  padding: 0;
-}
-
-.swatch[aria-checked="true"] {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
 
 .spacer {
   flex: 1;

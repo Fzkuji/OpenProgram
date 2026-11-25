@@ -149,6 +149,7 @@
 <tr><th scope="row">Commit</th><td>Ordinary code validates model output before a transactional commit. "Saved" in natural language is not evidence.</td></tr>
 <tr><th scope="row">Retries</th><td>A request key dedupes submissions; reuse with different input is rejected. Non-idempotent external effects inspect existing records or ask the user; a network timeout never repeats execution.</td></tr>
 <tr><th scope="row">Conversations</th><td>With <code translate="no">chat</code> a window keeps ordinary conversations of its own, one per key, a draft ID adopted on its first message. The host draws the real composer over the iframe where the page asks and hides the right sidebar; the page draws messages from a feed the host posts. The page's note rides beside each message as the <code translate="no">application</code> attachment, stored on the user node. The agent works in the folder like any chat; nothing passes through the backend.</td></tr>
+<tr><th scope="row">Sending for the owner</th><td>A button of the page can send a message as the owner's (<code translate="no">chat.send</code>); it waits in the send queue behind a running reply.</td></tr>
 </tbody>
 </table>
 

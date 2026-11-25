@@ -45,7 +45,6 @@ export function EnvironmentChip() {
   const { text } = useTranslation();
   const project = useChatProject();
   const machines = useMachines((s) => s.items);
-  const kinds = useMachines((s) => s.kinds);
   const loaded = useMachines((s) => s.loaded);
   const statusBadge = useSessionStore((s) => s.statusBadge);
   const machineName = useMachineName();
@@ -77,7 +76,7 @@ export function EnvironmentChip() {
         : undefined;
 
   const connection = statusBadge.paused ? text("Paused.", "已暂停。") : "";
-  const where = env && env.id !== LOCAL_ID ? env.shell?.where ?? "" : "";
+  const where = env && env.id !== LOCAL_ID ? env.connection?.where ?? "" : "";
   const detail = [
     where,
     env
@@ -115,7 +114,7 @@ export function EnvironmentChip() {
             )}
             data-environment-chip=""
           >
-            <MachineIcon machine={env} kinds={kinds} fill style={{ color: iconColor }} />
+            <MachineIcon machine={env} fill style={{ color: iconColor }} />
             <span className="badge-short">{label}</span>
           </span>
         </PopoverTrigger>
@@ -131,7 +130,7 @@ export function EnvironmentChip() {
         <div className={MENU_PANEL}>
           <div className={GROUP_LABEL}>{text("Environment", "运行环境")}</div>
           <div className={cn(itemCls(false), "cursor-default")} aria-disabled="true">
-            <MachineIcon machine={env} kinds={kinds} fill />
+            <MachineIcon machine={env} fill />
             <span className="flex min-w-0 flex-1 items-center gap-[6px]">
               <span className="truncate">{label}</span>
               {where ? <span className="truncate text-text-muted">{where}</span> : null}

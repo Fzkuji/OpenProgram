@@ -6,6 +6,7 @@ import { type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 import { toggleVariants } from "@/components/ui/toggle"
+import { SlidingThumb } from "@/components/ui/sliding-thumb"
 
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
@@ -52,7 +53,10 @@ const ToggleGroup = React.forwardRef<
       data-orientation={orientation}
       style={{ "--gap": spacing } as React.CSSProperties}
       className={cn(
-        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-md data-vertical:flex-col data-vertical:items-stretch data-[variant=segmented]:bg-muted data-[variant=segmented]:p-0.5",
+        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-md data-vertical:flex-col data-vertical:items-stretch",
+        // `segmented`: a groove with the chosen option's face sliding in it;
+        // its corner is the face's plus the padding around it (concentric).
+        "data-[variant=segmented]:relative data-[variant=segmented]:isolate data-[variant=segmented]:gap-0 data-[variant=segmented]:rounded-groove data-[variant=segmented]:bg-groove data-[variant=segmented]:p-[3px] data-[variant=segmented]:shadow-groove data-[variant=segmented]:data-[size=sm]:rounded-lg data-[variant=segmented]:data-[size=sm]:p-0.5 data-[variant=segmented]:data-[size=xs]:rounded-md data-[variant=segmented]:data-[size=xs]:p-0.5",
         className
       )}
       {...props}
@@ -62,6 +66,9 @@ const ToggleGroup = React.forwardRef<
       >
         {children}
       </ToggleGroupContext.Provider>
+      {variant === "segmented" ? (
+        <SlidingThumb selector='[data-slot="toggle-group-item"][data-state="on"]' className={size === "xs" ? "rounded-sm" : undefined} />
+      ) : null}
     </ToggleGroupPrimitive.Root>
   )
 )

@@ -132,6 +132,7 @@
 <tr><th scope="row"><code translate="no">chat.open(key, folder)</code></th><td>需要 <code translate="no">chat</code>。打开 <code translate="no">key</code> 下的对话，一个键一段，在 <code translate="no">folder</code> 里干活；返回 <code translate="no">{session_id, project_id, folder}</code></td></tr>
 <tr><th scope="row"><code translate="no">chat.place(rect)</code></th><td>把输入框放在页面像素坐标 <code translate="no">{left, right, bottom}</code>；<code translate="no">null</code> 隐藏</td></tr>
 <tr><th scope="row"><code translate="no">chat.note(text)</code></th><td>之后每条消息旁边发给模型，最多 16,000 字符：页面正在显示什么</td></tr>
+<tr><th scope="row"><code translate="no">chat.send(text)</code></th><td>以主人的名义发出 <code translate="no">text</code>，排在正在进行的回复之后：给“帮我起草”这类按钮用</td></tr>
 <tr><th scope="row"><code translate="no">chat.reveal()</code>、<code translate="no">chat.close()</code></th><td>在聊天标签页打开这段对话；在这里关掉</td></tr>
 <tr><th scope="row"><code translate="no">on(event, listener)</code></th><td><code translate="no">"chat"</code>：打开的对话的消息、工具步骤和是否正在回复。<code translate="no">"composer"</code>：输入框高度。返回取消订阅的函数。</td></tr>
 </tbody>

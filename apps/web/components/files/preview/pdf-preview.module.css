@@ -1,9 +1,9 @@
 .reader { color: var(--text-primary); background: var(--bg-primary); font-size: var(--fs-sm); }
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); }
-.toolbar button, .sidebar button { min-height: var(--ui-button-h); padding: 4px 8px; border-radius: var(--radius-xs); background: transparent; color: inherit; border: 1px solid transparent; }
-.toolbar button:hover, .sidebar button:hover { background: var(--bg-hover); }
-.toolbar button[aria-pressed=true], .sidebar button[aria-pressed=true] { background: var(--bg-secondary); border-color: var(--border-subtle); }
-.toolbar button:disabled { opacity: .4; }
+.toolbar > button, .sidebar li button { min-height: var(--ui-button-h); padding: 4px 8px; border-radius: var(--radius-xs); background: transparent; color: inherit; border: 1px solid transparent; }
+.toolbar > button:hover, .sidebar li button:hover { background: var(--bg-hover); }
+.toolbar > button[aria-pressed=true] { background: var(--bg-secondary); border-color: var(--border-subtle); }
+.toolbar > button:disabled { opacity: .4; }
 .toolbar input { border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 4px 6px; background: var(--bg-secondary); color: inherit; }
 .divider { height: 20px; border-left: 1px solid var(--border-subtle); margin: 0 5px; }
 .search input { width: 130px; }

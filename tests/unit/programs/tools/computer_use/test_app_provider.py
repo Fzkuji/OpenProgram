@@ -8,11 +8,15 @@ import pytest
 
 from openprogram.host import machines
 from openprogram.host.machines import kinds
-from openprogram.programs.tools.computer_use.computer_use import errors, locks, registry
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.routing import locks, registry
 from openprogram.programs.tools.computer_use.computer_use import tool as entry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.desktop import backends, base, tree
-from openprogram.programs.tools.computer_use.computer_use.providers import desktop
+from openprogram.programs.tools.computer_use.computer_use.desktop import backends
+from openprogram.programs.tools.computer_use.computer_use.desktop.common import base, tree
+from openprogram.programs.tools.computer_use.computer_use.providers.window import provider as desktop
+from openprogram.programs.tools.computer_use.computer_use.providers.window import agents as window_agents
+from openprogram.programs.tools.computer_use.computer_use.providers.window import platforms as window_platforms
 
 
 class _Computer:
@@ -63,9 +67,10 @@ def computer(monkeypatch):
     fake = _Computer()
     monkeypatch.setattr(backends, "support", lambda: {"available": True, "reason": ""})
     monkeypatch.setattr(backends, "backend", lambda: fake)
-    monkeypatch.setattr(desktop, "_missing_grants", lambda system: [])
-    for name in ("_acted", "_seen", "_rule_names"):
-        monkeypatch.setattr(desktop, name, {})
+    monkeypatch.setattr(window_platforms, "_missing_grants", lambda system: [])
+    for name in ("_acted", "_seen"):
+        monkeypatch.setattr(window_agents, name, {})
+    monkeypatch.setattr(desktop, "_rule_names", {})
     return fake
 
 
@@ -77,22 +82,15 @@ def _call(agent: str = "agent", images: bool = True) -> Call:
     return Call(conversation="conv", agent=agent, images=images)
 
 
-# ----------------------------------------------------------------- the kind
+# ----------------------------------------------------------------- the opener
 
-def test_this_computers_window_is_the_desktop_kind_and_yields_window(computer):
-    kind = kinds.get("window", "desktop")
-    assert kind is not None and kind.local_only and kind.connection == "window"
-    assert machines.local_machine({}).kind("window") is kind
-    # The same kind serves this computer's screen, which it has only with the whole screen on.
-    assert kinds.get("screen", "desktop") is desktop.SCREEN_KIND and machines.local_machine({}).screen is None
-    found = kind.open(machines.local_machine({}), "conv")
+def test_this_computer_yields_its_window_target(computer):
+    kind = kinds.get("local")
+    assert kind is not None and kind.local_only and machines.local_machine({}).kind is kind
+    assert desktop.providers in registry._openers["local"]
+    found = desktop.providers(machines.local_machine({}), "conv")
     assert [provider.target for provider in found] == ["window"]
     assert found[0].family == "window" and found[0].machine == "local" and found[0].address() == 'type="window"'
-
-
-def test_the_kind_reads_in_chinese_and_this_computer_needs_no_detail():
-    assert desktop.KIND.label_zh == "本机桌面"
-    assert desktop.KIND.where({}) == ""
 
 
 def test_without_a_backend_there_is_no_window_target(monkeypatch):
@@ -108,7 +106,7 @@ def test_open_file_is_an_action_of_macos_only(computer):
 
 
 def test_a_missing_grant_keeps_the_target_listed_with_where_to_grant_it(computer, monkeypatch):
-    monkeypatch.setattr(desktop, "_missing_grants", lambda system: ["accessibility"])
+    monkeypatch.setattr(window_platforms, "_missing_grants", lambda system: ["accessibility"])
     said = _app().describe()
     assert "app names the application" in said.line
     assert said.missing == ("OpenProgram needs Accessibility (System Settings > Privacy & Security > "
@@ -165,7 +163,7 @@ def test_a_backend_that_cannot_tell_keeps_the_name_given(computer):
 
 
 def test_the_tool_reads_approval_and_rule_from_the_provider(computer, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.providers import local_screen
+    from openprogram.programs.tools.computer_use.computer_use.providers.screen import local as local_screen
     monkeypatch.setattr(local_screen, "providers", lambda machine, conversation: [])
     call = {"type": "window", "app": "Calculator", "action": "left_click", "args": {"element_index": 3}}
     assert entry.requires_approval(**call) == "computer_use controls calculator"
@@ -297,7 +295,7 @@ def test_steps_reach_the_backend_in_our_names_and_the_state_follows(computer):
 
 
 def test_the_tool_rewrites_carried_over_names_before_the_provider_sees_them(computer, monkeypatch):
-    from openprogram.programs.tools.computer_use.computer_use.providers import local_screen
+    from openprogram.programs.tools.computer_use.computer_use.providers.screen import local as local_screen
     monkeypatch.setattr(local_screen, "providers", lambda machine, conversation: [])
     result = entry.computer_use(type="window", app="Notes", action="double_click",
                                 args={"element_index": 4, "duration": 1})
@@ -487,9 +485,9 @@ def test_the_end_of_an_agent_drops_its_window_states(computer):
 
 def test_the_guide_names_only_the_families_arguments():
     import re
-    from openprogram.programs.tools.computer_use.computer_use import vocabulary
+    from openprogram.programs.tools.computer_use.computer_use.actions import vocabulary
     from pathlib import Path
-    guide = (Path(desktop.__file__).parent.parent / "guides" / "window.md").read_text(encoding="utf-8")
+    guide = (Path(desktop.__file__).parents[2] / "guides" / "window.md").read_text(encoding="utf-8")
     family = vocabulary.FAMILIES["window"]
     for action in (*vocabulary.CORE, *family.extras):
         for found in re.finditer(rf"(?<![\w.]){action}\(([^)]*)\)", guide):

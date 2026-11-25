@@ -52,6 +52,8 @@ import { useResizableRail } from "../layout/use-resizable-rail";
 import { useStableScrollEnd } from "./use-stable-scroll-end";
 import { useNavLinksReturn } from "./use-nav-links-return";
 import { UpdateBadge } from "./update-badge";
+import { isPhoneViewport } from "@/lib/layout/phone";
+import { setSidebarDrawerApi } from "@/lib/layout/sidebar-drawer";
 
 // At or below this width the expanded sidebar is a fixed overlay over the
 // page (styles/base/layout.css), so it starts collapsed and closes after navigation.
@@ -80,6 +82,20 @@ export const Sidebar = memo(function Sidebar() {
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
+  const openRef = useRef(open);
+  openRef.current = open;
+  // The phone layout's header button, scrim and edge swipe open and close
+  // the drawer from outside (lib/layout/sidebar-drawer.ts).
+  useEffect(() => {
+    setSidebarDrawerApi({
+      isOpen: () => openRef.current,
+      setOpen: (next) => {
+        setOpen(next);
+        runtimeState.sidebarOpen = next;
+      },
+    });
+    return () => setSidebarDrawerApi(null);
+  }, []);
   const {
     style: railStyle,
     shellProps: railShellProps,
@@ -182,10 +198,14 @@ export const Sidebar = memo(function Sidebar() {
   function toggleSidebar() {
     setOpen((prev) => {
       const next = !prev;
-      try {
-        localStorage.setItem("sidebarOpen", next ? "1" : "0");
-      } catch {
-        /* ignore */
+      // The phone drawer is not a choice to keep: a wider window keeps
+      // the stored one.
+      if (!isPhoneViewport()) {
+        try {
+          localStorage.setItem("sidebarOpen", next ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
       }
       runtimeState.sidebarOpen = next;
       return next;

@@ -83,7 +83,7 @@ export function WorkingDirChips() {
   // there and have no git pill here, where git cannot read them.
   const projectMachine = projectMachineId(selectedProject);
   const { pickFolder, dialogs: folderPickerDialog } = useFolderPickerOn(projectMachine);
-  const folderHere = projectFolderHere(selectedProject, useMachines((s) => s.items), useMachines((s) => s.kinds));
+  const folderHere = projectFolderHere(selectedProject, useMachines((s) => s.items));
 
   // Whole-list replace: optimistic store write, then backend persist for
   // real (non-draft) sessions.

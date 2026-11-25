@@ -132,6 +132,7 @@
 <tr><th scope="row"><code translate="no">chat.open(key, folder)</code></th><td>Needs <code translate="no">chat</code>. Opens the conversation kept under <code translate="no">key</code>, one per key, working in <code translate="no">folder</code>; returns <code translate="no">{session_id, project_id, folder}</code></td></tr>
 <tr><th scope="row"><code translate="no">chat.place(rect)</code></th><td>Puts the composer at <code translate="no">{left, right, bottom}</code> in page pixels; <code translate="no">null</code> hides it</td></tr>
 <tr><th scope="row"><code translate="no">chat.note(text)</code></th><td>Sent to the model beside each next message, up to 16,000 characters: what the page is showing</td></tr>
+<tr><th scope="row"><code translate="no">chat.send(text)</code></th><td>Sends <code translate="no">text</code> as the owner's message, after the reply that is running: for a button such as “draft this”</td></tr>
 <tr><th scope="row"><code translate="no">chat.reveal()</code>, <code translate="no">chat.close()</code></th><td>Opens the conversation in a chat tab; closes it here</td></tr>
 <tr><th scope="row"><code translate="no">on(event, listener)</code></th><td><code translate="no">"chat"</code>: the open conversation's messages, tool steps and whether a reply is running. <code translate="no">"composer"</code>: its height. Returns an unsubscribe function.</td></tr>
 </tbody>

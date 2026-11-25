@@ -1,12 +1,14 @@
-"""Which targets exist now: what each machine's connection kinds yield, this computer first."""
+"""Which targets exist now: what each device's connection method yields, this computer first."""
 from __future__ import annotations
 
 import pytest
 
 from openprogram.host import machines
-from openprogram.programs.tools.computer_use.computer_use import errors, registry
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.routing import registry
 
 from tests.support.screen_targets import PIXELS, FakeProvider, install_machines, local, machine, user_browsers
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import shots as screen_shots
 
 
 @pytest.fixture
@@ -17,10 +19,10 @@ def fleet(monkeypatch):
                           claims=lambda window: "its tabs" if window.get("app") == "Google Chrome" else "")
     lab = FakeProvider("screen", "lab", capabilities=PIXELS)
     devbox = FakeProvider("window", "devbox")
-    listed = [local(window="fake", browser="fake"),
-              machine("devbox", shell={"kind": "ssh", "target": "me@devbox"}, window="fake"),
-              machine("lab", screen="fake"),
-              machine("off", screen="fake", enabled=False)]
+    listed = [local(),
+              machine("devbox"),
+              machine("lab"),
+              machine("off", enabled=False)]
     install_machines(monkeypatch, listed, {"local": [app, browser, chrome], "devbox": [devbox], "lab": [lab],
                                   "off": [FakeProvider("screen", "off")]})
     return {"app": app, "browser": browser, "chrome": chrome, "lab": lab, "devbox": devbox}
@@ -35,25 +37,25 @@ def test_targets_are_listed_by_machine_this_computer_first(fleet):
 
 def test_the_machines_registry_puts_this_computer_first():
     found = machines.list_machines({"machines": {"items": [
-        {"id": "lab", "screen": {"kind": "osworld", "url": "http://10.0.0.2:5000"}}]}})
+        {"id": "lab", "connection": {"kind": "osworld", "url": "http://10.0.0.2:5000"}}]}})
     assert [item.id for item in found] == ["local", "lab"]
-    assert found[0].is_local and found[0].window.kind == "desktop" and found[0].browser.kind == "built_in"
-    assert found[0].screen is None
+    assert found[0].is_local and found[0].method == "local" and found[1].method == "osworld"
 
 
 @pytest.fixture
 def real_kinds(monkeypatch):
-    """The real kinds, with this computer's backends, screen driver and browser service faked; the
+    """The real openers, with this computer's backends, screen driver and browser service faked; the
     configuration is ``config``."""
     from types import SimpleNamespace
-    from openprogram.programs.tools.computer_use.computer_use.providers import (
-        built_in_browser, desktop, local_screen)
-    monkeypatch.setattr(desktop, "supported", lambda: True)
-    monkeypatch.setattr(local_screen, "_driver_for", lambda system: object)
+    from openprogram.programs.tools.computer_use.computer_use.providers.browser import built_in as built_in_browser
+    from openprogram.programs.tools.computer_use.computer_use.providers.window import platforms as window_platforms
+    monkeypatch.setattr(window_platforms, "supported", lambda: True)
+    monkeypatch.setattr(screen_shots, "_driver_for", lambda system: object)
     browser = SimpleNamespace(extension=user_browsers())
     monkeypatch.setattr(built_in_browser, "service", lambda: browser)
     config: dict = {}
     monkeypatch.setattr(machines.user_config, "read_config_value", lambda key: config.get(key))
+    monkeypatch.setattr(registry.user_config, "read_config_value", lambda key: config.get(key))
     return config
 
 
@@ -63,22 +65,31 @@ def test_this_computer_lists_windows_and_its_browser_and_the_screen_only_when_on
     assert list(registry.providers("conv")) == ["window", "screen", "browser"]
 
 
-def test_a_machine_with_only_a_screen_lists_only_its_screen(real_kinds):
-    real_kinds["machines"] = {"items": [{"id": "lab", "screen": {"kind": "osworld", "url": "http://10.0.0.2:5000"}}]}
-    rows = {row.machine.id: [provider.target for provider in row.providers] for row in registry.listing("conv")}
+def _targets(config) -> dict[str, list[str]]:
+    return {row.machine.id: [provider.target for provider in row.providers] for row in registry.listing("conv")}
+
+
+def test_computer_use_decides_what_each_connection_method_offers(real_kinds):
+    """osworld gives the VM's screen; openprogram the other computer's window, screen and browser; ssh and
+    docker run commands only, so they offer computer_use nothing."""
+    real_kinds["machines"] = {"items": [
+        {"id": "lab", "connection": {"kind": "osworld", "url": "http://10.0.0.2:5000"}},
+        {"id": "studio", "name": "Studio", "connection": {"kind": "openprogram", "url": "http://10.0.0.9:18100"}},
+        {"id": "devbox", "connection": {"kind": "ssh", "target": "me@devbox"}},
+        {"id": "box", "connection": {"kind": "docker"}}]}
+    rows = _targets(real_kinds)
     assert rows["lab"] == ["lab screen"]
+    assert rows["studio"] == ["studio window", "studio screen", "studio browser"]
+    assert rows["devbox"] == [] and rows["box"] == []
 
 
-def test_a_window_connection_cannot_be_a_pixels_only_kind():
-    message = ("Refused: the OSWorld server (osworld) cannot be a window connection; it serves screen only.")
-    with pytest.raises(machines.KindError) as caught:
-        machines.kinds.validated("window", {"kind": "osworld", "url": "http://10.0.0.2:5000"})
-    assert str(caught.value) == message
-    # The machine is refused with the same sentence, before anything is stored or reached.
-    with pytest.raises(machines.MachineError) as refused:
-        machines._normalize_payload({"id": "lab", "window": {"kind": "osworld", "url": "http://10.0.0.2:5000"}},
-                                    {}, {})
-    assert str(refused.value) == message
+def test_a_paired_device_takes_any_browser_and_forwards_it(real_kinds):
+    real_kinds["machines"] = {"items": [
+        {"id": "studio", "connection": {"kind": "openprogram", "url": "http://10.0.0.9:18100"}}]}
+    found = registry.resolve({"device": "studio", "type": "browser", "app": "Google Chrome"})
+    assert found.forwards and found.machine == "studio" and found.app == "chrome"
+    assert found.target == "studio browser chrome"
+    assert registry.resolve({"device": "studio", "type": "window", "app": "Safari"}).app == ""
 
 
 def test_a_switched_off_machine_yields_nothing(fleet):
@@ -87,7 +98,7 @@ def test_a_switched_off_machine_yields_nothing(fleet):
 
 
 def test_a_kind_that_fails_to_open_leaves_the_others(monkeypatch):
-    listed = [local(window="fake"), machine("broken", screen="fake"), machine("lab", screen="fake")]
+    listed = [local(), machine("broken"), machine("lab")]
     install_machines(monkeypatch, listed, {"local": [FakeProvider("window")],
                                   "lab": [FakeProvider("screen", "lab")]}, failing=("broken",))
     assert list(registry.providers()) == ["window", "lab screen"]
@@ -95,7 +106,7 @@ def test_a_kind_that_fails_to_open_leaves_the_others(monkeypatch):
 
 
 def test_a_connection_whose_kind_is_not_loaded_yields_nothing(monkeypatch):
-    install_machines(monkeypatch, [local(window="fake"), machine("vnc-box", screen="no_such_kind")],
+    install_machines(monkeypatch, [local(), machine("vnc-box", "vnc-box", "no_such_kind")],
             {"local": [FakeProvider("window")]})
     assert list(registry.providers()) == ["window"]
 
@@ -161,7 +172,7 @@ def test_a_browser_is_named_in_lower_case_whatever_the_model_writes(written, mea
 def test_a_call_to_safari_resolves_to_the_safari_target(fleet, monkeypatch):
     from tests.support.screen_targets import FakeProvider
     safari = FakeProvider("browser", app="safari")
-    install_machines(monkeypatch, [local(browser="fake")], {"local": [safari]})
+    install_machines(monkeypatch, [local()], {"local": [safari]})
     assert registry.resolve({"type": "browser", "app": "Safari"}) is safari
 
 
@@ -190,7 +201,7 @@ def test_a_generic_word_is_never_sent_to_a_target_that_reads_it_as_something_els
     # A browser reads open and close as its tabs; on a window they mean an application or a window.
     app = FakeProvider("window", extras=("open_file",))
     browser = FakeProvider("browser", extras=("create_tab", "close_tab", "navigate", "back"))
-    install_machines(monkeypatch, [local(window="fake", browser="fake")], {"local": [app, browser]})
+    install_machines(monkeypatch, [local()], {"local": [app, browser]})
     elsewhere = registry.elsewhere(app)
     assert elsewhere("open") == [] and elsewhere("close") == []
     assert elsewhere("new_tab") == ['type="browser"'] and elsewhere("go_back") == ['type="browser"']
@@ -209,7 +220,7 @@ def test_a_claim_is_asked_for_the_conversation(monkeypatch):
             asked.append(conversation)
             return "its tabs"
 
-    install_machines(monkeypatch, [local(browser="fake")], {"local": [Chrome("browser", app="chrome")]})
+    install_machines(monkeypatch, [local()], {"local": [Chrome("browser", app="chrome")]})
     assert registry.claim({"app": "Google Chrome"}, "c1") == ('type="browser", app="chrome"', "its tabs")
     assert asked == ["c1"]
 
@@ -218,5 +229,5 @@ def test_a_claim_that_fails_claims_nothing(monkeypatch):
     def broken(window):
         raise RuntimeError("no")
 
-    install_machines(monkeypatch, [local(browser="fake")], {"local": [FakeProvider("browser", app="chrome", claims=broken)]})
+    install_machines(monkeypatch, [local()], {"local": [FakeProvider("browser", app="chrome", claims=broken)]})
     assert registry.claim({"app": "Google Chrome"}) is None

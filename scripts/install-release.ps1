@@ -17,7 +17,7 @@ if (Test-Path -LiteralPath $CheckoutInstaller -PathType Leaf) {
 }
 
 if (-not $Version) {
-    throw "No OpenProgram version was given. Set OPENPROGRAM_VERSION to a release number such as 1.2.3 and run this again, or use the short install command, which finds the latest release: irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex"
+    throw "No OpenProgram version was given. Set OPENPROGRAM_VERSION to a release number such as 1.2.3 and run this again, or use the short install command, which finds the latest release: irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex"
 }
 $Curl = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
 if (-not $Curl) {

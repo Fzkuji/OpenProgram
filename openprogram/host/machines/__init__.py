@@ -1,44 +1,47 @@
-"""Machines: the computers OpenProgram reaches, and the one a conversation runs on.
+"""Machines: the devices OpenProgram reaches, and the one a conversation runs on.
 
-A machine is a computer with its own operating system: this computer, an
-SSH host, a Docker machine, a virtual machine, a phone. It has up to four
-connections (``openprogram.host.machines.kinds``), each giving one kind of
-target: ``shell`` runs commands and reads files, ``window`` operates
-application windows (type ``window``), ``screen`` operates the whole display
-(type ``screen``), ``browser`` is a browser OpenProgram runs there
-(type ``browser``). A fifth, ``openprogram``, is another computer's own
-OpenProgram (``peer``): its conversations are listed beside this computer's
-and forwarded there, never copied. One kind may serve several connections; two
-connections of one machine with the same kind and address share one client.
+A device is a computer with its own operating system: this computer, an
+SSH host, a Docker machine, a virtual machine, another computer's own
+OpenProgram. It is an id, a name, a switch, and exactly one connection:
+how it is reached. The connection's kind is its connection method
+(``openprogram.host.machines.kinds``): ``local``, ``ssh``, ``docker``,
+``openprogram`` or ``osworld``.
 
-This computer is built in as ``local`` and never stored. Its connections
-are ``shell: local``, ``window: desktop`` and ``browser: built_in``; it has
-a ``screen`` connection (``desktop``) only while ``computer_use.whole_screen``
-is on, which it is not by default. Users add more in ``config.json``::
+The device layer knows nothing about what can be done once connected. Each
+feature decides that from the method: commands and files
+(``openprogram.host.backend``) run through ``local``, ``ssh`` and
+``docker``; ``computer_use`` operates this computer's windows, screen and
+browsers through ``local``, a virtual machine's screen through ``osworld``
+and another computer through ``openprogram``; another computer's
+conversations are listed here and forwarded there through ``openprogram``
+(``peer``).
+
+This computer is built in as ``local``, reached by the method ``local``,
+and never stored. Users add more in ``config.json``::
 
     "machines": {
-      "local": {"window": {"kind": "desktop"}, "browser": {"kind": "built_in"}},
       "items": [
         {"id": "devbox", "name": "Dev box",
-         "shell": {"kind": "ssh", "target": "me@devbox", "workdir": "/srv/app"}},
+         "connection": {"kind": "ssh", "target": "me@devbox", "workdir": "/srv/app"}},
         {"id": "ubuntu", "name": "Ubuntu",
-         "shell": {"kind": "docker", "image": "ubuntu:24.04"}},
+         "connection": {"kind": "docker", "image": "ubuntu:24.04"}},
         {"id": "lab", "name": "Lab VM",
-         "screen": {"kind": "osworld", "url": "http://192.168.64.2:5000"}}
+         "connection": {"kind": "osworld", "url": "http://192.168.64.2:5000"}}
       ]
     }
 
 Two bindings sit on this one registry and stay apart:
 
 * The **environment** is a role: the machine a conversation's commands and
-  file tools run on. It needs a shell. The conversation's project decides
-  it: a project is a folder on one machine (``machine_id`` on the project
-  record), and every conversation in it runs on that machine, in that
-  folder. The home project is always this computer. A project whose machine
-  was removed, switched off or has no shell is refused, never replaced by
-  this computer.
-* The **targets** of ``computer_use`` are listed per turn and chosen
-  per call, from every machine's window, screen and browser connections. Being the
+  file tools run on. It needs a method the shell feature runs commands
+  through. The conversation's project decides it: a project is a folder on
+  one machine (``machine_id`` on the project record), and every
+  conversation in it runs on that machine, in that folder. The home
+  project is always this computer. A project whose machine was removed,
+  switched off or cannot run commands is refused, never replaced by this
+  computer.
+* The **targets** of ``computer_use`` are listed per turn and chosen per
+  call, from what ``computer_use`` offers on each device. Being the
   environment never makes a machine the default target.
 
 Channels are a third axis: a channel decides where a conversation's messages
@@ -60,7 +63,7 @@ from typing import Any, Callable, Optional
 from urllib.parse import urlsplit
 
 from openprogram.host.machines import here, kinds
-from openprogram.host.machines.kinds import CONNECTIONS, Kind, KindError
+from openprogram.host.machines.kinds import Kind, KindError
 from openprogram.state import config as user_config
 
 
@@ -68,16 +71,9 @@ _log = logging.getLogger(__name__)
 
 LOCAL_ID = "local"
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
-# What this computer's connections are when the configuration names none; its screen only while
-# ``computer_use.whole_screen`` is on.
-_LOCAL_KINDS = {"shell": "local", "window": "desktop", "screen": "desktop", "browser": "built_in"}
-# The connections whose kind may be replaced on this computer, and those that reach an address another
-# machine may not share.
-_LOCAL_EDITABLE = ("window", "screen", "browser")
-_ADDRESSED = ("window", "screen")
 # What a stored secret leaves in the configuration file.
 SECRET_MARKER = {"secret": True}
-# What ``Machine.public`` adds to each connection for display; never stored.
+# What ``Machine.public`` adds to the connection for display; never stored.
 _DISPLAY_KEYS = ("label", "label_zh", "where", "known")
 _DEFAULT_PORTS = {"http": 80, "https": 443, "vnc": 5900, "ssh": 22}
 
@@ -103,49 +99,50 @@ class Connection:
 class Machine:
     id: str
     name: str
+    # How it is reached; its kind is the connection method.
+    connection: Optional[Connection] = None
     enabled: bool = True
-    shell: Optional[Connection] = None
-    window: Optional[Connection] = None
-    screen: Optional[Connection] = None
-    browser: Optional[Connection] = None
-    # Another computer's OpenProgram (``peer``): its conversations are listed here and forwarded there.
-    openprogram: Optional[Connection] = None
     # Found without configuration (a booted simulator), never stored.
     discovered: bool = False
 
-    def connection(self, name: str) -> Optional[Connection]:
-        return getattr(self, name) if name in CONNECTIONS else None
+    @property
+    def method(self) -> str:
+        """The connection method's name: ``local``, ``ssh``, ``docker``, ``openprogram``, ``osworld``."""
+        return self.connection.kind if self.connection is not None else ""
 
-    def kind(self, name: str) -> Optional[Kind]:
-        """The registered kind of one connection, or None when it has none or the kind is not loaded."""
-        connection = self.connection(name)
-        return kinds.get(name, connection.kind) if connection is not None else None
+    @property
+    def kind(self) -> Optional[Kind]:
+        """The registered connection method, or None when this installation does not have it loaded."""
+        return kinds.get(self.method) if self.connection is not None else None
 
     @property
     def is_local(self) -> bool:
         """This computer, where the worker and the App run."""
         return self.id == LOCAL_ID
 
+    # The shell feature's answers for this device. ``openprogram.host.backend`` owns which methods run
+    # commands and how; these only ask it.
+
     @property
     def has_shell(self) -> bool:
-        return self.shell is not None
+        return _shell(self) is not None
 
     @property
     def remote_shell(self) -> bool:
         """Commands run somewhere other than this computer's own shell."""
-        return self.shell is not None and not self.is_local
+        return self.has_shell and not self.is_local
 
     @property
     def remote_files(self) -> bool:
         """File tools must go through the shell, not this computer's disk."""
-        kind = self.kind("shell")
-        return bool(kind and kind.remote_files)
+        shell = _shell(self)
+        return bool(shell and shell.remote_files)
 
     @property
     def instance_scope(self) -> str:
         """``machine`` when there is one of it, ``conversation`` when each conversation gets its own."""
-        kind = self.kind("shell")
-        return kind.instance_scope if kind else "machine"
+        shell = _shell(self)
+        return shell.instance_scope if shell else "machine"
 
     def instance(self, conversation: Optional[str] = None) -> str:
         """The key of the instance a conversation uses: what state and locks are kept under."""
@@ -153,40 +150,43 @@ class Machine:
             return f"{self.id}/{conversation}"
         return self.id
 
-    def where(self, name: str) -> str:
-        """The detail that tells one connection of a kind from another ("me@devbox", an image), or "".
+    def where(self) -> str:
+        """The detail that tells this connection from another of its method ("me@devbox", an image), or "".
 
-        It is the same in every language; a reader puts it after the kind's label.
+        It is the same in every language; a reader puts it after the method's label.
         """
-        connection, kind = self.connection(name), self.kind(name)
-        if connection is None or kind is None or kind.where is None:
+        kind = self.kind
+        if self.connection is None or kind is None or kind.where is None:
             return ""
-        return str(kind.where(dict(connection.settings)) or "")
+        return str(kind.where(dict(self.connection.settings)) or "")
 
-    def describe(self, name: str) -> str:
-        """One connection in English, for the model and the command line: "SSH host me@devbox"."""
-        connection, kind = self.connection(name), self.kind(name)
-        if connection is None:
+    def describe(self) -> str:
+        """The connection in English, for the model and the command line: "SSH host me@devbox"."""
+        if self.connection is None:
             return ""
-        return " ".join(part for part in (kind.label if kind else connection.kind, self.where(name)) if part)
+        kind = self.kind
+        return " ".join(part for part in (kind.label if kind else self.connection.kind, self.where()) if part)
 
     def public(self) -> dict[str, Any]:
         """The machine as clients read it: secrets stay markers."""
         data: dict[str, Any] = {"id": self.id, "name": self.name, "enabled": self.enabled}
-        for name in CONNECTIONS:
-            connection, kind = self.connection(name), self.kind(name)
-            if connection is None:
-                continue
-            raw = connection.raw()
+        if self.connection is not None:
+            kind = self.kind
+            raw = self.connection.raw()
             for key in (kind.secrets() if kind is not None else ()):
                 if key in raw:
                     raw[key] = dict(SECRET_MARKER)
-            data[name] = {**raw, "label": kind.label if kind else connection.kind,
-                          "label_zh": (kind.label_zh or kind.label) if kind else connection.kind,
-                          "where": self.where(name), "known": kind is not None}
+            data["connection"] = {**raw, "label": kind.label if kind else self.connection.kind,
+                                  "label_zh": (kind.label_zh or kind.label) if kind else self.connection.kind,
+                                  "where": self.where(), "known": kind is not None}
         if self.discovered:
             data["discovered"] = True
         return data
+
+
+def _shell(machine: Machine):
+    from openprogram.host.backend import shell_for
+    return shell_for(machine)
 
 
 # ---- configuration -----------------------------------------------------------
@@ -198,7 +198,7 @@ def _section(cfg: Optional[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _connection(raw: Any) -> Optional[Connection]:
-    """A stored connection, kept as written: an unknown kind is carried, never dropped."""
+    """A stored connection, kept as written: an unknown method is carried, never dropped."""
     if not isinstance(raw, dict):
         return None
     kind = str(raw.get("kind") or "").strip().lower()
@@ -207,37 +207,8 @@ def _connection(raw: Any) -> Optional[Connection]:
     return Connection(kind, {key: value for key, value in raw.items() if key != "kind"})
 
 
-def _keeps_local_targets(name: str, kind_name: str) -> bool:
-    """A kind this computer's window, screen or browser may be: one that is this computer's own, so its window,
-    screen and browser are reached without a device. Any other kind would give this computer a second name."""
-    kind = kinds.get(name, kind_name)
-    return bool(kind and kind.local_only)
-
-
-def whole_screen(cfg: Optional[dict[str, Any]] = None) -> bool:
-    """Whether the owner turned this computer's whole screen on (``computer_use.whole_screen``); off by default.
-
-    Off, this computer has no screen connection, so the target ``screen`` is neither listed nor callable:
-    an ordinary task needs one application, not the whole screen.
-    """
-    try:
-        settings = user_config.read_config_value("computer_use") if cfg is None else cfg.get("computer_use")
-    except Exception:
-        return False
-    return isinstance(settings, dict) and settings.get("whole_screen") is True
-
-
-def _local(section: dict[str, Any], screen_on: bool) -> Machine:
-    raw = section.get("local") if isinstance(section.get("local"), dict) else {}
-    connections = {}
-    for name, default in _LOCAL_KINDS.items():
-        if name == "screen" and not screen_on:
-            continue
-        connection = _connection(raw.get(name)) if name != "shell" else None
-        if connection is not None and not _keeps_local_targets(name, connection.kind):
-            connection = None
-        connections[name] = connection or Connection(default)
-    return Machine(LOCAL_ID, "This computer", **connections)
+def _local() -> Machine:
+    return Machine(LOCAL_ID, "This computer", Connection("local"))
 
 
 def _from_item(raw: Any) -> Optional[Machine]:
@@ -246,17 +217,17 @@ def _from_item(raw: Any) -> Optional[Machine]:
     machine_id = str(raw.get("id") or "").strip()
     if not _ID_RE.match(machine_id) or machine_id == LOCAL_ID:
         return None
-    connections = {name: _connection(raw.get(name)) for name in CONNECTIONS}
-    if not any(connections.values()):
+    connection = _connection(raw.get("connection"))
+    if connection is None:
         return None
-    return Machine(machine_id, str(raw.get("name") or machine_id).strip() or machine_id,
-                   enabled=raw.get("enabled") is not False, **connections)
+    return Machine(machine_id, str(raw.get("name") or machine_id).strip() or machine_id, connection,
+                   enabled=raw.get("enabled") is not False)
 
 
 def list_machines(cfg: Optional[dict[str, Any]] = None) -> list[Machine]:
     """This computer first, then the configured machines in their order, switched-off ones included."""
     section = _section(cfg)
-    items: list[Machine] = [_local(section, whole_screen(cfg))]
+    items: list[Machine] = [_local()]
     seen = {LOCAL_ID}
     for raw in section.get("items") or []:
         machine = _from_item(raw)
@@ -276,13 +247,13 @@ def get_machine(machine_id: Optional[str], cfg: Optional[dict[str, Any]] = None)
 
 
 def local_machine(cfg: Optional[dict[str, Any]] = None) -> Machine:
-    return _local(_section(cfg), whole_screen(cfg))
+    return _local()
 
 
 def discovered_machines(cfg: Optional[dict[str, Any]] = None) -> list[Machine]:
-    """Machines the kinds find without configuration (a booted simulator), never stored.
+    """Machines the methods find without configuration (a booted simulator), never stored.
 
-    A kind's ``discover()`` may cost a process or two, so this is asked
+    A method's ``discover()`` may cost a process or two, so this is asked
     where a list is built for a person or a turn, not on every tool call.
     A discovered machine whose id a configured one already uses is left out.
     """
@@ -294,7 +265,7 @@ def discovered_machines(cfg: Optional[dict[str, Any]] = None) -> list[Machine]:
         try:
             machines = list(kind.discover())
         except Exception:
-            _log.warning("discovery by the %s kind %s failed", kind.connection, kind.name, exc_info=True)
+            _log.warning("discovery by the method %s failed", kind.name, exc_info=True)
             continue
         for machine in machines:
             if machine.id in taken:
@@ -305,8 +276,8 @@ def discovered_machines(cfg: Optional[dict[str, Any]] = None) -> list[Machine]:
 
 
 def usable_as_environment(machine: Optional[Machine]) -> bool:
-    """A conversation can run on it: it is switched on and has a shell whose kind is loaded."""
-    return bool(machine and machine.enabled and machine.has_shell and machine.kind("shell") is not None)
+    """A conversation can run on it: it is switched on and the shell feature runs commands through its method."""
+    return bool(machine and machine.enabled and machine.has_shell)
 
 
 def list_environments(cfg: Optional[dict[str, Any]] = None) -> list[Machine]:
@@ -347,9 +318,9 @@ def _write_secrets(machine_id: str, values: dict[str, str]) -> None:
     _private_atomic_write(path, lambda handle: handle.write(data), root=path.parent)
 
 
-def secret(machine: Machine, connection: str, key: str) -> str:
-    """A secret setting of one connection, read from the state directory's ``auth/machines``."""
-    return str(_read_secrets(machine.id).get(f"{connection}.{key}") or "")
+def secret(machine: Machine, key: str) -> str:
+    """A secret setting of the machine's connection, read from the state directory's ``auth/machines``."""
+    return str(_read_secrets(machine.id).get(key) or "")
 
 
 # ---- changes -------------------------------------------------------------------
@@ -363,44 +334,44 @@ def _stored_item(machine_id: str) -> dict[str, Any]:
     return {}
 
 
-def _normalize_connection(name: str, raw: dict[str, Any], stored: Any,
+def _normalize_connection(raw: dict[str, Any], stored: Any,
                           held: dict[str, str]) -> tuple[dict[str, Any], dict[str, str]]:
-    """One connection to store, and its secrets, from what a client sent.
+    """The connection to store, and its secrets, from what a client sent.
 
     A secret setting left out or sent back as the marker keeps the stored
-    value. A connection whose kind this process does not have loaded is
+    value. A connection whose method this process does not have loaded is
     kept exactly as stored when the client sends it back unchanged, so a
-    process that knows fewer kinds never rewrites what another wrote.
+    process that knows fewer methods never rewrites what another wrote.
     """
     kind_name = str(raw.get("kind") or "").strip().lower()
-    kind = kinds.get(name, kind_name)
+    kind = kinds.get(kind_name)
     # A client may send back what ``Machine.public`` added for display.
     own = set((kind.settings.get("properties") or {}) if kind is not None else ())
     raw = {key: value for key, value in raw.items() if key not in _DISPLAY_KEYS or key in own}
     if kind is None and isinstance(stored, dict) and str(stored.get("kind") or "").lower() == kind_name:
-        unchanged = {key: value for key, value in raw.items() if value != SECRET_MARKER} ==             {key: value for key, value in stored.items() if value != SECRET_MARKER}
+        unchanged = {key: value for key, value in raw.items() if value != SECRET_MARKER} == \
+            {key: value for key, value in stored.items() if value != SECRET_MARKER}
         if unchanged:
-            kept = {key: value for key, value in held.items() if key.startswith(f"{name}.")}
-            return dict(stored), kept
+            return dict(stored), dict(held)
     if kind is not None and kind.local_only:
-        raise MachineError(f"{kind.label} is this computer's own {name}; another machine cannot use it")
+        raise MachineError(f"{kind.label} is how this computer is reached; another machine cannot use it")
     hidden = kind.secrets() if kind is not None else ()
     full = {key: value for key, value in raw.items() if key not in hidden}
     for key in hidden:
         value = raw.get(key)
         if isinstance(value, str) and value:
             full[key] = value
-        elif value in (None, "", SECRET_MARKER) and held.get(f"{name}.{key}"):
-            full[key] = held[f"{name}.{key}"]
+        elif value in (None, "", SECRET_MARKER) and held.get(key):
+            full[key] = held[key]
     try:
-        stored_now = kinds.validated(name, full)
+        stored_now = kinds.validated(full)
     except KindError as exc:
         raise MachineError(str(exc)) from None
     secrets: dict[str, str] = {}
     for key in hidden:
         value = stored_now.get(key)
         if isinstance(value, str) and value:
-            secrets[f"{name}.{key}"] = value
+            secrets[key] = value
             stored_now[key] = dict(SECRET_MARKER)
     return stored_now, secrets
 
@@ -416,17 +387,12 @@ def _normalize_payload(payload: dict[str, Any], held: dict[str, str],
     item: dict[str, Any] = {"id": machine_id, "name": str(payload.get("name") or "").strip() or machine_id}
     if payload.get("enabled") is False:
         item["enabled"] = False
-    secrets: dict[str, str] = {}
-    for name in CONNECTIONS:
-        raw = payload.get(name)
-        if raw in (None, "", {}):
-            continue
-        if not isinstance(raw, dict):
-            raise MachineError(f"{name} must be an object with a kind")
-        item[name], found = _normalize_connection(name, raw, stored.get(name), held)
-        secrets.update(found)
-    if not any(name in item for name in CONNECTIONS):
-        raise MachineError("a machine needs at least one connection: shell, window, screen, browser or openprogram")
+    raw = payload.get("connection")
+    if raw in (None, "", {}):
+        raise MachineError("a machine needs a connection: how it is reached (ssh, docker, osworld, ...)")
+    if not isinstance(raw, dict):
+        raise MachineError("connection must be an object with a kind")
+    item["connection"], secrets = _normalize_connection(raw, stored.get("connection"), held)
     return item, secrets
 
 
@@ -468,58 +434,46 @@ def _normal_address(address: Any) -> str:
     return f"{host}:{port}" if port is not None else host
 
 
-def connection_address(machine: Machine, name: str) -> str:
-    """Where one connection of a machine reaches, as its kind says, normalized; "" when it does not say."""
-    connection, kind = machine.connection(name), machine.kind(name)
-    if connection is None or kind is None or kind.address is None:
+def connection_address(machine: Machine) -> str:
+    """The screen a machine's connection reaches, as its method says, normalized; "" when it does not say."""
+    kind = machine.kind
+    if machine.connection is None or kind is None or kind.address is None:
         return ""
     try:
-        return _normal_address(kind.address(dict(connection.settings)))
+        return _normal_address(kind.address(dict(machine.connection.settings)))
     except Exception:
         return ""
 
 
-def screen_address(machine: Machine) -> str:
-    """Where a machine's screen connection reaches, normalized; "" when it does not say."""
-    return connection_address(machine, "screen")
-
-
 def _refuse_shared_screen(machine_id: str, item: dict[str, Any]) -> None:
-    """Two machines may not share one window or screen address: they would be one screen with two names.
-
-    The window and the screen connection of one machine may share an address: one server serving both.
-    """
-    for name in _ADDRESSED:
-        raw = item.get(name)
-        if not isinstance(raw, dict):
-            continue
-        kind = kinds.get(name, str(raw.get("kind") or ""))
-        if kind is None or kind.address is None:
-            continue
-        address = _normal_address(kind.address({key: value for key, value in raw.items() if key != "kind"}))
-        if not address:
-            continue
-        for other in list_machines():
-            if other.id != machine_id and address in {connection_address(other, own) for own in _ADDRESSED}:
-                whose = "this computer" if other.is_local else f"machine {other.id!r}"
-                raise MachineError(f"Refused: {whose} already has the screen address {address}, and two "
-                                   "machines may not share one screen address.")
+    """Two machines may not share one screen address: they would be one screen with two names."""
+    raw = item.get("connection")
+    if not isinstance(raw, dict):
+        return
+    kind = kinds.get(str(raw.get("kind") or ""))
+    if kind is None or kind.address is None:
+        return
+    address = _normal_address(kind.address({key: value for key, value in raw.items() if key != "kind"}))
+    if not address:
+        return
+    for other in list_machines():
+        if other.id != machine_id and address == connection_address(other):
+            raise MachineError(f"Refused: machine {other.id!r} already has the screen address {address}, and two "
+                               "machines may not share one screen address.")
 
 
 def _admit(item: dict[str, Any], secrets: dict[str, str]) -> None:
-    """Ask each connection's kind whether it reaches this computer, which is built in and never added again."""
-    for name in CONNECTIONS:
-        raw = item.get(name)
-        kind = kinds.get(name, str(raw.get("kind") or "")) if isinstance(raw, dict) else None
-        if kind is None or kind.admit is None:
-            continue
-        settings = {key: value for key, value in raw.items() if key != "kind" and value != SECRET_MARKER}
-        settings.update({key.split(".", 1)[1]: value for key, value in secrets.items()
-                         if key.startswith(f"{name}.")})
-        try:
-            kind.admit(settings)
-        except KindError as exc:
-            raise MachineError(str(exc)) from None
+    """Ask the connection's method whether it reaches this computer, which is built in and never added again."""
+    raw = item.get("connection")
+    kind = kinds.get(str(raw.get("kind") or "")) if isinstance(raw, dict) else None
+    if kind is None or kind.admit is None:
+        return
+    settings = {key: value for key, value in raw.items() if key != "kind" and value != SECRET_MARKER}
+    settings.update(secrets)
+    try:
+        kind.admit(settings)
+    except KindError as exc:
+        raise MachineError(str(exc)) from None
 
 
 def save_machine(payload: dict[str, Any]) -> Machine:
@@ -587,7 +541,7 @@ def delete_machine(machine_id: str, *, wait: bool = False) -> None:
 
 
 def set_enabled(machine_id: str, enabled: bool, *, wait: bool = False) -> Machine:
-    """Switch a machine on or off. Off, it yields no targets and no conversation starts on it; its
+    """Switch a machine on or off. Off, no feature uses it and no conversation starts on it; its
     instances go, in the background unless ``wait``."""
     if machine_id == LOCAL_ID:
         raise MachineError("this computer cannot be switched off")
@@ -624,7 +578,7 @@ RELEASE_WAIT = 300.0
 
 
 def remove_instances(*, machine: Optional[str] = None, conversation: Optional[str] = None) -> None:
-    """Release what a machine or a conversation holds, then remove its instances of shell kinds scoped to
+    """Release what a machine or a conversation holds, then remove the shell feature's instances scoped to
     the conversation, by their labels.
 
     Asked when a conversation is deleted, and when a machine is deleted or
@@ -640,28 +594,28 @@ def remove_instances(*, machine: Optional[str] = None, conversation: Optional[st
             release(machine=machine, conversation=conversation)
         except Exception:
             _log.warning("releasing %s failed", machine or conversation, exc_info=True)
+    from openprogram.host.backend import SHELLS, wait_idle
     if machine:
         # Commands already running on it finish first; ``current_environment`` refuses new ones meanwhile.
-        from openprogram.host.backend import wait_idle
         if not wait_idle(machine, RELEASE_WAIT):
             _log.warning("commands on machine %s still ran after %.0f s; its instances are removed anyway",
                          machine, RELEASE_WAIT)
         if _back(machine):
             # Switched on or added again while its commands finished: what runs now on it is in use.
             return
-        shell_kinds = kinds.all_kinds("shell")
+        methods = list(SHELLS)
     else:
         # A conversation has instances only on a machine configured now (a machine's removal took its
         # own): no ``docker ps`` per conversation for someone without a Docker machine.
-        used = {m.shell.kind for m in list_machines() if m.shell is not None}
-        shell_kinds = [kind for kind in kinds.all_kinds("shell") if kind.name in used]
-    for kind in shell_kinds:
-        if kind.remove_instances is None:
+        methods = sorted({m.method for m in list_machines() if m.method in SHELLS})
+    for method in methods:
+        remove = SHELLS[method].remove_instances
+        if remove is None:
             continue
         try:
-            kind.remove_instances(machine, conversation)
+            remove(machine, conversation)
         except Exception:
-            _log.warning("removing the %s instances of %s failed", kind.name, machine or conversation,
+            _log.warning("removing the %s instances of %s failed", method, machine or conversation,
                          exc_info=True)
 
 
@@ -677,52 +631,12 @@ def _remove_instances_later(machine_id: str) -> None:
                      name=f"remove-instances-{machine_id}", daemon=True).start()
 
 
-def set_local_connection(name: str, raw: Optional[dict[str, Any]]) -> Machine:
-    """Replace this computer's window, screen or browser connection (``None`` puts the built-in one back).
-
-    Only a kind that is this computer's own is accepted, so its window, screen and browser
-    are reached without a device; any other kind is a machine of
-    its own. The screen connection is used only while ``computer_use.whole_screen`` is on.
-    """
-    if name not in _LOCAL_EDITABLE:
-        raise MachineError("this computer's shell cannot be replaced")
-    stored = None
-    if raw:
-        try:
-            stored = kinds.validated(name, raw)
-        except KindError as exc:
-            raise MachineError(str(exc)) from None
-        if not _keeps_local_targets(name, stored["kind"]):
-            kind = kinds.get(name, stored["kind"])
-            raise MachineError(f"Refused: this computer's {name} can only be its own; add the "
-                               f"{kind.label if kind else stored['kind']} as a machine of its own.")
-        if stored == {"kind": _LOCAL_KINDS[name]}:
-            # The built-in one, as it is when nothing is stored.
-            stored = None
-        elif name in _ADDRESSED:
-            _refuse_shared_screen(LOCAL_ID, {name: stored})
-
-    def mutate(cfg: dict[str, Any]) -> None:
-        section = _writable(cfg)
-        local = section.get("local") if isinstance(section.get("local"), dict) else {}
-        if stored is None:
-            local.pop(name, None)
-        else:
-            local[name] = stored
-        if local:
-            section["local"] = local
-        else:
-            section.pop("local", None)
-
-    return local_machine(user_config.update_config(mutate))
-
-
 def _not_an_environment(machine: Machine) -> str:
     if not machine.enabled:
         return f"machine {machine.id!r} is switched off"
-    if not machine.has_shell:
-        return f"machine {machine.id!r} has no shell, so no conversation can run on it"
-    return f"machine {machine.id!r} uses a shell kind this installation does not have ({machine.shell.kind})"
+    if machine.kind is None:
+        return f"machine {machine.id!r} uses a connection method this installation does not have ({machine.method})"
+    return f"machine {machine.id!r} is reached through {machine.kind.label}, which runs no commands"
 
 
 # ---- projects --------------------------------------------------------------
@@ -752,7 +666,7 @@ def resolve_for_project(project) -> Machine:
     """The machine a project's conversations run on.
 
     Raises :class:`MachineError` when the project names a machine that was
-    removed, switched off or has lost its shell: running its commands
+    removed, switched off or cannot run commands: running its commands
     somewhere else would be worse than refusing.
     """
     machine_id = project_machine_id(project)
@@ -772,11 +686,11 @@ def _pinned(machine_id: str, owner: str) -> Machine:
     if machine is None:
         raise MachineError(
             f"{owner} is on machine {machine_id!r}, which no longer exists. "
-            "Add it back in Settings > Machines.")
+            "Add it back in Settings > Devices.")
     if not usable_as_environment(machine):
         raise MachineError(
             f"{owner} is on machine {machine_id!r}, but {_not_an_environment(machine)}. "
-            "Change it in Settings > Machines.")
+            "Change it in Settings > Devices.")
     return machine
 
 
@@ -817,7 +731,7 @@ def current_environment() -> Machine:
 
     A turn binds its session's environment; outside a turn the current
     session's project decides, and with no session this computer. A bound machine
-    that was switched off, removed or lost its shell since is refused with
+    that was switched off, removed or can no longer run commands is refused with
     :class:`MachineError`, never replaced by this computer.
     """
     machine = _current_environment.get()
@@ -830,7 +744,6 @@ def current_environment() -> Machine:
 
 
 __all__ = [
-    "CONNECTIONS",
     "Connection",
     "Kind",
     "KindError",
@@ -857,11 +770,8 @@ __all__ = [
     "resolve_for_project",
     "resolve_for_session",
     "save_machine",
-    "screen_address",
     "secret",
     "still_usable",
     "set_enabled",
-    "set_local_connection",
     "usable_as_environment",
-    "whole_screen",
 ]

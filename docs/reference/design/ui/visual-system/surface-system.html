@@ -46,7 +46,6 @@
 <tr><th scope="row">Split layout</th><td><code translate="no">.center-col[data-split]</code>: the centre card dissolves, each pane is a card of the same material, 7px to rails and edges, 8px apart. Empty panes draw the card themselves.</td></tr>
 <tr><th scope="row">Collapsed rail</th><td><code translate="no">--rail-collapsed-w</code> 62px; <code translate="no">components/layout/use-resizable-rail.ts</code> carries the same number</td></tr>
 <tr><th scope="row">Focus</th><td>No mouse focus ring on buttons; keyboard focus is a small brightness change. Top-strip <code translate="no">role="tab"</code> uses each theme's <code translate="no">--focus-ring</code>.</td></tr>
-<tr><th scope="row">Tab pills</th><td>The selected pill on a manage page (Abilities, Programs, Plugins, Skills) uses <code translate="no">--bg-input</code>, like the search box; only there</td></tr>
 </tbody>
 </table>
 </details>
@@ -69,24 +68,50 @@
 <thead><tr><th scope="col">Variant</th><th scope="col">Face, hover</th><th scope="col">Use</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">default</code></th><td><code translate="no">bg-primary</code>; <code translate="no">primary/90</code></td><td>One main action per area: Run, Save, Test, Apply, Send, New</td></tr>
-<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>; deeper shadow. Pressed, checked or on: 1.5px <code translate="no">primary</code> ring.</td><td>Every other action, filter or choice; composer triggers, environment chips</td></tr>
+<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>; deeper shadow. Pressed, checked or on: 1.5px <code translate="no">primary</code> ring.</td><td>Every other action; composer triggers, environment chips. A choice among a few is a groove (<a href="#choices">below</a>).</td></tr>
 <tr><th scope="row"><code translate="no">destructive</code></th><td><code translate="no">bg-destructive/10</code>; <code translate="no">/20</code></td><td>Delete, Remove, Stop, Clear history</td></tr>
 <tr><th scope="row"><code translate="no">ghost</code></th><td>Transparent, no shadow; <code translate="no">bg-muted</code> (<code translate="no">/50</code> dark)</td><td>Icon tools hidden until hover: close, more, rename</td></tr>
 <tr><th scope="row"><code translate="no">link</code></th><td>Primary text; underline</td><td>Inline</td></tr>
 </tbody>
 </table>
-<p class="note">All press 1px while active, show a 3px <code translate="no">ring/50</code> on keyboard focus, and go to 50% when disabled. Sidebar rows are not Buttons: use <code translate="no">.ui-list-item</code> or <code translate="no">nav-classes.ts</code>. <code translate="no">outline</code> and <code translate="no">secondary</code> are not offered. <code translate="no">Toggle</code> and <code translate="no">ToggleGroup</code> offer the same face as <code translate="no">elevated</code>.</p>
+<p class="note">All press 1px while active, show a 3px <code translate="no">ring/50</code> on keyboard focus, and go to 50% when disabled. Sidebar rows are not Buttons: use <code translate="no">.ui-list-item</code> or <code translate="no">nav-classes.ts</code>. <code translate="no">outline</code> and <code translate="no">secondary</code> are not offered. <code translate="no">Toggle</code> and <code translate="no">ToggleGroup</code> offer the same face as <code translate="no">elevated</code>, with a tint for on, and the <code translate="no">segmented</code> groove.</p>
 <ul>
 <li>What cannot be a <code translate="no">&lt;Button&gt;</code> (a span hosting its own ✕, a Radix trigger span) uses <code translate="no">cn(buttonVariants({ variant, size }))</code>; the <code translate="no">cn()</code> merge resolves <code translate="no">border-transparent</code> against the variant's border.</li>
 <li>A 1 to 2px height mismatch inside a header row (search, pills, icon buttons) is a bug.</li>
 </ul>
+
+<h2 id="choices">Choosing one of a few</h2>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="A rounded groove holding three options, List, Board and Calendar; a raised white face sits under Board, the chosen one.">
+  <rect class="tile" x="190" y="20" width="300" height="40" rx="13"/>
+  <rect class="tile" x="294" y="25" width="92" height="30" rx="8"/>
+  <text class="t-soft mid" x="242" y="45">List</text>
+  <text class="t-big mid" x="340" y="45">Board</text>
+  <text class="t-soft mid" x="438" y="45">Calendar</text>
+  <text class="t-soft mid" x="340" y="92">Groove: --groove with an inset shadow. Face: --bg-input with shadow-raised.</text>
+  <text class="t-soft mid" x="340" y="114">The face slides to the chosen option; groove corner = face corner + padding.</text>
+</svg>
+<p>Two materials make every control: a <b>face</b> (<code translate="no">--bg-input</code>, <code translate="no">shadow-raised</code>: cards, buttons, inputs, menus) and a <b>groove</b> (<code translate="no">bg-groove</code>: a step below the surface in light themes, the deep page in dark ones; <code translate="no">shadow-groove</code>), which only ever holds a single choice. No glass.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">View, filter or setting</th><td>A groove 32px tall (<code translate="no">--ui-choice-h</code> 26px options, 3px around), so it reads as large as the raised 30px controls beside it; the options are plain text and a face (<code translate="no">SlidingThumb</code>) slides under the chosen one, running past it by 8% of the distance (at most 8px), swinging back once and settling; the groove's walls stop it at the ends. <code translate="no">ToggleGroup variant="segmented"</code>, <code translate="no">Tabs</code>, or <code translate="no">CAPSULE_GROOVE</code> with <code translate="no">CAPSULE_OPTION</code> from <code translate="no">components/ui/capsule.ts</code> for a row a page builds itself.</td></tr>
+<tr><th scope="row">Sizes</th><td>Every choice on a page is the default 32px, so choices side by side match. <code translate="no">sm</code> only in a compact tool palette (the image annotator), <code translate="no">xs</code> only inside a list row.</td></tr>
+<tr><th scope="row">Counts</th><td>A quiet number after the label, never a pill: a pill weighs the option's right side and pulls it off centre under the face.</td></tr>
+<tr><th scope="row">Drag</th><td>Like a finger: pressed anywhere in the groove, the face glides under the pointer at once and follows it while held (each frame closing a third of the gap); the option under the pointer on release is chosen.</td></tr>
+<tr><th scope="row">Page section</th><td>One size up (<code translate="no">TabsList variant="section"</code>, or <code translate="no">SECTION_GROOVE</code>, <code translate="no">SECTION_OPTION</code>), centred on the line between header and content (<code translate="no">SECTION_BAR</code>). The new content slides in from the side the switch moved towards (<code translate="no">SectionSlide</code>, or <code translate="no">TabsContent</code> by itself).</td></tr>
+<tr><th scope="row">Corners</th><td>Rounded rectangles like every other control, concentric: the face takes the button's 8px (<code translate="no">rounded-md</code>), the groove that plus its padding (<code translate="no">rounded-groove</code>, 11px; a section switch 8 + 4 = <code translate="no">rounded-xl</code>). Smaller groups step down together (sm: 8 in 10, xs: 6 in 8). No capsule: it would be the one round-ended shape on the page.</td></tr>
+<tr><th scope="row">Several on at once</th><td><code translate="no">ToggleGroup variant="elevated"</code>: each option is a face; on is a <code translate="no">primary/12</code> tint with primary ink</td></tr>
+<tr><th scope="row">Colour or shape swatch</th><td>The only choice that keeps a 1.5px accent ring: the swatch itself is the content</td></tr>
+<tr><th scope="row">Long or changing list</th><td><code translate="no">Select</code> (<a href="#selects-and-menus">below</a>)</td></tr>
+</tbody>
+</table>
 
 <h2 id="selects-and-menus">Selects and menus</h2>
 <p>Every fixed-list choice is the radix-nova <code translate="no">Select</code> (<code translate="no">components/ui/select.tsx</code>). No native <code translate="no">&lt;select&gt;</code>, no hand-rolled listbox. <code translate="no">SimpleSelect</code> is the one-line form (<code translate="no">value</code>, <code translate="no">onValueChange</code>, <code translate="no">options</code>, <code translate="no">label</code>, <code translate="no">placeholder</code>, <code translate="no">size</code>; groups as <code translate="no">{label, options}</code>).</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Trigger</th><td>Nova field: <code translate="no">rounded-lg</code>, <code translate="no">border-input</code>, <code translate="no">bg-transparent</code>, <code translate="no">dark:bg-input/30</code>, <code translate="no">h-8</code> or <code translate="no">h-7</code>. Default <code translate="no">w-full max-w-48</code>; call sites add only width or an error border.</td></tr>
+<tr><th scope="row">Trigger</th><td>A face: <code translate="no">rounded-lg</code>, <code translate="no">bg-input</code>, <code translate="no">shadow-raised</code> (deeper on hover and while open), no border, <code translate="no">--ui-button-h</code> or <code translate="no">-sm</code>. Default <code translate="no">w-full max-w-48</code>; call sites add only width; an error is a destructive ring.</td></tr>
 <tr><th scope="row">Popup</th><td>Solid <code translate="no">bg-popover</code> in the menu frame, <code translate="no">item-aligned</code>, <code translate="no">z-[130]</code> above dialogs. Muted heading names the choice (<code translate="no">label</code>, else <code translate="no">aria-label</code>), one per group. Plain check on the chosen row.</td></tr>
 <tr><th scope="row">Empty value</th><td>Radix reserves <code translate="no">""</code>: an option with that value uses a sentinel inside <code translate="no">SimpleSelect</code>; otherwise <code translate="no">""</code> shows the placeholder</td></tr>
 <tr><th scope="row">Other menus</th><td>DropdownMenu, popover pickers, sidebar footer, tab and function context menus use <code translate="no">MENU_PANEL</code>, <code translate="no">itemCls</code>, <code translate="no">GROUP_LABEL</code>, <code translate="no">MENU_SEPARATOR</code> from <code translate="no">components/ui/menu/menu-styles.ts</code>. A CSS module keeps only placement.</td></tr>
@@ -213,7 +238,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Don't</th><th scope="col">Why, or instead</th></tr></thead>
 <tbody>
-<tr><th scope="row">A new hover, selected, border or pill treatment</th><td>Add a line here first. Budget: deep grey hover, panel, brand fill, the header-tab <code translate="no">--bg-input</code>.</td></tr>
+<tr><th scope="row">A new hover, selected, border or pill treatment</th><td>Add a line here first. Budget: deep grey hover, panel, brand fill, the face and the groove.</td></tr>
 <tr><th scope="row">Brand fills on the deep surface</th><td>A brand pill reads as an alert</td></tr>
 <tr><th scope="row">Different metrics for MCP or any other content-pane list</th><td>One set of metrics for every content-pane list</td></tr>
 <tr><th scope="row">Hover motion (<code translate="no">translate-y</code>, <code translate="no">scale-105</code>)</th><td>Applies to either surface</td></tr>
@@ -226,7 +251,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td>Every part in <code translate="no">components/ui</code> is radix-nova, every former <code translate="no">&lt;select&gt;</code> and dropdown included: <code translate="no">Command</code>, <code translate="no">Popover</code>, <code translate="no">Tooltip</code> (<code translate="no">--surface-tooltip</code>, <code translate="no">--text-on-tooltip</code> alias <code translate="no">--foreground</code>, <code translate="no">--background</code>), <code translate="no">Tabs</code> (<code translate="no">line</code> in the Agent editor), <code translate="no">Kbd</code>, <code translate="no">ScrollArea</code>, <code translate="no">Sidebar</code>. Every modal and confirmation. Menu panels and rows, Settings General, desktop attention, composer parts, preview, browser toolbar.</td></tr>
+<tr><th scope="row">Implemented</th><td>Every part in <code translate="no">components/ui</code> is radix-nova, every former <code translate="no">&lt;select&gt;</code> and dropdown included: <code translate="no">Command</code>, <code translate="no">Popover</code>, <code translate="no">Tooltip</code> (<code translate="no">--surface-tooltip</code>, <code translate="no">--text-on-tooltip</code> alias <code translate="no">--foreground</code>, <code translate="no">--background</code>), <code translate="no">Tabs</code> (the capsule groove), <code translate="no">Kbd</code>, <code translate="no">ScrollArea</code>, <code translate="no">Sidebar</code>. Every modal and confirmation. Menu panels and rows, Settings General, desktop attention, composer parts, preview, browser toolbar.</td></tr>
 <tr><th scope="row">Exception</th><td>The attachment lightbox keeps its own full-screen viewer</td></tr>
 <tr><th scope="row">Not yet</th><td>Other Settings pages (<code translate="no">settings-page.module.css</code> rows); form inputs outside Settings keep the 1px rule until they move to the shadcn input</td></tr>
 </tbody>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._support import (
     REPO_ROOT,
 )
+from openprogram.programs.tools.computer_use.computer_use import devices as cu_devices
 
 
 def test_built_in_pages_are_a_target_of_the_one_screen_tool():
@@ -56,7 +57,7 @@ def test_a_turn_with_named_tools_gets_the_screen_tool_only_when_named(monkeypatc
     from openprogram.programs.tools.computer_use.computer_use import tool as entry
     from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
 
-    monkeypatch.setattr(entry, "available_targets", lambda: ["window", "browser"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["window", "browser"])
     monkeypatch.setattr(entry, "page_surface_call", lambda: {"type": "browser"})
 
     screen = SimpleNamespace(name="computer_use")
@@ -81,12 +82,12 @@ def test_the_screen_tool_follows_its_targets_not_an_open_page(monkeypatch):
     read = SimpleNamespace(name="read")
     monkeypatch.setattr(surface_context, "browser_pages_available", lambda context: False)
     # Application windows are set up and no Page is open: the tool is there, the Pages are not.
-    monkeypatch.setattr(entry, "available_targets", lambda: ["window"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["window"])
     monkeypatch.setattr(entry, "page_surface_call", lambda: None)
     tools, pages = _configure_screen_tool([read], None)
     assert [tool.name for tool in tools] == ["read", "computer_use"] and pages is False
     # No target at all: the tool is not offered.
-    monkeypatch.setattr(entry, "available_targets", lambda: [])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: [])
     tools, pages = _configure_screen_tool([read], None)
     assert [tool.name for tool in tools] == ["read"] and pages is False
 

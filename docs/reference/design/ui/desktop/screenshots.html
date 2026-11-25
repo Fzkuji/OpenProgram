@@ -1,0 +1,73 @@
+<title>Screenshots</title>
+<meta name="description" content="How the desktop App takes a screenshot: one frozen overlay per display, window snapping from the worker, shared annotation marks, OCR per platform, pins, and what was taken from Snow Shot.">
+<h1>Screenshots</h1>
+
+<p>A screenshot tool for people, modelled on Snow Shot: freeze the screen, select a window or area, mark it up, then copy, save, pin, read its text or send it to the chat. It is separate from the Agent's <code translate="no">computer_use</code>.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 200" role="img" aria-label="The App captures every display and opens one overlay page per display; the overlay asks the worker for visible windows and for OCR, and hands the finished PNG back to the App, which copies, saves, pins it or attaches it to the message box.">
+<rect class="tile" x="0" y="20" width="190" height="160" rx="8"/>
+<text class="mid" x="95" y="50">App (Electron)</text>
+<text class="t-soft mid" x="95" y="80">shortcut, capture</text>
+<text class="t-soft mid" x="95" y="102">overlay per display</text>
+<text class="t-soft mid" x="95" y="124">copy, save, pin</text>
+<text class="t-soft mid" x="95" y="146">attach to chat</text>
+<rect class="tile" x="245" y="20" width="190" height="160" rx="8"/>
+<text class="mid" x="340" y="50">Overlay page</text>
+<text class="t-soft mid" x="340" y="80">frozen picture</text>
+<text class="t-soft mid" x="340" y="102">select, mark up</text>
+<text class="t-soft mid" x="340" y="124">PNG of the selection</text>
+<rect class="tile" x="490" y="20" width="190" height="160" rx="8"/>
+<text class="mid" x="585" y="50">Worker</text>
+<text class="t-soft mid" x="585" y="80">visible windows</text>
+<text class="t-soft mid" x="585" y="102">OCR</text>
+<line class="ln-faint" x1="190" y1="100" x2="245" y2="100"/>
+<line class="ln-faint" x1="435" y1="100" x2="490" y2="100"/>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>App</dt><dd>shortcut, capture of every display, one overlay window each, and what happens to the result</dd>
+<dt>Overlay</dt><dd>the frozen picture, selection, marks and toolbar</dd>
+<dt>Worker</dt><dd><code translate="no">GET /api/screenshot/windows</code> and <code translate="no">POST /api/screenshot/ocr</code>, local owner only</dd>
+</dl>
+</figure>
+
+<h2>Capture and overlay</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry</th><td>Global shortcut <code translate="no">CommandOrControl+Shift+2</code>, the tray item, the composer's + menu (<code translate="no">screenshot.start</code>, which waits for the menu to close).</td></tr>
+<tr><th scope="row">Picture</th><td><code translate="no">desktopCapturer</code> screens at each display's pixel size, matched by <code translate="no">display_id</code>; the BGRA bitmap goes to the overlay over IPC, which only overlay pages may read.</td></tr>
+<tr><th scope="row">Overlay</th><td>One borderless window per display at <code translate="no">screen-saver</code> level, a non-activating <code translate="no">panel</code> on macOS so the App does not come forward. It loads <code translate="no">/menu-overlay/screenshot</code> and is hidden, not closed, so the next screenshot opens at once. It shows only after the page has painted the picture; the display under the pointer takes the keyboard.</td></tr>
+<tr><th scope="row">Several displays</th><td>Each overlay selects on its own display; starting a selection on one clears the others.</td></tr>
+</tbody>
+</table>
+
+<h2>Window snapping</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td><code translate="no">CGWindowListCopyWindowInfo</code>, layer 0, front to back, points.</td></tr>
+<tr><th scope="row">Windows</th><td><code translate="no">EnumWindows</code> per-monitor DPI aware; tool, non-activating and cloaked windows skipped; DWM frame bounds; pixels turned into App coordinates with <code translate="no">screenToDipRect</code>.</td></tr>
+<tr><th scope="row">Linux, X11</th><td><code translate="no">_NET_CLIENT_LIST_STACKING</code> with <code translate="no">_NET_FRAME_EXTENTS</code>; pixels divided by the display scale.</td></tr>
+<tr><th scope="row">Linux, Wayland</th><td>None: Wayland gives no other window's position. A click takes the display.</td></tr>
+</tbody>
+</table>
+<p>The overlays leave themselves out by their media source ids. Windows are cut at each display's edge.</p>
+
+<h2>Marks and toolbar</h2>
+<p>The marks (<code translate="no">lib/annotate/marks.ts</code>) and toolbar (<code translate="no">components/annotate</code>) are shared with the composer's image annotator. Marks are kept in image pixels and drawn with widths in CSS px times the image's scale, so a Retina capture and a plain image look alike and the PNG keeps the source size. Mosaic pixelates the picture under it rather than drawing a pattern.</p>
+<p>The toolbar sits under the selection, as in Snow Shot. When there is no room it goes above, and inside the selection when neither side fits (<code translate="no">placeToolbar</code>), so a selection along the screen's bottom edge still has its tools.</p>
+
+<h2>Text, pins and results</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">OCR</th><td>macOS Vision; Windows <code translate="no">Windows.Media.Ocr</code> through PowerShell, spaces between CJK characters removed; Linux <code translate="no">tesseract</code>. Boxes are drawn over the picture and the text listed beside it.</td></tr>
+<tr><th scope="row">Pin</th><td>A frameless always-on-top window at the selection's place. The App moves it while dragging, zooms it about the pointer (0.1–5×), sets opacity with the modifier (0.25–1), and gives a native menu.</td></tr>
+<tr><th scope="row">Send to chat</th><td><code translate="no">screenshot:attach</code> to the focused App window, which queues the PNG in the active composer like a dropped file.</td></tr>
+<tr><th scope="row">Save</th><td>Save dialog in Pictures, named <code translate="no">Screenshot YYYY-MM-DD HH.mm.ss.png</code> (<code translate="no">截图 …</code> in Chinese).</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p>Not taken from Snow Shot: screen recording, translation, scrolling (long) screenshots, measuring, and drawing a free canvas.</p>

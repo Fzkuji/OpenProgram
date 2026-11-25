@@ -517,7 +517,7 @@ export function MemoryPage({
               <div className={styles.rightPane}>
                 <div className={`${styles.coreControls} grid grid-cols-[minmax(220px,_320px)_minmax(260px,_1fr)] gap-[10px] mb-[10px] shrink-0`}>
                   <ToggleGroup
-                    type="single" variant="elevated" size="sm" spacing={1}
+                    type="single" variant="segmented"
                     className="grid w-full grid-cols-2"
                     value={coreView}
                     onValueChange={(value: string) => { if (value) setCoreView(value as typeof coreView); }}

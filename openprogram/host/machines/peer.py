@@ -1,10 +1,12 @@
 """Another OpenProgram: a machine reached through its own Worker.
 
-The ``openprogram`` connection holds where the other computer's Worker
-answers and the device credential it gave this computer when the two were
-paired. Its conversations, files and accounts stay there; this computer
+The connection method ``openprogram`` holds where the other computer's
+Worker answers and the device credential it gave this computer when the two
+were paired. Its conversations, files and accounts stay there; this computer
 lists them and forwards what is done to them
-(``openprogram.interfaces.server.remote_machines``).
+(``openprogram.interfaces.server.remote_machines``), and ``computer_use``
+forwards its calls there whole, to run on that computer
+(``computer_use/providers/paired.py``).
 
 A pairing link is what the other computer's Settings → Devices → Add device shows:
 ``http://192.168.1.20:18100/#pair=<code>``, with ``&via=<origin>`` once for
@@ -26,6 +28,8 @@ from openprogram.host.machines.kinds import Kind, KindError, register
 
 #: Seconds one address may take to answer before the next is tried.
 TIMEOUT_SECONDS = 6.0
+#: The connection method of a paired OpenProgram.
+METHOD = "openprogram"
 
 
 class PairingError(ValueError):
@@ -126,19 +130,31 @@ def redeem(link: str, *, own_port: int | None = None) -> dict:
     raise PairingError(f"No address of the other computer answered: {last}.")
 
 
+def is_paired(machine) -> bool:
+    """The machine is another computer's OpenProgram, reached by pairing."""
+    return machine is not None and machine.method == METHOD
+
+
+def credential(machine) -> tuple[list[str], str]:
+    """Every address of a paired machine, the one that answered last first, and its device credential."""
+    from openprogram.host.machines import secret
+
+    if not is_paired(machine):
+        return [], ""
+    return routes_of(machine.connection.settings), secret(machine, "token")
+
+
 def reachable(machine) -> tuple[str, str]:
     """``(route, "")`` for the first address that accepts this computer's credential, or ``("", why)``."""
     import httpx
-    from openprogram.host.machines import secret
 
-    connection = machine.connection("openprogram")
-    if connection is None:
+    if not is_paired(machine):
         return "", "no OpenProgram connection"
-    token = secret(machine, "openprogram", "token")
+    routes, token = credential(machine)
     if not token:
         return "", "not paired"
     reasons = []
-    for route in routes_of(connection.settings):
+    for route in routes:
         try:
             response = httpx.get(f"{route}/api/auth/session", headers={"Authorization": f"Bearer {token}"},
                                  timeout=TIMEOUT_SECONDS, trust_env=False)
@@ -171,7 +187,7 @@ def _normalize(settings: dict) -> dict:
 
 
 register(Kind(
-    name="openprogram", connection="openprogram", label="OpenProgram", label_zh="OpenProgram",
+    name=METHOD, label="OpenProgram", label_zh="OpenProgram", paired=True,
     settings={
         "type": "object",
         "description": "Another computer's OpenProgram, paired from its Settings → Devices → Add device.",
@@ -190,5 +206,5 @@ register(Kind(
     where=lambda settings: (routes_of(settings) or [""])[0]))
 
 
-__all__ = ["PairingError", "PairingLink", "TIMEOUT_SECONDS", "build_link", "device_label", "parse_link",
-           "reachable", "redeem", "routes_of"]
+__all__ = ["METHOD", "PairingError", "PairingLink", "TIMEOUT_SECONDS", "build_link", "credential", "device_label",
+           "is_paired", "parse_link", "reachable", "redeem", "routes_of"]

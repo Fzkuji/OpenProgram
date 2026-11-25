@@ -83,14 +83,14 @@ def test_redeem_refuses_this_very_worker_but_not_another_profile(monkeypatch):
 
 
 def test_the_credential_is_kept_out_of_the_configuration(cfg_path):
-    machine = machines.save_machine({"name": "Studio", "openprogram": {
+    machine = machines.save_machine({"name": "Studio", "connection": {
         "kind": "openprogram", "url": "http://192.168.1.20:18100/", "routes": ["https://studio.tail1.ts.net"],
         "token": "opd1.0123456789abcdef.secret", "device_id": "0123456789abcdef"}})
     assert machine.id == "studio"
     stored = cfg_path.read_text(encoding="utf-8")
     assert "secret" not in stored.replace('"secret": true', "")
-    assert machines.secret(machine, "openprogram", "token") == "opd1.0123456789abcdef.secret"
-    public = machine.public()["openprogram"]
+    assert machines.secret(machine, "token") == "opd1.0123456789abcdef.secret"
+    public = machine.public()["connection"]
     assert public["url"] == "http://192.168.1.20:18100"
     assert public["token"] == {"secret": True}
     assert public["where"] == "http://192.168.1.20:18100"

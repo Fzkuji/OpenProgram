@@ -106,7 +106,8 @@
 <tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>浏览器控制；对 App 的 CDP 端点的回环探测</td></tr>
 <tr><th scope="row"><code translate="no">cli/commands/capabilities/mcp.py</code></th><td>Owner 控制面；仅认证后端 opener</td></tr>
 <tr><th scope="row"><code translate="no">cli/ink.py</code>、<code translate="no">cli/commands/maintenance/doctor.py</code>、<code translate="no">cli/commands/maintenance/rescue.py</code></th><td>Owner 控制面；仅确切的回环 Worker 存活 socket</td></tr>
-<tr><th scope="row"><code translate="no">machines/peer.py</code>、<code translate="no">security/remote_access.py</code></th><td>Owner 控制面；与 owner 连接的 OpenProgram 配对和探测，只用它链接里的地址，不走代理、不跟随重定向；一个只读取局域网地址的 UDP socket</td></tr>
+<tr><th scope="row"><code translate="no">machines/peer.py</code>、<code translate="no">computer_use/providers/paired.py</code>、<code translate="no">security/remote_access.py</code></th><td>Owner 控制面；与 owner 连接的 OpenProgram 配对、探测，并把 computer_use 调用转发过去（带它的设备凭据），只用它链接里的地址，不走代理、不跟随重定向；一个只读取局域网地址的 UDP socket</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/web_push.py</code></th><td>Owner 控制面；每次 POST 一条加密通知到白名单里的浏览器推送服务（Apple、Google、Mozilla、Microsoft 的 https 地址），不走代理、不跟随重定向</td></tr>
 </tbody>
 </table>
 <p class="note">发布要求：策略和地址测试、真实同步异步 socket 和 TLS 对端测试、DNS 重绑定防护、重定向和凭据来源测试、响应解压和超时清理、所有消费者已迁移、活跃非托管传输为零、仅限 Owner 的精确例外、doctor、审计和静态强制，以及消费者兼容性契约。</p>

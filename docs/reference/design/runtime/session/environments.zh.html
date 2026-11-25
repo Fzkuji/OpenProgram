@@ -2,7 +2,7 @@
 <meta name="description" content="运行环境这个角色的设计：对话在它项目的机器上、项目的文件夹里运行；由此决定的东西、Shell 后端、远程文件工具、每个对话的容器和输入框胶囊。">
 <h1>运行环境</h1>
 <p>对话的 Shell 和文件在哪台机器上由项目决定：项目是某台机器上的一个文件夹，项目里的每个对话都在那里运行。</p>
-<p>本页讲由此决定了什么。机器本身、它的连接和类型是一份注册表，设计见<a href="../../integrations/computer-use/machines-and-targets.zh.html">机器与目标</a>。channel（微信、Telegram 等）只决定消息镜像到哪里。产品页：<a href="../../../../capabilities/environments.zh.html">在另一台机器上运行会话</a>。</p>
+<p>本页讲由此决定了什么。机器本身（每台只有一种连接方式）是一份注册表，设计见<a href="../../integrations/computer-use/machines-and-targets.zh.html">机器与目标</a>。channel（微信、Telegram 等）只决定消息镜像到哪里。产品页：<a href="../../../../capabilities/environments.zh.html">在另一台机器上运行会话</a>。</p>
 
 <table class="stack">
 <thead><tr><th scope="col">Shell 类型</th><th scope="col">后端</th><th scope="col">命令形式</th><th scope="col">工作文件夹</th><th scope="col">本机沙箱</th></tr></thead>
@@ -12,13 +12,13 @@
 <tr><th scope="row"><code translate="no">docker</code></th><td><code translate="no">DockerBackend(image, container, mounts, labels)</code></td><td><code translate="no">docker exec -i [-w cwd] &lt;container&gt; sh -c &lt;cmd&gt;</code></td><td>本机路径，以相同路径挂载</td><td>关闭；隔离靠容器</td></tr>
 </tbody>
 </table>
-<p class="note">每种 Shell 类型在 <code translate="no">openprogram/host/backend/__init__.py</code> 注册，带设置 schema、<code translate="no">backend</code>、<code translate="no">check</code>；Docker 另有 <code translate="no">instance_scope="conversation"</code> 和 <code translate="no">remove_instances</code>。<code translate="no">backend_for(machine, session_id)</code> 按机器的 Shell 类型构造后端，不点名任何类型。</p>
+<p class="note">命令功能在 <code translate="no">SHELLS</code>（<code translate="no">openprogram/host/backend/__init__.py</code>）里对应能跑命令的连接方式：<code translate="no">local</code>、<code translate="no">ssh</code>、<code translate="no">docker</code>，各带 <code translate="no">backend</code>；Docker 另有 <code translate="no">instance_scope="conversation"</code> 和 <code translate="no">remove_instances</code>。同一模块向设备层登记 <code translate="no">ssh</code> 和 <code translate="no">docker</code> 两种方式（设置 schema、<code translate="no">check</code>）。<code translate="no">backend_for(machine, session_id)</code> 按机器的连接方式构造后端，不点名任何方式。</p>
 
 <h2 id="registry">运行环境这个角色</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">问题</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">哪些机器可以</th><td><code translate="no">usable_as_environment</code>：已打开，且有本进程已加载其类型的 Shell。<code translate="no">list_environments()</code> 列出它们，这台电脑在前</td></tr>
+<tr><th scope="row">哪些机器可以</th><td><code translate="no">usable_as_environment</code>：已打开，且连接方式在 <code translate="no">SHELLS</code> 里。<code translate="no">list_environments()</code> 列出它们，这台电脑在前</td></tr>
 <tr><th scope="row">对话用哪台</th><td><code translate="no">resolve_for_session</code>：它项目的那台（<code translate="no">resolve_for_project</code>，取项目记录上的 <code translate="no">machine_id</code>）。主项目和没写机器的记录是 <code translate="no">local</code></td></tr>
 <tr><th scope="row">默认</th><td>没有。新对话属于一个项目，由项目指定机器</td></tr>
 </tbody>
@@ -33,16 +33,16 @@
 <tr><th scope="row">首条消息</th><td>首个 <code translate="no">chat</code> 帧指定的项目照旧绑定 session；机器不随帧发送，也不存在 session 上</td></tr>
 <tr><th scope="row">之后</th><td>session 的项目固定，机器也就固定</td></tr>
 <tr><th scope="row">Channel 对话</th><td>主项目：这台电脑</td></tr>
-<tr><th scope="row">机器被删除、关闭或没有 Shell</th><td><code translate="no">resolve_for_session</code> 抛 <code translate="no">MachineError</code>，指向 Settings &gt; Machines；后端变为 <code translate="no">UnavailableBackend</code>：每条命令返回同样的说明，启动进程（<code translate="no">execute_code</code>、后台命令）也以它拒绝。<code translate="no">current_environment()</code> 每次工具调用都重新读取绑定的机器，所以回合中途被关闭或删除的机器，下一条命令和下一次文件调用就会拒绝。工具绝不回落到本机</td></tr>
+<tr><th scope="row">机器被删除、关闭或不能跑命令</th><td><code translate="no">resolve_for_session</code> 抛 <code translate="no">MachineError</code>，指向 Settings &gt; Machines；后端变为 <code translate="no">UnavailableBackend</code>：每条命令返回同样的说明，启动进程（<code translate="no">execute_code</code>、后台命令）也以它拒绝。<code translate="no">current_environment()</code> 每次工具调用都重新读取绑定的机器，所以回合中途被关闭或删除的机器，下一条命令和下一次文件调用就会拒绝。工具绝不回落到本机</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">computer_use</code> 的目标是另一种绑定，每次调用各自选择；当运行环境从不让一台机器成为默认目标。</p>
 
 <h2 id="turn-binding">轮次绑定</h2>
 <p><code translate="no">TurnBindings.bind</code> 设置 <code translate="no">_current_environment</code> ContextVar。<code translate="no">current_environment()</code> 先读它，再读当前 session 项目的机器，没有 session 时是这台电脑。<code translate="no">get_active_backend()</code> 据此和当前 session 构造后端。</p>
-<p>Shell 不在这台电脑时，<code translate="no">&lt;environment&gt;</code> 块写明机器 id、名称和它的 Shell 类型的描述，并说明对话本身和 OpenProgram 仍在这台电脑；提供 <code translate="no">computer_use</code> 时再说明不带 <code translate="no">device</code> 的调用作用于这台电脑。</p>
+<p>Shell 不在这台电脑时，<code translate="no">&lt;environment&gt;</code> 块写明机器 id、名称和它的连接方式的描述，并说明对话本身和 OpenProgram 仍在这台电脑；提供 <code translate="no">computer_use</code> 时再说明不带 <code translate="no">device</code> 的调用作用于这台电脑。</p>
 <ul>
-<li>带 <code translate="no">remote_files</code> 的 Shell 类型（SSH）：worktree ContextVar 是项目在主机上的文件夹（<code translate="no">remote_project_folder</code>），命令从那里开始，权限围栏也按它检查。打开项目时文件夹已在主机上转成绝对路径（<code translate="no">cd</code> 后 <code translate="no">pwd -P</code>）。</li>
+<li>带 <code translate="no">remote_files</code> 的 Shell（SSH）：worktree ContextVar 是项目在主机上的文件夹（<code translate="no">remote_project_folder</code>），命令从那里开始，权限围栏也按它检查。打开项目时文件夹已在主机上转成绝对路径（<code translate="no">cd</code> 后 <code translate="no">pwd -P</code>）。</li>
 <li><code translate="no">remote_workdir</code> 即机器的远程文件夹设置，只是浏览项目文件夹时的起点。相对工具路径用 <code translate="no">posixpath</code> 拼接，不碰本机文件系统。</li>
 </ul>
 
@@ -67,7 +67,7 @@
 <li>守护进程因容器已不存在（“No such container”）或已停止（“is not running”，Docker 重启或 <code translate="no">docker stop</code> 之后）而拒绝命令时，丢掉缓存项，重新启动或创建容器，再运行一次：旧容器什么也没收到。只有以 <code translate="no">Error response from daemon:</code> 开头的拒绝才算。</li>
 <li>会话的容器只在它的机器已配置且启用时创建。命令在机器上计数之后、以及那次重试之前，若机器在后端建好之后被关闭或删除，命令被拒绝（“machine '&lt;id&gt;' was switched off” 或 “was removed”），不创建容器。</li>
 <li><code translate="no">remove_instances</code> 按这些标签找本安装的容器，不看当前配置了哪些机器，在后台线程删除：对话被删除时（单独删除或“全部清除”），不论 worker 启动后是否打开过它，按对话；机器被删除、关闭或保存为关闭时按机器。</li>
-<li>按对话删除时只询问某台已配置机器（包括已关闭的）用到的 Shell 类型，所以没有 Docker 机器时不会运行 <code translate="no">docker ps</code>。“全部清除”把所有被删除的对话交给一个线程，逐个处理。</li>
+<li>按对话删除时只询问某台已配置机器（包括已关闭的）的连接方式用到的 Shell，所以没有 Docker 机器时不会运行 <code translate="no">docker ps</code>。“全部清除”把所有被删除的对话交给一个线程，逐个处理。</li>
 <li>没有 session ID 时用一次性的 <code translate="no">docker run --rm</code>，<code translate="no">machines test</code> 也是这样；它不按机器的状态检查。</li>
 <li>按机器时，<code translate="no">remove_instances</code> 先让正在进行的 <code translate="no">computer_use</code> 调用结束（最多 <code translate="no">registry.FINISH_SECONDS</code>，300 秒），再等它上面计数的命令结束（<code translate="no">wait_idle</code>，最多 <code translate="no">RELEASE_WAIT</code>，300 秒）；其间 <code translate="no">current_environment()</code> 拒绝新命令。</li>
 <li>计数的是 SSH 和 Docker 后端的 <code translate="no">run</code> 调用和启动的进程，后台命令或受监督 bash 命令的 supervisor（只要它还活着），以及为启动进程检查或创建容器的过程。</li>
@@ -106,7 +106,7 @@
 <p class="note">胶囊是输入框设置 channel 的唯一位置。菜单和胶囊共用 <code translate="no">channel-choices.ts</code>，跟随输入框所在窗格（<code translate="no">useBoundChat</code>）。<code translate="no">statusBadge</code> 和 <code translate="no">channelHealth</code> 是独立的 store 切片。</p>
 
 <h2 id="implementation-status">实现状态</h2>
-<p>已实现：运行环境作为机器注册表上的角色，由项目决定；本机、SSH、Docker 三种 Shell 类型；<code translate="no">openprogram machines</code>、向导步骤、设置 → 设备、WebSocket 动作；远程文件工具；按对话的 Docker 容器，按标签删除。</p>
+<p>已实现：运行环境作为机器注册表上的角色，由项目决定；<code translate="no">local</code>、<code translate="no">ssh</code>、<code translate="no">docker</code> 三种方式的 Shell；<code translate="no">openprogram machines</code>、向导步骤、设置 → 设备、WebSocket 动作；远程文件工具；按对话的 Docker 容器，按标签删除。</p>
 <p>未实现：</p>
 <ul>
 <li>WSL 和云环境</li>

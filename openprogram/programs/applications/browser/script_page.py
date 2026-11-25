@@ -449,7 +449,7 @@ class Unsupported(Exception):
 
 def chord(written: str) -> tuple[list[str], str]:
     """A key or chord in xdotool's names -> (modifiers, key) in DOM ``KeyboardEvent.key`` names."""
-    from openprogram.programs.tools.computer_use.computer_use.keynames import playwright
+    from openprogram.programs.tools.computer_use.computer_use.actions.keynames import playwright
     spelled = playwright(written)
     if spelled.endswith("++"):
         parts, key = spelled[:-2].split("+"), "+"

@@ -1,0 +1,56 @@
+<title>Phone layout</title>
+<meta name="description" content="How the web UI becomes a phone app at 760px and below: sidebar drawer, right panel as a sheet, section lists as pages, composer above the keyboard, and what was taken from dsh-mobile.">
+<meta name="covers" content="apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx apps/web/components/layout/phone-drawer-button.tsx apps/web/lib/layout/">
+<h1>Phone layout</h1>
+<p>At or below 760px the shell is a phone app in one column. The breakpoint is one constant, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/layout/phone.ts"><code translate="no">PHONE_MAX_WIDTH</code></a>, the same one the <a href="sidebar/secondary-rail.html">secondary rail</a> already used. Everything else is CSS in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/app/styles/base/phone.css"><code translate="no">styles/base/phone.css</code></a>, loaded last, plus the gestures in <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/layout/phone-shell.tsx"><code translate="no">phone-shell.tsx</code></a>. Above 760px nothing changes.</p>
+
+<ol class="flow fig-narrow">
+  <li><strong>Conversation</strong><small>Tab row, one column, composer</small></li>
+  <li class="via"><strong>Header button or swipe from the left edge</strong><small>The sidebar slides over</small></li>
+  <li class="flow-end"><strong>Tap a chat, the scrim or swipe back</strong><small>The drawer closes on the chosen chat</small></li>
+</ol>
+
+<h2 id="screens">Screens</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">On a phone</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sidebar</th><td>A drawer, <code translate="no">min(86vw, 320px)</code> wide, over a <code translate="no">--scrim</code>. Opened by the button at the start of the tab row or of a page header, or by a swipe from the left 24px; closed by its own toggle, the scrim, a swipe left, or choosing a chat, page or tab. A drag follows the finger and settles by distance or flick speed. It stays mounted, so it reopens where it was scrolled. No icon rail when closed.</td></tr>
+<tr><th scope="row">Conversation</th><td>The centre card fills the screen; the transcript keeps a 12px margin and the composer lines up with it. The message rail, which lives in the side margin, is not shown; the view controls keep their narrow column, 8px from the top-right corner. Code blocks and tables scroll inside themselves.</td></tr>
+<tr><th scope="row">Right panel</th><td>A full-screen sheet sliding in from the right, opened by the button at the end of the tab row and closed by its toggle or by choosing a tab. Tool details, files, activity and resources use the whole width.</td></tr>
+<tr><th scope="row">Settings, History, Projects, Agents</th><td>The secondary rail is the page's section list, full width; a row opens its content. The list page's header has only the sidebar button; the content page's only a back chevron to the list.</td></tr>
+<tr><th scope="row">Management pages</th><td>Drawer button, rail toggle and title share the first header row; tabs and the toolbar wrap below. The 62px reserve for the collapsed rail is gone.</td></tr>
+<tr><th scope="row">Composer and question cards</th><td>The three-part composer keeps its layout and spans the column; question and approval cards live in it, so they are full width too.</td></tr>
+</tbody>
+</table>
+
+<h2 id="touch">Touch and screen edges</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Keyboard</th><td>The shell is <code translate="no">position: fixed</code> at the visual viewport's top and height (<code translate="no">--phone-viewport-top</code>, <code translate="no">--phone-viewport-h</code> from <code translate="no">visualViewport</code>), falling back to <code translate="no">100dvh</code>, so the composer rides above the on-screen keyboard in Safari too.</td></tr>
+<tr><th scope="row">Notch and home indicator</th><td>The shell pads by <code translate="no">env(safe-area-inset-*)</code>; the drawer and the sheet pad by at least 8px or the inset.</td></tr>
+<tr><th scope="row">Touch targets</th><td>Header buttons, drawer and sheet rows, and section-list rows are 44px.</td></tr>
+<tr><th scope="row">Inputs</th><td>At least 16px, so focusing one does not zoom the page.</td></tr>
+<tr><th scope="row">Hover</th><td>Hover tips never open from a touch; message actions are already visible without hover.</td></tr>
+<tr><th scope="row">Stored choices</th><td>Opening the drawer, the sheet or a section page on a phone stores nothing, and a stored open right panel starts closed: a wider window keeps its own choices.</td></tr>
+<tr><th scope="row">Motion</th><td>Drawer and sheet slide in 220ms; a drag follows the finger; reduced motion removes the slides.</td></tr>
+</tbody>
+</table>
+
+<h2 id="source">Taken from dsh-mobile</h2>
+<p>The design copies <a href="https://github.com/saya-ch/dsh-mobile">saya-ch/dsh-mobile</a> (Apache-2.0), a touch layout for another harness's web UI, rather than inventing one.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session list as an overlay drawer with scrim</th><td>The conversation keeps the whole width; the list is one swipe away and keeps its scroll position.</td></tr>
+<tr><th scope="row">Right panel as a full-screen sheet</th><td>A 300px column leaves no room for text on a phone; a sheet shows details at full width.</td></tr>
+<tr><th scope="row">Settings sections as a list page with a way back</th><td>The section list and its content cannot share 390px.</td></tr>
+<tr><th scope="row">Keyboard-following height, safe-area padding, 44px targets, 16px inputs</th><td>The checklist from its design system: primary actions above the keyboard, nothing under the notch, no focus zoom.</td></tr>
+<tr><th scope="row">No page-level sideways scroll; wide content scrolls in place</th><td>Same.</td></tr>
+</tbody>
+</table>
+<p class="note">Not copied: its folded 56px rail beside the conversation (OpenProgram keeps no rail on a phone) and its tablet docking band (at 761px and up the desktop layout already applies).</p>
+
+<h2 id="status">Implementation status</h2>
+<p>The page's viewport declares <code translate="no">viewport-fit=cover</code>. <code translate="no">interactive-widget=resizes-content</code> is not declared yet; the visual-viewport height covers the keyboard without it.</p>
+<p class="next"><a href="sidebar/secondary-rail.html">Secondary rail</a> · <a href="remote-web-access.html">Remote web access</a></p>

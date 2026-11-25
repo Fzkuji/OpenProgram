@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://fuzzykuji.github.io/openprogram-site/">Сайт</a> · <a href="#install">Установка</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">Документация</a>
+  <a href="https://fzkuji.github.io/OpenProgram/">Сайт</a> · <a href="#install">Установка</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">Документация</a>
 </p>
 
 <p align="center">
@@ -51,10 +51,10 @@
 ## Установка
 
 ```bash
-curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-В Windows (начиная с v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. Настольное приложение для macOS — DMG на [странице релизов](https://github.com/Fzkuji/OpenProgram/releases); приложение для Linux доступно там же в виде deb и AppImage, а приложение для Windows появится в v1.1.1. Если сайт не отвечает: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Другие варианты — в [руководстве по установке](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html) (на английском).
+В Windows (начиная с v1.2.0): `irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`. Настольное приложение для macOS — DMG на [странице релизов](https://github.com/Fzkuji/OpenProgram/releases); приложение для Linux доступно там же в виде deb и AppImage, а приложение для Windows появится в v1.1.1. Если сайт не отвечает: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Другие варианты — в [руководстве по установке](https://fzkuji.github.io/OpenProgram/docs/install/install.html) (на английском).
 
 ## Быстрый старт
 
@@ -90,48 +90,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[Классы агентов](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | Агент — это класс Python; ветвления, повторы и проверки — код, `self(...)` — вызов модели. |
-| **[DAG выполнения](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | Каждый ход пользователя, вызов модели и вызов функции — узел, который можно изучить, разветвить и воспроизвести. |
-| **[Контекст](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | Каждый вызов читает выбранные узлы, а не растущую переписку, с автоматическим сжатием. |
-| **[Самопрограммирование](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | Агенты дописывают новые методы в свой класс; со следующего хода это инструменты. |
-| **[Проверяемые решения](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.html)** | Модель выбирает из фиксированного меню, а код проверяет выбор до любого выполнения. |
-| **[Субагенты](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Субагенты работают в своей ветке, при желании в Git worktree, и возвращают только результат. |
-| **[События](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | Типизированная шина событий; плагины наблюдают за событиями или блокируют вызовы инструментов. |
-| **[Постоянно работающие агенты](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | Агенты, которые продолжают работать в фоне и реагируют на события. |
-| **[Цели и восстановление](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Долгосрочные цели переживают перезапуск и продолжаются с места остановки. |
-| **[Отказоустойчивость](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Повторы, тайм-ауты и классификация ошибок для каждого вызова модели. |
+| **[Классы агентов](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | Агент — это класс Python; ветвления, повторы и проверки — код, `self(...)` — вызов модели. |
+| **[DAG выполнения](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | Каждый ход пользователя, вызов модели и вызов функции — узел, который можно изучить, разветвить и воспроизвести. |
+| **[Контекст](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | Каждый вызов читает выбранные узлы, а не растущую переписку, с автоматическим сжатием. |
+| **[Самопрограммирование](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | Агенты дописывают новые методы в свой класс; со следующего хода это инструменты. |
+| **[Проверяемые решения](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | Модель выбирает из фиксированного меню, а код проверяет выбор до любого выполнения. |
+| **[Субагенты](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Субагенты работают в своей ветке, при желании в Git worktree, и возвращают только результат. |
+| **[События](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | Типизированная шина событий; плагины наблюдают за событиями или блокируют вызовы инструментов. |
+| **[Постоянно работающие агенты](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | Агенты, которые продолжают работать в фоне и реагируют на события. |
+| **[Цели и восстановление](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Долгосрочные цели переживают перезапуск и продолжаются с места остановки. |
+| **[Отказоустойчивость](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Повторы, тайм-ауты и классификация ошибок для каждого вызова модели. |
 
 ### Рабочее пространство
 
 | | |
 |---|---|
-| **[Настольный и веб-интерфейс](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | Приложение на macOS и Linux, а начиная с v1.2.0 и на Windows; веб-интерфейс — на любой из этих систем или на сервере. |
-| **[Разделённые панели](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Чаты, файлы, терминалы и веб-страницы рядом. |
-| **[Встроенный браузер](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | Браузер, который агент читает и которым управляет у вас на глазах. |
-| **[Встроенный терминал](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | Терминалы в рабочем пространстве, общие с агентом. |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Управление настольными приложениями, страницами браузера или удалённой ВМ. |
-| **[CLI и TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | Тот же агент из терминала. |
-| **[Удалённый доступ](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | Доступ к своему экземпляру с другого устройства, только для владельца. |
+| **[Настольный и веб-интерфейс](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | Приложение на macOS и Linux, а начиная с v1.2.0 и на Windows; веб-интерфейс — на любой из этих систем или на сервере. |
+| **[Разделённые панели](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Чаты, файлы, терминалы и веб-страницы рядом. |
+| **[Встроенный браузер](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | Браузер, который агент читает и которым управляет у вас на глазах. |
+| **[Встроенный терминал](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | Терминалы в рабочем пространстве, общие с агентом. |
+| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Управление настольными приложениями, страницами браузера или удалённой ВМ. |
+| **[CLI и TUI](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | Тот же агент из терминала. |
+| **[Удалённый доступ](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | Доступ к своему экземпляру с другого устройства, только для владельца. |
 
 ### Агенты и безопасность
 
 | | |
 |---|---|
-| **[Настраиваемые агенты](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Сохраните модель, инструкции, инструменты и доступ к памяти как переиспользуемого агента. |
-| **[Память](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | Память с источниками, поиском и фоновой записью. |
-| **[Права и песочница](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | Разрешайте или запрещайте вызовы инструментов с пояснением; команды выполняются в песочнице. |
-| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | Инструменты и приложения как устанавливаемые Programs. |
+| **[Настраиваемые агенты](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Сохраните модель, инструкции, инструменты и доступ к памяти как переиспользуемого агента. |
+| **[Память](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | Память с источниками, поиском и фоновой записью. |
+| **[Права и песочница](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | Разрешайте или запрещайте вызовы инструментов с пояснением; команды выполняются в песочнице. |
+| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | Инструменты и приложения как устанавливаемые Programs. |
 
 ### Модели и интеграции
 
 | | |
 |---|---|
-| **[Провайдеры](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini и другие, по несколько аккаунтов на провайдера. |
-| **[Локальные модели](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.html)** | Локальные серверы инференса, с необязательной аутентификацией. |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.html)** | Подключайте MCP-серверы или публикуйте OpenProgram как MCP-сервер. |
-| **[Skills и плагины](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Расширяйте знания агента и набор доступных ему вызовов. |
-| **[Каналы](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Общайтесь с агентами в Telegram, Discord, Slack и WeChat. |
-| **[Автообновления](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | Подписанные релизы, обновляющиеся на месте. |
+| **[Провайдеры](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini и другие, по несколько аккаунтов на провайдера. |
+| **[Локальные модели](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | Локальные серверы инференса, с необязательной аутентификацией. |
+| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | Подключайте MCP-серверы или публикуйте OpenProgram как MCP-сервер. |
+| **[Skills и плагины](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Расширяйте знания агента и набор доступных ему вызовов. |
+| **[Каналы](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | Общайтесь с агентами в Telegram, Discord, Slack и WeChat. |
+| **[Автообновления](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | Подписанные релизы, обновляющиеся на месте. |
 
 ## Цитирование
 

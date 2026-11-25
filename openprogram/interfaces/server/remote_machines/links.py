@@ -186,7 +186,8 @@ async def open_socket(route: str, token: str):
 def _machine(machine_id: str):
     from openprogram.host.machines import get_machine
     machine = get_machine(machine_id)
-    if machine is None or not machine.enabled or machine.connection("openprogram") is None:
+    from openprogram.host.machines.peer import is_paired
+    if machine is None or not machine.enabled or not is_paired(machine):
         return None
     return machine
 
@@ -251,16 +252,15 @@ async def _session(machine_id: str, socket) -> None:
 
 
 async def _run(machine_id: str, stop: asyncio.Event, wake: asyncio.Event) -> None:
-    from openprogram.host.machines import secret
-    from openprogram.host.machines.peer import routes_of
+    from openprogram.host.machines.peer import credential
 
     while not stop.is_set():
         machine = _machine(machine_id)
         if machine is None:
             return
-        token = secret(machine, "openprogram", "token")
+        routes, token = credential(machine)
         reason = "not paired"
-        for route in routes_of(machine.connection("openprogram").settings) if token else []:
+        for route in routes if token else []:
             try:
                 socket = await open_socket(route, token)
             except Exception as exc:
@@ -304,10 +304,10 @@ def sync() -> None:
 
 def _sync_on_loop() -> None:
     from openprogram.host.machines import list_machines
+    from openprogram.host.machines.peer import is_paired
     if _stop is None or _stop.is_set():
         return
-    wanted = {machine.id for machine in list_machines()
-              if machine.enabled and machine.connection("openprogram") is not None}
+    wanted = {machine.id for machine in list_machines() if machine.enabled and is_paired(machine)}
     for machine_id, task in list(_tasks.items()):
         if task.done() or machine_id not in wanted:
             task.cancel()

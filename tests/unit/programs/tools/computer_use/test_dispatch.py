@@ -7,13 +7,14 @@ from openprogram.models.providers.types import AgentToolResult, TextContent
 from openprogram.programs import _is_available_agent_tool, get_agent_tool
 from openprogram.programs._authoring import guides
 from openprogram.programs._host.execution import ToolReturn
-from openprogram.programs.tools.computer_use.computer_use import dispatch, errors, tool
+from openprogram.programs.tools.computer_use.computer_use.routing import dispatch
+from openprogram.programs.tools.computer_use.computer_use import errors, tool
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
 from openprogram.programs.tools.computer_use.computer_use.tool import computer_use
 
 from tests.support.screen_targets import PIXELS, FakeProvider, app_approval, environment, install_machines, local, machine
+from openprogram.programs.tools.computer_use.computer_use import (context as cu_context, devices as cu_devices, type_guides as cu_type_guides)
 
-SSH = {"kind": "ssh", "target": "me@devbox"}
 
 
 def _app() -> FakeProvider:
@@ -45,31 +46,31 @@ def _lab(machine_id: str = "lab") -> FakeProvider:
 def here(monkeypatch):
     """This computer alone, as the conversation's environment."""
     providers = {"window": _app(), "browser": _browser()}
-    install_machines(monkeypatch, [local(window="fake", browser="fake")], {"local": list(providers.values())})
+    install_machines(monkeypatch, [local()], {"local": list(providers.values())})
     environment(monkeypatch, local())
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
     return providers
 
 
 @pytest.fixture
 def fleet(monkeypatch):
-    """This computer, an SSH host with a desktop that is the conversation's environment, and a VM."""
-    devbox = machine("devbox", shell=SSH, window="fake", screen="fake", browser="fake")
+    """This computer, an SSH host that is the conversation's environment, another computer and a VM."""
+    devbox = machine("devbox", "devbox", "ssh", target="me@devbox")
     providers = {"window": _app(), "screen": FakeProvider("screen", line="a whole display."),
                  "browser": _browser(), "browser chrome": FakeProvider("browser", app="chrome", extras=("list_tabs",),
                                                                        line="the user's own Google Chrome."),
-                 "devbox window": FakeProvider("window", "devbox"),
-                 "devbox screen": FakeProvider("screen", "devbox"),
-                 "devbox browser": FakeProvider("browser", "devbox"),
+                 "studio window": FakeProvider("window", "studio"),
+                 "studio screen": FakeProvider("screen", "studio"),
+                 "studio browser": FakeProvider("browser", "studio"),
                  "lab screen": _lab()}
     install_machines(monkeypatch,
-            [local(window="fake", screen="fake", browser="fake"), machine("lab", screen="fake"), devbox,
-             machine("builder", shell={"kind": "docker"})],
+            [local(), machine("lab"), devbox, machine("studio"),
+             machine("builder", "builder", "docker")],
             {"local": [providers[name] for name in ("window", "screen", "browser", "browser chrome")],
-             "devbox": [providers[name] for name in ("devbox window", "devbox screen", "devbox browser")],
+             "studio": [providers[name] for name in ("studio window", "studio screen", "studio browser")],
              "lab": [providers["lab screen"]]})
     environment(monkeypatch, devbox)
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
     return providers
 
 
@@ -186,64 +187,67 @@ def test_a_call_without_device_has_no_header_where_the_shell_runs_here(here):
 # -- <devices> -------------------------------------------------------------------------
 
 def test_the_devices_are_listed_this_computer_then_the_environment_then_the_rest(fleet):
-    found = tool.devices()
-    assert list(found) == [tool.THIS_COMPUTER, "devbox", "lab"]
-    lines = found[tool.THIS_COMPUTER].splitlines()
+    found = cu_devices.devices()
+    assert list(found) == [cu_devices.THIS_COMPUTER, "devbox", "lab", "studio"]
+    lines = found[cu_devices.THIS_COMPUTER].splitlines()
     assert lines[0].startswith("- this computer (device left out): ") and lines[0].endswith(", where OpenProgram runs.")
     assert lines[1:] == [
         '  - type="window": application windows, read and operated in the background.',
         '  - type="screen": a whole display.',
         '  - type="browser": OpenProgram\'s built-in browser, this conversation\'s pages. Its http://localhost is '
-        'this computer\'s; for devbox\'s use device="devbox", type="browser".',
+        'this computer\'s.',
         '  - type="browser", app="chrome": the user\'s own Google Chrome.',
     ]
     assert found["devbox"].splitlines() == [
         '- devbox (device="devbox"): SSH host me@devbox; this conversation\'s shell and files are here.',
-        '  - device="devbox", type="window": window of devbox',
-        '  - device="devbox", type="screen": screen of devbox',
-        '  - device="devbox", type="browser": browser of devbox',
+        '  nothing on it can be operated with computer_use.',
     ]
-    assert found["lab"].splitlines() == ['- lab (device="lab"): a virtual machine, pixels only.',
+    assert found["studio"].splitlines()[1:] == [
+        '  - device="studio", type="window": window of studio',
+        '  - device="studio", type="screen": screen of studio',
+        '  - device="studio", type="browser": browser of studio',
+    ]
+    assert found["lab"].splitlines() == ['- lab (device="lab"): Test device.',
                                          '  - device="lab", type="screen": a virtual machine, pixels only']
     # A machine with no target that is not the environment is not listed.
-    assert "builder" not in tool.devices_text()
+    assert "builder" not in cu_devices.devices_text()
 
 
 def test_the_environments_entry_says_it_has_no_screen(monkeypatch):
-    builder = machine("builder", shell={"kind": "docker"})
-    install_machines(monkeypatch, [local(window="fake"), builder], {"local": [_app()]})
+    builder = machine("builder", "builder", "docker")
+    install_machines(monkeypatch, [local(), builder], {"local": [_app()]})
     environment(monkeypatch, builder)
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
-    text = tool.devices()["builder"]
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
+    text = cu_devices.devices()["builder"]
     assert text.startswith('- builder (device="builder"): Docker container')
     assert text.endswith("this conversation's shell and files are here.\n"
-                         "  nothing on it can be operated: it has no window, screen or browser connection.")
+                         "  nothing on it can be operated with computer_use.")
 
 
 def test_the_localhost_note_appears_only_when_the_shell_runs_elsewhere(here):
-    text = tool.devices_text()
+    text = cu_devices.devices_text()
     assert 'device="' not in text
     assert "Its http://localhost" not in text
 
 
 def test_a_target_missing_a_permission_stays_listed_with_a_note(monkeypatch):
-    install_machines(monkeypatch, [local(window="fake"), machine("lab", screen="fake")],
+    install_machines(monkeypatch, [local(), machine("lab")],
             {"local": [FakeProvider("window", line="application windows.",
                                     missing="Accessibility is off: System Settings > Privacy & Security.")],
              "lab": [FakeProvider("screen", "lab", line="a VM", missing="the server needs a token")]})
     environment(monkeypatch, local())
-    found = tool.devices()
+    found = cu_devices.devices()
     assert ('  - type="window": application windows. Not usable yet: Accessibility is off: System Settings > '
-            "Privacy & Security.") in found[tool.THIS_COMPUTER]
+            "Privacy & Security.") in found[cu_devices.THIS_COMPUTER]
     assert found["lab"].endswith('  - device="lab", type="screen": a VM. Not usable yet: the server needs a token')
 
 
 def test_the_tool_is_hidden_when_no_target_exists(monkeypatch):
     install_machines(monkeypatch, [local()], {})
-    assert tool.available_targets() == []
+    assert cu_devices.available_targets() == []
     assert not _is_available_agent_tool(get_agent_tool("computer_use"))
-    install_machines(monkeypatch, [local(window="fake")], {"local": [_app()]})
-    assert tool.available_targets() == ["window"]
+    install_machines(monkeypatch, [local()], {"local": [_app()]})
+    assert cu_devices.available_targets() == ["window"]
     assert _is_available_agent_tool(get_agent_tool("computer_use"))
 
 
@@ -270,11 +274,11 @@ def loop():
 
 
 def test_the_family_guide_and_the_target_note_arrive_with_the_first_call(monkeypatch, loop):
-    install_machines(monkeypatch, [local(), machine("lab", screen="fake"), machine("lab-2", screen="fake")],
+    install_machines(monkeypatch, [local(), machine("lab"), machine("lab-2")],
             {"lab": [_lab()], "lab-2": [_lab("lab-2")]})
     environment(monkeypatch, local())
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
-    tool.devices()
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
+    cu_devices.devices()
     call = {"device": "Lab", "type": "Screen", "action": "click", "args": {"x": 1, "y": 2}}
     first = _attached(guides.attach(tool.NAME, call, _result()))
     assert '<guide name="computer_use.screen">' in first
@@ -290,18 +294,18 @@ def test_the_family_guide_and_the_target_note_arrive_with_the_first_call(monkeyp
 
 
 def test_a_call_to_an_unknown_target_carries_no_guide(monkeypatch, loop):
-    install_machines(monkeypatch, [local(), machine("lab", screen="fake")], {"lab": [_lab()]})
+    install_machines(monkeypatch, [local(), machine("lab")], {"lab": [_lab()]})
     environment(monkeypatch, local())
-    tool.devices()
+    cu_devices.devices()
     assert _attached(guides.attach(tool.NAME, {"device": "vm", "type": "screen", "action": "click"},
                                    _result("UNKNOWN_TARGET: x", error=True))) == ""
 
 
 def test_action_guide_shows_the_family_guide_and_the_note_again(monkeypatch):
-    install_machines(monkeypatch, [local(), machine("lab", screen="fake")], {"lab": [_lab()]})
+    install_machines(monkeypatch, [local(), machine("lab")], {"lab": [_lab()]})
     environment(monkeypatch, local())
-    monkeypatch.setattr(tool, "_code_available", lambda: False)
+    monkeypatch.setattr(cu_context, "_code_available", lambda: False)
     result = computer_use(device="lab", type="screen", action="guide")
     assert '<guide name="computer_use.screen">' in result.text
     assert "Note: device=lab shows pixels only" in result.text
-    assert '<guide name="computer_use.note.lab screen">' in tool.guide({"device": "lab", "type": "screen"})
+    assert '<guide name="computer_use.note.lab screen">' in cu_type_guides.guide({"device": "lab", "type": "screen"})

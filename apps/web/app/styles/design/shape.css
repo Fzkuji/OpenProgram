@@ -12,6 +12,8 @@
      --radius-lg   10px  list rows, menus, popovers, cards
      --radius-xl   12px  the centre card, page panels, dialogs
      --radius-2xl  16px  large floating surfaces (Launchpad, overview)
+     --radius-groove 11px  a choice groove: its 8px face plus the 3px
+                         around it, so the two curves are concentric
      rounded-full / 50%  pills, avatars, dots */
 @theme {
   --spacing: 4px;
@@ -22,6 +24,7 @@
   --radius-lg: 10px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
+  --radius-groove: 11px;
   --radius-3xl: initial;
   --radius-4xl: initial;
 }

@@ -149,6 +149,7 @@
 <tr><th scope="row">提交</th><td>普通代码在事务提交前校验模型输出。自然语言的“已保存”不是证据。</td></tr>
 <tr><th scope="row">重试</th><td>请求键对提交去重；相同键配不同输入被拒绝。非幂等的外部效果要检查现有记录或询问用户；网络超时绝不重复执行。</td></tr>
 <tr><th scope="row">对话</th><td>声明 <code translate="no">chat</code> 的窗口有自己的普通对话，一个键一段，草稿 ID 在第一条消息时被采用。宿主把真正的输入框按页面要求的位置盖在 iframe 上，并隐藏右侧栏；页面按宿主推送的数据自己画消息。页面的说明作为 <code translate="no">application</code> 附件随每条消息发出，存在用户节点上。agent 像普通聊天一样在对话的文件夹里干活，不经过后端。</td></tr>
+<tr><th scope="row">替主人发消息</th><td>页面上的按钮可以用主人的名义发一条消息（<code translate="no">chat.send</code>），有回复在跑时排在发送队列里。</td></tr>
 </tbody>
 </table>
 

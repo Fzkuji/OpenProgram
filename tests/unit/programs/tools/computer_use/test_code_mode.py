@@ -16,13 +16,15 @@ import time
 import pytest
 
 from openprogram.programs._host.execution import ToolReturn
-from openprogram.programs.tools.computer_use.computer_use import code as code_mode
-from openprogram.programs.tools.computer_use.computer_use import locks, tool
+from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code_mode
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
+from openprogram.programs.tools.computer_use.computer_use import tool
 from openprogram.programs.tools.computer_use.computer_use.contract import Approval
-from openprogram.programs.tools.computer_use.computer_use.locks import Busy, Locks
+from openprogram.programs.tools.computer_use.computer_use.routing.locks import Busy, Locks
 from openprogram.programs.tools.computer_use.computer_use.tool import computer_use
 
 from tests.support.screen_targets import PIXELS, FakeProvider, app_approval, environment, install_machines, local, machine
+from openprogram.programs.tools.computer_use.computer_use import context as cu_context
 
 MACHINE = locks.machine_key("local")
 
@@ -84,7 +86,7 @@ def interpreter(monkeypatch, tmp_path):
     monkeypatch.setattr(code_mode, "_runner", lambda session: (broker, runner, "slot"))
     monkeypatch.setattr(code_mode, "_no_scripts", lambda: False)
     monkeypatch.setattr(code_mode, "_unrestricted", lambda tool_args: False)
-    monkeypatch.setattr(tool, "_code_available", lambda: True)
+    monkeypatch.setattr(cu_context, "_code_available", lambda: True)
     monkeypatch.setattr(locks, "_root", lambda: tmp_path / "locks")
     environment(monkeypatch, local())
     return SimpleNamespace(broker=broker, runner=runner)
@@ -107,7 +109,7 @@ def targets(monkeypatch):
                            approval=lambda subject, steps: (Approval("upload a file") if any(
                                name == "upload_file" for name, _ in steps) else None))
     lab = FakeProvider("screen", "lab", capabilities=PIXELS)
-    install_machines(monkeypatch, [local(window="fake", browser="fake"), machine("lab", screen="fake")],
+    install_machines(monkeypatch, [local(), machine("lab")],
             {"local": [app, browser], "lab": [lab]})
     return SimpleNamespace(app=app, browser=browser, lab=lab)
 
@@ -186,7 +188,7 @@ def test_a_step_that_asks_for_another_rule_names_both(monkeypatch, interpreter):
         return app_approval(subject, steps)
 
     app = FakeProvider("window", approval=approval)
-    install_machines(monkeypatch, [local(window="fake")], {"local": [app]})
+    install_machines(monkeypatch, [local()], {"local": [app]})
     result = _run("window", "await cu.drag(x=1, y=1, to_x=2, to_y=2)", app="Numbers")
     assert result.is_error
     assert "this code call is approved for window numbers; drag asks for screen" in result.text
@@ -273,7 +275,7 @@ def test_no_lock_is_held_between_two_steps(interpreter, monkeypatch):
 
     app = FakeProvider("window", approval=app_approval, act=act,
                        locks=lambda subject, steps: Locks(exclusive=(MACHINE,)))
-    install_machines(monkeypatch, [local(window="fake")], {"local": [app]})
+    install_machines(monkeypatch, [local()], {"local": [app]})
     result = _run("window", "await cu.click(element=1)\nprint(free())\nawait cu.click(element=2)\nprint(free())",
                   app="Numbers")
     assert result.text == "True\nTrue"

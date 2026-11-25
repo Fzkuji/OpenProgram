@@ -11,11 +11,11 @@
     design/         design tokens and Tailwind's names for them
     themes/         colour values, one file per theme (+ fallback.css)
     base/           document, focus, list row, shell layout, scrollbar,
-                    sidebar, desktop chrome, motion, canvas drag
+                    sidebar, desktop chrome, motion, canvas drag, phone
     chat/           pane/ messages/ cards/ execution/ composer/ welcome/
     dag/            graph/ panels/
     right-dock/     right-sidebar panels</pre>
-<p class="note"><code translate="no">index.css</code> cascade: base, chat, right-dock, dag. Tokens and tiers: <a href="design-tokens.html">Design tokens</a>.</p>
+<p class="note"><code translate="no">index.css</code> cascade: base, chat, right-dock, dag, then <code translate="no">base/phone.css</code> last (<a href="../phone-layout.html">phone layout</a>). Tokens and tiers: <a href="design-tokens.html">Design tokens</a>.</p>
 
 <h2 id="rules">Rules</h2>
 <table class="stack fixed">

@@ -2,13 +2,13 @@
 
 /**
  * Machines — the computers OpenProgram reaches: this computer, SSH hosts,
- * Docker machines, virtual machines. Each has up to three connections
- * (shell, screen, browser).
+ * Docker machines, virtual machines, another computer's OpenProgram. Each
+ * has one connection: how it is reached.
  *
  * The list comes from the worker (`list_machines`) and refreshes on every
  * `machines` broadcast, a machine's connection state changing included.
  * The environment is a role on this list: the machine a conversation's
- * commands and files run on, which needs a shell. The conversation's
+ * commands and files run on, which the worker marks with `shell`. The conversation's
  * project decides it (`machine_id` on the project); the home project is
  * always this computer.
  */
@@ -18,7 +18,6 @@ import { rememberMachineNames } from "@/lib/computer-use/computer-use-call";
 import { wsRequest } from "@/lib/net/ws/ws-request";
 import {
   LOCAL_ID,
-  findKind,
   type KindInfo,
   type MachineInfo,
   type MachinesSnapshot,
@@ -33,13 +32,14 @@ interface MachinesState {
   setSnapshot(snapshot: MachinesSnapshot): void;
 }
 
-// Until the worker answers: this computer, which always has its own shell.
+// Until the worker answers: this computer, which always runs commands.
 const LOCAL: MachineInfo = {
   id: LOCAL_ID,
   name: "This computer",
   enabled: true,
   status: { state: "connected" },
-  shell: { kind: "", label: "", where: "", known: true },
+  connection: { kind: "local", label: "This computer", where: "", known: true },
+  shell: { remote_files: false, instance_scope: "machine" },
 };
 
 export const useMachines = create<MachinesState>((set) => ({
@@ -144,9 +144,9 @@ export function machineOnline(machine: MachineInfo | null | undefined): boolean 
 }
 
 /** A project folder on this machine is on the machine's own disk, chosen there (an SSH host), not on this computer's. */
-export function machineKeepsFiles(machine: MachineInfo | null | undefined, kinds: KindInfo[]): boolean {
-  if (!machine || machine.id === LOCAL_ID || !machine.shell) return false;
-  return findKind(kinds, "shell", machine.shell.kind)?.remote_files === true;
+export function machineKeepsFiles(machine: MachineInfo | null | undefined): boolean {
+  if (!machine || machine.id === LOCAL_ID) return false;
+  return machine.shell?.remote_files === true;
 }
 
 /** The project's folder is on this computer's disk: the home project, a
@@ -157,18 +157,16 @@ export function machineKeepsFiles(machine: MachineInfo | null | undefined, kinds
 export function projectFolderHere(
   project: { is_default?: boolean; machine_id?: string | null } | null | undefined,
   items: MachineInfo[],
-  kinds: KindInfo[],
 ): boolean {
   const id = projectMachineId(project);
   if (id === LOCAL_ID) return true;
   const machine = findMachine(items, id);
-  return !!machine && !machineKeepsFiles(machine, kinds);
+  return !!machine && !machineKeepsFiles(machine);
 }
 
 /** This computer, a machine each conversation gets its own instance of, or any other machine. */
-export function machineIconName(machine: MachineInfo | null | undefined, kinds: KindInfo[]): "monitor" | "server-2" | "box" {
+export function machineIconName(machine: MachineInfo | null | undefined): "monitor" | "server-2" | "box" {
   // This computer, or another computer's own OpenProgram.
-  if (!machine || machine.id === LOCAL_ID || machine.openprogram) return "monitor";
-  const shell = machine.shell ? findKind(kinds, "shell", machine.shell.kind) : null;
-  return shell?.instance_scope === "conversation" ? "box" : "server-2";
+  if (!machine || machine.id === LOCAL_ID || machine.connection?.kind === "openprogram") return "monitor";
+  return machine.shell?.instance_scope === "conversation" ? "box" : "server-2";
 }

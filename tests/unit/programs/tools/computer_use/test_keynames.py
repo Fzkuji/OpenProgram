@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use.keynames import (
-    chord_of, normalize_key, playwright, pyautogui,
-)
+from openprogram.programs.tools.computer_use.computer_use.actions.keynames import (chord_of, normalize_key,
+    playwright, pyautogui)
 
 
 @pytest.mark.parametrize("written, ours", [

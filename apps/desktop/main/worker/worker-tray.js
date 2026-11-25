@@ -5,8 +5,8 @@
 // Assistant and the Butler keep running there, which is why closing a window
 // or quitting the App does not stop the worker and asks nothing.
 //
-// The menu is the system's own: a status line, Open OpenProgram, and Stop
-// background. Its icon is a single-colour version of the App icon
+// The menu is the system's own: a status line, Open OpenProgram, Take
+// Screenshot (main/windows/screenshot.js) and Stop background. Its icon is a single-colour version of the App icon
 // (main/worker/tray/trayTemplate.png, packaged with the main process);
 // without that file no tray is created, so nothing appears before the icon
 // is approved.
@@ -28,6 +28,7 @@ function trayMenuTemplate(state, actions) {
     { label: statusLabel(state), enabled: false },
     { type: "separator" },
     { label: "Open OpenProgram", click: actions.open },
+    ...(actions.screenshot ? [{ label: "Take Screenshot", accelerator: "CommandOrControl+Shift+2", click: actions.screenshot }] : []),
     {
       label: "Stop background",
       enabled: Boolean(state && state.running),
@@ -43,10 +44,11 @@ function trayIconPath(iconRoot) {
 
 /**
  * Create the tray when its icon exists. `probe()` resolves to
- * `{running}`; `open()` shows the main window; `stop()` stops the worker.
+ * `{running}`; `open()` shows the main window; `screenshot()` starts the
+ * screenshot tool; `stop()` stops the worker.
  * Returns `{refresh, destroy}`, or null without an icon.
  */
-function createWorkerTray({ Tray, Menu, nativeImage, iconRoot, probe, open, stop,
+function createWorkerTray({ Tray, Menu, nativeImage, iconRoot, probe, open, stop, screenshot,
   setInterval: every = setInterval, clearInterval: cancel = clearInterval, exists = fs.existsSync }) {
   const icon = trayIconPath(iconRoot);
   if (!exists(icon)) return null;
@@ -57,6 +59,7 @@ function createWorkerTray({ Tray, Menu, nativeImage, iconRoot, probe, open, stop
   let state = { running: false };
   const render = () => tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate(state, {
     open,
+    screenshot,
     stop: async () => {
       await stop();
       await refresh();

@@ -1,24 +1,25 @@
 """Machines section.
 
 A project is a folder on one machine, and its conversations run there:
-this computer, or a machine with a shell. The machines themselves are
+this computer, or a machine commands run on. The machines themselves are
 managed with ``openprogram machines``; this wizard step lists them and can
-add one, asking for the settings its shell kind declares.
+add one, asking for the settings its connection method declares.
 """
 from __future__ import annotations
 
 
 def _add_machine(text, choose) -> str | None:
+    from openprogram.host.backend import SHELLS
     from openprogram.host.machines import kinds, new_machine_id, save_machine
-    shells = [kind for kind in kinds.all_kinds("shell") if not kind.local_only]
+    shells = [kind for kind in kinds.all_kinds() if kind.name in SHELLS and not kind.local_only]
     labels = {kind.label: kind for kind in shells}
-    picked = choose("Its shell:", list(labels), next(iter(labels), ""))
+    picked = choose("How it is reached:", list(labels), next(iter(labels), ""))
     if picked is None:
         return None
     kind = labels[picked]
     suggested = new_machine_id(kind.name)
     machine_id = text("Machine id (lowercase, e.g. devbox):", default=suggested) or suggested
-    shell: dict = {"kind": kind.name}
+    connection: dict = {"kind": kind.name}
     required = set(kind.settings.get("required") or ())
     for key, spec in (kind.settings.get("properties") or {}).items():
         spec = spec if isinstance(spec, dict) else {}
@@ -26,8 +27,8 @@ def _add_machine(text, choose) -> str | None:
         hint = "" if key in required else " (blank = default)"
         value = text(f"{title}{hint}:", default=str(spec.get("default") or "")) or ""
         if value:
-            shell[key] = value
-    return save_machine({"id": machine_id, "shell": shell}).id
+            connection[key] = value
+    return save_machine({"id": machine_id, "connection": connection}).id
 
 
 def run_backend_section() -> int:
@@ -36,7 +37,7 @@ def run_backend_section() -> int:
 
     add, done = "+ add a machine", "done"
     print("Machines a project can be on: " + ", ".join(machine.id for machine in list_environments()))
-    picked = _choose_one("Add a machine with a shell?", [done, add], done)
+    picked = _choose_one("Add a machine commands run on?", [done, add], done)
     if picked is None:
         print("Cancelled.")
         return 1

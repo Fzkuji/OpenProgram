@@ -5,12 +5,15 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.host import machines
-from openprogram.programs.tools.computer_use.computer_use import errors, locks
+from openprogram.programs.tools.computer_use.computer_use import errors
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
 from openprogram.programs.tools.computer_use.computer_use import tool as entry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser, osworld
-from openprogram.programs.tools.computer_use.computer_use.providers.desktop import AppProvider
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import built_in as built_in_browser
+from openprogram.programs.tools.computer_use.computer_use.providers.screen import osworld
+from openprogram.programs.tools.computer_use.computer_use.providers.window.provider import AppProvider
 from tests.support.screen_targets import PNG, FakeProvider, environment, install, install_machines, local, machine
+from openprogram.programs.tools.computer_use.computer_use import context as cu_context
 
 URL = "http://vm.test:5000"
 
@@ -43,7 +46,7 @@ def listed(monkeypatch, tmp_path):
     environment(monkeypatch, None)
 
     def make(*providers):
-        install_machines(monkeypatch, [local(window="fake", browser="fake")], {"local": list(providers)})
+        install_machines(monkeypatch, [local()], {"local": list(providers)})
     return make
 
 
@@ -67,7 +70,7 @@ def test_code_and_actions_are_one_or_the_other(listed):
 
 def test_a_target_that_is_not_set_up_is_unknown_and_the_answer_lists_the_targets(monkeypatch, listed):
     # A machine reached only by shell has no target.
-    install_machines(monkeypatch, [local(window="fake"), machine("devbox", shell={"kind": "ssh", "target": "me@devbox"})],
+    install_machines(monkeypatch, [local(), machine("devbox", "devbox", "ssh", target="me@devbox")],
                      {"local": [FakeProvider("window")]})
     result = entry.computer_use(device="devbox", type="screen")
     assert result.is_error and result.text.startswith("UNKNOWN_TARGET:")
@@ -96,7 +99,7 @@ def test_browser_actions_reach_the_tab_driver_and_read_as_text(listed):
     listed(_browser(driver))
     # A carried-over argument name reaches the driver in ours.
     result = entry.computer_use(type="browser", action="click", args={"tab": "t2", "ref": "e2"})
-    assert driver.runs == [("click", {"tab": "t2", "element": "e2"}, entry._session_id())]
+    assert driver.runs == [("click", {"tab": "t2", "element": "e2"}, cu_context._session_id())]
     assert result.text.splitlines()[:3] == ["clicked e2", "tab t2 · A · https://a.test/", "changes:"]
 
 
@@ -155,7 +158,7 @@ def test_osworld_steps_become_pyautogui_with_literal_values():
 
 def test_osworld_steps_execute_then_return_a_new_screenshot(monkeypatch):
     executed = []
-    provider = osworld.OSWorldScreen(machine("lab", "Lab VM", screen={"kind": "osworld", "url": URL}))
+    provider = osworld.OSWorldScreen(machine("lab", "Lab VM", "osworld", url=URL))
     monkeypatch.setattr(provider, "_screenshot", lambda: PNG)
     monkeypatch.setattr(provider, "_execute", lambda script, sent: executed.append(script))
     monkeypatch.setattr(osworld, "time", SimpleNamespace(sleep=lambda seconds: None))
@@ -166,7 +169,7 @@ def test_osworld_steps_execute_then_return_a_new_screenshot(monkeypatch):
 
 def test_a_set_up_machine_is_operated_without_asking_and_its_rule_names_the_machine(monkeypatch, listed):
     from openprogram.runtime.permissions.rule import parse_command
-    install_machines(monkeypatch, [local(), machine("lab", "Lab VM", screen={"kind": "osworld", "url": URL})])
+    install_machines(monkeypatch, [local(), machine("lab", "Lab VM", "osworld", url=URL)])
     call = {"device": "lab", "type": "screen", "action": "click", "args": {"x": 1, "y": 2}}
     assert parse_command("computer_use", call) == "lab screen"
     assert entry.requires_approval(**call) is False

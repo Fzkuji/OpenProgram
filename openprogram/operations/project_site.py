@@ -6,8 +6,7 @@ versions read the update source below it; and a repository test keeps the
 READMEs, install scripts, release notes and the desktop App (which cannot
 import Python) pointing at the same address.
 
-The site is published from the FuzzyKuji/openprogram-site repository with
-GitHub Pages. The landing page sits at the root, the documentation one level
+The site is the GitHub Pages site of the Fzkuji/OpenProgram repository. The landing page sits at the root, the documentation one level
 down under ``docs/``. Pages serves a project site below the account's
 ``github.io`` host, so the address has a path, and every link the build
 writes has to carry it.
@@ -16,7 +15,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-SITE_URL = "https://fuzzykuji.github.io/openprogram-site/"
+SITE_URL = "https://fzkuji.github.io/OpenProgram/"
 
 SITE_HOST = urlparse(SITE_URL).hostname or ""
 DOCS_URL = SITE_URL + "docs/"

@@ -11,11 +11,11 @@
     design/         design tokens and Tailwind's names for them
     themes/         colour values, one file per theme (+ fallback.css)
     base/           document, focus, list row, shell layout, scrollbar,
-                    sidebar, desktop chrome, motion, canvas drag
+                    sidebar, desktop chrome, motion, canvas drag, phone
     chat/           pane/ messages/ cards/ execution/ composer/ welcome/
     dag/            graph/ panels/
     right-dock/     right-sidebar panels</pre>
-<p class="note"><code translate="no">index.css</code> 层叠顺序：base、chat、right-dock、dag。令牌和档位见<a href="design-tokens.zh.html">设计令牌</a>。</p>
+<p class="note"><code translate="no">index.css</code> 层叠顺序：base、chat、right-dock、dag，最后是 <code translate="no">base/phone.css</code>（<a href="../phone-layout.zh.html">手机布局</a>）。令牌和档位见<a href="design-tokens.zh.html">设计令牌</a>。</p>
 
 <h2 id="rules">规则</h2>
 <table class="stack fixed">

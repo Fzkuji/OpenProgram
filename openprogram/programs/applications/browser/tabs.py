@@ -1776,7 +1776,7 @@ class Driver:
         return float(size[0] or 0), float(size[1] or 0)
 
     def _press(self, page, tab: Tab, args: dict[str, Any], named: bool) -> str:
-        from openprogram.programs.tools.computer_use.computer_use.keynames import playwright
+        from openprogram.programs.tools.computer_use.computer_use.actions.keynames import playwright
         written = str(args.get("key") or "").strip()
         if not written:
             raise pa.ActionError("key_required", "press_key needs key, such as Return or ctrl+a")

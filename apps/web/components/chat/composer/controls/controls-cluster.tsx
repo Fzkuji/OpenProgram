@@ -31,6 +31,7 @@ import {
   OptionsIcon,
   RecordIcon,
   SandboxIcon,
+  ScreenshotIcon,
   UnattendedIcon,
   WebSearchIcon,
 } from "../icons";
@@ -41,6 +42,11 @@ import styles from "../composer.module.css";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+/** The screenshot shortcut as this platform writes it (apps/desktop/main/windows/screenshot.js). */
+function screenshotShortcut() {
+  return typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "⇧⌘2" : "Ctrl+Shift+2";
+}
+
 export interface ControlsClusterProps {
   /** Split-pane composers pass their bound session id so the agent badges
    *  get unique DOM ids; unbound keeps the legacy singleton ids. */
@@ -50,6 +56,8 @@ export interface ControlsClusterProps {
   onPickImages(): void;
   /** Present where a demonstration can be recorded (desktop App on macOS). */
   onRecord?(): void;
+  /** The screenshot tool; only the desktop App has it. */
+  onScreenshot?(): void;
   recordingActive?: boolean;
   pendingImagesCount: number;
   pendingDocsCount: number;
@@ -87,6 +95,7 @@ export const ControlsCluster = memo(function ControlsCluster({
   setPlusMenuOpen,
   onPickImages,
   onRecord,
+  onScreenshot,
   recordingActive = false,
   pendingImagesCount,
   pendingDocsCount,
@@ -176,6 +185,15 @@ export const ControlsCluster = memo(function ControlsCluster({
                   label={text("Add files or photos", "添加文件或照片")}
                   onSelect={() => onPickImages()}
                 />
+                {onScreenshot ? (
+                  <PlusMenuRow
+                    active={false}
+                    icon={<ScreenshotIcon size={16} />}
+                    label={text("Take a screenshot", "截图")}
+                    trailing={<span className="text-fs-xs text-muted-foreground">{screenshotShortcut()}</span>}
+                    onSelect={() => onScreenshot()}
+                  />
+                ) : null}
                 {onRecord ? (
                   <PlusMenuRow
                     active={recordingActive}

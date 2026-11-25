@@ -9,8 +9,8 @@ import time
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use import locks
-from openprogram.programs.tools.computer_use.computer_use.locks import Busy, Locks, held
+from openprogram.programs.tools.computer_use.computer_use.routing import locks
+from openprogram.programs.tools.computer_use.computer_use.routing.locks import Busy, Locks, held
 
 KEY = locks.machine_key("lab")
 SHORT = 0.3
@@ -180,7 +180,7 @@ def test_a_call_cancelled_while_waiting_leaves_the_queue(folder):
 _CHILD = textwrap.dedent("""
     import sys
     from pathlib import Path
-    from openprogram.programs.tools.computer_use.computer_use import locks
+    from openprogram.programs.tools.computer_use.computer_use.routing import locks
     locks._root = lambda: Path(sys.argv[1])
     wanted = locks.Locks(shared=(sys.argv[2],)) if sys.argv[3] == "shared" else locks.Locks(exclusive=(sys.argv[2],))
     print("asking", flush=True)

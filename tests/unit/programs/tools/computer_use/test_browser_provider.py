@@ -6,13 +6,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-from openprogram.host.machines import Machine, local_machine
-from openprogram.programs.tools.computer_use.computer_use import dispatch, locks, vocabulary
+from openprogram.host.machines import Connection, Machine, local_machine
+from openprogram.programs.tools.computer_use.computer_use.routing import dispatch, locks
+from openprogram.programs.tools.computer_use.computer_use.actions import vocabulary
 from openprogram.programs.tools.computer_use.computer_use.contract import Approval, Call, Row
-from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import built_in as built_in_browser
 from tests.support.screen_targets import user_browsers
 
-GUIDE = Path(built_in_browser.__file__).parents[1] / "guides" / "browser.md"
+GUIDE = Path(built_in_browser.__file__).parents[2] / "guides" / "browser.md"
 
 
 class FakeDriver:
@@ -48,16 +49,14 @@ def _run(provider, steps, subject=None, **call):
     return dispatch.run_steps(provider, subject or {}, steps, Call("s", "a1", **call))
 
 
-def test_the_kind_lists_the_built_in_browser_and_each_browser_with_the_extension(monkeypatch):
+def test_this_computer_lists_the_built_in_browser_and_each_browser_with_the_extension(monkeypatch):
     service = SimpleNamespace(extension=user_browsers("chrome", "edge"))
     monkeypatch.setattr(built_in_browser, "service", lambda: service)
-    kind = built_in_browser.KIND
-    assert (kind.name, kind.connection, kind.local_only) == ("built_in", "browser", True)
-    found = kind.open(local_machine(), "s")
+    found = built_in_browser._open(local_machine(), "s")
     assert [provider.target for provider in found] == ["browser", "browser chrome", "browser edge"]
     assert [provider.address() for provider in found] == [
         'type="browser"', 'type="browser", app="chrome"', 'type="browser", app="edge"']
-    assert kind.open(Machine(id="lab", name="lab"), "s") == []
+    assert built_in_browser._open(Machine("lab", "lab", Connection("osworld")), "s") == []
 
 
 def test_actions_reach_the_tab_driver_under_the_agents_name():
@@ -200,10 +199,6 @@ def test_in_a_conversation_on_another_machine_localhost_is_still_this_computers(
     assert provider.environment_note("devbox", set()) == " Its http://localhost is this computer's."
     assert provider.environment_note("devbox", {"devbox browser"}) == (
         " Its http://localhost is this computer's; for devbox's use device=\"devbox\", type=\"browser\".")
-
-
-def test_the_kind_has_a_chinese_label_and_no_where_line_on_this_computer():
-    assert built_in_browser.KIND.label_zh and built_in_browser.KIND.where is None
 
 
 def test_the_provider_offers_every_extra_of_the_family():

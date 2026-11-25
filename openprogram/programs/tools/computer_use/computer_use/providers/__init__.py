@@ -1,10 +1,14 @@
-"""The providers: one module per connection kind, all behind ``contract.Provider``.
+"""The providers, all behind ``contract.Provider``.
 
-Importing this package registers every kind with the machines registry
-(``openprogram.host.machines.kinds``). A module that cannot load on this
-platform leaves its kind out; the others stay.
+Importing this package lets each module offer what it opens, by connection
+method (``registry.offer``): this computer's windows and screen
+(``window/``, ``screen/local.py``) and browsers (``browser/``) for ``local``,
+a virtual machine's screen for ``osworld`` (``screen/osworld.py``, which also
+registers that method with the device layer), another computer's
+OpenProgram for ``openprogram`` (``paired.py``). A module that cannot load on this platform leaves its targets
+out; the others stay.
 
-Nothing outside this package names a target. To add a kind, add its module
+Nothing outside this package names a target. To add one, add its module
 here and to ``_MODULES``.
 """
 from __future__ import annotations
@@ -15,7 +19,7 @@ import logging
 _log = logging.getLogger(__name__)
 
 # In the order the description lists this computer's targets.
-_MODULES = ("desktop", "built_in_browser", "osworld")
+_MODULES = ("window.provider", "browser.built_in", "screen.osworld", "paired")
 
 for _name in _MODULES:
     try:

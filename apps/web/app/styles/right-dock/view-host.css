@@ -66,28 +66,9 @@
    视图顶部）。它们不是图标轨的并列入口，是节点的从属视图，所以开关跟着
    节点走。几何同 DAG 视角里的高亮模式开关。 */
 .session-view-switch {
-  display: flex;
   flex-shrink: 0;
-  gap: 4px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
-}
-.session-view-switch-btn {
-  flex: 1;
-  padding: 4px 8px;
-  font-size: var(--right-panel-text-size, var(--fs-xs));
-  line-height: var(--right-panel-line-height, normal);
-  font-family: inherit;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--motion-medium), color var(--motion-medium);
-}
-.session-view-switch-btn.is-active {
-  color: var(--text-bright);
-  background: var(--bg-hover);
 }
 
 /* Collapsed, the views stay mounted at the open width against the card's

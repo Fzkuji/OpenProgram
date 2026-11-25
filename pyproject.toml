@@ -227,9 +227,9 @@ all = [
 openprogram = "openprogram.interfaces.cli:main"
 
 [project.urls]
-Homepage = "https://fuzzykuji.github.io/openprogram-site/"
+Homepage = "https://fzkuji.github.io/OpenProgram/"
 Repository = "https://github.com/Fzkuji/OpenProgram"
-Documentation = "https://fuzzykuji.github.io/openprogram-site/docs/"
+Documentation = "https://fzkuji.github.io/OpenProgram/docs/"
 Issues = "https://github.com/Fzkuji/OpenProgram/issues"
 Changelog = "https://github.com/Fzkuji/OpenProgram/releases"
 Discussions = "https://github.com/Fzkuji/OpenProgram/discussions"

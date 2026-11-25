@@ -105,6 +105,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-muted: var(--muted);
+  --color-groove: var(--groove);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
@@ -132,6 +133,9 @@
      that scroll their pills keep 6px of padding so this is not clipped. */
   --shadow-raised: var(--composer-shadow);
   --shadow-raised-hover: var(--composer-shadow-focus);
+  /* The groove a choice sits in (ToggleGroup `segmented`, TabsList): set a
+     little into the surface, the mirror of the raised face above. */
+  --shadow-groove: inset 0 1px 2px rgb(0 0 0 / 0.06);
   --color-user-msg-bg: var(--user-msg-bg);
   --color-assistant-msg-bg: var(--assistant-msg-bg);
 

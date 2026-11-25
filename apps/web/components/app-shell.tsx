@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
+import { PhoneShell } from "./layout/phone-shell";
 import { useHoldsOwnConversation } from "./applications/application-conversation";
 import { ControlTips } from "./control-tips";
 import { CenterTabStrip } from "./center-tabs/strip/center-tab-strip";
@@ -747,6 +748,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ display: showChat && !applicationHoldsChat ? "contents" : "none" }}>
         <RightSidebar />
       </div>
+      {/* Phone only: the drawer's scrim, edge swipe and keyboard-aware height. */}
+      <PhoneShell />
       {composerMount && createPortal(<FocusedComposer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
       {messagesMount && createPortal(<MessageList paintRows={paintRows} />, messagesMount)}

@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.programs.tools.computer_use.computer_use import dispatch, locks
+from openprogram.programs.tools.computer_use.computer_use.routing import dispatch, locks
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.locks import Busy, Locks, held
+from openprogram.programs.tools.computer_use.computer_use.routing.locks import Busy, Locks, held
 
 from tests.support.screen_targets import FakeProvider
 

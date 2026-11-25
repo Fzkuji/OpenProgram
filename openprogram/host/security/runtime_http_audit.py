@@ -214,6 +214,20 @@ BOUNDARY_MANIFEST = (
         call_counts=(("httpx.post", 1), ("httpx.get", 1)),
     ),
     BoundaryExclusion(
+        path="programs/tools/computer_use/computer_use/providers/paired.py",
+        boundary_owner="owner-control-plane",
+        reason="a computer_use call forwarded to another OpenProgram the owner paired, on the addresses its pairing names, with its device credential, no proxy and no redirects",
+        kinds=frozenset({"httpx.post"}),
+        call_counts=(("httpx.post", 1),),
+    ),
+    BoundaryExclusion(
+        path="interfaces/server/web_push.py",
+        boundary_owner="owner-control-plane",
+        reason="Web Push posts only to a subscription endpoint on a browser push service (Apple, Google, Mozilla, Microsoft), checked by valid_endpoint: https, port 443, one of those hosts",
+        kinds=frozenset({"httpx.Client"}),
+        call_counts=(("httpx.Client", 1),),
+    ),
+    BoundaryExclusion(
         path="host/security/remote_access.py",
         boundary_owner="owner-control-plane",
         reason="a UDP socket is pointed at a numeric address to read which LAN address this computer would use; nothing is sent",

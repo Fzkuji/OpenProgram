@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://fuzzykuji.github.io/openprogram-site/">ウェブサイト</a> · <a href="#install">インストール</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">ドキュメント</a>
+  <a href="https://fzkuji.github.io/OpenProgram/">ウェブサイト</a> · <a href="#install">インストール</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">ドキュメント</a>
 </p>
 
 <p align="center">
@@ -51,10 +51,10 @@
 ## インストール
 
 ```bash
-curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-Windows（v1.2.0 から）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/Fzkuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。Web サイトに接続できない場合：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英語）を参照してください。
+Windows（v1.2.0 から）：`irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/Fzkuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。Web サイトに接続できない場合：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://fzkuji.github.io/OpenProgram/docs/install/install.html)（英語）を参照してください。
 
 ## クイックスタート
 
@@ -90,48 +90,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[エージェントクラス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | エージェントは Python クラス。分岐、リトライ、チェックはコードで、`self(...)` がモデル呼び出しです。 |
-| **[実行 DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | ユーザーのターン、モデル呼び出し、関数呼び出しはすべてノードとなり、確認、分岐、再実行ができます。 |
-| **[コンテキスト](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | 各呼び出しは伸び続ける会話履歴ではなく選ばれたノードを読み、自動で圧縮されます。 |
-| **[セルフプログラミング](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | エージェントが自分のクラスに新しいメソッドを書き、次のターンからツールになります。 |
-| **[検証付きの判断](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent/next-step-decision.html)** | モデルは決められた選択肢から選び、実行前にコードがその選択を検証します。 |
-| **[サブエージェント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | サブエージェントは自分のブランチ（必要なら Git worktree）で動き、結果だけを返します。 |
-| **[イベント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | 型付きのイベントバス。プラグインはイベントを監視したり、ツール呼び出しを止めたりできます。 |
-| **[常駐エージェント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | バックグラウンドで動き続け、イベントに反応するエージェント。 |
-| **[ゴールと復旧](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期のゴールは再起動後も残り、中断したところから再開します。 |
-| **[フォールトトレランス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | すべてのモデル呼び出しにリトライ、タイムアウト、エラー分類があります。 |
+| **[エージェントクラス](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | エージェントは Python クラス。分岐、リトライ、チェックはコードで、`self(...)` がモデル呼び出しです。 |
+| **[実行 DAG](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | ユーザーのターン、モデル呼び出し、関数呼び出しはすべてノードとなり、確認、分岐、再実行ができます。 |
+| **[コンテキスト](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | 各呼び出しは伸び続ける会話履歴ではなく選ばれたノードを読み、自動で圧縮されます。 |
+| **[セルフプログラミング](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | エージェントが自分のクラスに新しいメソッドを書き、次のターンからツールになります。 |
+| **[検証付きの判断](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | モデルは決められた選択肢から選び、実行前にコードがその選択を検証します。 |
+| **[サブエージェント](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | サブエージェントは自分のブランチ（必要なら Git worktree）で動き、結果だけを返します。 |
+| **[イベント](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | 型付きのイベントバス。プラグインはイベントを監視したり、ツール呼び出しを止めたりできます。 |
+| **[常駐エージェント](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | バックグラウンドで動き続け、イベントに反応するエージェント。 |
+| **[ゴールと復旧](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期のゴールは再起動後も残り、中断したところから再開します。 |
+| **[フォールトトレランス](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | すべてのモデル呼び出しにリトライ、タイムアウト、エラー分類があります。 |
 
 ### ワークスペース
 
 | | |
 |---|---|
-| **[デスクトップと Web UI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | macOS と Linux では App、v1.2.0 からは Windows でも App。Web UI はそのいずれでもサーバーでも使えます。 |
-| **[分割ペイン](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | チャット、ファイル、ターミナル、Web ページを並べて表示。 |
-| **[内蔵ブラウザ](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | エージェントが読んで操作するブラウザを、そばで見守れます。 |
-| **[統合ターミナル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | ワークスペース内のターミナルをエージェントと共有。 |
-| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | デスクトップアプリ、ブラウザのページ、リモート VM を操作します。 |
-| **[CLI と TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | 同じエージェントをターミナルから。 |
-| **[リモートアクセス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | 別のデバイスから自分のインスタンスにアクセス（本人のみ）。 |
+| **[デスクトップと Web UI](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | macOS と Linux では App、v1.2.0 からは Windows でも App。Web UI はそのいずれでもサーバーでも使えます。 |
+| **[分割ペイン](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | チャット、ファイル、ターミナル、Web ページを並べて表示。 |
+| **[内蔵ブラウザ](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | エージェントが読んで操作するブラウザを、そばで見守れます。 |
+| **[統合ターミナル](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | ワークスペース内のターミナルをエージェントと共有。 |
+| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | デスクトップアプリ、ブラウザのページ、リモート VM を操作します。 |
+| **[CLI と TUI](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | 同じエージェントをターミナルから。 |
+| **[リモートアクセス](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | 別のデバイスから自分のインスタンスにアクセス（本人のみ）。 |
 
 ### エージェントと安全性
 
 | | |
 |---|---|
-| **[エージェント設定](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | モデル、指示、ツール、メモリ権限を再利用できるエージェントとして保存。 |
-| **[メモリ](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | 出典付きのメモリ。検索とバックグラウンドでの書き込みに対応。 |
-| **[権限とサンドボックス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | ツール呼び出しをメモ付きで許可または拒否。コマンドはサンドボックスで実行されます。 |
-| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | ツールとアプリケーションをインストール可能な Program として扱います。 |
+| **[エージェント設定](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | モデル、指示、ツール、メモリ権限を再利用できるエージェントとして保存。 |
+| **[メモリ](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | 出典付きのメモリ。検索とバックグラウンドでの書き込みに対応。 |
+| **[権限とサンドボックス](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | ツール呼び出しをメモ付きで許可または拒否。コマンドはサンドボックスで実行されます。 |
+| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | ツールとアプリケーションをインストール可能な Program として扱います。 |
 
 ### モデルと連携
 
 | | |
 |---|---|
-| **[プロバイダー](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini など。プロバイダーごとに複数アカウント。 |
-| **[ローカルモデル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/models/local-models.html)** | ローカル推論サーバー。認証も設定可能。 |
-| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/mcp-integration.html)** | MCP サーバーを使う、または OpenProgram を MCP サーバーとして公開。 |
-| **[スキルとプラグイン](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | エージェントの知識と呼び出せるツールを拡張します。 |
-| **[チャンネル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Telegram、Discord、Slack、WeChat からエージェントと会話。 |
-| **[自動更新](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | 署名済みリリースをその場で更新。 |
+| **[プロバイダー](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini など。プロバイダーごとに複数アカウント。 |
+| **[ローカルモデル](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | ローカル推論サーバー。認証も設定可能。 |
+| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | MCP サーバーを使う、または OpenProgram を MCP サーバーとして公開。 |
+| **[スキルとプラグイン](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | エージェントの知識と呼び出せるツールを拡張します。 |
+| **[チャンネル](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | Telegram、Discord、Slack、WeChat からエージェントと会話。 |
+| **[自動更新](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | 署名済みリリースをその場で更新。 |
 
 ## 引用
 

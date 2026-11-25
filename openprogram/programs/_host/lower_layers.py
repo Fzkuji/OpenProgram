@@ -9,8 +9,8 @@ through ports they own, filled in here:
   session graph);
 * ``models.usage.goal_port`` — the Goal tool's lock, load, publish and
   usage refresh, which the usage ledger runs around a provider request;
-* ``host.machines.kinds`` — the window, screen and browser connection kinds, which
-  live with ``computer_use`` (its providers register them).
+* ``host.machines.kinds`` — the connection methods that live with
+  ``computer_use`` (``osworld``; its providers register it).
 
 Each provider imports its Program module when it is called, never here,
 so loading this module stays cheap and a test that replaces a Goal
@@ -72,15 +72,15 @@ def _goal_accumulate_usage(session_id: str, goal: dict) -> None:
     goals.accumulate_goal_usage(session_id, goal)
 
 
-def _load_connection_kinds() -> None:
+def _load_connection_methods() -> None:
     import openprogram.programs.tools.computer_use.computer_use.providers  # noqa: F401
 
 
 def register() -> None:
     from openprogram.host.machines import kinds as machine_kinds
 
-    if _load_connection_kinds not in machine_kinds.loaders:
-        machine_kinds.loaders.append(_load_connection_kinds)
+    if _load_connection_methods not in machine_kinds.loaders:
+        machine_kinds.loaders.append(_load_connection_methods)
     program_facts.register(
         web_search_provider_names=_web_search_provider_names,
         agent_tool_names=_agent_tool_names,

@@ -14,12 +14,16 @@ from openprogram.programs.applications.browser import catalog
 from openprogram.programs.applications.browser import extension as extension_browser
 from openprogram.programs.applications.browser import firefox, safari
 from openprogram.programs.applications.browser import script_page as sp
-from openprogram.programs.tools.computer_use.computer_use import dispatch, errors
+from openprogram.programs.tools.computer_use.computer_use.routing import dispatch
+from openprogram.programs.tools.computer_use.computer_use import errors
 from openprogram.programs.tools.computer_use.computer_use import tool as entry
 from openprogram.programs.tools.computer_use.computer_use.contract import Call
-from openprogram.programs.tools.computer_use.computer_use.desktop import macos
-from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser, user_browser
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import computer as macos
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import (built_in as built_in_browser,
+    user as user_browser)
 from tests.support.screen_targets import user_browsers
+from openprogram.programs.tools.computer_use.computer_use.desktop.macos import (frameworks as mac_frameworks, processes as mac_processes)
+from openprogram.programs.tools.computer_use.computer_use.providers.browser import tabs as browser_tabs
 
 
 # -- what a call may name --------------------------------------------------------------------
@@ -51,7 +55,7 @@ def test_the_description_and_parameters_list_every_browser_value():
 def test_safari_and_firefox_are_listed_as_targets_with_what_they_lack(monkeypatch):
     service = SimpleNamespace(extension=user_browsers("chrome", "brave", "safari", "firefox"))
     monkeypatch.setattr(built_in_browser, "service", lambda: service)
-    found = {provider.target: provider for provider in built_in_browser.KIND.open(local_machine(), "s")}
+    found = {provider.target: provider for provider in built_in_browser._open(local_machine(), "s")}
     assert list(found) == ["browser", "browser chrome", "browser brave", "browser safari", "browser firefox"]
     brave, safari_target, firefox_target = found["browser brave"], found["browser safari"], found["browser firefox"]
     assert brave.describe().line.startswith("the user's own Brave with their sign-ins")
@@ -349,10 +353,10 @@ def test_safari_lists_every_tab_and_acts_on_the_front_one_until_another_is_selec
 
 def test_safari_with_its_scripting_off_answers_permission_missing_with_where_to_turn_it_on(fake_safari, monkeypatch):
     fake_safari["js_off"] = True
-    monkeypatch.setattr(user_browser, "_tables", {})
-    monkeypatch.setattr(user_browser, "_current", {})
-    monkeypatch.setattr(user_browser, "_users", {})
-    monkeypatch.setattr(user_browser, "_turns", {})
+    monkeypatch.setattr(browser_tabs, "_tables", {})
+    monkeypatch.setattr(browser_tabs, "_current", {})
+    monkeypatch.setattr(browser_tabs, "_users", {})
+    monkeypatch.setattr(browser_tabs, "_turns", {})
     from openprogram.host._platform import front
     monkeypatch.setattr(front, "kept", lambda operated: __import__("contextlib").nullcontext())
     provider = user_browser.UserBrowser(SimpleNamespace(extension=user_browsers("safari")), "safari")
@@ -536,8 +540,8 @@ def test_a_browser_name_finds_its_mac_window_application(monkeypatch):
             SimpleNamespace(isTerminated=lambda: False, processIdentifier=lambda: 42,
                             bundleIdentifier=lambda: "com.apple.Safari", localizedName=lambda: "Safari",
                             bundleURL=lambda: None)]
-    monkeypatch.setattr(macos, "_appkit", lambda: object())
-    monkeypatch.setattr(macos, "running_applications", lambda appkit: apps)
+    monkeypatch.setattr(mac_frameworks, "_appkit", lambda: object())
+    monkeypatch.setattr(mac_processes, "running_applications", lambda appkit: apps)
     computer = macos.MacComputer()
     assert computer._running_match_once("safari") is apps[1]
     assert computer._running_match_once("SAFARI") is apps[1]

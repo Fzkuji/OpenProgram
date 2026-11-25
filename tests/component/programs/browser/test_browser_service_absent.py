@@ -56,11 +56,11 @@ def test_the_call_gets_no_pages_section(no_browser):
 def test_the_turn_gets_no_pages_without_the_browser(no_browser, monkeypatch):
     from types import SimpleNamespace
 
-    from openprogram.programs.tools.computer_use.computer_use import tool as entry
+    from openprogram.programs.tools.computer_use.computer_use import devices as cu_devices
     from openprogram.runtime.conversation.turn_runtime.loop_runner import _configure_screen_tool
 
     # Another target keeps the tool; no provider answers for the conversation's Pages.
-    monkeypatch.setattr(entry, "available_targets", lambda: ["window"])
+    monkeypatch.setattr(cu_devices, "available_targets", lambda: ["window"])
     tools = [SimpleNamespace(name="web_search")]
     configured, enabled = _configure_screen_tool(tools, _PAGE_CONTEXT, enabled=True)
     assert enabled is False
@@ -70,9 +70,9 @@ def test_the_turn_gets_no_pages_without_the_browser(no_browser, monkeypatch):
 def test_no_browser_target_is_listed_without_the_browser(no_browser):
     from openprogram.host.machines import local_machine
     from openprogram.programs.tools.computer_use.computer_use import tool as entry
-    from openprogram.programs.tools.computer_use.computer_use.providers import built_in_browser
+    from openprogram.programs.tools.computer_use.computer_use.providers.browser import built_in as built_in_browser
 
-    assert built_in_browser.KIND.open(local_machine(), "s1") == []
+    assert built_in_browser._open(local_machine(), "s1") == []
     result = entry.computer_use(type="browser", action="list_tabs")
     assert result.is_error and result.text.startswith("UNKNOWN_TARGET: ")
 

@@ -1,25 +1,47 @@
 "use client"
 
-// shadcn/ui Tabs, radix-nova style (the style ui.shadcn.com's docs use),
-// copied from the official registry (/r/styles/radix-nova/tabs.json);
-// only the imports are adapted, and triggers fill the list height so the
-// active pill sits centred (upstream leaves a 1px gap below it).
+// shadcn/ui Tabs, radix-nova style, copied from the official registry
+// (/r/styles/radix-nova/tabs.json) and given the app's one look for a choice
+// among a few options: the list is a rounded groove, the triggers plain
+// text, and a raised face (<SlidingThumb>) slides under the chosen one.
+// `default` is a view or filter switch, as tall as a button; `section` is a
+// page's section switch, one size up, and its content slides in from the
+// side the switch moved towards.
 
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 
 import { cn } from "@/lib/utils"
+import { SlidingThumb } from "@/components/ui/sliding-thumb"
 
 function Tabs({
   className,
   orientation = "horizontal",
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  const root = React.useRef<HTMLDivElement>(null)
+  // Which way the choice moved, for the content's slide.
+  const moved = (next: string) => {
+    const element = root.current
+    if (element) {
+      const values = Array.from(element.querySelectorAll<HTMLElement>('[data-slot="tabs-trigger"]'))
+        .filter((trigger) => trigger.closest('[data-slot="tabs"]') === element)
+        .map((trigger) => trigger.dataset.value)
+      const current = element.querySelector<HTMLElement>('[data-slot="tabs-trigger"][aria-selected="true"]')?.dataset.value
+      const from = values.indexOf(current), to = values.indexOf(next)
+      if (from >= 0 && to >= 0 && from !== to) element.dataset.direction = to > from ? "forward" : "back"
+    }
+    onValueChange?.(next)
+  }
   return (
     <TabsPrimitive.Root
+      ref={root}
       data-slot="tabs"
       data-orientation={orientation}
+      orientation={orientation}
+      onValueChange={moved}
       className={cn(
         "group/tabs flex gap-2 data-horizontal:flex-col",
         className
@@ -30,12 +52,12 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list relative isolate inline-flex w-fit shrink-0 items-center justify-center bg-groove shadow-groove group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col group-data-vertical/tabs:rounded-lg",
   {
     variants: {
       variant: {
-        default: "bg-muted",
-        line: "gap-1 bg-transparent",
+        default: "rounded-groove p-[3px]",
+        section: "rounded-xl p-1",
       },
     },
     defaultVariants: {
@@ -47,6 +69,7 @@ const tabsListVariants = cva(
 function TabsList({
   className,
   variant = "default",
+  children,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> &
   VariantProps<typeof tabsListVariants>) {
@@ -56,22 +79,29 @@ function TabsList({
       data-variant={variant}
       className={cn(tabsListVariants({ variant }), className)}
       {...props}
-    />
+    >
+      {children}
+      <SlidingThumb selector='[data-slot="tabs-trigger"][aria-selected="true"]' />
+    </TabsPrimitive.List>
   )
 }
 
 function TabsTrigger({
   className,
+  value,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
+      data-value={value}
+      value={value}
       className={cn(
-        "relative inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-fs-base font-medium whitespace-nowrap text-foreground/60 transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 dark:text-muted-foreground dark:hover:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent",
-        "data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground",
-        "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
+        // The chosen one is marked by aria-selected, which a tooltip trigger
+        // wrapped around it leaves alone (it rewrites data-state).
+        "relative z-10 inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border-0 bg-transparent font-medium whitespace-nowrap text-text-secondary outline-none transition-colors duration-(--motion-fast) group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-text-bright aria-selected:text-text-bright focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "group-data-[variant=default]/tabs-list:h-(--ui-choice-h) group-data-[variant=default]/tabs-list:px-3 group-data-[variant=default]/tabs-list:text-fs-sm",
+        "group-data-[variant=section]/tabs-list:h-(--ui-button-h) group-data-[variant=section]/tabs-list:px-4 group-data-[variant=section]/tabs-list:text-fs-base",
         className
       )}
       {...props}
@@ -86,7 +116,13 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 text-fs-base outline-none", className)}
+      className={cn(
+        "flex-1 text-fs-base outline-none",
+        // After the choice moves, the shown content slides in from that side.
+        "group-data-[direction]/tabs:data-[state=active]:animate-in group-data-[direction]/tabs:data-[state=active]:fade-in-0 group-data-[direction]/tabs:data-[state=active]:duration-(--motion-slow) motion-reduce:animate-none",
+        "group-data-[direction=forward]/tabs:data-[state=active]:slide-in-from-right-1/12 group-data-[direction=back]/tabs:data-[state=active]:slide-in-from-left-1/12",
+        className
+      )}
       {...props}
     />
   )

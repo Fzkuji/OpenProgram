@@ -7,11 +7,11 @@ import pytest
 from openprogram.host._platform import changes
 from openprogram.programs.tools.computer_use.computer_use.desktop import embedding
 from openprogram.programs.tools.computer_use.computer_use.desktop.embedding import follow
-from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow_linux import (
-    CONFIGURE_NOTIFY, DESTROY_NOTIFY, PROPERTY_NOTIFY, changed_window)
-from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow_macos import windows_for
-from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow_windows import (
-    EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_FOREGROUND, window_event)
+from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow.linux import (CONFIGURE_NOTIFY,
+    DESTROY_NOTIFY, PROPERTY_NOTIFY, changed_window)
+from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow.macos import windows_for
+from openprogram.programs.tools.computer_use.computer_use.desktop.embedding.follow.windows import (EVENT_OBJECT_LOCATIONCHANGE,
+    EVENT_SYSTEM_FOREGROUND, window_event)
 
 
 class _Source:

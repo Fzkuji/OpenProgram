@@ -120,6 +120,8 @@ def binary_path() -> Path | None:
     override = os.environ.get("OPENPROGRAM_TAILNET_BIN", "").strip()
     candidates = [Path(override)] if override else []
     candidates += [root / "bin" / _exe(BINARY) for root in _runtime_roots()]
+    # A version-store install: the sealed version's bin/, beside its venv.
+    candidates.append(Path(sys.prefix).parent / "bin" / _exe(BINARY))
     # Running from a checkout: scripts/release/build-tailnet.py writes here.
     repo = Path(__file__).resolve().parents[3]
     candidates.append(repo / "apps" / "tailnet" / "dist" / go_target() / _exe(BINARY))
