@@ -17,11 +17,8 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     # The site address is openprogram.operations.project_site.SITE_URL. The
     # landing page owns its root, so the documentation lives one level down,
     # and the links the build writes carry the address's path plus docs/.
@@ -74,9 +71,34 @@ jobs:
         with:
           path: ./_publish
 
+      - name: Keep the sitemap for IndexNow
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitemap
+          path: _publish/sitemap.xml
+
+  # Deploying in its own job, as GitHub's Pages template does: a deploy step
+  # in the uploading job can run before the new artifact is listed and fail
+  # with "No artifacts named github-pages".
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - name: Publish to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v5
+
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: sitemap
+          path: _publish
 
       - name: Submit sitemap to IndexNow
         continue-on-error: true
