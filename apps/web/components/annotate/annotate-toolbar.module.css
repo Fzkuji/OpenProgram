@@ -21,20 +21,22 @@
   gap: 6px;
 }
 
+/* The App's buttons with room around them: 6px of padding, and the bar's
+   corner is their 8px corner plus that padding, so the curves are concentric. */
 .bar {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: 6px;
 }
 
-/* Buttons in the floating bar follow its corner: the bar's radius less its padding. */
-.bar.surface button {
-  border-radius: calc(var(--radius-lg) - 4px);
+.bar.surface,
+.styleBar.surface {
+  border-radius: calc(var(--radius-md) + 6px);
 }
 
 .styleBar {
-  padding: 6px 8px;
+  padding: 6px 10px;
 }
 
 .inline {
