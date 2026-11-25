@@ -56,12 +56,26 @@ export function ImageAnnotator({ src, filename, onCancel, onSave }: {
     canvas.height = image.naturalHeight;
   }, [image]);
 
+  // The image with its finished marks is drawn once into `committed`; a
+  // stroke in progress only adds itself on top.
+  const committedRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!image) return;
+    const canvas = committedRef.current ?? (committedRef.current = document.createElement("canvas"));
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(image, 0, 0);
+    drawMarks(ctx, marks, { scale, source: image });
+  }, [image, marks, scale]);
+
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (!ctx || !image) return;
+    if (!ctx || !image || !committedRef.current) return;
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.drawImage(image, 0, 0);
-    drawMarks(ctx, draft ? [...marks, draft] : marks, { scale, source: image });
+    ctx.drawImage(committedRef.current, 0, 0);
+    if (draft) drawMarks(ctx, [draft], { scale, source: image });
   }, [image, marks, draft, scale]);
 
   useEffect(() => {
@@ -121,7 +135,13 @@ export function ImageAnnotator({ src, filename, onCancel, onSave }: {
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!draft) return;
     const at = toImage(event);
-    if ("points" in draft) setDraft({ ...draft, points: [...draft.points, at] });
+    if ("points" in draft) {
+      // The draft owns its points; skip sub-pixel moves and append in place.
+      const last = draft.points[draft.points.length - 1];
+      if (Math.abs(at.x - last.x) < 1 && Math.abs(at.y - last.y) < 1) return;
+      draft.points.push(at);
+      setDraft({ ...draft });
+    }
     else if ("from" in draft) setDraft({ ...draft, to: at });
   }
 

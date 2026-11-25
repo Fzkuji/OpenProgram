@@ -56,19 +56,17 @@ export function useToolNames() {
   } satisfies Record<Tool, string>;
 }
 
-export function ActionButton({ label, detail, onClick, icon, disabled, active, primary }: {
+export function ActionButton({ label, detail, onClick, icon, disabled, active }: {
   label: string;
   detail?: string;
   onClick: () => void;
   icon: SolarIconName;
   disabled?: boolean;
   active?: boolean;
-  /** The one filled button, like the composer's send. */
-  primary?: boolean;
 }) {
   return (
     <HoverTip label={<TipBody title={label} detail={detail} />}>
-      <Button variant={primary ? "default" : "ghost"} size="icon-sm" aria-label={label}
+      <Button variant="ghost" size="icon-sm" aria-label={label}
         aria-pressed={active === undefined ? undefined : active} disabled={disabled}
         className={cn(styles.button, active && styles.active)} onClick={onClick}>
         <Glyph name={icon} />

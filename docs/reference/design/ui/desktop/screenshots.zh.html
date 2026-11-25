@@ -56,6 +56,7 @@
 
 <h2>标注与工具栏</h2>
 <p>标注（<code translate="no">lib/annotate/marks.ts</code>）和工具栏（<code translate="no">components/annotate</code>）与输入框的图片标注共用。标注按图片像素保存，线宽用 CSS px 乘图片缩放来画，所以 Retina 截图和普通图片看起来一样，导出的 PNG 保持原尺寸。马赛克是把下面的画面像素化，不是画图案。</p>
+<p>画好的标注只画一次到离屏图层；拖动时只在上面画正在画的这一笔，画笔会跳过不到一个像素的移动。放大镜和取色直接读截下来的像素，不从画布读回。</p>
 <p>工具栏和 Snow Shot 一样放在选区下方。下方放不下就到上方，两边都放不下就放进选区里（<code translate="no">placeToolbar</code>），所以贴着屏幕底边的选区也有工具。</p>
 
 <h2>文字、贴图和结果</h2>
@@ -64,7 +65,7 @@
 <tbody>
 <tr><th scope="row">OCR</th><td>macOS 用 Vision；Windows 经 PowerShell 用 <code translate="no">Windows.Media.Ocr</code>，去掉中日韩字符之间的空格；Linux 用 <code translate="no">tesseract</code>。识别框画在画面上，文字列在旁边。</td></tr>
 <tr><th scope="row">贴图</th><td>无边框置顶窗口，放在选区原来的位置。拖动时由 App 移动，以指针为中心缩放（0.1–5 倍），按修饰键调透明度（0.25–1），右键是系统菜单。</td></tr>
-<tr><th scope="row">发送到对话</th><td>向当前 App 窗口发 <code translate="no">screenshot:attach</code>，当前输入框像收到拖入的文件一样排上这张 PNG。</td></tr>
+<tr><th scope="row">发送到对话</th><td>向开始截图时在前面的 App 窗口发 <code translate="no">screenshot:attach</code>，当前输入框像收到拖入的文件一样排上这张 PNG，还没有编号的新对话也一样。</td></tr>
 <tr><th scope="row">保存</th><td>保存对话框默认在“图片”文件夹，文件名 <code translate="no">Screenshot YYYY-MM-DD HH.mm.ss.png</code>（中文界面是 <code translate="no">截图 …</code>）。</td></tr>
 </tbody>
 </table>

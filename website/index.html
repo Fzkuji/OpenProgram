@@ -67,18 +67,25 @@
   --bg-tertiary:#ebebef;
   --bg-input:#ffffff;
   --bg-hover:rgba(10,10,15,.05);
+  --line:rgba(10,10,15,.08);
   --text-primary:#3a3a40;
   --text-secondary:#5c5c64;
   --text-bright:#131317;
   --text-muted:#8c8c94;
   --accent:#2563eb;
   --accent-hover:#1d4ed8;
+  --accent-soft:rgba(37,99,235,.1);
   --on-accent:#ffffff;
   --chip-ring:rgba(10,10,15,.1);
   --composer-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);
   --panel-shadow:0 1px 2px rgba(10,10,15,.04),0 8px 24px -8px rgba(10,10,15,.1);
+  --lift-shadow:0 2px 4px rgba(10,10,15,.04),0 16px 36px -12px rgba(10,10,15,.18);
   --menu-shadow:0 12px 32px -8px rgba(10,10,15,.18),0 0 0 1px rgba(10,10,15,.06);
-  --hero-shadow:0 2px 6px rgba(10,10,15,.05),0 30px 60px -20px rgba(10,10,15,.22);
+  --hero-shadow:0 2px 6px rgba(10,10,15,.05),0 40px 80px -30px rgba(30,40,90,.35);
+  --frame:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.55));
+  --glow-a:rgba(59,130,246,.16);
+  --glow-b:rgba(139,92,246,.13);
+  --dot:rgba(10,10,15,.09);
   --brand:linear-gradient(90deg,#3b82f6,#8b5cf6);
   --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
   --kw:#7c3aed;--fn:#2563eb;--str:#0d6e77;--cm:#8c8c94;
@@ -90,17 +97,24 @@ html[data-theme="dark"]{
   --bg-tertiary:#252529;
   --bg-input:#2a2a2e;
   --bg-hover:rgba(255,255,255,.05);
+  --line:rgba(255,255,255,.07);
   --text-primary:#b6b6bb;
   --text-secondary:#92929a;
   --text-bright:#ededf0;
   --text-muted:#74747c;
   --accent:#3b82f6;
   --accent-hover:#60a5fa;
+  --accent-soft:rgba(59,130,246,.16);
   --chip-ring:rgba(255,255,255,.08);
   --composer-shadow:0 1px 3px 0 rgb(0 0 0/.25),0 1px 2px -1px rgb(0 0 0/.25);
-  --panel-shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -8px rgba(0,0,0,.5);
+  --panel-shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -8px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.04);
+  --lift-shadow:0 2px 4px rgba(0,0,0,.3),0 16px 36px -12px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.06);
   --menu-shadow:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.07);
-  --hero-shadow:0 30px 60px -20px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05);
+  --hero-shadow:0 40px 90px -30px rgba(0,0,0,.85);
+  --frame:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03));
+  --glow-a:rgba(59,130,246,.2);
+  --glow-b:rgba(139,92,246,.16);
+  --dot:rgba(255,255,255,.07);
   --kw:#c4a7ff;--fn:#7cc4fa;--str:#9fd8a8;--cm:#74747c;
   color-scheme:dark;
 }
@@ -111,6 +125,7 @@ html{scroll-behavior:smooth;background:var(--bg-secondary);-webkit-text-size-adj
 body{
   background:var(--bg-secondary);color:var(--text-primary);
   font:15px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
+  font-feature-settings:"cv11","ss01";
   -webkit-font-smoothing:antialiased;overflow-x:hidden;
 }
 a{color:inherit;text-decoration:none}
@@ -127,8 +142,8 @@ svg{flex:none}
 
 /* nav: a floating panel, like the App's */
 .nav{position:sticky;top:12px;z-index:50;max-width:1200px;margin:12px auto 0;padding:0 24px}
-.nav-inner{display:flex;align-items:center;gap:6px;height:56px;padding:0 10px 0 16px;border-radius:16px;background:color-mix(in srgb,var(--bg-primary) 86%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--panel-shadow)}
-.brand{display:flex;align-items:center;gap:9px;margin-right:18px;color:var(--text-bright);font-size:17px;font-weight:700;letter-spacing:-.01em}
+.nav-inner{position:relative;display:flex;align-items:center;gap:6px;height:56px;padding:0 10px 0 16px;border-radius:16px;background:color-mix(in srgb,var(--bg-primary) 82%,transparent);backdrop-filter:saturate(1.6) blur(16px);-webkit-backdrop-filter:saturate(1.6) blur(16px);box-shadow:var(--panel-shadow)}
+.brand{display:flex;align-items:center;gap:9px;margin-right:18px;color:var(--text-bright);font-size:17px;font-weight:700;letter-spacing:-.015em}
 .brand img{width:26px;height:26px;border-radius:7px}
 .brand b{background:var(--brand);-webkit-background-clip:text;background-clip:text;color:transparent}
 .nav-links{display:flex;gap:2px}
@@ -137,35 +152,63 @@ svg{flex:none}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:4px}
 .icon-link{display:inline-flex;align-items:center;gap:7px;font-size:13.5px}
 .icon-link svg{width:17px;height:17px}
-.nav-right .btn{margin-left:6px}
+.nav-right>.btn{margin-left:6px}
+.icon-btn{width:34px;height:34px;border-radius:9px;border:0;background:none;color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,color .15s}
+.icon-btn:hover{color:var(--text-bright);background:var(--bg-hover)}
 .theme-wrap{position:relative}
-#theme-toggle{width:34px;height:34px;border-radius:9px;border:0;background:none;color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-#theme-toggle:hover{color:var(--text-bright);background:var(--bg-hover)}
 #theme-toggle svg{display:none}
 html[data-theme-mode="system"] #theme-toggle .ic-system,
 html[data-theme-mode="light"] #theme-toggle .ic-sun,
 html[data-theme-mode="dark"] #theme-toggle .ic-moon{display:block}
 html:not([data-theme-mode]) #theme-toggle .ic-system{display:block}
-.theme-menu{position:absolute;top:calc(100% + 8px);right:0;min-width:168px;padding:5px;border-radius:12px;background:var(--bg-primary);box-shadow:var(--menu-shadow);display:none;z-index:60}
-.theme-wrap.open .theme-menu{display:block}
+.menu{position:absolute;top:calc(100% + 8px);right:0;min-width:168px;padding:5px;border-radius:12px;background:var(--bg-primary);box-shadow:var(--menu-shadow);display:none;z-index:60}
+.theme-wrap.open .menu{display:block}
 .theme-opt{display:flex;width:100%;align-items:center;justify-content:space-between;gap:18px;padding:7px 10px;border:0;border-radius:8px;background:none;cursor:pointer;color:var(--text-primary);font-size:13.5px;font-weight:500;text-align:left}
 .theme-opt:hover{background:var(--bg-hover)}
 .theme-opt .check{visibility:hidden;color:var(--accent)}
 .theme-opt.active{color:var(--text-bright)}
 .theme-opt.active .check{visibility:visible}
+#nav-menu-button{display:none}
+.mobile-menu{display:none;position:absolute;top:calc(100% + 8px);left:0;right:0;padding:8px;border-radius:16px;background:var(--bg-primary);box-shadow:var(--menu-shadow)}
+.mobile-menu a{display:block;padding:11px 12px;border-radius:10px;color:var(--text-bright);font-size:15px;font-weight:500}
+.mobile-menu a:hover{background:var(--bg-hover)}
+.nav.open .mobile-menu{display:block}
 
 /* buttons: natural width, the App's sizes */
-.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap;transition:background .15s,box-shadow .15s}
+.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border:0;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s}
 .btn svg{width:16px;height:16px}
+.btn-lg{height:46px;padding:0 20px;font-size:15px;border-radius:12px}
 .btn-sm{height:34px;padding:0 13px;font-size:13.5px;border-radius:9px}
-.btn-primary{background:var(--accent);color:var(--on-accent)}
+.btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:0 1px 2px rgba(10,10,15,.12),inset 0 1px 0 rgba(255,255,255,.14)}
 .btn-primary:hover{background:var(--accent-hover)}
 .btn-elevated{background:var(--bg-input);color:var(--text-bright);box-shadow:var(--composer-shadow)}
 .btn-elevated:hover{box-shadow:var(--composer-shadow),0 0 0 1px var(--chip-ring)}
-.actions{display:flex;gap:10px;flex-wrap:wrap}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* split download button and its menu, in the App's menu style */
+.split{position:relative;display:inline-flex}
+.split-main{border-radius:12px 0 0 12px}
+.split-more{width:40px;padding:0;justify-content:center;border-radius:0 12px 12px 0;margin-left:1px}
+.split-more svg{width:14px;height:14px;transition:transform .15s}
+.split.open .split-more svg{transform:rotate(180deg)}
+.dl-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:40;min-width:300px;padding:5px;border-radius:12px;background:var(--bg-primary);box-shadow:var(--menu-shadow);display:none;text-align:left}
+.split.open .dl-menu{display:block}
+.dl-group{padding:6px 10px 4px;color:var(--text-muted);font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.dl-item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;color:var(--text-primary);font-size:13.5px}
+.dl-item:hover,.dl-item:focus-visible{background:var(--bg-hover);color:var(--text-bright);outline:0}
+.dl-name{flex:1}
+.dl-ext{color:var(--text-muted);font:12px var(--mono)}
+.dl-item .check{width:14px;height:14px;visibility:hidden;color:var(--accent)}
+.dl-item.current{color:var(--text-bright);font-weight:550}
+.dl-item.current .check{visibility:visible}
+.dl-sep{height:1px;margin:5px 6px;background:var(--line)}
+.dl-all{color:var(--accent);font-weight:500}
+.dl-caption{margin-top:14px;color:var(--text-secondary);font-size:13px}
+.dl-caption a{color:var(--accent);font-weight:500}
+.dl-caption a:hover{text-decoration:underline;text-underline-offset:3px}
 
 /* the install box is the App's composer, with its chips below */
-.composer{display:flex;align-items:center;gap:12px;max-width:100%;padding:14px 14px 14px 18px;border-radius:18px;background:var(--bg-input);box-shadow:var(--composer-shadow);color:var(--text-bright);font:14px/1.5 var(--mono)}
+.composer{display:flex;align-items:center;gap:12px;max-width:100%;padding:12px 12px 12px 18px;border-radius:18px;background:var(--bg-input);box-shadow:var(--composer-shadow),0 0 0 1px var(--line);color:var(--text-bright);font:14px/1.5 var(--mono)}
 .composer .cmd{flex:1;min-width:0;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
 .composer .cmd::-webkit-scrollbar{display:none}
 .composer .cmd[hidden]{display:none}
@@ -176,84 +219,206 @@ html:not([data-theme-mode]) #theme-toggle .ic-system{display:block}
 .copy-btn .ic-done,.copy-btn.copied .ic-copy{display:none}
 .copy-btn.copied .ic-done{display:block;color:var(--accent)}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:0;border-radius:9px;background:var(--bg-input);box-shadow:var(--composer-shadow);color:var(--text-primary);font-size:13px;font-weight:500;cursor:pointer}
+.chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:0;border-radius:9px;background:var(--bg-input);box-shadow:var(--composer-shadow);color:var(--text-primary);font-size:13px;font-weight:500;white-space:nowrap}
+button.chip{cursor:pointer}
 .chip svg{width:14px;height:14px}
 .chip[aria-pressed="true"]{color:var(--text-bright);box-shadow:var(--composer-shadow),0 0 0 1.5px var(--accent)}
 
 /* type */
-h1,h2,h3{color:var(--text-bright)}
-h1{font-size:clamp(40px,6.4vw,76px);font-weight:700;line-height:1.04;letter-spacing:-.035em}
-h2{font-size:clamp(28px,3.4vw,40px);font-weight:650;line-height:1.15;letter-spacing:-.025em}
-h3{font-size:16px;font-weight:600;letter-spacing:-.01em}
-.program-word{background:var(--brand);-webkit-background-clip:text;background-clip:text;color:transparent}
-.lead{color:var(--text-secondary);font-size:18px;line-height:1.6}
-.kicker{display:block;margin-bottom:12px;color:var(--accent);font-size:13px;font-weight:600}
-section{padding:96px 0;scroll-margin-top:80px}
-.sec-head{max-width:640px;margin-bottom:40px}
-.sec-head .lead{margin-top:14px}
+h1,h2,h3{color:var(--text-bright);text-wrap:balance}
+h1{font-size:clamp(44px,7vw,84px);font-weight:700;line-height:1;letter-spacing:-.045em}
+h2{font-size:clamp(30px,3.6vw,44px);font-weight:680;line-height:1.1;letter-spacing:-.032em}
+h3{font-size:16px;font-weight:620;letter-spacing:-.012em}
+.program-word{background:var(--brand);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.04em}
+.lead{color:var(--text-secondary);font-size:18px;line-height:1.6;text-wrap:pretty}
+.kicker{display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--accent);font-size:13px;font-weight:600}
+section{padding:112px 0;scroll-margin-top:84px}
+.sec-head{max-width:660px;margin-bottom:48px}
+.sec-head .lead{margin-top:16px}
+.sec-head.center{margin-left:auto;margin-right:auto;text-align:center}
+.link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:14px;font-weight:550}
+.link:hover{text-decoration:underline;text-underline-offset:3px}
 .panel{border-radius:18px;background:var(--bg-primary);box-shadow:var(--panel-shadow)}
-.ico{display:grid;place-items:center;width:34px;height:34px;margin-bottom:14px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-bright)}
+.ico{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
 .ico svg{width:18px;height:18px}
 
-/* hero */
-.hero{padding:96px 0 0;text-align:center}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:13px;font-weight:500}
-.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
-.eyebrow a{color:var(--accent);font-weight:600}
-.hero h1{max-width:15ch;margin:22px auto 0}
-.hero .lead{max-width:600px;margin:22px auto 0}
-.hero .actions{justify-content:center;margin-top:32px}
-.install{max-width:640px;margin:40px auto 0;text-align:left}
+/* hero, on the App's dotted canvas */
+.hero{position:relative;padding:104px 0 0;text-align:center;isolation:isolate}
+.hero::before{content:"";position:absolute;inset:-80px 0 auto;height:820px;z-index:-1;pointer-events:none;
+  background:radial-gradient(42% 38% at 30% 28%,var(--glow-a),transparent 70%),radial-gradient(38% 34% at 72% 30%,var(--glow-b),transparent 70%)}
+.hero::after{content:"";position:absolute;inset:-80px 0 auto;height:760px;z-index:-1;pointer-events:none;
+  background-image:radial-gradient(var(--dot) 1.2px,transparent 1.4px);background-size:22px 22px;
+  -webkit-mask-image:radial-gradient(60% 55% at 50% 35%,#000 20%,transparent 75%);mask-image:radial-gradient(60% 55% at 50% 35%,#000 20%,transparent 75%)}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;padding:4px 12px 4px 4px;border-radius:999px;background:var(--bg-primary);box-shadow:var(--composer-shadow),0 0 0 1px var(--line);color:var(--text-secondary);font-size:13px;font-weight:500;transition:box-shadow .15s}
+.eyebrow:hover{box-shadow:var(--composer-shadow),0 0 0 1px var(--chip-ring)}
+.eyebrow .new{padding:2px 8px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:12px;font-weight:600}
+.eyebrow .go{color:var(--text-bright);font-weight:550}
+.hero h1{max-width:17ch;margin:26px auto 0}
+.hero .lead{max-width:610px;margin:24px auto 0}
+.hero .actions{justify-content:center;margin-top:36px}
+.install{max-width:620px;margin:36px auto 0;text-align:left}
 .install .chips{justify-content:center}
-.shot{max-width:1120px;margin:72px auto 0;border-radius:18px;overflow:hidden;background:var(--bg-primary);box-shadow:var(--hero-shadow)}
-.shot img{width:100%}
+.frame{position:relative;max-width:1140px;margin:80px auto 0;padding:8px;border-radius:24px;background:var(--frame);box-shadow:var(--hero-shadow),0 0 0 1px var(--line)}
+.frame .screen{border-radius:16px;overflow:hidden;background:var(--bg-primary);box-shadow:0 0 0 1px var(--line)}
+.frame img{width:100%}
+
+/* model strip */
+.models{padding:72px 0 0;text-align:center}
+.models p{color:var(--text-muted);font-size:13.5px;font-weight:500}
+.model-row{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 34px;margin-top:20px}
+.model-row span{color:var(--text-secondary);font-size:17px;font-weight:650;letter-spacing:-.02em;opacity:.85}
+.model-row .more{color:var(--accent);opacity:1}
 
 /* how it works */
-.how{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;align-items:start}
-pre.code{padding:22px 24px;overflow-x:auto;color:var(--text-primary);font-size:13.5px;line-height:1.75}
+.how{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:40px;align-items:center}
+.code-window{border-radius:18px;background:var(--bg-primary);box-shadow:var(--lift-shadow);overflow:hidden}
+.code-bar{display:flex;align-items:center;gap:7px;height:42px;padding:0 16px;border-bottom:1px solid var(--line)}
+.code-bar i{width:10px;height:10px;border-radius:50%;background:var(--bg-tertiary)}
+.code-bar span{margin-left:10px;color:var(--text-secondary);font:12.5px var(--mono)}
+pre.code{padding:20px 0;overflow-x:auto;color:var(--text-primary);font-size:13.5px;line-height:1.8;counter-reset:line}
+pre.code .ln{display:block;padding:0 24px 0 0}
+pre.code .ln::before{counter-increment:line;content:counter(line);display:inline-block;width:44px;padding-right:18px;text-align:right;color:var(--text-muted);opacity:.6;user-select:none}
+pre.code .hl{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent)}
 .kw{color:var(--kw)}.fn{color:var(--fn)}.str{color:var(--str)}.cm{color:var(--cm)}
-.how-list{display:grid;gap:26px;padding-top:6px}
-.how-list p{margin-top:6px;color:var(--text-secondary);font-size:14.5px}
+.code-note{padding:14px 20px;border-top:1px solid var(--line);color:var(--text-secondary);font-size:13.5px}
+.code-note code{color:var(--accent)}
+.steps{display:grid;gap:8px;list-style:none}
+.step{display:grid;grid-template-columns:36px 1fr;gap:16px;padding:18px;border-radius:16px;transition:background .15s}
+.step:hover{background:var(--bg-primary);box-shadow:var(--panel-shadow)}
+.step p{margin-top:5px;color:var(--text-secondary);font-size:14.5px}
 
-/* features */
-#features{padding-top:0}
-.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-.card{display:block;padding:22px;border-radius:16px;background:var(--bg-primary);box-shadow:var(--panel-shadow);transition:box-shadow .15s}
-.card:hover{box-shadow:var(--panel-shadow),0 0 0 1px var(--chip-ring)}
-.card p{margin-top:8px;color:var(--text-secondary);font-size:14px;line-height:1.55}
+/* workspace tour */
+.tour{text-align:center}
+.seg{display:inline-flex;gap:2px;padding:4px;margin-bottom:28px;border-radius:12px;background:var(--bg-tertiary)}
+.seg button{height:34px;padding:0 16px;border:0;border-radius:9px;background:none;color:var(--text-secondary);font-size:14px;font-weight:550;cursor:pointer;transition:background .15s,color .15s}
+.seg button:hover{color:var(--text-bright)}
+.seg button[aria-selected="true"]{background:var(--bg-input);color:var(--text-bright);box-shadow:var(--composer-shadow)}
+.tour .frame{margin-top:0}
+.tour figcaption{margin-top:22px;color:var(--text-secondary);font-size:15px}
+.tour [role="tabpanel"][hidden]{display:none}
+
+/* features bento */
+.bento{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.card{position:relative;display:flex;flex-direction:column;min-height:236px;padding:26px;border-radius:18px;background:var(--bg-primary);box-shadow:var(--panel-shadow);transition:box-shadow .2s,transform .2s}
+a.card:hover{box-shadow:var(--lift-shadow);transform:translateY(-2px)}
+.card.wide{grid-column:span 2}
+.card h3{margin-top:18px;font-size:17px}
+.card p{margin-top:8px;color:var(--text-secondary);font-size:14.5px;line-height:1.55;max-width:46ch}
+.card .more-link{position:absolute;top:26px;right:24px;color:var(--text-muted);transition:color .15s,transform .15s}
+.card .more-link svg{width:16px;height:16px}
+a.card:hover .more-link{color:var(--accent);transform:translate(2px,-2px)}
+.card .chips{margin-top:auto;padding-top:20px}
+.card .chip{cursor:default}
+.big-number{margin-top:auto;padding-top:16px;font-size:52px;font-weight:700;letter-spacing:-.04em;line-height:1;background:var(--brand);-webkit-background-clip:text;background-clip:text;color:transparent}
+.big-number small{font-size:15px;font-weight:550;letter-spacing:0;color:var(--text-secondary);-webkit-text-fill-color:var(--text-secondary);margin-left:6px}
+.tree{margin-top:auto;padding-top:18px;font:12.5px/1.9 var(--mono);color:var(--text-secondary)}
+.tree b{color:var(--text-bright);font-weight:550}
+.tree .ok{color:#16a34a}
+
+/* download */
+.platforms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.plat{display:flex;flex-direction:column;padding:26px;border-radius:18px;background:var(--bg-primary);box-shadow:var(--panel-shadow);transition:box-shadow .2s}
+.plat-head{display:flex;align-items:center;justify-content:space-between}
+.plat-ico{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--bg-tertiary);color:var(--text-bright)}
+.plat-ico svg{width:22px;height:22px}
+.yours{display:none;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600}
+.plat h3{margin-top:18px;font-size:20px}
+.plat .req{margin-top:4px;color:var(--text-secondary);font-size:14px}
+.plat-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.plat-more{margin-top:12px;color:var(--text-muted);font-size:12.5px}
+.plat-more a{color:var(--text-secondary)}
+.plat-more a:hover{color:var(--text-bright)}
+.plat.current{box-shadow:var(--lift-shadow),0 0 0 1.5px var(--accent)}
+.plat.current .yours{display:inline-block}
+.plat.current .plat-btns .btn:first-child{background:var(--accent);color:var(--on-accent);box-shadow:none}
+.plat.current .plat-btns .btn:first-child:hover{background:var(--accent-hover)}
+.dl-foot{display:flex;flex-wrap:wrap;gap:8px 22px;justify-content:center;margin-top:28px;color:var(--text-secondary);font-size:13.5px}
+.dl-foot a:hover{color:var(--text-bright)}
 
 /* research */
-#research{padding-top:0}
-.cta{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;padding:36px}
-.cta h2{font-size:28px}
-.cta p{margin-top:8px;color:var(--text-secondary)}
-.cta p a{color:var(--accent);font-weight:500}
+.papers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.paper{display:flex;flex-direction:column;padding:28px;border-radius:18px;background:var(--bg-primary);box-shadow:var(--panel-shadow);transition:box-shadow .2s,transform .2s}
+.paper:hover{box-shadow:var(--lift-shadow);transform:translateY(-2px)}
+.paper-id{color:var(--text-muted);font:12.5px var(--mono)}
+.paper h3{margin-top:14px;font-size:19px;line-height:1.35}
+.paper p{margin-top:10px;color:var(--text-secondary);font-size:14.5px}
+.paper .link{margin-top:auto;padding-top:22px}
 
-footer{padding:40px 0 60px;color:var(--text-secondary);font-size:13.5px}
-.footer-in{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.footer-links{display:flex;gap:18px;flex-wrap:wrap}
-.footer-links a:hover{color:var(--text-bright)}
+/* closing call */
+.closing{padding-top:24px}
+.cta{position:relative;overflow:hidden;padding:72px 32px;border-radius:28px;text-align:center;background:var(--bg-primary);box-shadow:var(--panel-shadow);isolation:isolate}
+.cta::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(50% 70% at 50% 0%,var(--glow-a),transparent 70%),radial-gradient(40% 60% at 85% 100%,var(--glow-b),transparent 70%)}
+.cta::after{content:"";position:absolute;inset:0;z-index:-1;background-image:radial-gradient(var(--dot) 1.2px,transparent 1.4px);background-size:22px 22px;-webkit-mask-image:linear-gradient(#000,transparent 80%);mask-image:linear-gradient(#000,transparent 80%)}
+.cta img{width:56px;height:56px;margin:0 auto 24px;border-radius:14px;box-shadow:var(--lift-shadow)}
+.cta h2{max-width:16ch;margin:0 auto}
+.cta .lead{max-width:520px;margin:16px auto 0}
+.cta .actions{justify-content:center;margin-top:32px}
 
-@media(max-width:900px){
-  .nav-links{display:none}
+/* footer */
+footer{padding:72px 0 48px}
+.foot{display:grid;grid-template-columns:1.4fr repeat(4,1fr);gap:32px}
+.foot-brand p{margin-top:12px;max-width:30ch;color:var(--text-secondary);font-size:13.5px}
+.foot h4{color:var(--text-bright);font-size:13px;font-weight:600}
+.foot ul{list-style:none;margin-top:12px;display:grid;gap:8px}
+.foot li a{color:var(--text-secondary);font-size:13.5px}
+.foot li a:hover{color:var(--text-bright)}
+.foot-bottom{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:48px;padding-top:24px;border-top:1px solid var(--line);color:var(--text-secondary);font-size:13px}
+
+
+/* two install paths */
+.alt-path{margin-top:10px;color:var(--text-secondary);font-size:13.5px}
+.alt-path a{color:var(--text-bright);font-weight:550;border-bottom:1px solid var(--chip-ring)}
+.alt-path a:hover{border-color:var(--text-bright)}
+.path-head{display:flex;gap:14px;align-items:flex-start;max-width:720px;margin:8px 0 18px}
+#cli{margin-top:48px;scroll-margin-top:96px}
+.path-no{flex:none;display:grid;place-items:center;width:28px;height:28px;margin-top:1px;border-radius:50%;background:var(--bg-tertiary);color:var(--text-bright);font-size:13px;font-weight:650}
+.path-head h3{display:flex;align-items:center;gap:10px;font-size:19px}
+.path-head p{margin-top:4px;color:var(--text-secondary);font-size:14.5px}
+.badge{padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;letter-spacing:0}
+.cli{display:grid;gap:0;padding:8px 26px}
+.cli-step{display:grid;grid-template-columns:72px minmax(0,1fr);gap:18px;align-items:start;padding:20px 0}
+.cli-step+.cli-step{border-top:1px solid var(--line)}
+.step-no{padding-top:12px;color:var(--text-muted);font-size:12.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.cli .chips{justify-content:flex-start}
+.run{display:flex;align-items:baseline;gap:16px;padding:9px 0}
+.run code{min-width:150px;color:var(--text-bright);font-size:13.5px}
+.run span{color:var(--text-secondary);font-size:14px}
+@media(max-width:640px){.cli{padding:4px 18px}.cli-step{grid-template-columns:1fr;gap:8px}.step-no{padding-top:0}.run{flex-direction:column;gap:2px}}
+@media(max-width:960px){
+  .nav-links,.nav-right .icon-link span{display:none}
+  #nav-menu-button{display:inline-flex}
   .how{grid-template-columns:1fr}
-  .grid3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .bento{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card.wide{grid-column:span 2}
+  .platforms{grid-template-columns:1fr}
+  .foot{grid-template-columns:repeat(2,1fr)}
+  .foot-brand{grid-column:span 2}
 }
-@media(max-width:600px){
+@media(max-width:640px){
   .wrap,.nav{padding:0 16px}
-  .icon-link span,.nav-right .btn{display:none}
+  .nav-right>.btn,.nav-right .icon-link{display:none}
   .brand{margin-right:0}
-  .hero{padding-top:64px}
+  .eyebrow .wide{display:none}
+  .hero{padding-top:56px}
   .lead{font-size:16.5px}
-  .grid3{grid-template-columns:1fr}
-  section{padding:64px 0}
-  .shot{margin-top:48px;border-radius:12px}
-  .cta{padding:24px}
-  pre.code{font-size:12px;padding:18px 16px}
+  section{padding:80px 0}
+  .split-main{padding:0 16px}
+  .dl-menu{min-width:280px;left:50%;transform:translateX(-50%)}
+  .frame{margin-top:56px;padding:5px;border-radius:16px}
+  .frame .screen{border-radius:11px}
+  .bento,.papers{grid-template-columns:1fr}
+  .card.wide{grid-column:auto}
+  .card{min-height:0}
+  .seg{display:flex;width:100%}
+  .seg button{flex:1;padding:0 6px;font-size:13px}
+  pre.code{font-size:12px}
+  pre.code .ln::before{width:32px;padding-right:12px}
+  .cta{padding:56px 20px;border-radius:22px}
+  .foot{grid-template-columns:1fr 1fr}
 }
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
-  .btn,.card,.copy-btn{transition:none}
+  *{transition:none!important}
 }
 </style>
 <link rel="describedby" href="https://fzkuji.github.io/OpenProgram/llms.txt">
@@ -261,31 +426,41 @@ footer{padding:40px 0 60px;color:var(--text-secondary);font-size:13.5px}
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="nav">
+<header class="nav" id="nav">
   <nav class="nav-inner" aria-label="Primary navigation">
     <a class="brand" href="./" aria-label="OpenProgram home"><img src="docs/images/openprogram-app-icon.svg" alt="" width="26" height="26"><span>Open<b>Program</b></span></a>
     <div class="nav-links">
       <a href="#how">How it works</a>
+      <a href="#workspace">Workspace</a>
       <a href="#features">Features</a>
       <a href="docs/">Docs</a>
-      <a href="docs/install/download.html">Download</a>
       <a href="#research">Research</a>
     </div>
     <div class="nav-right">
       <a class="icon-link" href="https://github.com/Fzkuji/OpenProgram"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
       <div class="theme-wrap">
-        <button type="button" id="theme-toggle" aria-label="Theme" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
+        <button type="button" class="icon-btn" id="theme-toggle" aria-label="Theme" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
           <svg class="ic-system" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M8 11.5V14M5.5 14h5"/></svg>
           <svg class="ic-moon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A6 6 0 1 1 6.5 2.5a5 5 0 0 0 7 7z"/></svg>
           <svg class="ic-sun" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>
         </button>
-        <div class="theme-menu" id="theme-menu" role="menu" aria-labelledby="theme-toggle">
+        <div class="menu theme-menu" id="theme-menu" role="menu" aria-labelledby="theme-toggle">
           <button type="button" class="theme-opt" data-theme-choice="system" role="menuitemradio" aria-checked="true"><span>Follow system</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
           <button type="button" class="theme-opt" data-theme-choice="light" role="menuitemradio" aria-checked="false"><span>Light</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
           <button type="button" class="theme-opt" data-theme-choice="dark" role="menuitemradio" aria-checked="false"><span>Dark</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
         </div>
       </div>
-      <a class="btn btn-primary btn-sm" href="docs/install/download.html" data-download><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>Download</a>
+      <a class="btn btn-primary btn-sm" href="#download"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>Download</a>
+      <button type="button" class="icon-btn" id="nav-menu-button" aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 6h12M3 12h12"/></svg></button>
+    </div>
+    <div class="mobile-menu" id="mobile-menu">
+      <a href="#how">How it works</a>
+      <a href="#workspace">Workspace</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="docs/">Docs</a>
+      <a href="#research">Research</a>
+      <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
     </div>
   </nav>
 </header>
@@ -293,63 +468,110 @@ footer{padding:40px 0 60px;color:var(--text-secondary);font-size:13.5px}
 <main id="main">
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow">v1.4.0 · several keys per provider <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0">See what’s new →</a></span>
+      <a class="eyebrow" href="https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0"><span class="new">v1.4.0</span><span>Several keys per provider<span class="wide">, switched at a limit</span></span><span class="go">→</span></a>
       <h1>Agents that <span class="program-word">program</span> themselves.</h1>
       <p class="lead">OpenProgram agents are Python classes that write new methods into their own code. Run them in one workspace with chat, files, a terminal and a browser.</p>
       <div class="actions">
-        <a class="btn btn-primary" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-download data-download-label><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg><span>Download for macOS</span></a>
-        <a class="btn btn-elevated" href="docs/">Read the docs</a>
-      </div>
-      <div class="install">
-        <div class="composer">
-          <span class="cmd" data-cmd="unix"><span class="prompt">$ </span>curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh</span>
-          <span class="cmd" data-cmd="win" hidden><span class="prompt">PS&gt; </span>irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</span>
-          <button class="copy-btn" type="button" aria-label="Copy the install command"><svg class="ic-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><svg class="ic-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
+        <div class="split" data-split>
+          <a class="btn btn-primary btn-lg split-main" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-primary><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg><span data-primary-label>Download for macOS</span></a><button class="btn btn-primary btn-lg split-more" type="button" aria-label="Other downloads" aria-haspopup="menu" aria-expanded="false" aria-controls="download-menu"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+          <div class="dl-menu" id="download-menu" role="menu">
+            <div class="dl-group">macOS 13.5 or later</div>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-build="mac-arm64"><span class="dl-name">Apple Silicon</span><span class="dl-ext">.dmg</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-mac-x64.dmg" data-build="mac-x64"><span class="dl-name">Intel</span><span class="dl-ext">.dmg</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <div class="dl-group">Windows 10 or 11</div>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-win-x64.exe" data-build="win-x64"><span class="dl-name">x64 installer</span><span class="dl-ext">.exe</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <div class="dl-group">Linux</div>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-linux-amd64.deb" data-build="linux-x64"><span class="dl-name">x86_64</span><span class="dl-ext">.deb</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-linux-x86_64.AppImage" data-build="linux-x64-appimage"><span class="dl-name">x86_64</span><span class="dl-ext">.AppImage</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-linux-arm64.deb" data-build="linux-arm64"><span class="dl-name">arm64</span><span class="dl-ext">.deb</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <a class="dl-item" role="menuitem" href="docs/latest.html?OpenProgram-linux-arm64.AppImage" data-build="linux-arm64-appimage"><span class="dl-name">arm64</span><span class="dl-ext">.AppImage</span><svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></a>
+            <div class="dl-sep"></div>
+            <a class="dl-item dl-all" role="menuitem" href="#download">All downloads and requirements</a>
+          </div>
         </div>
-        <div class="chips" role="group" aria-label="Operating system">
-          <button class="chip" type="button" aria-pressed="true" data-os="unix"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.2 8.5c0-1.6 1.3-2.3 1.4-2.4-.8-1.1-1.9-1.3-2.3-1.3-1-.1-1.9.6-2.4.6s-1.3-.6-2.1-.6C4.7 4.8 3.7 5.4 3.1 6.4c-1.2 2-.3 5 .9 6.6.6.8 1.2 1.7 2.1 1.7.8 0 1.2-.5 2.2-.5s1.3.5 2.2.5 1.5-.8 2-1.6c.6-.9.9-1.8.9-1.9 0 0-1.9-.7-2.2-2.7zM9.6 3.6c.4-.5.8-1.3.7-2-.7 0-1.5.5-1.9 1-.4.5-.8 1.2-.7 2 .7 0 1.5-.5 1.9-1z"/></svg>macOS · Linux</button>
-          <button class="chip" type="button" aria-pressed="false" data-os="win"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 3l5.7-.8v5.5H1zM7.5 2.1 15 1v6.7H7.5zM1 8.4h5.7v5.5L1 13.1zM7.5 8.4H15V15l-7.5-1.1z"/></svg>Windows</button>
-        </div>
+        <a class="btn btn-elevated btn-lg" href="docs/">Read the docs</a>
       </div>
-      <div class="shot">
-        <picture class="when-dark">
-          <source srcset="docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
-          <img src="docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
-        </picture>
-        <picture class="when-light">
-          <source srcset="docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
-          <img src="docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
-        </picture>
+      <p class="dl-caption" data-caption>v1.4.0 · Apple Silicon · macOS 13.5 or later · <a href="#download">Other platforms</a></p>
+      <p class="alt-path">Live in the terminal, or installing on a server? <a href="#cli">Use the command line →</a></p>
+      <div class="frame">
+        <div class="screen">
+          <picture class="when-dark">
+            <source srcset="docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
+          </picture>
+          <picture class="when-light">
+            <source srcset="docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
+          </picture>
+        </div>
       </div>
     </div>
   </section>
+
+  <div class="models">
+    <div class="wrap">
+      <p>Bring any model: 300+ providers, cloud or local</p>
+      <div class="model-row" aria-label="Model providers">
+        <span>Anthropic</span><span>OpenAI</span><span>Google Gemini</span><span>DeepSeek</span><span>xAI</span><span>Mistral</span><span>OpenRouter</span><span>Ollama</span><span>vLLM</span><a class="more" href="docs/models/providers.html">and more →</a>
+      </div>
+    </div>
+  </div>
 
   <section id="how">
     <div class="wrap">
       <div class="sec-head reveal">
         <span class="kicker">How it works</span>
-        <h2>The model decides.<br>Python makes sure the steps run.</h2>
-        <p class="lead">An agent is a Python class. Branches, retries and checks are code; <code>self(...)</code> is a model call.</p>
+        <h2>The model decides. Python makes sure the steps run.</h2>
+        <p class="lead">An agent is a Python class. Branches, retries and checks are ordinary code, and <code>self(...)</code> is a model call.</p>
       </div>
       <div class="how reveal">
-        <div class="panel">
-<pre class="code"><code><span class="kw">from</span> openprogram <span class="kw">import</span> Agent
-
-<span class="kw">class</span> <span class="fn">SupportAgent</span>(Agent):
-    <span class="kw">def</span> <span class="fn">triage</span>(self, ticket: str) -&gt; str:
-        <span class="str">"""Classify the ticket, then draft a reply."""</span>
-        kind = self(ticket, choices=[<span class="str">"bug"</span>, <span class="str">"question"</span>])
-        <span class="kw">if</span> kind == <span class="str">"bug"</span>:
-            logs = search_logs(ticket)  <span class="cm"># your own helper</span>
-            <span class="kw">return</span> self(<span class="str">f"Reply using:\n{logs}"</span>)
-        <span class="kw">return</span> self(<span class="str">"Draft a short reply."</span>)</code></pre>
+        <div class="code-window">
+          <div class="code-bar"><i></i><i></i><i></i><span>support_agent.py</span></div>
+<pre class="code"><code><span class="ln"><span class="kw">from</span> openprogram <span class="kw">import</span> Agent</span><span class="ln"></span><span class="ln"><span class="kw">class</span> <span class="fn">SupportAgent</span>(Agent):</span><span class="ln">    <span class="kw">def</span> <span class="fn">triage</span>(self, ticket: str) -&gt; str:</span><span class="ln">        <span class="str">"""Classify the ticket, then draft a reply."""</span></span><span class="ln hl">        kind = self(ticket, choices=[<span class="str">"bug"</span>, <span class="str">"question"</span>])</span><span class="ln">        <span class="kw">if</span> kind == <span class="str">"bug"</span>:</span><span class="ln">            logs = search_logs(ticket)  <span class="cm"># your own helper</span></span><span class="ln hl">            <span class="kw">return</span> self(<span class="str">f"Reply using:\n{logs}"</span>)</span><span class="ln hl">        <span class="kw">return</span> self(<span class="str">"Draft a short reply."</span>)</span></code></pre>
+          <p class="code-note">Highlighted lines are model calls. <code>choices</code> makes the model pick from a fixed menu.</p>
         </div>
-        <div class="how-list">
-          <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2l7.4 3.6M8.3 16.8l7.4-3.6"/></svg></div><h3>A graph, not a transcript</h3><p>Every turn, model call and function call is a node you can inspect, branch and replay.</p></div>
-          <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg></div><h3>Agents that program themselves</h3><p>An agent writes new methods into its own class; next turn each one is a tool.</p></div>
-          <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><h3>Checked decisions</h3><p>The model picks from a fixed menu, and code validates the pick before anything runs.</p></div>
-        </div>
+        <ol class="steps">
+          <li class="step"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2l7.4 3.6M8.3 16.8l7.4-3.6"/></svg></div><div><h3>A graph, not a transcript</h3><p>Every turn, model call and function call is a node you can inspect, branch and replay.</p></div></li>
+          <li class="step"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg></div><div><h3>Agents that program themselves</h3><p>An agent writes new methods into its own class. From the next turn, each one is a tool it can call.</p></div></li>
+          <li class="step"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div><h3>Checked decisions</h3><p>Code validates the model's pick before anything runs, and sends a bad one back for another try.</p></div></li>
+        </ol>
       </div>
+    </div>
+  </section>
+
+  <section id="workspace" class="tour">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <span class="kicker">One workspace</span>
+        <h2>Chat, files, terminals and a browser, side by side.</h2>
+        <p class="lead">The desktop App and the web UI are one workspace. The terminal UI and the CLI reach the same sessions, models and tools.</p>
+      </div>
+      <div class="seg" role="tablist" aria-label="Workspace views">
+        <button type="button" role="tab" id="tab-graph" aria-controls="panel-graph" aria-selected="true">Context graph</button>
+        <button type="button" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false" tabindex="-1">Chat</button>
+        <button type="button" role="tab" id="tab-browser" aria-controls="panel-browser" aria-selected="false" tabindex="-1">Built-in browser</button>
+      </div>
+      <figure role="tabpanel" id="panel-graph" aria-labelledby="tab-graph">
+        <div class="frame"><div class="screen">
+          <img class="when-dark" src="docs/images/code_hero.png" alt="Context graph of a session with two user turns and their sub-agents" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/code_hero_light.png" alt="Context graph of a session with two user turns and their sub-agents" loading="lazy" width="3024" height="1890">
+        </div></div>
+        <figcaption>Every turn and call is a node you can open, branch from or retry.</figcaption>
+      </figure>
+      <figure role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden>
+        <div class="frame"><div class="screen">
+          <img class="when-dark" src="docs/images/chat_edit.png" alt="Chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/chat_edit_light.png" alt="Chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+        </div></div>
+        <figcaption>The agent edits files in your project and reports what changed.</figcaption>
+      </figure>
+      <figure role="tabpanel" id="panel-browser" aria-labelledby="tab-browser" hidden>
+        <div class="frame"><div class="screen">
+          <img class="when-dark" src="docs/images/browser_hero.png" alt="Built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/browser_hero_light.png" alt="Built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+        </div></div>
+        <figcaption>Open what the agent built, or let it read and operate pages while you watch.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -359,28 +581,124 @@ footer{padding:40px 0 60px;color:var(--text-secondary);font-size:13.5px}
         <span class="kicker">Included</span>
         <h2>Everything an agent needs, in one place.</h2>
       </div>
-      <div class="grid3 reveal">
-        <a class="card" href="docs/interfaces/desktop.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M9 21h6M12 18v3M3 8h18"/></svg></div><h3>One workspace</h3><p>Chats, files, terminals and a built-in browser side by side.</p></a>
-        <a class="card" href="docs/capabilities/computer-use.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 7-6 2-2 6z"/></svg></div><h3>Operates your computer</h3><p>Desktop apps, web pages and remote VMs, in the background.</p></a>
-        <a class="card" href="docs/capabilities/always-on-agents.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>Always on</h3><p>Scheduled tasks, lasting goals, and chat from Telegram, Slack and WeChat.</p></a>
-        <a class="card" href="docs/models/providers.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div><h3>Any model</h3><p>300+ providers and local models, several keys each.</p></a>
-        <a class="card" href="docs/capabilities/tools.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/></svg></div><h3>Tools, MCP, skills</h3><p>Built-in tools, MCP servers, skills and installable Programs.</p></a>
-        <a class="card" href="docs/capabilities/permissions.html"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><h3>Approvals</h3><p>Approve or deny a tool call before it runs; a denial can carry a note.</p></a>
+      <div class="bento reveal">
+        <a class="card wide" href="docs/capabilities/computer-use.html">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 7-6 2-2 6z"/></svg></div>
+          <span class="more-link"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></span>
+          <h3>Operates your computer</h3>
+          <p>Drives desktop apps, browser pages and remote VMs in the background. Your screen stays yours.</p>
+          <div class="chips"><span class="chip">Desktop apps</span><span class="chip">Built-in browser</span><span class="chip">Chrome or Edge</span><span class="chip">Remote VM</span></div>
+        </a>
+        <a class="card" href="docs/models/providers.html">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div>
+          <span class="more-link"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></span>
+          <h3>Any model</h3>
+          <p>Several keys per provider, switched automatically at a limit.</p>
+          <div class="big-number">300+<small>providers</small></div>
+        </a>
+        <a class="card" href="docs/capabilities/always-on-agents.html">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <span class="more-link"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></span>
+          <h3>Always on</h3>
+          <p>Scheduled tasks and goals that survive restarts. Chat from where you already are.</p>
+          <div class="chips"><span class="chip">Telegram</span><span class="chip">Discord</span><span class="chip">Slack</span><span class="chip">WeChat</span></div>
+        </a>
+        <a class="card" href="docs/capabilities/goal.html">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M6 12h6a4 4 0 0 0 4-4"/></svg></div>
+          <span class="more-link"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></span>
+          <h3>Sub-agents</h3>
+          <p>Hand parts of a task to sub-agents, each on its own branch, and get back only their results.</p>
+          <div class="tree"><b>goal</b> ship the release<br>├ docs <span class="ok">✓</span><br>└ tests <span class="ok">✓</span></div>
+        </a>
+        <a class="card" href="docs/capabilities/tools.html">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/></svg></div>
+          <span class="more-link"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></span>
+          <h3>Tools, MCP and skills</h3>
+          <p>Built-in file, shell and browser tools, MCP servers, skills, and Programs you install from GitHub.</p>
+          <div class="chips"><span class="chip">MCP</span><span class="chip">Skills</span><span class="chip">Programs</span></div>
+        </a>
       </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <span class="kicker">Download</span>
+        <h2>Two ways to run OpenProgram.</h2>
+        <p class="lead">The same agents and the same data, in <code>~/.openprogram</code>. Most people want the App; you can add the command line later, or the other way round.</p>
+      </div>
+      <div class="path-head reveal"><span class="path-no">1</span><div><h3>Desktop App <span class="badge">Recommended</span></h3><p>The full workspace in a window: chat, files, terminals, a built-in browser and computer use. It updates itself.</p></div></div>
+      <div class="platforms reveal">
+        <div class="plat" data-plat="mac">
+          <div class="plat-head"><div class="plat-ico"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.2 8.5c0-1.6 1.3-2.3 1.4-2.4-.8-1.1-1.9-1.3-2.3-1.3-1-.1-1.9.6-2.4.6s-1.3-.6-2.1-.6C4.7 4.8 3.7 5.4 3.1 6.4c-1.2 2-.3 5 .9 6.6.6.8 1.2 1.7 2.1 1.7.8 0 1.2-.5 2.2-.5s1.3.5 2.2.5 1.5-.8 2-1.6c.6-.9.9-1.8.9-1.9 0 0-1.9-.7-2.2-2.7zM9.6 3.6c.4-.5.8-1.3.7-2-.7 0-1.5.5-1.9 1-.4.5-.8 1.2-.7 2 .7 0 1.5-.5 1.9-1z"/></svg></div><span class="yours">Your system</span></div>
+          <h3>macOS</h3><p class="req">macOS 13.5 or later</p>
+          <div class="plat-btns"><a class="btn btn-elevated" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-plat-build="mac-arm64">Apple Silicon</a><a class="btn btn-elevated" href="docs/latest.html?OpenProgram-mac-x64.dmg" data-plat-build="mac-x64">Intel</a></div>
+          <p class="plat-more">Disk image (.dmg) · <a href="#cli" data-cli="mac">or the command line</a></p>
+        </div>
+        <div class="plat" data-plat="win">
+          <div class="plat-head"><div class="plat-ico"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 3l5.7-.8v5.5H1zM7.5 2.1 15 1v6.7H7.5zM1 8.4h5.7v5.5L1 13.1zM7.5 8.4H15V15l-7.5-1.1z"/></svg></div><span class="yours">Your system</span></div>
+          <h3>Windows</h3><p class="req">Windows 10 or 11, x64</p>
+          <div class="plat-btns"><a class="btn btn-elevated" href="docs/latest.html?OpenProgram-win-x64.exe" data-plat-build="win-x64">Download installer</a></div>
+          <p class="plat-more">Installer (.exe) · <a href="#cli" data-cli="win">or the command line</a></p>
+        </div>
+        <div class="plat" data-plat="linux">
+          <div class="plat-head"><div class="plat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/></svg></div><span class="yours">Your system</span></div>
+          <h3>Linux</h3><p class="req">Ubuntu 22.04 or later, glibc 2.35+</p>
+          <div class="plat-btns"><a class="btn btn-elevated" href="docs/latest.html?OpenProgram-linux-amd64.deb" data-plat-build="linux-x64">.deb</a><a class="btn btn-elevated" href="docs/latest.html?OpenProgram-linux-x86_64.AppImage" data-plat-build="linux-x64-appimage">AppImage</a></div>
+          <p class="plat-more"><a href="#cli" data-cli="linux">Or the command line</a> · arm64: <a href="docs/latest.html?OpenProgram-linux-arm64.deb">.deb</a> · <a href="docs/latest.html?OpenProgram-linux-arm64.AppImage">AppImage</a></p>
+        </div>
+      </div>
+      <div class="path-head reveal" id="cli"><span class="path-no">2</span><div><h3>Command line</h3><p>For terminals, servers and SSH. No window needed: chat in the terminal, or open the same workspace in your browser.</p></div></div>
+      <div class="cli panel reveal">
+        <div class="cli-step"><span class="step-no">Install</span><div class="cli-body"><div class="composer">
+          <span class="cmd" data-cmd="mac linux"><span class="prompt">$ </span>curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh</span>
+          <span class="cmd" data-cmd="win" hidden><span class="prompt">PS&gt; </span>irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</span>
+          <button class="copy-btn" type="button" aria-label="Copy the install command"><svg class="ic-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><svg class="ic-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
+        </div>
+        <div class="chips" role="group" aria-label="Operating system">
+          <button class="chip" type="button" aria-pressed="true" data-os="mac"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.2 8.5c0-1.6 1.3-2.3 1.4-2.4-.8-1.1-1.9-1.3-2.3-1.3-1-.1-1.9.6-2.4.6s-1.3-.6-2.1-.6C4.7 4.8 3.7 5.4 3.1 6.4c-1.2 2-.3 5 .9 6.6.6.8 1.2 1.7 2.1 1.7.8 0 1.2-.5 2.2-.5s1.3.5 2.2.5 1.5-.8 2-1.6c.6-.9.9-1.8.9-1.9 0 0-1.9-.7-2.2-2.7zM9.6 3.6c.4-.5.8-1.3.7-2-.7 0-1.5.5-1.9 1-.4.5-.8 1.2-.7 2 .7 0 1.5-.5 1.9-1z"/></svg>macOS</button><button class="chip" type="button" aria-pressed="false" data-os="linux"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>Linux</button>
+          <button class="chip" type="button" aria-pressed="false" data-os="win"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 3l5.7-.8v5.5H1zM7.5 2.1 15 1v6.7H7.5zM1 8.4h5.7v5.5L1 13.1zM7.5 8.4H15V15l-7.5-1.1z"/></svg>Windows</button>
+        </div>
+      </div></div>
+        <div class="cli-step"><span class="step-no">Then</span><div class="cli-body"><div class="run"><code>openprogram</code><span>Connect a model and chat in the terminal</span></div><div class="run"><code>openprogram web</code><span>Open the workspace at localhost:18100</span></div></div></div>
+      </div>
+      <p class="dl-foot reveal"><a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0">Release notes</a><a href="docs/install/install.html#checksums">Verify a download</a><a href="https://github.com/Fzkuji/OpenProgram/releases">All releases</a><a href="docs/install/install.html">Install guide</a></p>
     </div>
   </section>
 
   <section id="research">
     <div class="wrap">
-      <div class="cta panel reveal">
-        <div>
-          <span class="kicker">Research</span>
-          <h2>LLM-as-Code: Agentic Programming for Agent Harness</h2>
-          <p>The design behind OpenProgram. Also: <a href="https://arxiv.org/abs/2608.03270">GUI-Lens</a>, GUI grounding for its computer use.</p>
-        </div>
+      <div class="sec-head reveal">
+        <span class="kicker">Research</span>
+        <h2>The ideas behind it.</h2>
+      </div>
+      <div class="papers reveal">
+        <a class="paper" href="https://arxiv.org/abs/2606.15874">
+          <span class="paper-id">arXiv:2606.15874 · KDD 2026 AgenticSE</span>
+          <h3>LLM-as-Code: Agentic Programming for Agent Harness</h3>
+          <p>Agents as programs: Python owns the control flow, and the model is called where judgment is needed.</p>
+          <span class="link">Read the paper →</span>
+        </a>
+        <a class="paper" href="https://arxiv.org/abs/2608.03270">
+          <span class="paper-id">arXiv:2608.03270</span>
+          <h3>GUI-Lens: Coarse-to-Fine Cropping for GUI Grounding with General-Purpose VLMs</h3>
+          <p>Finding the right element on screen with general-purpose vision-language models, behind OpenProgram's computer use.</p>
+          <span class="link">Read the paper →</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="closing">
+    <div class="wrap">
+      <div class="cta reveal">
+        <img src="docs/images/openprogram-app-icon.svg" alt="" width="56" height="56" loading="lazy">
+        <h2>Build agents that improve themselves.</h2>
+        <p class="lead">Free and open source under AGPL-3.0. Bring the models you already use.</p>
         <div class="actions">
-          <a class="btn btn-elevated" href="https://arxiv.org/abs/2606.15874">Read the paper</a>
-          <a class="btn btn-primary" href="docs/install/download.html" data-download><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>Download OpenProgram</a>
+          <a class="btn btn-primary btn-lg" href="docs/latest.html?OpenProgram-mac-arm64.dmg" data-primary><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg><span data-primary-label>Download for macOS</span></a>
+          <a class="btn btn-elevated btn-lg" href="https://github.com/Fzkuji/OpenProgram"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="m8 1.8 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></svg>Star on GitHub</a>
         </div>
       </div>
     </div>
@@ -388,64 +706,157 @@ footer{padding:40px 0 60px;color:var(--text-secondary);font-size:13.5px}
 </main>
 
 <footer>
-  <div class="wrap footer-in">
-    <span>© 2026 OpenProgram · AGPL-3.0</span>
-    <div class="footer-links">
-      <a href="docs/">Docs</a>
-      <a href="https://github.com/Fzkuji/OpenProgram/releases">Releases</a>
-      <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
-      <a href="https://github.com/Fzkuji/OpenProgram/discussions">Discussions</a>
-      <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contribute</a>
-      <a href="llms.txt">llms.txt</a>
-      <a href="sitemap.xml">Sitemap</a>
+  <div class="wrap">
+    <div class="foot">
+      <div class="foot-brand">
+        <a class="brand" href="./"><img src="docs/images/openprogram-app-icon.svg" alt="" width="26" height="26" loading="lazy"><span>Open<b>Program</b></span></a>
+        <p>An open-source agent harness where agents are Python programs that improve themselves.</p>
+      </div>
+      <div><h4>Product</h4><ul><li><a href="#download">Download</a></li><li><a href="#features">Features</a></li><li><a href="https://github.com/Fzkuji/OpenProgram/releases">Releases</a></li><li><a href="docs/models/providers.html">Model providers</a></li></ul></div>
+      <div><h4>Docs</h4><ul><li><a href="docs/start/GETTING_STARTED.html">Getting started</a></li><li><a href="docs/install/install.html">Install guide</a></li><li><a href="docs/capabilities/agentic-programming/writing-functions/agent.html">Writing agents</a></li><li><a href="llms.txt">llms.txt</a></li></ul></div>
+      <div><h4>Community</h4><ul><li><a href="https://github.com/Fzkuji/OpenProgram">GitHub</a></li><li><a href="https://github.com/Fzkuji/OpenProgram/discussions">Discussions</a></li><li><a href="https://github.com/Fzkuji/OpenProgram/issues">Issues</a></li><li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contribute</a></li></ul></div>
+      <div><h4>Research</h4><ul><li><a href="https://arxiv.org/abs/2606.15874">LLM-as-Code</a></li><li><a href="https://arxiv.org/abs/2608.03270">GUI-Lens</a></li><li><a href="sitemap.xml">Sitemap</a></li></ul></div>
     </div>
+    <div class="foot-bottom"><span>© 2026 OpenProgram · AGPL-3.0</span><span>Made for agents that write their own code.</span></div>
   </div>
 </footer>
 
 <script>
 (function(){
+  function closeAll(except){
+    document.querySelectorAll("[data-split].open,#nav.open").forEach(function(el){
+      if(el===except)return;
+      el.classList.remove("open");
+      var b=el.querySelector("[aria-expanded]");if(b)b.setAttribute("aria-expanded","false");
+    });
+  }
+  document.addEventListener("click",function(){closeAll()});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")closeAll()});
+
+  // install command, per system
   var commands={
-    unix:"curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh",
+    mac:"curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh",
+    linux:"curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh",
     win:"irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex"
   };
-  var os="unix";
+  var os="mac";
   function pick(next){
     os=next;
     document.querySelectorAll("[data-os]").forEach(function(chip){chip.setAttribute("aria-pressed",String(chip.dataset.os===os))});
-    document.querySelectorAll("[data-cmd]").forEach(function(cmd){cmd.hidden=cmd.dataset.cmd!==os});
+    document.querySelectorAll("[data-cmd]").forEach(function(cmd){cmd.hidden=cmd.dataset.cmd.split(" ").indexOf(os)<0});
   }
-  document.querySelectorAll("[data-os]").forEach(function(chip){
-    chip.addEventListener("click",function(){pick(chip.dataset.os)});
-  });
-
+  document.querySelectorAll("[data-os]").forEach(function(chip){chip.addEventListener("click",function(){pick(chip.dataset.os)})});
   var copy=document.querySelector(".copy-btn");
-  function copied(){
-    copy.classList.add("copied");
-    window.setTimeout(function(){copy.classList.remove("copied")},1600);
-  }
+  function copied(){copy.classList.add("copied");window.setTimeout(function(){copy.classList.remove("copied")},1600)}
   copy.addEventListener("click",function(){
     var value=commands[os];
-    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(value).then(copied,fallback);return;}
-    fallback();
     function fallback(){
       var input=document.createElement("textarea");
       input.value=value;input.setAttribute("readonly","");input.style.position="fixed";input.style.opacity="0";
       document.body.appendChild(input);input.select();document.execCommand("copy");input.remove();copied();
     }
+    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(value).then(copied,fallback);return;}
+    fallback();
   });
 
-  // The download button and install command follow the visitor's system.
-  var agent=navigator.userAgent;
-  var phone=/iPhone|iPad|Android/.test(agent);
-  var target=null;
-  if(!phone&&/Windows/.test(agent)){target={label:"Download for Windows",href:"docs/latest.html?OpenProgram-win-x64.exe"};pick("win");}
-  else if(!phone&&/Linux|X11/.test(agent)){target={label:"Download for Linux",href:"docs/install/download.html"};}
-  else if(phone){target={label:"Download",href:"docs/install/download.html"};}
-  if(target){
-    var hero=document.querySelector("[data-download-label]");
-    hero.href=target.href;
-    hero.querySelector("span").textContent=target.label;
+  document.querySelectorAll("[data-cli]").forEach(function(a){a.addEventListener("click",function(){pick(a.dataset.cli)})});
+
+  // split download menu
+  var split=document.querySelector("[data-split]");
+  var more=split.querySelector(".split-more");
+  more.addEventListener("click",function(e){
+    e.stopPropagation();
+    var open=!split.classList.contains("open");
+    closeAll();split.classList.toggle("open",open);more.setAttribute("aria-expanded",String(open));
+    if(open){var first=split.querySelector(".dl-item.current")||split.querySelector(".dl-item");first.focus();}
+  });
+  split.querySelector(".dl-menu").addEventListener("keydown",function(e){
+    var items=[].slice.call(split.querySelectorAll(".dl-item"));
+    var i=items.indexOf(document.activeElement);
+    if(e.key==="ArrowDown"){e.preventDefault();items[(i+1)%items.length].focus();}
+    if(e.key==="ArrowUp"){e.preventDefault();items[(i-1+items.length)%items.length].focus();}
+  });
+
+  // mobile menu
+  var nav=document.getElementById("nav");
+  var navButton=document.getElementById("nav-menu-button");
+  navButton.addEventListener("click",function(e){
+    e.stopPropagation();
+    var open=!nav.classList.contains("open");
+    closeAll();nav.classList.toggle("open",open);navButton.setAttribute("aria-expanded",String(open));
+  });
+  document.querySelectorAll("#mobile-menu a").forEach(function(a){a.addEventListener("click",function(){closeAll()})});
+
+  // workspace tour
+  var tabs=[].slice.call(document.querySelectorAll('.seg [role="tab"]'));
+  function select(tab,focus){
+    tabs.forEach(function(other){
+      var on=other===tab;
+      other.setAttribute("aria-selected",String(on));other.tabIndex=on?0:-1;
+      document.getElementById(other.getAttribute("aria-controls")).hidden=!on;
+    });
+    if(focus)tab.focus();
   }
+  tabs.forEach(function(tab,index){
+    tab.addEventListener("click",function(){select(tab,false)});
+    tab.addEventListener("keydown",function(e){
+      var next=e.key==="ArrowRight"?tabs[(index+1)%tabs.length]:e.key==="ArrowLeft"?tabs[(index+tabs.length-1)%tabs.length]:null;
+      if(next){e.preventDefault();select(next,true);}
+    });
+  });
+
+  // Recommend the build for the visitor's system, as a vendor download page does.
+  var BUILDS={
+    "mac-arm64":{file:"OpenProgram-mac-arm64.dmg",label:"Download for macOS",caption:"Apple Silicon · macOS 13.5 or later",plat:"mac"},
+    "mac-x64":{file:"OpenProgram-mac-x64.dmg",label:"Download for macOS",caption:"Intel · macOS 13.5 or later",plat:"mac"},
+    "win-x64":{file:"OpenProgram-win-x64.exe",label:"Download for Windows",caption:"x64 · Windows 10 or 11",plat:"win"},
+    "linux-x64":{file:"OpenProgram-linux-amd64.deb",label:"Download for Linux",caption:"x86_64 .deb · Ubuntu 22.04 or later",plat:"linux"},
+    "linux-arm64":{file:"OpenProgram-linux-arm64.deb",label:"Download for Linux",caption:"arm64 .deb · Ubuntu 22.04 or later",plat:"linux"}
+  };
+  function apply(key){
+    var caption=document.querySelector("[data-caption]");
+    var build=BUILDS[key];
+    document.querySelectorAll(".plat").forEach(function(p){p.classList.toggle("current",!!build&&p.dataset.plat===build.plat)});
+    document.querySelectorAll(".dl-item[data-build]").forEach(function(i){i.classList.toggle("current",i.dataset.build===key)});
+    if(build){
+      var row=document.querySelector('.plat[data-plat="'+build.plat+'"] .plat-btns');
+      var chosen=row&&row.querySelector('[data-plat-build="'+key+'"]');
+      if(chosen&&chosen!==row.firstElementChild)row.insertBefore(chosen,row.firstElementChild);
+    }
+    if(!build){
+      document.querySelectorAll("[data-primary]").forEach(function(a){a.href="#download"});
+      document.querySelectorAll("[data-primary-label]").forEach(function(l){l.textContent="Get the App"});
+      caption.textContent="For macOS, Windows and Linux. Open this page on your computer to install.";
+      return;
+    }
+    document.querySelectorAll("[data-primary]").forEach(function(a){a.href="docs/latest.html?"+build.file});
+    document.querySelectorAll("[data-primary-label]").forEach(function(l){l.textContent=build.label});
+    caption.innerHTML="v1.4.0 · "+build.caption+' · <a href="#download">Other platforms</a>';
+    pick(build.os||build.plat);
+  }
+  function gpu(){
+    try{
+      var gl=document.createElement("canvas").getContext("webgl");
+      var ext=gl&&gl.getExtension("WEBGL_debug_renderer_info");
+      var name=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):"";
+      if(/Intel|AMD|Radeon/i.test(name))return "mac-x64";
+    }catch(e){}
+    return "mac-arm64";
+  }
+  function detect(){
+    var ua=navigator.userAgent;
+    if(/iPhone|iPad|Android/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1))return Promise.resolve("phone");
+    if(/Windows/.test(ua))return Promise.resolve("win-x64");
+    if(/Linux|X11|CrOS/.test(ua))return Promise.resolve(/aarch64|arm64/i.test(ua)?"linux-arm64":"linux-x64");
+    // A Mac: Chromium reports the CPU; otherwise the GPU name tells Intel from Apple Silicon.
+    var data=navigator.userAgentData;
+    if(data&&data.getHighEntropyValues){
+      return data.getHighEntropyValues(["architecture"]).then(function(v){return v.architecture==="x86"?"mac-x64":"mac-arm64"},gpu);
+    }
+    return Promise.resolve(gpu());
+  }
+  var forced=/[?&]as=([\w-]+)/.exec(location.search);
+  if(forced)apply(forced[1]);else detect().then(apply);
 })();
 </script>
 </body>

@@ -56,6 +56,7 @@
 
 <h2>Marks and toolbar</h2>
 <p>The marks (<code translate="no">lib/annotate/marks.ts</code>) and toolbar (<code translate="no">components/annotate</code>) are shared with the composer's image annotator. Marks are kept in image pixels and drawn with widths in CSS px times the image's scale, so a Retina capture and a plain image look alike and the PNG keeps the source size. Mosaic pixelates the picture under it rather than drawing a pattern.</p>
+<p>Finished marks are drawn once into an offscreen layer; while dragging, only the mark in progress is drawn on top of it, and a pen stroke drops moves under one pixel. The magnifier and colour picker read the captured pixels directly instead of reading the canvas back.</p>
 <p>The toolbar sits under the selection, as in Snow Shot. When there is no room it goes above, and inside the selection when neither side fits (<code translate="no">placeToolbar</code>), so a selection along the screen's bottom edge still has its tools.</p>
 
 <h2>Text, pins and results</h2>
@@ -64,7 +65,7 @@
 <tbody>
 <tr><th scope="row">OCR</th><td>macOS Vision; Windows <code translate="no">Windows.Media.Ocr</code> through PowerShell, spaces between CJK characters removed; Linux <code translate="no">tesseract</code>. Boxes are drawn over the picture and the text listed beside it.</td></tr>
 <tr><th scope="row">Pin</th><td>A frameless always-on-top window at the selection's place. The App moves it while dragging, zooms it about the pointer (0.1–5×), sets opacity with the modifier (0.25–1), and gives a native menu.</td></tr>
-<tr><th scope="row">Send to chat</th><td><code translate="no">screenshot:attach</code> to the focused App window, which queues the PNG in the active composer like a dropped file.</td></tr>
+<tr><th scope="row">Send to chat</th><td><code translate="no">screenshot:attach</code> to the App window that was in front when the screenshot began, which queues the PNG in the active composer like a dropped file, a new chat that has no key yet included.</td></tr>
 <tr><th scope="row">Save</th><td>Save dialog in Pictures, named <code translate="no">Screenshot YYYY-MM-DD HH.mm.ss.png</code> (<code translate="no">截图 …</code> in Chinese).</td></tr>
 </tbody>
 </table>

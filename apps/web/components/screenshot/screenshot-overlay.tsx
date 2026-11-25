@@ -22,6 +22,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { ActionButton, AnnotateToolbar, TOOL_KEYS } from "@/components/annotate/annotate-toolbar";
 import { Button } from "@/components/ui/button";
+import { HoverTip, TipBody } from "@/components/ui/tooltip";
 import {
   commit, drawMarks, emptyHistory, isEmpty, nextNumber, normalized, redo, undo,
   WIDTHS, COLORS, type History, type Mark, type Point, type Tool,
@@ -67,6 +68,14 @@ function imageData(frame: ScreenshotFrame): ImageData {
     }
   }
   return new ImageData(out, frame.width, frame.height);
+}
+
+/** The colour of one frame pixel, read from the BGRA rows (no canvas readback). */
+function pixelHex(frame: ScreenshotFrame, x: number, y: number) {
+  const px = Math.min(frame.width - 1, Math.max(0, x));
+  const py = Math.min(frame.height - 1, Math.max(0, y));
+  const s = py * (frame.pixels.length / frame.height) + px * 4;
+  return toHex(frame.pixels[s + 2], frame.pixels[s + 1], frame.pixels[s]);
 }
 
 async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array | null> {
@@ -159,6 +168,23 @@ export function ScreenshotOverlay() {
   }, [frame, bridge]);
 
   const marks = history.present;
+  // Finished marks are drawn once into `committed`; a stroke in progress only
+  // adds itself on top, so a long pen line doesn't redraw everything per move.
+  const committedRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const base = baseRef.current;
+    if (!base || !frame) return;
+    const canvas = committedRef.current ?? (committedRef.current = document.createElement("canvas"));
+    if (canvas.width !== frame.width || canvas.height !== frame.height) {
+      canvas.width = frame.width;
+      canvas.height = frame.height;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (selection && marks.length) drawMarks(ctx, marks, { scale, source: base });
+  }, [marks, selection, scale, frame]);
+
   useEffect(() => {
     const canvas = marksRef.current;
     const base = baseRef.current;
@@ -170,7 +196,8 @@ export function ScreenshotOverlay() {
     ctx.beginPath();
     ctx.rect(selection.x * scale, selection.y * scale, selection.width * scale, selection.height * scale);
     ctx.clip();
-    drawMarks(ctx, draft ? [...marks, draft] : marks, { scale, source: base });
+    if (committedRef.current && marks.length) ctx.drawImage(committedRef.current, 0, 0);
+    if (draft) drawMarks(ctx, [draft], { scale, source: base });
     ctx.restore();
   }, [marks, draft, selection, scale, frame]);
 
@@ -332,7 +359,11 @@ export function ScreenshotOverlay() {
     } else if (drag.kind === "draw" && draft) {
       const image = toImage(p);
       if ("points" in draft) {
-        setDraft({ ...draft, points: [...draft.points, image] });
+        // The draft owns its points; skip sub-pixel moves and append in place.
+        const last = draft.points[draft.points.length - 1];
+        if (Math.abs(image.x - last.x) < 1 && Math.abs(image.y - last.y) < 1) return;
+        draft.points.push(image);
+        setDraft({ ...draft });
       } else if ("from" in draft) {
         let to = image;
         if (event.shiftKey && (draft.kind === "rect" || draft.kind === "ellipse")) {
@@ -407,10 +438,8 @@ export function ScreenshotOverlay() {
         return;
       }
       if (mod && event.key.toLowerCase() === "s" && selection) { event.preventDefault(); void finish("save"); return; }
-      if (!selection && !mod && event.key.toLowerCase() === "c" && pointer && baseRef.current) {
-        const ctx = baseRef.current.getContext("2d");
-        const [r, g, b] = ctx?.getImageData(Math.floor(pointer.x * scale), Math.floor(pointer.y * scale), 1, 1).data ?? [0, 0, 0];
-        void desktopBridge()?.writeClipboardText?.(toHex(r, g, b));
+      if (!selection && !mod && event.key.toLowerCase() === "c" && pointer) {
+        void desktopBridge()?.writeClipboardText?.(pixelHex(frame, Math.floor(pointer.x * scale), Math.floor(pointer.y * scale)));
         void finish("cancel");
         return;
       }
@@ -439,8 +468,8 @@ export function ScreenshotOverlay() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const ratio = window.devicePixelRatio || 1;
-    canvas.width = MAGNIFIER_SIZE * ratio;
-    canvas.height = MAGNIFIER_SIZE * ratio;
+    const side = MAGNIFIER_SIZE * ratio;
+    if (canvas.width !== side) { canvas.width = side; canvas.height = side; }
     const px = Math.floor(pointer.x * scale);
     const py = Math.floor(pointer.y * scale);
     const half = Math.floor(MAGNIFIER_PIXELS / 2);
@@ -452,9 +481,8 @@ export function ScreenshotOverlay() {
     ctx.strokeStyle = "rgba(59,130,246,0.9)";
     ctx.lineWidth = Math.max(1, ratio);
     ctx.strokeRect(half * cell, half * cell, cell, cell);
-    const [r, g, b] = base.getContext("2d")?.getImageData(px, py, 1, 1).data ?? [0, 0, 0];
-    setHex(toHex(r, g, b));
-  }, [showMagnifier, pointer, scale]);
+    if (frame) setHex(pixelHex(frame, px, py));
+  }, [showMagnifier, pointer, scale, frame]);
 
   if (!bridge) return null;
 
@@ -526,9 +554,10 @@ export function ScreenshotOverlay() {
                   onClick={() => { void finish("copy"); }} />
                 <ActionButton label={text("Cancel", "取消")} detail="Esc" icon="close-circle"
                   onClick={() => { void finish("cancel"); }} />
-                <ActionButton primary label={text("Send to chat", "发送到对话")}
-                  detail={text("Adds it to the message box", "加到输入框里")} icon="plain-2"
-                  onClick={() => { void finish("send"); }} />
+                <HoverTip label={<TipBody title={text("Send to chat", "发送到对话")}
+                  detail={text("Adds it to the message box", "加到输入框里")} />}>
+                  <Button size="sm" onClick={() => { void finish("send"); }}>{text("Send", "发送")}</Button>
+                </HoverTip>
               </>
             )}
           />

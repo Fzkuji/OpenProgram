@@ -28,6 +28,11 @@
   padding: 4px;
 }
 
+/* Buttons in the floating bar follow its corner: the bar's radius less its padding. */
+.bar.surface button {
+  border-radius: calc(var(--radius-lg) - 4px);
+}
+
 .styleBar {
   padding: 6px 8px;
 }
