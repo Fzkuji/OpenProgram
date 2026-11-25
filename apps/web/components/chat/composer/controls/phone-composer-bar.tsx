@@ -38,7 +38,13 @@ import {
 import { ChatModelMenuBody, useChatModel } from "@/components/chat/top-bar";
 import { ModelMark } from "@/components/chat/top-bar/chips/model-mark";
 import { ChatAgentMenuRows, useChatAgent } from "@/components/chat/top-bar/menus/agent-config-menu";
-import { HarnessAgentRows, harnessAgentLabel, harnessName, HarnessRows, useHarness } from "@/components/chat/top-bar/menus/harness-menu";
+import {
+  HarnessAgentRows, harnessAgentLabel, harnessName, harnessNote, HarnessRows, useHarness, useHarnessAgents, useHarnessPick,
+} from "@/components/chat/top-bar/menus/harness-menu";
+import { useModelPicker } from "@/components/chat/top-bar/menus/agent-selector";
+import { harnessProvider, listedModel, unavailable } from "@/lib/models/harnesses";
+import { nativeMenus, openNativeMenu, type NativeMenuItem } from "@/lib/mobile/native-menu";
+import { navigate } from "@/lib/nav/navigate";
 import { formatEffortLabel } from "@/lib/effort/effort-color";
 import { useTranslation } from "@/lib/i18n";
 import { haptic } from "@/lib/mobile/bridge";
@@ -82,6 +88,10 @@ export const PhoneComposerBar = memo(function PhoneComposerBar(props: Props) {
       >
         <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
       </button>
+      {nativeMenus() ? (
+        <NativeSettings {...props} model={model} permission={permission} permissionLabel={permissionLabel}
+          showEffort={showEffort} modelText={modelText} summary={summary} />
+      ) : (
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
           <button
@@ -110,6 +120,7 @@ export const PhoneComposerBar = memo(function PhoneComposerBar(props: Props) {
             showEffort={showEffort} close={() => setOpen(false)} />
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
     </div>
   );
 });
@@ -245,5 +256,131 @@ function ModelTrail({ label, id, none }: { label: string; id?: string; none: str
       <span>{label || none}</span>
       {bare && same(bare) !== same(label) ? <small>{bare}</small> : null}
     </span>
+  );
+}
+
+/** The settings in the phone app: the same button, and iOS's own menu
+ *  (lib/mobile/native-menu.ts), as ChatGPT's and Claude's iPhone apps
+ *  show theirs. A row with a value opens its choices as a submenu; the
+ *  switches are checked rows. */
+function NativeSettings({ model, permission, permissionLabel, showEffort, modelText, summary, ...props }: Props & {
+  model: ReturnType<typeof useChatModel>;
+  permission: ReturnType<typeof usePermissionMode>;
+  permissionLabel: string;
+  showEffort: boolean;
+  modelText: string;
+  summary: string;
+}) {
+  const { text } = useTranslation();
+  const harness = useHarness(true);
+  const pickHarness = useHarnessPick(harness, () => {});
+  const harnessAgents = useHarnessAgents(harness, () => {});
+  const agent = useChatAgent(() => {});
+  const picker = useModelPicker({
+    currentProvider: model.provider,
+    currentModel: model.model,
+    onClose: () => {},
+    probe: false,
+    harness: harness.harness ? {
+      id: harness.harness,
+      provider: harnessProvider(harness.harness) ?? model.provider ?? "",
+      entry: harness.entry,
+    } : undefined,
+  });
+
+  const items = (): NativeMenuItem[] => {
+    const tick = () => haptic("selection");
+    const section = (title: string, children: NativeMenuItem[]): NativeMenuItem => ({ title, inline: true, children });
+
+    const harnessMenu: NativeMenuItem[] = [
+      { title: "OpenProgram", checked: !harness.harness, run: () => void pickHarness("openprogram") },
+      ...(harness.harnesses ?? []).map((h) => ({
+        title: h.label, subtitle: harnessNote(h, text), checked: harness.harness === h.id,
+        disabled: !!unavailable(h), run: () => void pickHarness(h.id, h),
+      })),
+    ];
+
+    const modelRow = (m: { provider: string; id: string; name?: string }) => ({
+      title: m.name || m.id, checked: picker.isActive(m as never), run: () => picker.pick(m.provider, m.id),
+    });
+    const providers: NativeMenuItem[] = picker.byProvider.length === 1
+      ? picker.byProvider[0].models.map(modelRow)
+      : picker.byProvider.map((group) => ({
+        title: picker.providerName(group.provider),
+        subtitle: group.models.find((m) => picker.isActive(m))?.name,
+        children: group.models.map(modelRow),
+      }));
+    const entry = harness.entry;
+    const modelMenu: NativeMenuItem[] = harness.harness ? [
+      section(entry?.label ?? harness.harness, (entry?.models ?? []).map((m) => ({
+        title: m.label,
+        checked: model.provider === harnessProvider(harness.harness!) && listedModel(entry, model.model)?.id === m.id,
+        run: () => void picker.pickModel(harnessProvider(harness.harness!) ?? "", m.id),
+      }))),
+      ...(picker.gateway ? [section(text("Through OpenProgram", "通过 OpenProgram"), providers)] : []),
+    ] : providers;
+
+    const agentMenu: NativeMenuItem[] = harness.harness
+      ? harnessAgents.shown.map((group) => section(group.title ?? "", harnessAgents.choices
+        .filter((a) => a.kind === group.kind)
+        .map((a) => ({ title: harnessAgents.label(a), checked: a.id === harnessAgents.currentId, run: () => void harnessAgents.pick(a.id) }))))
+      : [
+        section(agent.liveAgents.length ? text("Chat", "对话") : "", agent.chatAgents.map((a) => ({
+          title: a.name || a.id, checked: a.id === agent.currentId, run: () => void agent.pick(a),
+        }))),
+        ...(agent.liveAgents.length ? [section(text("Always-on", "常驻"), agent.liveAgents.map((a) => ({
+          title: a.name || a.id, checked: a.id === agent.currentId, run: () => void agent.pick(a),
+        })))] : []),
+        section("", [{ title: text("Manage Agents", "管理 Agents"), icon: "gearshape", run: () => navigate("/agents") }]),
+      ];
+
+    const toggle = (on: boolean, flip: () => void, title: string, icon: string): NativeMenuItem =>
+      ({ title, icon, checked: on, run: () => { tick(); flip(); } });
+    const toggles: NativeMenuItem[] = [];
+    if (props.fastSupported) toggles.push(toggle(props.fastEnabled, props.toggleFast, text("Fast mode", "高速模式"), "bolt"));
+    if (!harness.harness) toggles.push(toggle(props.webSearchEnabled, props.toggleWebSearch, text("Web search", "网页搜索"), "globe"));
+    if (props.sandboxAvailable && !harness.harness) toggles.push(toggle(props.sandboxEnabled, props.toggleSandbox, text("Sandbox", "沙箱"), "shippingbox"));
+    toggles.push(toggle(props.unattended, props.toggleUnattended, text("Unattended", "无人值守"), "moon"));
+
+    return [
+      section("", [
+        { title: "Harness", subtitle: harnessName(harness), icon: "square.stack.3d.up", children: harnessMenu },
+        { title: text("Model", "模型"), subtitle: model.label || text("None", "未选择"), icon: "cpu", children: modelMenu },
+        ...(showEffort ? [{
+          title: text("Thinking", "思考力度"), subtitle: props.thinking ? formatEffortLabel(props.thinking) : undefined, icon: "brain",
+          children: props.thinkingOptions.map((o) => ({
+            title: formatEffortLabel(o.value), checked: o.value === props.thinking, run: () => { tick(); props.setThinking(o.value); },
+          })),
+        }] : []),
+        { title: text("Permissions", "权限"), subtitle: permissionLabel, icon: "lock.shield", children: permission.options.map((o) => ({
+          title: o.label, subtitle: o.description, checked: o.value === permission.mode,
+          run: () => { if (!permission.pending) permission.set(o.value); },
+        })) },
+        {
+          title: text("Agent", "智能体"), icon: "person.crop.circle",
+          subtitle: (harness.harness ? harnessAgentLabel(harness, text) : agent.label) || undefined,
+          disabled: !!harness.harness && !harness.entry, children: agentMenu,
+        },
+      ]),
+      section("", toggles),
+    ];
+  };
+
+  return (
+    <button
+      type="button"
+      className="phone-composer-settings"
+      disabled={!!props.chatAgent.locked}
+      aria-label={text(`Settings: ${summary}`, `设置：${summary}`)}
+      onClick={(event) => openNativeMenu(event.currentTarget, items())}
+    >
+      <span className="phone-composer-chip phone-composer-chip-model">
+        <ModelMark provider={model.markProvider} />
+        <span className="phone-composer-settings-text">{modelText}</span>
+      </span>
+      <span className="phone-composer-chip phone-composer-chip-permission" data-mode={permission.mode}>
+        <SolarIcon name="shield-check" size={17} aria-hidden="true" />
+      </span>
+    </button>
   );
 }

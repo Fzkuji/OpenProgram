@@ -88,6 +88,18 @@ export const SVG = {
   ),
 };
 
+/** The SF Symbol of each action glyph, for the phone app's iOS menu
+ *  (components/phone/phone-message-menu.tsx). */
+const SYMBOLS = new Map<unknown, string>([
+  [SVG.copy, "doc.on.doc"],
+  [SVG.check, "checkmark"],
+  [SVG.retry, "arrow.clockwise"],
+  [SVG.pencil, "square.and.pencil"],
+  [SVG.undo, "arrow.uturn.backward"],
+  [SVG.fork, "arrow.triangle.branch"],
+  [SVG.pin, "bookmark"],
+]);
+
 function postJson(url: string, body: unknown): Promise<unknown> {
   return fetch(url, {
     method: "POST",
@@ -146,6 +158,7 @@ export function ActionButton({
       aria-label={title}
       aria-description={disabledReason ? undefined : detail}
       aria-pressed={pressed}
+      data-symbol={SYMBOLS.get(icon)}
       disabled={off}
       onClick={onClick}
       {...handlers}
@@ -179,6 +192,7 @@ export function NavButton({
         type="button"
         className={cn(ACTION_BUTTON_CLASS, "message-nav-btn")}
         data-nav={dir}
+        data-symbol={dir === "prev" ? "chevron.left" : "chevron.right"}
         aria-label={label}
         disabled={disabled}
         onClick={onClick}

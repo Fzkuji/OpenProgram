@@ -162,6 +162,9 @@ class CodexTurn:
         self.plan_updates = 0
         self.steer_images: dict[str, list[str]] = {}
         self.followups: list[list[dict]] = []
+        self.followup_ids: list[str] = []  # the steering messages the follow-up turn carries
+        self.held_id: Optional[str] = None  # the last message Codex took this turn
+        self.pending_ids: list[str] = []  # steering messages waiting for a follow-up turn
         self.last_error: Optional[dict] = None
         self.context_window = DEFAULT_CONTEXT_WINDOW
         self.server: Optional[AppServer] = None
@@ -354,11 +357,13 @@ class CodexTurn:
         from openprogram.runtime.harnesses import branch_setting
         choice = branch_setting(self.req, "harness_agent")
         kind, _, value = choice.partition(":") if isinstance(choice, str) else ("", "", "")
-        if kind == "profile" and value:
-            return ["-c", f"profile={json.dumps(value)}"], {}
+        args = ["-c", f"profile={json.dumps(value)}"] if kind == "profile" and value else []
         listed = self._listed_model()
         if listed is None or not listed.get("personality"):
-            return [], {}
+            return args, {}
+        if args:
+            # A personality stays with the thread: a profile asks for its own, or Codex's.
+            return args, {"personality": _profile_personality(value) or _configured_personality()}
         if kind == "personality" and value:
             return [], {"personality": value}
         # A personality stays with the thread: Default asks for Codex's own again.
@@ -372,7 +377,13 @@ class CodexTurn:
         db = default_db()
         key = handoff.branch_key(self.req)
         records = handoff.read_records(db, self.req.session_id, PROVIDER)
-        plan = handoff.plan_thread(records, key, self.history)
+        plan = handoff.plan_thread(records, key, self.history, getattr(self.req, "user_text", None))
+        own = records.get(key) if isinstance(records, dict) else None
+        if (plan.action == "start" and isinstance(own, dict) and own.get("thread_id")
+                and not own.get("seen") and not own.get("shared")):
+            # The branch's thread never finished a turn (its first message was stopped or
+            # failed): it goes on there, told everything said since.
+            plan = handoff.ThreadPlan("resume", own["thread_id"], list(self.history))
         common = {"cwd": cwd, "approvalPolicy": settings["approvalPolicy"], "sandbox": settings["sandbox"],
                   "approvalsReviewer": settings["approvalsReviewer"], **settings.get("extra", {})}
         if model:
@@ -430,7 +441,14 @@ class CodexTurn:
         else:
             missed = {str(m.get("id") or "") for m in plan.missed}
             self.base_seen = next((i for i in reversed(ids) if i and i not in missed), None)
-        handoff.write_record(db, self.req.session_id, PROVIDER, key, {"thread_id": thread_id})
+        # The record starts where the thread is, so a turn that ends before Codex begins
+        # leaves it resumable from there.
+        # A thread resumed from this branch's own record already has its position (a sync may
+        # even have moved it since); one taken up from another record gets it here.
+        own_thread = (records.get(key) or {}).get("thread_id") if isinstance(records, dict) else None
+        start_seen = self.base_seen if plan.action != "resume" or own_thread != thread_id else None
+        handoff.write_record(db, self.req.session_id, PROVIDER, key,
+                             {"thread_id": thread_id, **({"seen": start_seen} if start_seen else {})})
         return note
 
     def _input(self, note: Optional[str]) -> list[dict]:
@@ -486,6 +504,8 @@ class CodexTurn:
                 answer = server.request("turn/start", params)
                 self.turn_id = self.turn_id or ((answer or {}).get("turn") or {}).get("id")
                 self._note_turn()
+                self.held_id = (self.followup_ids or [None])[-1] or self.held_id or self.req.user_msg_id
+                self.followup_ids = []
                 completed = self._drain()
                 if completed is None:  # stopped
                     break
@@ -496,6 +516,8 @@ class CodexTurn:
                     break
                 inputs = [entry for followup in self.followups for entry in followup]
                 self.followups.clear()
+                self.followup_ids = self.pending_ids
+                self.pending_ids = []
             finished = True
         except AppServerError as exc:
             crashed = exc.exited or not server.alive
@@ -538,8 +560,15 @@ class CodexTurn:
             values: dict = {"thread_id": self.thread_id, "own_turns": own}
             # Seen only once Codex began a turn: a message stopped before it reached the
             # thread goes in with the next turn's handoff.
-            if finished and not self.turn_ids and self.base_seen:
-                # Stopped before Codex began: the next turn resumes from where the thread is.
+            if not finished and self.turn_ids and self.held_id:
+                # Codex took the message (and any sent mid-turn), then the turn failed: the
+                # thread holds them, so the next turn hands over only what follows. ``prior``
+                # is where it was before, for a retry of the message (a new id) to go on there.
+                values.update(handoff.held_record(self.history, str(self.held_id),
+                                                  getattr(self.req, "user_text", None)))
+            elif not (finished and self.turn_ids) and self.base_seen:
+                # Stopped before Codex began, or failed: the next turn resumes from where the
+                # thread was and hands this message over again.
                 values["seen"] = self.base_seen
             if finished and self.turn_ids:
                 values.update({"seen": self.assistant_msg_id, "at": time.time(),
@@ -729,8 +758,10 @@ class CodexTurn:
             "prompt": "\n".join([str(q["question"]), *(f"  • {o['label']}: {o['description']}"
                                                        for o in q.get("options") or []
                                                        if isinstance(o, dict) and o.get("label") and o.get("description"))]),
-            "question_title": str(q.get("header") or q["question"]),
+            "question_title": str(q["question"]),
             "options": [str(o["label"]) for o in q.get("options") or [] if isinstance(o, dict) and o.get("label")],
+            "option_descriptions": {str(o["label"]): str(o["description"]) for o in q.get("options") or []
+                                    if isinstance(o, dict) and o.get("label") and o.get("description")},
             "multi": False, "allow_custom": bool(q.get("isOther")) or not q.get("options"),
         } for q in asked]
         reply = ask_live_questions(owner, cards, publish=self.on_event, cancel_event=self.cancel_event)
@@ -808,11 +839,13 @@ class CodexTurn:
                 assert self.server is not None
                 self.server.request("turn/steer", {"threadId": self.thread_id,
                                                    "expectedTurnId": self.turn_id, "input": entries})
+                self.held_id = str(frame["msg_id"])
             except AppServerError as exc:
                 if exc.exited:
                     raise
                 # The turn ended meanwhile: the steer starts the next one.
                 self.followups.append(entries)
+                self.pending_ids.append(str(frame["msg_id"]))
 
 
 #: Codex's requests this engine answers itself; the rest get the client's default answer.
@@ -893,6 +926,18 @@ def _profile_model(req: Any) -> Optional[str]:
         from openprogram.state.store.session.external_import import codex
         config = tomllib.loads((codex.default_home() / "config.toml").read_text(encoding="utf-8"))
         value = ((config.get("profiles") or {}).get(choice.partition(":")[2]) or {}).get("model")
+    except Exception:  # noqa: BLE001
+        value = None
+    return value if isinstance(value, str) and value else None
+
+
+def _profile_personality(profile: str) -> Optional[str]:
+    """The personality a Codex profile sets in config.toml, if any."""
+    try:
+        import tomllib
+        from openprogram.state.store.session.external_import import codex
+        config = tomllib.loads((codex.default_home() / "config.toml").read_text(encoding="utf-8"))
+        value = ((config.get("profiles") or {}).get(profile) or {}).get("personality")
     except Exception:  # noqa: BLE001
         value = None
     return value if isinstance(value, str) and value else None

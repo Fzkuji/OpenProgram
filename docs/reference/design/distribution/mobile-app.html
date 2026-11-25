@@ -1,5 +1,5 @@
 <title>Mobile app</title>
-<meta name="description" content="The OpenProgram phone app: a small native shell that carries the web UI, forwards its requests to a paired computer with a device credential, and lays the UI out as a phone app: a list of chats, a conversation, a settings sheet and a details page.">
+<meta name="description" content="The OpenProgram phone app: a small native shell that carries the web UI, forwards its requests to a paired computer with a device credential, and lays the UI out as a phone app: a list of chats, a conversation, a settings menu and a details page.">
 <meta name="covers" content="apps/mobile/ openprogram/interfaces/server/owner_auth.py apps/web/lib/net/ws/use-ws.ts apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx">
 <h1>Mobile app</h1>
 <p>A phone uses OpenProgram through an app from the store, not a browser tab. The app carries the whole UI, so opening it reads nothing over the network but data; it pairs with a computer once and stays signed in. Conversations, files and accounts stay on the computer, as in <a href="../ui/remote-web-access.html">remote web access</a>.</p>
@@ -32,7 +32,7 @@
 <tr><th scope="row">HTTP to the computer</th><td>The same handler takes <code translate="no">/api/</code>, <code translate="no">/hooks/</code> and the other server paths and forwards them through one shared <code translate="no">URLSession</code>, so requests reuse its connections instead of paying a TLS handshake each, to the current address, adding <code translate="no">Authorization: Bearer opd1.…</code> and no <code translate="no">Origin</code>. Responses stream back chunk by chunk, so server-sent events work. To the page every request is same-origin: images, file previews and downloads need no change.</td></tr>
 <tr><th scope="row">WebSocket</th><td>A custom scheme cannot carry WebSockets, so the page opens <code translate="no">wss://&lt;address&gt;/ws</code> itself. The app tells the page where (<code translate="no">window.openprogramMobile.socket</code>), and the credential goes in the handshake as a subprotocol, <code translate="no">APP_BEARER_PREFIX</code> followed by the credential, next to <code translate="no">APP_SUBPROTOCOL</code> (both in <code translate="no">openprogram/interfaces/server/owner_auth.py</code>), because a browser WebSocket cannot set headers. The server accepts this only from the app's origin <code translate="no">openprogram://app</code>, answers with <code translate="no">APP_SUBPROTOCOL</code>, and never echoes the credential.</td></tr>
 <tr><th scope="row">Credential</th><td>The device credential of <a href="../ui/remote-web-access.html#paired-devices">paired devices</a>, unchanged: redeemed once, revoked from Settings → Devices, forgotten after 30 idle days. Kept in the Keychain, readable only after the first unlock.</td></tr>
-<tr><th scope="row">Native calls</th><td>Scan a code (VisionKit), list, add, choose and forget computers, and haptics. The page calls them through one <code translate="no">WKScriptMessageHandler</code>; the app hands the page the paired computers (<code translate="no">window.openprogramMobile.computers</code>) for its picker, which asks the app to switch (<code translate="no">selectComputer</code>) or pair another (<code translate="no">addComputer</code>).</td></tr>
+<tr><th scope="row">Native calls</th><td>Scan a code (VisionKit), list, add, choose and forget computers, and haptics. The page calls them through one <code translate="no">WKScriptMessageHandler</code>; the app hands the page the paired computers (<code translate="no">window.openprogramMobile.computers</code>) for its picker, which asks the app to switch (<code translate="no">selectComputer</code>) or pair another (<code translate="no">addComputer</code>). Menus are UIMenus the page describes (<code translate="no">menu</code> for a tap, <code translate="no">menuPress</code> for a long press).</td></tr>
 </tbody>
 </table>
 
@@ -48,7 +48,8 @@
 </ul>
 
 <h2 id="layout">Layout</h2>
-<p>The app's screens are a phone app of their own, built inside the web UI from its data and renderers (<a href="../ui/phone-app.html">phone app</a>): Projects first, then a project's chats, with a docked new-chat field; a conversation with Back and ⓘ, one sheet for the turn's settings from the composer, and a details page for changes, files, activity, resources and the chat's actions. A swipe from the left edge goes one page back.</p>
+<p>The app's screens are a phone app of their own, built inside the web UI from its data and renderers (<a href="../ui/phone-app.html">phone app</a>): Projects first, then a project's chats, with a docked new-chat field; a conversation with Back and ⓘ, one menu for the turn's settings from the composer, and a details page for changes, files, activity, resources and the chat's actions.</p>
+<p>A swipe from the left edge goes one page back.</p>
 <p>The first version restyled the desktop's three columns as two drawers around the chat; it still read as a computer on a phone and was replaced.</p>
 
 <h2 id="later">Implementation status</h2>

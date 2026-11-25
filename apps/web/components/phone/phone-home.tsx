@@ -12,10 +12,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Mic, Pin, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { Archive, ChevronRight, Link, Mic, Pencil, Pin, PinOff, Search, Settings, SlidersHorizontal, Trash2, type LucideIcon } from "lucide-react";
 
 import { useSessionActions } from "@/components/chat/pane/session-actions-menu";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 
 import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
@@ -24,6 +24,7 @@ import { displayTitle, wsSend, type LegacyConv } from "@/components/sidebar/sess
 import { useTranslation } from "@/lib/i18n";
 import { LOCAL_ID, projectMachineId } from "@/lib/machines/store";
 import { haptic, mobileBridge } from "@/lib/mobile/bridge";
+import { armNativePress, nativeMenus } from "@/lib/mobile/native-menu";
 import { navigate } from "@/lib/nav/navigate";
 import { listSessionProjects } from "@/lib/projects/list-projects";
 import { projectGroups, type ProjectGroupSource } from "@/lib/projects/project-groups";
@@ -136,8 +137,10 @@ let closeOpenRow: (() => void) | null = null;
  *  a dot for a result not seen yet. A swipe to the left shows Archive,
  *  which takes a tap (Happy: no full swipe); a long press opens the
  *  chat's menu (Paseo, 450ms). */
-function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
-  const { text, locale } = useTranslation();
+type RowAction = "p" | "r" | "c" | "a" | "d";
+
+function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string, run?: RowAction) => void }) {
+  const { t, text, locale } = useTranslation();
   const { conv, state } = row;
   const slide = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -174,6 +177,20 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
       axis = null;
       swallowClick.current = false;
       window.clearTimeout(timer);
+      // In the phone app iOS runs the long press and draws its menu.
+      if (nativeMenus()) {
+        const run = (action: RowAction) => () => onMenu(conv.id, action);
+        armNativePress(track, [
+          { title: "", inline: true, children: [
+            { title: conv.pinned ? t("sidebar.unpin") : t("sidebar.pin"), icon: conv.pinned ? "pin.slash" : "pin", run: run("p") },
+            { title: t("sidebar.rename"), icon: "pencil", run: run("r") },
+            { title: t("sidebar.copy_link"), icon: "link", run: run("c") },
+            { title: conv.archived ? t("sidebar.unarchive") : t("sidebar.archive"), icon: "archivebox", run: run("a") },
+          ] },
+          { title: t("sidebar.delete"), icon: "trash", destructive: true, run: run("d") },
+        ]);
+        return;
+      }
       timer = window.setTimeout(() => {
         timer = 0;
         swallowClick.current = true;
@@ -188,6 +205,7 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
         window.clearTimeout(timer);
         timer = 0;
         axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (nativeMenus()) armNativePress(null);
       }
       if (axis !== "x") return;
       event.preventDefault();
@@ -200,6 +218,7 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
     const onEnd = () => {
       window.clearTimeout(timer);
       timer = 0;
+      if (nativeMenus()) armNativePress(null);
       if (axis === "x") {
         swallowClick.current = true;
         const open = shown.current < -ACTION_W / 2;
@@ -220,7 +239,7 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
     };
-  }, [conv.id, onMenu]);
+  }, [conv.id, conv.pinned, conv.archived, onMenu, t]);
 
   const word = stateWord(state, text);
   return (
@@ -270,17 +289,27 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string) => void }) {
 
 /** A chat's menu from its row's long press: the same actions as the
  *  details page, for this chat (chat/pane/session-actions-menu.tsx). */
-function ChatRowMenu({ id }: { id: string }) {
+function ChatRowMenu({ id, run }: { id: string; run?: RowAction }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!run);
   const here = typeof window === "undefined" ? "" : window.location.pathname + window.location.search;
   const { conv, actions, dialogs } = useSessionActions(() => {
     // Deleting it must not leave the list for another chat.
     setTimeout(() => { if (window.location.pathname + window.location.search !== here) window.history.replaceState(null, "", here); }, 0);
   }, id);
-  const row = (label: string, run: () => void, danger?: boolean) => (
+  // Picked from iOS's menu: run it here, where its dialogs live.
+  const ran = useRef(false);
+  useEffect(() => {
+    if (!run || ran.current) return;
+    ran.current = true;
+    actions[run]();
+  }, [run, actions]);
+  const row = (label: string, Icon: LucideIcon, run: () => void, danger?: boolean) => (
     <DropdownMenuItem className={cn(itemCls(false), MENU_ITEM_STATES, danger && "text-[var(--accent-red)]")}
-      onSelect={() => window.setTimeout(run, 0)}>{label}</DropdownMenuItem>
+      onSelect={() => window.setTimeout(run, 0)}>
+      <span className="phone-sheet-icon" aria-hidden="true"><Icon size={18} /></span>
+      {label}
+    </DropdownMenuItem>
   );
   return (
     <>
@@ -289,11 +318,12 @@ function ChatRowMenu({ id }: { id: string }) {
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild><span className="phone-message-menu-anchor" aria-hidden="true" /></DropdownMenuTrigger>
         <DropdownMenuContent className={MENU_PANEL} onCloseAutoFocus={(event) => event.preventDefault()}>
-          {row(conv?.pinned ? t("sidebar.unpin") : t("sidebar.pin"), actions.p)}
-          {row(t("sidebar.rename"), actions.r)}
-          {row(t("sidebar.copy_link"), actions.c)}
-          {row(conv?.archived ? t("sidebar.unarchive") : t("sidebar.archive"), actions.a)}
-          {row(t("sidebar.delete"), actions.d, true)}
+          {row(conv?.pinned ? t("sidebar.unpin") : t("sidebar.pin"), conv?.pinned ? PinOff : Pin, actions.p)}
+          {row(t("sidebar.rename"), Pencil, actions.r)}
+          {row(t("sidebar.copy_link"), Link, actions.c)}
+          {row(conv?.archived ? t("sidebar.unarchive") : t("sidebar.archive"), Archive, actions.a)}
+          <DropdownMenuSeparator />
+          {row(t("sidebar.delete"), Trash2, actions.d, true)}
         </DropdownMenuContent>
       </DropdownMenu>
       {dialogs}
@@ -303,8 +333,8 @@ function ChatRowMenu({ id }: { id: string }) {
 
 function ChatRows({ rows, sections }: { rows: Row[]; sections?: boolean }) {
   const { text } = useTranslation();
-  const [menu, setMenu] = useState<{ id: string; n: number } | null>(null);
-  const onMenu = useCallback((id: string) => setMenu((prev) => ({ id, n: (prev?.n ?? 0) + 1 })), []);
+  const [menu, setMenu] = useState<{ id: string; n: number; run?: RowAction } | null>(null);
+  const onMenu = useCallback((id: string, run?: RowAction) => setMenu((prev) => ({ id, run, n: (prev?.n ?? 0) + 1 })), []);
   // A project's chats in two groups when some are live: those running or
   // waiting for the person, then the rest.
   const live = sections ? rows.filter((row) => row.state === "needs_input" || row.state === "working") : [];
@@ -319,7 +349,7 @@ function ChatRows({ rows, sections }: { rows: Row[]; sections?: boolean }) {
       {live.length ? <><h2 className="phone-app-section-title">{text("In progress", "进行中")}</h2>{list(live)}</> : null}
       {live.length && rest.length ? <h2 className="phone-app-section-title">{text("Earlier", "更早")}</h2> : null}
       {rest.length ? list(rest) : null}
-      {menu ? <ChatRowMenu key={menu.n} id={menu.id} /> : null}
+      {menu ? <ChatRowMenu key={menu.n} id={menu.id} run={menu.run} /> : null}
     </>
   );
 }

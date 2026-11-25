@@ -72,7 +72,7 @@
 <dt>DeepSeek Harness</dt><dd>模型列出会话提供的模型，不带 provider 前缀。没有 Through OpenProgram。权限有完全访问和询问。</dd>
 <dt>力度</dt><dd>没有思考力度档位的 Harness 模型不显示力度控件，也不发送力度。Harness 第一次读取之前控件先等着；读完后刷新每个会话的设置。Codex 和 DeepSeek Harness 的力度跟着线程走，所以选 Auto 时发送模型的默认档位；Codex 的 Default 智能体同样发送 <code translate="no">config.toml</code> 里设的人格。</dd>
 <dt>选项</dt><dd>不提供网页搜索和沙箱，选项的提示也只说添加文件：智能体用自己的方式搜索和运行命令。开了无人值守时，智能体的提问会被告知没人可问。</dd>
-<dt>芯片</dt><dd>Agent 芯片用 Agent 图标，Harness 的标只在 Harness 芯片上。它只显示模型接受的选项，默认和 Codex 的性格按界面语言显示。手机上，对话的设置面板有 Harness 一行。</dd>
+<dt>芯片</dt><dd>Agent 芯片用 Agent 图标，Harness 的标只在 Harness 芯片上。它只显示模型接受的选项，默认和 Codex 的性格按界面语言显示。手机上，对话的设置菜单有 Harness 一行。</dd>
 <dt>卡片</dt><dd>Claude Code 的工具按 OpenProgram 自己接受同样参数的工具名显示：<code translate="no">Bash</code> 是命令，<code translate="no">Edit</code> 是修改，<code translate="no">TodoWrite</code> 是清单。批准它的计划时，按原文显示计划。</dd>
 </dl>
 <p>Harness 是分支的运行设置，与模型、思考档位、权限并列。切到 Codex 时换成它的默认模型和 Agent，并记住原来的 OpenProgram 模型和思考档位；切回时恢复。</p>

@@ -211,7 +211,7 @@ class DshTurn:
         db = default_db()
         key = handoff.branch_key(self.req)
         records = handoff.read_records(db, self.req.session_id, PROVIDER)
-        plan = handoff.plan_thread(records, key, self.history)
+        plan = handoff.plan_thread(records, key, self.history, getattr(self.req, "user_text", None))
         loaded: set = server.__dict__.setdefault("loaded_sessions", set())
         loaded_at: dict = server.__dict__.setdefault("loaded_at", {})
         options: list = server.__dict__.setdefault("options", {}).get(plan.thread_id or "", [])
@@ -387,13 +387,15 @@ class DshTurn:
             if finished:
                 self._remember_seen()
             elif self.message_ids:
-                self._remember_seen(seen=False)  # what it wrote is the session's, though the turn failed
+                # What it wrote is the session's, though the turn failed: the session holds the
+                # person's message, so the next turn hands over only what comes after it.
+                self._remember_seen(seen=False, holds=getattr(self.req, "user_msg_id", None))
             if marked:
                 handoff.leave_running(marked)
         from openprogram.state.reply_text import reply_text
         return reply_text(self.blocks).strip(), self.usage, self.tool_calls
 
-    def _remember_seen(self, *, seen: bool = True) -> None:
+    def _remember_seen(self, *, seen: bool = True, holds: Optional[str] = None) -> None:
         if not self.session_id:
             return
         try:
@@ -405,6 +407,8 @@ class DshTurn:
             update: dict = {"thread_id": self.session_id, "cwd": self.cwd, "own_turns": own}
             if seen:
                 update.update(seen=self.assistant_msg_id, at=time.time())
+            elif holds:
+                update.update(handoff.held_record(self.history, holds, getattr(self.req, "user_text", None)))
             handoff.write_record(db, self.req.session_id, PROVIDER, key, update)
         except Exception:  # noqa: BLE001 - the next turn hands off what it cannot tell
             _log.warning("DeepSeek Harness session record not kept for %s", self.req.session_id, exc_info=True)

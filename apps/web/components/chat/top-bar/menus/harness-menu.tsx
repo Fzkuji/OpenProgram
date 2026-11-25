@@ -160,11 +160,12 @@ export function harnessName(state: HarnessState): string {
 }
 
 /** OpenProgram and each outside agent: the Harness chip's menu and the phone's Harness row. */
-export function HarnessRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+/** Switch the conversation to OpenProgram or an outside agent; the rows
+ *  below and the phone app's iOS menu pick through it. */
+export function useHarnessPick(state: HarnessState, onPicked: () => void) {
   const { text } = useTranslation();
   const { sessionId, chatKey } = useBoundChat();
-
-  async function pick(target: string, entry?: Harness) {
+  return async function pick(target: string, entry?: Harness) {
     onPicked();
     if ((state.harness ?? OPENPROGRAM_HARNESS) === target) return;
     try {
@@ -174,16 +175,24 @@ export function HarnessRows({ state, onPicked }: { state: HarnessState; onPicked
     } catch (e) {
       showToast(text("Could not switch harness: ", "切换 Harness 失败：") + String(e), { tone: "error" });
     }
-  }
-
-  const reason = (h: Harness) => {
-    const why = unavailable(h);
-    return why === "not_installed" ? text("Not installed", "未安装")
-      : why === "not_started" ? text("Would not start", "无法启动")
-      : why === "not_signed_in" ? text("Not signed in", "未登录")
-      : why === "no_models" ? text("No models", "没有模型")
-        : h.version;
   };
+}
+
+/** Why an outside agent cannot be picked now, else its version. */
+export function harnessNote(h: Harness, text: (en: string, zh: string) => string): string | undefined {
+  const why = unavailable(h);
+  return why === "not_installed" ? text("Not installed", "未安装")
+    : why === "not_started" ? text("Would not start", "无法启动")
+    : why === "not_signed_in" ? text("Not signed in", "未登录")
+    : why === "no_models" ? text("No models", "没有模型")
+      : h.version;
+}
+
+export function HarnessRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+  const { text } = useTranslation();
+  const pick = useHarnessPick(state, onPicked);
+
+  const reason = (h: Harness) => harnessNote(h, text);
 
   return (
     <>
@@ -272,7 +281,9 @@ function agentRowLabel(a: { id: string; label: string }, text: (en: string, zh: 
 }
 
 /** A harness's agent choices, grouped by kind: the Agent chip's menu and the phone's Agent row. */
-export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+/** A harness's agent choices in their groups, and the pick: the rows
+ *  below and the phone app's iOS menu. */
+export function useHarnessAgents(state: HarnessState, onPicked: () => void) {
   const { text } = useTranslation();
   const { sessionId, chatKey } = useBoundChat();
   const choices = agentChoices(state.entry, state.model);
@@ -298,6 +309,13 @@ export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onP
     { title: text("Agents", "智能体"), kind: "agent" },
   ];
   const shown = groups.filter((g) => choices.some((a) => a.kind === g.kind));
+  const label = (a: { id: string; label: string }) => agentRowLabel(a, text);
+  return { choices, currentId, shown, pick, label };
+}
+
+export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+  const { text } = useTranslation();
+  const { choices, currentId, shown, pick } = useHarnessAgents(state, onPicked);
   return (
     <>
       {shown.map((group, index) => (

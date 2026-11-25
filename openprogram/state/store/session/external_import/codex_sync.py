@@ -81,7 +81,9 @@ def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str
         moved = False
         for key, record in list(records.items()):
             if isinstance(record, dict) and record.get("thread_id") == thread_id and record.get("seen") == old_tip:
-                records[key] = {**record, "seen": new_tip, "at": time.time(), "synced_at": time.time()}
+                # The thread went on in the app: a failed turn's retry position no longer holds.
+                kept = {k: v for k, v in record.items() if k not in ("prior", "held_text")}
+                records[key] = {**kept, "seen": new_tip, "at": time.time(), "synced_at": time.time()}
                 moved = True
         if not moved:
             old = records.get(SHARED_KEY)
@@ -90,7 +92,8 @@ def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str
                 # The main branch runs another thread: this one's record stands beside it.
                 key = f"shared:{thread_id}"
                 old = records.get(key)
-            records[key] = {**(old if isinstance(old, dict) and old.get("thread_id") == thread_id else {}),
+            kept = old if isinstance(old, dict) and old.get("thread_id") == thread_id else {}
+            records[key] = {**{k: v for k, v in kept.items() if k not in ("prior", "held_text")},
                             "thread_id": thread_id, "seen": new_tip, "shared": True,
                             "at": time.time(), "synced_at": time.time()}
         threads[provider] = records

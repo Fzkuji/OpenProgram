@@ -150,6 +150,7 @@ class ClaudeTurn:
         self.own_saved = 0
         self.own_saved_at = 0.0
         self.action = "start"  # how this turn reached its session: resume, fork or start
+        self.held_id: Optional[str] = None  # the last message sent mid-turn that Claude Code took
         self.inited = False  # the process announced its session
         self.fresh = False  # the session could not be resumed: this turn starts a new one
 
@@ -242,7 +243,7 @@ class ClaudeTurn:
         db = default_db()
         key = handoff.branch_key(self.req)
         records = handoff.read_records(db, self.req.session_id, PROVIDER)
-        plan = handoff.plan_thread(records, key, self.history)
+        plan = handoff.plan_thread(records, key, self.history, getattr(self.req, "user_text", None))
         if self.fresh:
             plan = handoff.ThreadPlan("start", missed=list(self.history))
         self.action = plan.action
@@ -473,6 +474,11 @@ class ClaudeTurn:
                 self._remember_seen()
             elif self.own:
                 self._save_own()  # what it wrote is the session's, though the turn failed
+                held = self.held_id or getattr(self.req, "user_msg_id", None)
+                if self.inited and held:
+                    # The session holds the person's message (and any sent mid-turn): the next
+                    # turn hands over only what follows; a retry of it goes on from ``prior``.
+                    self._write_record(seen=False, holds=held)
             if self.marked:
                 handoff.leave_running(self.marked)
         from openprogram.state.reply_text import reply_text
@@ -539,7 +545,7 @@ class ClaudeTurn:
         self.own_saved_at = time.monotonic()
         self._write_record(seen=False)
 
-    def _write_record(self, *, seen: bool) -> None:
+    def _write_record(self, *, seen: bool, holds: Optional[str] = None) -> None:
         if not self.session_id or self.fresh and not self.inited:
             return  # a session started in place of a gone one that never began keeps the old record
         try:
@@ -552,6 +558,8 @@ class ClaudeTurn:
             update: dict = {"thread_id": self.session_id, "cwd": self.cwd, "own_turns": own}
             if seen:
                 update.update(seen=self.assistant_msg_id, at=time.time())
+            elif holds:
+                update.update(handoff.held_record(self.history, holds, getattr(self.req, "user_text", None)))
             elif record.get("thread_id") != self.session_id:
                 # A session resumed here has seen what its record said; a new one nothing yet.
                 update.update(seen=self.resumed_seen)
@@ -662,6 +670,7 @@ class ClaudeTurn:
             self.own.append(steer_uuid)
             self.process.send(self._user_message(str(frame["content"]), priority="next", uuid=steer_uuid))
             self.last_steer_at = time.monotonic()
+            self.held_id = str(frame["msg_id"])
 
     def _stream(self, event: dict) -> None:
         kind = event.get("type")

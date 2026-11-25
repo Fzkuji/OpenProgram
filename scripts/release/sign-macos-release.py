@@ -38,7 +38,8 @@ def run(*args: str) -> str:
 
 def create_dmg(image: Path, dmg_path: Path) -> None:
     # LZMA (ULMO) opens on macOS 10.15 and later; the 1.5.1 image was 729 MB
-    # as UDZO and 420 MB as ULMO. Matches "dmg.format" in the desktop package.
+    # as UDZO and 420 MB as ULMO. electron-builder's own DMG target cannot
+    # make ULMO, which is why the release builds the App with --dir.
     args = (
         'hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
         '-format', 'ULMO', str(dmg_path),

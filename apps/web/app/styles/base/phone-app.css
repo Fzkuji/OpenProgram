@@ -222,6 +222,8 @@
   background: var(--phone-fill, color-mix(in srgb, var(--text-bright) 7%, transparent));
 }
 .phone-app-segmented { margin: 0 var(--phone-gutter) 18px; }
+.phone-segmented { background: var(--phone-glass-card); }
+.phone-segmented button[data-on] { background: var(--bg-input, var(--bg-primary)) !important; }
 .phone-app-segmented button,
 .phone-segmented button {
   flex: 1;
@@ -392,7 +394,6 @@
   right: 0;
   bottom: 0;
   padding: 28px var(--phone-gutter) max(10px, calc(env(safe-area-inset-bottom) - 6px));
-  background: linear-gradient(transparent, var(--bg-primary) 45%);
   pointer-events: none;
 }
 .phone-home-capsule {
@@ -403,9 +404,10 @@
   height: 60px;
   padding: 0 8px;
   border-radius: 30px;
-  background: var(--bg-input, var(--phone-card));
-  border: 0.5px solid var(--border);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.1);
+  background: var(--phone-glass);
+  -webkit-backdrop-filter: var(--phone-glass-filter);
+  backdrop-filter: var(--phone-glass-filter);
+  box-shadow: var(--phone-glass-edge), 0 6px 24px rgb(0 0 0 / 0.1);
 }
 .phone-home-dock-button {
   flex: none;
@@ -538,6 +540,11 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   --composer-action-inset: 6px;
   --composer-action-top: calc(100% - 50px);
   border-radius: 30px !important;
+  /* Glass, as the capsule on Projects: the transcript shows through. */
+  background: var(--phone-glass) !important;
+  -webkit-backdrop-filter: var(--phone-glass-filter);
+  backdrop-filter: var(--phone-glass-filter);
+  box-shadow: var(--phone-glass-edge), 0 6px 24px rgb(0 0 0 / 0.1) !important;
 }
 .phone-conversation [data-phone-layout] :is([data-composer-mic], [data-composer-send]) { border-radius: 50% !important; }
 /* Send, once there is something to send: the one filled button. */
@@ -567,6 +574,13 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
 [data-phone-layout]:has([data-composer-send][data-empty]):not([data-voice]) [data-composer-send],
 [data-phone-layout][data-voice] [data-composer-send][data-empty] { display: none !important; }
 [data-phone-layout]:not([data-voice]):not(:has([data-composer-send][data-empty])) [data-composer-mic] { display: none !important; }
+/* While it listens, the level strip takes the row from + to the mic, and
+   the settings chips step aside rather than sit under it. */
+[data-phone-layout][data-voice] .phone-composer-settings { visibility: hidden; }
+[data-phone-layout][data-voice] [role="status"][class*="strip"] {
+  width: auto;
+  left: calc(var(--composer-action-inset) + var(--composer-action-size) + 12px);
+}
 [data-phone-layout] :is([data-composer-mic], [data-composer-send]) svg { width: 20px; height: 20px; }
 .phone-composer-bar {
   display: flex;
@@ -629,11 +643,22 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 8px 10px 10px;
-  font-size: 16px;
+  padding: 2px 4px 10px 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-bright);
 }
+/* A sheet row's leading icon: a small round tile, as Settings' rows have. */
+.phone-sheet-icon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.phone-sheet-icon svg { width: 18px; height: 18px; }
 .phone-sheet-head button {
   height: 32px;
   padding: 0 4px;
@@ -645,7 +670,7 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   margin-bottom: 10px;
   border-radius: 14px;
   overflow: hidden;
-  background: var(--phone-card, color-mix(in srgb, var(--text-bright) 4.5%, var(--popover)));
+  background: var(--phone-glass-card);
 }
 .phone-sheet-group > [role] { border-radius: 0 !important; min-height: 48px !important; }
 .phone-sheet-group > [role] + [role] { box-shadow: inset 0 0.5px 0 color-mix(in srgb, var(--text-bright) 10%, transparent); }

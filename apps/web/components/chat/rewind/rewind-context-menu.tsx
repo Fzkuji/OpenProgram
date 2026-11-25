@@ -14,6 +14,7 @@ import { MenuOptionContent } from "@/components/ui/menu/option-content";
 import { ITEM_TWO_LINE } from "@/components/ui/menu/menu-styles";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { nativeMenus } from "@/lib/mobile/native-menu";
 import { forkFromMessage, requestRewind } from "@/lib/chat/rewind/rewind-actions";
 import { forkDisabledReason, isRewindable } from "@/lib/chat/rewind/rewind-logic";
 import { useForkDisabled, useRewindAllowed, useRewindDisabled } from "@/lib/chat/rewind/use-rewind-disabled";
@@ -39,7 +40,8 @@ export function RewindContextMenu({ msg, sessionId, enabled, children }: {
   // a send gets its menu when the server acknowledges it, and a wrapper
   // that appeared then would mount the bubble a second time. Until then
   // the trigger is off and the browser's own menu shows.
-  const offered = enabled && !!sessionId && isRewindable(msg) && inConversation;
+  // In the phone app the long press is iOS's menu, which lists both.
+  const offered = enabled && !!sessionId && isRewindable(msg) && inConversation && !nativeMenus();
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild disabled={!offered} onContextMenuCapture={keepNativeMenuForSelection}>

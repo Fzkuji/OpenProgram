@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import { armNativePress, nativeMenus } from "@/lib/mobile/native-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 import { haptic } from "@/lib/mobile/bridge";
@@ -20,7 +21,7 @@ import { cn } from "@/lib/utils";
 const HOLD_MS = 450;
 const SLOP = 8;
 
-type Action = { label: string; disabled: boolean; button: HTMLButtonElement };
+type Action = { label: string; icon: string; symbol?: string; disabled: boolean; button: HTMLButtonElement };
 
 /** The action bar's buttons of one message, in their order. */
 function actionsOf(message: HTMLElement): Action[] {
@@ -29,8 +30,16 @@ function actionsOf(message: HTMLElement): Action[] {
   );
   return [...buttons]
     .filter((button) => button.closest(".message") === message)
-    .map((button) => ({ label: button.getAttribute("aria-label") ?? "", disabled: button.disabled, button }))
+    // The button's own icon, so the sheet row shows what the bar shows.
+    .map((button) => ({ label: button.getAttribute("aria-label") ?? "", icon: button.querySelector("svg")?.outerHTML ?? "", symbol: button.dataset.symbol, disabled: button.disabled, button }))
     .filter((action) => action.label);
+}
+
+/** The part of a message on screen, which is what lifts: a long one is
+ *  taller than the screen (lib/mobile/native-menu.ts keeps it to the screen). */
+function visiblePart(message: HTMLElement, target: HTMLElement): HTMLElement {
+  // A turn has a text block between each step: the one pressed.
+  return target.closest<HTMLElement>(".message-content") ?? message;
 }
 
 export function PhoneMessageMenu({ root, children }: { root: RefObject<HTMLElement | null>; children: ReactNode }) {
@@ -56,6 +65,21 @@ export function PhoneMessageMenu({ root, children }: { root: RefObject<HTMLEleme
       x = event.touches[0].clientX;
       y = event.touches[0].clientY;
       cancel();
+      // In the phone app iOS runs the long press: the message lifts and
+      // its actions show as the system's menu.
+      if (nativeMenus()) {
+        // In a turn, its text: a step's row is not the message.
+        if (message.classList.contains("assistant") && !target.closest(".message-content")) return;
+        const found = actionsOf(message);
+        if (!found.length) return;
+        armNativePress(visiblePart(message, target), found.map((action) => ({
+          title: action.label,
+          icon: action.symbol,
+          disabled: action.disabled,
+          run: () => action.button.click(),
+        })), 18, message.classList.contains("assistant") ? 12 : 0, message.closest(".chat-messages"));
+        return;
+      }
       timer = window.setTimeout(() => {
         timer = 0;
         const found = actionsOf(message);
@@ -71,6 +95,11 @@ export function PhoneMessageMenu({ root, children }: { root: RefObject<HTMLEleme
       }, HOLD_MS);
     };
     const onMove = (event: TouchEvent) => {
+      if (nativeMenus()) {
+        const touch = event.touches[0];
+        if (Math.hypot(touch.clientX - x, touch.clientY - y) > SLOP) armNativePress(null);
+        return;
+      }
       if (!timer) return;
       const touch = event.touches[0];
       if (Math.hypot(touch.clientX - x, touch.clientY - y) > SLOP) cancel();
@@ -116,6 +145,7 @@ export function PhoneMessageMenu({ root, children }: { root: RefObject<HTMLEleme
               // dialog or editor is not closed with it.
               onSelect={() => { window.setTimeout(() => action.button.click(), 0); }}
             >
+              <span className="phone-sheet-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: action.icon }} />
               {action.label}
             </DropdownMenuItem>
           ))}

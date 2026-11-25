@@ -89,22 +89,23 @@ type EnabledModel = Awaited<ReturnType<typeof api.listEnabledModels>>[number];
 
 const fetchStatus = () => jsonFetch<ProviderStatusPayload>("/api/providers/status");
 
-export function AgentSelector({
+/** The model list and the pick, for whichever menu shows them: the
+ *  dropdown below, or the phone app's iOS menu (phone-composer-bar.tsx). */
+export function useModelPicker({
   currentProvider,
   currentModel,
   onClose,
   onPick,
   harness,
+  probe = true,
 }: {
   currentProvider?: string;
   currentModel?: string;
   onClose: () => void;
-  /** The harness the conversation runs in: its models come first, and a
-   *  provider's model runs in it through OpenProgram. */
-  harness?: { id: string; provider: string; entry?: Harness };
-  /** Use the chosen model for something else than this chat's composer
-   *  (the spent-quota card re-sends with it). */
   onPick?: (provider: string, model: string) => void;
+  harness?: { id: string; provider: string; entry?: Harness };
+  /** Ask local servers again on mount: when the list is opened. */
+  probe?: boolean;
 }) {
   const { sessionId: currentSessionId, chatKey } = useBoundChat();
   const { t, text } = useTranslation();
@@ -120,12 +121,13 @@ export function AgentSelector({
   // an unchanged answer keeps the same data, so nothing redraws.
   const queryClient = useQueryClient();
   useEffect(() => {
+    if (!probe) return;
     void queryClient.fetchQuery({
       queryKey: PICKER_QUERY_KEY,
       queryFn: api.listPickerModelsProbingLocal,
       staleTime: 0,
     }).catch(() => {});
-  }, [queryClient]);
+  }, [queryClient, probe]);
   const models = data?.models;
   const states = data?.providers ?? {};
   // Quota rows for the submenu headers, and whether any provider is
@@ -197,6 +199,30 @@ export function AgentSelector({
     ? currentProvider === harness.provider && currentModel === gatewayRef(m.provider, m.id)
     : currentProvider === m.provider &&
       (currentModel === m.id || currentModel === `${m.provider}:${m.id}`);
+  return { data, models, states, status, statusFailed, limitsOf, providerName, gateway, pick, pickModel, byProvider, isActive, currentSessionId };
+}
+
+export function AgentSelector({
+  currentProvider,
+  currentModel,
+  onClose,
+  onPick,
+  harness,
+}: {
+  currentProvider?: string;
+  currentModel?: string;
+  onClose: () => void;
+  /** The harness the conversation runs in: its models come first, and a
+   *  provider's model runs in it through OpenProgram. */
+  harness?: { id: string; provider: string; entry?: Harness };
+  /** Use the chosen model for something else than this chat's composer
+   *  (the spent-quota card re-sends with it). */
+  onPick?: (provider: string, model: string) => void;
+}) {
+  const { t, text } = useTranslation();
+  const {
+    models, states, status, statusFailed, limitsOf, providerName, gateway, pick, pickModel, byProvider, isActive, currentSessionId,
+  } = useModelPicker({ currentProvider, currentModel, onClose, onPick, harness });
   const modelRows = (list: EnabledModel[]) =>
     list.map((m) => (
       <ModelRow key={m.id} model={m} active={isActive(m)} onPick={() => pick(m.provider, m.id)} />

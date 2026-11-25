@@ -10,14 +10,15 @@
  * the second kind is a filter on the same list.
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Check, ChevronDown, Link2, Monitor, Plus, Settings2 } from "lucide-react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { GROUP_LABEL, MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 import { useTranslation } from "@/lib/i18n";
 import { LOCAL_ID, ensureMachines, machineOnline, useMachines } from "@/lib/machines/store";
 import { callMobile, haptic, mobileBridge } from "@/lib/mobile/bridge";
+import { nativeMenus, openNativeMenu, type NativeMenuItem } from "@/lib/mobile/native-menu";
 import { cn } from "@/lib/utils";
 
 const KEY = "openprogram.mobile.machine:";
@@ -91,8 +92,58 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
     return <span className="phone-home-computer-label">{label}</span>;
   }
 
-  const line = (name: string, sub: string, on: boolean) => (
+  const pairedList = here ? (paired.length ? paired : [{ id: here.id ?? "", name: here.name }]) : [];
+  const isCurrent = (computer: { id: string; name: string }) =>
+    !!here && computer.name === here.name && (!here.id || computer.id === here.id);
+  const pickPaired = (computer: { id: string; name: string }) => {
+    haptic("selection");
+    if (isCurrent(computer)) setShown(LOCAL_ID);
+    else callMobile("selectComputer", { id: computer.id });
+  };
+  const pairedSub = (computer: { id: string; name: string }) =>
+    isCurrent(computer) ? status.replace(`${here?.name} · `, "") : text("Paired", "已配对");
+  const linkedSub = (machine: (typeof linked)[number]) =>
+    machineOnline(machine) ? text("Online", "在线") : text("Offline", "离线");
+
+  // In the phone app iOS draws the menu, as Files does from its title.
+  if (nativeMenus()) {
+    const items: NativeMenuItem[] = [];
+    if (pairedList.length) items.push({
+      title: text("Paired with this phone", "这台手机配对的电脑"),
+      inline: true,
+      children: pairedList.map((computer) => ({
+        title: computer.name, subtitle: pairedSub(computer), icon: "desktopcomputer",
+        checked: isCurrent(computer) && !shownLinked, run: () => pickPaired(computer),
+      })),
+    });
+    if (linked.length) items.push({
+      title: text(`Through ${here?.name ?? "this computer"}`, `经 ${here?.name ?? "这台电脑"} 连接`),
+      inline: true,
+      children: linked.map((machine) => ({
+        title: machine.name, subtitle: linkedSub(machine), icon: "link",
+        checked: machine.id === shown, run: () => { haptic("selection"); setShown(machine.id); },
+      })),
+    });
+    if (here) items.push({
+      title: "",
+      inline: true,
+      children: [
+        { title: text("Pair Another Computer", "配对另一台电脑"), icon: "plus", run: () => callMobile("addComputer") },
+        { title: text("Manage Computers", "管理电脑"), icon: "gearshape", run: () => callMobile("computers") },
+      ],
+    });
+    return (
+      <button type="button" className="phone-home-computer-label" aria-label={text(`Computer: ${label}`, `电脑：${label}`)}
+        onClick={(event) => openNativeMenu(event.currentTarget, items)}>
+        <span className="truncate">{label}</span>
+        <ChevronDown size={14} strokeWidth={2} className="phone-home-computer-more" aria-hidden="true" />
+      </button>
+    );
+  }
+
+  const line = (name: string, sub: string, on: boolean, icon: ReactNode) => (
     <>
+      <span className="phone-sheet-icon" aria-hidden="true">{icon}</span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{name}</span>
         <span className="truncate text-fs-xs text-text-muted">{sub}</span>
@@ -110,25 +161,15 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={cn(MENU_PANEL, "min-w-64")} align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
+        <div className="phone-sheet-head">{text("Computers", "电脑")}</div>
         {here ? (
           <>
             <div className={GROUP_LABEL}>{text("Paired with this phone", "这台手机配对的电脑")}</div>
-            {(paired.length ? paired : [{ id: here.id ?? "", name: here.name }]).map((computer) => {
-              const current = computer.name === here.name && (!here.id || computer.id === here.id);
-              return (
-                <DropdownMenuItem
-                  key={computer.id || computer.name}
-                  className={row}
-                  onSelect={() => {
-                    haptic("selection");
-                    if (current) setShown(LOCAL_ID);
-                    else callMobile("selectComputer", { id: computer.id });
-                  }}
-                >
-                  {line(computer.name, current ? status.replace(`${here.name} · `, "") : text("Paired", "已配对"), current && !shownLinked)}
-                </DropdownMenuItem>
-              );
-            })}
+            {pairedList.map((computer) => (
+              <DropdownMenuItem key={computer.id || computer.name} className={row} onSelect={() => pickPaired(computer)}>
+                {line(computer.name, pairedSub(computer), isCurrent(computer) && !shownLinked, <Monitor size={18} />)}
+              </DropdownMenuItem>
+            ))}
           </>
         ) : null}
         {linked.length ? (
@@ -140,7 +181,7 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
                 className={row}
                 onSelect={() => { haptic("selection"); setShown(machine.id); }}
               >
-                {line(machine.name, machineOnline(machine) ? text("Online", "在线") : text("Offline", "离线"), machine.id === shown)}
+                {line(machine.name, linkedSub(machine), machine.id === shown, <Link2 size={18} />)}
               </DropdownMenuItem>
             ))}
           </>
@@ -148,11 +189,13 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
         {here ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className={row} onSelect={() => callMobile("addComputer")}>
+            <DropdownMenuItem className={cn(row, "text-[var(--theme-accent)]")} onSelect={() => callMobile("addComputer")}>
+              <span className="phone-sheet-icon" aria-hidden="true"><Plus size={18} /></span>
               {text("Pair another computer", "配对另一台电脑")}
             </DropdownMenuItem>
             <DropdownMenuItem className={row} onSelect={() => callMobile("computers")}>
-              {text("Manage computers…", "管理电脑…")}
+              <span className="phone-sheet-icon" aria-hidden="true"><Settings2 size={18} /></span>
+              {text("Manage computers", "管理电脑")}
             </DropdownMenuItem>
           </>
         ) : null}

@@ -49,19 +49,57 @@ def _after(history: list[dict], seen: str) -> list[dict]:
             if not str(message.get("id") or "").startswith(seen)]
 
 
-def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
-    """How a turn on branch ``key`` with ``history`` (before its message) reaches its thread."""
+def held_record(history: list[dict], held: str, text: Optional[str]) -> dict:
+    """The record of a turn whose thread took its message, then failed: ``seen`` is the last
+    message the thread took; ``prior`` what it held before this turn (handoff included), for a
+    retry of the message, which comes back with a new id; ``held_text`` tells a retry from an edit."""
+    ids = _ids(history)
+    return {"seen": held, "prior": ids[-1] if ids else "", "held_text": _digest(text)}
+
+
+def _digest(text: Optional[str]) -> str:
+    import hashlib
+    return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()[:16]
+
+
+def plan_thread(records: dict, key: str, history: list[dict], text: Optional[str] = None) -> ThreadPlan:
+    """How a turn on branch ``key`` with ``history`` (before its message ``text``) reaches its thread."""
     ids = set(_ids(history))
     own = records.get(key) if isinstance(records, dict) else None
     taken = _taken(records)
+    if isinstance(own, dict) and own.get("handed_over"):
+        # Its thread went on in a retry on another branch: this branch starts over.
+        return ThreadPlan("start", missed=list(history))
     if isinstance(own, dict) and own.get("thread_id") and not (own.get("shared") and own["thread_id"] in taken):
         seen = str(own.get("seen") or "")
         if seen and seen in ids:
             return ThreadPlan("resume", own["thread_id"], _after(history, seen))
+        prior = own.get("prior")
+        if text is not None and own.get("held_text") and own["held_text"] != _digest(text):
+            prior = None  # the failed message was edited: the thread holding it is left
+        if prior == "" and not history:
+            return ThreadPlan("resume", own["thread_id"])  # a retry of the thread's first message
+        if prior and prior in ids:
+            # The message the thread took before its turn failed was sent again (a retry):
+            # the thread goes on from where it was.
+            return ThreadPlan("resume", own["thread_id"], _after(history, prior))
         if not seen and not history:
             return ThreadPlan("resume", own["thread_id"])
         # The branch went back before what the thread saw (an edit or rewind).
         return ThreadPlan("start", missed=list(history))
+    # A retry of a failed message comes on a branch of its own: the thread that took the
+    # message goes on, when it held exactly what comes before it here.
+    if text is not None:
+        digest = _digest(text)
+        for held_key, record in (records or {}).items():
+            if not (isinstance(record, dict) and record.get("thread_id") and record.get("held_text") == digest):
+                continue
+            if any(k != held_key and isinstance(r, dict) and r.get("thread_id") == record["thread_id"]
+                   and not r.get("handed_over") and not r.get("shared") for k, r in records.items()):
+                continue  # another branch already went on in it
+            prior = record.get("prior")
+            if (prior == "" and not history) or (prior and prior in ids and not _after(history, prior)):
+                return ThreadPlan("resume", record["thread_id"])
     # A conversation synced from an app: its thread, when nothing was said
     # here since. Once an engine went on in that thread on some branch, the
     # record is no longer shared (``write_record``) and another branch forks it.
@@ -81,6 +119,8 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
             continue
         if record.get("shared") and record["thread_id"] in taken:
             continue  # it holds another branch's turns now: starting over keeps them out
+        if record.get("handed_over"):
+            continue  # its thread went on in a retry elsewhere: it is not this branch's end
         seen = str(record.get("seen") or "")
         if seen in ids:
             position = order.index(seen)
@@ -179,11 +219,22 @@ def write_record(db: Any, session_id: str, provider: str, key: str, record: dict
         # The engine went on here: the thread now holds this branch's turns, so
         # another branch forks it instead of taking it as the app's shared one.
         merged = {**old, **record, **({"shared": False} if old.get("shared") else {})}
+        if "seen" in record and "prior" not in record:
+            # Only a failed turn's record keeps where it was before.
+            merged.pop("prior", None)
+            merged.pop("held_text", None)
         if isinstance(record.get("own_turns"), list):
             # Two turns may keep ids at once: each adds its own to what is there now.
             kept = list(old.get("own_turns") or [])
             merged["own_turns"] = (kept + [t for t in record["own_turns"] if t not in kept])[-_OWN_TURNS_KEPT:]
         records[key] = merged
+        if merged.get("thread_id"):
+            # A failed turn's thread taken up by a retry on this branch is no longer its branch's.
+            for other, held in list(records.items()):
+                if (other != key and isinstance(held, dict) and held.get("held_text")
+                        and held.get("thread_id") == merged["thread_id"]):
+                    records[other] = {**{k: v for k, v in held.items() if k not in ("prior", "held_text")},
+                                      "handed_over": True}
         threads[provider] = records
         return threads
 

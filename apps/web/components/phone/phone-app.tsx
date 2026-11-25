@@ -30,6 +30,10 @@ import { PhoneHome } from "./phone-home";
 import type { DetailsPage } from "./phone-nav";
 import { PhoneNavBar } from "./phone-nav-bar";
 import { useEdgeSwipeBack } from "./use-edge-swipe-back";
+import { prefetchAgents } from "@/lib/agents/agents-query";
+import { PICKER_QUERY_KEY } from "@/lib/models/provider-state";
+import { api } from "@/lib/net/api";
+import { getQueryClient } from "@/lib/query-client";
 import { useLeavingCopy, usePageEntry } from "./use-page-transitions";
 
 const DETAILS_PAGES: DetailsPage[] = ["changes", "files", "activity", "resources", "step"];
@@ -61,6 +65,12 @@ export function PhoneApp({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (opened) return;
     opened = true;
+    // What the composer's settings sheet names (models, Agents) is read
+    // at start, so a sheet opened at once shows names and every row
+    // instead of ids and blanks.
+    const client = getQueryClient();
+    void client?.prefetchQuery({ queryKey: PICKER_QUERY_KEY, queryFn: api.listPickerModels }).catch(() => {});
+    void prefetchAgents();
     if (window.location.pathname === "/chat") window.history.replaceState(null, "", "/chats");
   }, []);
 

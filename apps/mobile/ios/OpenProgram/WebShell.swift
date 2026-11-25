@@ -58,6 +58,7 @@ struct WebShell: UIViewRepresentable {
         // (components/phone/use-edge-swipe-back.ts): the back-forward
         // gesture does not take the history entries the pages push.
         view.hideFormAccessoryBar()
+        coordinator.menus.attach(view)
         #if DEBUG
         view.isInspectable = true
         #endif
@@ -91,6 +92,8 @@ struct WebShell: UIViewRepresentable {
             "socket": ["url": socket.string!, "protocols": ["openprogram.v1", "openprogram.bearer." + token]],
             "computer": ["id": computer.id, "name": computer.name, "via": ComputerStore.isLocal(origin) ? "lan" : "anywhere"],
             "computers": computers.map { ["id": $0.id, "name": $0.name] },
+            // Menus are drawn by iOS (NativeMenus.swift).
+            "menus": NativeMenus.available,
         ]
     }
 
@@ -134,6 +137,7 @@ struct WebShell: UIViewRepresentable {
         var origin: String
         /// The paired computers the page was last told about.
         var listed: [String] = []
+        let menus = NativeMenus()
 
         init(onAction: @escaping (String, [String: Any]) -> Void, origin: String) {
             self.onAction = onAction
@@ -142,7 +146,11 @@ struct WebShell: UIViewRepresentable {
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
-            if action == "haptic" {
+            if action == "menu" {
+                menus.show(body)
+            } else if action == "menuPress" {
+                menus.press(body)
+            } else if action == "haptic" {
                 switch body["style"] as? String {
                 case "medium": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 case "selection": UISelectionFeedbackGenerator().selectionChanged()

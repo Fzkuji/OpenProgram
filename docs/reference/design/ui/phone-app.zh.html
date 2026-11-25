@@ -1,5 +1,5 @@
 <title>手机界面</title>
-<meta name="description" content="在触屏手机上，网页界面是一套独立的手机界面：项目列表、项目里的对话、带返回和详情的对话页、输入框里的一个设置面板、详情页，用的是桌面端的数据和渲染；为什么不再改桌面结构，参考了哪些同类产品。">
+<meta name="description" content="在触屏手机上，网页界面是一套独立的手机界面：项目列表、项目里的对话、带返回和详情的对话页、输入框里的一个设置菜单、详情页，用的是桌面端的数据和渲染；为什么不再改桌面结构，参考了哪些同类产品。">
 <meta name="covers" content="apps/web/components/phone/ apps/web/components/chat/composer/controls/phone-composer-bar.tsx apps/web/app/styles/base/phone-app.css apps/mobile/ios/OpenProgram/WebShell.swift apps/web/lib/mobile/bridge.ts">
 <h1>手机界面</h1>
 <p>在触屏手机上（商店里的 App 或手机浏览器），界面是一套手机 App 的页面，而不是桌面窗口。<code translate="no">useTouchPhone()</code> 成立时，<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/app-shell.tsx"><code translate="no">AppShell</code></a> 渲染 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/phone/phone-app.tsx"><code translate="no">PhoneApp</code></a>，代替侧边栏、标签栏和右侧面板。窄的桌面窗口仍用桌面外壳的<a href="phone-layout.zh.html">手机布局</a>。</p>
@@ -17,13 +17,13 @@
 <thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row">项目</th><td>顶部是当前显示的电脑和设置按钮，然后是大标题、搜索，下面每个项目一行：带首字母的彩色方块、名字、最近对话的时间或几个在等你、对话数和最新标题。有对话在等你的项目排最前，再按时间。搜索会找所有项目里的对话。</td></tr>
-<tr><th scope="row">底部胶囊</th><td>项目列表和项目页底部是一整条胶囊，高 60pt、两端全圆，离两边 16pt，紧贴 Home 条上方：新对话的设置（打开新对话并弹出它的设置面板）、新对话输入框、语音（打开新对话并开始录音）。列表在它下面渐隐。</td></tr>
-<tr><th scope="row">电脑</th><td>点顶部的电脑名打开选择器。里面列出这台手机配对的电脑（各自一条连接，由 App 切换），以及当前电脑连接的其他电脑（设置 → 机器），它们的项目本来就在列表里。一次只显示一台电脑（<code translate="no">phone-computer-switcher.tsx</code>）。</td></tr>
+<tr><th scope="row">底部胶囊</th><td>项目列表和项目页底部是一整条胶囊，高 60pt、两端全圆，离两边 16pt，紧贴 Home 条上方：新对话的设置（打开新对话并弹出它的设置菜单）、新对话输入框、语音（打开新对话并开始录音）。列表在它下面渐隐。</td></tr>
+<tr><th scope="row">电脑</th><td>点顶部的电脑名，在它下面弹出菜单，和 Files 点标题一样。里面列出这台手机配对的电脑（各自一条连接，由 App 切换），以及当前电脑连接的其他电脑（设置 → 机器），它们的项目本来就在列表里。一次只显示一台电脑（<code translate="no">phone-computer-switcher.tsx</code>）。</td></tr>
 <tr><th scope="row">边距</th><td>标题、搜索、列表行、导航栏和胶囊统一离边 16pt（<code translate="no">--phone-gutter</code>）。列表是平铺的：行直接在页面上，之间是细分隔线，没有灰色底。搜索框圆角 20pt。</td></tr>
-<tr><th scope="row">一个项目</th><td>‹ 项目、项目名、搜索，下面是它的对话，分“进行中”和“更早”两组。每行是标题，下面是状态词和最后一行，右边是时间、状态点或“等你”标记。左滑露出归档；长按打开置顶、重命名、复制链接、归档、删除。底部输入框写着“在 &lt;项目&gt; 里开新对话”。</td></tr>
+<tr><th scope="row">一个项目</th><td>‹ 项目、项目名、搜索，下面是它的对话，分“进行中”和“更早”两组。每行是标题，下面是状态词和最后一行，右边是时间、状态点或“等你”标记。左滑露出归档；长按时这一行浮起来，弹出置顶、重命名、复制链接、归档，最后是红色的删除。底部输入框写着“在 &lt;项目&gt; 里开新对话”。</td></tr>
 <tr><th scope="row">对话</th><td>导航栏：‹ 项目名（或返回）、标题，运行、等你或失败时标题下有状态点，ⓘ 打开详情。输入框是一个框，离屏幕两边 10pt、圆角 30pt：文字，下面一排 44pt 的按钮：<code translate="no">+</code>、写着模型和思考力度的芯片、表示权限的盾牌、麦克风；有文字时麦克风变成发送。</td></tr>
-<tr><th scope="row">消息</th><td>用户消息是浅色气泡；每组工具调用折成一行灰字，点开后点其中一步会以一页打开。消息下面没有按钮：长按打开这条消息的操作面板。</td></tr>
-<tr><th scope="row">设置面板</th><td>点任一芯片打开一个带“完成”按钮的底部面板，分组放这一轮的全部设置：Harness ›、模型 ›（名字，id 小字）、思考力度（分段选择）、权限 ›、智能体 ›，然后是高速模式、网页搜索、沙箱、无人值守的开关（外部智能体的对话没有网页搜索和沙箱）。带 › 的行在同一个面板里打开下一页，带返回行；往下拖跟手，松开关闭。</td></tr>
+<tr><th scope="row">消息</th><td>用户消息是浅色气泡；每组工具调用折成一行灰字，点开后点其中一步会以一页打开。消息下面没有按钮：长按时按住的文字或气泡浮起来，弹出它的操作。</td></tr>
+<tr><th scope="row">设置菜单</th><td>点任一芯片打开一个菜单，放这一轮的全部设置：Harness、模型、思考力度、权限、智能体，每行下面写当前值，选项在子菜单里；然后是高速模式、网页搜索、沙箱、无人值守，开着的打勾（外部智能体的对话没有网页搜索和沙箱）。</td></tr>
 <tr><th scope="row">详情</th><td>推到对话上面：改动（带 +增加 −删除 行数）、文件、活动、资源各一行，点开各是一页（桌面的右侧面板）；然后是显示方式，再是置顶、重命名、自动重命名、复制链接、复制会话，归档和删除单独一组。删除后回到项目列表。</td></tr>
 <tr><th scope="row">其他页面</th><td>设置、历史和其他路由都以一页打开，上面有 ‹ 项目。</td></tr>
 </tbody>
@@ -39,7 +39,8 @@
 <tr><th scope="row">数据</th><td>不重复取数据：列表读会话 store，对话页用分屏视图里自成一体的 <code translate="no">PeerSessionPane</code>，详情页挂右侧面板原有的面板。聊天页的外壳在看不见的地方保持挂载，因为连接和地址里对话的加载由它负责。</td></tr>
 <tr><th scope="row">和桌面共用</th><td>模型、智能体和会话操作菜单拆成了 hook 和内容（<code translate="no">useChatModel</code>、<code translate="no">useChatAgent</code>、<code translate="no">useSessionActions</code>），手机的面板、详情页和桌面的芯片、菜单跑同一份代码。</td></tr>
 <tr><th scope="row">中日韩文字</th><td>iOS 的 WebKit 遇到系统字体没有的字，会画成带问号的方框，而不是去试下一个字体，所以每个字体栈都把 PingFang SC、Hiragino Sans、Apple SD Gothic Neo 放在 <code translate="no">-apple-system</code> 前面（<code translate="no">lib/prefs/appearance/font-stacks.ts</code>）。</td></tr>
-<tr><th scope="row">长按</th><td>消息的操作面板列出它桌面操作栏里的按钮（操作栏留在页面里隐藏），点选就是点那个按钮，所以每个操作跑同一份代码（<code translate="no">phone-message-menu.tsx</code>）。按住 450ms 触发并震动一下，同时取消用户气泡自带的回退菜单。输入框以外不能选中文字。</td></tr>
+<tr><th scope="row">菜单</th><td>商店 App 里所有菜单都由 iOS 自己画（<code translate="no">lib/mobile/native-menu.ts</code>、<code translate="no">NativeMenus.swift</code>），样子和动画就是系统的：点按钮时网页把菜单项交给 App，手指一落到对话或消息上就先交过去，长按时菜单已经备好；选中的项以事件传回网页。浏览器里仍用网页自己的面板。</td></tr>
+<tr><th scope="row">长按</th><td>消息的菜单列出它桌面操作栏里的按钮（操作栏留在页面里隐藏），点选就是点那个按钮，所以每个操作跑同一份代码（<code translate="no">phone-message-menu.tsx</code>）。输入框以外不能选中文字。</td></tr>
 <tr><th scope="row">触感</th><td>商店 App 的桥接提供轻、中、选择、成功四种震动（<code translate="no">lib/mobile/bridge.ts</code> 里的 <code translate="no">haptic()</code>）：长按、开关和分段选择时用。</td></tr>
 <tr><th scope="row">权限卡片</th><td>选项竖排成全宽 44pt 按钮，推荐的在最下面，靠近拇指。</td></tr>
 <tr><th scope="row">不缩放</th><td>在两个控件上快速各点一下会让页面放大：页面用了 <code translate="no">touch-action: manipulation</code>，商店 App 还锁住了视口缩放。</td></tr>
@@ -53,7 +54,7 @@
 <thead><tr><th scope="col">同类</th><th scope="col">手机上怎么做</th><th scope="col">采用</th></tr></thead>
 <tbody>
 <tr><th scope="row">Happy</th><td>原生的会话列表，推入的会话页标题下写状态，输入卡片的控件收成一行，长按消息出操作并震动</td><td>标题下写状态、输入框一行控件、长按菜单、触感</td></tr>
-<tr><th scope="row">Paseo</th><td>手机上面板变成推入的页面；输入框的智能体控件收成一个按钮，点开是面板；工具调用折成一行；列表行左滑归档</td><td>设置面板、推入的页面、折叠工具行、左滑归档</td></tr>
+<tr><th scope="row">Paseo</th><td>手机上面板变成推入的页面；输入框的智能体控件收成一个按钮，点开是面板；工具调用折成一行；列表行左滑归档</td><td>一个设置按钮、推入的页面、折叠工具行、左滑归档</td></tr>
 <tr><th scope="row">Claude、ChatGPT</th><td>底部固定的新对话框、带返回的导航栏、分组列表式设置</td><td>固定输入框、分组列表、ⓘ 进详情</td></tr>
 <tr><th scope="row">GitHub</th><td>改动、文件、活动是详情页里的几行</td><td>详情页第一组</td></tr>
 </tbody>
