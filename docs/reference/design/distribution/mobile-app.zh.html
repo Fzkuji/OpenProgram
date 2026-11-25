@@ -1,5 +1,5 @@
 <title>手机 App</title>
-<meta name="description" content="OpenProgram 手机 App：一个很小的原生外壳，带着网页界面，用设备凭证把请求转发到配对的电脑，界面是对话在中间、左右各一个侧栏。">
+<meta name="description" content="OpenProgram 手机 App：一个很小的原生外壳，带着网页界面，用设备凭证把请求转发到配对的电脑，界面是一套手机页面：项目、项目里的对话、设置面板和详情页。">
 <meta name="covers" content="apps/mobile/ openprogram/interfaces/server/owner_auth.py apps/web/lib/net/ws/use-ws.ts apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx">
 <h1>手机 App</h1>
 <p>手机通过应用商店里的 App 使用 OpenProgram，不再用浏览器标签页。App 自带全部界面，打开时网络上只传数据；和电脑配对一次，之后一直保持登录。对话、文件和账号都留在电脑上，和<a href="../ui/remote-web-access.zh.html">远程 Web 访问</a>一样。</p>
@@ -45,26 +45,17 @@
 </ul>
 
 <h2 id="layout">布局</h2>
-<p>对话在中间，左右各一个侧栏，把电脑上的三栏并排放进手机。从三版画出来的方案（对话优先加侧栏、底部标签栏、列表优先）里选定；这是 Claude 和 ChatGPT 手机 App 的结构，加上右侧栏。</p>
-<table class="stack fixed">
-<thead><tr><th scope="col">部分</th><th scope="col">手机上</th></tr></thead>
-<tbody>
-<tr><th scope="row">对话</th><td>导航栏：菜单按钮、当前对话的标题（点开是对话菜单：文件、活动、资源和对话操作）、新对话按钮。用户的消息是主题强调色的气泡，助手的是正文。三段式输入框保持原样，在键盘上方。一次只开一个页面，浮层的圆角和屏幕的圆角平行（<a href="../ui/phone-layout.zh.html">手机布局</a>）。</td></tr>
-<tr><th scope="row">左侧栏</th><td>从左边缘右滑，或点按钮。就是电脑上的左侧栏：新对话、任务、Agent、能力、应用、历史，然后是对话。</td></tr>
-<tr><th scope="row">右侧栏</th><td>从右边缘左滑，或点按钮。就是电脑上的右侧面板：文件、活动、资源。</td></tr>
-<tr><th scope="row">手势</th><td>两个侧栏都跟手，按距离或甩动速度决定打开还是收回，和<a href="../ui/phone-layout.zh.html">手机布局</a>里左侧抽屉现在的做法一样。</td></tr>
-<tr><th scope="row">设置</th><td>iOS 风格的分组列表：电脑（已连接的、添加电脑），然后是通用设置。</td></tr>
-</tbody>
-</table>
+<p>App 的页面是一套独立的手机界面，在网页界面里用它的数据和渲染写成（<a href="../ui/phone-app.zh.html">手机界面</a>）：先是项目列表，点进去是项目里的对话，底部固定新对话框；带返回和 ⓘ 的对话页；输入框里一个按钮打开这一轮的设置面板；详情页放改动、文件、活动、资源和对话操作。从左边缘滑动返回一页。</p>
+<p>第一版把电脑的三栏改成对话两边各一个抽屉，看起来仍是塞进手机的电脑，已经换掉。</p>
 
 <h2 id="later">实现状态</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
 <tbody>
-<tr><th scope="row">已做</th><td>先做：iOS 外壳、配对、服务端 WebSocket 子协议、两侧栏的手机布局（手机浏览器也用这套布局）。</td></tr>
+<tr><th scope="row">已做</th><td>iOS 外壳、配对、服务端 WebSocket 子协议、手机界面的各个页面（手机浏览器也用）。</td></tr>
 <tr><th scope="row">通知</th><td>通知：商店 App 的推送要经苹果的服务，所需的密钥不能放在用户电脑上，需要一个小的中继。第一版在 App 关闭时不发通知。</td></tr>
 <tr><th scope="row">Android</th><td>Android：同样的设计，界面文件用 <code translate="no">WebViewAssetLoader</code>；先在 GitHub Release 发 APK，因为 Google Play 在中国大陆用不了。</td></tr>
-<tr><th scope="row">还没做</th><td>设计稿里还没做的：标题下面的模型、每个工具步骤一行灰底、左侧栏底部的已连接电脑、右侧栏的分段控件、设置里的 iOS 分组列表。</td></tr>
+<tr><th scope="row">还没做</th><td>还没做：每个工具步骤一行灰底、设置里的 iOS 分组列表，以及<a href="../ui/phone-app.zh.html#status">手机界面</a>里列出的部分。</td></tr>
 <tr><th scope="row">编译 App</th><td>编译 App 的图标和资源目录需要 Xcode 里装 iOS 模拟器运行时（<code translate="no">xcodebuild -downloadPlatform iOS</code>）；Swift 代码不需要它也能对着 iOS SDK 编译通过。</td></tr>
 <tr><th scope="row">上架</th><td>商店审核和 TestFlight 需要在现有苹果团队下建 App Store Connect 记录。</td></tr>
 </tbody>

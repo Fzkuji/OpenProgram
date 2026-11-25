@@ -74,10 +74,10 @@ export default function RootLayout({
                 // this document was served. Cookie first, localStorage
                 // as a legacy fallback.
                 var FONTS = {
-                  system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
-                  inter:  "var(--font-inter-latin, 'Inter Variable'), 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
+                  system: "'PingFang SC', 'Hiragino Sans', 'Apple SD Gothic Neo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
+                  inter:  "var(--font-inter-latin, 'Inter Variable'), 'Inter Variable', 'Inter', 'PingFang SC', 'Hiragino Sans', 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
-                  mono:   "var(--font-mono-latin, 'JetBrains Mono Variable'), 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
+                  mono:   "var(--font-mono-latin, 'JetBrains Mono Variable'), 'JetBrains Mono Variable', 'JetBrains Mono', 'PingFang SC', 'Hiragino Sans', 'Apple SD Gothic Neo', ui-monospace, Menlo, Monaco, Consolas, 'Microsoft YaHei', monospace"
                 };
                 var cm = document.cookie.match(/(?:^|;\\s*)agentic_font=([^;]+)/);
                 var cookieFont = cm && cm[1];

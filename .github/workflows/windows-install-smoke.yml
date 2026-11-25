@@ -199,8 +199,17 @@ jobs:
           & $Command worker start
           if ($LASTEXITCODE -ne 0) { throw "the worker did not start" }
           try {
-            $Health = Invoke-RestMethod "http://127.0.0.1:$env:OPENPROGRAM_WEB_PORT/healthz"
-            if ($Health.status -ne "ok") { throw "the worker is not healthy" }
+            # `worker start` returns once the worker has named itself, before
+            # its web server listens, so wait for it to answer.
+            $Health = $null
+            for ($Attempt = 0; $Attempt -lt 120 -and -not $Health; $Attempt++) {
+              try {
+                $Health = Invoke-RestMethod -TimeoutSec 2 "http://127.0.0.1:$env:OPENPROGRAM_WEB_PORT/healthz"
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $Health -or $Health.status -ne "ok") { throw "the worker is not healthy" }
             # One real tool call through the worker, in the shell it resolves.
             python scripts/release/smoke-tool-call.py --openprogram $Command --home $env:USERPROFILE
             if ($LASTEXITCODE -ne 0) { throw "one tool call through the ZIP install failed" }
@@ -249,4 +258,5 @@ jobs:
             ${{ runner.temp }}/windows-diagnostics
             ${{ runner.temp }}/zip-home/.openprogram/**/*.log
             ${{ runner.temp }}/zip-state/**/*.log
+          include-hidden-files: true
           if-no-files-found: ignore

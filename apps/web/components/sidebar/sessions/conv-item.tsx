@@ -324,9 +324,9 @@ export function ConvItem({
           </span>)
         )}
         {agent && !activity ? (
-          // The agent the chat runs in, dimmed at the row's end (T3 Code's
-          // provider mark); it steps aside for the ⋯ button on hover.
-          <span aria-hidden="true" className="flex shrink-0 text-text-muted opacity-60
+          // The agent the chat runs in, in its own colours at the row's end
+          // (T3 Code's provider mark); it steps aside for the ⋯ button on hover.
+          <span aria-hidden="true" className="flex shrink-0
             transition-opacity duration-150 group-hover:opacity-0"
             style={menuOpen ? { opacity: 0 } : undefined}>
             <AgentMark harness={conv.harness} size={13} fit="contain" />
@@ -365,8 +365,11 @@ export function ConvItem({
             aria-label={text(`Options for ${spoken}`, `${spoken} 的操作`)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className="absolute right-[4px] top-1/2 flex size-(--ui-button-h-xs) -translate-y-1/2
-              items-center justify-center rounded-sm text-text-muted
+            /* 3px from the row's edges on every side (a 24px button in a 30px
+               row), and the row's radius less those 3px, so the two corners
+               are concentric. */
+            className="absolute right-[3px] top-1/2 flex size-(--ui-button-h-xs) -translate-y-1/2
+              items-center justify-center rounded-[calc(var(--ui-list-radius)_-_3px)] text-text-muted
               opacity-0 pointer-events-none transition-opacity duration-150 ease-out
               group-hover:opacity-100 group-hover:pointer-events-auto
               data-[state=open]:opacity-100 data-[state=open]:pointer-events-auto
@@ -400,12 +403,23 @@ export function ConvItem({
   );
 }
 
+/** Where a synced conversation also lives, by its source. */
+const ALSO_IN: Record<string, string> = {
+  codex: "Codex App", "claude-code": "Claude Code", "deepseek-harness": "DeepSeek Harness",
+};
+
 /** What a chat running in an outside agent shows on hover: its model and
  *  agent, its project, and when it last moved. */
 function AgentCard({ conv, agent, zh }: { conv: LegacyConv; agent: string; zh: boolean }) {
-  const model = conv.model ? gatewayModel(conv.model)?.model ?? conv.model : null;
+  // DeepSeek Harness names a model with its provider (`deepseek-official:deepseek-flash`).
+  const raw = conv.model ? gatewayModel(conv.model)?.model ?? conv.model : null;
+  const named = raw && conv.harness === "deepseek-harness" ? raw.split(":").pop() ?? raw : raw;
+  // The agent's own default model has no name to show.
+  const model = named && named.toLowerCase() !== "default" ? named : null;
   const time = formatRelativeTime(conv.updated_at || conv.created_at || 0, zh ? "zh" : "en");
-  const also = conv.harness === "codex" ? (zh ? "也在 Codex App 里" : "Also in the Codex app") : null;
+  // A conversation synced from an app is that app's too, while it runs there.
+  const home = conv.source && conv.source === conv.harness ? ALSO_IN[conv.source] : undefined;
+  const also = home ? (zh ? `也在 ${home} 里` : `Also in ${home}`) : null;
   return (
     <TipBody
       title={model ? `${model} · ${agent}` : agent}

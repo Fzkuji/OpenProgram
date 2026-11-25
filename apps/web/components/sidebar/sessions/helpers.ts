@@ -27,6 +27,9 @@ export interface LegacyConv {
   harness?: string | null;
   /** That agent's model, for the row's hover card. */
   model?: string | null;
+  /** The app a synced conversation came from (`codex`, `claude-code`,
+   *  `deepseek-harness`); OpenProgram's own have none. */
+  source?: string | null;
   account_id?: string | null;
   preview?: string | null;
   pinned?: boolean;

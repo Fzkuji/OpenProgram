@@ -159,7 +159,7 @@ export function DetailPanel() {
         </div>
       )}
 
-      <div className="detail-section">
+      <div className="detail-section" data-internal>
         <div className="detail-section-title">Path</div>
         <div className="detail-field-value">{node.path}</div>
       </div>
@@ -205,7 +205,7 @@ export function DetailPanel() {
         value={node.attempts && node.attempts.length > 0 ? node.attempts : null}
       />
 
-      <div className="detail-section">
+      <div className="detail-section" data-internal>
         <div className="detail-section-title">Render / Compress</div>
         <div className="detail-field-value">
           render: {node.render || "summary"} | compress:{" "}

@@ -163,8 +163,8 @@
   /* families. type.css :root already defines --font-mono / --font-sans;
      re-aliasing them here would self-reference, so inline the same stacks
      (kept in sync with type.css). */
-  --font-mono: var(--font-mono-latin, "JetBrains Mono Variable"), "JetBrains Mono Variable", "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
-  --font-sans: var(--font-inter-latin, "Inter Variable"), "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-mono: var(--font-mono-latin, "JetBrains Mono Variable"), "JetBrains Mono Variable", "JetBrains Mono", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
+  --font-sans: var(--font-inter-latin, "Inter Variable"), "Inter Variable", "Inter", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
 
   /* font sizes → text-fs-*, one per tier of type.css, each with the
      tier's line height (so a 14px menu row is 28px, as in the docs).

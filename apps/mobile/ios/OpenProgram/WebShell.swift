@@ -27,6 +27,12 @@ struct WebShell: UIViewRepresentable {
         let content = WKUserContentController()
         content.add(context.coordinator, name: "openprogram")
         content.addUserScript(WKUserScript(source: bootstrap(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // An app's screens do not zoom: two quick taps on two controls, or a
+        // pinch, would otherwise magnify the whole UI.
+        content.addUserScript(WKUserScript(source: """
+        document.querySelector('meta[name="viewport"]')?.setAttribute("content",
+          "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content");
+        """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = content
 
         let view = WKWebView(frame: .zero, configuration: config)
@@ -34,10 +40,12 @@ struct WebShell: UIViewRepresentable {
         view.backgroundColor = .systemBackground
         view.scrollView.backgroundColor = .systemBackground
         // The page lays itself out to the safe area (viewport-fit=cover) and
-        // owns its own scrolling and edge swipes.
+        // owns its own scrolling.
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.scrollView.bounces = false
-        view.allowsBackForwardNavigationGestures = false
+        // The swipe from the left edge back a page is the page's own
+        // (components/phone/use-edge-swipe-back.ts): the back-forward
+        // gesture does not take the history entries the pages push.
         view.hideFormAccessoryBar()
         #if DEBUG
         view.isInspectable = true
@@ -102,7 +110,12 @@ struct WebShell: UIViewRepresentable {
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
             if action == "haptic" {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                switch body["style"] as? String {
+                case "medium": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                case "selection": UISelectionFeedbackGenerator().selectionChanged()
+                case "success": UINotificationFeedbackGenerator().notificationOccurred(.success)
+                default: UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
             } else {
                 onAction(action)
             }

@@ -18,6 +18,11 @@ HANDOFF_BUDGET_CHARS = 24_000
 _TOOL_LINE_CHARS = 160
 _SESSION_FIELD = "harness_threads"
 
+# The turns running per agent session, which the app sync waits for (kept in state, which it reads).
+from openprogram.state.store.session.external_import.engine_turns import (  # noqa: E402,F401
+    enter_running, leave_running, running,
+)
+
 
 @dataclass
 class ThreadPlan:
@@ -48,7 +53,8 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
     """How a turn on branch ``key`` with ``history`` (before its message) reaches its thread."""
     ids = set(_ids(history))
     own = records.get(key) if isinstance(records, dict) else None
-    if isinstance(own, dict) and own.get("thread_id"):
+    taken = _taken(records)
+    if isinstance(own, dict) and own.get("thread_id") and not (own.get("shared") and own["thread_id"] in taken):
         seen = str(own.get("seen") or "")
         if seen and seen in ids:
             return ThreadPlan("resume", own["thread_id"], _after(history, seen))
@@ -56,9 +62,12 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
             return ThreadPlan("resume", own["thread_id"])
         # The branch went back before what the thread saw (an edit or rewind).
         return ThreadPlan("start", missed=list(history))
-    # A conversation synced from the Codex app: its thread, when nothing
-    # was said here since the thread last saw it.
+    # A conversation synced from an app: its thread, when nothing was said
+    # here since. Once an engine went on in that thread on some branch, the
+    # record is no longer shared (``write_record``) and another branch forks it.
     for record in (records or {}).values():
+        if isinstance(record, dict) and record.get("thread_id") in taken:
+            continue
         if isinstance(record, dict) and record.get("shared") and record.get("thread_id"):
             seen = str(record.get("seen") or "")
             if seen and seen in ids:
@@ -70,6 +79,8 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
     for record in (records or {}).values():
         if not isinstance(record, dict) or not record.get("thread_id"):
             continue
+        if record.get("shared") and record["thread_id"] in taken:
+            continue  # it holds another branch's turns now: starting over keeps them out
         seen = str(record.get("seen") or "")
         if seen in ids:
             position = order.index(seen)
@@ -78,6 +89,13 @@ def plan_thread(records: dict, key: str, history: list[dict]) -> ThreadPlan:
     if best is not None and not _after(history, str(best[1]["seen"])):
         return ThreadPlan("fork", best[1]["thread_id"])
     return ThreadPlan("start", missed=list(history))
+
+
+def _taken(records: dict) -> set:
+    """Threads an engine went on in on some branch: an app's shared record of one no longer
+    describes it, since the thread holds that branch's turns too."""
+    return {r.get("thread_id") for r in (records or {}).values()
+            if isinstance(r, dict) and not r.get("shared") and r.get("own_turns")}
 
 
 def _text(message: dict) -> str:
@@ -151,7 +169,10 @@ def write_record(db: Any, session_id: str, provider: str, key: str, record: dict
     def update(current: dict) -> dict:
         threads = dict(current or {})
         records = dict(threads.get(provider) or {})
-        records[key] = {**dict(records.get(key) or {}), **record}
+        old = dict(records.get(key) or {})
+        # The engine went on here: the thread now holds this branch's turns, so
+        # another branch forks it instead of taking it as the app's shared one.
+        records[key] = {**old, **record, **({"shared": False} if old.get("shared") else {})}
         threads[provider] = records
         return threads
 

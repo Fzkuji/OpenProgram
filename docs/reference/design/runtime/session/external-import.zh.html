@@ -67,7 +67,8 @@
 <tr><th scope="row">放进所在文件夹的项目</th><td>和在这里打开那个文件夹一样；原 cwd 保留在 <code translate="no">imported_from.cwd</code>。</td></tr>
 <tr><th scope="row"><code translate="no">--list</code> 之外另有 <code translate="no">--dry-run</code></th><td><code translate="no">--list</code> 列出所有对话文件及状态；<code translate="no">--dry-run</code> 只列出同一条命令会新建或追加的对话。它运行 <code translate="no">plan_imports</code>，和导入做同样的判断，所以回退过的来源显示为新对话，而不是追加。</td></tr>
 <tr><th scope="row">Codex App 的对话是同步，不是导入</th><td>Codex App 和 CLI 的线程通过 <code translate="no">codex_sync.py</code> 自己进来：它复用这里的读取、写入和台账，但把每个对话连到它的 Codex 线程，并追加 App 里新加的轮次，跳过 OpenProgram 在上面跑的轮次；见 <a href="../../integrations/harness-engines.zh.html#synced">Harness 引擎</a>。和导入不同，它不新建项目，因为 Codex App 每个对话都会开一个文件夹。</td></tr>
-<tr><th scope="row">Claude App 和 DeepSeek Harness 也同步</th><td><code translate="no">app_sync.py</code> 用同一份台账把 Claude App Code 标签页的对话和 DeepSeek Harness 的对话（<code translate="no">deepseek_harness.py</code> 读它的 zstd 事件日志）带进来，App 新加的轮次接在这里说过的之后；在 App 里回退过的对话，这里保持原样。</td></tr>
+<tr><th scope="row">Claude App 和 DeepSeek Harness 也同步</th><td><code translate="no">app_sync.py</code> 用同一份台账把 Claude App Code 标签页的对话和 DeepSeek Harness 的对话（<code translate="no">deepseek_harness.py</code> 读它的 zstd 事件日志）带进来，App 新加的轮次接在这里说过的之后；在 App 里回退过的对话，这里保持原样。终端里用 <code translate="no">claude</code> 开的对话（<code translate="no">entrypoint: cli</code>）也进来。</td></tr>
+<tr><th scope="row">在原智能体里接着聊</th><td>DeepSeek Harness 和 Claude 的对话连到那个智能体引擎上的同一个会话；引擎跑过的轮次按最后一条助手消息或记录的 id 认出并跳过。</td></tr>
 </tbody>
 </table>
 

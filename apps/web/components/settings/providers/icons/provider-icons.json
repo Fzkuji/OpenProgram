@@ -72,8 +72,8 @@
     "mono": true
   },
   "claudecode": {
-    "file": "claudecode.svg",
-    "mono": true
+    "file": "claudecode-color.svg",
+    "mono": false
   },
   "cloudflare-ai-gateway": {
     "file": "cloudflare-color.svg",
@@ -84,8 +84,8 @@
     "mono": false
   },
   "codex": {
-    "file": "codex.svg",
-    "mono": true
+    "file": "codex-color.svg",
+    "mono": false
   },
   "cohere": {
     "file": "cohere-color.svg",

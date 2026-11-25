@@ -1,5 +1,5 @@
 <title>Mobile app</title>
-<meta name="description" content="The OpenProgram phone app: a small native shell that carries the web UI, forwards its requests to a paired computer with a device credential, and lays the UI out as chat in the middle with a sidebar on each side.">
+<meta name="description" content="The OpenProgram phone app: a small native shell that carries the web UI, forwards its requests to a paired computer with a device credential, and lays the UI out as a phone app: a list of chats, a conversation, a settings sheet and a details page.">
 <meta name="covers" content="apps/mobile/ openprogram/interfaces/server/owner_auth.py apps/web/lib/net/ws/use-ws.ts apps/web/app/styles/base/phone.css apps/web/components/layout/phone-shell.tsx">
 <h1>Mobile app</h1>
 <p>A phone uses OpenProgram through an app from the store, not a browser tab. The app carries the whole UI, so opening it reads nothing over the network but data; it pairs with a computer once and stays signed in. Conversations, files and accounts stay on the computer, as in <a href="../ui/remote-web-access.html">remote web access</a>.</p>
@@ -45,26 +45,17 @@
 </ul>
 
 <h2 id="layout">Layout</h2>
-<p>Chat in the middle and a sidebar on each side, the computer's three columns laid side by side on the phone. Chosen from three drawn options (chat first with sidebars, a bottom tab bar, a list first); this is the Claude and ChatGPT phone apps' structure with the right panel added.</p>
-<table class="stack fixed">
-<thead><tr><th scope="col">Part</th><th scope="col">On the phone</th></tr></thead>
-<tbody>
-<tr><th scope="row">Conversation</th><td>A navigation bar with a menu button, the open chat's title, which opens the conversation's menu (its files, activity and resources, then its actions), and a new chat button. The user's messages are bubbles in the theme's accent fill; the assistant's are plain text. The three-part composer keeps its layout above the keyboard. One page at a time, and floating panels round their corners parallel to the screen's (<a href="../ui/phone-layout.html">phone layout</a>).</td></tr>
-<tr><th scope="row">Left sidebar</th><td>A swipe from the left edge, or the button. The desktop's sidebar: New chat, Tasks, Agents, Abilities, Applications, History, then conversations.</td></tr>
-<tr><th scope="row">Right sidebar</th><td>A swipe from the right edge, or the button. The desktop's right panel: Files, Activity and Resources.</td></tr>
-<tr><th scope="row">Gestures</th><td>Both sidebars follow the finger and settle by distance or flick speed, as the left drawer already does in <a href="../ui/phone-layout.html">phone layout</a>.</td></tr>
-<tr><th scope="row">Settings</th><td>Grouped lists in the iOS style: computers (connected one, Add computer), then general settings.</td></tr>
-</tbody>
-</table>
+<p>The app's screens are a phone app of their own, built inside the web UI from its data and renderers (<a href="../ui/phone-app.html">phone app</a>): Projects first, then a project's chats, with a docked new-chat field; a conversation with Back and ⓘ, one sheet for the turn's settings from the composer, and a details page for changes, files, activity, resources and the chat's actions. A swipe from the left edge goes one page back.</p>
+<p>The first version restyled the desktop's three columns as two drawers around the chat; it still read as a computer on a phone and was replaced.</p>
 
 <h2 id="later">Implementation status</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">Part</th><th scope="col">State</th></tr></thead>
 <tbody>
-<tr><th scope="row">Built</th><td>Built first: the iOS shell, pairing, the server's WebSocket subprotocol, and the two-sidebar phone layout, which the browser on a phone gets too.</td></tr>
+<tr><th scope="row">Built</th><td>The iOS shell, pairing, the server's WebSocket subprotocol, and the phone app's screens, which a phone's browser gets too.</td></tr>
 <tr><th scope="row">Notifications</th><td>Notifications: a store app's push goes through Apple's service with a key that cannot live on the user's computer, so it needs a small relay. The first version notifies nothing while the app is closed.</td></tr>
 <tr><th scope="row">Android</th><td>Android: the same design, with <code translate="no">WebViewAssetLoader</code> for the files; published as an APK on the GitHub release first, since Google Play does not reach mainland China.</td></tr>
-<tr><th scope="row">Not built yet</th><td>Not built yet from the drawn design: the model under the chat's title, tool steps as one gray line each, the connected computer at the bottom of the left sidebar, a segmented control in the right sidebar, and iOS grouped lists in Settings.</td></tr>
+<tr><th scope="row">Not built yet</th><td>Not built yet: tool steps as one gray line each, iOS grouped lists in Settings, and the rest listed under the <a href="../ui/phone-app.html#status">phone app</a>.</td></tr>
 <tr><th scope="row">Building the app</th><td>Compiling the app's icon and asset catalog needs an iOS Simulator runtime in Xcode (<code translate="no">xcodebuild -downloadPlatform iOS</code>); the Swift code compiles against the iOS SDK without it.</td></tr>
 <tr><th scope="row">Store</th><td>Store review and TestFlight need an App Store Connect record under the existing Apple team.</td></tr>
 </tbody>

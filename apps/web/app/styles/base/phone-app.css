@@ -1,0 +1,630 @@
+/* The phone app (components/phone/): a phone app's pages, bars, lists and
+   sheets in place of the desktop window on a touch phone. Its look follows
+   the system's: a 44pt navigation bar with Back on the left, a large title
+   over the list, grouped rounded lists, a page that slides in from the
+   right. Colours are the theme's. */
+
+.phone-app {
+  --phone-card: color-mix(in srgb, var(--text-bright) 4.5%, var(--bg-primary));
+  --phone-fill: color-mix(in srgb, var(--text-bright) 7%, transparent);
+  --phone-separator: color-mix(in srgb, var(--text-bright) 10%, transparent);
+  /* Two quick taps are two taps, not a zoom into the page. */
+  touch-action: manipulation;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--phone-viewport-top, 0px);
+  height: var(--phone-viewport-h, 100dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 16px;
+  -webkit-tap-highlight-color: transparent;
+  /* A long press opens a menu, as in a phone app, rather than selecting
+     the words under it; fields and the details' panels (diffs, files)
+     keep selection. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.phone-app :is(input, textarea, [contenteditable="true"], .phone-app-panel, .message.is-editing) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+.phone-app button { font: inherit; color: inherit; background: none; border: 0; padding: 0; }
+.phone-app-engine { display: none; }
+
+.phone-app-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  animation: phone-app-push 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.phone-home:not(.phone-project) { animation: none; }
+@keyframes phone-app-push { from { transform: translateX(28%); opacity: 0.4; } }
+/* Going back, the page underneath returns from the left. */
+.phone-app[data-nav="back"] > .phone-app-page { animation: phone-app-pop 260ms cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes phone-app-pop { from { transform: translateX(-24%); opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) { .phone-app-page { animation: none !important; } }
+
+/* --- Navigation bar --------------------------------------------------- */
+.phone-app-nav {
+  flex: none;
+  height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+.phone-app-nav-side { display: flex; align-items: center; min-width: 0; }
+.phone-app-nav-trailing { justify-content: flex-end; }
+.phone-app-back {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 44px;
+  margin-left: -4px;
+  color: var(--theme-accent) !important;
+  font-size: 17px !important;
+}
+.phone-app-back svg { flex: none; }
+.phone-app-back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-app-nav-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 58vw;
+  line-height: 1.2;
+  text-align: center;
+}
+.phone-app-nav-title b,
+.phone-app-nav-title span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-app-nav-title b { font-size: 16px; font-weight: 600; color: var(--text-bright); }
+.phone-app-nav-title span { font-size: 12px; color: var(--text-muted); }
+.phone-app-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--phone-fill) !important;
+}
+
+/* --- Pages, lists ----------------------------------------------------- */
+.phone-app-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.phone-app-large-title {
+  margin: 2px 20px 8px;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-bright);
+}
+.phone-app-search {
+  margin: 0 16px 6px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--phone-fill);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--text-muted);
+}
+.phone-app-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+.phone-app-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.phone-app-section h2,
+.phone-app-section-title {
+  margin: 0;
+  padding: 16px 20px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.phone-app-list {
+  margin: 0 16px 18px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--phone-card);
+}
+.phone-app-section .phone-app-list { margin-bottom: 0; }
+.phone-app-empty { padding: 32px 24px; text-align: center; color: var(--text-muted); font-size: 15px; }
+.phone-app-fill { flex: 1; }
+
+/* A row of a grouped list: optional coloured icon, label, value, chevron. */
+.phone-app-row {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px !important;
+  text-align: left;
+  font-size: 16.5px !important;
+}
+.phone-app-row + .phone-app-row::before,
+.phone-home-row + .phone-home-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 14px;
+  height: 0.5px;
+  background: var(--phone-separator);
+}
+.phone-app-row:active,
+.phone-home-row:active { background: var(--phone-fill) !important; }
+.phone-app-row[data-danger] { color: var(--accent-red) !important; }
+.phone-app-row-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.phone-app-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-app-row-trail { color: var(--text-muted); font-size: 15px; }
+.phone-lines { font-size: 14px; font-variant-numeric: tabular-nums; }
+.phone-lines [data-add] { color: var(--accent-green); }
+.phone-lines [data-del] { color: var(--accent-red); }
+.phone-app-row-chevron { color: var(--text-muted); opacity: 0.6; flex: none; }
+
+.phone-app-segmented,
+.phone-segmented {
+  display: flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--phone-fill, color-mix(in srgb, var(--text-bright) 7%, transparent));
+}
+.phone-app-segmented { margin: 0 16px 18px; }
+.phone-app-segmented button,
+.phone-segmented button {
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.phone-app-segmented button[data-on],
+.phone-segmented button[data-on] {
+  background: var(--bg-primary);
+  color: var(--text-bright);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
+}
+
+/* --- Chats (the list) ------------------------------------------------- */
+.phone-home .phone-app-nav { grid-template-columns: minmax(0, 1fr) auto; }
+.phone-home-computer {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 12px !important;
+  font-size: 14px !important;
+  color: var(--text-muted) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phone-home-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 4px;
+  background: var(--accent-yellow);
+}
+.phone-home-computer[data-state="open"] .phone-home-dot { background: var(--accent-green); }
+.phone-home .phone-app-scroll { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.phone-home-row {
+  position: relative;
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px !important;
+  text-align: left;
+}
+.phone-project-row { align-items: center !important; }
+.phone-project-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #2f6fe4;
+  font-size: 15px;
+  font-weight: 600;
+}
+.phone-project-chevron { margin-right: -4px; }
+/* A chat's row: the row slides over its Archive button. */
+.phone-chat-row { position: relative; overflow: hidden; }
+.phone-chat-row + .phone-chat-row::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 14px;
+  height: 0.5px;
+  background: var(--phone-separator);
+}
+.phone-chat-row-track { position: relative; background: var(--phone-card); touch-action: pan-y; }
+.phone-chat-row-archive {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 84px;
+  display: grid !important;
+  place-items: center;
+  background: var(--accent-red) !important;
+  color: #fff !important;
+  font-size: 15px !important;
+  font-weight: 600;
+}
+.phone-chat-row:not([data-swiped]) .phone-chat-row-archive { visibility: hidden; }
+.phone-chat-row .phone-home-row { padding: 10px 14px !important; }
+.phone-home-slot {
+  flex: none;
+  min-width: 44px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  align-self: center;
+}
+.phone-home-pin { display: inline; margin: 0 4px 2px 0; color: var(--text-muted); vertical-align: middle; }
+.phone-home-preview b { font-weight: 500; color: var(--text-secondary); }
+.phone-home-preview b[data-state="needs_input"] { color: var(--theme-accent); }
+.phone-home-preview b[data-state="failed"] { color: var(--accent-red); }
+.phone-home-state {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 5px;
+}
+.phone-home-state[data-state="needs_input"] { background: var(--theme-accent); }
+.phone-home-state[data-state="working"] { background: var(--accent-blue); animation: phone-home-pulse 1.4s ease-in-out infinite; }
+.phone-home-state[data-state="failed"] { background: var(--accent-red); }
+.phone-home-state[data-state="unread"] { background: var(--accent-blue); }
+@keyframes phone-home-pulse { 50% { opacity: 0.35; } }
+.phone-home-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.phone-home-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.phone-home-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.phone-home-time { flex: none; font-size: 13px; color: var(--text-muted); }
+.phone-home-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--theme-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.phone-home-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.phone-home-dock {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16px 12px calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg-primary) 30%);
+}
+.phone-home-new {
+  display: flex !important;
+  align-items: center;
+  width: 100%;
+  height: 52px;
+  padding: 0 20px !important;
+  border-radius: 26px;
+  background: var(--bg-input, var(--phone-card)) !important;
+  border: 0.5px solid var(--border) !important;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.07);
+  color: var(--text-muted) !important;
+  font-size: 17px !important;
+  text-align: left;
+}
+
+/* --- A conversation --------------------------------------------------- */
+.phone-conversation .peer-session-pane {
+  flex: 1;
+  /* The split pane's 56px side lane is the desktop's: the text runs to
+     16px from the screen's edges. */
+  --chat-column-gutter: 12px;
+}
+.phone-conversation .peer-session-pane .chat-messages {
+  padding: 12px 16px var(--peer-composer-h, 180px);
+}
+/* The bar is frosted and drawn apart from the transcript scrolling under it. */
+.phone-conversation > .phone-app-nav {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 0.5px 0 var(--phone-separator);
+}
+/* The state under the title: a dot that pulses while it runs, orange when
+   it waits for the person (Happy's header). */
+.phone-conversation[data-state] .phone-app-nav-title span::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 4px;
+  vertical-align: 1px;
+  background: var(--accent-blue);
+}
+.phone-conversation[data-state="working"] .phone-app-nav-title span::before { animation: phone-home-pulse 1.4s ease-in-out infinite; }
+.phone-conversation[data-state="needs_input"] .phone-app-nav-title span::before { background: var(--theme-accent); }
+.phone-conversation[data-state="failed"] .phone-app-nav-title span::before { background: var(--accent-red); }
+.phone-conversation[data-state="unread"] .phone-app-nav-title span::before { display: none; }
+
+/* Messages. The person's own: a light bubble whose corner by the edge is
+   tucked; the reply: plain text (Paseo). No row of icons under each
+   message: a long press opens them (phone-message-menu.tsx), so the text
+   is not selected by the press either. */
+.phone-conversation .message.user .message-content {
+  background: color-mix(in srgb, var(--text-bright) 7%, var(--bg-primary));
+  color: var(--text-bright);
+  border-radius: 18px 18px 5px 18px;
+  padding: 9px 14px;
+  max-width: 82%;
+  margin-right: 0;
+}
+.phone-conversation .message-actions-footer { display: none; }
+.phone-conversation .message:not(.is-editing) {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1), opacity 160ms;
+}
+.phone-conversation .message[data-phone-pressed] { transform: scale(0.98); }
+.phone-conversation:has(.message[data-phone-pressed]) .message:not([data-phone-pressed]) { opacity: 0.45; }
+.phone-message-menu-anchor { position: fixed; left: 50%; bottom: 0; width: 0; height: 0; }
+/* A folded run of steps is one quiet line a thumb can hit, smaller and
+   lighter than the reply around it (Paseo's 14pt muted row). */
+.phone-conversation .tl-toggle { height: 36px; line-height: 36px; font-size: 14.5px !important; color: var(--text-muted) !important; }
+
+/* Back to the latest: a solid round button at the right, over the text. */
+.phone-conversation .jump-latest-anchor { left: auto !important; right: 16px !important; transform: none !important; }
+.phone-conversation .jump-latest {
+  width: 38px !important;
+  height: 38px !important;
+  background: var(--bg-input, var(--bg-primary)) !important;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.16) !important;
+  color: var(--text-primary) !important;
+}
+
+/* A request for permission: its choices stacked, the main one first, each
+   a full-width 44pt button (Paseo's card on a phone, Happy's labels). */
+.phone-conversation [data-question-card] [role="group"] > div {
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: stretch !important;
+  width: 100%;
+  gap: 6px !important;
+}
+.phone-conversation [data-question-card] [role="group"] > div > :is(button, span) {
+  width: 100% !important;
+  height: 44px !important;
+  justify-content: center;
+  font-size: 15px !important;
+}
+.phone-conversation [data-question-card] [role="group"] > div > button[aria-label]::after {
+  content: attr(aria-label);
+  margin-left: 6px;
+}
+.phone-conversation [data-question-card] kbd { display: none; }
+
+/* The box sits above the home indicator, and on the keyboard when it is up. */
+.phone-conversation [data-composer-input-area] {
+  padding-bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+}
+html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
+  padding-bottom: 8px !important;
+}
+
+/* The composer's phone row (composer/controls/phone-composer-bar.tsx):
+   the text spans the box; +, the settings button, the mic and send share
+   the row under it. */
+[data-phone-layout] :has(> [data-composer-text]) {
+  padding: 12px 16px 2px !important;
+}
+[data-phone-layout] [data-composer-mic] {
+  left: auto !important;
+  right: calc(var(--composer-action-inset) + var(--composer-action-size) + 4px) !important;
+}
+.phone-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: var(--composer-line-h);
+  padding: 0 calc(2 * var(--composer-action-size) + var(--composer-action-inset) + 10px) 0 8px;
+}
+.phone-composer-plus {
+  width: var(--composer-action-size);
+  height: var(--composer-action-size);
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: none;
+}
+.phone-composer-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--composer-action-size);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+/* Model and effort, then the permission: two chips of one button. */
+.phone-composer-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-bright) 6%, transparent);
+  white-space: nowrap;
+}
+.phone-composer-chip-permission {
+  flex: none;
+  width: var(--composer-action-size);
+  padding: 0;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+.phone-composer-chip-permission[data-mode="bypass"] { color: var(--theme-accent); }
+.phone-composer-chip-model { flex: 0 1 auto; }
+.phone-composer-settings-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The settings sheet: a title with Done, then grouped cards (model;
+   thinking; permission and agent; switches), every row's text on one
+   edge, as a system settings sheet is laid out. */
+.phone-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 10px 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.phone-sheet-head button {
+  height: 32px;
+  padding: 0 4px;
+  color: var(--theme-accent) !important;
+  font-size: 16px;
+  font-weight: 500;
+}
+.phone-sheet-group {
+  margin-bottom: 10px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--phone-card, color-mix(in srgb, var(--text-bright) 4.5%, var(--popover)));
+}
+.phone-sheet-group > [role] { border-radius: 0 !important; min-height: 48px !important; }
+.phone-sheet-group > [role] + [role] { box-shadow: inset 0 0.5px 0 color-mix(in srgb, var(--text-bright) 10%, transparent); }
+.phone-sheet-label {
+  padding: 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.phone-model-trail { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-size: 14px; }
+.phone-model-trail small { font-size: 11px; color: var(--text-muted); opacity: 0.8; }
+.phone-effort-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0 0 12px;
+  grid-column: 1 / -1;
+}
+.phone-effort-row .phone-sheet-label { padding: 0 12px; }
+.phone-switch {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  flex: none;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--text-bright) 14%, transparent);
+  transition: background 200ms;
+}
+.phone-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.2);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.phone-switch[data-on] { background: var(--accent-green); }
+.phone-switch[data-on]::after { transform: translateX(20px); }
+
+/* --- Details ---------------------------------------------------------- */
+.phone-details-head { padding: 14px 20px 18px; }
+.phone-details-head h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; color: var(--text-bright); }
+.phone-details-head p { margin: 2px 0 0; font-size: 14px; color: var(--text-muted); }
+.phone-app-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.phone-app-panel > * { flex: 1; min-height: 0; }
+
+/* --- Other routes (settings and the rest) ----------------------------- */
+.phone-app-route {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.phone-app-route > * { flex: 1; min-height: 0; }
+
+/* A step's page on the phone leaves out the bookkeeping rows (its call
+   id, render and compress), which only the desktop's inspector keeps. */
+.phone-app .detail-section[data-internal] { display: none; }

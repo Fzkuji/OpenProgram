@@ -207,6 +207,10 @@ def _active_chain(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return chain
 
 
+#: What Claude Code writes as a user record when a Stop interrupts it.
+_INTERRUPTED = "[Request interrupted by user"
+
+
 def parse(path: Path) -> ExternalSession:
     records = list(_records(path))
     titles: dict[str, str] = {}
@@ -236,10 +240,17 @@ def parse(path: Path) -> ExternalSession:
                             tool.result = _result_text(block.get("content"))
                             tool.is_error = bool(block.get("is_error"))
             text = _user_text(content)
+            if text.startswith(_INTERRUPTED):
+                # Claude Code's note that a Stop ended the turn: not a message of the person's.
+                if turn is not None and ts:
+                    turn.ended_at = ts
+                continue
             if text:
                 raw = content if isinstance(content, str) else ""
                 turn = Turn(user_text=text, timestamp=ts, ended_at=ts,
                             command=is_command(raw))
+                # Known by its message until an answer comes (an engine sends that uuid itself).
+                turn.turn_id = str(record.get("uuid") or "") or None
                 pending.clear()
                 session.turns.append(turn)
             elif turn is not None and ts:
@@ -249,6 +260,8 @@ def parse(path: Path) -> ExternalSession:
             continue
         if record.get("isApiErrorMessage") or record.get("isSidechain"):
             continue
+        if record.get("uuid"):
+            turn.turn_id = str(record["uuid"])  # the turn's last assistant record: the engine knows it
         model = message.get("model") or ""
         if model and not model.startswith("<"):
             turn.model = session.model = model

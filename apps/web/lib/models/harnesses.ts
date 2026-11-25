@@ -22,7 +22,7 @@ export interface HarnessModel {
 export interface HarnessAgent {
   id: string;
   label: string;
-  kind: "default" | "profile" | "personality";
+  kind: "default" | "profile" | "personality" | "agent";
   default?: boolean;
 }
 
@@ -50,9 +50,14 @@ export const OPENPROGRAM_HARNESS = "openprogram";
 export const GATEWAY_PREFIX = "openprogram:";
 
 /** The provider id of each harness's models. */
-const PROVIDERS: Record<string, string> = { codex: "codex-harness" };
+const PROVIDERS: Record<string, string> = {
+  codex: "codex-harness", "claude-code": "claude-code-harness", "deepseek-harness": "deepseek-harness",
+};
 /** The provider whose logo a harness shows. */
-const MARKS: Record<string, string> = { "codex-harness": "openai", codex: "openai" };
+const MARKS: Record<string, string> = {
+  "codex-harness": "openai", codex: "openai", "claude-code-harness": "anthropic", "claude-code": "anthropic",
+  "deepseek-harness": "deepseek",
+};
 
 export function isHarnessProvider(provider: string | null | undefined): boolean {
   return !!provider && Object.values(PROVIDERS).includes(provider);
@@ -114,6 +119,17 @@ export function unavailable(harness: Harness): "not_installed" | "not_signed_in"
   if (!harness.installed) return "not_installed";
   if (!harness.signedIn) return "not_signed_in";
   return null;
+}
+
+/** The listed model `id` is, or the one listed alias a full id names
+ *  (Claude Code lists `opus`; a synced transcript says `claude-opus-5-5`). */
+export function listedModel(harness: Harness | undefined, id: string | null | undefined): HarnessModel | undefined {
+  const models = harness?.models ?? [];
+  const exact = models.find((m) => m.id === id);
+  if (exact || !id) return exact;
+  const tokens = new Set(id.toLowerCase().split(/[-[\]]/));
+  const named = models.filter((m) => tokens.has(m.id.toLowerCase()));
+  return named.length === 1 ? named[0] : undefined;
 }
 
 export function defaultModel(harness: Harness | undefined): HarnessModel | undefined {

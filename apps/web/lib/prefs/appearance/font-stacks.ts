@@ -29,15 +29,22 @@ export const CHAT_WIDTH_COOKIE = "agentic_chat_width";
 // always-resolvable name (never an undefined `var()`), so it is a valid
 // font-family value on its own — no dependency on any CSS variable being
 // defined elsewhere.
+// The Chinese, Japanese and Korean faces come before the system font:
+// iOS WebKit draws a character -apple-system / system-ui lacks as a boxed
+// "?" instead of falling through to the next family, so a CJK face named
+// after them is never reached on an iPhone. Where these faces are absent
+// (Windows, Linux) they are skipped and the stack is unchanged.
+const CJK_FIRST = ["'PingFang SC'", "'Hiragino Sans'", "'Apple SD Gothic Neo'"];
+
 export const FONT_STACKS: Record<FontKey, string> = {
   // OS-native stack (pure system look). No Inter — picks up SF on
   // macOS, Segoe on Windows, etc.
   system: [
+    ...CJK_FIRST,
     "system-ui",
     "-apple-system",
     "BlinkMacSystemFont",
     "'Segoe UI'",
-    "'PingFang SC'",
     "'Microsoft YaHei'",
     "'Hiragino Sans GB'",
     "sans-serif",
@@ -50,10 +57,10 @@ export const FONT_STACKS: Record<FontKey, string> = {
     "var(--font-inter-latin, 'Inter Variable')",
     "'Inter Variable'",
     "'Inter'",
+    ...CJK_FIRST,
     "-apple-system",
     "BlinkMacSystemFont",
     "'Segoe UI'",
-    "'PingFang SC'",
     "'Microsoft YaHei'",
     "'Hiragino Sans GB'",
     "sans-serif",
@@ -74,11 +81,11 @@ export const FONT_STACKS: Record<FontKey, string> = {
     "var(--font-mono-latin, 'JetBrains Mono Variable')",
     "'JetBrains Mono Variable'",
     "'JetBrains Mono'",
+    ...CJK_FIRST,
     "ui-monospace",
     "Menlo",
     "Monaco",
     "Consolas",
-    "'PingFang SC'",
     "'Microsoft YaHei'",
     "monospace",
   ].join(", "),

@@ -65,3 +65,4 @@
 
 /* ── 手机布局（≤760px，lib/layout/phone.ts）：最后加载，覆盖上面各区 ── */
 @import "./base/phone.css";
+@import "./base/phone-app.css";

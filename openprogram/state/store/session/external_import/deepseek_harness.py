@@ -9,7 +9,9 @@ then events ``{type, seq, time, data}``. A turn opens with
 ``source.kind`` is ``user`` (others are context the harness injected);
 ``assistant/message`` holds a step's reasoning, text and tool-call blocks,
 and ``tool/result`` the result of a call. ``session/title`` names the
-conversation and ``model/selection`` its model.
+conversation and ``model/selection`` its model. A turn's ``turn_id`` is the
+id of its last assistant message, which the ACP session's updates carry
+too: a turn OpenProgram ran in the session is known by it.
 """
 from __future__ import annotations
 
@@ -96,7 +98,7 @@ def parse(conversation: Conversation) -> ExternalSession:
     session = ExternalSession(agent=DEEPSEEK_HARNESS, source_id=conversation.id,
                               path=conversation.path, cwd=conversation.cwd)
     tools: dict[str, ToolBlock] = {}
-    model = ""
+    model = provider = ""
     turn: Optional[Turn] = None
     for record in _records(conversation.path):
         kind = record.get("type")
@@ -106,6 +108,7 @@ def parse(conversation: Conversation) -> ExternalSession:
             session.cwd = session.cwd or record.get("cwd")
         elif kind == "model/selection" and isinstance(data, dict):
             model = str(data.get("model") or model)
+            provider = str(data.get("provider") or provider)
         elif kind == "session/title" and isinstance(data, dict) and data.get("title"):
             session.title = str(data["title"])
         elif kind == "user/message" and isinstance(data, dict):
@@ -122,6 +125,8 @@ def parse(conversation: Conversation) -> ExternalSession:
             message = data.get("message") or {}
             source = message.get("source") or {}
             turn.model = str(source.get("model") or turn.model or model)
+            if message.get("id"):
+                turn.turn_id = str(message["id"])
             for block in message.get("content") or []:
                 if not isinstance(block, dict):
                     continue
@@ -144,7 +149,7 @@ def parse(conversation: Conversation) -> ExternalSession:
                         tool.result = _text(block.get("content"))
                         tool.is_error = bool(block.get("isError"))
             turn.ended_at = ts or turn.ended_at
-    session.model = model
+    session.model, session.model_provider = model, provider
     if not session.title and session.turns:
         first = session.turns[0].user_text.strip().splitlines()[0]
         session.title = first[:80]

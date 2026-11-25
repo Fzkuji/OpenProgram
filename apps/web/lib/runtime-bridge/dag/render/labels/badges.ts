@@ -21,10 +21,10 @@ import { _currentHead } from "../../store/globals";
 // 字号/字重必须跟下面 <text> 实际画的一致（取 active 的 600 偏保守），
 // 否则量出来的宽度偏窄，文字贴边。
 const BADGE_FONT =
-  '600 10.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+  '600 10.5px "Inter Variable", "Inter", "PingFang SC", -apple-system, sans-serif';
 // agent 名牌用小一号：它是字形旁的标注，不是分支级按钮。
 const BADGE_FONT_SMALL =
-  '600 9px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+  '600 9px "Inter Variable", "Inter", "PingFang SC", -apple-system, sans-serif';
 
 interface PlacedBox { x1: number; x2: number; y1: number; y2: number }
 

@@ -1,4 +1,4 @@
-"""Outside coding agents that run a conversation's turns (Codex now; Claude Code and ACP agents next).
+"""Outside coding agents that run a conversation's turns (Codex, Claude Code, and DeepSeek Harness over ACP).
 
 A conversation whose model belongs to a harness provider (``codex-harness``)
 hands each turn to that agent's engine instead of OpenProgram's agent loop:
@@ -26,6 +26,8 @@ class HarnessEngine(Protocol):
 #: ends in ``-harness`` (``claude-code-harness``, ``<agent>-harness`` for ACP).
 _ENGINES: dict[str, tuple[str, str]] = {
     "codex-harness": ("openprogram.runtime.harnesses.codex.engine", "CodexEngine"),
+    "deepseek-harness": ("openprogram.runtime.harnesses.deepseek.engine", "DeepSeekHarnessEngine"),
+    "claude-code-harness": ("openprogram.runtime.harnesses.claude_code.engine", "ClaudeCodeEngine"),
 }
 _loaded: dict[str, HarnessEngine] = {}
 
@@ -60,7 +62,8 @@ def split_ref(model_ref: Optional[str]) -> tuple[Optional[str], Optional[str]]:
 
 
 #: The harness setting's value for each harness provider (``None`` is OpenProgram's own engine).
-HARNESS_IDS: dict[str, str] = {"codex-harness": "codex"}
+HARNESS_IDS: dict[str, str] = {"codex-harness": "codex", "deepseek-harness": "deepseek-harness",
+                               "claude-code-harness": "claude-code"}
 
 
 def provider_of(harness: Optional[str]) -> Optional[str]:

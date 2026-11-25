@@ -47,8 +47,8 @@ def model_ref(thread: codex_threads.Thread) -> Optional[str]:
     return GATEWAY_PREFIX + thread.model if thread.provider == GATEWAY_PROVIDER else thread.model
 
 
-def thread_records(row: dict, thread_id: str) -> list[dict]:
-    threads = (row.get(THREADS_FIELD) or {}).get(HARNESS_PROVIDER) or {}
+def thread_records(row: dict, thread_id: str, *, provider: str = HARNESS_PROVIDER) -> list[dict]:
+    threads = (row.get(THREADS_FIELD) or {}).get(provider) or {}
     return [r for r in threads.values() if isinstance(r, dict) and r.get("thread_id") == thread_id]
 
 
@@ -60,11 +60,12 @@ def _tip(records: list[dict], fallback: Optional[str]) -> Optional[str]:
     return max(seen, key=lambda r: float(r.get("at") or 0))["seen"]
 
 
-def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str], new_tip: str) -> None:
+def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str], new_tip: str,
+                   *, provider: str = HARNESS_PROVIDER) -> None:
     """Point the thread's records at ``new_tip``: each that was at the old tip, or the shared one."""
     def update(current: dict) -> dict:
         threads = dict(current or {})
-        records = dict(threads.get(HARNESS_PROVIDER) or {})
+        records = dict(threads.get(provider) or {})
         moved = False
         for key, record in list(records.items()):
             if isinstance(record, dict) and record.get("thread_id") == thread_id and record.get("seen") == old_tip:
@@ -73,7 +74,7 @@ def _write_records(store, session_id: str, thread_id: str, old_tip: Optional[str
         if not moved:
             records[SHARED_KEY] = {**dict(records.get(SHARED_KEY) or {}), "thread_id": thread_id,
                                    "seen": new_tip, "shared": True, "at": time.time(), "synced_at": time.time()}
-        threads[HARNESS_PROVIDER] = records
+        threads[provider] = records
         return threads
 
     store.update_session_dict(session_id, THREADS_FIELD, update)

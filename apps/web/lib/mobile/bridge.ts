@@ -30,3 +30,11 @@ export function mobileBridge(): MobileBridge | null {
 export function callMobile(action: "signedOut" | "computers" | "haptic", detail: Record<string, unknown> = {}): void {
   (window as unknown as Native).webkit?.messageHandlers?.openprogram?.postMessage({ action, ...detail });
 }
+
+/** A tap of the phone's haptic engine, in the app only, and only for
+ *  the person's own actions (Happy's rule): `light` for a send or a fold,
+ *  `medium` when a long press or a swipe arms, `selection` for a picker or
+ *  a switch, `success` when something is done (archived). */
+export function haptic(style: "light" | "medium" | "selection" | "success" = "light"): void {
+  if (mobileBridge()) callMobile("haptic", { style });
+}

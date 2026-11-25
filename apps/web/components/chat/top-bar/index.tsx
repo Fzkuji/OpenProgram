@@ -42,7 +42,7 @@ import { ModelMark } from "./chips/model-mark";
 import { MENU_PANEL } from "@/components/ui/menu/menu-styles";
 import { useBoundChat } from "./bound-chat";
 import { useHarness } from "./menus/harness-menu";
-import { gatewayModel, harnessProvider } from "@/lib/models/harnesses";
+import { gatewayModel, harnessProvider, listedModel } from "@/lib/models/harnesses";
 import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/tabs/top-bar-sync";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -96,20 +96,11 @@ function fmtAgentLabel(
   return nameById.get(`${provider ?? ""}:${bare}`) ?? nameById.get(bare) ?? bare;
 }
 
-/** The conversation's chat model chip. Which Agent it runs with is the
- *  neighbouring AgentConfigBadge. */
-export function AgentBadge({
-  id,
-  locked,
-  provider,
-  model,
-}: {
-  id: string;
-  locked: boolean;
-  provider?: string;
-  model?: string;
-}) {
-  const [open, setOpen] = useState(false);
+/** The conversation's model as the chip names it: the model the Agent
+ *  resolved to when one did, its display name, the provider whose mark it
+ *  shows, a mark when that provider needs action, and the harness it runs
+ *  in. Shared by the chip and the phone's settings sheet. */
+export function useChatModel(provider: string | undefined, model: string | undefined, harnessOpen = false) {
   const { text } = useTranslation();
   const { chatKey } = useBoundChat();
   const invocation = useSessionStore((state) => chatKey
@@ -118,24 +109,6 @@ export function AgentBadge({
     provider = invocation.resolvedModel.provider;
     model = invocation.resolvedModel.id;
   }
-
-  // A `topbar-close-menus` event (fired by another top-bar dropdown)
-  // closes this menu, so only one is ever open.
-  useEffect(() => {
-    const close = () => setOpen(false);
-    window.addEventListener("topbar-close-menus", close);
-    return () => window.removeEventListener("topbar-close-menus", close);
-  }, []);
-
-  function onOpenChange(next: boolean) {
-    if (locked) return;
-    if (next) {
-      window.dispatchEvent(new Event("topbar-close-menus"));
-      closeAllPopovers();
-    }
-    setOpen(next);
-  }
-
   // Enabled-models list (shared cache with the AgentSelector dropdown —
   // same PICKER_QUERY_KEY, so the menu adds no extra fetch) → id-to-display-name map
   // so the chip shows "GPT-5.5" instead of "openai-codex:gpt-5.5". Keyed
@@ -161,23 +134,83 @@ export function AgentBadge({
 
   // In a harness (Codex) the model is one of its own, named by its listing,
   // or an OpenProgram model run through it, which shows as that model.
-  const harness = useHarness(open);
+  const harness = useHarness(harnessOpen);
   const routed = harness.harness ? gatewayModel(model) : null;
   const markProvider = routed?.provider ?? provider;
   const harnessLabel = harness.harness && !routed
-    ? harness.entry?.models.find((m) => m.id === model)?.label ?? model ?? ""
+    // An unlisted one shows without its provider (DeepSeek Harness's ``provider:model``).
+    ? listedModel(harness.entry, model)?.label ?? (model ?? "").replace(/^[^:/]+:/, "")
     : null;
-
-  // Tooltip carries the "what is this chip" intro, so the chip itself
-  // shows only the provider's logo — plus the model name when one is set.
   const label = harnessLabel ?? (routed
     ? fmtAgentLabel(routed.provider, routed.model, nameById)
     : fmtAgentLabel(provider, model, nameById));
+  const providerLabel = (provider && enabledModels?.find((m) => m.provider === provider)?.providerLabel) || provider;
+  return { provider, model, label, mark, markProvider, harness, providerLabel };
+}
+
+/** The model menu's rows for a conversation's model (AgentSelector), in
+ *  whichever menu holds them: the chip's dropdown or the phone's sheet. */
+export function ChatModelMenuBody({ chat, onClose }: {
+  chat: ReturnType<typeof useChatModel>;
+  onClose: () => void;
+}) {
+  const { harness, provider, model } = chat;
+  return (
+    <AgentSelector
+      currentProvider={provider}
+      currentModel={model}
+      onClose={onClose}
+      harness={harness.harness ? {
+        id: harness.harness,
+        provider: harnessProvider(harness.harness) ?? provider ?? "",
+        entry: harness.entry,
+      } : undefined}
+    />
+  );
+}
+
+/** The conversation's chat model chip. Which Agent it runs with is the
+ *  neighbouring AgentConfigBadge. */
+export function AgentBadge({
+  id,
+  locked,
+  provider,
+  model,
+}: {
+  id: string;
+  locked: boolean;
+  provider?: string;
+  model?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { text } = useTranslation();
+  const chat = useChatModel(provider, model, open);
+  const { label, mark, markProvider } = chat;
+
+  // A `topbar-close-menus` event (fired by another top-bar dropdown)
+  // closes this menu, so only one is ever open.
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("topbar-close-menus", close);
+    return () => window.removeEventListener("topbar-close-menus", close);
+  }, []);
+
+  function onOpenChange(next: boolean) {
+    if (locked) return;
+    if (next) {
+      window.dispatchEvent(new Event("topbar-close-menus"));
+      closeAllPopovers();
+    }
+    setOpen(next);
+  }
+
+  // Tooltip carries the "what is this chip" intro, so the chip itself
+  // shows only the provider's logo — plus the model name when one is set.
   const tipBody = (
     <TipBody
       title={text(`Model: ${label || "none"}`, `模型：${label || "未选择"}`)}
       detail={mark
-        ? `${(provider && enabledModels?.find((m) => m.provider === provider)?.providerLabel) || provider} · ${mark.detail}`
+        ? `${chat.providerLabel} · ${mark.detail}`
         : text("Talks with you and plans the work. Click to change model.", "和你对话并规划工作。点击更换模型。")}
     />
   );
@@ -213,16 +246,7 @@ export function AgentBadge({
         onCloseAutoFocus={(e) => e.preventDefault()}
         className={cn(MENU_PANEL, PICKER_PANEL, "text-text-primary")}
       >
-        <AgentSelector
-          currentProvider={provider}
-          currentModel={model}
-          onClose={() => setOpen(false)}
-          harness={harness.harness ? {
-            id: harness.harness,
-            provider: harnessProvider(harness.harness) ?? provider ?? "",
-            entry: harness.entry,
-          } : undefined}
-        />
+        <ChatModelMenuBody chat={chat} onClose={() => setOpen(false)} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -480,8 +480,8 @@ function ChatRow({
         {asked ? <span className="truncate text-fs-base text-text-muted">{asked}</span> : null}
       </span>
       {conv.harness ? (
-        // The agent it runs in, dimmed, as the sidebar marks it.
-        <span className="flex shrink-0 text-text-muted opacity-60" aria-label={agentName(conv.harness) ?? conv.harness}>
+        // The agent it runs in, in its own colours, as the sidebar marks it.
+        <span className="flex shrink-0" aria-label={agentName(conv.harness) ?? conv.harness}>
           <AgentMark harness={conv.harness} size={14} fit="contain" />
         </span>
       ) : null}

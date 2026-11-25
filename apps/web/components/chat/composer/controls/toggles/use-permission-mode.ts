@@ -91,6 +91,63 @@ const HARNESS_LABELS: typeof MODE_LABELS = [
   },
 ];
 
+// Claude Code's own modes (runtime/harnesses/claude_code/engine.py PERMISSION_MODES).
+const CLAUDE_CODE_LABELS: typeof MODE_LABELS = [
+  {
+    value: "bypass", en: "Bypass permissions", zh: "跳过授权", key: "1",
+    enDesc: "Runs anything without asking",
+    zhDesc: "不经询问运行任何操作",
+  },
+  {
+    value: "auto", en: "Auto", zh: "自动", key: "2",
+    enDesc: "Claude Code decides which actions need asking",
+    zhDesc: "由 Claude Code 判断哪些操作需要询问",
+  },
+  {
+    value: "acceptEdits", en: "Accept edits", zh: "自动接受编辑", key: "3",
+    enDesc: "Edits files without asking; asks before commands",
+    zhDesc: "直接修改文件；运行命令前先询问",
+  },
+  {
+    value: "ask", en: "Ask", zh: "询问", key: "4",
+    enDesc: "Asks before edits and commands",
+    zhDesc: "修改和运行命令前都先询问",
+  },
+  {
+    value: "plan", en: "Plan", zh: "Plan", key: "5",
+    enDesc: "Plans without making changes",
+    zhDesc: "只做计划，不做修改",
+  },
+];
+
+// DeepSeek Harness's: it either runs its tools or asks for each one.
+const DEEPSEEK_HARNESS_LABELS: typeof MODE_LABELS = [
+  {
+    value: "bypass", en: "Full access", zh: "完全访问", key: "1",
+    enDesc: "Runs its tools without asking",
+    zhDesc: "不经询问运行工具",
+  },
+  {
+    value: "ask", en: "Ask", zh: "询问", key: "2",
+    enDesc: "Asks before each tool it runs",
+    zhDesc: "每次运行工具前先询问",
+  },
+];
+
+/** The modes a conversation's engine offers, named for what it does with each. */
+function labelsFor(harness: string | null): typeof MODE_LABELS {
+  if (harness === "claude-code") return CLAUDE_CODE_LABELS;
+  if (harness === "deepseek-harness") return DEEPSEEK_HARNESS_LABELS;
+  return harness ? HARNESS_LABELS : MODE_LABELS;
+}
+
+/** A stored mode as the engine's own menu shows it. */
+function shownMode(harness: string | null, stored: PermissionMode): PermissionMode {
+  if (harness === "deepseek-harness") return stored === "bypass" ? "bypass" : "ask";
+  if (harness && harness !== "claude-code" && stored === "plan") return "ask";
+  return stored;
+}
+
 const DEFAULT_MODE: PermissionMode = "bypass";
 
 export interface PermissionModeHook {
@@ -117,14 +174,15 @@ export function usePermissionMode(): PermissionModeHook {
   const { text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const chat = useSessionAgentSettings().chat;
-  const inHarness = !!(chat?.harness ?? harnessOf(chat?.provider));
+  const harnessId = chat?.harness ?? harnessOf(chat?.provider) ?? null;
+  const inHarness = !!harnessId;
   const stored = (
     settings.effective_permission
     || settings.permission_mode
     || DEFAULT_MODE
   ) as PermissionMode;
-  const mode: PermissionMode = inHarness && stored === "plan" ? "ask" : stored;
-  const options: PermissionModeOption[] = (inHarness ? HARNESS_LABELS : MODE_LABELS)
+  const mode: PermissionMode = shownMode(harnessId, stored);
+  const options: PermissionModeOption[] = labelsFor(harnessId)
     .filter((m) => inHarness || m.value !== "acceptEdits" || mode === "acceptEdits")
     .map((m) => ({
       value: m.value,

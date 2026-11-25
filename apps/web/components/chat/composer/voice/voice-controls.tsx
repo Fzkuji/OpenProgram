@@ -42,6 +42,7 @@ export function MicButton({ state, onToggle }: { state: VoiceState; onToggle: ()
       <button
         type="button"
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), styles.micBtn)}
+        data-composer-mic=""
         data-state={state}
         aria-pressed={active}
         aria-label={label}

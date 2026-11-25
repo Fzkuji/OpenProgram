@@ -41,6 +41,7 @@ import { chooseHarnessAgent, ensureChatSession, switchSessionHarness } from "@/l
 import {
   OPENPROGRAM_HARNESS,
   agentChoices,
+  agentName,
   defaultModel,
   harnessOf,
   unavailable,
@@ -186,44 +187,23 @@ export function HarnessBadge({ id }: { id: string }) {
 }
 
 function harnessLabel(harness: string): string {
-  return harness === "codex" ? "Codex" : harness;
+  return agentName(harness) ?? harness;
 }
 
 /** The Agent chip while a harness runs the conversation: the harness's own
  *  agent-like choices, stored on the branch like its other run settings. */
 export function HarnessAgentBadge({ id, state }: { id: string; state: HarnessState }) {
   const { text } = useTranslation();
-  const { sessionId, chatKey } = useBoundChat();
   const [open, setOpen] = useExclusiveOpen();
-  const choices = agentChoices(state.entry, state.model);
-  const currentId = state.agent ?? "default";
-  const current = state.entry?.agents.find((a) => a.id === currentId);
-  const label = current?.label ?? (state.entry ? text("Default", "默认") : "");
-
-  async function pick(agent: string) {
-    setOpen(false);
-    if (agent === currentId) return;
-    try {
-      const sid = await ensureChatSession(sessionId, chatKey);
-      if (sid) await chooseHarnessAgent(sid, agent);
-    } catch (e) {
-      showToast(text("Could not change the agent: ", "更换 Agent 失败：") + String(e), { tone: "error" });
-    }
-  }
-
-  const groups: { title: string; kind: string }[] = [
-    { title: text("Agent", "Agent"), kind: "default" },
-    { title: text("Profiles", "Profiles"), kind: "profile" },
-    { title: text("Personality", "性格"), kind: "personality" },
-  ];
-  const shown = groups.filter((g) => choices.some((a) => a.kind === g.kind));
+  const label = harnessAgentLabel(state, text);
+  const runner = agentName(state.harness) ?? state.entry?.label ?? state.harness ?? "";
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <HoverTip
         label={<TipBody
           title={text(`Agent: ${label}`, `Agent：${label}`)}
-          detail={text("What Codex runs this conversation with. Click to change.", "Codex 运行这个会话所用的设置。点击更换。")}
+          detail={text(`What ${runner} runs this conversation with. Click to change.`, `${runner} 运行这个会话所用的设置。点击更换。`)}
         />}
       >
         <DropdownMenuTrigger asChild>
@@ -244,18 +224,58 @@ export function HarnessAgentBadge({ id, state }: { id: string; state: HarnessSta
         onCloseAutoFocus={(e) => e.preventDefault()}
         className={cn(MENU_PANEL, "text-text-primary")}
       >
-        {shown.map((group, index) => (
-          <div key={group.kind}>
-            {index ? <DropdownMenuSeparator className={MENU_SEPARATOR} /> : null}
-            <div className={GROUP_LABEL}>{group.title}</div>
-            {choices.filter((a) => a.kind === group.kind).map((a) => (
-              <DropdownMenuItem key={a.id} onSelect={() => void pick(a.id)} className={cn(itemCls(false), MENU_ITEM_STATES)}>
-                <MenuRow label={a.label} checked={a.id === currentId} />
-              </DropdownMenuItem>
-            ))}
-          </div>
-        ))}
+        <HarnessAgentRows state={state} onPicked={() => setOpen(false)} />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** The harness agent a conversation runs with, as its chip and the phone's row name it. */
+export function harnessAgentLabel(state: HarnessState, text: (en: string, zh: string) => string): string {
+  const current = state.entry?.agents.find((a) => a.id === (state.agent ?? "default"));
+  return current?.label ?? (state.entry ? text("Default", "默认") : "");
+}
+
+/** A harness's agent choices, grouped by kind: the Agent chip's menu and the phone's Agent row. */
+export function HarnessAgentRows({ state, onPicked }: { state: HarnessState; onPicked: () => void }) {
+  const { text } = useTranslation();
+  const { sessionId, chatKey } = useBoundChat();
+  const choices = agentChoices(state.entry, state.model);
+  const currentId = state.agent ?? "default";
+
+  async function pick(agent: string) {
+    onPicked();
+    if (agent === currentId) return;
+    try {
+      const sid = await ensureChatSession(sessionId, chatKey);
+      if (sid) await chooseHarnessAgent(sid, agent);
+    } catch (e) {
+      showToast(text("Could not change the agent: ", "更换 Agent 失败：") + String(e), { tone: "error" });
+    }
+  }
+
+  const named = choices.some((a) => a.kind === "agent");
+  const groups: { title: string | null; kind: string }[] = [
+    // Beside Claude Code's named agents, its default needs no heading of its own.
+    { title: named ? null : text("Agent", "Agent"), kind: "default" },
+    { title: text("Profiles", "Profiles"), kind: "profile" },
+    { title: text("Personality", "性格"), kind: "personality" },
+    { title: text("Agents", "Agents"), kind: "agent" },
+  ];
+  const shown = groups.filter((g) => choices.some((a) => a.kind === g.kind));
+  return (
+    <>
+      {shown.map((group, index) => (
+        <div key={group.kind}>
+          {index ? <DropdownMenuSeparator className={MENU_SEPARATOR} /> : null}
+          {group.title ? <div className={GROUP_LABEL}>{group.title}</div> : null}
+          {choices.filter((a) => a.kind === group.kind).map((a) => (
+            <DropdownMenuItem key={a.id} onSelect={() => void pick(a.id)} className={cn(itemCls(false), MENU_ITEM_STATES)}>
+              <MenuRow label={a.label} checked={a.id === currentId} />
+            </DropdownMenuItem>
+          ))}
+        </div>
+      ))}
+    </>
   );
 }

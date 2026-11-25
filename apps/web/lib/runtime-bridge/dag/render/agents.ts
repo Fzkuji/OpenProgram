@@ -25,7 +25,7 @@ import { TILE_R, spawnName, tileFor } from "./tiles";
 import { seatOf as seat } from "./seat";
 
 const LAYER = "dag-agents";
-const BUBBLE_FONT = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif";
+const BUBBLE_FONT = "11px 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const BUBBLE_MAX = 260;
 const BUBBLE_H = 20;
 const MAIN = "";

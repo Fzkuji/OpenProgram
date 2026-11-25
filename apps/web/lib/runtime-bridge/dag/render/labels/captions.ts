@@ -19,7 +19,7 @@ import { TILE_R, tileFor } from "../tiles";
 import { seatOf as seat } from "../seat";
 
 const LAYER = "dag-captions";
-const FONT = "10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif";
+const FONT = "10.5px 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const GAP = 8;
 const MAX_W = 240;
 const MIN_W = 36;

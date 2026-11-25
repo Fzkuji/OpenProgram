@@ -87,6 +87,8 @@ class ExternalSession:
     title: str = ""
     turns: list[Turn] = field(default_factory=list)
     model: str = ""
+    #: The provider the agent ran ``model`` on, where the agent names one.
+    model_provider: str = ""
 
     @property
     def started_at(self) -> Optional[float]:

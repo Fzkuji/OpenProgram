@@ -507,6 +507,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/visual-system/surface-system.html",
             "reference/design/ui/state-layer.html",
             "reference/design/ui/phone-layout.html",
+            "reference/design/ui/phone-app.html",
             "reference/design/ui/visual-system/theme-system.html",
             "reference/design/ui/desktop/window-state.html",
             "reference/design/ui/workspace/center-canvas-layout.html",

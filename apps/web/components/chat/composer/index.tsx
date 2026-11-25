@@ -34,6 +34,7 @@ import { createPortal } from "react-dom";
 import { useBoundComposerSettings, useBoundSetComposerSettings } from "./state/use-composer-settings";
 import { settingOrigin } from "@/lib/session-store/branch-settings";
 import { useSessionStore } from "@/lib/session-store";
+import { PhoneComposerBar } from "./controls/phone-composer-bar";
 import { useAwaitingAnswer } from "@/lib/chat/decisions/answer-wait";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { getSocket } from "@/lib/runtime-bridge/state";
@@ -231,6 +232,12 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
   const modKey = platformKeys("⌘");
   // A touch phone has no Enter-with-modifier or Esc to hint at.
   const touchPhone = useTouchPhone();
+  // A touch phone shows where a chat runs (computer, folders) only until
+  // its first message; after that the details page holds it.
+  const hasMessages = useSessionStore((s) => {
+    const key = activeChatKey ?? currentSessionId;
+    return !!key && (s.messageOrder[key]?.length ?? 0) > 0;
+  });
   const fnFormActive = fnFormFunction !== null;
   // Decisions have their own output cards. Chat text always sends or queues
   // a message. While a run goes on the action button is Stop, draft or not:
@@ -686,9 +693,11 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           )
         : null}
       <div className={styles.decisionColumn}><PendingDecisionPanels sessionId={activeChatKey ?? currentSessionId} /></div>
-      <TuckRow tucked={tuck.tucked} side="above" onSettled={tuck.onSettled}>
-        <EnvironmentRow sessionId={currentSessionId} />
-      </TuckRow>
+      {touchPhone && hasMessages ? null : (
+        <TuckRow tucked={tuck.tucked} side="above" onSettled={tuck.onSettled}>
+          <EnvironmentRow sessionId={currentSessionId} />
+        </TuckRow>
+      )}
       {/* Messages typed during the run dock directly above the input box. */}
       <QueuedMessages key={activeChatKey ?? currentSessionId ?? "new"} sessionId={activeChatKey ?? currentSessionId} />
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
@@ -721,6 +730,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
         className={`${styles.inputWrapper} ${morphed ? styles.morphed : ""}`}
         data-tuckable={tuck.enabled ? "" : undefined}
         data-voice={voice.state !== "idle" ? voice.state : undefined}
+        data-phone-layout={touchPhone && !fnFormActive ? "" : undefined}
       >
         {pendingRecording ? (
           <RecordingTile
@@ -766,7 +776,10 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           idlePlaceholder={disconnected ? text(
             "Not connected. Messages wait and send once the connection is back.",
             "未连接。消息会排队，连接恢复后发送。",
-          ) : placeholder}
+          ) : placeholder ?? (touchPhone
+            // A phone has no `/` key in reach and no room for the hint.
+            ? hasMessages ? text("Reply…", "回复…") : text("Ask anything…", "想做什么…")
+            : undefined)}
           draftOwner={draftOwner ?? undefined}
           suggestion={nextPrompt.suggestion}
           onKeyDown={onKeyDown}
@@ -774,6 +787,28 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           slash={slash}
           fileMention={fileMention}
         />
+
+        {touchPhone && !fnFormActive ? (
+          <PhoneComposerBar
+            onPickImages={onPickImages}
+            webSearchEnabled={webSearchEnabled}
+            toggleWebSearch={toggleWebSearch}
+            fastEnabled={fastEnabled}
+            fastSupported={fastSupported}
+            toggleFast={toggleFast}
+            unattended={unattended}
+            toggleUnattended={toggleUnattended}
+            sandboxEnabled={sandbox}
+            sandboxAvailable={sandboxAvailable}
+            toggleSandbox={toggleSandbox}
+            chatAgent={chatAgent}
+            chatModel={chatModel}
+            noEnabledModels={noEnabledModels}
+            thinking={thinking}
+            thinkingOptions={thinkingOptions}
+            setThinking={setThinking}
+          />
+        ) : null}
 
         {/* Voice input: mic in the bottom-left corner, live level strip
             before send in the bottom-right. */}
@@ -787,6 +822,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
             size: "icon-sm",
           }))} ${styles.actionBtn} ${showStop ? "" : styles.sendBtn}`}
           onClick={showStop ? stop : onSendButtonClick}
+          data-composer-send=""
           disabled={isCancelling || (!showStop && sendDisabled)}
           data-fn-missing={
             !showStop && fnFormActive && missingFnParams.length > 0
@@ -830,11 +866,13 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
         )}
       </div>
       </div>{/* /.composerStack */}
-      <TuckRow tucked={tuck.tucked} side="below" onSettled={tuck.onSettled}>
-        <div ref={controlsRowRef} className={`${styles.controlsRow} composer-bottom-row`}>
-          {controlsCluster}
-        </div>
-      </TuckRow>
+      {touchPhone ? null : (
+        <TuckRow tucked={tuck.tucked} side="below" onSettled={tuck.onSettled}>
+          <div ref={controlsRowRef} className={`${styles.controlsRow} composer-bottom-row`}>
+            {controlsCluster}
+          </div>
+        </TuckRow>
+      )}
       {recordDialogOpen ? (
         <RecordDialog composer={recordingComposer} onClose={() => setRecordDialogOpen(false)} />
       ) : null}

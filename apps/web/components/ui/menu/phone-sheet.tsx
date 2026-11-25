@@ -79,20 +79,36 @@ export function PhoneSheetBack({ Item }: {
   );
 }
 
-/** Pointer handlers for a sheet: a downward swipe from its scrolled-to-top
- *  position closes every open sheet, the way a phone's sheets close. A
- *  sheet that is not a radix layer passes its own `close`. */
+/** Touch handlers for a sheet: from its scrolled-to-top position the sheet
+ *  follows a finger pulling it down, and closes when let go 64px down (it
+ *  settles back short of that), the way a phone's sheets close. A sheet
+ *  that is not a radix layer passes its own `close`. */
 export function usePhoneSheetSwipe(enabled: boolean, close?: () => void) {
-  const start = React.useRef<{ y: number; top: boolean } | null>(null);
+  const start = React.useRef<{ y: number; top: boolean; dy: number } | null>(null);
   return React.useMemo(() => enabled ? {
     onTouchStart(event: React.TouchEvent<HTMLElement>) {
-      start.current = { y: event.touches[0].clientY, top: event.currentTarget.scrollTop <= 0 };
+      start.current = { y: event.touches[0].clientY, top: event.currentTarget.scrollTop <= 0, dy: 0 };
+    },
+    onTouchMove(event: React.TouchEvent<HTMLElement>) {
+      const from = start.current;
+      if (!from?.top) return;
+      from.dy = Math.max(0, event.touches[0].clientY - from.y);
+      const el = event.currentTarget;
+      el.style.transition = "none";
+      el.style.transform = from.dy ? `translateY(${from.dy}px)` : "";
     },
     onTouchEnd(event: React.TouchEvent<HTMLElement>) {
       const from = start.current;
       start.current = null;
       if (!from?.top) return;
-      if (event.changedTouches[0].clientY - from.y < 64) return;
+      const el = event.currentTarget;
+      if (from.dy < 64) {
+        el.style.transition = "transform 200ms cubic-bezier(0.32, 0.72, 0, 1)";
+        el.style.transform = "";
+        return;
+      }
+      // The closing animation (phone.css) runs on from where the finger
+      // left the sheet: its keyframes name only the end.
       if (close) close();
       else closeAllSheets();
     },

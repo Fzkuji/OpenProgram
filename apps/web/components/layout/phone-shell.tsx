@@ -261,13 +261,16 @@ function useSingleTab(enabled: boolean) {
   }, [enabled]);
 }
 
-/** Mounted once by AppShell: the drawer's scrim and the phone effects. */
-export function PhoneShell() {
+/** Mounted once by AppShell: the drawer's scrim and the phone effects.
+ *  The phone app (components/phone/phone-app.tsx) has no drawers: it keeps
+ *  the keyboard-aware height and one tab. */
+export function PhoneShell({ drawers = true }: { drawers?: boolean }) {
   const phone = usePhoneViewport();
-  useDrawerSwipe(phone);
+  useDrawerSwipe(phone && drawers);
   useVisualViewportVars(phone);
-  useCloseOverlaysOnTabChange(phone);
+  useCloseOverlaysOnTabChange(phone && drawers);
   useSingleTab(useTouchPhone());
+  if (!drawers) return null;
   return (
     <div
       className="phone-scrim"

@@ -119,7 +119,7 @@ export function drawMarks(
 ) {
   const { scale, source } = options;
   const offset = options.offset ?? { x: 0, y: 0 };
-  const font = options.font ?? "Inter, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif";
+  const font = options.font ?? "Inter, 'PingFang SC', -apple-system, 'Segoe UI', sans-serif";
   ctx.save();
   ctx.translate(-offset.x, -offset.y);
   ctx.lineCap = "round";

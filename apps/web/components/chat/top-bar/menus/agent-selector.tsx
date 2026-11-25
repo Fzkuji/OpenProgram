@@ -82,7 +82,7 @@ import {
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import { ProviderKeys } from "./provider-keys";
 import { QuotaRing, QuotaRows, StateWord } from "./provider-quota";
-import { gatewayRef, type Harness } from "@/lib/models/harnesses";
+import { agentName, gatewayRef, listedModel, type Harness } from "@/lib/models/harnesses";
 import { HarnessUpdateRows } from "./harness-update";
 
 type EnabledModel = Awaited<ReturnType<typeof api.listEnabledModels>>[number];
@@ -145,7 +145,10 @@ export function AgentSelector({
       || status?.providers.find((p) => p.id === id)?.label || id;
   };
 
-  // In a harness, an OpenProgram model is that harness's gateway model.
+  // In a harness, an OpenProgram model is that harness's gateway model. Only
+  // Codex reaches OpenProgram's models (its gateway provider); Claude Code and
+  // DeepSeek Harness run only their own.
+  const gateway = !harness || harness.id === "codex";
   const pick = (provider: string, model: string) => harness
     ? pickModel(harness.provider, gatewayRef(provider, model))
     : pickModel(provider, model);
@@ -272,27 +275,31 @@ export function AgentSelector({
       {harness ? (
         <>
           {/* The harness's own models, then OpenProgram's run through it. */}
-          <div className={GROUP_LABEL}>{harness.entry?.label ?? harness.id}</div>
+          <div className={GROUP_LABEL}>{harness.entry?.label ?? agentName(harness.id) ?? harness.id}</div>
           {(harness.entry?.models ?? []).map((m) => (
             <DropdownMenuItem
               key={m.id}
               onSelect={() => void pickModel(harness.provider, m.id)}
               className={cn(itemCls(false), MENU_ITEM_STATES)}
             >
-              <MenuRow icon={<ModelMark provider={harness.provider} />} label={m.label} checked={currentProvider === harness.provider && currentModel === m.id} />
+              <MenuRow icon={<ModelMark provider={harness.provider} />} label={m.label} checked={currentProvider === harness.provider && listedModel(harness.entry, currentModel)?.id === m.id} />
             </DropdownMenuItem>
           ))}
           {harness.entry ? <HarnessUpdateRows harness={harness.entry} /> : null}
-          <DropdownMenuSeparator className={MENU_SEPARATOR} />
-          <div className={GROUP_LABEL}>{text("Through OpenProgram", "通过 OpenProgram")}</div>
+          {gateway ? (
+            <>
+              <DropdownMenuSeparator className={MENU_SEPARATOR} />
+              <div className={GROUP_LABEL}>{text("Through OpenProgram", "通过 OpenProgram")}</div>
+            </>
+          ) : null}
         </>
       ) : (
         /* Grammar-A header naming the dimension. */
         <div className={GROUP_LABEL}>{text("Models", "模型")}</div>
       )}
       {/* Nothing until the list arrives, or the empty-state note flashes. */}
-      {body}
-      {models && !noProvider ? (
+      {gateway ? body : null}
+      {gateway && models && !noProvider ? (
         <>
           <DropdownMenuSeparator className={MENU_SEPARATOR} />
           <DropdownMenuItem asChild className={cn(itemCls(false), MENU_ITEM_STATES, "no-underline")}>

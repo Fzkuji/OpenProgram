@@ -55,31 +55,22 @@ export function useOpenSession() {
   return { tab, sessionId, conv, title, saved };
 }
 
-export function SessionActionsMenu({
-  children,
-  leading,
-  tip,
-  compact = false,
-  align = "end",
-}: {
-  /** The trigger, passed to DropdownMenuTrigger asChild. */
-  children: ReactNode;
-  /** Rows above the session actions. */
-  leading?: ReactNode;
-  /** The trigger's hover tip. */
-  tip?: string;
-  /** A phone's menu: without "Use this view by default", which is a
-   *  setting rather than something done to this conversation. */
-  compact?: boolean;
-  align?: "start" | "center" | "end";
-}) {
-  const { t, text, locale } = useTranslation();
-  const { sessionId, conv, title, saved } = useOpenSession();
+/** What can be done to the open conversation, and the dialogs those
+ *  actions open (render `dialogs` once). Shared by the chat pane's menu
+ *  and the phone's details page. */
+export function useSessionActions(onDeleted?: () => void, forSessionId?: string | null) {
+  const { t, locale } = useTranslation();
+  // A given conversation (a row of the phone's list) or the open one.
+  const open = useOpenSession();
+  const given = useSessionStore((s) => (forSessionId ? s.conversations[forSessionId] : undefined)) as ConvSummary | undefined;
+  const sessionId = forSessionId ?? open.sessionId;
+  const conv = forSessionId ? given : open.conv;
+  const title = forSessionId ? given?.title || t("sidebar.untitled") : open.title;
+  const saved = forSessionId ? !!given : open.saved;
   const conversations = useSessionStore((s) => s.conversations);
   const upsertConversation = useSessionStore((s) => s.upsertConversation);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const transcriptView = useTranscriptView(sessionId);
   const defaultView = useDefaultTranscriptView();
 
@@ -117,6 +108,7 @@ export function SessionActionsMenu({
   function del() {
     if (!sessionId) return;
     deleteSessionAndRefocus(sessionId);
+    onDeleted?.();
   }
 
   // The letters on the rows work while the menu is open, as in the
@@ -128,6 +120,62 @@ export function SessionActionsMenu({
     a: () => setFlags({ archived: !conv?.archived }),
     d: () => setConfirmDelete(true),
   };
+  const dialogs = (
+    <>
+    {renaming ? (
+      <RenameDialog
+        initial={title}
+        onCancel={() => setRenaming(false)}
+        onSubmit={(next) => {
+          setRenaming(false);
+          rename(next);
+        }}
+      />
+    ) : null}
+    {confirmDelete ? (
+      <ConfirmDialog
+        title={t("sidebar.delete_chat")}
+        confirmLabel={t("sidebar.delete")}
+        destructive
+        description={
+          locale === "zh"
+            ? `确定要删除「${title}」吗？`
+            : `Are you sure you want to delete "${title}"?`
+        }
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          del();
+        }}
+      />
+    ) : null}
+    </>
+  );
+  return { sessionId, conv, title, saved, transcriptView, defaultView, actions, dialogs };
+}
+
+export function SessionActionsMenu({
+  children,
+  leading,
+  tip,
+  compact = false,
+  align = "end",
+}: {
+  /** The trigger, passed to DropdownMenuTrigger asChild. */
+  children: ReactNode;
+  /** Rows above the session actions. */
+  leading?: ReactNode;
+  /** The trigger's hover tip. */
+  tip?: string;
+  /** A phone's menu: without "Use this view by default", which is a
+   *  setting rather than something done to this conversation. */
+  compact?: boolean;
+  align?: "start" | "center" | "end";
+}) {
+  const { t, text } = useTranslation();
+  const { sessionId, conv, saved, transcriptView, defaultView, actions, dialogs } = useSessionActions();
+  const [menuOpen, setMenuOpen] = useState(false);
+
   function onMenuKey(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const action = actions[e.key.toLowerCase() as keyof typeof actions];
@@ -211,33 +259,7 @@ export function SessionActionsMenu({
           <DropdownMenuContent align={align} className={MENU_PANEL}>{leading}</DropdownMenuContent>
         ) : null}
       </DropdownMenu>
-    {renaming ? (
-      <RenameDialog
-        initial={title}
-        onCancel={() => setRenaming(false)}
-        onSubmit={(next) => {
-          setRenaming(false);
-          rename(next);
-        }}
-      />
-    ) : null}
-    {confirmDelete ? (
-      <ConfirmDialog
-        title={t("sidebar.delete_chat")}
-        confirmLabel={t("sidebar.delete")}
-        destructive
-        description={
-          locale === "zh"
-            ? `确定要删除「${title}」吗？`
-            : `Are you sure you want to delete "${title}"?`
-        }
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => {
-          setConfirmDelete(false);
-          del();
-        }}
-      />
-    ) : null}
+    {dialogs}
     </>
   );
 }

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 
 import pytest
 import zstandard
@@ -115,6 +117,19 @@ def test_a_deepseek_harness_log_reads_as_turns(apps) -> None:
     assert turn.reply_text() == "There is a.py." and turn.blocks[0] == {"type": "thinking", "text": "use ls"}
 
 
+def test_conversations_started_in_a_terminal_come_in(apps) -> None:
+    """``claude`` in a terminal writes ``entrypoint: cli``; the Agent SDK's and ``claude -p``'s stay out."""
+    apps.claude("app-1", 1)
+    for cli_id, entrypoint in (("term-1", "cli"), ("sdk-1", "sdk-cli")):
+        records = _claude_turns(1)
+        for record in records:
+            record["entrypoint"] = entrypoint
+            record["sessionId"] = cli_id
+        path = apps.claude_home / "projects" / "-work-repo" / f"{cli_id}.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    assert sorted(item.id for item in apps.items()) == ["app-1", "term-1"]
+
+
 def test_archived_conversations_stay_out(apps) -> None:
     apps.claude("old", 1, archived=True)
     apps.deepseek("session-1", DEEPSEEK_TURN, archived=True)
@@ -129,7 +144,9 @@ def test_app_conversations_arrive_and_follow_the_app(apps, store, tmp_path) -> N
     claude = results["claude-code"]["session_id"]
     row = store.get_session(claude)
     assert (row["source"], row["title"], row["model_override"]) == ("claude-code", "Fix the parser", "claude-test")
-    assert row.get("harness") is None  # a turn sent here runs in OpenProgram
+    # A turn sent here runs in the person's Claude Code, in the same session.
+    [record] = row["harness_threads"]["claude-code-harness"].values()
+    assert record["thread_id"] == "cli-1" and record["seen"] == row["head_id"]
     assert _texts(store, claude) == ["question 0", "answer 0"]
     assert store.get_session(results["deepseek-harness"]["session_id"])["source"] == "deepseek-harness"
     assert _sync(apps, store, tmp_path) == []  # nothing new: not read again
@@ -144,3 +161,61 @@ def test_app_conversations_arrive_and_follow_the_app(apps, store, tmp_path) -> N
     [result] = _sync(apps, store, tmp_path)
     assert (result["status"], result["turns_added"]) == ("appended", 1)
     assert _texts(store, claude) == ["question 0", "answer 0", "said here", "question 1", "answer 1"]
+
+
+def _reply(message_id, text, turn):
+    return {"type": "assistant/message", "data": {"turn": turn, "step": 0, "message": {
+        "id": message_id, "role": "assistant", "source": {"kind": "model", "model": "deepseek-flash"},
+        "content": [{"type": "text", "text": text}]}}}
+
+
+def _ask(text):
+    return {"type": "user/message", "data": {"role": "user", "source": {"kind": "user"},
+                                             "content": [{"type": "text", "text": text}]}}
+
+
+def test_a_deepseek_conversation_goes_on_in_its_session(apps, store, tmp_path) -> None:
+    """It runs on the DeepSeek Harness engine; the turns that engine ran are not written twice."""
+    first = [DEEPSEEK_TURN[0], _ask("one"), _reply("r1", "first", 0)]
+    apps.deepseek("session-1", first)
+    [result] = _sync(apps, store, tmp_path)
+    session_id = result["session_id"]
+    row = store.get_session(session_id)
+    config = row.get("branch_config") or {}
+    settings = next(iter(config.values()), config) if config and "harness" not in config else config
+    assert (row.get("harness") or settings.get("harness")) == "deepseek-harness"
+    assert (row.get("model_override") or settings.get("model_override")) == "deepseek-official:deepseek-flash"
+    [record] = row["harness_threads"]["deepseek-harness"].values()
+    assert record["thread_id"] == "session-1" and record["seen"] == row["head_id"]
+
+    # A turn ran here in the session (its reply r2), then one in the app (r3).
+    head = row["head_id"]
+    store.append_message(session_id, {"id": "mine", "role": "user", "content": "two", "parent_id": head,
+                                      "caller": "ROOT", "predecessor": head, "created_at": 2000})
+    store.append_message(session_id, {"id": "mine_reply", "role": "assistant", "content": "second",
+                                      "parent_id": "mine", "caller": "ROOT", "predecessor": "mine",
+                                      "created_at": 2001})
+    store.set_head(session_id, "mine_reply")
+    from openprogram.runtime.harnesses import handoff
+    handoff.write_record(store, session_id, "deepseek-harness", "b", {
+        "thread_id": "session-1", "seen": "mine_reply", "at": time.time() + 1, "own_turns": ["r2"]})
+    apps.deepseek("session-1", first + [_ask("two"), _reply("r2", "second", 1), _ask("three"), _reply("r3", "third", 2)])
+    for log in apps.dsh.glob("sessions/*/session-1/*"):
+        os.utime(log, (time.time() + 60, time.time() + 60))
+    [result] = _sync(apps, store, tmp_path)
+    assert result["turns_added"] == 1
+    assert _texts(store, session_id) == ["one", "first", "two", "second", "three", "third"]
+    records = store.get_session(session_id)["harness_threads"]["deepseek-harness"]
+    assert records["b"]["seen"] == store.get_session(session_id)["head_id"] and records["b"]["synced_at"]
+
+
+def test_a_conversation_synced_before_its_engine_is_put_on_it(apps, store, tmp_path) -> None:
+    apps.claude("cli-1", 1)
+    [result] = _sync(apps, store, tmp_path)
+    session_id = result["session_id"]
+    store.update_session(session_id, harness_threads={})
+    store.update_branch_config(session_id, None, {"harness": None, "provider_override": None})
+    assert _sync(apps, store, tmp_path) == []  # nothing new in the app
+    row = store.get_session(session_id)
+    [record] = row["harness_threads"]["claude-code-harness"].values()
+    assert record["thread_id"] == "cli-1" and record["seen"] == row["head_id"]

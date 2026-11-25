@@ -55,10 +55,10 @@ export function AgentConfigBadge({ id }: { id: string }) {
   return harness.harness ? <HarnessAgentBadge id={id} state={harness} /> : <OpenProgramAgentBadge id={id} />;
 }
 
-function OpenProgramAgentBadge({ id }: { id: string }) {
-  const [open, setOpen] = useState(false);
+/** The conversation's Agent: its name, the list to pick from, and the
+ *  pick itself; `onDone` closes whichever menu holds the rows. */
+export function useChatAgent(onDone: () => void) {
   const [error, setError] = useState("");
-  const { text } = useTranslation();
   const { sessionId, chatKey } = useBoundChat();
   const invocation = useSessionStore((state) => chatKey
     ? state.composerSettingsBySession[chatKey]?.agentInvocation : undefined);
@@ -67,13 +67,6 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
   const ownAgent = useSessionStore((state) => conversationAgentId(state, sessionId, chatKey));
   const { data: agents, refetch } = useAgents();
 
-  // One top-bar dropdown open at a time (same event as the model chip).
-  useEffect(() => {
-    const close = () => setOpen(false);
-    window.addEventListener("topbar-close-menus", close);
-    return () => window.removeEventListener("topbar-close-menus", close);
-  }, []);
-
   const fallback = agents?.find((agent) => agent.default);
   const currentId = ownAgent ?? fallback?.id;
   const current = agents?.find((agent) => agent.id === currentId);
@@ -81,20 +74,9 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
   const label = invocation?.label || current?.name || (agents ? currentId : "") || "";
   const alwaysOn = !!current?.always_on?.enabled;
 
-  function onOpenChange(next: boolean) {
-    if (next) {
-      window.dispatchEvent(new Event("topbar-close-menus"));
-      closeAllPopovers();
-      setError("");
-      // Agents saved elsewhere since the last look show up in the list.
-      void refetch();
-    }
-    setOpen(next);
-  }
-
   async function pick(agent: Agent) {
     if (agent.id === currentId && !invocation?.trial) {
-      setOpen(false);
+      onDone();
       return;
     }
     try {
@@ -111,7 +93,7 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
         }
         await setDraftAgent(key, agent.id);
       }
-      setOpen(false);
+      onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -119,6 +101,13 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
 
   const chatAgents = (agents ?? []).filter((agent) => !agent.always_on?.enabled);
   const liveAgents = (agents ?? []).filter((agent) => agent.always_on?.enabled);
+  return { label, current, currentId, invocation, alwaysOn, agents, chatAgents, liveAgents, pick, error, setError, refetch };
+}
+
+/** The Agent menu's rows, in the chip's dropdown or the phone's sheet. */
+export function ChatAgentMenuRows({ chat }: { chat: ReturnType<typeof useChatAgent> }) {
+  const { text } = useTranslation();
+  const { chatAgents, liveAgents, currentId, pick, error } = chat;
   const row = (agent: Agent) => (
     <DropdownMenuItem
       key={agent.id}
@@ -133,6 +122,55 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
       {agent.id === currentId ? <MenuCheck /> : <span className={CHECK_SLOT_PAD} />}
     </DropdownMenuItem>
   );
+
+  return (
+    <>
+        {/* Grouped by the always-on switch, as the Agents page is. */}
+        <div className={GROUP_LABEL}>{liveAgents.length ? text("Chat", "对话") : text("Agent", "Agent")}</div>
+        {chatAgents.map(row)}
+        {liveAgents.length ? (
+          <>
+            <DropdownMenuSeparator className={MENU_SEPARATOR} />
+            <div className={GROUP_LABEL}>{text("Always-on", "常驻")}</div>
+            {liveAgents.map(row)}
+          </>
+        ) : null}
+        {error ? <div className={cn(MENU_NOTE, MENU_NOTE_ERROR)}>{error}</div> : null}
+        <DropdownMenuSeparator className={MENU_SEPARATOR} />
+        <DropdownMenuItem
+          onSelect={() => navigate("/agents")}
+          className={cn(itemCls(false), MENU_ITEM_STATES)}
+        >
+          <span className="min-w-0 flex-1 truncate">{text("Manage Agents", "管理 Agents")}</span>
+          <span className={CHECK_SLOT_PAD} />
+        </DropdownMenuItem>
+    </>
+  );
+}
+
+function OpenProgramAgentBadge({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const { text } = useTranslation();
+  const chat = useChatAgent(() => setOpen(false));
+  const { label, current, currentId, invocation, alwaysOn, setError, refetch } = chat;
+
+  // One top-bar dropdown open at a time (same event as the model chip).
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("topbar-close-menus", close);
+    return () => window.removeEventListener("topbar-close-menus", close);
+  }, []);
+
+  function onOpenChange(next: boolean) {
+    if (next) {
+      window.dispatchEvent(new Event("topbar-close-menus"));
+      closeAllPopovers();
+      setError("");
+      // Agents saved elsewhere since the last look show up in the list.
+      void refetch();
+    }
+    setOpen(next);
+  }
 
   const tip = (
     <TipBody
@@ -167,25 +205,7 @@ function OpenProgramAgentBadge({ id }: { id: string }) {
         onCloseAutoFocus={(e) => e.preventDefault()}
         className={cn(MENU_PANEL, "text-text-primary")}
       >
-        {/* Grouped by the always-on switch, as the Agents page is. */}
-        <div className={GROUP_LABEL}>{liveAgents.length ? text("Chat", "对话") : text("Agent", "Agent")}</div>
-        {chatAgents.map(row)}
-        {liveAgents.length ? (
-          <>
-            <DropdownMenuSeparator className={MENU_SEPARATOR} />
-            <div className={GROUP_LABEL}>{text("Always-on", "常驻")}</div>
-            {liveAgents.map(row)}
-          </>
-        ) : null}
-        {error ? <div className={cn(MENU_NOTE, MENU_NOTE_ERROR)}>{error}</div> : null}
-        <DropdownMenuSeparator className={MENU_SEPARATOR} />
-        <DropdownMenuItem
-          onSelect={() => navigate("/agents")}
-          className={cn(itemCls(false), MENU_ITEM_STATES)}
-        >
-          <span className="min-w-0 flex-1 truncate">{text("Manage Agents", "管理 Agents")}</span>
-          <span className={CHECK_SLOT_PAD} />
-        </DropdownMenuItem>
+        <ChatAgentMenuRows chat={chat} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -145,6 +145,9 @@ class AppServer:
         self.exited = threading.Event()
         self.user_agent = ""
 
+    #: The program's name in the errors the person sees.
+    label = "Codex"
+
     # -- lifetime ---------------------------------------------------------
 
     def start(self) -> dict:
@@ -216,7 +219,7 @@ class AppServer:
             waiting = list(self._pending.values())
             self._pending.clear()
         for slot in waiting:
-            slot["error"] = AppServerError("Codex stopped", exited=True)
+            slot["error"] = AppServerError(f"{self.label} stopped", exited=True)
             slot["event"].set()
 
     # -- protocol ---------------------------------------------------------
@@ -224,14 +227,14 @@ class AppServer:
     def _write(self, message: Message) -> None:
         process = self._process
         if process is None or process.stdin is None or not self.alive:
-            raise AppServerError("Codex is not running", exited=True)
+            raise AppServerError(f"{self.label} is not running", exited=True)
         line = json.dumps(message, ensure_ascii=False) + "\n"
         with self._write_lock:
             try:
                 process.stdin.write(line.encode("utf-8"))
                 process.stdin.flush()
             except (OSError, ValueError) as exc:
-                raise AppServerError("Codex is not running", exited=True) from exc
+                raise AppServerError(f"{self.label} is not running", exited=True) from exc
 
     def request(self, method: str, params: Optional[dict] = None, *,
                 timeout: float = REQUEST_TIMEOUT_SECONDS) -> Any:
@@ -242,7 +245,7 @@ class AppServer:
         try:
             self._write({"id": request_id, "method": method, "params": params or {}})
             if not slot["event"].wait(timeout):
-                raise AppServerError(f"Codex did not answer {method}")
+                raise AppServerError(f"{self.label} did not answer {method}")
         finally:
             with self._pending_lock:
                 self._pending.pop(request_id, None)
@@ -250,8 +253,12 @@ class AppServer:
             error = slot["error"]
             if isinstance(error, AppServerError):
                 raise error
-            raise AppServerError(str(error.get("message") or error), code=error.get("code"),
-                                 data=error.get("data"))
+            message = str(error.get("message") or error)
+            data = error.get("data")
+            detail = data if isinstance(data, str) else (data or {}).get("message") if isinstance(data, dict) else None
+            if detail and str(detail) not in message:
+                message = f"{message}: {detail}"  # ACP puts the reason in ``data``
+            raise AppServerError(message, code=error.get("code"), data=data)
         return slot.get("result")
 
     def notify(self, method: str, params: Optional[dict] = None) -> None:
@@ -326,7 +333,10 @@ class AppServer:
             except Exception:  # noqa: BLE001 - one listener never stops the stream
                 _log.warning("Codex listener failed", exc_info=True)
         if not taken and "id" in message:
-            self.respond(message["id"], **default_answer(message))
+            self.respond(message["id"], **self.default_answer(message))
+
+    def default_answer(self, message: Message) -> dict:
+        return default_answer(message)
 
     def _read_stderr(self) -> None:
         process = self._process
@@ -402,9 +412,14 @@ def start_app_server(extra_args: Optional[list[str]] = None,
 class ProcessPool:
     """The app-server of each conversation, released when idle."""
 
-    def __init__(self, *, idle_seconds: float = IDLE_RELEASE_SECONDS) -> None:
+    def __init__(self, *, idle_seconds: float = IDLE_RELEASE_SECONDS,
+                 starter: Optional[Callable[[list[str], dict[str, str]], "AppServer"]] = None) -> None:
         self.idle_seconds = idle_seconds
+        # How a process is started: ``codex app-server`` unless another
+        # harness (DeepSeek Harness over ACP) pools its own processes.
+        self.starter = starter
         self._entries: dict[str, dict] = {}
+        self._loose: set = set()  # processes started for one turn while another held the key
         self._lock = threading.Lock()
         self._reaper: Optional[threading.Thread] = None
 
@@ -429,13 +444,24 @@ class ProcessPool:
                 return entry["server"], False
         if stale is not None:
             stale.close()
-        server = start_app_server(extra_args, env)
+        server = (self.starter or start_app_server)(extra_args, env)
         with self._lock:
+            current = self._entries.get(key)
+            if current is not None and current["server"].alive:
+                # Another turn started one first: this one serves this turn alone.
+                self._loose.add(server)
+                return server, True
             self._entries[key] = {"server": server, "launch": launch, "busy": 1, "used": time.monotonic()}
             self._ensure_reaper()
         return server, True
 
     def release(self, key: str, server: AppServer) -> None:
+        with self._lock:
+            loose = server in self._loose
+            self._loose.discard(server)
+        if loose:
+            server.close()
+            return
         with self._lock:
             entry = self._entries.get(key)
             if entry is not None and entry["server"] is server:
@@ -445,6 +471,7 @@ class ProcessPool:
     def discard(self, key: str, server: AppServer) -> None:
         """Forget and stop a process that failed; the next turn starts another."""
         with self._lock:
+            self._loose.discard(server)
             entry = self._entries.get(key)
             if entry is not None and entry["server"] is server:
                 self._entries.pop(key, None)
@@ -452,8 +479,9 @@ class ProcessPool:
 
     def close_all(self) -> None:
         with self._lock:
-            servers = [entry["server"] for entry in self._entries.values()]
+            servers = [entry["server"] for entry in self._entries.values()] + list(self._loose)
             self._entries.clear()
+            self._loose.clear()
         for server in servers:
             server.close()
 

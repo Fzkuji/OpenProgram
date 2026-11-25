@@ -5,10 +5,13 @@ The conversations of the Claude app's Code tab (its session list,
 transcript) and of the DeepSeek Harness app (``deepseek_harness``) are
 OpenProgram conversations too, mixed with its own: each becomes a session
 whose ``source`` names the app, and turns made in the app later are
-appended to it, after whatever was said here since. OpenProgram has no
-engine for these agents yet, so a turn sent here runs in OpenProgram: the
-conversation moves here and the app keeps its own copy. Codex, which has
-an engine, has its own two-way sync (``codex_sync``).
+appended to it, after whatever was said here since. A DeepSeek Harness
+or Claude conversation goes on in its own session, on that agent's engine
+(``runtime.harnesses.deepseek``, ``runtime.harnesses.claude_code``),
+whose record of the session is written here; the turns the engine ran are
+known by their ids (``own_turns``) and not written twice. Conversations
+started with ``claude`` in a terminal come in too. Codex has its own
+two-way sync (``codex_sync``).
 
 A conversation is read again only when the app records newer activity;
 an archived one is left out. The import ledger is shared with
@@ -26,13 +29,19 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import claude_code, deepseek_harness
-from .codex_sync import _project_of
+from .codex_sync import _project_of, _tip, _write_records, thread_records
 from .ledger import locked
 from .model import AGENT_LABELS, CLAUDE_CODE, DEEPSEEK_HARNESS, ExternalSession
 from .sanitize import remove_secret_values, remove_secrets
 from .writer import node_prefix, reply_id, write_turns
 
 _log = logging.getLogger(__name__)
+
+#: The engine each app's conversations go on in: (provider, harness setting).
+ENGINES = {
+    DEEPSEEK_HARNESS: ("deepseek-harness", "deepseek-harness"),
+    CLAUDE_CODE: ("claude-code-harness", "claude-code"),
+}
 
 
 @dataclass
@@ -53,7 +62,20 @@ def claude_app_dir() -> Path:
     return Path.home() / "Library" / "Application Support" / "Claude"
 
 
-def _claude_items(app_dir: Path, claude_home: Path) -> list[Item]:
+def _transcripts(claude_home: Path) -> dict[str, Path]:
+    """Every Claude Code transcript by session id; of copies in several project folders, the newest."""
+    found: dict[str, tuple[float, Path]] = {}
+    for path in (claude_home / "projects").glob("*/*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if path.stem not in found or mtime > found[path.stem][0]:
+            found[path.stem] = (mtime, path)
+    return {stem: path for stem, (_, path) in found.items()}
+
+
+def _claude_items(app_dir: Path, transcripts: dict[str, Path], archived: set[str]) -> list[Item]:
     items = []
     for meta_path in (app_dir / "claude-code-sessions").glob("*/*/local_*.json"):
         try:
@@ -61,9 +83,12 @@ def _claude_items(app_dir: Path, claude_home: Path) -> list[Item]:
         except (OSError, json.JSONDecodeError):
             continue
         cli_id = meta.get("cliSessionId")
-        if not cli_id or meta.get("isArchived"):
+        if not cli_id:
             continue
-        transcript = next((claude_home / "projects").glob(f"*/{cli_id}.jsonl"), None)
+        if meta.get("isArchived"):
+            archived.add(str(cli_id))
+            continue
+        transcript = transcripts.get(cli_id)
         if transcript is None:
             continue
         title = str(meta.get("title") or "")
@@ -86,9 +111,59 @@ def _deepseek_items(home: Path) -> list[Item]:
             for c in deepseek_harness.conversations(home)]
 
 
+#: A transcript's ``entrypoint``, by path: once written it never changes.
+_entrypoints: dict[str, str] = {}
+
+
+def _entrypoint(path: Path) -> Optional[str]:
+    """The ``entrypoint`` of the session's own records: a fork's copied records carry its parent's."""
+    key = str(path)
+    if key not in _entrypoints:
+        found = None
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for _, line in zip(range(200), fh):
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if (isinstance(record, dict) and record.get("entrypoint")
+                            and record.get("sessionId", path.stem) == path.stem):
+                        found = str(record["entrypoint"])
+                        break
+        except OSError:
+            return None
+        if found is None:
+            return None  # not written yet: read again next time
+        _entrypoints[key] = found
+    return _entrypoints[key]
+
+
+def _claude_cli_items(transcripts: dict[str, Path], listed: set[str]) -> list[Item]:
+    """Conversations started in a terminal with ``claude``: their transcripts say ``cli``.
+
+    Those run through the Agent SDK or ``claude -p`` (other programs' and this
+    engine's own) are left out, as Codex's ``exec`` threads are, and so are the
+    Claude app's own, archived ones too."""
+    found = []
+    for path in transcripts.values():
+        if path.stem in listed or _entrypoint(path) != "cli":
+            continue
+        try:
+            updated = path.stat().st_mtime
+        except OSError:
+            continue
+        found.append(Item(CLAUDE_CODE, path.stem, "", None, updated, lambda path=path: claude_code.parse(path)))
+    return found
+
+
 def items(*, claude_app: Optional[Path] = None, claude_home: Optional[Path] = None,
           dsh_home: Optional[Path] = None) -> list[Item]:
-    found = _claude_items(Path(claude_app or claude_app_dir()), Path(claude_home or claude_code.default_home()))
+    home = Path(claude_home or claude_code.default_home())
+    transcripts = _transcripts(home)
+    archived: set[str] = set()
+    found = _claude_items(Path(claude_app or claude_app_dir()), transcripts, archived)
+    found += _claude_cli_items(transcripts, {item.id for item in found} | archived)
     found += _deepseek_items(Path(dsh_home or deepseek_harness.default_home()))
     return found
 
@@ -98,21 +173,64 @@ def _create(store, item: Item, session: ExternalSession, agent_id: str) -> str:
     session_id = f"local_{uuid.uuid4()}"
     fields: dict[str, Any] = {"imported_from": {
         "agent": item.agent, "source_id": item.id, "path": str(session.path),
-        "cwd": session.cwd, "imported_at": time.time(),
+        "cwd": session.cwd, "imported_at": time.time(), "title": session.title or "",
     }}
     project_id = _project_of(session.cwd)
     if project_id:
         fields["project_id"] = project_id
     store.create_session(session_id, agent_id, title=session.title or AGENT_LABELS[item.agent],
                          source=item.agent, created_at=session.started_at or time.time(), **fields)
-    if session.model:
-        store.update_branch_config(session_id, None, {"model_override": session.model})
     last = write_turns(store, session_id, session)
     if last:
         store.set_head(session_id, last)
+        _link(store, session_id, item, session, last)
     store.update_session(session_id, updated_at=item.updated_at or session.updated_at or time.time())
     store.commit_turn(session_id, f"sync from {AGENT_LABELS[item.agent]}")
     return session_id
+
+
+def _model_ref(session: ExternalSession) -> Optional[str]:
+    if not session.model:
+        return None
+    return f"{session.model_provider}:{session.model}" if session.model_provider else session.model
+
+
+def _link(store, session_id: str, item: Item, session: ExternalSession, tip: str) -> None:
+    """Run the conversation on its agent's engine, in the agent's own session."""
+    provider, harness = ENGINES[item.agent]
+    values: dict[str, Any] = {"provider_override": provider, "harness": harness}
+    model = _model_ref(session)
+    if model:
+        values["model_override"] = model
+    store.update_branch_config(session_id, None, values)
+    _write_records(store, session_id, item.id, None, tip, provider=provider)
+
+
+def _unlinked(row: dict, item: Item) -> bool:
+    provider = ENGINES[item.agent][0]
+    return not ((row.get("harness_threads") or {}).get(provider))
+
+
+#: The branch settings a switch back to OpenProgram puts back (as the Harness chip keeps them).
+_RETURN_FIELDS = ("provider_override", "model_override", "thinking_effort")
+
+
+def _link_existing(store, session_id: str, item: Item, row: dict, entry: dict) -> None:
+    """Put a conversation synced before its agent had an engine on that engine.
+
+    Its session has seen the last turn synced from the app, not what was
+    said here since: the engine hands it those."""
+    from openprogram.state.store.session.branch_config import config_for_branch
+    provider, harness = ENGINES[item.agent]
+    current = config_for_branch(row, row.get("active_branch_id"))
+    values: dict[str, Any] = {"provider_override": provider, "harness": harness,
+                              "model_override": _model_ref(item.read()), "thinking_effort": None}
+    if not current.get("harness"):
+        values["harness_return"] = {key: current.get(key) for key in _RETURN_FIELDS}
+    store.update_branch_config(session_id, None, values)
+    tip = entry.get("last_node_id") or row.get("head_id")
+    if tip:
+        _write_records(store, session_id, item.id, None, tip, provider=provider)
 
 
 def _append(store, session_id: str, item: Item, session: ExternalSession, entry: dict) -> int:
@@ -120,10 +238,15 @@ def _append(store, session_id: str, item: Item, session: ExternalSession, entry:
     done = int(entry.get("turns") or 0)
     if done and (done > len(session.turns)
                  or session.turns[done - 1].fingerprint() != entry.get("last_fingerprint")):
-        return 0  # rewound in the app: what is here stays as it is
+        return -1  # rewound in the app: what is here stays as it is
     row = store.get_session(session_id) or {}
+    _retitle(store, session_id, row, session)
     tip = entry.get("last_node_id")
-    indices = list(range(done, len(session.turns)))
+    provider = ENGINES[item.agent][0]
+    records = thread_records(row, item.id, provider=provider)
+    tip = _tip(records, tip)
+    own = {t for r in records for t in (r.get("own_turns") or [])}
+    indices = [i for i in range(done, len(session.turns)) if not (own and session.turns[i].turn_id in own)]
     prefix = node_prefix(item.agent, item.id)
     # The last turn written may still have been running in the app then.
     if done and tip == reply_id(prefix, done - 1) and row.get("head_id") in (tip, None):
@@ -138,13 +261,47 @@ def _append(store, session_id: str, item: Item, session: ExternalSession, entry:
     if not last:
         return 0
     store.set_head(session_id, last)
+    if last != tip:
+        # The session has these turns: the engine hands it only what follows.
+        _write_records(store, session_id, item.id, tip, last, provider=provider)
     store.update_session(session_id, updated_at=item.updated_at or time.time())
     store.commit_turn(session_id, f"sync from {AGENT_LABELS[item.agent]}")
     return len([i for i in indices if i >= done])
 
 
+def _retitle(store, session_id: str, row: dict, session: ExternalSession) -> None:
+    """The app's newer title (it names a conversation after its first turn), unless renamed here."""
+    imported = row.get("imported_from") if isinstance(row.get("imported_from"), dict) else {}
+    synced = imported.get("title")
+    if synced is None or not session.title or session.title == synced or row.get("title") != synced:
+        return
+    store.update_session(session_id, title=session.title, imported_from={**imported, "title": session.title})
+
+
+def _running(item: Item) -> bool:
+    """An engine turn is running in the conversation's agent session right now."""
+    from .engine_turns import is_running
+    return is_running((ENGINES[item.agent][0], item.id))
+
+
+def _engine_threads(store, agent: str) -> set[str]:
+    """Every agent session an engine ran a conversation in."""
+    provider = ENGINES[agent][0]
+    threads: set[str] = set()
+    try:
+        # Every conversation: one switched back to OpenProgram still owns its agent sessions.
+        rows = store.list_sessions(limit=1_000_000, include_archived=True)
+    except Exception:  # noqa: BLE001
+        return threads
+    for listed in rows or []:
+        row = store.get_session(listed.get("id")) or {}
+        records = (row.get("harness_threads") or {}).get(provider) or {}
+        threads.update(str(r.get("thread_id")) for r in records.values() if isinstance(r, dict) and r.get("thread_id"))
+    return threads
+
+
 def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[str] = None,
-         found: Optional[list[Item]] = None) -> list[dict[str, Any]]:
+         found: Optional[list[Item]] = None, settle: float = 0.0) -> list[dict[str, Any]]:
     """Bring every changed conversation in; one row per conversation that changed."""
     from .service import _default_agent_id, _default_store
     store = store or _default_store()
@@ -152,13 +309,35 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
     results: list[dict[str, Any]] = []
     if not found:
         return results
+    engine_threads: dict[str, set[str]] = {}
     with locked(ledger_root) as ledger:
         for item in found:
             entry = ledger.get(item.agent, item.id) or {}
             seen_at = float(entry.get("last_message_at") or 0)
             session_id = entry.get("session_id")
-            alive = bool(session_id) and store.get_session(session_id) is not None
+            row = store.get_session(session_id) if session_id else None
+            alive = row is not None
+            if entry.get("engine"):
+                continue
+            if not alive and not entry:
+                # A session an engine started or forked here is that conversation's, not a new one.
+                if item.agent not in engine_threads:
+                    engine_threads[item.agent] = _engine_threads(store, item.agent)
+                if item.id in engine_threads[item.agent]:
+                    ledger.put(item.agent, item.id, {"engine": True})  # known from now on, even once deleted
+                    continue
+            if alive and _unlinked(row, item):
+                try:
+                    _link_existing(store, session_id, item, row, entry)  # synced before its engine existed
+                except Exception:  # noqa: BLE001 - tried again next time
+                    _log.warning("%s conversation %s not put on its engine", item.agent, item.id, exc_info=True)
             if (alive or entry.get("empty")) and item.updated_at <= seen_at + 0.5:
+                continue
+            if alive and _running(item):
+                continue  # its turn is still being written by an engine here: read it once that ends
+            if settle and time.time() - item.updated_at < settle:
+                # Still being written: read once it rests, not on every poll while it streams.
+                results.append({"agent": item.agent, "source_id": item.id, "status": "deferred"})
                 continue
             try:
                 session = remove_secrets(item.read())
@@ -168,6 +347,11 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
                     continue
                 if alive:
                     added = _append(store, session_id, item, session, entry)
+                    if added < 0:
+                        # Rewound in the app: the ledger stays at what was written, so turns
+                        # added later are never put after ones the app took back.
+                        ledger.put(item.agent, item.id, {**entry, "last_message_at": item.updated_at})
+                        continue
                     status = "appended" if added else "unchanged"
                 else:
                     session_id = _create(store, item, session, agent_id or _default_agent_id())
@@ -191,6 +375,9 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
 
 #: How often the apps' lists are checked for a change.
 POLL_SECONDS = 10.0
+#: How long a conversation's file rests before it is read: a session that is
+#: streaming is parsed once it pauses, not on every poll.
+SETTLE_SECONDS = 4.0
 
 
 def _stamp(found: list[Item]) -> tuple:
@@ -211,9 +398,11 @@ async def run_sync(stop, notify) -> None:
             stamp = _stamp(found)
             if stamp != seen:
                 seen = stamp
-                results = await asyncio.to_thread(sync, found=found)
+                results = await asyncio.to_thread(sync, found=found, settle=SETTLE_SECONDS)
                 if any(r.get("status") in ("created", "appended") for r in results):
                     notify()
+                if any(r.get("status") == "deferred" for r in results):
+                    seen = ()  # what was left until it rests is read on the next poll
         except Exception:  # noqa: BLE001 - the next change tries again
             _log.warning("app conversations not synced", exc_info=True)
         try:

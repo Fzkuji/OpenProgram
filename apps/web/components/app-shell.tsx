@@ -8,6 +8,8 @@ import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { PhoneShell } from "./layout/phone-shell";
+import { PhoneApp } from "./phone/phone-app";
+import { useTouchPhone } from "@/lib/layout/phone";
 import { useHoldsOwnConversation } from "./applications/application-conversation";
 import { ControlTips } from "./control-tips";
 import { CenterTabStrip } from "./center-tabs/strip/center-tab-strip";
@@ -480,6 +482,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // only from the web-tab pane would leave Cmd+T dead until a web tab was
   // opened once. First frame renders the browser layout, then snaps to
   // desktop — acceptable one-time flash inside Electron.
+  const touchPhone = useTouchPhone();
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     const bridge = desktopBridge();
@@ -627,6 +630,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return <BuiltinTabPane page={tab.page} />;
     }
     return null;
+  }
+
+  // A touch phone gets a phone app's structure (components/phone/), not
+  // this window: every hook above still runs, so routing, the socket and
+  // the stores behave as on the desktop.
+  if (touchPhone) {
+    return (
+      <>
+        <PhoneApp>{children}</PhoneApp>
+        <PhoneShell drawers={false} />
+        <LegacyTopbarBridge />
+        <ToastHost />
+        <VersionNotices />
+        <RewindDialog />
+        <RewindPicker />
+      </>
+    );
   }
 
   return (

@@ -15,6 +15,8 @@ _log = logging.getLogger(__name__)
 
 #: How long one reading of a harness is reused.
 CACHE_SECONDS = 300.0
+#: How soon a reading that found no models is read again.
+RETRY_SECONDS = 15.0
 
 _cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
@@ -107,7 +109,143 @@ def read_codex() -> dict:
     return entry
 
 
-_READERS = {"codex": read_codex}
+def _probe_dir() -> "Path":
+    from pathlib import Path
+    try:
+        from openprogram.state.paths import get_state_dir
+        root = Path(get_state_dir())
+    except Exception:  # noqa: BLE001
+        import tempfile
+        root = Path(tempfile.gettempdir())
+    folder = root / "cache" / "deepseek-harness-probe"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _forget_dsh_session(session_id: str) -> None:
+    """Remove a session the listing opened only to read its options."""
+    import shutil
+    from openprogram.runtime.harnesses.deepseek.client import dsh_home
+    home = dsh_home()
+    for folder in (home / "sessions").glob(f"*/{session_id}"):
+        shutil.rmtree(folder, ignore_errors=True)
+        try:
+            folder.parent.rmdir()  # the probe folder's own, when it is empty
+        except OSError:
+            pass
+    (home / "storages" / "session_projcache" / "sessions" / f"{session_id}.json").unlink(missing_ok=True)
+
+
+def read_deepseek() -> dict:
+    """What DeepSeek Harness on this computer is: installed, version, sign-in and models.
+
+    Its models are what a session offers: the ones a turn here last saw, or
+    else those of a session opened for the reading and removed again."""
+    from openprogram.runtime.harnesses.deepseek import client
+
+    entry: dict[str, Any] = {
+        "id": "deepseek-harness", "provider": "deepseek-harness", "label": "DeepSeek Harness",
+        "installed": False, "version": "", "signedIn": False, "models": [],
+        # Its agent is its own; the Agent chip shows it as Default.
+        "agents": [{"id": "default", "label": "Default", "kind": "default", "default": True}],
+    }
+    if client.binary_path() is None:
+        return entry
+    entry["installed"] = True
+    entry["version"] = client.app_version()
+    entry["signedIn"] = client.signed_in()
+    options = _seen_options.get("deepseek-harness")
+    if options is None:
+        try:
+            server = client.start_acp_server()
+        except (client.AppServerError, OSError) as exc:
+            _log.info("DeepSeek Harness could not be read: %s", exc)
+            entry["error"] = "not_started"
+            return entry
+        session_id = None
+        try:
+            answer = server.request("session/new", {"cwd": str(_probe_dir()), "mcpServers": []}, timeout=60) or {}
+            session_id = answer.get("sessionId")
+            options = answer.get("configOptions") or []
+            if session_id:
+                try:
+                    server.request("session/close", {"sessionId": session_id}, timeout=15)
+                except client.AppServerError:
+                    pass
+        except client.AppServerError as exc:
+            _log.info("DeepSeek Harness models could not be read: %s", exc)
+            options = []
+        finally:
+            server.close()
+            if session_id:
+                _forget_dsh_session(session_id)
+        if options:
+            _seen_options["deepseek-harness"] = options  # the next reading opens no session
+    entry["models"] = client.read_options(options)[0]
+    return entry
+
+
+#: The config options a live session of each harness last offered.
+_seen_options: dict[str, list] = {}
+
+
+def remember_options(harness_id: str, options: list) -> None:
+    """Keep the models a session offered as the harness's listing."""
+    if not options:
+        return
+    _seen_options[harness_id] = options
+    with _cache_lock:
+        cached = _cache.get(harness_id)
+    if cached and harness_id == "deepseek-harness":
+        from openprogram.runtime.harnesses.deepseek.client import read_options
+        entry = {**cached[1], "models": read_options(options)[0]}
+        with _cache_lock:
+            _cache[harness_id] = (cached[0], entry)
+
+
+def read_claude_code() -> dict:
+    """What Claude Code on this computer is: installed, version, sign-in, models and agents.
+
+    Read from its ``initialize`` answer, which starts no turn (T3 Code merges
+    the same answer's models into its own list)."""
+    from openprogram.runtime.harnesses.claude_code import client
+
+    entry: dict[str, Any] = {
+        "id": "claude-code", "provider": "claude-code-harness", "label": "Claude Code",
+        "installed": False, "version": "", "signedIn": False, "models": [], "agents": [],
+    }
+    binary = client.binary_path()
+    if binary is None:
+        return entry
+    entry["installed"] = True
+    entry["version"] = client.binary_version(binary)
+    try:
+        answer = client.read_listing(binary)
+    except (client.ClaudeError, OSError) as exc:
+        _log.info("Claude Code could not be read: %s", exc)
+        entry["error"] = "not_started"
+        return entry
+    # Whether it is signed in, from the kind of sign-in it reports; no credential is read.
+    # The Claude app hands its own Claude Code a sign-in that a separate start does not have.
+    account = answer.get("account") or {}
+    entry["signedIn"] = (str(account.get("tokenSource") or "none") != "none"
+                         or str(account.get("apiProvider") or "firstParty") != "firstParty")
+    entry["models"] = [{
+        "id": str(row.get("value")), "label": str(row.get("displayName") or row.get("value")),
+        "default": row.get("value") == "default",
+        "efforts": [str(level) for level in row.get("supportedEffortLevels") or []],
+        "default_effort": None, "images": True, "personality": False,
+    } for row in answer.get("models") or [] if isinstance(row, dict) and row.get("value")]
+    agents = [{"id": "default", "label": "Default", "kind": "default", "default": True}]
+    for agent in answer.get("agents") or []:
+        name = agent.get("name") if isinstance(agent, dict) else agent
+        if name:
+            agents.append({"id": f"agent:{name}", "label": str(name), "kind": "agent"})
+    entry["agents"] = agents
+    return entry
+
+
+_READERS = {"codex": read_codex, "claude-code": read_claude_code, "deepseek-harness": read_deepseek}
 
 
 def list_harnesses(*, refresh: bool = False) -> list[dict]:
@@ -133,8 +271,11 @@ def read_harness(harness_id: str, *, refresh: bool = False) -> dict:
         if cached and (not refresh or time.monotonic() - cached[0] < 1.0):
             return cached[1]
         entry = _READERS[harness_id]()
+        read_at = time.monotonic()
+        if entry.get("installed") and not entry.get("models"):
+            read_at -= CACHE_SECONDS - RETRY_SECONDS  # a reading that found no models is tried again soon
         with _cache_lock:
-            _cache[harness_id] = (time.monotonic(), entry)
+            _cache[harness_id] = (read_at, entry)
         return entry
 
 
@@ -146,10 +287,21 @@ def harness_model(provider: str, model_id: Optional[str]) -> Optional[dict]:
         entry = cached[1] if cached else None
         if entry is None or entry.get("provider") != provider:
             continue
-        for model in entry.get("models") or []:
+        models = entry.get("models") or []
+        for model in models:
             if model.get("id") == model_id:
                 return model
+        alias = listed_alias(models, model_id)
+        if alias is not None:
+            return alias
     return None
+
+
+def listed_alias(models: list[dict], model_id: Optional[str]) -> Optional[dict]:
+    """The listed model a full id belongs to: Claude Code lists ``opus``, a transcript says ``claude-opus-5-5``."""
+    tokens = set(str(model_id or "").lower().replace("[", "-").replace("]", "-").split("-"))
+    found = [m for m in models if str(m.get("id") or "").lower() in tokens]
+    return found[0] if len(found) == 1 else None
 
 
 def cached_harness(provider: str) -> Optional[dict]:
@@ -163,8 +315,9 @@ def cached_harness(provider: str) -> Optional[dict]:
 
 def warm(provider: str) -> None:
     """Read the harness behind ``provider`` in the background."""
+    from openprogram.runtime.harnesses import HARNESS_IDS
     for harness_id in _READERS:
-        if harness_id == provider.removesuffix("-harness"):
+        if harness_id == HARNESS_IDS.get(provider):
             threading.Thread(target=read_harness, args=(harness_id,), daemon=True,
                              name=f"harness-read-{harness_id}").start()
 

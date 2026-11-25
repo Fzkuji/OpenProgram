@@ -1,9 +1,10 @@
 <title>Harness Engines</title>
-<meta name="description" content="How a chat runs on Codex instead of OpenProgram's own agent loop: the Harness chip, where a turn is handed over, how Codex's items become cards, live approvals, Stop and steering, threads per branch and the handoff when the engine changes. Decisions taken from T3 Code and Paseo.">
+<meta name="description" content="How a chat runs on Codex, Claude Code or DeepSeek Harness instead of OpenProgram's own agent loop: the Harness chip, where a turn is handed over, how Codex's items become cards, live approvals, Stop and steering, threads per branch and the handoff when the engine changes. Decisions taken from T3 Code and Paseo.">
 <meta name="covers" content="openprogram/runtime/harnesses/ openprogram/runtime/permissions/approvals/live.py openprogram/interfaces/server/routes/execution/harnesses.py">
 <h1>Harness Engines</h1>
 
-<p>A conversation can be run by an outside coding agent instead of OpenProgram's own agent loop. The agent makes the model calls and runs its own tools in its own sandbox; OpenProgram shows what it does, asks the person its approvals and keeps the record. Codex is the first engine; Claude Code and ACP agents follow the same shape.</p>
+<p>A conversation can be run by an outside coding agent instead of OpenProgram's own agent loop. The agent makes the model calls and runs its own tools in its own sandbox; OpenProgram shows what it does, asks the person its approvals and keeps the record.</p>
+<p>The engines are Codex, Claude Code and DeepSeek Harness (over ACP); other ACP agents follow the same shape.</p>
 
 <figure>
 <svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="A chat turn passes admission, the run slot and the stream tap as usual. At run_loop_blocking it goes either to OpenProgram's agent loop or to the conversation's harness engine. The Codex engine drives codex app-server over JSON-RPC and turns its items into the same stream events; approvals become live waits answered in the chat.">
@@ -66,6 +67,10 @@
 <tr><th scope="row">Permission</th><td>Unchanged</td><td>Read Only (untrusted, read-only sandbox), Ask for Approval (on-request, workspace-write), Auto (on-request with auto review), Full Access (never, full access); Plan is hidden and runs as Read Only</td></tr>
 </tbody>
 </table>
+<dl class="pairs">
+<dt>Claude Code</dt><dd>Model lists its own aliases; a full id from a synced transcript shows as its alias. No Through OpenProgram. Agent lists Default and its named agents. Permission offers Bypass permissions, Auto, Accept edits, Ask and Plan; approving its plan puts the menu back on the mode before Plan, as OpenProgram's own plan mode does.</dd>
+<dt>DeepSeek Harness</dt><dd>Model lists its session's models without the provider prefix. No Through OpenProgram. Permission offers Full access and Ask.</dd>
+</dl>
 <p>The harness is a run setting of the branch beside model, effort and permission. Switching to Codex takes its default model and agent and remembers the OpenProgram model and effort; switching back restores them.</p>
 
 <h2 id="turn">One Codex turn</h2>
@@ -102,6 +107,55 @@
 </tbody>
 </table>
 
+<h2 id="deepseek">DeepSeek Harness over ACP</h2>
+<p>DeepSeek Harness is the second engine (<code translate="no">runtime/harnesses/deepseek/</code>). It is driven as an Agent Client Protocol client: <code translate="no">dsh --profile acp</code>, one process per conversation, the same line protocol and process pool as Codex. Its sessions are saved with the DeepSeek Harness app's own and use the app's sign-in.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">ACP</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness chip</th><td>DeepSeek Harness with its app version; Not Installed without the app or <code translate="no">dsh</code>, Not Signed In without saved credentials</td></tr>
+<tr><th scope="row">Model, Effort</th><td>What a session's <code translate="no">configOptions</code> offer (<code translate="no">model</code>, <code translate="no">reasoning_effort</code>), set per turn with <code translate="no">session/set_config_option</code>. A model is <code translate="no">&lt;provider&gt;:&lt;model&gt;</code>; an effort the session lacks becomes the nearest it has. The list is read once from a session opened and removed again, then from each turn's session</td></tr>
+<tr><th scope="row"><code translate="no">agent_thought_chunk</code>, <code translate="no">agent_message_chunk</code></td><td>Thinking and text; each message is a passage of its own</td></tr>
+<tr><th scope="row"><code translate="no">tool_call</code>, <code translate="no">tool_call_update</code></td><td>A card named by the tool, its <code translate="no">rawInput</code> as input and its content as result</td></tr>
+<tr><th scope="row"><code translate="no">usage_update</code></td><td>Context meter</td></tr>
+<tr><th scope="row"><code translate="no">session/request_permission</code></td><td>Full Access allows it; any other mode asks with the usual question card (Allow → <code translate="no">allow-once</code>, Deny → <code translate="no">reject-once</code>)</td></tr>
+<tr><th scope="row">Stop</th><td><code translate="no">session/cancel</code>, sent once the prompt is out; the process is stopped when the turn does not end within a few seconds</td></tr>
+<tr><th scope="row">Errors</th><td>A failed prompt is the turn's error with DeepSeek's message (an empty balance reads as a rate limit)</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Branch</dt><dd>Keeps its session id, folder, the last message the session saw and the ids of the messages it wrote here.</dd>
+<dt>New branch</dt><dd>ACP has no fork, so it starts a session with the handoff transcript, as does a session that no longer resumes. A session resumes only in the folder it was made in.</dd>
+<dt>In the app</dt><dd>Sessions started here are saved by DeepSeek Harness but not listed in its app, which lists only those its own workspaces made.</dd>
+</dl>
+
+<h2 id="claude-code">Claude Code</h2>
+<p>The person's own Claude Code runs the turn (<code translate="no">runtime/harnesses/claude_code/</code>): <code translate="no">claude -p</code> in stream-JSON mode, the protocol Anthropic's Agent SDK speaks to it. Claude Code signs in and calls the model itself; OpenProgram never reads its credentials or calls Anthropic for it.</p>
+<table class="stack">
+<thead><tr><th scope="col">Question</th><th scope="col">T3 Code</th><th scope="col">Paseo</th><th scope="col">magpie</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Way in</th><td>Agent SDK</td><td>Agent SDK</td><td>CLI stream-JSON</td><td>CLI stream-JSON (no Node SDK in a Python server); the same messages and control requests</td></tr>
+<tr><th scope="row">Which Claude Code</th><td><code translate="no">claude</code> on PATH</td><td><code translate="no">claude</code> on PATH</td><td>Found or downloaded</td><td><code translate="no">OPENPROGRAM_CLAUDE_BINARY</code>, the newest build the Claude app installed, <code translate="no">~/.claude/local</code>, <code translate="no">~/.local/bin</code>, PATH</td></tr>
+<tr><th scope="row">Sign-in</th><td>The user's own</td><td>The user's own</td><td>Reads and switches logins</td><td>T3 and Paseo: the user's own; Not Signed In until <code translate="no">claude auth login</code>. The Claude app's own sign-in is never taken</td></tr>
+<tr><th scope="row">Process</th><td>One per conversation, 2 idle minutes</td><td>One per agent, 60 idle minutes</td><td>One per caller</td><td>One per conversation branch, 30 idle minutes; another session, folder or agent starts another</td></tr>
+<tr><th scope="row">Model, effort, mode</th><td><code translate="no">setModel</code>, <code translate="no">applyFlagSettings</code>; restart for policy</td><td>Same, plus <code translate="no">setPermissionMode</code></td><td>Settings file</td><td>Paseo's: all three change in the running process; started with full access allowed</td></tr>
+<tr><th scope="row">Models, agents</th><td>Manifest plus <code translate="no">initialize</code></td><td><code translate="no">supportedModels()</code> plus manifest</td><td>Not applicable</td><td>The <code translate="no">initialize</code> answer, which runs no turn: models, their efforts, and agents for the Agent chip (<code translate="no">--agent</code>)</td></tr>
+<tr><th scope="row">Thinking</th><td>Adaptive, summarised</td><td>Adaptive, summarised</td><td>Not applicable</td><td>The same</td></tr>
+<tr><th scope="row">Session</th><td><code translate="no">sessionId</code>, <code translate="no">resume</code>, fork at a message</td><td>Same; fork only for rewind</td><td><code translate="no">claude --resume</code> in a terminal</td><td><code translate="no">--session-id</code>, <code translate="no">--resume</code> from the session's folder; a new branch forks with <code translate="no">--fork-session</code> and gets the handoff</td></tr>
+<tr><th scope="row">Permission prompt</th><td>Once, for the session, deny, cancel</td><td>Same</td><td>Not applicable</td><td>The same as live waits; for the session adds Claude Code's own suggestions</td></tr>
+<tr><th scope="row">Stop, steering</th><td><code translate="no">interrupt</code>, 10 s, then force; <code translate="no">priority: next</code></td><td>Same</td><td>Not applicable</td><td>T3's</td></tr>
+<tr><th scope="row">Stream</th><td>Partial deltas, snapshots fill gaps; subagents apart</td><td>Same</td><td>Not applicable</td><td>Partial deltas, snapshots for what did not stream; a subagent's steps stay in its tool card</td></tr>
+<tr><th scope="row">Outside turns</th><td>Restart a live process the transcript moved past</td><td>Manual reload</td><td>Re-reads changed files</td><td>T3's restart, after the app sync wrote them</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>App threads</dt><dd>Once an engine went on in an app's thread on one branch, the app's record of it is neither resumed nor forked by another branch; that branch starts a session with the handoff.</dd>
+<dt>Two turns at once</dt><dd>A branch's process runs one turn. A second turn on the same branch gets a process of its own, closed when it ends.</dd>
+<dt>Steering</dt><dd>A message sent mid-turn may be answered as a turn of its own, and the turn waits for that one's result. A process that took steering is not reused, so nothing queued in it reaches a later turn.</dd>
+<dt>Effort</dt><dd>No request unsets an effort, so going back to Claude Code's own default starts another process. A model change sets the effort again.</dd>
+<dt>Written turns</dt><dd>The person's message goes in with a uuid of its own. That uuid and the record uuids a turn writes are kept while it runs and when it fails, so the app sync never copies them back, even after a Stop. Claude Code's interruption note is not a message.</dd>
+<dt>A process that ended</dt><dd>A kept process that ended between turns is replaced, and the turn is sent to the new one.</dd>
+</dl>
+
 <h2 id="synced">The Codex app's conversations</h2>
 <p>Every conversation the person has in the Codex app or the Codex CLI is a conversation in OpenProgram too, mixed with OpenProgram's own and linked to the same Codex thread both ways (<code translate="no">state/store/session/external_import/codex_sync.py</code>).</p>
 <table class="stack fixed">
@@ -112,12 +166,13 @@
 <tr><th scope="row">Keep it in Codex</th><td>The next turn resumes the same thread (a shared thread record), so the app shows it; turns the app adds later arrive here. Turns OpenProgram ran are known by their Codex turn id and not written twice; a loaded thread the app moved on is reloaded first</td><td>T3 Code's native ids</td></tr>
 <tr><th scope="row">Move it to OpenProgram</th><td>Switch its Harness chip to OpenProgram. What is said in the app later still arrives, after what was said here</td><td>T3 Code's handoff</td></tr>
 <tr><th scope="row">The app's history</th><td>Codex lists and resumes a thread only on the provider it was saved with, so turning on Also in the Terminal moves the app's threads to the OpenProgram provider and turning it off moves them back; a single thread follows the model of the turn run on it</td><td>magpie's provider move</td></tr>
-<tr><th scope="row">Sidebar</th><td>The status dot and a channel's logo stay as they are; a dimmed one-colour mark of the agent at the row's end says the conversation runs in that agent now, and it gives way to the ⋯ button on hover. A hover card names the model and agent, the project, the time and that the conversation is also in the Codex app. OpenProgram's own conversations have no mark</td><td>T3 Code's provider mark</td></tr>
-<tr><th scope="row">The Claude app and DeepSeek Harness</th><td>Their conversations come in the same way (<code translate="no">app_sync.py</code>): the Claude app's Code tab list (<code translate="no">claude-code-sessions/**/local_*.json</code>, each naming a Claude Code transcript) and DeepSeek Harness's workspaces (<code translate="no">~/.dsh</code>, a zstd event log per conversation), archived ones left out. With no engine for them yet, a turn sent here runs in OpenProgram, so these rows carry no mark; turns made in the app later still arrive</td><td>Paseo's import</td></tr>
+<tr><th scope="row">Sidebar</th><td>The status dot and a channel's logo stay as they are; the agent's own colour logo at the row's end says the conversation runs in that agent now, and it gives way to the ⋯ button on hover. A hover card names the model and agent, the project, the time and the app a synced conversation is also in. OpenProgram's own conversations have no mark</td><td>T3 Code's provider mark</td></tr>
+<tr><th scope="row">The Claude app and DeepSeek Harness</th><td>Their conversations come in the same way (<code translate="no">app_sync.py</code>): the Claude app's Code tab list (<code translate="no">claude-code-sessions/**/local_*.json</code>, each naming a Claude Code transcript) and DeepSeek Harness's workspaces (<code translate="no">~/.dsh</code>, a zstd event log per conversation), archived ones left out. Conversations started with <code translate="no">claude</code> in a terminal come in too; those run through the SDK or <code translate="no">claude -p</code> stay out, as Codex's <code translate="no">exec</code> threads do. Each continues in its own session on its agent's engine</td><td>Paseo's import</td></tr>
+<tr><th scope="row">Kept apart</th><td>A session an engine started or forked here is not imported as another conversation. A session with an engine turn running is read once the turn ends, and one still being written once it rests a few seconds. A rewind in the app leaves what is here unchanged. The app's later title replaces the first one unless the conversation was renamed here</td><td>Codex's own-turn ids</td></tr>
 <tr><th scope="row">History page</th><td>Mixed with OpenProgram's chats, the same mark on each row, and a Source filter that appears once another agent has conversations here</td><td>T3 Code</td></tr>
 </tbody>
 </table>
 
 <h2 id="status">Implementation status</h2>
-<p>Codex runs chats, natively or through OpenProgram's models, and the Codex app's conversations are synced both ways. Claude Code (Claude Agent SDK, with an Anthropic API key only) and ACP agents (Gemini CLI, OpenCode) are next with the same engine shape.</p>
-<p>The Claude app's and DeepSeek Harness's conversations already come in and follow the apps; continuing them in that agent comes with its engine. DeepSeek Harness ships an ACP server (<code translate="no">dsh-acp</code>), the way in for its engine.</p>
+<p>Codex runs chats, natively or through OpenProgram's models, and the Codex app's conversations are synced both ways. DeepSeek Harness runs chats over ACP and its app's conversations continue in their sessions.</p>
+<p>Claude Code runs chats with the person's own sign-in, and the Claude app's and terminal's conversations continue in their sessions. Next, with the same engine shape: other ACP agents (Gemini CLI, OpenCode).</p>
