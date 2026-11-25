@@ -62,6 +62,7 @@ install_packages() {
   MACOSX_DEPLOYMENT_TARGET="$(read_pin macosMinimum)" \
     "$uv_bin" pip "$verb" --python "$python" --strict --break-system-packages \
       --require-hashes "${target_args[@]}" "${source[@]}"
+  "$python" -I "$repo_root/scripts/release/trim-runtime.py" packages "$python"
 }
 
 # Seal each browser bundle once here. Packaging leaves this tree untouched
@@ -127,6 +128,7 @@ if test -n "$embedded_runtime"; then
   install_packages install "$python_bin" "$embedded_runtime/product-requirements.txt"
   install_browsers "$python_bin" "$embedded_runtime/assets/playwright"
   install_git "$embedded_runtime/git" "$python_bin"
+  "$python_bin" -I "$repo_root/scripts/release/trim-runtime.py" git "$embedded_runtime/git"
   exit 0
 fi
 
@@ -235,6 +237,8 @@ if test -n "$(pin_of git)" && test "$(pin_of git)" = "$git_pin" && test -d "$clo
 else
   install_git "$dest/git" "$base_python"
 fi
+# Also for a cloned Git: a base built before trimming still has the manager.
+"$base_python" -I "$repo_root/scripts/release/trim-runtime.py" git "$dest/git"
 
 cp "$product_config" "$dest/product-runtime.json"
 cp "$repo_root/uv.lock" "$dest/product-uv.lock"

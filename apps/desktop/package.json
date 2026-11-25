@@ -90,6 +90,9 @@
         "to": "update/install-app.sh"
       }
     ],
+    "dmg": {
+      "format": "ULMO"
+    },
     "mac": {
       "target": [
         "dmg",

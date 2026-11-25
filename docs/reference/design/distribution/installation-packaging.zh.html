@@ -35,6 +35,7 @@
 <tbody>
 <tr><th scope="row">包含</th><td>固定的 CPython（3.12.10）、固定的 <code translate="no">uv</code>（0.11.16）、固定的 Git、OpenProgram、预构建 Web、带 Node.js 的独立 Ink 包。Node 只有这一份：在 macOS 和 Linux 上，Playwright 的 driver 通过一个链接运行在它上面（<code translate="no">scripts/release/share-runtime-node.py</code>），否则 Playwright 包会再带来约 115 MB 的另一份；Windows 两份都保留。能力列在 <code translate="no">scripts/release/product-runtime.json</code>：<code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
 <tr><th scope="row">不含</th><td>Program、PyTorch、torchvision、OpenCV、EasyOCR、sentence-transformers、triton、NVIDIA/CUDA。Computer use 是内置工具，不带权重</td></tr>
+<tr><th scope="row">精简</th><td><code translate="no">scripts/release/trim-runtime.py</code> 去掉依赖包的测试、调试符号和 dugite Git 的 Credential Manager（1.5.1 中约 140 MB；Windows 的 MinGit 保留它，那里它是配置好的凭据助手）。内置文档不带 <code translate="no">reference/design/</code>（66 MB），访问时跳转到公开站点。macOS DMG 用 LZMA（<code translate="no">ULMO</code>）：原来 UDZO 是 729 MB，现在 420 MB</td></tr>
 <tr><th scope="row">Office 编辑器</th><td>在清单里固定版本并标为可选；用户同意后才安装</td></tr>
 <tr><th scope="row">可变数据</th><td><code translate="no">~/.openprogram</code>：配置、会话、缓存、用户添加的 Program。运行时保持只读</td></tr>
 <tr><th scope="row">开发覆盖层</th><td>可编辑源码、调试、本地 Web 和 Ink 构建、测试、显式配置的感知、OCR 或 Browser 后端。绝不是产品依赖，基础能力清单仍须通过</td></tr>

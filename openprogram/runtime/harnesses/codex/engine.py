@@ -152,6 +152,7 @@ class CodexTurn:
         self.turn_id: Optional[str] = None
         #: Every Codex turn this one started (a steer that became a followup starts another).
         self.turn_ids: list[str] = []
+        self.base_seen: Optional[str] = None  # the last message the thread holds, before this turn
         #: The thread this turn writes into while it runs, for the app sync to wait on.
         self.marked: Optional[tuple[str, str]] = None
         self.items: dict[str, dict] = {}
@@ -308,9 +309,18 @@ class CodexTurn:
         return [], {}, model
 
     def _listed_model(self) -> Optional[dict]:
+        """The listed model the turn runs: the branch's, or Codex's default one for Auto."""
         try:
-            from openprogram.runtime.harnesses.models import harness_model
-            return harness_model(PROVIDER, self.model_id)
+            from openprogram.runtime.harnesses.models import cached_harness, harness_model
+            listed = harness_model(PROVIDER, self.model_id)
+            if listed is None and str(self.model_id or "").strip().lower() in _MODEL_DEFAULTS:
+                # Auto runs the chosen profile's model when it names one, else Codex's default.
+                profile_model = _profile_model(self.req)
+                if profile_model:
+                    return harness_model(PROVIDER, profile_model)
+                listed = next((m for m in (cached_harness(PROVIDER) or {}).get("models") or []
+                               if m.get("default")), None)
+            return listed
         except Exception:  # noqa: BLE001 - an unread listing only loses the effort check
             return None
 
@@ -334,9 +344,6 @@ class CodexTurn:
                 default = None
             return codex_effort(default, self._supported_efforts()) if default else None
         listed = self._listed_model()
-        if listed is None and model.strip().lower() in _MODEL_DEFAULTS:
-            from openprogram.runtime.harnesses.models import cached_harness
-            listed = next((m for m in (cached_harness(PROVIDER) or {}).get("models") or [] if m.get("default")), None)
         if listed is None:
             return "medium"  # Codex not read yet: its usual default, which every model takes
         return listed.get("default_effort") if listed.get("efforts") else None
@@ -415,6 +422,14 @@ class CodexTurn:
             loaded_at[thread_id] = time.time()
         loaded.add(thread_id)
         self.thread_id = thread_id
+        # What the thread holds of the conversation before this turn: a new thread got all of it
+        # with its instructions; a resumed one what came before the handoff it has yet to read.
+        ids = [str(m.get("id") or "") for m in self.history]
+        if plan.action == "start":
+            self.base_seen = ids[-1] if ids else None
+        else:
+            missed = {str(m.get("id") or "") for m in plan.missed}
+            self.base_seen = next((i for i in reversed(ids) if i and i not in missed), None)
         handoff.write_record(db, self.req.session_id, PROVIDER, key, {"thread_id": thread_id})
         return note
 
@@ -521,7 +536,12 @@ class CodexTurn:
             own = list((handoff.read_records(db, self.req.session_id, PROVIDER).get(key) or {}).get("own_turns") or [])
             own = (own + [t for t in self.turn_ids if t not in own])[-_OWN_TURNS_KEPT:]
             values: dict = {"thread_id": self.thread_id, "own_turns": own}
-            if finished:
+            # Seen only once Codex began a turn: a message stopped before it reached the
+            # thread goes in with the next turn's handoff.
+            if finished and not self.turn_ids and self.base_seen:
+                # Stopped before Codex began: the next turn resumes from where the thread is.
+                values["seen"] = self.base_seen
+            if finished and self.turn_ids:
                 values.update({"seen": self.assistant_msg_id, "at": time.time(),
                                **({"last_turn_id": self.turn_id} if self.turn_id else {})})
             handoff.write_record(db, self.req.session_id, PROVIDER, key, values)
@@ -830,7 +850,7 @@ def _image_file(attachment: Any, session_id: str) -> Optional[str]:
             restrict_to_user(partial)
             partial.replace(path)
         return str(path)
-    except (ValueError, OSError):
+    except Exception:  # noqa: BLE001 - an image that cannot be kept is skipped, the turn goes on
         _log.warning("attached image not kept for Codex", exc_info=True)
         return None
 
@@ -860,6 +880,22 @@ def _match_provider(thread_id: Optional[str], model: Optional[str]) -> None:
             codex_threads.move_provider(home, _configured_provider(home), thread_ids=[thread_id])
     except Exception:  # noqa: BLE001 - an unmoved thread starts a new one with the handoff
         _log.info("Codex thread %s kept on its provider", thread_id, exc_info=True)
+
+
+def _profile_model(req: Any) -> Optional[str]:
+    """The model the branch's Codex profile sets in config.toml, if it is on one."""
+    from openprogram.runtime.harnesses import branch_setting
+    choice = branch_setting(req, "harness_agent")
+    if not (isinstance(choice, str) and choice.startswith("profile:")):
+        return None
+    try:
+        import tomllib
+        from openprogram.state.store.session.external_import import codex
+        config = tomllib.loads((codex.default_home() / "config.toml").read_text(encoding="utf-8"))
+        value = ((config.get("profiles") or {}).get(choice.partition(":")[2]) or {}).get("model")
+    except Exception:  # noqa: BLE001
+        value = None
+    return value if isinstance(value, str) and value else None
 
 
 def _configured_personality() -> str:

@@ -37,9 +37,11 @@ def run(*args: str) -> str:
 
 
 def create_dmg(image: Path, dmg_path: Path) -> None:
+    # LZMA (ULMO) opens on macOS 10.15 and later; the 1.5.1 image was 729 MB
+    # as UDZO and 420 MB as ULMO. Matches "dmg.format" in the desktop package.
     args = (
         'hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
-        '-format', 'UDZO', str(dmg_path),
+        '-format', 'ULMO', str(dmg_path),
     )
     last_error: RuntimeError | None = None
     for attempt in range(1, 6):

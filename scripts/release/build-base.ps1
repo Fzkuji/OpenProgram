@@ -45,6 +45,7 @@ function Install-Packages {
     $Source = @(if ($Verb -eq "sync") { $Requirements } else { "--requirements"; $Requirements })
     Invoke-Native $Uv pip $Verb --python $Python --strict --break-system-packages `
         --require-hashes @TargetArgs @Source
+    Invoke-Native $Python -I (Join-Path $RepoRoot "scripts\release\trim-runtime.py") packages $Python
 }
 
 function Install-Browsers {

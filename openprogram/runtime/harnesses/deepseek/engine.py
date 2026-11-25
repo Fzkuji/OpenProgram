@@ -480,14 +480,15 @@ class DshTurn:
         params = message.get("params") or {}
         call = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
         card = self.open_cards.get(str(call.get("toolCallId") or "")) or {}
-        allow = {"outcome": {"outcome": "selected", "optionId": "allow-once"}}
+        allow = {"outcome": {"outcome": "selected", "optionId": _option(params, "allow_once", "allow-once")}}
+        reject = {"outcome": {"outcome": "selected", "optionId": _option(params, "reject_once", "reject-once")}}
         if str(getattr(self.req, "permission_mode", None) or "bypass") == "bypass":
             self.server.respond(message["id"], allow)
             return
         from openprogram.runtime.permissions.approvals.live import ask_live_approval, live_owner_from
         owner = live_owner_from(self.execution_context, self.req.session_id, HARNESS_ID)
         if owner is None:
-            self.server.respond(message["id"], {"outcome": {"outcome": "selected", "optionId": "reject-once"}})
+            self.server.respond(message["id"], reject)
             return
         # The request names its tool call; the card may not exist yet.
         tool = str(call.get("title") or card.get("tool") or "tool")
@@ -500,9 +501,17 @@ class DshTurn:
         if decision.allowed:
             self.server.respond(message["id"], allow)
         elif decision.outcome == "deny":
-            self.server.respond(message["id"], {"outcome": {"outcome": "selected", "optionId": "reject-once"}})
+            self.server.respond(message["id"], reject)
         else:
             self.server.respond(message["id"], {"outcome": {"outcome": "cancelled"}})
+
+
+def _option(params: dict, kind: str, fallback: str) -> str:
+    """The id of the option of ``kind`` the request offers (ACP ``options``), else the usual one."""
+    for option in params.get("options") or []:
+        if isinstance(option, dict) and option.get("kind") == kind and option.get("optionId"):
+            return str(option["optionId"])
+    return fallback
 
 
 def _loads(text: Any) -> dict:

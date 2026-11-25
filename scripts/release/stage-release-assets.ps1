@@ -129,6 +129,9 @@ Get-ChildItem -LiteralPath $SourceDir -Force |
 New-Item -ItemType Directory -Path $DocsTargetDir -Force | Out-Null
 Get-ChildItem -LiteralPath $DocsSourceDir -Force |
     Copy-Item -Destination $DocsTargetDir -Recurse -Force
+# The design pages are engineering records (66 MB); the App sends a reader
+# who follows a link to one to the public site instead.
+Remove-Item -LiteralPath (Join-Path $DocsTargetDir "reference\design") -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($NodeModules) {
     # A version carries its terminal UI inside the bundle it is staged with.

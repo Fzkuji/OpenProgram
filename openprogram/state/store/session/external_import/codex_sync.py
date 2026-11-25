@@ -182,14 +182,15 @@ def _append(store, session_id: str, thread: codex_threads.Thread, session: Exter
         if not still:
             raise Busy()
         last = write_turns(store, session_id, session, indices=indices, predecessor=after)
-    if not last:
-        return 0
-    if shown:
-        store.set_head(session_id, last)
-    if last != tip:
-        _write_records(store, session_id, thread.id, tip, last)
-    store.update_session(session_id, updated_at=thread.updated_at or time.time())
-    store.commit_turn(session_id, "sync from Codex")
+        if not last:
+            return 0
+        # The head and record move with the turns, so no engine turn starts between them.
+        if shown:
+            store.set_head(session_id, last)
+        if last != tip:
+            _write_records(store, session_id, thread.id, tip, last)
+        store.update_session(session_id, updated_at=thread.updated_at or time.time())
+        store.commit_turn(session_id, "sync from Codex")
     return len([i for i in indices if i >= done])
 
 

@@ -68,7 +68,7 @@ python -m scripts.docs_site.check_landing</code></pre>
 <tr><th scope="row">构建</th><td>重新生成 CLI、配置和供应商参考页，写入 <code translate="no">docs/_site.tmp/</code>，再替换被 Git 忽略的 <code translate="no">docs/_site/</code>。</td></tr>
 <tr><th scope="row"><code translate="no">docs/_static_root/</code></th><td>拷入站点，不进导航和搜索；其中文本文件里的 <code translate="no">{{SITE_URL}}</code> 换成<a href="../distribution/github-publishing.zh.html#website">网站地址</a>。<code translate="no">.github/workflows/docs-pages.yml</code> 把根文件（<code translate="no">robots.txt</code>、<code translate="no">sitemap.xml</code>、<code translate="no">llms.txt</code>、Search Console 证明、IndexNow 密钥，以及构建为自定义域名写出的 <code translate="no">CNAME</code>）移到站点根，并检查证明内容。生成的 <code translate="no">sitemap.xml</code> 是唯一站点地图。</td></tr>
 <tr><th scope="row">源码检出</th><td>提供自己的 <code translate="no">docs/_site/</code>。worker 在注册路由时检查是否重建；HTTP 读取不扫描也不重建。没有监听模式。</td></tr>
-<tr><th scope="row">已安装运行时</th><td>提供 Server 的 <code translate="no">_frontend/docs/</code> 内置包。重建其他检出不会更新它：声称验收前先比较实际页面。</td></tr>
+<tr><th scope="row">已安装运行时</th><td>提供 Server 的 <code translate="no">_frontend/docs/</code> 内置包，不含 <code translate="no">reference/design/</code>，指向那里的链接跳转到公开站点。重建其他检出不会更新它：声称验收前先比较实际页面。</td></tr>
 </tbody>
 </table>
 

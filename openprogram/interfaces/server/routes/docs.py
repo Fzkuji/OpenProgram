@@ -17,6 +17,8 @@ from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
+PUBLIC_DOCS_URL = "https://fzkuji.github.io/OpenProgram/docs/"
+
 
 def _repo_root() -> Path:
     from openprogram.operations.self_update.github_release.detect import package_root, repo_root
@@ -138,6 +140,16 @@ def register(app) -> None:
     @app.api_route("/docs", methods=["GET", "HEAD"], include_in_schema=False)
     async def _docs_slash_redirect():  # noqa: ANN202
         return RedirectResponse(url="/docs/", status_code=307)
+
+    # A packaged App leaves the design pages out (engineering records); a
+    # link to one opens it on the public site. A checkout builds them.
+    if not _is_source_checkout() and not (site / "reference" / "design").is_dir():
+        @app.api_route(
+            "/docs/reference/design/{rest:path}", methods=["GET", "HEAD"],
+            include_in_schema=False)
+        async def _design_on_public_site(rest: str):  # noqa: ANN202
+            return RedirectResponse(
+                url=f"{PUBLIC_DOCS_URL}reference/design/{rest}", status_code=307)
 
     # html=True → /docs/ resolves to index.html; extensionless paths fall back
     # to <name>.html.

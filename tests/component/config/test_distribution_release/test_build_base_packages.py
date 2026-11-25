@@ -81,6 +81,7 @@ def project(tmp_path: Path) -> dict:
     repo = tmp_path / "repo"
     (repo / "scripts" / "release").mkdir(parents=True)
     for relative in ("scripts/release/runtime-wheels.py", "scripts/release/product-runtime.json",
+                     "scripts/release/trim-runtime.py",
                      "openprogram/__init__.py", "openprogram/host/__init__.py",
                      "openprogram/host/_platform/__init__.py", "openprogram/host/_platform/architecture.py"):
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)

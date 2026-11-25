@@ -143,6 +143,9 @@ mkdir -p "$target_dir"
 cp -R "$source_dir/." "$target_dir/"
 mkdir -p "$docs_target_dir"
 cp -R "$docs_source_dir/." "$docs_target_dir/"
+# The design pages are engineering records (66 MB); the App sends a reader
+# who follows a link to one to the public site instead.
+rm -rf "$docs_target_dir/reference/design"
 if test -n "$node_modules_source"; then
   # A version carries its terminal UI inside the bundle it is staged with.
   mkdir -p "$target_dir/tui"
