@@ -11,7 +11,7 @@
 <thead><tr><th scope="col">项目</th><th scope="col">输出</th><th scope="col">依据</th></tr></thead>
 <tbody>
 <tr><th scope="row">首屏图</th><td>初始 HTML 中专用的 AVIF，带固有尺寸，是唯一 <code translate="no">fetchpriority="high"</code> 的图片。原 PNG 留给文档和既有链接。</td><td><a href="https://web.dev/articles/optimize-lcp">优化 LCP</a>、<a href="https://web.dev/learn/design/responsive-images">响应式图片</a></td></tr>
-<tr><th scope="row">落地页图片和文字</th><td>明确宽高。次要文字达到 WCAG AA。复制按钮用可见内容命名。渐变标题里的 <code translate="no">program</code> 用高对比品牌色。</td><td>Lighthouse</td></tr>
+<tr><th scope="row">落地页图片和文字</th><td>明确宽高。次要文字达到 WCAG AA。只有图标的复制按钮带无障碍名称。标题里的 <code translate="no">program</code> 用 App 的蓝紫品牌渐变。</td><td>Lighthouse</td></tr>
 <tr><th scope="row">语言配对</th><td>相同且互指的 <code translate="no">en</code>、<code translate="no">zh-Hans</code>、<code translate="no">x-default</code> 链接，英文作回退，与 canonical 同源同基路径。未配对页不输出。</td><td><a href="https://developers.google.com/search/docs/specialty/international/localized-versions">本地化版本</a></td></tr>
 <tr><th scope="row">Canonical</th><td>指向自身；语言切换不变</td><td></td></tr>
 <tr><th scope="row">面包屑</th><td>每个内容页一个 <code translate="no">BreadcrumbList</code>：<code translate="no">OpenProgram Docs → 当前页</code>。文档根没有。由标准库序列化并转义 <code translate="no">&lt;</code>。</td><td><a href="https://developers.google.com/search/docs/appearance/structured-data/breadcrumb">面包屑数据</a></td></tr>

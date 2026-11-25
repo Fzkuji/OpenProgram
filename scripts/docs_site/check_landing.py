@@ -44,13 +44,13 @@ HERO_ALT = "OpenProgram workspace showing an agent session that ran two sub-agen
 HERO_AVIFS = ("chat_hero-home.avif", "chat_hero-home-light.avif")
 HERO_AVIF_SIZE = (1600, 1000)
 THEME_COLORS = {
-    "(prefers-color-scheme: dark)": "#0e0f17",
-    "(prefers-color-scheme: light)": "#f8f9fc",
+    "(prefers-color-scheme: dark)": "#171719",
+    "(prefers-color-scheme: light)": "#f5f5f7",
 }
-# The landing's indigo palettes, taken from the logo.
+# The App's surfaces (apps/web/app/styles/themes), light first as in the page.
 PALETTE_BACKGROUNDS = {
-    "dark": ("#0e0f17", "#141622", "#1a1c2b"),
-    "light": ("#f8f9fc", "#f1f3f9", "#ffffff"),
+    "light": ("#ffffff", "#f5f5f7", "#ebebef"),
+    "dark": ("#1e1e20", "#171719", "#2a2a2e"),
 }
 
 
@@ -349,23 +349,23 @@ def main() -> int:
     require(all(image.get("width") and image.get("height")
                 for image in page.image_attrs),
             "landing image is missing explicit dimensions", failures)
-    command_buttons = [
+    copy_buttons = [
         button
         for button in page.buttons
-        if "command-card" in button.get("class", "").split()
+        if "copy-btn" in button.get("class", "").split()
     ]
     require(
-        command_buttons and all("aria-label" not in button for button in command_buttons),
-        "copy button accessible name overrides its visible text",
+        copy_buttons and all(button.get("aria-label") for button in copy_buttons),
+        "icon-only copy button has no accessible name",
         failures,
     )
-    # The first --faint belongs to the dark base palette, the second to light.
-    faint_colors = re.findall(r"--faint\s*:\s*(#[0-9a-fA-F]{6})", css)
-    require(len(faint_colors) == len(PALETTE_BACKGROUNDS),
+    # The first --text-secondary belongs to the light base palette, the second to dark.
+    secondary_colors = re.findall(r"--text-secondary\s*:\s*(#[0-9a-fA-F]{6})", css)
+    require(len(secondary_colors) == len(PALETTE_BACKGROUNDS),
             "landing secondary-text color is missing from a theme", failures)
-    for faint, (theme, backgrounds) in zip(faint_colors, PALETTE_BACKGROUNDS.items()):
+    for secondary, (theme, backgrounds) in zip(secondary_colors, PALETTE_BACKGROUNDS.items()):
         for background in backgrounds:
-            require(_contrast_ratio(faint, background) >= 4.5,
+            require(_contrast_ratio(secondary, background) >= 4.5,
                     f"{theme} secondary text fails 4.5:1 contrast on {background}", failures)
     require(f"<b>{README_HERO}</b>" in readme,
             "README hero differs from the canonical tagline", failures)
@@ -394,16 +394,13 @@ def main() -> int:
     require(software is not None and software.get("description") == SITE_DESCRIPTION,
             "structured data differs from the product description", failures)
 
-    for section_id in (
-        "use-cases", "quick-start", "capabilities", "interfaces",
-        "mechanisms", "papers", "start",
-    ):
+    for section_id in ("how", "features", "research"):
         require(section_id in page.ids, f"missing #{section_id} section", failures)
 
     for phrase in (
-        "Build agents that program their own workflows.",
-        "Use an agent or build your own.",
-        "Everything you need to run agents.",
+        "Agents that program themselves.",
+        "The model decides.",
+        "Everything an agent needs, in one place.",
     ):
         require(phrase in visible_text, f"missing product copy: {phrase}", failures)
     require('<span class="program-word">program</span>' in source,
@@ -430,22 +427,19 @@ def main() -> int:
 
     install = f"curl -fsSL {INSTALL_SCRIPT_URL} | sh"
     require(install in visible_text, "missing documented installer", failures)
-    require('data-copy="openprogram web"' in source,
-            "missing copyable openprogram run command", failures)
+    require(f"irm {INSTALL_SCRIPT_URL}.ps1 | iex" in visible_text,
+            "missing Windows installer", failures)
+    version = project.get("version", "")
+    require(f"v{version}" in visible_text
+            and f"https://github.com/Fzkuji/OpenProgram/releases/tag/v{version}" in page.anchors,
+            f"landing release note does not name the current version v{version}", failures)
     require("pip install openprogram" not in visible_text,
             "landing page still advertises unsupported pip install", failures)
 
     for image in (
-        "docs/images/logo-lockup-dark.svg",
-        "docs/images/code_hero.png",
+        "docs/images/openprogram-app-icon.svg",
         "docs/images/chat_hero.png",
-        "docs/images/browser_hero.png",
-        "docs/images/chat_edit.png",
-        "docs/images/logo-lockup-light.svg",
-        "docs/images/code_hero_light.png",
         "docs/images/chat_hero_light.png",
-        "docs/images/browser_hero_light.png",
-        "docs/images/chat_edit_light.png",
     ):
         require(image in page.images, f"missing product image {image}", failures)
 
@@ -454,9 +448,9 @@ def main() -> int:
     require(re.search(r"\.reveal[^}]*\{[^}]*opacity\s*:\s*0", css) is None,
             "reveal CSS can hide landing-page content", failures)
     require(re.search(
-        r"\.command-body\s*\{[^}]*white-space\s*:\s*nowrap[^}]*"
+        r"\.composer \.cmd\s*\{[^}]*white-space\s*:\s*nowrap[^}]*"
         r"overflow-x\s*:\s*auto", css,
-    ) is not None, "command text can wrap inside the terminal card", failures)
+    ) is not None, "command text can wrap inside the install box", failures)
 
     sitemap_path = BUILT_SITE / "sitemap.xml"
     require(sitemap_path.is_file(), "docs build did not produce sitemap.xml", failures)

@@ -18,52 +18,82 @@
 <a id="3-agentic-workflow--for-trustworthy--self-evolving-agents"></a>
 <a id="4-event-infrastructure--for-proactive-agents"></a>
 <a id="also-in-the-product"></a>
+<a id="quick-start"></a>
+<a id="features"></a>
+<a id="framework"></a>
+<a id="workspace"></a>
+<a id="agents-and-safety"></a>
+<a id="models-and-integrations"></a>
+<a id="acknowledgements"></a>
 
 <p align="center"><b>開源 Agent Harness：Agent 就是能自我改進的 Python 程式。</b></p>
 
 <p align="center">
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CHANGELOG.md"><img alt="版本" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="版本" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
-  <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
+  <a href="https://arxiv.org/abs/2606.15874"><img alt="Paper" src="https://img.shields.io/badge/arXiv-2606.15874-b31b1b?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="https://fzkuji.github.io/OpenProgram/">官網</a> · <a href="#install">安裝</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">文件</a>
+  <a href="https://fzkuji.github.io/OpenProgram/"><b>官網</b></a> · <a href="https://fzkuji.github.io/OpenProgram/docs/README.html"><b>文件</b></a> · <a href="https://fzkuji.github.io/OpenProgram/docs/install/download.html"><b>下載 App</b></a> · <a href="https://arxiv.org/abs/2606.15874"><b>論文</b></a>
 </p>
 
 <p align="center">
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-## 動態
-
-- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每個服務商可放多組金鑰與登入，到達限額時自動換下一組；回覆依任務分塊；排程任務有執行紀錄。從這一版起在本儲存庫發布。
-- **2026-11-15 · v1.3.0** — 服務商頁面顯示健康狀態、額度與花費；Activity 列出對話中工作的 Agent；Agent 產生的檔案自動開啟。
-- **2026-11-14 · v1.2.0** — 同一對話的分支可以並行執行，停止立即生效，Windows App 上線。
-- **2026-11-10 · v1.1.0** — 可以從任一則已傳送的訊息回退；App 支援 Linux。
-- **2026-11-06 · v1.0.0** — 1.x 的第一個版本：具分割畫面的桌面 App、背景執行的電腦操作、會議與常駐排程器。
-- **2026-08-17 · v0.7.0** — 內建瀏覽器，與檔案、對話和終端機並排，Agent 可以讀取並操作。
-- **2026-03-31 · v0.1.0** — 第一個公開版本：Agentic 函式——由模型執行各步驟的 Python 函式，執行過程記錄在脈絡樹中。
+<p align="center">
+  <a href="https://fzkuji.github.io/OpenProgram/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
+      <img src="../docs/images/chat_hero.png" alt="OpenProgram 工作區：一個執行了兩個子 Agent 的對話" width="100%">
+    </picture>
+  </a>
+</p>
 
 <a id="install"></a>
 
 ## 安裝
 
+**macOS · Linux**
+
 ```bash
 curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-Windows（v1.2.0 起）：`irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`。macOS 桌面 App 是 DMG，可在[發行頁](https://github.com/Fzkuji/OpenProgram/releases)下載；Linux App 是同一頁上的 deb 和 AppImage，Windows App 從 v1.2.0 起提供。網站無法連線時：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式見[安裝說明](https://fzkuji.github.io/OpenProgram/docs/install/install.html)（英文）。
+**Windows（PowerShell）**
 
-## 快速開始
-
-```bash
-openprogram        # 設定精靈，然後進入終端機聊天
-openprogram web    # 工作區，網址 http://localhost:18100
+```powershell
+irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex
 ```
 
-接下來：[快速上手](../docs/start/GETTING_STARTED.html) · [模型設定](../docs/models/README.html) · [全部文件](../docs/README.html)（英文）
+**桌面 App** — [macOS Apple Silicon](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-mac-arm64.dmg) · [macOS Intel](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-mac-x64.dmg) · [Windows](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-win-x64.exe) · [Linux（deb、AppImage）](https://fzkuji.github.io/OpenProgram/docs/install/download.html)。App 會自動更新。
+
+接著執行：
+
+```bash
+openprogram        # 連接模型，然後在終端機裡聊天
+openprogram web    # 開啟工作區，網址 http://localhost:18100
+```
+
+網站無法連線時：`curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式：[安裝說明](https://fzkuji.github.io/OpenProgram/docs/install/install.html) · [快速上手](https://fzkuji.github.io/OpenProgram/docs/start/GETTING_STARTED.html)。
+
+## 為什麼選 OpenProgram
+
+<table>
+<tr><td><b>Agent 就是 Python 程式</b></td><td>分支、重試和檢查都是一般的程式碼；<code>self(...)</code> 是一次模型呼叫。模型負責判斷，Python 確保必要的步驟一定會執行。</td></tr>
+<tr><td><b>自己為自己寫程式</b></td><td>Agent 把新方法寫進自己的類別，下一輪起每個方法都是可呼叫的工具。</td></tr>
+<tr><td><b>是圖，不是對話記錄</b></td><td>每輪對話、模型呼叫和函式呼叫都是節點，可以檢視、分支和重播。子 Agent 在自己的分支上工作，只交回結果。</td></tr>
+<tr><td><b>受檢查的決策</b></td><td>模型從固定選項中挑選，程式碼先驗證再執行。</td></tr>
+<tr><td><b>一個工作區</b></td><td>聊天、檔案、終端機和內建瀏覽器並排呈現，可在桌面 App、網頁介面、終端介面或 CLI 中使用。</td></tr>
+<tr><td><b>操作你的電腦</b></td><td>在背景操作桌面應用程式、瀏覽器頁面和遠端虛擬機，不佔用你的螢幕。</td></tr>
+<tr><td><b>常駐執行</b></td><td>排程任務、重新啟動後繼續的目標，以及在 Telegram、Discord、Slack 和微信裡對話。</td></tr>
+<tr><td><b>任何模型</b></td><td>300 多個服務商與本機模型；每個服務商可放多組金鑰，到達限額時自動切換。</td></tr>
+</table>
+
+每項功能及其設計：[功能索引](https://fzkuji.github.io/OpenProgram/docs/reference/design/README.html)。
 
 ## 一眼看懂
 
@@ -80,58 +110,23 @@ class SupportAgent(Agent):
         return self("Draft a short reply.")
 ```
 
-模型負責判斷，Python 確保必要的步驟一定會執行。參見[撰寫 Agent](../docs/capabilities/agentic-programming/writing-functions/agent.html)（英文）。
+參見[撰寫 Agent](https://fzkuji.github.io/OpenProgram/docs/capabilities/agentic-programming/writing-functions/agent.html)。
 
-## 功能
+## 動態
 
-每一項都連結到對應的設計文件（英文）。
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — 每個服務商可放多組金鑰與登入，到達限額時自動切換；回覆依任務分塊；排程任務有執行紀錄。
+- **2026-11-15 · v1.3.0** — 服務商頁面顯示健康狀態、額度與花費；Activity 列出對話中工作的 Agent。
+- **2026-11-14 · v1.2.0** — 同一對話的分支可以並行執行，停止立即生效，Windows App 上線。
 
-### 框架
+<details>
+<summary>更早</summary>
 
-| | |
-|---|---|
-| **[Agent 類別](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | Agent 是一個 Python 類別；分支、重試和檢查都是程式碼，`self(...)` 是一次模型呼叫。 |
-| **[執行 DAG](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | 每則使用者訊息、模型呼叫和函式呼叫都是節點，可以檢視、分支和重播。 |
-| **[上下文](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | 每次呼叫讀取挑選出的節點，而不是不斷變長的對話記錄，並會自動壓縮。 |
-| **[自我程式設計](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | Agent 把新方法寫進自己的類別，下一輪起就能當作工具使用。 |
-| **[受檢查的決策](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | 模型從固定選項中挑選，程式碼先驗證再執行。 |
-| **[子 Agent](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | 子 Agent 在自己的分支上執行，可使用獨立的 Git worktree，只交回結果。 |
-| **[事件](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | 型別化事件匯流排；外掛可以觀察事件或攔截工具呼叫。 |
-| **[常駐 Agent](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | 在背景持續執行、對事件做出反應的 Agent。 |
-| **[目標與復原](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期目標在重新啟動後繼續，從中斷處復原。 |
-| **[容錯](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | 每次模型呼叫都有重試、逾時和錯誤分類。 |
+- **2026-11-10 · v1.1.0** — 可以從任一則已傳送的訊息回退；App 支援 Linux。
+- **2026-11-06 · v1.0.0** — 1.x 的第一個版本：具分割畫面的桌面 App、背景執行的電腦操作、會議與常駐排程器。
+- **2026-08-17 · v0.7.0** — 內建瀏覽器，與檔案、對話和終端機並排，Agent 可以讀取並操作。
+- **2026-03-31 · v0.1.0** — 第一個公開版本：Agentic 函式——由模型執行各步驟的 Python 函式，執行過程記錄在脈絡樹中。
 
-### 工作區
-
-| | |
-|---|---|
-| **[桌面與網頁介面](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | macOS 和 Linux 上用 App，v1.2.0 起 Windows 也有 App；網頁介面可在這些系統或伺服器上使用。 |
-| **[分割畫面](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | 聊天、檔案、終端機和網頁並排呈現。 |
-| **[內建瀏覽器](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | Agent 能讀取和操作網頁，你在一旁觀看。 |
-| **[整合終端機](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | 工作區裡的終端機，與 Agent 共用。 |
-| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | 操作桌面應用程式、瀏覽器頁面或遠端虛擬機。 |
-| **[CLI 與終端介面](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | 在終端機裡使用同一個 Agent。 |
-| **[遠端存取](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | 從其他裝置存取你自己的實例，僅限本人。 |
-
-### Agent 與安全
-
-| | |
-|---|---|
-| **[Agent 設定](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | 把模型、指令、工具和記憶權限儲存成可重複使用的 Agent。 |
-| **[記憶](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | 有來源依據的記憶，支援檢索和背景寫入。 |
-| **[權限與沙箱](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | 批准或拒絕工具呼叫並附上說明；指令在沙箱中執行。 |
-| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | 工具和應用程式都是可安裝的 Program。 |
-
-### 模型與整合
-
-| | |
-|---|---|
-| **[模型服務](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini 等，每個服務商可設定多個帳號。 |
-| **[本機模型](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | 本機推論服務，可選用身分驗證。 |
-| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | 使用 MCP 伺服器，或把 OpenProgram 作為 MCP 伺服器提供。 |
-| **[Skills 與外掛](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | 擴充 Agent 的知識和可呼叫的工具。 |
-| **[聊天頻道](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | 在 Telegram、Discord、Slack 和微信裡與 Agent 對話。 |
-| **[自動更新](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | 經過簽署的發行版本，原地更新。 |
+</details>
 
 ## 引用
 
@@ -145,13 +140,9 @@ class SupportAgent(Agent):
 }
 ```
 
-## 授權
+## 參與貢獻
 
-[AGPL-3.0](../LICENSE) © 2026 FuzzyKuji。使用、修改、散布及網路服務的義務以授權條款全文為準。
-
-## 致謝
-
-感謝提供程式碼、問題回報、重現、測試、文件與審查的貢獻者。
+歡迎問題回報、重現、測試、文件與程式碼：[問題回報](https://github.com/Fzkuji/OpenProgram/issues) · [拉取請求](https://github.com/Fzkuji/OpenProgram/pulls) · [貢獻指南](../.github/CONTRIBUTING.md)。
 
 <!-- contributors-avatars -->
 <p>
@@ -163,4 +154,6 @@ class SupportAgent(Agent):
 </p>
 <!-- /contributors-avatars -->
 
-[問題回報](https://github.com/Fzkuji/OpenProgram/issues) · [拉取請求](https://github.com/Fzkuji/OpenProgram/pulls)
+## 授權
+
+[AGPL-3.0](../LICENSE) © 2026 FuzzyKuji。

@@ -18,52 +18,82 @@
 <a id="3-agentic-workflow--for-trustworthy--self-evolving-agents"></a>
 <a id="4-event-infrastructure--for-proactive-agents"></a>
 <a id="also-in-the-product"></a>
+<a id="quick-start"></a>
+<a id="features"></a>
+<a id="framework"></a>
+<a id="workspace"></a>
+<a id="agents-and-safety"></a>
+<a id="models-and-integrations"></a>
+<a id="acknowledgements"></a>
 
 <p align="center"><b>Ein Open-Source-Agent-Harness, in dem Agenten Python-Programme sind, die sich selbst verbessern.</b></p>
 
 <p align="center">
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CHANGELOG.md"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFzkuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
-  <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
+  <a href="https://arxiv.org/abs/2606.15874"><img alt="Paper" src="https://img.shields.io/badge/arXiv-2606.15874-b31b1b?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="https://fzkuji.github.io/OpenProgram/">Website</a> · <a href="#install">Installation</a> · <a href="https://fzkuji.github.io/OpenProgram/docs/">Dokumentation</a>
+  <a href="https://fzkuji.github.io/OpenProgram/"><b>Website</b></a> · <a href="https://fzkuji.github.io/OpenProgram/docs/"><b>Dokumentation</b></a> · <a href="https://fzkuji.github.io/OpenProgram/docs/install/download.html"><b>App herunterladen</b></a> · <a href="https://arxiv.org/abs/2606.15874"><b>Paper</b></a>
 </p>
 
 <p align="center">
   <a href="../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
 </p>
 
-## Neuigkeiten
-
-- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Mehrere Schlüssel und Anmeldungen je Anbieter mit automatischem Wechsel bei einem Limit, Aufgabenblöcke in Antworten und ein Ausführungsverlauf für geplante Aufgaben. Ab dieser Version werden Releases aus diesem Repository veröffentlicht.
-- **2026-11-15 · v1.3.0** — Anbieterseite mit Zustand, Kontingent und Kosten; die Agenten einer Unterhaltung in Activity aufgelistet; Dateien, die ein Agent erstellt, öffnen sich von selbst.
-- **2026-11-14 · v1.2.0** — Zweige einer Unterhaltung laufen nebeneinander, Stopp wirkt sofort, und die Windows-App ist da.
-- **2026-11-10 · v1.1.0** — Zurückspulen von jeder gesendeten Nachricht aus; die App kommt auf Linux.
-- **2026-11-06 · v1.0.0** — Erste Version der 1.x-Reihe: Desktop-App mit geteilten Ansichten, Computernutzung im Hintergrund, Meetings und ein dauerhaft laufender Planer.
-- **2026-08-17 · v0.7.0** — Ein eingebauter Browser neben Dateien, Chat und Terminal, den Agenten lesen und bedienen können.
-- **2026-03-31 · v0.1.0** — Erste öffentliche Version: agentische Funktionen, Python-Funktionen, deren Schritte ein Modell ausführt, aufgezeichnet in einem Kontextbaum.
+<p align="center">
+  <a href="https://fzkuji.github.io/OpenProgram/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../docs/images/chat_hero.png">
+      <source media="(prefers-color-scheme: light)" srcset="../docs/images/chat_hero_light.png">
+      <img src="../docs/images/chat_hero.png" alt="OpenProgram-Arbeitsbereich: eine Agenten-Sitzung, die zwei Sub-Agenten ausgeführt hat" width="100%">
+    </picture>
+  </a>
+</p>
 
 <a id="install"></a>
 
 ## Installation
 
+**macOS · Linux**
+
 ```bash
 curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 ```
 
-Unter Windows (ab v1.2.0): `irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex`. Die macOS-Desktop-App ist ein DMG auf der [Release-Seite](https://github.com/Fzkuji/OpenProgram/releases); die Linux-App liegt dort als deb und AppImage, die Windows-App kommt mit v1.1.1. Falls die Website nicht antwortet: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Weitere Optionen in der [Installationsanleitung](https://fzkuji.github.io/OpenProgram/docs/install/install.html) (Englisch).
+**Windows (PowerShell)**
 
-## Schnellstart
-
-```bash
-openprogram        # Einrichtungsassistent, danach Chat im Terminal
-openprogram web    # Arbeitsbereich unter http://localhost:18100
+```powershell
+irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex
 ```
 
-Weiter: [Erste Schritte](../docs/start/GETTING_STARTED.html) · [Modelle](../docs/models/README.html) · [gesamte Dokumentation](../docs/README.html) (Englisch)
+**Desktop-App** — [macOS Apple Silicon](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-mac-arm64.dmg) · [macOS Intel](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-mac-x64.dmg) · [Windows](https://fzkuji.github.io/OpenProgram/docs/latest.html?OpenProgram-win-x64.exe) · [Linux (deb, AppImage)](https://fzkuji.github.io/OpenProgram/docs/install/download.html). Die App aktualisiert sich selbst.
+
+Danach:
+
+```bash
+openprogram        # Modell verbinden, danach Chat im Terminal
+openprogram web    # Arbeitsbereich unter http://localhost:18100 öffnen
+```
+
+Falls die Website nicht antwortet: `curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/docs/_static_root/install.sh | sh`. Weitere Optionen: [Installationsanleitung](https://fzkuji.github.io/OpenProgram/docs/install/install.html) · [Erste Schritte](https://fzkuji.github.io/OpenProgram/docs/start/GETTING_STARTED.html).
+
+## Warum OpenProgram
+
+<table>
+<tr><td><b>Agenten sind Python-Programme</b></td><td>Verzweigungen, Wiederholungen und Prüfungen sind gewöhnlicher Code; <code>self(...)</code> ist ein Modellaufruf. Das Modell entscheidet, und Python sorgt dafür, dass die nötigen Schritte ausgeführt werden.</td></tr>
+<tr><td><b>Sie programmieren sich selbst</b></td><td>Ein Agent schreibt neue Methoden in seine eigene Klasse. Ab dem nächsten Zug ist jede davon ein Werkzeug, das er aufrufen kann.</td></tr>
+<tr><td><b>Ein Graph statt eines Verlaufs</b></td><td>Jeder Zug, Modellaufruf und Funktionsaufruf ist ein Knoten, den du ansehen, verzweigen und erneut abspielen kannst. Sub-Agenten arbeiten auf einem eigenen Zweig und liefern nur ihr Ergebnis.</td></tr>
+<tr><td><b>Geprüfte Entscheidungen</b></td><td>Das Modell wählt aus einem festen Menü, und Code prüft die Wahl, bevor etwas ausgeführt wird.</td></tr>
+<tr><td><b>Ein Arbeitsbereich</b></td><td>Chats, Dateien, Terminals und ein integrierter Browser nebeneinander, in der Desktop-App, der Weboberfläche, einer Terminal-Oberfläche oder der CLI.</td></tr>
+<tr><td><b>Bedient deinen Computer</b></td><td>Steuert Desktop-Apps, Browserseiten und entfernte VMs im Hintergrund, ohne deinen Bildschirm zu übernehmen.</td></tr>
+<tr><td><b>Dauerhaft aktiv</b></td><td>Geplante Aufgaben, Ziele, die Neustarts überstehen, und Chat über Telegram, Discord, Slack und WeChat.</td></tr>
+<tr><td><b>Jedes Modell</b></td><td>Über 300 Anbieter und lokale Modelle; mehrere Schlüssel je Anbieter, automatisch gewechselt bei einem Limit.</td></tr>
+</table>
+
+Alle Funktionen mit ihrem Design: [Funktionsübersicht](https://fzkuji.github.io/OpenProgram/docs/reference/design/README.html).
 
 ## Auf einen Blick
 
@@ -80,58 +110,23 @@ class SupportAgent(Agent):
         return self("Draft a short reply.")
 ```
 
-Das Modell entscheidet; Python sorgt dafür, dass die nötigen Schritte ausgeführt werden. Siehe [Agenten schreiben](../docs/capabilities/agentic-programming/writing-functions/agent.html) (Englisch).
+Siehe [Agenten schreiben](https://fzkuji.github.io/OpenProgram/docs/capabilities/agentic-programming/writing-functions/agent.html).
 
-## Funktionen
+## Neuigkeiten
 
-Jeder Eintrag verlinkt auf sein Designdokument (Englisch).
+- **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Mehrere Schlüssel und Anmeldungen je Anbieter mit automatischem Wechsel bei einem Limit, Aufgabenblöcke in Antworten und ein Ausführungsverlauf für geplante Aufgaben.
+- **2026-11-15 · v1.3.0** — Anbieterseite mit Zustand, Kontingent und Kosten; die Agenten einer Unterhaltung in Activity aufgelistet.
+- **2026-11-14 · v1.2.0** — Zweige einer Unterhaltung laufen nebeneinander, Stopp wirkt sofort, und die Windows-App ist da.
 
-### Framework
+<details>
+<summary>Früher</summary>
 
-| | |
-|---|---|
-| **[Agentenklassen](https://fzkuji.github.io/OpenProgram/docs/reference/design/function/agentic-program.html)** | Ein Agent ist eine Python-Klasse; Verzweigungen, Wiederholungen und Prüfungen sind Code, `self(...)` ist ein Modellaufruf. |
-| **[Ausführungs-DAG](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/dag/overview.html)** | Jeder Nutzerzug, Modellaufruf und Funktionsaufruf ist ein Knoten, den du ansehen, verzweigen und erneut abspielen kannst. |
-| **[Kontext](https://fzkuji.github.io/OpenProgram/docs/reference/design/context/overview.html)** | Jeder Aufruf liest eine Auswahl von Knoten statt eines immer längeren Verlaufs, mit automatischer Verdichtung. |
-| **[Selbstprogrammierung](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/workflows/workflow.html)** | Agenten schreiben neue Methoden in ihre eigene Klasse; ab dem nächsten Zug sind es Werkzeuge. |
-| **[Geprüfte Entscheidungen](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent/next-step-decision.html)** | Das Modell wählt aus einem festen Menü, und Code prüft die Wahl, bevor etwas ausgeführt wird. |
-| **[Sub-Agenten](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Sub-Agenten laufen auf eigenen Zweigen, optional in einem Git-Worktree, und liefern nur ihr Ergebnis. |
-| **[Ereignisse](https://fzkuji.github.io/OpenProgram/docs/reference/design/proactive/event-layer.html)** | Ein typisierter Ereignisbus; Plugins beobachten Ereignisse oder sperren Werkzeugaufrufe. |
-| **[Dauerhaft laufende Agenten](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/always-on-agents.html)** | Agenten, die im Hintergrund weiterlaufen und auf Ereignisse reagieren. |
-| **[Ziele und Wiederherstellung](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Langfristige Ziele überstehen Neustarts und machen dort weiter, wo sie aufgehört haben. |
-| **[Fehlertoleranz](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Wiederholungen, Zeitlimits und Fehlerklassifizierung für jeden Modellaufruf. |
+- **2026-11-10 · v1.1.0** — Zurückspulen von jeder gesendeten Nachricht aus; die App kommt auf Linux.
+- **2026-11-06 · v1.0.0** — Erste Version der 1.x-Reihe: Desktop-App mit geteilten Ansichten, Computernutzung im Hintergrund, Meetings und ein dauerhaft laufender Planer.
+- **2026-08-17 · v0.7.0** — Ein eingebauter Browser neben Dateien, Chat und Terminal, den Agenten lesen und bedienen können.
+- **2026-03-31 · v0.1.0** — Erste öffentliche Version: agentische Funktionen, Python-Funktionen, deren Schritte ein Modell ausführt, aufgezeichnet in einem Kontextbaum.
 
-### Arbeitsbereich
-
-| | |
-|---|---|
-| **[Desktop- und Web-Oberfläche](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/README.html)** | Die App auf macOS und Linux, ab v1.2.0 auch auf Windows; die Weboberfläche auf jedem davon oder einem Server. |
-| **[Geteilte Ansichten](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Chats, Dateien, Terminals und Webseiten nebeneinander. |
-| **[Integrierter Browser](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/browser/built-in-browser.html)** | Ein Browser, den der Agent liest und bedient, während du zusiehst. |
-| **[Integriertes Terminal](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/workspace/integrated-terminal.html)** | Terminals im Arbeitsbereich, gemeinsam mit dem Agenten genutzt. |
-| **[Computer use](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/computer-use/computer-and-browser-use.html)** | Desktop-Apps, Browserseiten oder eine entfernte VM bedienen. |
-| **[CLI und TUI](https://fzkuji.github.io/OpenProgram/docs/reference/design/cli/README.html)** | Derselbe Agent im Terminal. |
-| **[Fernzugriff](https://fzkuji.github.io/OpenProgram/docs/reference/design/ui/remote-web-access.html)** | Von einem anderen Gerät auf deine eigene Instanz zugreifen, nur für dich. |
-
-### Agenten und Sicherheit
-
-| | |
-|---|---|
-| **[Konfigurierbare Agenten](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Modell, Anweisungen, Werkzeuge und Gedächtniszugriff als wiederverwendbaren Agenten speichern. |
-| **[Gedächtnis](https://fzkuji.github.io/OpenProgram/docs/reference/design/memory/overview.html)** | Gedächtnis mit Quellenangaben, Suche und Schreiben im Hintergrund. |
-| **[Berechtigungen und Sandbox](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/security/sandbox-architecture.html)** | Werkzeugaufrufe mit einer Notiz erlauben oder ablehnen; Befehle laufen in einer Sandbox. |
-| **[Programs](https://fzkuji.github.io/OpenProgram/docs/reference/design/runtime/programs/programs-architecture.html)** | Werkzeuge und Anwendungen als installierbare Programs. |
-
-### Modelle und Integrationen
-
-| | |
-|---|---|
-| **[Anbieter](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini und weitere, mit mehreren Konten pro Anbieter. |
-| **[Lokale Modelle](https://fzkuji.github.io/OpenProgram/docs/reference/design/providers/models/local-models.html)** | Lokale Inferenzserver, optional mit Authentifizierung. |
-| **[MCP](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/mcp-integration.html)** | MCP-Server nutzen oder OpenProgram selbst als MCP-Server anbieten. |
-| **[Skills und Plugins](https://fzkuji.github.io/OpenProgram/docs/reference/design/integrations/extensions/skills-and-plugins.html)** | Erweitere, was der Agent weiß und aufrufen kann. |
-| **[Kanäle](https://fzkuji.github.io/OpenProgram/docs/reference/design/channels/README.html)** | Sprich mit deinen Agenten über Telegram, Discord, Slack und WeChat. |
-| **[Automatische Updates](https://fzkuji.github.io/OpenProgram/docs/reference/design/distribution/automatic-updates.html)** | Signierte Releases, die sich an Ort und Stelle aktualisieren. |
+</details>
 
 ## Zitieren
 
@@ -145,13 +140,9 @@ Jeder Eintrag verlinkt auf sein Designdokument (Englisch).
 }
 ```
 
-## Lizenz
+## Mitwirken
 
-[AGPL-3.0](../LICENSE) © 2026 FuzzyKuji. Pflichten zu Nutzung, Änderung, Weitergabe und Netzwerkdiensten regelt der Lizenztext.
-
-## Danksagung
-
-Danke an alle, die mit Code, Meldungen, Reproduktionen, Tests, Dokumentation und Reviews beitragen.
+Meldungen, Reproduktionen, Tests, Dokumentation und Code sind willkommen: [Issues](https://github.com/Fzkuji/OpenProgram/issues) · [Pull Requests](https://github.com/Fzkuji/OpenProgram/pulls) · [Leitfaden für Beiträge](../.github/CONTRIBUTING.md).
 
 <!-- contributors-avatars -->
 <p>
@@ -163,4 +154,6 @@ Danke an alle, die mit Code, Meldungen, Reproduktionen, Tests, Dokumentation und
 </p>
 <!-- /contributors-avatars -->
 
-[Issues](https://github.com/Fzkuji/OpenProgram/issues) · [Pull Requests](https://github.com/Fzkuji/OpenProgram/pulls)
+## Lizenz
+
+[AGPL-3.0](../LICENSE) © 2026 FuzzyKuji.
