@@ -99,19 +99,20 @@ const PALETTE = [
   "#06b6d4", "#ef4444", "#84cc16", "#ec4899", "#14b8a6",
 ];
 
-function catColor(idx: number): string {
+export function catColor(idx: number): string {
   return PALETTE[idx % PALETTE.length];
 }
 
 // ── formatters ──────────────────────────────────────────────────────────────
 
-function fmtNum(n: number): string {
+export function fmtNum(n: number): string {
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + "B";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
   return n.toLocaleString("en-US");
 }
 
-function fmtCost(c: number | null): string {
+export function fmtCost(c: number | null): string {
   if (c == null) return "—";
   if (c === 0) return "$0.00";
   if (c < 0.01) return "<$0.01";

@@ -305,6 +305,88 @@ SCROLL_SCRIPT = r"""
 }
 """
 
+# For a tab behind others, where Chrome draws no frames and real pointer input waits for them: the element at
+# a viewport point, standing in for the element a script is bound to.
+AT_POINT = "document.elementFromPoint(o.x, o.y) || document.scrollingElement || document.documentElement"
+
+# A drag as page events, from the element (or the point o.from) to the point o.to: pointer and mouse events
+# along the way, and HTML5 drag events with one shared DataTransfer when the start is draggable.
+DRAG_SCRIPT = r"""
+async (element, o) => {
+  const doc = element ? element.ownerDocument : document;
+  const rect = element ? element.getBoundingClientRect() : null;
+  const from = o.from || {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+  const start = element || doc.elementFromPoint(from.x, from.y);
+  if (!start) return {ok: false, reason_code: "no_element_at_start"};
+  const at = (x, y, buttons) => ({bubbles: true, cancelable: true, composed: true, view: window,
+    clientX: x, clientY: y, button: 0, buttons});
+  const pointer = (target, type, x, y, buttons) => {
+    target.dispatchEvent(new PointerEvent("pointer" + type, {...at(x, y, buttons), pointerType: "mouse", isPrimary: true}));
+    target.dispatchEvent(new MouseEvent("mouse" + type, at(x, y, buttons)));
+  };
+  // A task between steps lets the page's handlers run; a message, unlike a timer, is not held back to once a
+  // second in a tab behind others.
+  const pause = () => new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(0);
+  });
+  const draggable = start.closest?.("[draggable=true]") || (start.draggable ? start : null);
+  pointer(start, "down", from.x, from.y, 1);
+  const data = draggable ? new DataTransfer() : null;
+  const drag = (target, type, x, y) => target.dispatchEvent(new DragEvent(type, {...at(x, y, 1), dataTransfer: data}));
+  if (draggable) drag(draggable, "dragstart", from.x, from.y);
+  let over = start;
+  const steps = 8;
+  for (let i = 1; i <= steps; i++) {
+    const x = from.x + (o.to.x - from.x) * i / steps, y = from.y + (o.to.y - from.y) * i / steps;
+    const target = doc.elementFromPoint(x, y) || doc.body;
+    if (draggable) {
+      if (target !== over) drag(target, "dragenter", x, y);
+      drag(target, "dragover", x, y);
+    } else {
+      pointer(target, "move", x, y, 1);
+    }
+    over = target;
+    await pause();
+  }
+  if (draggable) {
+    drag(over, "drop", o.to.x, o.to.y);
+    drag(draggable, "dragend", o.to.x, o.to.y);
+  }
+  pointer(over, "up", o.to.x, o.to.y, 0);
+  return {ok: true};
+}
+"""
+
+CENTER_SCRIPT = "(e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }"
+
+# A checkbox or radio set by a click in the page, when it is not already as asked.
+CHECK_SCRIPT = r"""
+(element, o) => {
+  if (element.checked !== o.on) element.click();
+  return {ok: element.checked === o.on, reason_code: "not_toggled"};
+}
+"""
+
+# A press held at an element for o.seconds, as page events.
+HOLD_SCRIPT = r"""
+async (element, o) => {
+  const rect = element.getBoundingClientRect();
+  const button = {left: 0, middle: 1, right: 2}[o.button] ?? 0;
+  const at = {bubbles: true, cancelable: true, composed: true, view: window,
+    clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button};
+  const pressed = {0: 1, 1: 4, 2: 2}[button];
+  element.dispatchEvent(new PointerEvent("pointerdown", {...at, buttons: pressed, pointerType: "mouse", isPrimary: true}));
+  element.dispatchEvent(new MouseEvent("mousedown", {...at, buttons: pressed}));
+  await new Promise((resolve) => setTimeout(resolve, o.seconds * 1000));
+  element.dispatchEvent(new PointerEvent("pointerup", {...at, buttons: 0, pointerType: "mouse", isPrimary: true}));
+  element.dispatchEvent(new MouseEvent("mouseup", {...at, buttons: 0}));
+  if (button === 0) element.dispatchEvent(new MouseEvent("click", {...at, buttons: 0}));
+  return {ok: true};
+}
+"""
+
 INSERT_TEXT_SCRIPT = r"""
 (element, o) => {
   const doc = element ? element.ownerDocument : document;
@@ -341,23 +423,30 @@ PASTE_SCRIPT = r"""
 """
 
 
-def bound_call(script: str, options: dict[str, Any], *, with_element: bool = True, require: str = "") -> str:
+def bound_call(script: str, options: dict[str, Any], *, with_element: bool = True, require: str = "",
+               at_point: bool = False) -> str:
     """A function an MCP ``evaluate`` can run, with the options inlined as JSON.
 
     With ``require``, a result whose field of that name is falsy throws, so
-    the backend reports the call as failed instead of as done.
+    the backend reports the call as failed instead of as done. With
+    ``at_point`` the script is bound to the element at ``options``' x, y
+    (``AT_POINT``) instead of a target. A script that returns a promise is
+    awaited.
     """
     payload = json.dumps(options, ensure_ascii=False)
-    head, element = ("(element) => ", "element") if with_element else ("() => ", "null")
+    if at_point:
+        head, element = "() => ", f"((o) => {AT_POINT})({payload})"
+    else:
+        head, element = ("(element) => ", "element") if with_element else ("() => ", "null")
     call = f"({script.strip()})({element}, {payload})"
     if not require:
         return f"{head}{call}"
-    return (f"{head}{{ const r = {call}; if (!r || !r[{json.dumps(require)}]) "
+    return (f"async {head}{{ const r = await {call}; if (!r || !r[{json.dumps(require)}]) "
             f"throw new Error((r && r.reason_code) || {json.dumps(require + '_failed')}); return r; }}")
 
 
 __all__ = [
-    "ActionError", "EVALUATE_ACTION", "FIELD_KIND_SCRIPT", "HOVER_SCRIPT", "INSERT_TEXT_SCRIPT", "MAX_RESULT_CHARS",
+    "AT_POINT", "CENTER_SCRIPT", "CHECK_SCRIPT", "DRAG_SCRIPT", "HOLD_SCRIPT", "ActionError", "EVALUATE_ACTION", "FIELD_KIND_SCRIPT", "HOVER_SCRIPT", "INSERT_TEXT_SCRIPT", "MAX_RESULT_CHARS",
     "MAX_SCRIPT_CHARS", "PAGE_SHARE", "PASTE_SCRIPT", "POINTER_SCRIPT", "SCROLL_SCRIPT", "bound_call", "checked",
     "click_options", "evaluate_source", "evaluation_text", "find_lines", "modifiers", "mouse_options",
     "option_values", "paste_payload", "scroll_delta",

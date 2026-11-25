@@ -1,0 +1,92 @@
+<title>Model Gateway</title>
+<meta name="description" content="How Claude Code, Codex and other harnesses run on any model set up in OpenProgram: the gateway routes, how each protocol is read into OpenProgram's own message types and written back, the gateway key, launch overrides and the optional edit of the harness's own config. Decisions taken from magpie.">
+<meta name="covers" content="openprogram/models/gateway/ openprogram/interfaces/server/routes/gateway.py openprogram/interfaces/server/routes/settings/harness_models.py">
+<h1>Model Gateway</h1>
+
+<p>Claude Code and Codex send their model calls to the Worker instead of to Anthropic or OpenAI. The Worker answers them with the model the user picked among OpenProgram's providers, in the harness's own protocol.</p>
+<p>Upstream calls go only through OpenProgram's configured providers and their own credentials. An Anthropic model is reached with an Anthropic API key, as everywhere in OpenProgram; the key or token a harness sends only opens the gateway and is never forwarded.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Protocols</th><td><code translate="no">openprogram/models/gateway/messages.py</code> (Anthropic Messages), <code translate="no">responses.py</code> (OpenAI Responses), <code translate="no">chat_completions.py</code></td></tr>
+<tr><th scope="row">Shared pieces</th><td><code translate="no">conversion.py</code> (model refs, signatures, options), <code translate="no">stream.py</code> (one upstream call, errors)</td></tr>
+<tr><th scope="row">Routes</th><td><code translate="no">openprogram/interfaces/server/routes/gateway.py</code></td></tr>
+<tr><th scope="row">Key</th><td><code translate="no">keys.py</code>, <code translate="no">&lt;state&gt;/gateway/key</code>; checked in <code translate="no">owner_auth.py</code></td></tr>
+<tr><th scope="row">Launch overrides</th><td><code translate="no">launch.py</code>: <code translate="no">codex_launch</code>, <code translate="no">claude_code_launch</code></td></tr>
+<tr><th scope="row">Terminal config</th><td><code translate="no">harness_config.py</code>, <code translate="no">config_files.py</code>, <code translate="no">stash.py</code>, <code translate="no">&lt;state&gt;/gateway/harness-stash.json</code></td></tr>
+<tr><th scope="row">Settings</th><td><code translate="no">harnesses.*</code> in <code translate="no">state/settings.py</code>; <code translate="no">GET/PUT /api/harnesses/models</code>; the Models card on Settings → Third-Party Harnesses</td></tr>
+</tbody>
+</table>
+
+<h2 id="routes">Routes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Path</th><th scope="col">Client</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages</code></th><td>Claude Code; streamed and whole replies</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages/count_tokens</code></th><td>Estimated locally (a CJK character 1, anything else ¼)</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/responses</code></th><td>Codex; plain HTTP with server-sent events (Codex uses WebSockets only for a provider that declares <code translate="no">supports_websockets</code>)</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/chat/completions</code></th><td>Harnesses that speak only Chat Completions</td></tr>
+<tr><th scope="row"><code translate="no">GET /gateway/*/v1/models</code></th><td>The enabled models as <code translate="no">provider/model</code></td></tr>
+</tbody>
+</table>
+<p>The existing <code translate="no">/v1/chat/completions</code>, which answers with an OpenProgram Agent, is a different endpoint (<a href="openai-compatible-endpoint.html">OpenAI-Compatible Endpoint</a>).</p>
+
+<h2 id="conversion">One internal format</h2>
+<p>A request is read into the same <code translate="no">Context</code>, messages and <code translate="no">SimpleStreamOptions</code> the agent loop uses, sent through <code translate="no">stream_simple</code>, and the provider's events are written back in the client's protocol.</p>
+<p>The provider adapters already convert both ways between these types and every upstream API, so the gateway adds only the client side. A call therefore gets the provider layer's credential rotation, retries and fault tolerance; the gateway adds no second retry layer.</p>
+<table class="stack">
+<thead><tr><th scope="col">Question</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model names</th><td>Explicit <code translate="no">provider/model</code> refs (<code translate="no">split_model_ref</code>), optionally prefixed <code translate="no">openprogram:</code>; an unknown name is a 404, never an alias</td></tr>
+<tr><th scope="row">Thinking signatures</th><td>The model's own value goes to the client wrapped with the model that made it and comes back only to that model. A Claude Code client of an Anthropic model gets Anthropic's own signature. None is made up; an unsigned thinking block never goes to Anthropic.</td></tr>
+<tr><th scope="row">Codex freeform tools</th><td><code translate="no">apply_patch</code> reaches the model as a function with one <code translate="no">input</code> string and the grammar in its description, and returns as <code translate="no">custom_tool_call</code></td></tr>
+<tr><th scope="row">Cache markers</th><td>A client's <code translate="no">cache_control</code> on tools and content is kept; the Anthropic adapter places and caps breakpoints as for any request</td></tr>
+<tr><th scope="row">Client headers</th><td>Nothing beyond the body reaches the provider: no key, no <code translate="no">anthropic-beta</code></td></tr>
+<tr><th scope="row">Errors</th><td>Before the first byte: the protocol's error response (Anthropic <code translate="no">{type:"error"}</code>, OpenAI <code translate="no">{error:{…}}</code>); a context overflow reads "prompt is too long" or <code translate="no">context_length_exceeded</code> so the harness compacts; a refused upstream credential is a 502, never a 401 that would send the harness to its own sign-in. After the first byte: the in-stream error event, and nothing is sent again.</td></tr>
+<tr><th scope="row">Usage</th><td>Recorded in OpenProgram's ledger as <code translate="no">call_kind = "harness"</code>, labelled by the harness</td></tr>
+</tbody>
+</table>
+
+<h2 id="auth">The gateway key</h2>
+<p>The owner token changes with every Worker start, so a config file could not hold it. The gateway key is random, kept owner-only in the state folder and survives restarts.</p>
+<p>The owner-auth middleware accepts it, as <code translate="no">Authorization: Bearer</code> or <code translate="no">x-api-key</code>, only on <code translate="no">/gateway/</code> paths; the owner token works there too. Every gateway request needs one of them, from any address. Backups keep <code translate="no">gateway/</code> with the credentials, because harness configs written for the terminal carry the key.</p>
+
+<h2 id="launch">Two ways a harness uses it</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Codex</th><th scope="col">Claude Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Started by OpenProgram for a chat</th><td><code translate="no">-c</code> overrides: <code translate="no">model_provider = "openprogram"</code>, the <code translate="no">model_providers.openprogram</code> table with <code translate="no">env_key</code>, <code translate="no">model</code>, <code translate="no">model_context_window</code>; the key in the environment</td><td>Environment: <code translate="no">ANTHROPIC_BASE_URL</code>, <code translate="no">ANTHROPIC_AUTH_TOKEN</code>, the Opus/Sonnet/Haiku tier variables, <code translate="no">ANTHROPIC_SMALL_FAST_MODEL</code>, <code translate="no">CLAUDE_CODE_SUBAGENT_MODEL</code>; cloud switches off</td></tr>
+<tr><th scope="row">Also in the Terminal</th><td><code translate="no">config.toml</code>: <code translate="no">model_provider</code>, <code translate="no">model</code> and the table with <code translate="no">experimental_bearer_token</code></td><td><code translate="no">settings.json</code>: the same variables under <code translate="no">env</code> and the top-level <code translate="no">model</code>; <code translate="no">CLAUDE_CODE_USE_BEDROCK</code>/<code translate="no">_VERTEX</code>/<code translate="no">_FOUNDRY</code> removed while on</td></tr>
+</tbody>
+</table>
+<p><code translate="no">ANTHROPIC_MODEL</code> is never set: it would override the model picked with <code translate="no">/model</code>. Nothing else is added to a harness's config: no MCP servers, permissions or instructions, and no prompt text names the gateway.</p>
+
+<h2 id="terminal">Editing a harness's own config</h2>
+<ol>
+<li>The file is parsed first. A file that does not parse is unknown: nothing is written and the page says why.</li>
+<li>The original value of every key about to change, or that it was absent, goes to the stash before the first write.</li>
+<li>Only those keys change. TOML is edited line by line and the result is parsed and compared with the intended change; JSON keeps its key order and indentation. Comments, CRLF and symlinks are kept; the write is a temp file renamed over the original.</li>
+<li>Turning it off, or going back to the harness's own sign-in, restores each value that still holds what OpenProgram wrote. A value the user changed since is drift: the card shows it and it is never restored over. The stash entry is deleted only after the restoring write succeeded.</li>
+<li>Codex's <code translate="no">[model_providers.openprogram]</code> table is never removed, because a thread started on it cannot reopen without it; only <code translate="no">model_provider</code> goes back.</li>
+</ol>
+
+<h2 id="codex-app">The Codex app</h2>
+<p>The Codex app inside ChatGPT.app runs its own <code translate="no">codex app-server</code> on the same <code translate="no">~/.codex</code>, so the same <code translate="no">config.toml</code> reaches it (<code translate="no">codex_app.py</code>).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Gap</th><th scope="col">What OpenProgram does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Its model picker</th><td>Lists <code translate="no">model/list</code>, which shows only Codex's own models for a provider it does not ship. The enabled models are written to <code translate="no">openprogram-models.json</code> beside <code translate="no">config.toml</code> and named by <code translate="no">model_catalog_json</code>; the chosen one comes first. Each entry is Codex's own metadata for an unknown model: the window OpenProgram knows or 272K, and the <code translate="no">prompt.md</code> instructions of the installed Codex's release, read once and kept</td></tr>
+<tr><th scope="row">Reading the change</th><td>Its app-server reads the config only as it starts. Turning on or off ends the app's own app-server (in an app bundle, stdio, on this Codex home) with SIGTERM once no session file was written for 20 seconds, for up to 15 minutes; the app starts another and keeps its windows and chats. A new model alone restarts nothing</td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">Taken from magpie</h2>
+<p>magpie (yetone/magpie) runs the same kind of gateway.</p>
+<ul>
+<li>Taken: explicit model refs; Claude Code's tier variables without <code translate="no">ANTHROPIC_MODEL</code>; Codex's provider table that is never removed; the Codex app's catalog and its app-server restart on a route change; stash-before-write with drift; refusing a config that does not parse; errors in the client's protocol with no fallback after the first byte.</li>
+<li>Not taken: serving a Claude subscription by running the <code translate="no">claude</code> binary; rules for one vendor applied to all; additions to the harness's config that were not asked for.</li>
+</ul>
+
+<h2 id="status">Implementation status</h2>
+<p>Codex over WebSockets, Gemini's tool-call thought signatures through the Anthropic protocol, provider-side web search, and PDF documents are not carried yet. A reset of OpenProgram does not yet call <code translate="no">harness_config.restore_all</code>.</p>

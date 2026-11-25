@@ -328,7 +328,7 @@ def _unavailable(provider: str, pool: CredentialPool, model: str, *, pinned_id: 
         head = f"No {provider} key can be used now."
     states = "; ".join(f"{r['label']}: {_said(r['state'])}" + (f" until {time.strftime('%H:%M', time.localtime(r['back_at']))}"
                        if r["back_at"] else "") for r in rows)
-    message = f"{head} {states}." if states else f"{head} Add a key in Settings → Model services."
+    message = f"{head} {states}." if states else f"{head} Add a key in Settings → Model Services."
     return NoUsableCredential(message, provider_id=provider, rows=rows, pinned_id=pinned_id,
                               wait_ms=wait_ms, wait_label=wait_label)
 

@@ -41,6 +41,8 @@ import { PICKER_QUERY_KEY, triggerMark } from "@/lib/models/provider-state";
 import { ModelMark } from "./chips/model-mark";
 import { MENU_PANEL } from "@/components/ui/menu/menu-styles";
 import { useBoundChat } from "./bound-chat";
+import { useHarness } from "./menus/harness-menu";
+import { gatewayModel, harnessProvider } from "@/lib/models/harnesses";
 import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/tabs/top-bar-sync";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -49,6 +51,7 @@ export { ProjectBadge } from "./menus/project-menu";
 export { WorkingDirChips } from "./chips/working-dir-chips";
 export { PermissionBadge } from "./menus/permission-menu";
 export { AgentConfigBadge } from "./menus/agent-config-menu";
+export { HarnessBadge } from "./menus/harness-menu";
 
 /**
  * Headless bridge — seeds the store from the current runtime state on
@@ -156,9 +159,20 @@ export function AgentBadge({
     return m;
   }, [enabledModels]);
 
+  // In a harness (Codex) the model is one of its own, named by its listing,
+  // or an OpenProgram model run through it, which shows as that model.
+  const harness = useHarness(open);
+  const routed = harness.harness ? gatewayModel(model) : null;
+  const markProvider = routed?.provider ?? provider;
+  const harnessLabel = harness.harness && !routed
+    ? harness.entry?.models.find((m) => m.id === model)?.label ?? model ?? ""
+    : null;
+
   // Tooltip carries the "what is this chip" intro, so the chip itself
   // shows only the provider's logo — plus the model name when one is set.
-  const label = fmtAgentLabel(provider, model, nameById);
+  const label = harnessLabel ?? (routed
+    ? fmtAgentLabel(routed.provider, routed.model, nameById)
+    : fmtAgentLabel(provider, model, nameById));
   const tipBody = (
     <TipBody
       title={text(`Model: ${label || "none"}`, `模型：${label || "未选择"}`)}
@@ -178,13 +192,13 @@ export function AgentBadge({
           >
             {mark ? (
               <span className="relative inline-flex">
-                <ModelMark provider={provider} />
+                <ModelMark provider={markProvider} />
                 <TriggerMark tone={mark.tone} />
                 {/* The dot is drawn only; its meaning is read out here. */}
                 <span className="sr-only">{mark.detail}</span>
               </span>
             ) : (
-              <ModelMark provider={provider} />
+              <ModelMark provider={markProvider} />
             )}
             {label ? <span className="badge-details">{label}</span> : null}
           </button>
@@ -203,6 +217,11 @@ export function AgentBadge({
           currentProvider={provider}
           currentModel={model}
           onClose={() => setOpen(false)}
+          harness={harness.harness ? {
+            id: harness.harness,
+            provider: harnessProvider(harness.harness) ?? provider ?? "",
+            entry: harness.entry,
+          } : undefined}
         />
       </DropdownMenuContent>
     </DropdownMenu>

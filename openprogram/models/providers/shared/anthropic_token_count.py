@@ -75,7 +75,7 @@ def count_tokens_via_anthropic(
     """Return ``{"input_tokens": N}`` for the given message list, or None.
 
     The API key is resolved via the ``api_key`` parameter, else the
-    AuthStore (Settings -> Model services).
+    AuthStore (Settings -> Model Services).
 
     Returns None on any failure — never raises. Caller treats None as
     'we don't know' and leaves the token columns NULL.

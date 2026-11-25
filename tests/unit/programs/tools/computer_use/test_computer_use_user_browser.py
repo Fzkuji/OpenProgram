@@ -565,8 +565,37 @@ def test_pointing_by_x_y_moves_the_mouse_there():
     page = _extension_browser(client)
     page.run("hover", {"x": 10, "y": 20, "seconds": 0})
     page.run("scroll", {"x": 10, "y": 20, "direction": "down", "pixels": 300})
-    assert client.calls == [("browser_mouse_move_xy", {"x": 10, "y": 20}), ("browser_mouse_move_xy", {"x": 10, "y": 20}),
+    assert _without_visibility(client.calls) == [("browser_mouse_move_xy", {"x": 10, "y": 20}), ("browser_mouse_move_xy", {"x": 10, "y": 20}),
                             ("browser_mouse_wheel", {"deltaX": 0, "deltaY": 300})]
+
+
+def _without_visibility(calls):
+    return [call for call in calls if not call[1].get("function", "").endswith("visibilityState")]
+
+
+def test_pointer_steps_in_a_tab_behind_others_are_sent_in_the_page():
+    """Chrome draws a tab behind others no frames; a real pointer move, wheel or Playwright drag waits for them."""
+    class Client(_HiddenTabClient):
+        def call(self, name, arguments):
+            self.calls.append((name, arguments))
+            function = arguments.get("function", "")
+            text = ('### Result\n"hidden"' if function.endswith("visibilityState") else
+                    '### Result\n"check"' if "HTMLSelectElement" in function else
+                    "### Result\n[230, 330]" if "getBoundingClientRect(); return [" in function else "done")
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)], isError=False)
+    client = Client("hidden")
+    page = _extension_browser(client)
+    steps = (("hover", {"x": 10, "y": 20, "seconds": 0}), ("scroll", {"x": 10, "y": 20, "direction": "down", "pixels": 300}),
+             ("scroll", {"direction": "down", "pixels": 300}), ("click", {"x": 10, "y": 20, "seconds": 0.01}),
+             ("set_value", {"element": "e3", "value": True}), ("drag", {"element": "e1", "to_element": "e2"}),
+             ("drag", {"x": 1, "y": 2, "to_x": 30, "to_y": 40}))
+    for action, step in steps:
+        assert page.run(action, step)["ok"], (action, step)
+    names = {name for name, _ in client.calls}
+    assert names == {"browser_evaluate"}, names
+    drags = [args for _, args in client.calls if "dragstart" in args.get("function", "")]
+    assert drags[0]["target"] == "e1" and '"to": {"x": 230.0, "y": 330.0}' in drags[0]["function"]
+    assert '"from": {"x": 1.0, "y": 2.0}' in drags[1]["function"] and "target" not in drags[1]
 
 
 def test_set_value_chooses_options_of_a_select_box():

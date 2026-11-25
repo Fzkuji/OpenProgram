@@ -26,6 +26,10 @@
  * `provider_quota` frame; opening the menu reads the status route, which
  * also reads quota endpoints older than ten minutes in the background.
  *
+ * A conversation a harness (Codex) runs lists that harness's own models
+ * first, then the providers above under "Through OpenProgram": their models
+ * run in the harness through OpenProgram (`openprogram:<provider>/<model>`).
+ *
  * Positioning / click-outside / portal are handled by the shadcn
  * <DropdownMenu> in `index.tsx`; this file renders its rows.
  */
@@ -78,6 +82,8 @@ import {
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import { ProviderKeys } from "./provider-keys";
 import { QuotaRing, QuotaRows, StateWord } from "./provider-quota";
+import { gatewayRef, type Harness } from "@/lib/models/harnesses";
+import { HarnessUpdateRows } from "./harness-update";
 
 type EnabledModel = Awaited<ReturnType<typeof api.listEnabledModels>>[number];
 
@@ -88,10 +94,14 @@ export function AgentSelector({
   currentModel,
   onClose,
   onPick,
+  harness,
 }: {
   currentProvider?: string;
   currentModel?: string;
   onClose: () => void;
+  /** The harness the conversation runs in: its models come first, and a
+   *  provider's model runs in it through OpenProgram. */
+  harness?: { id: string; provider: string; entry?: Harness };
   /** Use the chosen model for something else than this chat's composer
    *  (the spent-quota card re-sends with it). */
   onPick?: (provider: string, model: string) => void;
@@ -135,7 +145,12 @@ export function AgentSelector({
       || status?.providers.find((p) => p.id === id)?.label || id;
   };
 
-  async function pick(provider: string, model: string) {
+  // In a harness, an OpenProgram model is that harness's gateway model.
+  const pick = (provider: string, model: string) => harness
+    ? pickModel(harness.provider, gatewayRef(provider, model))
+    : pickModel(provider, model);
+
+  async function pickModel(provider: string, model: string) {
     onClose();
     if (onPick) {
       onPick(provider, model);
@@ -175,9 +190,10 @@ export function AgentSelector({
     group.models.push(m);
   }
 
-  const isActive = (m: EnabledModel) =>
-    currentProvider === m.provider &&
-    (currentModel === m.id || currentModel === `${m.provider}:${m.id}`);
+  const isActive = (m: EnabledModel) => harness
+    ? currentProvider === harness.provider && currentModel === gatewayRef(m.provider, m.id)
+    : currentProvider === m.provider &&
+      (currentModel === m.id || currentModel === `${m.provider}:${m.id}`);
   const modelRows = (list: EnabledModel[]) =>
     list.map((m) => (
       <ModelRow key={m.id} model={m} active={isActive(m)} onPick={() => pick(m.provider, m.id)} />
@@ -253,8 +269,27 @@ export function AgentSelector({
 
   return (
     <>
-      {/* Grammar-A header naming the dimension. */}
-      <div className={GROUP_LABEL}>{text("Models", "模型")}</div>
+      {harness ? (
+        <>
+          {/* The harness's own models, then OpenProgram's run through it. */}
+          <div className={GROUP_LABEL}>{harness.entry?.label ?? harness.id}</div>
+          {(harness.entry?.models ?? []).map((m) => (
+            <DropdownMenuItem
+              key={m.id}
+              onSelect={() => void pickModel(harness.provider, m.id)}
+              className={cn(itemCls(false), MENU_ITEM_STATES)}
+            >
+              <MenuRow label={m.label} checked={currentProvider === harness.provider && currentModel === m.id} />
+            </DropdownMenuItem>
+          ))}
+          {harness.entry ? <HarnessUpdateRows harness={harness.entry} /> : null}
+          <DropdownMenuSeparator className={MENU_SEPARATOR} />
+          <div className={GROUP_LABEL}>{text("Through OpenProgram", "通过 OpenProgram")}</div>
+        </>
+      ) : (
+        /* Grammar-A header naming the dimension. */
+        <div className={GROUP_LABEL}>{text("Models", "模型")}</div>
+      )}
       {/* Nothing until the list arrives, or the empty-state note flashes. */}
       {body}
       {models && !noProvider ? (

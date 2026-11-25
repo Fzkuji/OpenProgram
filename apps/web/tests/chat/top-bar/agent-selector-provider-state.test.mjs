@@ -39,6 +39,7 @@ installLoader({
     "/components/chat/top-bar/chips/working-dir-chips.tsx": "export const WorkingDirChips = () => null;",
     "/components/chat/top-bar/menus/permission-menu.tsx": "export const PermissionBadge = () => null;",
     "/components/chat/top-bar/menus/agent-config-menu.tsx": "export const AgentConfigBadge = () => null;",
+    "/components/chat/top-bar/menus/harness-menu.tsx": "export const HarnessBadge = () => null; export const useHarness = () => ({ harness: null });",
     "/components/solar-icons/index.ts": `${passthrough} export const SolarIcon = ({ name }) => h('svg', { 'data-solar': name });`,
     "/components/chat/top-bar/chips/model-mark.tsx": `${passthrough} export const ModelMark = ({ provider }) => h('i', { 'data-mark': provider });`,
     "/components/chat/top-bar/bound-chat.tsx": "export const useBoundChat = () => ({ sessionId: 's1', chatKey: 's1' });",
@@ -324,4 +325,25 @@ test("one way of a company reached several ways is named \"Company · Way\" as s
   assert.match(html, />OpenAI · API</);
   assert.match(html, />DeepSeek</);
   assert.doesNotMatch(html, />OpenAI Codex</);
+});
+
+test("in Codex the menu lists Codex's models, then OpenProgram's providers run through it", () => {
+  globalThis.__queries = {
+    [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: PROVIDERS },
+    [JSON.stringify(S.PICKER_LIMITS_QUERY_KEY)]: STATUS,
+  };
+  const entry = {
+    id: "codex", provider: "codex-harness", label: "Codex", installed: true, version: "0.153.4", signedIn: true,
+    models: [{ id: "gpt-6-astra", label: "GPT-6 Astra", default: true, efforts: [] }, { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", default: false, efforts: [] }],
+    agents: [],
+  };
+  const html = renderToStaticMarkup(h(AgentSelector, {
+    currentProvider: "codex-harness", currentModel: "openprogram:deepseek/deepseek-v4", onClose() {},
+    harness: { id: "codex", provider: "codex-harness", entry },
+  }));
+  const order = ["Codex", "GPT-6 Astra", "GPT-5.6 Sol", "Through OpenProgram", "DeepSeek"].map((label) => html.indexOf(label));
+  assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1])), html);
+  // The provider whose model runs in Codex names it, as the current model.
+  assert.match(rowOf(html, "deepseek"), /DEEPSEEK-V4/);
+  assert.doesNotMatch(html, />Models</);
 });

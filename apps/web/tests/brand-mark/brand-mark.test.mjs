@@ -203,6 +203,8 @@ describe("one drawer", () => {
     ["components/settings/providers/status/provider-card.tsx", ["<ProviderIcon id={companyIcon(group)} size={20} />"]],
     ["components/settings/providers/status/provider-rows.tsx", ["<ProviderIcon id={p.id} size={20} />", "<ProviderIcon id={companyIcon(group)} size={20} />"]],
     ["components/settings/providers/add/add-provider-dialog.tsx", ["<ProviderIcon id={choice.id} size={28} />", "<ProviderIcon id={step.choice.id} size={28} />"]],
+    ["components/settings/third-party-harnesses/harness-models.tsx", ["<ProviderIcon id={ICON[row.id] ?? row.id} size={20} />"]],
+    ["components/settings/third-party-harnesses/index.tsx", ["<ProviderIcon id={ICON[a.agent] ?? a.agent} size={20} />", "<ProviderIcon id={ICON[s.agent] ?? s.agent} size={18} />"]],
     ["components/settings/providers/add/pick.tsx", ["<ProviderIcon id={icon} size={20} />", "<ProviderIcon id={p.id} size={20} />", '<ProviderIcon id={c.id} size={40} plate="brand" />', '<ProviderIcon id={row.id} size={40} plate="brand" />']],
   ]);
   const DRAWERS = new Set([

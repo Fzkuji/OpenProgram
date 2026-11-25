@@ -596,6 +596,10 @@ export interface AgentBadgeInfo {
   fast_capability?: { status: string; source: string };
   /** The model's effort levels and default, as GET /api/agent_settings sends them. */
   thinking?: { options?: { value: string; desc?: string }[]; default?: string };
+  /** The engine the branch runs in (`null`: OpenProgram's own; `"codex"`)
+   *  and that harness's agent choice (lib/models/harnesses.ts). */
+  harness?: string | null;
+  harness_agent?: string | null;
 }
 export interface AgentSettingsState {
   chat?: AgentBadgeInfo;

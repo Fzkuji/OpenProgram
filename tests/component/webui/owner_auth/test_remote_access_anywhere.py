@@ -200,6 +200,39 @@ def test_a_sidecar_that_exits_reports_an_error_and_stops_answering(sidecar):
     manager.stop()
 
 
+def test_the_sidecar_goes_online_through_the_system_proxy(monkeypatch, sidecar):
+    """An App-launched Worker has no proxy variables; behind a proxy Tailscale is reachable only through it."""
+    manager, spawned = sidecar
+    for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy",
+                "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(ways.urllib.request, "getproxies",
+                        lambda: {"https": "http://127.0.0.1:7890", "http": "http://127.0.0.1:7890"})
+    ways.set_anywhere_configured(True)
+    manager.start(18100, _auth().allow_origins)
+    env = spawned[0].options["env"]
+    assert env["HTTPS_PROXY"] == "http://127.0.0.1:7890" and env["HTTP_PROXY"] == "http://127.0.0.1:7890"
+    manager.stop()
+    # A proxy the environment already names is kept as it is.
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    assert ways.child_env()["HTTPS_PROXY"] == "http://proxy.example:3128"
+    assert "HTTP_PROXY" not in ways.child_env()
+
+
+def test_a_sidecar_that_never_gets_past_starting_says_it_cannot_reach_tailscale(monkeypatch, sidecar):
+    manager, spawned = sidecar
+    ways.set_anywhere_configured(True)
+    manager.start(18100, _auth().allow_origins)
+    assert manager.status()["state"] == "starting"
+    monkeypatch.setattr(ways, "_REACH_SECONDS", 0.0)
+    status = manager.status()
+    assert status["state"] == "error" and "reach Tailscale" in status["message"]
+    # It keeps trying; a sign-in link that comes late replaces the error.
+    spawned[0].say(state="needs_login", login_url="https://login.tailscale.com/a/x")
+    _until(lambda: manager.status()["state"] == "needs_login")
+    manager.stop()
+
+
 def test_a_missing_binary_is_reported(monkeypatch, sidecar):
     manager, spawned = sidecar
     monkeypatch.setattr(ways, "binary_path", lambda: None)

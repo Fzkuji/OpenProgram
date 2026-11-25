@@ -117,7 +117,7 @@ REMOVED = tuple(
 
 FEATURES = tuple(
     f"{RUNTIME}.{name}"
-    for name in ("conversation", "jobs", "agent_registry", "scheduler", "proactive", "commands")
+    for name in ("conversation", "jobs", "agent_registry", "scheduler", "proactive", "commands", "harnesses")
 )
 CALL_CORE = (f"{RUNTIME}.agent",)
 PROGRAMS = ("openprogram.programs",)

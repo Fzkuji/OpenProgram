@@ -79,7 +79,9 @@ def _owner(state):
 def test_browser_pairs_with_a_code_and_keeps_a_device_cookie():
     state = _state()
     code, _expires = state.devices.create_pairing()
-    iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1"
+    # A real Safari User-Agent, comma and all.
+    iphone = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+              "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
     with TestClient(_app(state), base_url=LAN_ORIGIN) as client:
         response = client.post(
             "/api/auth/pair",

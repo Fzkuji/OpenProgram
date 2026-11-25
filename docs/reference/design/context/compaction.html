@@ -274,7 +274,7 @@
 
 <details id="tuning">
 <summary>Choosing the share from the user's own calls</summary>
-<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → Model services → Behavior → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
+<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → Model Services → Behavior → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/token_accounting/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>

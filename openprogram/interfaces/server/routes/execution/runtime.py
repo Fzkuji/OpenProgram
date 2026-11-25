@@ -97,6 +97,7 @@ def picked_reply(row: dict) -> dict:
         "branch_id": row.get("branch_id"), "active_branch_id": row.get("active_branch_id"),
         "settings": snapshot(row),
         "chat": {"provider": prov, "model": model,
+                 "harness": row.get("harness"), "harness_agent": row.get("harness_agent"),
                  "thinking": _s._get_thinking_config_for_model(prov, model),
                  "fast": supports_fast(prov, model), "fast_capability": fast_capability(prov, model)},
     }
@@ -252,7 +253,12 @@ def register(app):
                 elsewhere = await run_for_conversation(session_id, picks_other_branch, session_id, body)
                 need_new_rt = not elsewhere and ((target_provider and target_provider != cur_prov) or (old_rt is None))
                 runtime_ready = old_rt is not None
-                if need_new_rt:
+                from openprogram.runtime.harnesses import is_harness_provider
+                if is_harness_provider(prov):
+                    # An outside agent (Codex) runs the turns: no provider
+                    # runtime to build, and none of another provider kept.
+                    need_new_rt, new_rt, runtime_ready = not elsewhere, None, True
+                elif need_new_rt:
                     try:
                         new_rt = await _build_rt(prov)
                     except Exception as e:
@@ -400,6 +406,9 @@ def register(app):
             "chat": {
                 "provider": chat_provider,
                 "model": chat_model,
+                # The engine the branch runs in (None: OpenProgram's own) and its agent choice.
+                "harness": (settings or shown or conv or {}).get("harness"),
+                "harness_agent": (settings or shown or conv or {}).get("harness_agent"),
                 "session_id": chat_session_id,
                 "locked": chat_locked,
                 "thinking": _s._get_thinking_config_for_model(chat_provider, chat_model),

@@ -2,8 +2,8 @@
 
 /**
  * Composer controls cluster — permission / plus menu / active tool chips on
- * the left; the model chip, thinking-effort pill, the Agent chip and
- * context ring on the right.
+ * the left; the harness chip, model chip, thinking-effort pill, the Agent
+ * chip and context ring on the right.
  *
  * Always rendered in the detached `.controlsRow` below the wrapper —
  * every composer mode shares the same row, this component only knows
@@ -24,7 +24,7 @@ import { HoverTip, TipBody } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import { effortLevelColor, formatEffortLabel } from "@/lib/effort/effort-color";
 import { MENU_PANEL, MENU_SEPARATOR } from "@/components/ui/menu/menu-styles";
-import { AgentBadge, AgentConfigBadge, PermissionBadge } from "../../top-bar";
+import { AgentBadge, AgentConfigBadge, HarnessBadge, PermissionBadge } from "../../top-bar";
 import { ContextBadge } from "../../badges/context-badge";
 import {
   AttachIcon,
@@ -294,6 +294,9 @@ export const ControlsCluster = memo(function ControlsCluster({
                 and popover untouched), effort pill, the conversation's
                 Agent, context ring last. */}
             <div className={styles.agentChips}>
+              {/* The engine the turns run in; the model, effort, Agent and
+                  permission chips follow it. */}
+              <HarnessBadge id={bound ? `harnessBadge-${bound}` : "harnessBadge"} />
               <AgentBadge
                 id={bound ? `chatAgentBadge-${bound}` : "chatAgentBadge"}
                 locked={!!chatAgent.locked}

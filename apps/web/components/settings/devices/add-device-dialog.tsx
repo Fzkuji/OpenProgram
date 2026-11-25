@@ -4,6 +4,7 @@
  * Add device: first what it is, then one step.
  *
  * - Phone or tablet: a one-time QR code (Codex: "Connect your phone to this Mac").
+ *   With no way in yet, Same Wi-Fi and Anywhere are offered side by side.
  * - Another computer with OpenProgram: show its conversations here (paste
  *   the link it shows), or let it use this one (show this one's code).
  * - Server over SSH: a host from ~/.ssh/config, or ``user@host`` (Claude
@@ -14,7 +15,7 @@
  * - Set up by hand: the full form.
  */
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronRight, Monitor, Server, Smartphone, Sparkles } from "lucide-react";
+import { ChevronRight, Globe, Monitor, Server, Smartphone, Sparkles, Wifi } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,18 +27,25 @@ import { wsRequest } from "@/lib/net/ws/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import styles from "../settings-page.module.css";
-import type { Ways } from "./access-section";
+import { host, type Ways } from "./access-section";
 import { machineRequest, SAVE_WAIT_MS, sshHosts, TEST_WAIT_MS, type Text } from "./device-requests";
 import { PairingCode } from "./pairing-code";
 
 type Step = "choose" | "phone" | "computer" | "ssh" | "agent";
 
-function Choice({ icon, title, sub, onClick }: { icon: ReactNode; title: string; sub: string; onClick: () => void }) {
+function Choice({
+  icon,
+  title,
+  sub,
+  disabled,
+  onClick,
+}: { icon: ReactNode; title: string; sub: string; disabled?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-lg border bg-bg-input px-3 py-2.5 text-left shadow-raised hover:shadow-raised-hover"
+      className="flex w-full items-center gap-3 rounded-lg border bg-bg-input px-3 py-2.5 text-left shadow-raised hover:shadow-raised-hover disabled:pointer-events-none disabled:opacity-50"
     >
       <span className="text-text-muted [&_svg]:size-5">{icon}</span>
       <span className="min-w-0 flex-1">
@@ -49,25 +57,123 @@ function Choice({ icon, title, sub, onClick }: { icon: ReactNode; title: string;
   );
 }
 
-/** Nothing reaches this computer yet: one click switches Same Wi-Fi on. */
-function NoWayIn({ change, text }: { change: (body: { lan: boolean }) => Promise<string>; text: Text }) {
-  const [problem, setProblem] = useState("");
+type Change = (body: Partial<Record<"lan" | "anywhere", boolean>>) => Promise<string>;
+
+function hasWayIn(ways: Ways | null): boolean {
+  return !!(ways?.lan.on || (ways?.anywhere?.on && ways.anywhere.state === "running"));
+}
+
+/** One way in, as a line under the code: on (where), or what is missing and the one click that fixes it. */
+function WayRow({ label, on, note, action }: { label: string; on: boolean; note?: string | null; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-3">
-      <p className="text-fs-base">
-        {text(
-          "Phones reach this computer over Wi-Fi. Switch on Same Wi-Fi to show the code.",
-          "手机通过 Wi-Fi 连到这台电脑。打开“同一 Wi-Fi”后即可显示二维码。",
-        )}
-      </p>
-      <Button onClick={() => void change({ lan: true }).then(setProblem)}>{text("Switch on and continue", "打开并继续")}</Button>
-      {problem ? <p className="text-fs-sm text-destructive">{problem}</p> : null}
+    <div className="flex min-h-8 items-center gap-2">
+      <span className={`size-2 shrink-0 rounded-full ${on ? "bg-[var(--accent-green)]" : "bg-[var(--text-muted)] opacity-50"}`} aria-hidden="true" />
+      <span className="font-medium">{label}</span>
+      {note ? <span className="min-w-0 text-text-muted">{note}</span> : null}
+      {action ? <span className="ml-auto shrink-0">{action}</span> : null}
     </div>
   );
 }
 
-function hasWayIn(ways: Ways | null): boolean {
-  return !!(ways?.lan.on || (ways?.anywhere?.on && ways.anywhere.state === "running"));
+/**
+ * Where the other device reaches this computer from. With no way open the
+ * two are offered side by side, each with its cost; once one is open the
+ * code shows, with a line per way under it so the other can be opened in
+ * place. Anywhere's sign-in happens here too, not behind the dialog.
+ */
+function WaysIn({ ways, change, hint }: { ways: Ways | null; change: Change; hint: string }) {
+  const { text } = useTranslation();
+  const [problem, setProblem] = useState("");
+  const flip = (body: Partial<Record<"lan" | "anywhere", boolean>>) => void change(body).then(setProblem);
+  const lan = ways?.lan;
+  const anywhere = ways?.anywhere;
+  const open = hasWayIn(ways);
+  const anywhereRunning = !!anywhere?.on && anywhere.state === "running";
+  const problemLine = problem ? <p className="text-fs-sm text-destructive">{problem}</p> : null;
+
+  if (!open && !anywhere?.on) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="pb-1 text-fs-base">{text("Where will it reach this computer from?", "它从哪里连这台电脑？")}</p>
+        <Choice
+          icon={<Wifi />}
+          title={text("Same Wi-Fi", "同一 Wi-Fi")}
+          sub={lan?.address
+            ? text("Works at once. Not encrypted, and no notifications.", "马上能用；不加密，收不到通知。")
+            : text("This computer is not on a local network.", "这台电脑没有连接局域网。")}
+          disabled={!lan?.address}
+          onClick={() => flip({ lan: true })}
+        />
+        {anywhere ? (
+          <Choice
+            icon={<Globe />}
+            title={text("Anywhere", "任何地方")}
+            sub={text(
+              "Away from home too, over https, with notifications. Sign in to Tailscale once.",
+              "出门也能用，走 https，能收通知；登录一次 Tailscale。",
+            )}
+            onClick={() => flip({ anywhere: true })}
+          />
+        ) : null}
+        {problemLine}
+      </div>
+    );
+  }
+
+  const turnOn = (way: "lan" | "anywhere") => (
+    <Button size="sm" variant="elevated" onClick={() => flip({ [way]: true })}>{text("Switch on", "打开")}</Button>
+  );
+  let anywhereNote: string | null = null;
+  let anywhereAction: ReactNode = null;
+  if (anywhere && !anywhere.on) {
+    anywhereNote = text("Off; it can't connect away from home", "没开，出门连不上");
+    anywhereAction = turnOn("anywhere");
+  } else if (anywhere?.state === "running" && anywhere.address) {
+    anywhereNote = host(anywhere.address);
+  } else if (anywhere?.state === "needs_login" && anywhere.login_url) {
+    anywhereNote = text("Sign in to Tailscale once to finish. It's free.", "登录一次 Tailscale 即可完成，免费。");
+    anywhereAction = (
+      <Button size="sm" onClick={() => window.open(anywhere.login_url!, "_blank", "noopener")}>{text("Sign in", "登录")}</Button>
+    );
+  } else if (anywhere?.state === "needs_funnel" && anywhere.enable_url) {
+    anywhereNote = text("One more click in Tailscale lets it through.", "在 Tailscale 里再点一下就能连上。");
+    anywhereAction = (
+      <Button size="sm" onClick={() => window.open(anywhere.enable_url!, "_blank", "noopener")}>{text("Allow", "允许")}</Button>
+    );
+  } else if (anywhere?.state === "error") {
+    anywhereNote = anywhere.message;
+    // Off and on again starts a new sidecar; the one that failed is stopped.
+    anywhereAction = (
+      <Button
+        size="sm"
+        variant="elevated"
+        onClick={() => void change({ anywhere: false }).then((first) => first ? setProblem(first) : flip({ anywhere: true }))}
+      >
+        {text("Try again", "重试")}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* A new code when the ways change, so its link carries every open address. */}
+      {open ? <PairingCode key={`${!!lan?.on}-${anywhereRunning}`} hint={hint} /> : null}
+      <div className={`flex flex-col gap-1 text-fs-sm ${open ? "border-t pt-3" : ""}`}>
+        <WayRow
+          label={text("Same Wi-Fi", "同一 Wi-Fi")}
+          on={!!lan?.on}
+          note={lan?.on && lan.address
+            ? host(lan.address)
+            : lan?.address ? text("Off", "没开") : text("Not on a local network", "没有连接局域网")}
+          action={!lan?.on && lan?.address ? turnOn("lan") : null}
+        />
+        {anywhere ? (
+          <WayRow label={text("Anywhere", "任何地方")} on={anywhereRunning} note={anywhereNote} action={anywhereAction} />
+        ) : null}
+      </div>
+      {problemLine}
+    </div>
+  );
 }
 
 export function AddDeviceDialog({
@@ -77,7 +183,7 @@ export function AddDeviceDialog({
   onClose,
 }: {
   ways: Ways | null;
-  change: (body: Partial<Record<"lan" | "anywhere", boolean>>) => Promise<string>;
+  change: Change;
   onManual: () => void;
   onClose: () => void;
 }) {
@@ -94,7 +200,8 @@ export function AddDeviceDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-[560px]">
+      {/* One column no wider than the dialog: the pairing link would otherwise widen it past the edge. */}
+      <DialogContent className="grid-cols-[minmax(0,1fr)] sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{titles[step]}</DialogTitle>
           {step === "choose" ? <DialogDescription>{text("What do you want to add?", "要添加什么设备？")}</DialogDescription> : null}
@@ -131,14 +238,14 @@ export function AddDeviceDialog({
           </div>
         ) : null}
         {step === "phone" ? (
-          hasWayIn(ways) ? (
-            <PairingCode
-              hint={text(
-                "Scan with the phone's camera. It opens OpenProgram in the phone's browser, already signed in.",
-                "用手机相机扫码，会在手机浏览器里打开 OpenProgram，并且已经登录。",
-              )}
-            />
-          ) : <NoWayIn change={change} text={text} />
+          <WaysIn
+            ways={ways}
+            change={change}
+            hint={text(
+              "Scan with the phone's camera. It opens OpenProgram in the phone's browser, already signed in.",
+              "用手机相机扫码，会在手机浏览器里打开 OpenProgram，并且已经登录。",
+            )}
+          />
         ) : null}
         {step === "computer" ? <AnotherComputer ways={ways} change={change} onDone={onClose} /> : null}
         {step === "ssh" ? <SshServer onDone={onClose} /> : null}
@@ -159,7 +266,7 @@ function AnotherComputer({
   onDone,
 }: {
   ways: Ways | null;
-  change: (body: { lan: boolean }) => Promise<string>;
+  change: Change;
   onDone: () => void;
 }) {
   const { text } = useTranslation();
@@ -210,14 +317,16 @@ function AnotherComputer({
           {error ? <p className={styles.rowStatusError}>{error}</p> : null}
           <Button type="submit" className="self-end" disabled={busy || !link.trim()}>{text("Connect", "连接")}</Button>
         </form>
-      ) : hasWayIn(ways) ? (
-        <PairingCode
+      ) : (
+        <WaysIn
+          ways={ways}
+          change={change}
           hint={text(
             "On the other computer: Add device → Another computer → Show its conversations here, then paste this link.",
             "在另一台电脑上：添加设备 → 另一台电脑 → 在这里看它的对话，然后粘贴这个链接。",
           )}
         />
-      ) : <NoWayIn change={change} text={text} />}
+      )}
     </div>
   );
 }

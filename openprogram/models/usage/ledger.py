@@ -275,7 +275,7 @@ _QUOTA_READ_FIELDS = ("read_at", "status", "error", "held_until", "failure_read_
 #: again (``host/_platform/changes.py``). Keyed by the sessions of the call.
 ROSTER_TOPIC = "roster"
 #: A provider call or a failover switch was recorded: the routing overview
-#: (Settings → Model services) reads again.
+#: (Settings → Model Services) reads again.
 ROUTING_TOPIC = "routing"
 
 

@@ -2036,6 +2036,16 @@ def run_loop_blocking(
     see tests/unit/agent/dispatcher/test_dispatcher_integration.py. None means use
     the default (real provider via stream_simple).
     """
+    if continuation is None and stream_fn is None:
+        # A conversation on an outside agent (Codex) runs its turn there.
+        from openprogram.runtime.harnesses import turn_engine
+        engine = turn_engine(req)
+        if engine is not None:
+            return engine.run_turn(
+                req=req, history=history, on_event=on_event, cancel_event=cancel_event,
+                assistant_msg_id=assistant_msg_id, ordered_blocks_out=ordered_blocks_out,
+                execution_context=execution_context,
+            )
     from openprogram.runtime.agent.turn_api import _current_turn_agent
     owner = _current_turn_agent.get()
     if stream_fn is None and owner is not None:

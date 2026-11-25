@@ -2,7 +2,8 @@
 
 ``serve`` runs the server in the foreground; ``launch`` (what a launcher
 runs) starts it in the background when it is not running yet and opens
-its window. The server
+its window: on macOS a native one in the launcher's process
+(:mod:`.window`), elsewhere a browser's. The server
 
 - keeps everything in the data folder (``OPENPROGRAM_STATE_DIR``) and
   takes the computer's model and voice settings first (:mod:`.settings`);
@@ -265,7 +266,7 @@ CHROMIUM_MAC = ("Google Chrome", "Microsoft Edge", "Brave Browser", "Chromium", 
 
 
 def open_window(url: str) -> None:
-    """A window of its own where a Chromium browser is installed; the default browser otherwise."""
+    """Where no native window can be drawn (``window.py``): a Chromium app window, else the default browser."""
     if sys.platform == "darwin":
         for name in CHROMIUM_MAC:
             if Path(f"/Applications/{name}.app").is_dir() and name != "Arc":
@@ -306,8 +307,20 @@ def launch(package: Path, data: Path, *, settings_from: Path | None, idle_minute
             port = running(data)
     url = f"http://127.0.0.1:{port}/#token={token(data)}"
     if open_it:
-        open_window(url)
+        from . import window
+        if window.available():
+            window.run(url, _title(package))
+        else:
+            open_window(url)
     return url
+
+
+def _title(package: Path) -> str:
+    try:
+        manifest = json.loads((package / "application.json").read_text(encoding="utf-8"))
+        return str(manifest.get("display_title") or manifest.get("title") or package.name)
+    except (OSError, ValueError):
+        return package.name
 
 
 def main(argv: list[str] | None = None) -> None:

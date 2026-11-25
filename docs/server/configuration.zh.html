@@ -59,7 +59,7 @@
 <thead class="sr"><tr><th scope="col">层</th><th scope="col">规则</th></tr></thead>
 <tbody>
 <tr><th scope="row">绑定地址 <code translate="no">web.host</code></th><td>默认 <code translate="no">127.0.0.1</code>，仅本机。<code translate="no">0.0.0.0</code> 把需要登录的 UI 暴露给其他接口，且至少需要一个 <code translate="no">web.allowed_origins</code> 条目。不可信网络优先用同机反向代理加 HTTPS</td></tr>
-<tr><th scope="row">登录</th><td>每个 API 和 WebSocket 请求都需要登录链接设置的 owner cookie、配对设备的凭据（<code translate="no">openprogram web pair</code>）或 bearer token，否则 401。公开的只有 <code translate="no">/healthz</code>、页面外壳、<code translate="no">/docs</code>，以及 <code translate="no">/hooks/</code> 下由任务自身密钥保护的 Scheduler webhook</td></tr>
+<tr><th scope="row">登录</th><td>每个 API 和 WebSocket 请求都需要登录链接设置的 owner cookie、配对设备的凭据（<code translate="no">openprogram web pair</code>）或 bearer token，否则 401。公开的只有 <code translate="no">/healthz</code>、页面外壳、<code translate="no">/docs</code>，以及 <code translate="no">/hooks/</code> 下由任务自身密钥保护的 Scheduler webhook。<code translate="no">/gateway/</code> 下的模型网关接受给 Claude Code 和 Codex 配置的网关密钥</td></tr>
 <tr><th scope="row">Host</th><td>必须是有效 origin：绑定回环时为回环地址，加上 <code translate="no">web.allowed_origins</code>。否则 403</td></tr>
 <tr><th scope="row"><code translate="no">Sec-Fetch-Site</code></th><td><code translate="no">cross-site</code> 得到 403</td></tr>
 <tr><th scope="row"><code translate="no">Origin</code>，存在时</th><td>必须与请求自身的 origin 一致，否则 403</td></tr>

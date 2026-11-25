@@ -49,7 +49,7 @@ def test_paste_offers_markdown_as_html_and_html_with_a_plain_fallback():
 
 def test_inlined_scripts_throw_when_the_page_reports_failure():
     source = pa.bound_call(pa.INSERT_TEXT_SCRIPT, {"text": "值"}, require="ok")
-    assert source.startswith("(element) => { const r = ") and "throw new Error" in source
+    assert source.startswith("async (element) => { const r = await ") and "throw new Error" in source
     assert json.dumps({"text": "值"}, ensure_ascii=False) in source
 
 
@@ -61,6 +61,9 @@ _PAGE = """
 <p id=para>alpha <b>beta</b> gamma</p>
 <div id=rich contenteditable>start</div>
 <button id=btn>go</button>
+<input id=box2 type=checkbox>
+<div id=card draggable=true style="position:fixed;left:0;top:300px;width:40px;height:40px">card</div>
+<div id=bin style="position:fixed;left:200px;top:300px;width:60px;height:60px">bin</div>
 <script>
   window.events = [];
   for (const type of ["click", "dblclick", "contextmenu", "auxclick", "mousedown"])
@@ -122,6 +125,47 @@ def test_paste_inserts_rich_text_or_lets_the_page_handle_it(fresh):
     fresh.evaluate("rich.addEventListener('paste', e => { window.pasted = e.clipboardData.getData('text/plain'); e.preventDefault(); })")
     assert rich.evaluate(pa.PASTE_SCRIPT, {"text": "via page", "html": ""}) == {"ok": True, "handled_by_page": True}
     assert fresh.evaluate("window.pasted") == "via page"
+
+
+def test_scripts_bound_to_a_point_reach_the_element_there(fresh):
+    fresh.evaluate("btn.addEventListener('mouseover', () => window.hovered = true)")
+    box = fresh.locator("#btn").bounding_box()
+    point = {"x": box["x"] + 2, "y": box["y"] + 2}
+    assert fresh.evaluate(pa.bound_call(pa.HOVER_SCRIPT, point, at_point=True)) is True
+    assert fresh.evaluate("window.hovered") is True
+    inner = fresh.locator("#inner").bounding_box()
+    moved = fresh.evaluate(pa.bound_call(pa.SCROLL_SCRIPT, {"x": inner["x"] + 2, "y": inner["y"] + 2, "dx": 0, "dy": 40},
+                                         require="moved", at_point=True))
+    assert moved == {"moved": True, "container": "div"} and fresh.evaluate("box.scrollTop") == 40
+
+
+def test_check_and_hold_scripts_act_in_the_page(fresh):
+    check = fresh.locator("#box2")
+    assert check.evaluate(pa.CHECK_SCRIPT, {"on": True})["ok"] is True and check.is_checked()
+    assert check.evaluate(pa.CHECK_SCRIPT, {"on": True})["ok"] is True and check.is_checked(), "already on stays on"
+    assert check.evaluate(pa.CHECK_SCRIPT, {"on": False})["ok"] is True and not check.is_checked()
+    held = fresh.locator("#btn").evaluate(pa.HOLD_SCRIPT, {"button": "left", "seconds": 0.05})
+    assert held == {"ok": True}
+    assert ["mousedown", 0, 0, False] in fresh.evaluate("events") and ["click", 0, 0, False] in fresh.evaluate("events")
+
+
+def test_drag_script_drags_html5_and_pointer_targets(fresh):
+    fresh.evaluate("""() => {
+      window.drag = [];
+      card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', 'card'); drag.push('start'); });
+      bin.addEventListener('dragover', e => e.preventDefault());
+      bin.addEventListener('drop', e => drag.push('drop:' + e.dataTransfer.getData('text/plain')));
+      card.addEventListener('dragend', () => drag.push('end'));
+      document.addEventListener('pointermove', e => window.lastMove = [e.clientX, e.clientY, e.buttons]);
+      document.addEventListener('pointerup', e => window.up = [e.clientX, e.clientY]);
+    }""")
+    source = pa.bound_call(pa.DRAG_SCRIPT, {"to": {"x": 230, "y": 330}}, require="ok")
+    assert fresh.locator("#card").evaluate(source) == {"ok": True}
+    assert fresh.evaluate("drag") == ["start", "drop:card", "end"]
+    by_point = pa.bound_call(pa.DRAG_SCRIPT, {"from": {"x": 5, "y": 5}, "to": {"x": 50, "y": 60}},
+                             with_element=False, require="ok")
+    assert fresh.evaluate(by_point) == {"ok": True}
+    assert fresh.evaluate("window.lastMove") == [50, 60, 1] and fresh.evaluate("window.up") == [50, 60]
 
 
 # ----------------------------------------------------------------- evaluate

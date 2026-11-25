@@ -110,8 +110,8 @@ export function useConversationFeed(sessionId: string | null, post: (event: stri
 }
 
 /** The composer over the window's place for it; its height goes back to the window. */
-export function ApplicationComposer({ sessionId, place, onHeight }: {
-  sessionId: string; place: ComposerPlace; onHeight: (height: number) => void;
+export function ApplicationComposer({ sessionId, place, hint, onHeight }: {
+  sessionId: string; place: ComposerPlace; hint?: string; onHeight: (height: number) => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const heightRef = useRef(onHeight);
@@ -137,11 +137,14 @@ export function ApplicationComposer({ sessionId, place, onHeight }: {
       style={{
         position: "absolute", left: place.left, width: Math.max(0, place.right - place.left),
         top: place.bottom, height: 0, zIndex: 5,
+        // The application sizes the place, so the composer fills it instead of
+        // stopping at the chat column's cap.
         ["--chat-column-gutter" as string]: "24px",
+        ["--chat-column-max" as string]: "100vw",
       }}
     >
       <SessionScopeProvider sid={sessionId}>
-        <Composer sessionId={sessionId} />
+        <Composer sessionId={sessionId} placeholder={hint || undefined} />
       </SessionScopeProvider>
     </div>
   );

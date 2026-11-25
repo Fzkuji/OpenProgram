@@ -1,0 +1,27 @@
+<title>Third-Party Harnesses</title>
+<meta name="description" content="Run Claude Code and Codex on any model set up in OpenProgram, and see what they use: sessions, tokens, an API-price estimate and Codex's plan quota, in Settings → Third-Party Harnesses.">
+<meta name="covers" content="openprogram/models/usage/harnesses/ openprogram/models/gateway/">
+<h1>Third-Party Harnesses</h1>
+<p>Settings → Third-Party Harnesses picks the model Claude Code and Codex on this computer run on, and shows what they use, read from the session files they keep.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">In a chat</th><td>The <strong>Harness</strong> chip before the model chip runs the conversation on Codex: its models, efforts, agents and permission modes replace OpenProgram's, its approvals appear in the chat, and <code translate="no">codex resume &lt;id&gt;</code> continues the same session in a terminal. It is the <code translate="no">codex</code> you installed; when a newer one is out, the model menu shows the models it adds and <strong>Update Codex</strong></td></tr>
+<tr><th scope="row">Models</th><td>The harness's own sign-in, or <strong>Through OpenProgram</strong> with any enabled model; for Claude Code also the model behind Opus, Sonnet and Haiku</td></tr>
+<tr><th scope="row">Also in the Terminal</th><td>Writes the choice into <code translate="no">~/.codex/config.toml</code> or <code translate="no">~/.claude/settings.json</code>, so <code translate="no">codex</code> and <code translate="no">claude</code> in a terminal use it too, and so does the Codex app, which lists the enabled models and picks up the change by itself. Turning it off puts the earlier values back. <strong>Config Changed Elsewhere</strong> means a value was edited since; it is left as it is.</td></tr>
+<tr><th scope="row">A card per harness</th><td>Sessions, tokens, output and the API estimate for the last 30 days</td></tr>
+<tr><th scope="row">Codex plan</th><td>Each limit as a meter with its reset time and credits, as Codex last wrote them</td></tr>
+<tr><th scope="row">Daily tokens</th><td>One bar per day, one colour per harness</td></tr>
+<tr><th scope="row">Sessions</th><td>Title, folder, branch, models, the app that started it, tokens and estimate. Filter by harness or search; the copy button copies the command that continues the session in a terminal.</td></tr>
+<tr><th scope="row">By model, Started from</th><td>Totals per model and per app (terminal, desktop app, an SDK)</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>API estimate</dt><dd>What the calls would cost at API list prices. It is not your subscription bill. A <code translate="no">+</code> means some calls used a model with no known price.</dd>
+<dt>Claude plan quota</dt><dd>Not shown: Claude Code's files do not record it.</dd>
+<dt>Files read</dt><dd><code translate="no">~/.claude/projects</code> (or <code translate="no">$CLAUDE_CONFIG_DIR</code>) and <code translate="no">~/.codex/sessions</code>, <code translate="no">~/.codex/archived_sessions</code> (or <code translate="no">$CODEX_HOME</code>)</dd>
+<dt>Through OpenProgram</dt><dd>The harness sends its model calls to the OpenProgram Worker, which must be running. The model's provider bills as usual, and the calls count in Token Usage.</dd>
+<dt>Kept</dt><dd>92 days, also after Claude Code deletes its own old transcripts</dd>
+<dt>Turn off</dt><dd><strong>Read Claude Code and Codex sessions</strong> at the bottom of the page, or <code translate="no">openprogram config set usage.third_party_harnesses false</code></dd>
+</dl>
+<p class="next"><a href="token-tracking.html">Token tracking</a> · <a href="../reference/design/integrations/third-party-harnesses.html">Design</a> · <a href="../reference/design/integrations/harness-engines.html">Harness Engines</a></p>

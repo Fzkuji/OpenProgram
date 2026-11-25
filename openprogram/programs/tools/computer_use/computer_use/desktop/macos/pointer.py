@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from ..common import keys as keymap
-from ..common.base import BadArgument, ComputerUseError, NotDispatched, check_cancelled as _check_cancelled
+from ..common.base import BadArgument, ComputerUseError, NotDispatched, StaleElement, check_cancelled as _check_cancelled
 from .skylight import SUBTYPE_DEFAULT, SUBTYPE_TOUCH
 from .frameworks import (LINES_PER_TICK, MAX_DRAG_STEPS, PIXELS_PER_EVENT, SCROLL_SETTLE_MAX, TICKS_PER_PAGE,
     WindowState, _BUTTONS)
@@ -23,6 +23,12 @@ class Pointer:
             raise BadArgument("x and y are required when no element is given")
         if not state.has_screenshot:
             raise BadArgument("This window has no screenshot to take coordinates from; use element.")
+        live = state.live_size
+        if live is not None and (abs(live[0] - state.size[0]) > 1 or abs(live[1] - state.size[1]) > 1):
+            # The page has laid itself out again: the pixel no longer shows what the model aimed at.
+            raise StaleElement(f"The window was resized since its screenshot ({int(state.size[0])}x"
+                               f"{int(state.size[1])} -> {int(live[0])}x{int(live[1])} points), so ({x}, {y}) "
+                               "no longer points at the same thing. Call get_state for a fresh screenshot.")
         try:
             px, py = float(x), float(y)
         except (TypeError, ValueError) as exc:

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings > Versions and updates. The app's own version and updates come
+ * Settings > Versions and Updates. The app's own version and updates come
  * first (ApplicationSection); below them, each change OpenProgram makes to itself is kept as a
  * version; this page shows which one runs, which it falls back to, and lets
  * the owner undo. Going back and undoing run in a conversation, so the page

@@ -54,7 +54,7 @@ def _sentence(phase: str, *, candidate: str, previous: str, ahead: int | None, k
         "quiescing": "Waiting for running tasks to reach a safe point before switching.",
         "activating": "Switching to the new version… OpenProgram restarts for about a minute.",
         "verifying": "Checking that the new version works on your real setup.",
-        "succeeded": f"Updated to {candidate}. To go back, open Settings, Versions and updates.",
+        "succeeded": f"Updated to {candidate}. To go back, open Settings, Versions and Updates.",
         "aborted": "The update stopped before anything changed. You are still on the same version.",
         "rolled_back": (
             f"{candidate.capitalize()} didn't work, "
@@ -62,7 +62,7 @@ def _sentence(phase: str, *, candidate: str, previous: str, ahead: int | None, k
         ),
         "needs_manual_recovery": (
             f"{candidate.capitalize()} didn't work and "
-            "the version before it failed its checks too. Pick a version in Settings, Versions and updates, "
+            "the version before it failed its checks too. Pick a version in Settings, Versions and Updates, "
             "or run `openprogram versions` in a terminal."
         ),
     }.get(phase)
@@ -98,7 +98,7 @@ def describe(
 ) -> dict[str, Any]:
     """``progress`` and ``notes`` for one phase; empty for an unknown phase.
 
-    ``keeps_versions`` is false on an install with no Settings, Versions and updates page to send the owner to.
+    ``keeps_versions`` is false on an install with no Settings, Versions and Updates page to send the owner to.
     """
     sentence = _sentence(phase, candidate=candidate, previous=previous, ahead=ahead, keeps_versions=keeps_versions)
     if sentence is None:

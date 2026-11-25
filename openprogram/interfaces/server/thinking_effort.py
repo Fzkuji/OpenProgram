@@ -40,15 +40,18 @@ _LEVEL_DESC = {
     "high": "Deep reasoning",
     "xhigh": "Extended effort",
     "max": "Maximum effort",
+    "ultra": "Beyond maximum",
 }
 
 _LEVEL_ORDER = {
+    "none": -1,
     "minimal": 0,
     "low": 1,
     "medium": 2,
     "high": 3,
     "xhigh": 4,
     "max": 5,
+    "ultra": 6,
 }
 
 
@@ -86,6 +89,10 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
             "default": default or (ordered[len(ordered) // 2] if ordered else None),
             "variant": variant,
         }
+
+    from openprogram.runtime.harnesses import is_harness_provider
+    if is_harness_provider(provider):
+        return _harness_thinking_config(provider, model_id, _build)
 
     if model_id:
         # Enabled models: read thinking levels straight off the stored config
@@ -125,6 +132,34 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         # ``off`` in a map is how "no thinking" is sent, not a level.
         return _build([k for k in emap if k != "off"], get_default_effort(provider), None)
     return {"label": label, "options": [], "default": None, "variant": None}
+
+
+def _harness_thinking_config(provider: str, model_id: str | None, build) -> dict:
+    """An outside agent's model: the efforts it lists, or those of the
+    OpenProgram model it runs (``openprogram:<provider>/<model>``)."""
+    from openprogram.runtime.harnesses.codex.engine import GATEWAY_PREFIX
+    if model_id and model_id.startswith(GATEWAY_PREFIX):
+        inner_provider, _, inner_model = model_id[len(GATEWAY_PREFIX):].partition("/")
+        if inner_provider and inner_model:
+            return get_thinking_config_for_model(inner_provider, inner_model)
+    from openprogram.runtime.harnesses.models import cached_harness, harness_model, warm
+    model = harness_model(provider, model_id)
+    if model is None:
+        # Reading the harness starts a process: never on this call's thread.
+        entry = cached_harness(provider)
+        if entry is None:
+            warm(provider)
+        model = next((m for m in (entry or {}).get("models") or [] if m.get("default")), None)
+    if not model or not model.get("efforts"):
+        return {"label": "reasoning effort", "options": [], "default": None, "variant": None}
+    # Codex's "none" is OpenProgram's "off"; a model without it lists no "off".
+    levels = [level for level in model["efforts"] if level != "none"]
+    default = "off" if model.get("default_effort") == "none" else model.get("default_effort")
+    config = build(levels, default, None)
+    config["label"] = "reasoning effort"
+    if "none" not in model["efforts"]:
+        config["options"] = [option for option in config["options"] if option["value"] != "off"]
+    return config
 
 
 def default_effort_for(runtime) -> str:

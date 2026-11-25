@@ -67,7 +67,7 @@ const DICT = {
   // /settings/general page
   "general.title": { en: "General", zh: "通用" },
   "general.meta": {
-    en: "App-wide preferences. Language is per-browser. How the interface looks is in Appearance; the version and updates are in Versions and updates.",
+    en: "App-wide preferences. Language is per-browser. How the interface looks is in Appearance; the version and updates are in Versions and Updates.",
     zh: "应用级偏好。语言按浏览器保存。界面外观在「外观」里，版本和更新在「版本与更新」里。",
   },
   // /settings/appearance page
@@ -100,8 +100,9 @@ const DICT = {
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
-  "settings.tab.providers": { en: "Model services", zh: "模型服务" },
+  "settings.tab.providers": { en: "Model Services", zh: "模型服务" },
   "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
+  "settings.tab.harnesses": { en: "Third-Party Harnesses", zh: "第三方 Harness" },
   "settings.tab.import": { en: "Import", zh: "导入对话" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
   "settings.tab.machines": { en: "Devices", zh: "设备" },
@@ -111,7 +112,7 @@ const DICT = {
   "settings.tab.permissions": { en: "Permissions", zh: "权限" },
   "settings.tab.general": { en: "General", zh: "通用" },
   "settings.tab.appearance": { en: "Appearance", zh: "外观" },
-  "settings.tab.versions": { en: "Versions and updates", zh: "版本与更新" },
+  "settings.tab.versions": { en: "Versions and Updates", zh: "版本与更新" },
   "settings.tab.browser": { en: "Browser", zh: "浏览器" },
 
   // Token usage page

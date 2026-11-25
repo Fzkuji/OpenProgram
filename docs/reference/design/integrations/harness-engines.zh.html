@@ -1,0 +1,106 @@
+<title>Harness 引擎</title>
+<meta name="description" content="对话如何改由 Codex 运行，而不是 OpenProgram 自己的智能体循环：Harness 芯片、一轮在哪里交出去、Codex 的条目如何变成卡片、实时审批、停止与插话、每个分支的线程，以及换引擎时的交接。决定取自 T3 Code 和 Paseo。">
+<meta name="covers" content="openprogram/runtime/harnesses/ openprogram/runtime/permissions/approvals/live.py openprogram/interfaces/server/routes/execution/harnesses.py">
+<h1>Harness 引擎</h1>
+
+<p>对话可以交给外部编码智能体运行，而不用 OpenProgram 自己的智能体循环。它自己调用模型、在自己的沙箱里运行自己的工具；OpenProgram 显示它做了什么，把它的审批交给用户，并保存记录。Codex 是第一个引擎；Claude Code 和 ACP 智能体沿用同样的结构。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="一轮对话照常经过准入、运行槽和流记录。在 run_loop_blocking 处，它要么进入 OpenProgram 的智能体循环，要么进入对话的 Harness 引擎。Codex 引擎通过 JSON-RPC 驱动 codex app-server，把它的条目转成同样的流事件；审批变成在对话里回答的实时等待。">
+  <defs><marker id="he-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="20" y="80" width="150" height="60" rx="8"/>
+  <text class="t-big mid" x="95" y="106">一轮对话</text>
+  <text class="t-soft mid" x="95" y="126">准入、运行槽</text>
+  <rect class="tile" x="260" y="20" width="160" height="60" rx="8"/>
+  <text class="t-big mid" x="340" y="46">智能体循环</text>
+  <text class="t-soft mid" x="340" y="66">Harness：OpenProgram</text>
+  <rect class="tile" x="260" y="140" width="160" height="60" rx="8"/>
+  <text class="t-big mid" x="340" y="166">Codex 引擎</text>
+  <text class="t-soft mid" x="340" y="186">Harness：Codex</text>
+  <rect class="tile" x="510" y="140" width="150" height="60" rx="8"/>
+  <text class="t-big mid" x="585" y="166">codex app-server</text>
+  <text class="t-soft mid" x="585" y="186">每个对话一个</text>
+  <line class="ln" x1="170" y1="100" x2="256" y2="55" marker-end="url(#he-a)"/>
+  <line class="ln-acc" x1="170" y1="120" x2="256" y2="165" marker-end="url(#he-a)"/>
+  <line class="ln-acc" x1="420" y1="170" x2="506" y2="170" marker-end="url(#he-a)"/>
+  <text class="t-cmd mid" x="463" y="160">JSON-RPC</text>
+  <text class="t-soft" x="430" y="60">同样的帧、卡片和记录</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">交出</th><td><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code> 里 <code translate="no">run_loop_blocking</code> 的开头；引擎在 <code translate="no">openprogram/runtime/harnesses/__init__.py</code></td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">runtime/harnesses/codex/client.py</code>（进程与 JSON-RPC）、<code translate="no">engine.py</code>（一轮）、<code translate="no">items.py</code>（卡片）</td></tr>
+<tr><th scope="row">线程与交接</th><td><code translate="no">runtime/harnesses/handoff.py</code></td></tr>
+<tr><th scope="row">审批</th><td><code translate="no">runtime/permissions/approvals/live.py</code></td></tr>
+<tr><th scope="row">列表</th><td><code translate="no">runtime/harnesses/models.py</code>、<code translate="no">GET /api/harnesses</code>；Worker 启动时读取，旧的读数立即返回，同时在后台重新读取</td></tr>
+<tr><th scope="row">网页</th><td><code translate="no">apps/web/components/chat/top-bar/menus/harness-menu.tsx</code>、<code translate="no">lib/models/harnesses.ts</code>、<code translate="no">lib/agents/session-harness.ts</code></td></tr>
+<tr><th scope="row">通过 OpenProgram 的模型</th><td><a href="model-gateway.zh.html">模型网关</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">决定及其来源</h2>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">T3 Code</th><th scope="col">Paseo</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">在哪里选 Harness</th><td>模型选择器，按 provider 实例</td><td>provider 与模型合在一个选择器</td><td>模型芯片前单独的 Harness 芯片：换 Harness 会同时换模型、思考档位、权限模式、工具和 Agent，而且每个 Harness 都有自己的 Agent 类设置</td></tr>
+<tr><th scope="row">用哪个 Codex</th><td>设置项，默认 PATH 上的 <code translate="no">codex</code>；模型取它列出的，更新的模型标为需要更新</td><td>按 PATH 查找，桌面版取登录 shell 的环境</td><td>沿用：用户自己的 Codex（设置、PATH、登录 shell）及它列出的模型；采用 T3 的更新行，模型清单放在本仓库</td></tr>
+<tr><th scope="row">进程</th><td>共用一个 app-server</td><td>每个 agent 一个；按 Codex 目录排队启动并重试</td><td>采用 Paseo：每个对话一个，空闲 30 分钟释放，按 <code translate="no">CODEX_HOME</code> 串行启动，遇到 SQLite 启动错误重试</td></tr>
+<tr><th scope="row">会话</th><td>沿用原生 id</td><td>沿用原生 id；可导入</td><td>沿用原生 id，按分支；<code translate="no">codex resume &lt;id&gt;</code> 能接着聊</td></tr>
+<tr><th scope="row">事件</th><td>26 种条目，不丢信息</td><td>较少的时间线</td><td>采用 T3 的条目模型，映射到 OpenProgram 现有卡片</td></tr>
+<tr><th scope="row">权限模式</th><td>原生，绝不模拟</td><td>按 provider 原生</td><td>采用 T3 的规则：Codex 自己的四种模式</td></tr>
+<tr><th scope="row">换引擎</th><td>可移植交接</td><td>不支持</td><td>采用 T3：交接线程没见过的轮次</td></tr>
+</tbody>
+</table>
+
+<h2 id="chips">芯片</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">芯片</th><th scope="col">OpenProgram</th><th scope="col">Codex</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness</th><td>默认</td><td>显示版本；在对话所在机器上未安装或未登录时变灰</td></tr>
+<tr><th scope="row">模型</th><td>不变</td><td>Codex 自己的模型；有更新的 Codex 时，还有只有新版才列出的模型（变暗）和 <strong>Update Codex</strong>；然后是 <strong>Through OpenProgram</strong> 下的各 provider（<code translate="no">openprogram:&lt;provider&gt;/&lt;model&gt;</code>）</td></tr>
+<tr><th scope="row">思考档位</th><td>不变</td><td>模型的 <code translate="no">supportedReasoningEfforts</code></td></tr>
+<tr><th scope="row">Agent</th><td>不变</td><td>默认、Codex 配置里的 <code translate="no">[profiles.*]</code>，以及模型支持时的性格</td></tr>
+<tr><th scope="row">权限</th><td>不变</td><td>只读（untrusted，只读沙箱）、需要批准（on-request，workspace-write）、自动（on-request 加自动审查）、完全访问（never，完全访问）；Plan 隐藏，按只读运行</td></tr>
+</tbody>
+</table>
+<p>Harness 是分支的运行设置，与模型、思考档位、权限并列。切到 Codex 时换成它的默认模型和 Agent，并记住原来的 OpenProgram 模型和思考档位；切回时恢复。</p>
+
+<h2 id="turn">Codex 的一轮</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Codex</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agentMessage</code> 增量、推理增量</td><td>文本和思考流事件</td></tr>
+<tr><th scope="row"><code translate="no">commandExecution</code></td><td><code translate="no">bash</code> 卡片，输出作为结果</td></tr>
+<tr><th scope="row"><code translate="no">fileChange</code></td><td><code translate="no">apply_patch</code> 卡片，补丁由 diff 生成</td></tr>
+<tr><th scope="row"><code translate="no">webSearch</code>、<code translate="no">mcpToolCall</code></td><td>由提供方执行的 <code translate="no">web_search</code>；<code translate="no">mcp__&lt;server&gt;__&lt;tool&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">turn/plan/updated</code></td><td><code translate="no">todo_write</code> 清单</td></tr>
+<tr><th scope="row"><code translate="no">thread/tokenUsage/updated</code></td><td>上下文用量；不计入 Token 用量，因为第三方 Harness 页面已从 Codex 自己的文件统计这些调用</td></tr>
+<tr><th scope="row">审批请求</th><td>实时等待，显示为普通的提问卡片；允许 → <code translate="no">accept</code>，本对话内允许 → <code translate="no">acceptForSession</code>，拒绝 → <code translate="no">decline</code>。没有卡片的请求一律拒绝，一轮不会卡住</td></tr>
+<tr><th scope="row">停止、插话</th><td><code translate="no">turn/interrupt</code>（还没拿到 turn id 时先排队）；插话从执行中取出，用 <code translate="no">turn/steer</code> 发送</td></tr>
+</tbody>
+</table>
+<p>这些事件和智能体循环的事件走同一条流记录，所以刷新后仍能看到这一轮；能转发提问的 channel 也会转发 Codex 的审批。</p>
+
+<h2 id="threads">线程、机器与切换</h2>
+<dl class="pairs">
+<dt>机器</dt><dd>引擎在对话所在的机器上运行，用那台机器的 Codex 和登录；配对机器的列表由那台机器给出。Environment 和 Channel 芯片不变。</dd>
+<dt>用哪个 Codex</dt><dd>用户自己安装的那个：设置了 <code translate="no">harnesses.codex.binary</code> 就用它，否则用 PATH 上的 <code translate="no">codex</code>，再否则用登录 shell 找到的。Codex 只列出它这个版本能运行的模型，更新 Codex 就能看到最新的模型。</dd>
+<dt>文件夹</dt><dd>每次 <code translate="no">turn/start</code> 都带上对话当前的文件夹。</dd>
+<dt>分支</dt><dd>每个分支有自己的 Codex 线程，以及它看到的最后一条消息的 id。</dd>
+<dt>交接</dt><dd>线程在已有历史的对话上开始，或在它没运行的轮次之后恢复时，先收到这些轮次的限长记录，保留最新的。切回 OpenProgram 不需要交接：Codex 的轮次已按普通消息和工具调用保存。</dd>
+<dt>崩溃</dt><dd>进程退出会让正在进行的一轮失败；下一轮启动新进程并恢复线程。</dd>
+</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">保持最新</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">最新版本</th><td>npm、bun、pnpm 安装的查 npm，其他查 OpenAI 的发布频道；每小时读一次（<code translate="no">runtime/harnesses/codex/maintenance.py</code>）</td></tr>
+<tr><th scope="row">新版带来的模型</th><td><code translate="no">model-manifest.json</code> 里已安装的 Codex 没列出的模型。随包附带，每小时从本仓库 <code translate="no">main</code> 刷新；Codex 出新模型时在这里加</td></tr>
+<tr><th scope="row">更新</th><td>用这个文件所属的安装方式：<code translate="no">npm</code>/<code translate="no">bun</code>/<code translate="no">pnpm</code> 全局安装 <code translate="no">@openai/codex@latest</code>、<code translate="no">brew upgrade [--cask] codex</code>、<code translate="no">mise upgrade codex</code> 或 <code translate="no">codex update</code>。其他安装方式只显示这些模型，没有更新行</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<p>Codex 已能运行对话，用它自己的模型或 OpenProgram 的模型。下一步是 Claude Code（Claude Agent SDK，只用 Anthropic API key）和 ACP 智能体（Gemini CLI、OpenCode），引擎结构相同；把已有的 Harness 会话导入对话也随之实现。</p>

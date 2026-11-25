@@ -775,7 +775,7 @@ async def stream_simple(
         raise LLMError(
             message=(
                 f"No API key configured for provider '{model.provider}'. "
-                f"Add one in Settings → Model services, or run: "
+                f"Add one in Settings → Model Services, or run: "
                 f"openprogram providers keys {model.provider} add"
             ),
             reason=ErrorReason.AUTHENTICATION,

@@ -409,6 +409,10 @@ class _AgentSafePointHook:
                     "payload": shared._json_safe(command.payload),
                 })
 
+    def take_open_steers(self) -> None:
+        """Queue open steering now, for an engine with no safe points (an outside agent)."""
+        self._take_steers(self.driver._control_service())
+
     def _stop_for(self, service, command) -> bool:
         """Serve a pause or step command at the position just recorded."""
         if command.kind is CommandKind.STEER:

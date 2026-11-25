@@ -13,7 +13,7 @@ import { installDom, render } from "../../../_support/dom.mjs";
 
 installLoader({
   stubs: {
-    "../../top-bar": "export const AgentBadge = () => null; export const AgentConfigBadge = () => null; export const PermissionBadge = () => null;",
+    "../../top-bar": "export const AgentBadge = () => null; export const AgentConfigBadge = () => null; export const HarnessBadge = () => null; export const PermissionBadge = () => null;",
     "../../badges/context-badge": "export const ContextBadge = () => null;",
   },
 });

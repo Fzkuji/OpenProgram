@@ -62,6 +62,7 @@ INCLUDED: tuple[str, ...] = (
     "projects",
     "worktrees.json",
     "usage.db",  # usage/accounting history
+    "harnesses.db",  # Claude Code and Codex calls, kept after their files are deleted
     "run_index.jsonl",  # which session each run belongs to
     "revisions.jsonl",  # Workflow versions and approvals
     "programs",  # installed programs and the user's own
@@ -82,8 +83,10 @@ INCLUDED: tuple[str, ...] = (
 
 # Whole top-level credential trees included only with --include-credentials.
 # plugin-options holds each plugin's settings, which can be its API keys;
-# web_push holds the key phones' notifications are signed with.
-CREDENTIAL_ENTRIES: tuple[str, ...] = ("auth", "mcp_tokens", "plugin-options", "web_push")
+# web_push holds the key phones' notifications are signed with; gateway holds
+# the model gateway's key, which harness configs written for the terminal
+# carry, and the original harness settings it puts back.
+CREDENTIAL_ENTRIES: tuple[str, ...] = ("auth", "mcp_tokens", "plugin-options", "web_push", "gateway")
 
 # Everything else the code writes at the top level: rebuilt on demand, only
 # meaningful to the running process, or a secret that is never archived.

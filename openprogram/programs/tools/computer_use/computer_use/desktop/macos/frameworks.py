@@ -229,6 +229,8 @@ class WindowState:
     snapshot: Snapshot | None = None
     origin: tuple[float, float] = (0.0, 0.0)
     size: tuple[float, float] = (0.0, 0.0)
+    # The window's size when it was last followed; a different one from ``size`` means it was resized since.
+    live_size: tuple[float, float] | None = None
     scale: float = 1.0           # screenshot pixels per screen point
     has_screenshot: bool = False
     sparse: bool = False         # the tree shows little of the window, so reads add OCR text and shapes

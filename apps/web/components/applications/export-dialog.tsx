@@ -4,13 +4,14 @@
  * openprogram/interfaces/standalone/export.py): choose a folder, export,
  * then show the result in the file manager.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { applicationRequest } from "@/lib/net/applications";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FolderOpenIcon } from "@/components/animated-icons";
+import { ApplicationIcon } from "./application-icon";
 import type { ApplicationRow } from "./application-rows";
 import styles from "./applications-page.module.css";
 
@@ -23,6 +24,19 @@ interface Exported { path: string; size: number }
 
 const isMac = () => typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
+/** The drawn icon as the PNG a macOS icon takes: 1024 px, the tile inside the standard margin. */
+async function iconPng(svg: SVGSVGElement | null | undefined): Promise<string | undefined> {
+  if (!svg) return undefined;
+  const source = new XMLSerializer().serializeToString(svg);
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
+  await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1024;
+  canvas.getContext("2d")?.drawImage(image, 100, 100, 824, 824);
+  return canvas.toDataURL("image/png");
+}
+
 export function ExportDialog({ row, onClose, pickFolder }: {
   row: ApplicationRow | null;
   onClose: () => void;
@@ -33,6 +47,7 @@ export function ExportDialog({ row, onClose, pickFolder }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<Exported | null>(null);
+  const drawn = useRef<HTMLDivElement>(null);
   useEffect(() => { if (row) { setBusy(false); setError(""); setDone(null); } }, [row]);
   if (!row) return null;
   const file = isMac() ? `${row.title}.app` : row.title;
@@ -42,7 +57,8 @@ export function ExportDialog({ row, onClose, pickFolder }: {
   async function run() {
     setBusy(true); setError("");
     try {
-      setDone(await applicationRequest<Exported>(`/api/applications/${encodeURIComponent(row!.id)}/export`, "POST", { output: folder.trim() }));
+      const icon = await iconPng(drawn.current?.querySelector("svg")).catch(() => undefined);
+      setDone(await applicationRequest<Exported>(`/api/applications/${encodeURIComponent(row!.id)}/export`, "POST", { output: folder.trim(), icon }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -61,6 +77,7 @@ export function ExportDialog({ row, onClose, pickFolder }: {
   return (
     <Dialog open onOpenChange={next => { if (!next && !busy) onClose(); }}>
       <DialogContent className="sm:max-w-[520px]">
+        <div ref={drawn} hidden><ApplicationIcon icon={row.icon} id={row.id} size={1024} /></div>
         {done ? (
           <div className="grid gap-[10px]">
             <DialogHeader>

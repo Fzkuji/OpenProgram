@@ -154,6 +154,9 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
         ),
         "plugins.autoupdate": frozenset({"https://registry.npmjs.org"}),
         "updater.github": frozenset({"https://api.github.com"}),
+        "harness.codex.release": frozenset(
+            {"https://raw.githubusercontent.com", "https://registry.npmjs.org", "https://releases.openai.com"}
+        ),
         "office.assets": frozenset({"https://github.com", "https://release-assets.githubusercontent.com"}),
         "self_update.electron": frozenset(
             {"https://github.com", "https://release-assets.githubusercontent.com"}
@@ -390,6 +393,8 @@ _SPECS = (
     _download("plugins.marketplace", URLTrustClass.CONFIGURED_SERVICE),
     _download("plugins.autoupdate", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _download("updater.github", URLTrustClass.FIXED_PUBLIC_SERVICE),
+    # The newest Codex and the models it offers, for the user's own Codex.
+    _download("harness.codex.release", URLTrustClass.FIXED_PUBLIC_SERVICE),
     # The Office pack is about 700 MB: on a slow link it takes longer than
     # any fixed deadline, so it runs while bytes keep coming.
     replace(_download("office.assets", URLTrustClass.FIXED_PUBLIC_SERVICE),

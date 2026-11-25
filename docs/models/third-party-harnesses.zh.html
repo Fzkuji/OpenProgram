@@ -1,0 +1,27 @@
+<title>第三方 Harness</title>
+<meta name="description" content="在 设置 → 第三方 Harness 让 Claude Code 和 Codex 使用 OpenProgram 里设置的任何模型，并查看它们的用量：会话、Token、按 API 价估算的费用和 Codex 套餐额度。">
+<meta name="covers" content="openprogram/models/usage/harnesses/ openprogram/models/gateway/">
+<h1>第三方 Harness</h1>
+<p>设置 → 第三方 Harness 选择本机 Claude Code 和 Codex 使用的模型，并显示它们的用量，数据来自它们自己保存的会话文件。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">在对话里</th><td>模型芯片前的 <strong>Harness</strong> 芯片让对话改由 Codex 运行：模型、思考档位、Agent 和权限模式换成 Codex 的，它的审批出现在对话里，终端里 <code translate="no">codex resume &lt;id&gt;</code> 能接着同一个会话。用的是你自己安装的 <code translate="no">codex</code>；有新版时，模型菜单会列出新版带来的模型和 <strong>Update Codex</strong></td></tr>
+<tr><th scope="row">模型</th><td>Harness 自己的登录，或<strong>通过 OpenProgram</strong> 使用任一已启用的模型；Claude Code 还可分别指定 Opus、Sonnet、Haiku 背后的模型</td></tr>
+<tr><th scope="row">也用于终端</th><td>把选择写进 <code translate="no">~/.codex/config.toml</code> 或 <code translate="no">~/.claude/settings.json</code>，终端里的 <code translate="no">codex</code> 和 <code translate="no">claude</code> 也用它，Codex 应用也一样：它会列出已启用的模型，并自动用上新的设置。关闭后恢复原来的值。<strong>配置已在别处修改</strong>表示之后有值被改过，它会保持原样。</td></tr>
+<tr><th scope="row">每个 Harness 一张卡片</th><td>最近 30 天的会话数、Token、输出和按 API 价估算的费用</td></tr>
+<tr><th scope="row">Codex 套餐</th><td>每项额度一条进度条，带重置时间和 credits，取 Codex 最近一次写下的值</td></tr>
+<tr><th scope="row">每日 Token</th><td>每天一根柱，每个 Harness 一种颜色</td></tr>
+<tr><th scope="row">会话</th><td>标题、文件夹、分支、模型、启动它的应用、Token 和估算费用。可按 Harness 筛选或搜索；复制按钮复制在终端里继续这个会话的命令。</td></tr>
+<tr><th scope="row">按模型、启动来源</th><td>按模型和按应用（终端、桌面版、SDK）的合计</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>按 API 价估算</dt><dd>这些调用按 API 标价算的费用，不是订阅账单。带 <code translate="no">+</code> 表示部分调用的模型没有已知价格。</dd>
+<dt>Claude 套餐额度</dt><dd>不显示：Claude Code 的文件里没有记录。</dd>
+<dt>读取的文件</dt><dd><code translate="no">~/.claude/projects</code>（或 <code translate="no">$CLAUDE_CONFIG_DIR</code>），以及 <code translate="no">~/.codex/sessions</code>、<code translate="no">~/.codex/archived_sessions</code>（或 <code translate="no">$CODEX_HOME</code>）</dd>
+<dt>通过 OpenProgram</dt><dd>Harness 把模型调用发给 OpenProgram 的 Worker，Worker 需要在运行。模型所属的提供商照常计费，这些调用计入 Token 用量。</dd>
+<dt>保留</dt><dd>92 天，Claude Code 删除自己的旧记录后也保留</dd>
+<dt>关闭</dt><dd>页面底部的 <strong>Read Claude Code and Codex sessions</strong>，或 <code translate="no">openprogram config set usage.third_party_harnesses false</code></dd>
+</dl>
+<p class="next"><a href="token-tracking.html">Token 统计</a> · <a href="../reference/design/integrations/third-party-harnesses.html">设计</a> · <a href="../reference/design/integrations/harness-engines.html">Harness 引擎</a></p>

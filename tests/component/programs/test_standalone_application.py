@@ -162,7 +162,14 @@ def test_the_server_answers_only_its_signed_in_page(server):
     described = client.get("/api/standalone").json()
     assert described["application"]["id"] == APP_ID
     assert described["ui_url"].startswith(f"/application-assets/{described['instance_id']}/")
-    assert client.get(described["ui_url"]).status_code == 200
+    page = client.get(described["ui_url"])
+    assert page.status_code == 200
+    # The frame's origin is opaque: its own folder is named, not only 'self',
+    # or WebKit refuses the application's scripts.
+    folder = "http://127.0.0.1:8123" + described["ui_url"].rsplit("/", 1)[0] + "/"
+    policy = dict(part.strip().split(" ", 1) for part in page.headers["content-security-policy"].split(";")[1:])
+    assert folder in policy["script-src"] and folder in policy["style-src"] and folder in policy["font-src"]
+    assert policy["frame-ancestors"] == "'self' http://127.0.0.1:8123"
     assert client.get("/api/standalone", headers={"host": "attacker.example"}).status_code == 403
     assert client.get("/api/applications").status_code == 200  # signed in: the App's routes
 
@@ -225,6 +232,38 @@ def test_an_app_export_is_a_macos_bundle(tmp_path):
     assert "NSMicrophoneUsageDescription" in info
     assert os.access(contents / "MacOS" / "StandaloneTest", os.X_OK)
     assert (contents / "Resources" / "app" / "application.json").is_file()
+    assert "CFBundleIconFile" not in info
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="an .app is made on macOS")
+def test_an_app_export_takes_the_drawn_icon(tmp_path):
+    import base64
+    from openprogram.interfaces.standalone import export
+    # A 1x1 PNG: sips scales it to every size an .icns holds.
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+    package = write_package(tmp_path / "package")
+    result = export.export(str(package), tmp_path, format="app", python="reference", icon=png)
+    contents = Path(result["path"]) / "Contents"
+    assert plistlib.loads((contents / "Info.plist").read_bytes())["CFBundleIconFile"] == "AppIcon"
+    assert (contents / "Resources" / "AppIcon.icns").read_bytes()[:4] == b"icns"
+    with pytest.raises(ValueError, match="PNG"):
+        export.export(str(package), tmp_path / "again", format="app", python="reference", icon=b"GIF89a")
+    assert not (tmp_path / "again" / "Standalone Test.app").exists()
+
+
+def test_the_launcher_opens_a_native_window_on_macos(tmp_path, monkeypatch):
+    from openprogram.interfaces.standalone import server, window
+    package = write_package(tmp_path / "package")
+    opened: list[tuple] = []
+    monkeypatch.setattr(server, "running", lambda data: 4321)
+    monkeypatch.setattr(window, "available", lambda: True)
+    monkeypatch.setattr(window, "run", lambda url, title, **_: opened.append(("native", title)))
+    monkeypatch.setattr(server, "open_window", lambda url: opened.append(("browser", url)))
+    server.launch(package, tmp_path / "data", settings_from=None, idle_minutes=1)
+    monkeypatch.setattr(window, "available", lambda: False)
+    server.launch(package, tmp_path / "data", settings_from=None, idle_minutes=1)
+    assert opened[0] == ("native", "Standalone Test")
+    assert opened[1][0] == "browser" and opened[1][1].startswith("http://127.0.0.1:4321/#token=")
 
 
 def test_applications_that_need_the_app_are_not_exported(tmp_path):
@@ -299,10 +338,15 @@ def test_the_applications_page_exports_and_shows_only_its_own_exports(tmp_path, 
     app = FastAPI()
     applications.register(app)
     client = TestClient(app)  # no lifespan: nothing loads
-    result = client.post("/api/applications/meeting/export", json={"output": str(tmp_path)})
+    png = b"\x89PNG\r\n\x1a\nicon"
+    import base64
+    drawn = "data:image/png;base64," + base64.b64encode(png).decode()
+    result = client.post("/api/applications/meeting/export", json={"output": str(tmp_path), "icon": drawn})
     assert result.status_code == 200, result.text
     [(name, output, options)] = written
-    assert name == "meeting" and output == tmp_path and options["next_free"] is True
+    assert name == "meeting" and output == tmp_path and options["next_free"] is True and options["icon"] == png
+    assert client.post("/api/applications/meeting/export",
+                       json={"output": str(tmp_path), "icon": "data:image/png;base64,%%"}).status_code == 400
     assert client.post("/api/applications/meeting/export", json={"output": str(tmp_path / "missing")}).status_code == 400
     (Path.home() / "Downloads").mkdir(exist_ok=True)
     client.post("/api/applications/meeting/export", json={})

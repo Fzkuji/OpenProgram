@@ -153,6 +153,11 @@ class ActivationOperations:
             or text.startswith(("/forced_tool", "/spawn", "/merge"))
         ):
             return CapabilitySet()
+        from openprogram.runtime.harnesses import is_harness_provider, turn_provider
+        if is_harness_provider(turn_provider(request)):
+            # An outside agent has no safe point to pause, step or fork at;
+            # steering goes to it while it runs.
+            return CapabilitySet(steer=True)
         return CapabilitySet(
             pause=True,
             step=True,

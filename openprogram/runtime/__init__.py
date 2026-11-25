@@ -5,7 +5,8 @@ loop); ``conversation`` runs chats and turns on it; ``jobs`` runs background
 work; ``agent_registry`` keeps saved Agents; ``permissions`` decides what a
 tool call may do; ``context`` holds the ``Context`` class and what the model
 sees; ``execution`` is the pause, cancel and recovery control plane;
-``events``, ``commands``, ``proactive`` and ``scheduler`` complete it.
+``events``, ``commands``, ``proactive`` and ``scheduler`` complete it;
+``harnesses`` runs a conversation's turns in an outside agent (Codex).
 """
 
 from openprogram.state.memory.writer_agent import register_writer_agent as _register_writer_agent

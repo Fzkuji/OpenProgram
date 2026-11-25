@@ -1,0 +1,162 @@
+"""'Also in the terminal' edits a harness's own config surgically and puts it back."""
+from __future__ import annotations
+
+import json
+import os
+import tomllib
+
+import pytest
+
+
+@pytest.fixture
+def homes(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENPROGRAM_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr("openprogram.models.gateway.address.worker_base_url", lambda stable=False: "http://127.0.0.1:18100")
+    (tmp_path / "codex").mkdir()
+    (tmp_path / "claude").mkdir()
+    from openprogram.models.gateway import codex_app
+    RESTARTS.clear()
+    monkeypatch.setattr(codex_app, "base_instructions", lambda _versions: "You are Codex.")
+    monkeypatch.setattr(codex_app, "restart_app", lambda home: RESTARTS.append(str(home)))
+    monkeypatch.setattr("openprogram.models.gateway.conversion.enabled_model_refs", lambda: [
+        {"id": "openrouter/x", "name": "X", "provider": "openrouter", "context_window": None},
+        {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "deepseek", "context_window": 128000},
+    ])
+    return tmp_path
+
+
+#: The Codex home of each restart of the Codex app's app-server a test asked for.
+RESTARTS: list[str] = []
+
+
+CODEX = (
+    "# my settings\r\n"
+    "model = \"gpt-5.5\"  # the default\r\n"
+    "approval_policy = \"on-request\"\r\n"
+    "\r\n"
+    "# projects I trust\r\n"
+    "[projects.\"/repo\"]\r\n"
+    "trust_level = \"trusted\"\r\n"
+)
+
+
+def test_codex_config_is_edited_in_place_and_restored(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    path = homes / "codex" / "config.toml"
+    path.write_bytes(CODEX.encode())
+    harness_config.apply("codex", "openprogram:deepseek/deepseek-chat")
+    text = path.read_bytes().decode()
+    assert "\n" not in text.replace("\r\n", "")  # CRLF kept
+    assert "# my settings" in text and "# projects I trust" in text
+    assert 'model = "deepseek/deepseek-chat"  # the default' in text
+    doc = tomllib.loads(text)
+    assert doc["model_provider"] == "openprogram"
+    assert doc["approval_policy"] == "on-request" and doc["projects"]["/repo"]["trust_level"] == "trusted"
+    table = doc["model_providers"]["openprogram"]
+    assert table["wire_api"] == "responses" and table["base_url"].endswith("/gateway/openai/v1")
+    assert table["experimental_bearer_token"].startswith("opgw-")
+    # Top-level keys stay above the first table.
+    assert text.index("model_provider") < text.index("[projects")
+    assert harness_config.status("codex")["applied"] and not harness_config.status("codex")["drift"]
+
+    harness_config.restore("codex")
+    restored = path.read_bytes().decode()
+    doc = tomllib.loads(restored)
+    assert doc["model"] == "gpt-5.5" and "model_provider" not in doc
+    assert "openprogram" in doc["model_providers"]  # the table stays for threads started on it
+    assert restored.startswith(CODEX.split("[projects")[0].replace('model = "gpt-5.5"', 'model = "gpt-5.5"'))
+    assert not harness_config.status("codex")["applied"]
+
+
+def test_a_value_changed_since_is_drift_and_not_restored(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    path = homes / "codex" / "config.toml"
+    path.write_text('model = "gpt-5.5"\n', encoding="utf-8")
+    harness_config.apply("codex", "deepseek/deepseek-chat")
+    path.write_text(path.read_text(encoding="utf-8").replace('"deepseek/deepseek-chat"', '"o3"'), encoding="utf-8")
+    assert harness_config.status("codex")["drift"] == ["model"]
+    harness_config.restore("codex")
+    doc = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert doc["model"] == "o3" and "model_provider" not in doc
+
+
+def test_unparseable_config_is_refused(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    path = homes / "codex" / "config.toml"
+    path.write_text("model = \n[broken", encoding="utf-8")
+    with pytest.raises(harness_config.HarnessConfigError):
+        harness_config.apply("codex", "deepseek/deepseek-chat")
+    assert path.read_text(encoding="utf-8") == "model = \n[broken"
+    assert not harness_config.status("codex")["applied"]
+
+    settings = homes / "claude" / "settings.json"
+    settings.write_text("{not json", encoding="utf-8")
+    with pytest.raises(harness_config.HarnessConfigError):
+        harness_config.apply("claude_code", "deepseek/deepseek-chat")
+    assert settings.read_text(encoding="utf-8") == "{not json"
+
+
+def test_claude_settings_keep_order_indent_and_come_back(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    real = homes / "claude" / "real-settings.json"
+    original = json.dumps({"permissions": {"allow": ["Bash(ls)"]}, "env": {"CLAUDE_CODE_USE_BEDROCK": "1", "FOO": "bar"},
+                           "theme": "dark"}, indent=4) + "\n"
+    real.write_text(original, encoding="utf-8")
+    os.symlink(real, homes / "claude" / "settings.json")
+
+    harness_config.apply("claude_code", "zai/glm-5", {"haiku": "deepseek/deepseek-chat"})
+    assert (homes / "claude" / "settings.json").is_symlink()
+    text = real.read_text(encoding="utf-8")
+    data = json.loads(text)
+    assert list(data) == ["permissions", "env", "theme", "model"]
+    assert text.startswith('{\n    "permissions"')
+    assert data["model"] == "zai/glm-5"
+    env = data["env"]
+    assert "CLAUDE_CODE_USE_BEDROCK" not in env and env["FOO"] == "bar"
+    assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:18100/gateway/anthropic"
+    assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "deepseek/deepseek-chat"
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "zai/glm-5" and "ANTHROPIC_MODEL" not in env
+
+    harness_config.restore("claude_code")
+    assert json.loads(real.read_text(encoding="utf-8")) == json.loads(original)
+    assert real.read_text(encoding="utf-8").startswith('{\n    "permissions"')
+
+
+def test_claude_settings_created_from_nothing_go_back_to_nothing(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    settings = homes / "claude" / "settings.json"
+    settings.write_text('{"theme": "light"}\n', encoding="utf-8")
+    harness_config.apply("claude_code", "zai/glm-5")
+    harness_config.restore("claude_code")
+    assert json.loads(settings.read_text(encoding="utf-8")) == {"theme": "light"}
+
+
+def test_the_codex_app_gets_the_models_and_restarts_when_the_route_changes(homes) -> None:
+    from openprogram.models.gateway import harness_config
+
+    path = homes / "codex" / "config.toml"
+    path.write_text('model = "gpt-5.5"\n')
+    harness_config.apply("codex", "openprogram:deepseek/deepseek-chat")
+    doc = tomllib.loads(path.read_text())
+    catalog = json.loads((homes / "codex" / "openprogram-models.json").read_text())
+    assert doc["model_catalog_json"] == str(homes / "codex" / "openprogram-models.json")
+    assert [m["slug"] for m in catalog["models"]] == ["deepseek/deepseek-chat", "openrouter/x"]
+    first = catalog["models"][0]
+    assert first["context_window"] == 128000 and first["visibility"] == "list"
+    assert first["model_messages"]["instructions_template"] == "You are Codex."
+    assert RESTARTS == [str(homes / "codex")]
+
+    harness_config.apply("codex", "openprogram:openrouter/x")  # a new model alone restarts nothing
+    assert len(RESTARTS) == 1
+
+    harness_config.restore("codex")
+    assert "model_catalog_json" not in tomllib.loads(path.read_text())
+    assert not (homes / "codex" / "openprogram-models.json").exists()
+    assert len(RESTARTS) == 2

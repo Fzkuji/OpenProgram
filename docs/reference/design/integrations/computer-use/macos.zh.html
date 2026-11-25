@@ -39,6 +39,7 @@
 <tbody>
 <tr><th scope="row">选择窗口</th><td>窗口由 <code translate="no">window</code>（标题子串或序号）或 <code translate="no">window_id</code> 选定；两者都不给时，模型上次读过的窗口只要还开着就保持选中，否则取焦点窗口或主窗口。</td></tr>
 <tr><th scope="row">跟随</th><td>每次状态都记下应用的窗口（窗口 id，没有 id 时用标题）；如果焦点窗口或主窗口是上次读取时还没有的，就改读它，并说明它盖在哪个窗口上，这样某一步弹出的对话框或文档就是后面步骤的操作对象。</td></tr>
+<tr><th scope="row">移动或改变大小</th><td>每一步之前重新读窗口位置（<code translate="no">_follow_window</code>）：用户挪了窗口，坐标跟着走。截图之后改过大小的窗口已经重新排版，所以按 <code translate="no">x</code>,<code translate="no">y</code> 的步骤返回 <code translate="no">StaleElement</code>，模型重新读一次；按元素的步骤读元素的位置，不受影响。</td></tr>
 <tr><th scope="row">对话框</th><td>新出现的对话框类窗口（子角色 <code translate="no">AXDialog</code>、<code translate="no">AXSystemDialog</code>）或新的文件对话框，即使焦点仍留在它下面的窗口上也会被跟随；后台应用打开进程外的文件对话框时就是这样。</td></tr>
 </tbody>
 </table>

@@ -71,6 +71,7 @@ import { useThinkingEffort } from "./controls/effort/use-thinking-effort";
 import { useSessionAgentSettings } from "./state/use-session-agent-settings";
 import { useToolsToggles } from "./controls/toggles/use-tools-toggles";
 import { useModelAvailability } from "./controls/toggles/use-model-availability";
+import { isHarnessProvider } from "@/lib/models/harnesses";
 import { useUnattendedMode } from "./controls/toggles/use-unattended-mode";
 import { useSandboxToggle } from "./controls/toggles/use-sandbox-toggle";
 import { ControlsCluster } from "./controls/controls-cluster";
@@ -138,7 +139,11 @@ function mentionSources(sessionId: string | null): MentionSources {
 /** No chat model read yet: one object, so the controls it feeds stay as drawn. */
 const NO_CHAT_AGENT: NonNullable<ReturnType<typeof useSessionAgentSettings>["chat"]> = {};
 
-export function Composer({ sessionId: boundSessionId }: { sessionId?: string } = {}) {
+export function Composer({ sessionId: boundSessionId, placeholder }: {
+  sessionId?: string;
+  /** The idle placeholder an application gives its composer (`chat.hint`). */
+  placeholder?: string;
+} = {}) {
   const { text } = useTranslation();
   const bound = boundSessionId ?? null;
   const focusedSessionId = useSessionStore((s) => s.currentSessionId);
@@ -272,7 +277,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // The effort picker only appears once a chat model is actually
   // selected; with no model picked it stays hidden.
   const chatModel = chatAgent.model;
-  const { noEnabledModels, promptNeedModel } = useModelAvailability();
+  const { noEnabledModels: noModelsEnabled, promptNeedModel } = useModelAvailability();
+  // A harness (Codex) brings its own models: none need be enabled in Settings.
+  const noEnabledModels = noModelsEnabled && !isHarnessProvider(chatAgent.provider);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   // Demonstration recording: the + menu item, its start dialog and the
   // finished recording waiting to go out with the next message.
@@ -750,7 +757,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           idlePlaceholder={disconnected ? text(
             "Not connected. Messages wait and send once the connection is back.",
             "未连接。消息会排队，连接恢复后发送。",
-          ) : undefined}
+          ) : placeholder}
           draftOwner={draftOwner ?? undefined}
           suggestion={nextPrompt.suggestion}
           onKeyDown={onKeyDown}

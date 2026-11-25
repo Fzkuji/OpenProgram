@@ -41,6 +41,8 @@ PYTHONS = ("auto", "bundle", "reference")
 TRIMMED_PREFIX = ("include", "share", "lib/tcl9", "lib/tcl9.0", "lib/tk9.0", "lib/itcl4.3.5", "lib/thread3.0.4")
 TRIMMED_STDLIB = ("test", "idlelib", "tkinter", "turtledemo")
 TRIMMED_SITE = ("playwright", "PyObjCTest")
+#: The largest icon PNG an export takes.
+ICON_LIMIT = 4 * 1024 * 1024
 #: Inside the ``openprogram`` package.
 TRIMMED_OPENPROGRAM = ("interfaces/server/_frontend",)
 
@@ -182,12 +184,35 @@ set PYTHONNOUSERSITE=1
 """
 
 
-def export(name: str, output: Path, *, format: str = "app", python: str = "auto", next_free: bool = False) -> dict:
+def _write_icon(png: bytes, resources: Path) -> str | None:
+    """``AppIcon.icns`` in ``resources`` from a square PNG (macOS ``sips`` and ``iconutil``)."""
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or len(png) > ICON_LIMIT:
+        raise ValueError("the icon must be a PNG of at most 4 MB")
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp:
+        source = Path(temp) / "icon.png"
+        source.write_bytes(png)
+        iconset = Path(temp) / "AppIcon.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            for scale in (1, 2):
+                name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
+                subprocess.run(["sips", "-z", str(size * scale), str(size * scale), str(source), "--out", str(iconset / name)],
+                               check=True, capture_output=True)
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "AppIcon.icns")],
+                       check=True, capture_output=True)
+    return "AppIcon"
+
+
+def export(name: str, output: Path, *, format: str = "app", python: str = "auto", next_free: bool = False,
+           icon: bytes | None = None) -> dict:
     """Write the standalone application for ``name`` into ``output``; returns what was written.
 
     An existing export of that name is refused, or, with ``next_free``, kept
     beside the new one, numbered as the Finder numbers a second download
-    (``Meetings 2.app``).
+    (``Meetings 2.app``). ``icon`` is the application's icon as a square
+    PNG (the App draws it); an .app without one shows the system's.
     """
     if format not in FORMATS:
         raise ValueError(f"format must be one of {', '.join(FORMATS)}")
@@ -232,8 +257,10 @@ def export(name: str, output: Path, *, format: str = "app", python: str = "auto"
             executable.write_text(_shell_launcher(python=launcher_python, package='"$here/../Resources/app"',
                                                   app_id=definition["id"], settings=settings), encoding="utf-8")
             executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            icon_file = _write_icon(icon, root) if icon else None
             with open(target / "Contents" / "Info.plist", "wb") as handle:
                 plistlib.dump({
+                    **({"CFBundleIconFile": icon_file} if icon_file else {}),
                     "CFBundleName": title,
                     "CFBundleDisplayName": definition.get("title") or title,
                     "CFBundleIdentifier": f"org.openprogram.application.{re.sub(r'[^A-Za-z0-9.-]', '-', definition['id'])}",

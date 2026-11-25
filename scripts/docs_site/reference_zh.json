@@ -668,5 +668,19 @@
   "Folder to write into (default: here)": "写入的文件夹（默认：当前文件夹）",
   "A macOS .app (default on macOS) or a folder with run.sh and run.cmd": "macOS .app（macOS 上的默认值），或带 run.sh 和 run.cmd 的文件夹",
   "Copy the Python runtime into the export (bundle), name this one (reference), or copy it when it can be copied (auto)": "把 Python 运行时复制进导出物（bundle）、指向当前这个（reference），或能复制时就复制（auto）",
-  "Export an application as software of its own": "把应用导出为独立软件"
+  "Export an application as software of its own": "把应用导出为独立软件",
+  "Harnesses": "Harness",
+  "Read Claude Code and Codex sessions": "读取 Claude Code 和 Codex 会话",
+  "Read the session files Claude Code and Codex keep on this computer and show their sessions, tokens, estimated cost and Codex plan quota on the Third-Party Harnesses page. Read only; the files never leave this computer.": "读取 Claude Code 和 Codex 保存在本机的会话文件，在第三方 Harness 页面显示它们的会话、Token、估算费用和 Codex 套餐额度。只读；文件不会离开这台电脑。",
+  "Harness Models": "Harness 模型",
+  "Codex model": "Codex 模型",
+  "Empty for Codex's own sign-in, or an OpenProgram model as provider/model.": "留空使用 Codex 自己的登录，或填写 OpenProgram 的模型（provider/model）。",
+  "Codex in the terminal": "终端里的 Codex",
+  "Whether ~/.codex/config.toml points Codex at OpenProgram's model.": "是否让 ~/.codex/config.toml 把 Codex 指向 OpenProgram 的模型。",
+  "Claude Code model": "Claude Code 模型",
+  "Empty for Claude Code's own sign-in, or an OpenProgram model as provider/model.": "留空使用 Claude Code 自己的登录，或填写 OpenProgram 的模型（provider/model）。",
+  "Claude Code Opus, Sonnet and Haiku models": "Claude Code 的 Opus、Sonnet、Haiku 模型",
+  "The model each Claude Code tier runs on; a tier left out uses the Claude Code model.": "Claude Code 每一档使用的模型；未填的档位使用 Claude Code 模型。",
+  "Claude Code in the terminal": "终端里的 Claude Code",
+  "Whether ~/.claude/settings.json points Claude Code at OpenProgram's model.": "是否让 ~/.claude/settings.json 把 Claude Code 指向 OpenProgram 的模型。"
 }

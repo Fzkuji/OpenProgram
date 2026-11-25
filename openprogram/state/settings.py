@@ -433,6 +433,12 @@ def _coerce(widget: str, value: Any) -> Any:
     return str(value)
 
 
+def _validate_model_ref(v: Any) -> Optional[str]:
+    if not isinstance(v, str) or (v and ("/" not in v or v.startswith("/") or v.endswith("/"))):
+        return "must be empty or provider/model"
+    return None
+
+
 def _validate_auto_compact_percent(v: Any) -> Optional[str]:
     if not isinstance(v, int) or not 50 <= v <= 95:
         return "must be a whole number from 50 to 95"
@@ -875,6 +881,53 @@ SETTINGS: list[SettingSpec] = [
              "costs less. 5 minutes suits back-and-forth chats. 1 hour costs "
              "more up front and is worth it if you often return to a "
              "conversation after a break of more than five minutes.",
+    ),
+    SettingSpec(
+        key="usage.third_party_harnesses", path=("usage", "third_party_harnesses"),
+        group="Harnesses", label="Read Claude Code and Codex sessions", widget="toggle",
+        apply=APPLY_LIVE, default=True,
+        help="Read the session files Claude Code and Codex keep on this computer "
+             "and show their sessions, tokens, estimated cost and Codex plan quota "
+             "on the Third-Party Harnesses page. Read only; the files never leave this computer.",
+    ),
+    # The model each harness uses outside a chat (Settings → Third-Party
+    # Harnesses → Models; routes/settings/harness_models.py). "" is the
+    # harness's own sign-in; otherwise a provider/model ref answered by the
+    # model gateway (models/gateway). Edited on that page, which also writes
+    # the harness's own config when "terminal" is on, so the group is not
+    # one of the schema-rendered ones.
+    SettingSpec(
+        key="harnesses.codex.model", path=("harnesses", "codex", "model"),
+        group="Harness Models", label="Codex model", widget="text",
+        apply=APPLY_LIVE, default="", validate=lambda v: _validate_model_ref(v),
+        help="Empty for Codex's own sign-in, or an OpenProgram model as provider/model.",
+    ),
+    SettingSpec(
+        key="harnesses.codex.terminal", path=("harnesses", "codex", "terminal"),
+        group="Harness Models", label="Codex in the terminal", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Whether ~/.codex/config.toml points Codex at OpenProgram's model.",
+    ),
+    SettingSpec(
+        key="harnesses.claude_code.model", path=("harnesses", "claude_code", "model"),
+        group="Harness Models", label="Claude Code model", widget="text",
+        apply=APPLY_LIVE, default="", validate=lambda v: _validate_model_ref(v),
+        help="Empty for Claude Code's own sign-in, or an OpenProgram model as provider/model.",
+    ),
+    SettingSpec(
+        key="harnesses.claude_code.tiers", path=("harnesses", "claude_code", "tiers"),
+        group="Harness Models", label="Claude Code Opus, Sonnet and Haiku models", widget="json",
+        apply=APPLY_LIVE, default={},
+        validate=lambda v: (None if isinstance(v, dict) and all(
+            k in {"opus", "sonnet", "haiku"} and not _validate_model_ref(m) for k, m in v.items())
+            else "must map opus, sonnet and haiku to provider/model refs"),
+        help="The model each Claude Code tier runs on; a tier left out uses the Claude Code model.",
+    ),
+    SettingSpec(
+        key="harnesses.claude_code.terminal", path=("harnesses", "claude_code", "terminal"),
+        group="Harness Models", label="Claude Code in the terminal", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Whether ~/.claude/settings.json points Claude Code at OpenProgram's model.",
     ),
     SettingSpec(
         key="privacy.redact_requests", path=("privacy", "redact_requests"),

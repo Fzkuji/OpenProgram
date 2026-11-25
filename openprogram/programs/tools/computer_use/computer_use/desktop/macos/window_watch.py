@@ -24,6 +24,13 @@ a window is watched, and a read at least every ``RESYNC_SECONDS`` covers an
 application that opened a window without being told of. Without
 Accessibility access nothing announces a change, and the place is read
 every ``REPORT_SECONDS``.
+
+A window the user drags or resizes is moved by the window server, and the
+application hears of it only now and then, often not before the mouse is
+released. So while the left button is held the place is read every
+``DRAG_SECONDS`` (one display frame), and the button is looked at every
+``PRESS_SECONDS`` otherwise: the overlay follows the window through the
+drag instead of jumping to it afterwards.
 """
 from __future__ import annotations
 
@@ -36,6 +43,10 @@ from typing import Any, Callable, Protocol
 IDLE_SECONDS = 20.0
 REPORT_SECONDS = 0.12
 RESYNC_SECONDS = 5.0
+# While the left mouse button is held: one read a display frame (a read of the window list takes about 1.3 ms).
+DRAG_SECONDS = 1 / 60
+# How often the button is looked at when it is up (well under a microsecond each).
+PRESS_SECONDS = 0.05
 # The App's own overlay windows carry this title, so they never count as
 # covering the window they are drawn over.
 OVERLAY_TITLE = "OpenProgram agent overlay"
@@ -151,8 +162,15 @@ class WindowWatch:
         """Report the watched window's place while it stays watched, then its end."""
         sent: dict[str, Any] | None = None
         announced = self._changes.join(watch.wake)
+        every = RESYNC_SECONDS if announced else REPORT_SECONDS
+        read_at = float("-inf")
         try:
             while self._current(session, watch):
+                pressed = _button_held()
+                if not (pressed or watch.wake.is_set() or time.monotonic() - read_at >= every):
+                    watch.wake.wait(PRESS_SECONDS)
+                    continue
+                read_at = time.monotonic()
                 # Cleared before the read: a change during it reads once more.
                 watch.wake.clear()
                 try:
@@ -170,7 +188,7 @@ class WindowWatch:
                 if place != sent:
                     sent = place
                     self._send(watch, {**place, "active": True})
-                watch.wake.wait(RESYNC_SECONDS if announced else REPORT_SECONDS)
+                watch.wake.wait(DRAG_SECONDS if pressed else PRESS_SECONDS)
         finally:
             self._changes.leave(watch.wake)
         self._send(watch, {"frame": None, "occluders": [], "active": False})
@@ -218,6 +236,16 @@ class WindowWatch:
         for watch in stale:
             watch.wake.set()
             _stop(watch)
+
+
+def _button_held() -> bool:
+    """Whether the left mouse button is down now: the user may be dragging or resizing a window."""
+    try:
+        import Quartz
+        return bool(Quartz.CGEventSourceButtonState(Quartz.kCGEventSourceStateCombinedSessionState,
+                                                    Quartz.kCGMouseButtonLeft))
+    except Exception:
+        return False
 
 
 def _screen_rows() -> list[dict]:

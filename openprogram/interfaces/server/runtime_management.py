@@ -524,7 +524,7 @@ def _get_session_runtime(session_id: str, msg_id: str = None):
 
     if not provider:
         raise RuntimeError(
-            "No model available. Enable a model in Settings → Model services "
+            "No model available. Enable a model in Settings → Model Services "
             "(or install a CLI such as codex/claude/gemini, or set an API key)."
         )
 
@@ -555,6 +555,10 @@ def _resolve_session_provider_model(conv: dict | None, *, snapshot: bool = False
     happen to be present. Otherwise a send after "disable all" silently
     executes on the pinned default — the exact surprise the user hit.
     """
+    from openprogram.runtime.harnesses import is_harness_provider
+    if conv and is_harness_provider(conv.get("provider_override")):
+        # A conversation Codex runs needs no model enabled in Settings.
+        return conv["provider_override"], conv.get("model_override")
     if not _enabled_model_keys():
         return None, None
 
@@ -617,6 +621,10 @@ def _default_is_enabled(provider: str | None, model: str | None) -> bool:
     """
     if not provider:
         return False
+    from openprogram.runtime.harnesses import is_harness_provider
+    if is_harness_provider(provider):
+        # An outside agent's (Codex's) models are its own, not enabled in Settings.
+        return True
     keys = _enabled_model_keys()
     if not keys:
         return False

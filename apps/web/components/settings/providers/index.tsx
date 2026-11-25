@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Model services settings (design: docs/reference/design/providers/provider-management.html).
+ * Model Services settings (design: docs/reference/design/providers/provider-management.html).
  *
  * /settings/providers lists the connected providers as cards or compact
  * rows (the switch is remembered), one card or row per company with a

@@ -1,0 +1,92 @@
+<title>模型网关</title>
+<meta name="description" content="Claude Code、Codex 等 Harness 如何使用 OpenProgram 里设置的任何模型：网关路由、每种协议如何读成 OpenProgram 自己的消息类型再写回、网关密钥、启动覆盖，以及可选地改写 Harness 自己的配置。决定取自 magpie。">
+<meta name="covers" content="openprogram/models/gateway/ openprogram/interfaces/server/routes/gateway.py openprogram/interfaces/server/routes/settings/harness_models.py">
+<h1>模型网关</h1>
+
+<p>Claude Code 和 Codex 把模型调用发给 Worker，而不是 Anthropic 或 OpenAI。Worker 用用户在 OpenProgram 的提供商里选的模型回答，用 Harness 自己的协议。</p>
+<p>上游调用只经过 OpenProgram 配置的提供商和它们自己的凭据。Anthropic 模型和 OpenProgram 其他地方一样用 Anthropic API key；Harness 发来的密钥或令牌只用于进入网关，从不转发。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">协议</th><td><code translate="no">openprogram/models/gateway/messages.py</code>（Anthropic Messages）、<code translate="no">responses.py</code>（OpenAI Responses）、<code translate="no">chat_completions.py</code></td></tr>
+<tr><th scope="row">共用部分</th><td><code translate="no">conversion.py</code>（模型引用、签名、选项）、<code translate="no">stream.py</code>（一次上游调用、错误）</td></tr>
+<tr><th scope="row">路由</th><td><code translate="no">openprogram/interfaces/server/routes/gateway.py</code></td></tr>
+<tr><th scope="row">密钥</th><td><code translate="no">keys.py</code>、<code translate="no">&lt;state&gt;/gateway/key</code>；在 <code translate="no">owner_auth.py</code> 里校验</td></tr>
+<tr><th scope="row">启动覆盖</th><td><code translate="no">launch.py</code>：<code translate="no">codex_launch</code>、<code translate="no">claude_code_launch</code></td></tr>
+<tr><th scope="row">终端配置</th><td><code translate="no">harness_config.py</code>、<code translate="no">config_files.py</code>、<code translate="no">stash.py</code>、<code translate="no">&lt;state&gt;/gateway/harness-stash.json</code></td></tr>
+<tr><th scope="row">设置</th><td><code translate="no">state/settings.py</code> 里的 <code translate="no">harnesses.*</code>；<code translate="no">GET/PUT /api/harnesses/models</code>；设置 → 第三方 Harness 上的模型卡片</td></tr>
+</tbody>
+</table>
+
+<h2 id="routes">路由</h2>
+<table class="stack">
+<thead><tr><th scope="col">路径</th><th scope="col">客户端</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages</code></th><td>Claude Code；流式和整段回复</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages/count_tokens</code></th><td>本地估算（一个 CJK 字符算 1，其他算 ¼）</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/responses</code></th><td>Codex；普通 HTTP 加服务器推送事件（Codex 只对声明了 <code translate="no">supports_websockets</code> 的提供商用 WebSocket）</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/chat/completions</code></th><td>只会 Chat Completions 的 Harness</td></tr>
+<tr><th scope="row"><code translate="no">GET /gateway/*/v1/models</code></th><td>已启用的模型，写作 <code translate="no">provider/model</code></td></tr>
+</tbody>
+</table>
+<p>已有的 <code translate="no">/v1/chat/completions</code> 用 OpenProgram Agent 回答，是另一个端点（<a href="openai-compatible-endpoint.zh.html">OpenAI 兼容端点</a>）。</p>
+
+<h2 id="conversion">一种内部格式</h2>
+<p>请求读成 Agent 循环用的同一套 <code translate="no">Context</code>、消息和 <code translate="no">SimpleStreamOptions</code>，经 <code translate="no">stream_simple</code> 发出，提供商的事件再按客户端的协议写回。</p>
+<p>提供商适配器已经在这些类型和各家上游 API 之间双向转换，网关只补客户端这一侧。所以每次调用都有提供商层的凭据轮换、重试和容错；网关不再加一层重试。</p>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型名</th><td>显式的 <code translate="no">provider/model</code> 引用（<code translate="no">split_model_ref</code>），可带 <code translate="no">openprogram:</code> 前缀；不认识的名字返回 404，从不起别名</td></tr>
+<tr><th scope="row">思考签名</th><td>模型自己的值包上生成它的模型再交给客户端，只回到那个模型。Anthropic 模型的 Claude Code 客户端拿到的是 Anthropic 自己的签名。从不编造签名；没签名的思考块不发给 Anthropic。</td></tr>
+<tr><th scope="row">Codex 自由格式工具</th><td><code translate="no">apply_patch</code> 以一个带 <code translate="no">input</code> 字符串的函数交给模型，语法写进描述，再以 <code translate="no">custom_tool_call</code> 返回</td></tr>
+<tr><th scope="row">缓存标记</th><td>保留客户端在工具和内容上的 <code translate="no">cache_control</code>；断点由 Anthropic 适配器照常放置和限数</td></tr>
+<tr><th scope="row">客户端请求头</th><td>正文以外的东西都不到提供商：没有密钥，没有 <code translate="no">anthropic-beta</code></td></tr>
+<tr><th scope="row">错误</th><td>第一个字节之前：该协议的错误响应（Anthropic <code translate="no">{type:"error"}</code>、OpenAI <code translate="no">{error:{…}}</code>）；上下文超长写成“prompt is too long”或 <code translate="no">context_length_exceeded</code>，让 Harness 去压缩；上游凭据被拒是 502，不是会把 Harness 送去重新登录的 401。第一个字节之后：流内错误事件，不再重发。</td></tr>
+<tr><th scope="row">用量</th><td>记进 OpenProgram 的账本，<code translate="no">call_kind = "harness"</code>，按 Harness 标注</td></tr>
+</tbody>
+</table>
+
+<h2 id="auth">网关密钥</h2>
+<p>owner 令牌每次 Worker 启动都会变，配置文件存不住它。网关密钥是随机的，只有本人可读地放在状态目录里，重启后不变。</p>
+<p>owner-auth 中间件只在 <code translate="no">/gateway/</code> 路径上接受它（<code translate="no">Authorization: Bearer</code> 或 <code translate="no">x-api-key</code>）；owner 令牌在那里也可以用。每个网关请求都要其中之一，不论来自哪个地址。备份把 <code translate="no">gateway/</code> 和凭据放在一起，因为写进终端配置的是这个密钥。</p>
+
+<h2 id="launch">Harness 使用它的两种方式</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Codex</th><th scope="col">Claude Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">由 OpenProgram 为对话启动</th><td><code translate="no">-c</code> 覆盖：<code translate="no">model_provider = "openprogram"</code>、带 <code translate="no">env_key</code> 的 <code translate="no">model_providers.openprogram</code> 表、<code translate="no">model</code>、<code translate="no">model_context_window</code>；密钥放在环境变量里</td><td>环境变量：<code translate="no">ANTHROPIC_BASE_URL</code>、<code translate="no">ANTHROPIC_AUTH_TOKEN</code>、Opus/Sonnet/Haiku 档位变量、<code translate="no">ANTHROPIC_SMALL_FAST_MODEL</code>、<code translate="no">CLAUDE_CODE_SUBAGENT_MODEL</code>；云开关关闭</td></tr>
+<tr><th scope="row">也用于终端</th><td><code translate="no">config.toml</code>：<code translate="no">model_provider</code>、<code translate="no">model</code> 和带 <code translate="no">experimental_bearer_token</code> 的表</td><td><code translate="no">settings.json</code>：<code translate="no">env</code> 下同样的变量和顶层 <code translate="no">model</code>；开启期间去掉 <code translate="no">CLAUDE_CODE_USE_BEDROCK</code>/<code translate="no">_VERTEX</code>/<code translate="no">_FOUNDRY</code></td></tr>
+</tbody>
+</table>
+<p>从不设置 <code translate="no">ANTHROPIC_MODEL</code>：它会盖过用 <code translate="no">/model</code> 选的模型。Harness 的配置里不加别的东西：没有 MCP 服务器、权限或指令，也没有提到网关的提示词。</p>
+
+<h2 id="terminal">改写 Harness 自己的配置</h2>
+<ol>
+<li>先解析文件。解析不了的文件内容未知：什么都不写，页面说明原因。</li>
+<li>第一次写之前，把每个要改的键的原值（或它原本不存在）存进暂存。</li>
+<li>只改这些键。TOML 逐行修改，并解析结果、和预期的改动比对；JSON 保留键的顺序和缩进。注释、CRLF 和符号链接都保留；写入是临时文件改名覆盖原文件。</li>
+<li>关闭它，或改回 Harness 自己的登录时，恢复每个仍是 OpenProgram 所写的值。用户之后改过的值算漂移：卡片上会显示，也不会被恢复覆盖。只有恢复写入成功后才删掉暂存条目。</li>
+<li>Codex 的 <code translate="no">[model_providers.openprogram]</code> 表从不删除，因为在它上面开始的线程没有它就打不开；只把 <code translate="no">model_provider</code> 改回去。</li>
+</ol>
+
+<h2 id="codex-app">Codex 应用</h2>
+<p>ChatGPT.app 里的 Codex 应用在同一个 <code translate="no">~/.codex</code> 上运行自己的 <code translate="no">codex app-server</code>，所以同一份 <code translate="no">config.toml</code> 对它也生效（<code translate="no">codex_app.py</code>）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">缺口</th><th scope="col">OpenProgram 的做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">它的模型选择器</th><td>列的是 <code translate="no">model/list</code>，对 Codex 不自带的提供商只显示 Codex 自己的模型。已启用的模型写进 <code translate="no">config.toml</code> 旁边的 <code translate="no">openprogram-models.json</code>，由 <code translate="no">model_catalog_json</code> 指向；选中的排第一。每一项是 Codex 对不认识模型用的元数据：OpenProgram 知道的窗口或 272K，以及所装 Codex 版本的 <code translate="no">prompt.md</code> 指令，读一次后保留</td></tr>
+<tr><th scope="row">读到改动</th><td>它的 app-server 只在启动时读配置。开启或关闭时，等 20 秒没有会话文件写入（最多等 15 分钟），用 SIGTERM 结束应用自己的 app-server（在应用包内、走 stdio、用这个 Codex 目录）；应用会立刻再起一个，窗口和对话都保留。只换模型不重启</td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">取自 magpie</h2>
+<p>magpie（yetone/magpie）运行同类网关。</p>
+<ul>
+<li>采用的：显式模型引用、不设 <code translate="no">ANTHROPIC_MODEL</code> 的 Claude Code 档位变量、从不删除的 Codex 提供商表、Codex 应用的模型目录和路由变化时重启它的 app-server、写前暂存和漂移、拒绝改写解析不了的配置、按客户端协议返回错误且第一个字节后不再回退。</li>
+<li>没采用的：靠运行 <code translate="no">claude</code> 程序提供 Claude 订阅、把针对一家的规则用到所有家、往 Harness 配置里加没要求的东西。</li>
+</ul>
+
+<h2 id="status">实现状态</h2>
+<p>还不支持：Codex 走 WebSocket、经 Anthropic 协议传 Gemini 工具调用的 thought signature、提供商侧网页搜索、PDF 文档。重置 OpenProgram 时还不会调用 <code translate="no">harness_config.restore_all</code>。</p>

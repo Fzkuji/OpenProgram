@@ -12,7 +12,7 @@ from ..common.base import (INCLUDE, OCR_SPARSE_NODES, AudioClip, BadArgument, Co
 from ..common.tree import _BIDI_MARKS, diff, leave_out, number, role_name, snapshot
 from .frameworks import (BUSY_MAX, FILE_PANEL_NOTE, FILE_PANEL_OPEN_NOTE, MAX_IMAGE_SIDE, MAX_NODES, QUICK_NODES,
     SETTLE_MAX, SETTLE_MIN, WindowState, _BUSY_ROLES, _CLAIMED_ROLES, _log, _unlocked)
-from .geometry import live_origin
+from .geometry import live_frame
 from .accessibility import _await
 from . import frameworks
 
@@ -159,6 +159,7 @@ class WindowReading:
             if include == "screenshot":
                 previous.origin = (frame[0], frame[1]) if frame else previous.origin
                 previous.size = (frame[2], frame[3]) if frame else previous.size
+                previous.live_size = None
                 previous.scale, previous.has_screenshot = scale, image is not None
                 previous.text_boxes = self._read_text(image, frame, scale) if previous.sparse else []
                 previous.shapes = self._read_shapes(image, frame, scale, previous.text_boxes) if previous.sparse else []
@@ -231,7 +232,7 @@ class WindowReading:
         return app, state
 
     def _follow_window(self, state: WindowState) -> None:
-        """Move ``state.origin`` to where the window is now, if the window server knows it."""
+        """Move ``state.origin`` to where the window is now, and note its size now, if the window server knows it."""
         if not state.window_id:
             return
         try:
@@ -239,9 +240,9 @@ class WindowReading:
             rows = cg.CGWindowListCopyWindowInfo(cg.kCGWindowListOptionIncludingWindow, state.window_id) or []
         except Exception:
             return
-        origin = live_origin(rows, state.window_id)
-        if origin is not None:
-            state.origin = origin
+        frame = live_frame(rows, state.window_id)
+        if frame is not None:
+            state.origin, state.live_size = frame[:2], frame[2:]
 
     def _control(self, session: str, pid: int, app_name: str, window, window_id: int) -> None:
         """Mark ``window_id`` as the window this session controls (see window_watch)."""

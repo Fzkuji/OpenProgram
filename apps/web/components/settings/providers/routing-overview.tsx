@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Routing pane of Settings → Model services: every session (and its
+ * Routing pane of Settings → Model Services: every session (and its
  * branches, sub-agents and child sessions) that is talking to a model right
  * now or did so inside the chosen window, wired to the models it uses.
  *

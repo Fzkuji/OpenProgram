@@ -1,0 +1,145 @@
+/* Settings → Third-Party Harnesses. Cards, tables and the chart come from
+   token-usage/usage.module.css; this file adds the harness cards, the quota
+   meter and the session list. */
+
+.agents {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.agentHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agentName {
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.agentMeta {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.agentNums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 8px 0 4px;
+}
+
+.quota {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.quotaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fs-sm);
+  color: var(--text-bright);
+}
+
+.meter {
+  height: 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-xs);
+  background: var(--text-bright);
+}
+
+.search {
+  width: 220px;
+  max-width: 100%;
+}
+
+.sessions {
+  border: 1px solid var(--border);
+  border-radius: var(--ui-list-radius);
+  overflow: hidden;
+}
+
+.session {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.session:last-child {
+  border-bottom: 0;
+}
+
+.session:hover {
+  background: var(--bg-hover);
+}
+
+.sessionMain {
+  min-width: 0;
+}
+
+.sessionTitle {
+  font-size: var(--fs-sm);
+  color: var(--text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionMeta {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionNum {
+  min-width: 64px;
+  text-align: right;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.more {
+  align-self: flex-start;
+}
+
+/* Phone width: the numbers move under the title. */
+@media (max-width: 560px) {
+  .session {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .sessionTokens {
+    display: none;
+  }
+}
+
+/* The Models card: one row per choice, divided as settings rows are. */
+.modelRows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.modelRows > * + * {
+  border-top: 1px solid var(--border);
+}

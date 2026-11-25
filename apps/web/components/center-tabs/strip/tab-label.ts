@@ -12,11 +12,12 @@ const pageLabels: Record<string, [string, string]> = {
   settings: ["Settings", "设置"],
 };
 const settingsLabels: Record<string, [string, string]> = {
-  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["Model services", "模型服务"],
+  general: ["General", "通用"], appearance: ["Appearance", "外观"], providers: ["Model Services", "模型服务"],
   channels: ["Channels", "消息渠道"], browser: ["Browser", "浏览器"],
   memory: ["Memory", "记忆"], machines: ["Machines", "机器"], voice: ["Voice", "语音"],
-  import: ["Import", "导入对话"], versions: ["Versions and updates", "版本与更新"],
+  import: ["Import", "导入对话"], versions: ["Versions and Updates", "版本与更新"],
   search: ["Web Search", "网页搜索"], usage: ["Token Usage", "Token 用量"],
+  harnesses: ["Third-Party Harnesses", "第三方 Harness"],
   auth: ["Accounts", "账户"],
 };
 

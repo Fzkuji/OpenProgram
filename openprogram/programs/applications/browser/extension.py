@@ -652,11 +652,13 @@ class ExtensionBrowser:
         if action == "drag":
             if _seconds(args.get("seconds")):
                 raise pa.ActionError("unsupported_option", f"a drag that holds is not available in {NAMES[self.browser]}")
-            if ref and to_ref:
-                return self._result(*call("browser_drag", {"startTarget": ref, "endTarget": to_ref}))
-            if any(args.get(key) is None for key in ("x", "y", "to_x", "to_y")):
+            if not (ref and to_ref) and any(args.get(key) is None for key in ("x", "y", "to_x", "to_y")):
                 raise pa.ActionError("unsupported_option", f"in {NAMES[self.browser]} a drag goes from element to "
                                      "to_element, or from x,y to to_x,to_y")
+            if self._hidden():
+                return self._page_drag(args, ref, to_ref)
+            if ref and to_ref:
+                return self._result(*call("browser_drag", {"startTarget": ref, "endTarget": to_ref}))
             return self._result(*call("browser_mouse_drag_xy", {"startX": args["x"], "startY": args["y"],
                                                                 "endX": args["to_x"], "endY": args["to_y"]}))
         return {"ok": False, "reason_code": "unsupported_action",
@@ -669,6 +671,10 @@ class ExtensionBrowser:
             if ref or click["modifiers"] or click["count"] != 1:
                 raise pa.ActionError("unsupported_option", f"a long press in {NAMES[self.browser]} is a single click "
                                      "by x,y with seconds")
+            if self._hidden():
+                script = pa.bound_call(pa.HOLD_SCRIPT, {"x": args["x"], "y": args["y"], "button": click["button"],
+                                                        "seconds": hold}, at_point=True)
+                return self._result(*self._call("browser_evaluate", {"function": script}))
             text, images, failed = self._call("browser_mouse_move_xy", {"x": args["x"], "y": args["y"]})
             if failed:
                 return self._result(text, images, failed)
@@ -696,7 +702,11 @@ class ExtensionBrowser:
 
     def _hover(self, args: dict[str, Any], ref: str) -> dict[str, Any]:
         rest = _seconds(args.get("seconds"), 0.8)
-        if not ref:
+        if not ref and self._hidden():
+            # Moving the real pointer over a tab nobody is looking at waits for frames that never come.
+            script = pa.bound_call(pa.HOVER_SCRIPT, {"x": args["x"], "y": args["y"]}, at_point=True)
+            result = self._result(*self._call("browser_evaluate", {"function": script}))
+        elif not ref:
             result = self._result(*self._call("browser_mouse_move_xy", {"x": args["x"], "y": args["y"]}))
         elif self._hidden():
             # Chrome stops drawing a tab nobody is looking at, and a real hover waits for its frames.
@@ -721,6 +731,13 @@ class ExtensionBrowser:
         if ref:
             script = pa.bound_call(pa.SCROLL_SCRIPT, {"dx": dx, "dy": dy}, require="moved")
             return self._result(*self._call("browser_evaluate", {"target": ref, "function": script}))
+        if self._hidden():
+            # A wheel over a tab behind others waits for frames that never come: scroll in the page instead,
+            # from the element at the point, or the page.
+            x, y = args.get("x"), args.get("y")
+            point = {"x": x, "y": y} if x is not None and y is not None else {"x": 0, "y": 0}
+            script = pa.bound_call(pa.SCROLL_SCRIPT, {**point, "dx": dx, "dy": dy}, require="moved", at_point=True)
+            return self._result(*self._call("browser_evaluate", {"function": script}))
         if args.get("x") is not None and args.get("y") is not None:
             text, images, failed = self._call("browser_mouse_move_xy", {"x": args["x"], "y": args["y"]})
             if failed:
@@ -750,12 +767,37 @@ class ExtensionBrowser:
         kind = _evaluated(said).strip('"')
         if kind == "select":
             return self._result(*self._call("browser_select_option", {"target": ref, "values": pa.option_values(args)}))
+        if kind == "check" and self._hidden():
+            # Playwright waits for the box to hold still over two frames, which a tab behind others never draws.
+            script = pa.bound_call(pa.CHECK_SCRIPT, {"on": pa.checked(args)}, require="ok")
+            return self._result(*self._call("browser_evaluate", {"target": ref, "function": script}))
         if kind == "check":
             on = "true" if pa.checked(args) else "false"
             return self._result(*self._call("browser_fill_form", {"fields": [
                 {"name": ref, "type": "checkbox", "target": ref, "value": on}]}))
         value = args.get("value")
         return self._result(*self._call("browser_type", {"target": ref, "text": "" if value is None else str(value)}))
+
+    def _page_drag(self, args: dict[str, Any], ref: str, to_ref: str) -> dict[str, Any]:
+        """A drag as page events, for a tab behind others: Chrome draws it no frames, and real pointer
+        moves and Playwright's own drag wait for them."""
+        if to_ref:
+            said, failed = self._evaluate(pa.CENTER_SCRIPT, to_ref)
+            if failed:
+                return self._result(said, [], True)
+            try:
+                end = json.loads(_evaluated(said))
+                to = {"x": float(end[0]), "y": float(end[1])}
+            except (TypeError, ValueError, IndexError):
+                return self._result(said, [], True)
+        else:
+            to = {"x": float(args["to_x"]), "y": float(args["to_y"])}
+        if ref:
+            script = pa.bound_call(pa.DRAG_SCRIPT, {"to": to}, require="ok")
+            return self._result(*self._call("browser_evaluate", {"target": ref, "function": script}))
+        options = {"from": {"x": float(args["x"]), "y": float(args["y"])}, "to": to}
+        script = pa.bound_call(pa.DRAG_SCRIPT, options, with_element=False, require="ok")
+        return self._result(*self._call("browser_evaluate", {"function": script}))
 
     def _wait(self, args: dict[str, Any]) -> dict[str, Any]:
         """Until a text is on the page, or for some seconds; the same limits as the built-in browser."""

@@ -170,7 +170,7 @@ def detect_provider() -> tuple[str, str]:
         "    2. Gemini CLI:       npm install -g @google/gemini-cli\n"
         "\n"
         "  API providers (paste a key — stored under ~/.openprogram):\n"
-        "    3. Web UI:   Settings -> Model services -> pick one -> add a key\n"
+        "    3. Web UI:   Settings -> Model Services -> pick one -> add a key\n"
         "    4. CLI:      openprogram providers login <provider> --api-key\n"
         "                 (e.g. openprogram providers login deepseek --api-key)\n"
         "\n"

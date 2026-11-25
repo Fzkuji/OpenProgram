@@ -318,7 +318,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Overview", "概览", ["models/README.html", "models/providers.html"]),
         ("Configuration", "配置", [
             "models/auth.html", "models/several-keys.html", "models/local-models.html", "models/fast-tier.html",
-            "models/thinking-effort.html", "models/token-tracking.html"]),
+            "models/thinking-effort.html", "models/token-tracking.html",
+            "models/third-party-harnesses.html"]),
     ],
     "integrations": [
         ("Services", "服务", [
@@ -655,6 +656,9 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/integrations/editor-integration.html",
             "reference/design/integrations/extensions/extension-management.html",
             "reference/design/integrations/harness-standard.html",
+            "reference/design/integrations/third-party-harnesses.html",
+            "reference/design/integrations/model-gateway.html",
+            "reference/design/integrations/harness-engines.html",
             "reference/design/integrations/extensions/mcp-integration.html",
             "reference/design/integrations/extensions/mcp-server.html",
             "reference/design/integrations/openai-compatible-endpoint.html",
@@ -844,6 +848,7 @@ PAGE_ORDER: dict[str, int] = {
     "models/fast-tier.html": 3,
     "models/thinking-effort.html": 4,
     "models/token-tracking.html": 5,
+    "models/third-party-harnesses.html": 6,
     "integrations/anthropic.html": 0,
     "integrations/openclaw.html": 1,
     "integrations/channels.html": 2,

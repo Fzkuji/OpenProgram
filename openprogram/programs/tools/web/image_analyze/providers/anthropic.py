@@ -45,7 +45,7 @@ class AnthropicVisionProvider:
         key = self._resolve_key()
         if not key:
             raise RuntimeError(
-                "No Anthropic API key. Add one in Settings -> Model services or "
+                "No Anthropic API key. Add one in Settings -> Model Services or "
                 "run: openprogram providers login anthropic --api-key"
             )
         mdl = model or DEFAULT_MODEL

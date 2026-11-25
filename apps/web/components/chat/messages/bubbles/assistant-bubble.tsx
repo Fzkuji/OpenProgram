@@ -120,7 +120,7 @@ export function errorHeadline(
         : text("Rate limited — try again shortly.", "请求过于频繁 —— 稍后重试。");
     case "auth":
       return text(
-        "Your API key was rejected — check it in Settings → Model services.",
+        "Your API key was rejected — check it in Settings → Model Services.",
         "API 密钥被拒 —— 去 设置 → LLM 服务商 检查。",
       );
     case "authz":

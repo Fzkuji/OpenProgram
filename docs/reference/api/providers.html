@@ -17,7 +17,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")</code></pre>
 <tr><th scope="row">any other</th><td><code translate="no">Runtime("provider:model")</code></td><td>first enabled model</td><td>Provider's key</td></tr>
 </tbody>
 </table>
-<p class="note">API keys live in the credential store: <strong>Settings → Model services</strong>, or <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>. The Anthropic, OpenAI and Google SDKs ship as base dependencies; the OAuth providers talk raw HTTP.</p>
+<p class="note">API keys live in the credential store: <strong>Settings → Model Services</strong>, or <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>. The Anthropic, OpenAI and Google SDKs ship as base dependencies; the OAuth providers talk raw HTTP.</p>
 <h2 id="create_runtime-detect_provider">Functions</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Function</th><th scope="col">Behaviour</th></tr></thead>
@@ -56,7 +56,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 <tr><th scope="row"><code translate="no">gemini</code></th><td>Google Generative Language</td><td>Env names accepted when adding a key: <code translate="no">GEMINI_API_KEY</code>, <code translate="no">GOOGLE_API_KEY</code>, <code translate="no">GOOGLE_GENERATIVE_AI_API_KEY</code></td></tr>
 </tbody>
 </table>
-<p class="note">All include streaming, the tool loop and DAG recording. Custom provider: <strong>Settings → Model services → Add custom provider</strong> (name and base URL), then <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> or <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>. A host-only base URL resolves to <code translate="no">/v1</code>; an explicit API path is preserved.</p>
+<p class="note">All include streaming, the tool loop and DAG recording. Custom provider: <strong>Settings → Model Services → Add custom provider</strong> (name and base URL), then <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> or <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>. A host-only base URL resolves to <code translate="no">/v1</code>; an explicit API path is preserved.</p>
 <span id="openai"></span>
 <span id="gemini"></span>
 <h2 id="openai-codex">Subscription providers</h2>
@@ -79,7 +79,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")<
 rt = Runtime(model="deepseek:deepseek-chat")
 # or
 rt = create_runtime(provider="deepseek", model="deepseek-chat")</code></pre>
-<p class="note">deepseek, groq, openrouter, minimax, kimi and the rest of the catalogue go through the model registry, the path the chat dispatcher uses. With no model and none registered, <code translate="no">ValueError</code>: enable some in <strong>Settings → Model services</strong> or see <code translate="no">openprogram providers available &lt;provider&gt;</code>.</p>
+<p class="note">deepseek, groq, openrouter, minimax, kimi and the rest of the catalogue go through the model registry, the path the chat dispatcher uses. With no model and none registered, <code translate="no">ValueError</code>: enable some in <strong>Settings → Model Services</strong> or see <code translate="no">openprogram providers available &lt;provider&gt;</code>.</p>
 <h2 id="custom-providers">Custom providers</h2>
 <pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
 

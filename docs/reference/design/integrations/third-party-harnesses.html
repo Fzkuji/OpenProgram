@@ -1,0 +1,115 @@
+<title>Third-Party Harnesses</title>
+<meta name="description" content="How OpenProgram watches the Claude Code and Codex sessions on this computer: which files it reads, how calls are counted once, how they are priced, and what the Third-Party Harnesses page shows. Decisions taken from magpie, Paseo and T3 Code.">
+<meta name="covers" content="openprogram/models/usage/harnesses/">
+<h1>Third-Party Harnesses</h1>
+
+<p>Claude Code and Codex write every session to files on this computer. OpenProgram reads those files and shows the sessions, tokens, estimated cost and the last plan quota they recorded.</p>
+<p>Reading changes no harness's configuration, sits in no request path and sends nothing anywhere. Running a harness on OpenProgram's models is the <a href="model-gateway.html">Model Gateway</a>.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Readers</th><td><code translate="no">openprogram/models/usage/harnesses/claude_code.py</code>, <code translate="no">codex.py</code></td></tr>
+<tr><th scope="row">Incremental reading</th><td><code translate="no">openprogram/models/usage/harnesses/files.py</code></td></tr>
+<tr><th scope="row">Index</th><td><code translate="no">openprogram/models/usage/harnesses/store.py</code>, <code translate="no">&lt;state&gt;/harnesses.db</code></td></tr>
+<tr><th scope="row">Prices</th><td><code translate="no">openprogram/models/usage/harnesses/pricing.py</code></td></tr>
+<tr><th scope="row">Report</th><td><code translate="no">openprogram/models/usage/harnesses/report.py</code>, <code translate="no">GET /api/usage/harnesses</code></td></tr>
+<tr><th scope="row">Page</th><td><code translate="no">apps/web/components/settings/third-party-harnesses/</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">Decisions and the peers they come from</h2>
+<p>magpie (yetone/magpie) reads the same files beside its gateway; Paseo (getpaseo/paseo) lists them to import sessions and shows plan quota; T3 Code (pingdotgg/t3code) does both and prices every call.</p>
+<table class="stack">
+<thead><tr><th scope="col">Question</th><th scope="col">magpie</th><th scope="col">Paseo</th><th scope="col">T3 Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Subagent files</th><td>Read, counted toward the parent</td><td>Skipped</td><td>Read</td><td>Read, counted toward the parent</td></tr>
+<tr><th scope="row">Resuming a file</th><td>Offset, checked by 16 sampled windows</td><td>No offsets</td><td>Offset, checked by the 64 bytes before it</td><td>T3 Code's check: a rewrite anywhere before the offset is caught</td></tr>
+<tr><th scope="row">Counting a call once</th><td>Inside one file, in a window of about a thousand messages</td><td>Not counted</td><td>One key across all files</td><td>One key across all files, oldest file first</td></tr>
+<tr><th scope="row">Price source</th><td>models.dev</td><td>None</td><td>LiteLLM</td><td>models.dev, the catalogue OpenProgram already uses</td></tr>
+<tr><th scope="row">Long-context tier</th><td>Ignored</td><td>—</td><td>Applied</td><td>Applied</td></tr>
+<tr><th scope="row">Deleted transcripts</th><td>Dropped</td><td>—</td><td>Kept</td><td>Kept, 92 days</td></tr>
+<tr><th scope="row">Codex quota</th><td>Live endpoint</td><td>Live endpoint</td><td>Live endpoint</td><td>The newest value Codex wrote to its own files</td></tr>
+<tr><th scope="row">Claude quota</th><td>Live endpoint</td><td>Claude Code's sign-in</td><td>Claude Code's sign-in</td><td>Not shown</td></tr>
+<tr><th scope="row">When it reads</th><td>Polls every 10–15 s</td><td>On request</td><td>On request</td><td>At Worker start, then when the page asks</td></tr>
+<tr><th scope="row">Which app started a session</th><td>Not shown</td><td>Not shown</td><td>Not shown</td><td>Shown</td></tr>
+</tbody>
+</table>
+<p class="note">Claude quota is not shown because reading it means using Claude Code's sign-in against Anthropic's usage endpoint; OpenProgram reaches Anthropic only through the official API with an API key.</p>
+
+<h2 id="files">Which files</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Harness</th><th scope="col">Read</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><code translate="no">$CLAUDE_CONFIG_DIR</code> or <code translate="no">~/.claude</code>: <code translate="no">projects/&lt;folder&gt;/&lt;session&gt;.jsonl</code>, and every <code translate="no">*.jsonl</code> under <code translate="no">&lt;session&gt;/subagents/</code> except a workflow's <code translate="no">journal.jsonl</code></td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">$CODEX_HOME</code> or <code translate="no">~/.codex</code>: <code translate="no">rollout-*.jsonl</code> and <code translate="no">rollout-*.jsonl.zst</code> under <code translate="no">sessions/</code> and <code translate="no">archived_sessions/</code>; names from <code translate="no">session_index.jsonl</code></td></tr>
+</tbody>
+</table>
+<p>The first scan skips files last changed more than 92 days ago. A home reached twice through a link is read once.</p>
+
+<h2 id="reading">Reading only what was appended</h2>
+<dl class="pairs">
+<dt>Mark</dt><dd>Per file: size, modification time, the offset after its last complete line, and a hash of the 64 bytes before that offset.</dd>
+<dt>Resume</dt><dd>A file that grew and whose 64 bytes still match is read from the offset; one that shrank or changed is read from the start.</dd>
+<dt>Partial line</dt><dd>A last line without its newline waits for the next scan.</dd>
+<dt>Archive</dt><dd>A zstd archive is read whole, and again only when its size or time changes.</dd>
+<dt>Markers</dt><dd>A line is parsed only when it holds a marker (<code translate="no">"usage"</code>, <code translate="no">token_count</code>, a title record), so tool output and images are skipped as bytes.</dd>
+<dt>Timing</dt><dd>The Worker scans at start, in the background, and again when the page asks and the last scan is older than 5 seconds; one scan at a time. The open page asks every 10 seconds.</dd>
+</dl>
+<p class="note">On this computer the first scan, 8.6 GB of Claude Code files and 4.7 GB of Codex rollouts, took 37 seconds; the next took 0.04 seconds, and a 30-day report 0.2 seconds.</p>
+
+<h2 id="counting">Counting each call once</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Harness</th><th scope="col">One call is</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>An <code translate="no">assistant</code> line with <code translate="no">message.usage</code>, keyed <code translate="no">message.id</code> + <code translate="no">requestId</code>. Claude Code repeats the usage on each content block and copies lines into resumed and forked sessions; copies keep the largest value of each token kind and the earliest time. Model <code translate="no">&lt;synthetic&gt;</code> is not a call.</td></tr>
+<tr><th scope="row">Codex</th><td>A <code translate="no">token_usage_record</code>, keyed by its <code translate="no">response_id</code>. A file without them counts each <code translate="no">token_count</code>'s <code translate="no">last_token_usage</code>, skipping one whose running total did not move, keyed by its time and size so a fork's copied history counts once.</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Tokens</dt><dd>Input without cache, cache read, cache write (5-minute and 1-hour apart for Claude), output. Codex input is <code translate="no">input − cached − cache_write</code>; reasoning is inside output.</dd>
+<dt>Model</dt><dd>Claude <code translate="no">message.model</code>; Codex <code translate="no">turn_context.model</code>.</dd>
+<dt>Speed</dt><dd>Claude <code translate="no">usage.speed</code>; Codex <code translate="no">service_tier</code> <code translate="no">priority</code> or <code translate="no">fast</code>.</dd>
+<dt>App</dt><dd>Claude <code translate="no">entrypoint</code> (<code translate="no">cli</code>, <code translate="no">claude-desktop</code>, <code translate="no">sdk-ts</code>, …); Codex <code translate="no">session_meta.originator</code>. It tells sessions a person ran from sessions another app drove through an SDK.</dd>
+</dl>
+
+<h2 id="sessions">Sessions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">From</th></tr></thead>
+<tbody>
+<tr><th scope="row">Title</th><td>Claude: the last <code translate="no">custom-title</code>. Codex: the newest name in <code translate="no">session_index.jsonl</code>. Else the first prompt, cut to 160 characters, skipping meta, sidechain, tool results and Codex's preamble (Paseo's rules).</td></tr>
+<tr><th scope="row">Place</th><td>Working folder and git branch</td></tr>
+<tr><th scope="row">Time</th><td>First and last call</td></tr>
+<tr><th scope="row">Continue</th><td><code translate="no">cd &lt;folder&gt; &amp;&amp; claude --resume &lt;id&gt;</code> or <code translate="no">codex resume &lt;id&gt;</code>, copied (magpie)</td></tr>
+</tbody>
+</table>
+<p>Calls stay after their file is deleted, since Claude Code deletes its own transcripts after 30 days, and are removed after 92 days.</p>
+
+<h2 id="cost">Price</h2>
+<p>The cost is the calls at API list prices, labelled an API estimate: it is not the subscription bill. Prices are applied when the page asks, grouped in SQL by model, speed and tier, so a catalogue update reprices history without a rescan.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Price</th></tr></thead>
+<tbody>
+<tr><th scope="row">Base</th><td>Input, output, cache read, cache write per million tokens</td></tr>
+<tr><th scope="row">1-hour cache write</th><td>Twice the input price, Anthropic models only (magpie once leaked this rule onto OpenAI models)</td></tr>
+<tr><th scope="row">Long context</th><td>A prompt (input + cache read + cache write) over the model's tier prices all its tokens at the tier</td></tr>
+<tr><th scope="row">Fast</th><td>The model's fast price</td></tr>
+<tr><th scope="row">Unknown model</th><td>Tokens count, cost does not; the total reads <code translate="no">$12.40+</code>. Never priced from a similar name.</td></tr>
+</tbody>
+</table>
+
+<h2 id="page">The page</h2>
+<p>Settings → Third-Party Harnesses (<code translate="no">/settings/harnesses</code>), beside Token Usage and apart from it, so a harness's cost never enters OpenProgram's own totals or budgets. It was chosen over a source switch on Token Usage because it puts the harnesses side by side.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">A card per harness</th><td>Sessions, tokens, output and the API estimate for 30 days; for Codex each plan window as a meter with its reset, credits and when Codex wrote it</td></tr>
+<tr><th scope="row">Daily tokens</th><td>Stacked bars, one colour per harness</td></tr>
+<tr><th scope="row">Sessions</th><td>Filtered by harness and search: title; folder, branch, models, app, last activity; tokens and calls; estimate; a copy button for the continue command. 20 shown, then all.</td></tr>
+<tr><th scope="row">By model, Started from</th><td>Tables with the harness on each row</td></tr>
+<tr><th scope="row">Reading</th><td>The <code translate="no">usage.third_party_harnesses</code> switch, on by default; magpie asks per harness instead</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<p>Claude Code and Codex are read. Gemini CLI (<code translate="no">~/.gemini/tmp/*/chats/</code>), OpenCode (its SQLite store, read only) and Pi are next with the same reader shape. Importing a harness session into a conversation and driving the harnesses (Claude Agent SDK, <code translate="no">codex app-server</code>, ACP for the rest) are separate steps.</p>

@@ -51,6 +51,7 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
   // The conversation the window shows (capability `chat`) and where its composer goes.
   const [conversation, setConversation] = useState<string | null>(null);
   const [place, setPlace] = useState<ComposerPlace | null>(null);
+  const [hint, setHint] = useState("");
   const conversationRef = useRef<string | null>(null);
   const base = `/api/application-instances/${encodeURIComponent(instanceId)}`;
   useEffect(() => {
@@ -187,6 +188,11 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
           if (!enqueueMessage(sid, { text, thinking: "", webSearchEnabled: false, background: true })) throw new Error("The message was not queued");
           useSendQueue.getState().drain(sid);
           result = true;
+        } else if (method === "chat.hint") {
+          // The empty composer's placeholder: what to say here.
+          chatAllowed();
+          setHint(typeof params.text === "string" ? params.text.trim().slice(0, 200) : "");
+          result = true;
         } else if (method === "chat.place") {
           chatAllowed();
           setPlace(readPlace(params.rect));
@@ -227,12 +233,12 @@ export function ApplicationTabPane({ instanceId }: { instanceId: string }) {
         className="h-full w-full border-0"
         onLoad={event => {
           if (conversationRef.current) setApplicationNote(conversationRef.current, null);
-          conversationRef.current = null; setConversation(null); setPlace(null);
+          conversationRef.current = null; setConversation(null); setPlace(null); setHint("");
           connect(event.currentTarget);
         }}
       />
       {conversation && place ? (
-        <ApplicationComposer key={conversation} sessionId={conversation} place={place}
+        <ApplicationComposer key={conversation} sessionId={conversation} place={place} hint={hint}
           onHeight={(height) => post("composer", { height })} />
       ) : null}
     </div>

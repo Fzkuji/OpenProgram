@@ -5,7 +5,7 @@
  * and `openprogram config` edit, read from /api/settings (backed by
  * openprogram.state.settings), one SettingSpec server-side → one row here.
  * The web shows only the groups with no page of their own, each on the page
- * it belongs to: "Models" on Model services → Behavior, "Ports" on General.
+ * it belongs to: "Models" on Model Services → Behavior, "Ports" on General.
  */
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

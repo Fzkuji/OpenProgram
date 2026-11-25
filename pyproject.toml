@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openprogram"
-version = "1.4.0"
+version = "1.5.0"
 description = "OpenProgram: Self-Programming AI Agent Framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -280,6 +280,8 @@ include = ["openprogram", "openprogram.*"]
     # Provider registry — endpoints/model metadata read by
     # models/providers/catalog/metadata.py and enabled_models.py.
     "models/providers/adapters/*/provider.json",
+    # The models Codex currently offers (runtime/harnesses/codex/maintenance.py).
+    "runtime/harnesses/codex/model-manifest.json",
 ]
 "openprogram.interfaces.server" = [
     "routes/application-sdk.js",

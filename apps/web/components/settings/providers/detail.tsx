@@ -178,7 +178,7 @@ export function Detail({
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><button type="button" onClick={onBack}>{text("Model services", "模型服务")}</button></BreadcrumbLink>
+              <BreadcrumbLink asChild><button type="button" onClick={onBack}>{text("Model Services", "模型服务")}</button></BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem><BreadcrumbPage>{provider.label}</BreadcrumbPage></BreadcrumbItem>

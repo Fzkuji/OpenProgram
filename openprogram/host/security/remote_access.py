@@ -29,6 +29,8 @@ import socket
 import subprocess
 import sys
 import threading
+import time
+import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
@@ -85,6 +87,11 @@ def lan_origin(port: int) -> str:
 STATES = ("off", "starting", "needs_login", "needs_funnel", "running", "error")
 BINARY = "openprogram-tailnet"
 _STOP_SECONDS = 5.0
+#: How long the sidecar may sit at "starting" before it is told it cannot reach Tailscale. A first sign-in
+#: link normally comes within a few seconds.
+_REACH_SECONDS = 30.0
+_UNREACHABLE = ("Can't reach Tailscale from this computer. If it goes online through a proxy or VPN, "
+                "check that it is running.")
 
 
 def _exe(name: str) -> str:
@@ -170,6 +177,29 @@ def set_anywhere_configured(on: bool) -> None:
     update_config(mutate)
 
 
+def child_env() -> dict[str, str]:
+    """The Worker's environment, plus this computer's proxy when the environment names none.
+
+    Go reads a proxy only from ``HTTPS_PROXY`` and friends, and an App-launched Worker has none of
+    them, while a computer behind a proxy (a fake-IP tunnel included) can reach Tailscale only
+    through it. ``urllib.request.getproxies()`` reads the system setting on macOS and Windows.
+    Loopback is never proxied, so the sidecar still reaches the Worker directly.
+    """
+    env = dict(os.environ)
+    if any(env.get(key) for key in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")):
+        return env
+    try:
+        proxies = urllib.request.getproxies()
+    except Exception:  # noqa: BLE001 - a proxy we cannot read is the same as none
+        return env
+    for scheme in ("https", "http"):
+        if proxies.get(scheme):
+            env[f"{scheme.upper()}_PROXY"] = proxies[scheme]
+    if proxies.get("no") and not (env.get("NO_PROXY") or env.get("no_proxy")):
+        env["NO_PROXY"] = proxies["no"]
+    return env
+
+
 def parse_line(line: str) -> dict[str, Any] | None:
     """One state line from the sidecar, or ``None`` for anything else."""
     try:
@@ -197,6 +227,8 @@ class Anywhere:
         self._allow: Callable[..., None] | None = None
         self._state: dict[str, Any] = {"state": "off"}
         self._address = ""
+        # When the current sidecar started, until it first reports anything past "starting".
+        self._waiting_since: float | None = None
 
     def status(self) -> dict[str, Any]:
         """The ``anywhere`` object of ``GET /api/auth/remote-access``."""
@@ -204,6 +236,10 @@ class Anywhere:
         with self._lock:
             state = dict(self._state)
             alive = self._process is not None and self._process.poll() is None
+            waiting = self._waiting_since
+        if alive and state.get("state") == "starting" and waiting is not None \
+                and time.monotonic() - waiting > _REACH_SECONDS:
+            state = {"state": "error", "message": _UNREACHABLE}
         if not on and not alive:
             state = {"state": "off"}
         name = state.get("state", "off")
@@ -241,12 +277,13 @@ class Anywhere:
             try:
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                            stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                                           errors="replace", bufsize=1, **options)
+                                           errors="replace", bufsize=1, env=child_env(), **options)
             except OSError as exc:
                 self._state = {"state": "error", "message": str(exc)}
                 return
             self._process = process
             self._state = {"state": "starting"}
+            self._waiting_since = time.monotonic()
         threading.Thread(target=self._read, args=(process,), daemon=True, name=BINARY).start()
 
     def stop(self) -> None:
@@ -294,6 +331,8 @@ class Anywhere:
             if process is not None and self._process is not process:
                 return
             self._state = state
+            if state["state"] != "starting":
+                self._waiting_since = None
         self._set_address(state["url"] if state["state"] == "running" and state["url"] else "")
 
     def _set_address(self, address: str) -> None:
@@ -318,6 +357,6 @@ def start_anywhere_if_configured(port: int, allow: Callable[..., None]) -> None:
         anywhere.start(port, allow)
 
 
-__all__ = ["Anywhere", "anywhere", "anywhere_configured", "binary_path", "go_target", "lan_address",
+__all__ = ["Anywhere", "anywhere", "anywhere_configured", "binary_path", "child_env", "go_target", "lan_address",
            "lan_origin", "node_name", "parse_line", "set_anywhere_configured", "start_anywhere_if_configured",
            "state_dir"]

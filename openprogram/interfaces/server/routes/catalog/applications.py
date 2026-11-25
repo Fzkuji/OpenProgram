@@ -112,9 +112,20 @@ def register(app):
             folder = str(body.get("output") or "").strip() or "~/Downloads"
             if not Path(folder).expanduser().is_dir():
                 raise ValueError(f"{folder} is not a folder")
+            # The page draws the application's icon and sends it as a PNG data URL.
+            icon = None
+            drawn = str(body.get("icon") or "")
+            if drawn.startswith("data:image/png;base64,"):
+                import base64
+                import binascii
+                try:
+                    icon = base64.b64decode(drawn.split(",", 1)[1], validate=True)
+                except binascii.Error:
+                    raise ValueError("the icon is not a PNG") from None
             try:
                 result = await asyncio.to_thread(
-                    export, app_id, Path(folder), format="app" if sys.platform == "darwin" else "dir", next_free=True)
+                    export, app_id, Path(folder), format="app" if sys.platform == "darwin" else "dir",
+                    next_free=True, icon=icon)
             except (PermissionError, FileExistsError) as exc:  # the folder chosen: say so beside the form
                 raise ValueError(str(exc)) from None
             exported.add(result["path"])
@@ -311,7 +322,12 @@ def register(app):
             if not target.is_file():
                 raise FileNotFoundError("application asset not found")
             asset_base = str(request.base_url).rstrip('/') + f"/application-assets/{key}/{digest}/{token}/"
-            policy = CSP.replace("connect-src 'none'", "connect-src " + asset_base) + "; frame-ancestors 'self'"
+            # The frame's origin is opaque (sandbox), and WebKit reads 'self'
+            # there as that opaque origin, refusing the application's own
+            # scripts: name the application's folder and the host as well.
+            origin = str(request.base_url).rstrip('/')
+            policy = CSP.replace("connect-src 'none'", "connect-src " + asset_base) \
+                .replace("'self'", "'self' " + asset_base) + "; frame-ancestors 'self' " + origin
             headers = {"Access-Control-Allow-Origin": "*", "Content-Security-Policy": policy, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store"}
             if target.suffix.lower() == ".html":
                 sdk = (Path(__file__).parent.parent / "application-sdk.js").read_text(encoding="utf-8")

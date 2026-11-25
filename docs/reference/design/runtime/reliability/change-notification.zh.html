@@ -146,7 +146,7 @@
 <tr><th scope="row">空闲会话的记忆监视</th><td>每 5 分钟</td><td>睡到下一个已知的空闲期限或重试，最多 300 秒</td></tr>
 <tr><th scope="row">记忆的手动检查点</th><td>每 15 秒</td><td>睡到待办检查点到期；<code translate="no">memory.checkpoint</code> 唤醒它；300 秒兜底</td></tr>
 <tr><th scope="row">跟随其他应用的窗口（<code translate="no">embedding/follow/</code>）</th><td>视图每 1.5 秒读一次窗口状态</td><td>从这个窗口的第一个视图到最后一个，跟随操作系统事件：macOS 上是辅助功能观察器和 kqueue，Windows 上是 <code translate="no">SetWinEventHook</code>，X11 上是 <code translate="no">StructureNotify</code> 和 <code translate="no">PropertyChange</code>；每次都发 <code translate="no">embedded_windows</code></td></tr>
-<tr><th scope="row">控制浮层的位置报告（<code translate="no">desktop/macos/window_watch.py</code>、<code translate="no">desktop/macos/ax_events.py</code>）</th><td>步骤运行时每 0.12 秒</td><td>屏幕上每个有窗口的应用，在其应用元素上挂辅助功能观察器（窗口创建、移动、缩放、销毁、最小化、还原；焦点窗口变化；应用激活、失活、隐藏、显示），每个进程一个 kqueue 退出事件；一串通知只读一次窗口列表；步骤运行时 5 秒兜底；只在有窗口被监视时挂观察器</td></tr>
+<tr><th scope="row">控制浮层的位置报告（<code translate="no">desktop/macos/window_watch.py</code>、<code translate="no">desktop/macos/ax_events.py</code>）</th><td>步骤运行时每 0.12 秒</td><td>屏幕上每个有窗口的应用，在其应用元素上挂辅助功能观察器（窗口创建、移动、缩放、销毁、最小化、还原；焦点窗口变化；应用激活、失活、隐藏、显示），每个进程一个 kqueue 退出事件；一串通知只读一次窗口列表；步骤运行时 5 秒兜底；按住鼠标左键时每帧读一次，因为被拖动窗口的应用很晚才得知；只在有窗口被监视时挂观察器</td></tr>
 </tbody>
 </table>
 

@@ -975,9 +975,10 @@ def test_a_screenshot_pixel_lands_on_the_same_place_in_the_window_wherever_it_is
     assert mac_geometry.screen_point(300, 150, origin=(-1440.0, 120.0), scale=1.5) == (-1240.0, 220.0)
     assert mac_geometry.window_location((850.0, 430.0), (800.0, 400.0)) == (50.0, 30.0)
     assert mac_geometry.window_location((-1240.0, 220.0), (-1440.0, 120.0)) == (200.0, 100.0)
-    assert mac_geometry.live_origin([_row(5, 1, x=10, y=20), _row(70, 1, x=640, y=90, w=500, h=300)], 70) == (640.0, 90.0)
-    assert mac_geometry.live_origin([_row(70, 1, w=0, h=0)], 70) is None, "a window with no size has no place"
-    assert mac_geometry.live_origin([], 70) is None
+    assert mac_geometry.live_frame([_row(5, 1, x=10, y=20), _row(70, 1, x=640, y=90, w=500, h=300)], 70) == (
+        640.0, 90.0, 500.0, 300.0)
+    assert mac_geometry.live_frame([_row(70, 1, w=0, h=0)], 70) is None, "a window with no size has no place"
+    assert mac_geometry.live_frame([], 70) is None
 
     computer = macos.MacComputer.__new__(macos.MacComputer)
     state = mac_frameworks.WindowState(pid=1, window_title="Calc", window_id=70, has_screenshot=True, scale=2.0,
@@ -998,6 +999,13 @@ def test_a_screenshot_pixel_lands_on_the_same_place_in_the_window_wherever_it_is
     assert state.origin == (640.0, 90.0)
     point = computer._point(state, 100, 60)
     assert point == (690.0, 120.0)
+    # The user resized it: the page laid itself out again, so a pixel of the old screenshot is refused.
+    rows[:] = [_row(70, 1, x=640, y=90, w=700, h=300)]
+    computer._follow_window(state)
+    with pytest.raises(base.StaleElement, match="resized since its screenshot"):
+        computer._point(state, 100, 60)
+    rows[:] = [_row(70, 1, x=640, y=90, w=500, h=300)]
+    computer._follow_window(state)
 
     stamped = []
 

@@ -1,0 +1,106 @@
+<title>Harness Engines</title>
+<meta name="description" content="How a chat runs on Codex instead of OpenProgram's own agent loop: the Harness chip, where a turn is handed over, how Codex's items become cards, live approvals, Stop and steering, threads per branch and the handoff when the engine changes. Decisions taken from T3 Code and Paseo.">
+<meta name="covers" content="openprogram/runtime/harnesses/ openprogram/runtime/permissions/approvals/live.py openprogram/interfaces/server/routes/execution/harnesses.py">
+<h1>Harness Engines</h1>
+
+<p>A conversation can be run by an outside coding agent instead of OpenProgram's own agent loop. The agent makes the model calls and runs its own tools in its own sandbox; OpenProgram shows what it does, asks the person its approvals and keeps the record. Codex is the first engine; Claude Code and ACP agents follow the same shape.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="A chat turn passes admission, the run slot and the stream tap as usual. At run_loop_blocking it goes either to OpenProgram's agent loop or to the conversation's harness engine. The Codex engine drives codex app-server over JSON-RPC and turns its items into the same stream events; approvals become live waits answered in the chat.">
+  <defs><marker id="he-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="20" y="80" width="150" height="60" rx="8"/>
+  <text class="t-big mid" x="95" y="106">Chat turn</text>
+  <text class="t-soft mid" x="95" y="126">admission, run slot</text>
+  <rect class="tile" x="260" y="20" width="160" height="60" rx="8"/>
+  <text class="t-big mid" x="340" y="46">Agent loop</text>
+  <text class="t-soft mid" x="340" y="66">Harness: OpenProgram</text>
+  <rect class="tile" x="260" y="140" width="160" height="60" rx="8"/>
+  <text class="t-big mid" x="340" y="166">Codex engine</text>
+  <text class="t-soft mid" x="340" y="186">Harness: Codex</text>
+  <rect class="tile" x="510" y="140" width="150" height="60" rx="8"/>
+  <text class="t-big mid" x="585" y="166">codex app-server</text>
+  <text class="t-soft mid" x="585" y="186">one per conversation</text>
+  <line class="ln" x1="170" y1="100" x2="256" y2="55" marker-end="url(#he-a)"/>
+  <line class="ln-acc" x1="170" y1="120" x2="256" y2="165" marker-end="url(#he-a)"/>
+  <line class="ln-acc" x1="420" y1="170" x2="506" y2="170" marker-end="url(#he-a)"/>
+  <text class="t-cmd mid" x="463" y="160">JSON-RPC</text>
+  <text class="t-soft" x="430" y="60">same frames, cards, record</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hand-over</th><td>Top of <code translate="no">run_loop_blocking</code> in <code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code>; engines in <code translate="no">openprogram/runtime/harnesses/__init__.py</code></td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">runtime/harnesses/codex/client.py</code> (process and JSON-RPC), <code translate="no">engine.py</code> (one turn), <code translate="no">items.py</code> (cards)</td></tr>
+<tr><th scope="row">Threads and handoff</th><td><code translate="no">runtime/harnesses/handoff.py</code></td></tr>
+<tr><th scope="row">Approvals</th><td><code translate="no">runtime/permissions/approvals/live.py</code></td></tr>
+<tr><th scope="row">Listing</th><td><code translate="no">runtime/harnesses/models.py</code>, <code translate="no">GET /api/harnesses</code>; read as the Worker starts, and an old reading is answered at once and read again behind it</td></tr>
+<tr><th scope="row">Web</th><td><code translate="no">apps/web/components/chat/top-bar/menus/harness-menu.tsx</code>, <code translate="no">lib/models/harnesses.ts</code>, <code translate="no">lib/agents/session-harness.ts</code></td></tr>
+<tr><th scope="row">Models through OpenProgram</th><td><a href="model-gateway.html">Model Gateway</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">Decisions and the peers they come from</h2>
+<table class="stack">
+<thead><tr><th scope="col">Question</th><th scope="col">T3 Code</th><th scope="col">Paseo</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where the harness is chosen</th><td>Model picker, by provider instance</td><td>Combined provider and model picker</td><td>Its own Harness chip before the model chip: a harness changes models, efforts, permission modes, tools and agents together, and every harness has agent-like settings of its own</td></tr>
+<tr><th scope="row">Which Codex</th><td>Setting, default <code translate="no">codex</code> on PATH; models are what that CLI lists, and newer ones show as needing an update</td><td>The PATH lookup, with the desktop app taking the login shell's environment</td><td>Theirs: the user's own Codex (setting, PATH, login shell) and the models it lists; T3's update rows, from a model manifest kept in this repository</td></tr>
+<tr><th scope="row">Process</th><td>One shared app-server</td><td>One per agent; starts queued per Codex home and retried</td><td>Paseo's: one per conversation, 30 idle minutes, starts serialised per <code translate="no">CODEX_HOME</code> and retried on the SQLite start error</td></tr>
+<tr><th scope="row">Session</th><td>Native ids reused</td><td>Native ids reused; import</td><td>Native ids reused, per branch; <code translate="no">codex resume &lt;id&gt;</code> continues it</td></tr>
+<tr><th scope="row">Events</th><td>26 item types, lossless</td><td>Smaller timeline</td><td>T3's item model mapped onto OpenProgram's existing cards</td></tr>
+<tr><th scope="row">Permission modes</th><td>Native, never emulated</td><td>Native per provider</td><td>T3's rule: Codex's own four modes</td></tr>
+<tr><th scope="row">Switching engine</th><td>Portable handoff</td><td>Not supported</td><td>T3's handoff of the turns the thread did not see</td></tr>
+</tbody>
+</table>
+
+<h2 id="chips">The chips</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Chip</th><th scope="col">OpenProgram</th><th scope="col">Codex</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness</th><td>Default</td><td>Shown with its version; greyed with Not Installed or Not Signed In on the conversation's machine</td></tr>
+<tr><th scope="row">Model</th><td>Unchanged</td><td>Codex's own models; when a newer Codex is out, the models only it lists (dimmed) and <strong>Update Codex</strong>; then <strong>Through OpenProgram</strong> with the provider rows (<code translate="no">openprogram:&lt;provider&gt;/&lt;model&gt;</code>)</td></tr>
+<tr><th scope="row">Effort</th><td>Unchanged</td><td>The model's <code translate="no">supportedReasoningEfforts</code></td></tr>
+<tr><th scope="row">Agent</th><td>Unchanged</td><td>Default, the <code translate="no">[profiles.*]</code> of Codex's config, and personalities where the model supports them</td></tr>
+<tr><th scope="row">Permission</th><td>Unchanged</td><td>Read Only (untrusted, read-only sandbox), Ask for Approval (on-request, workspace-write), Auto (on-request with auto review), Full Access (never, full access); Plan is hidden and runs as Read Only</td></tr>
+</tbody>
+</table>
+<p>The harness is a run setting of the branch beside model, effort and permission. Switching to Codex takes its default model and agent and remembers the OpenProgram model and effort; switching back restores them.</p>
+
+<h2 id="turn">One Codex turn</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Codex</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agentMessage</code> deltas, reasoning deltas</td><td>Text and thinking stream events</td></tr>
+<tr><th scope="row"><code translate="no">commandExecution</code></td><td><code translate="no">bash</code> card, output as its result</td></tr>
+<tr><th scope="row"><code translate="no">fileChange</code></td><td><code translate="no">apply_patch</code> card with a patch built from the diffs</td></tr>
+<tr><th scope="row"><code translate="no">webSearch</code>, <code translate="no">mcpToolCall</code></td><td>Provider-run <code translate="no">web_search</code>; <code translate="no">mcp__&lt;server&gt;__&lt;tool&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">turn/plan/updated</code></td><td><code translate="no">todo_write</code> checklist</td></tr>
+<tr><th scope="row"><code translate="no">thread/tokenUsage/updated</code></td><td>Context meter; not added to Token Usage, since the Third-Party Harnesses page already counts Codex's calls from its own files</td></tr>
+<tr><th scope="row">Approval requests</th><td>A live wait shown as the usual question card; Allow → <code translate="no">accept</code>, for the chat → <code translate="no">acceptForSession</code>, Deny → <code translate="no">decline</code>. Requests with no card are declined, so a turn never hangs</td></tr>
+<tr><th scope="row">Stop, steering</th><td><code translate="no">turn/interrupt</code> (queued if the turn id is not known yet); steers taken from the execution and sent with <code translate="no">turn/steer</code></td></tr>
+</tbody>
+</table>
+<p>The events go through the same stream tap as the agent loop's, so a reload shows the turn, and a channel that relays questions relays Codex's approvals too.</p>
+
+<h2 id="threads">Threads, machines and switching</h2>
+<dl class="pairs">
+<dt>Machine</dt><dd>The engine runs on the conversation's machine, with that machine's Codex and sign-in; a paired machine's list comes from that machine. The Environment and Channel chips do not change.</dd>
+<dt>Which Codex</dt><dd>The one the user installed: <code translate="no">harnesses.codex.binary</code> when set, else <code translate="no">codex</code> on PATH, else what the login shell finds. Codex lists only the models its version can run, so updating Codex brings its newest models.</dd>
+<dt>Folder</dt><dd>Each <code translate="no">turn/start</code> carries the conversation's current folder.</dd>
+<dt>Branch</dt><dd>Each branch keeps its own Codex thread and the id of the last message it saw.</dd>
+<dt>Handoff</dt><dd>When a thread starts on a conversation with history, or resumes after turns it did not run, it first gets those turns as a budgeted transcript, newest kept. Switching back to OpenProgram needs nothing: Codex's turns are stored as ordinary messages and tool calls.</dd>
+<dt>Crash</dt><dd>A process that exits fails the running turn; the next turn starts a process and resumes the thread.</dd>
+</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Keeping it current</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Newest version</th><td>npm for an npm, bun or pnpm install, else OpenAI's release channel; read hourly (<code translate="no">runtime/harnesses/codex/maintenance.py</code>)</td></tr>
+<tr><th scope="row">Models it would bring</th><td>Those in <code translate="no">model-manifest.json</code> the installed Codex does not list. Bundled, refreshed hourly from this repository's <code translate="no">main</code>; add a model there when Codex ships one</td></tr>
+<tr><th scope="row">Update</th><td>The installer the file belongs to: <code translate="no">npm</code>/<code translate="no">bun</code>/<code translate="no">pnpm</code> global add of <code translate="no">@openai/codex@latest</code>, <code translate="no">brew upgrade [--cask] codex</code>, <code translate="no">mise upgrade codex</code> or <code translate="no">codex update</code>. Any other install shows the models without the Update row</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<p>Codex runs chats, natively or through OpenProgram's models. Claude Code (Claude Agent SDK, with an Anthropic API key only) and ACP agents (Gemini CLI, OpenCode) are next with the same engine shape; importing an existing harness session into a conversation comes with them.</p>

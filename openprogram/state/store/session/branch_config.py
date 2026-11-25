@@ -8,6 +8,10 @@ BRANCH_CONFIG_FIELDS = (
     "agent_id", "provider_override", "model_override", "thinking_effort",
     "tools_override", "web_search", "permission_mode", "permission_state",
     "permission_rules", "sandbox_enabled", "service_tier",
+    # The engine that runs the branch's turns (None: OpenProgram's own; "codex"),
+    # its agent-like choice (a Codex profile or personality), and the
+    # OpenProgram model and effort the branch goes back to when switched back.
+    "harness", "harness_agent", "harness_return",
 )
 BRANCH_UNSET = object()
 

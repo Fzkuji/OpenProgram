@@ -31,13 +31,13 @@ def window_location(point: tuple[float, float], origin: tuple[float, float]) -> 
     return point[0] - origin[0], point[1] - origin[1]
 
 
-def live_origin(rows: list[dict], window_id: int) -> tuple[float, float] | None:
-    """The window's top left now, from the window server's rows, if listed."""
+def live_frame(rows: list[dict], window_id: int) -> tuple[float, float, float, float] | None:
+    """The window's frame now (x, y, width, height in points), from the window server's rows, if listed."""
     for row in rows:
         if int(row.get("kCGWindowNumber", 0)) == window_id:
             b = row.get("kCGWindowBounds") or {}
             if float(b.get("Width", 0)) > 0 and float(b.get("Height", 0)) > 0:
-                return float(b.get("X", 0)), float(b.get("Y", 0))
+                return float(b.get("X", 0)), float(b.get("Y", 0)), float(b.get("Width", 0)), float(b.get("Height", 0))
     return None
 
 

@@ -42,6 +42,7 @@ EXPECTED_CONSUMERS = {
     "plugins.marketplace",
     "plugins.autoupdate",
     "updater.github",
+    "harness.codex.release",
     "office.assets",
     "self_update.electron",
     "provider.fixed_api",
@@ -116,6 +117,9 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "plugins.autoupdate": frozenset({"https://registry.npmjs.org"}),
     "updater.github": frozenset({"https://api.github.com"}),
+    "harness.codex.release": frozenset(
+        {"https://raw.githubusercontent.com", "https://registry.npmjs.org", "https://releases.openai.com"}
+    ),
     "office.assets": frozenset({"https://github.com", "https://release-assets.githubusercontent.com"}),
     "self_update.electron": frozenset(
         {"https://github.com", "https://release-assets.githubusercontent.com"}

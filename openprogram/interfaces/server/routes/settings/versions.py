@@ -1,4 +1,4 @@
-"""Settings > Versions and updates: the kept versions, undo, direct edits and notices.
+"""Settings > Versions and Updates: the kept versions, undo, direct edits and notices.
 
 Undo and bringing direct edits back start a conversation in which the Agent
 calls ``self_update``, so the update shows there as an ordinary tool call and

@@ -1,0 +1,115 @@
+<title>第三方 Harness</title>
+<meta name="description" content="OpenProgram 如何查看本机的 Claude Code 和 Codex 会话：读哪些文件，怎样每次调用只算一次，怎样定价，第三方 Harness 页面显示什么。决定取自 magpie、Paseo 和 T3 Code。">
+<meta name="covers" content="openprogram/models/usage/harnesses/">
+<h1>第三方 Harness</h1>
+
+<p>Claude Code 和 Codex 把每个会话写进本机文件。OpenProgram 读这些文件，显示会话、Token、估算费用和它们最近记下的套餐额度。</p>
+<p>读取不改任何 Harness 的配置，不在请求路径上，也不向任何地方发送。让 Harness 使用 OpenProgram 的模型见<a href="model-gateway.zh.html">模型网关</a>。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取器</th><td><code translate="no">openprogram/models/usage/harnesses/claude_code.py</code>、<code translate="no">codex.py</code></td></tr>
+<tr><th scope="row">增量读取</th><td><code translate="no">openprogram/models/usage/harnesses/files.py</code></td></tr>
+<tr><th scope="row">索引</th><td><code translate="no">openprogram/models/usage/harnesses/store.py</code>、<code translate="no">&lt;state&gt;/harnesses.db</code></td></tr>
+<tr><th scope="row">价格</th><td><code translate="no">openprogram/models/usage/harnesses/pricing.py</code></td></tr>
+<tr><th scope="row">报表</th><td><code translate="no">openprogram/models/usage/harnesses/report.py</code>、<code translate="no">GET /api/usage/harnesses</code></td></tr>
+<tr><th scope="row">页面</th><td><code translate="no">apps/web/components/settings/third-party-harnesses/</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">决定及其来源</h2>
+<p>magpie（yetone/magpie）在网关旁读同样的文件；Paseo（getpaseo/paseo）列出它们以导入会话，并显示套餐额度；T3 Code（pingdotgg/t3code）两者都做，并给每次调用定价。</p>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">magpie</th><th scope="col">Paseo</th><th scope="col">T3 Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">子智能体文件</th><td>读取，计入父会话</td><td>跳过</td><td>读取</td><td>读取，计入父会话</td></tr>
+<tr><th scope="row">接着读文件</th><td>偏移量，用 16 个采样窗口校验</td><td>无偏移量</td><td>偏移量，用它前面 64 字节校验</td><td>T3 Code 的校验：偏移量之前任何位置被改写都能发现</td></tr>
+<tr><th scope="row">每次调用只算一次</th><td>单个文件内，约一千条消息的窗口</td><td>不统计</td><td>跨所有文件一个键</td><td>跨所有文件一个键，旧文件优先</td></tr>
+<tr><th scope="row">价格来源</th><td>models.dev</td><td>无</td><td>LiteLLM</td><td>models.dev，OpenProgram 已在用的目录</td></tr>
+<tr><th scope="row">长上下文档位</th><td>忽略</td><td>—</td><td>计入</td><td>计入</td></tr>
+<tr><th scope="row">被删的记录</th><td>丢弃</td><td>—</td><td>保留</td><td>保留 92 天</td></tr>
+<tr><th scope="row">Codex 额度</th><td>实时接口</td><td>实时接口</td><td>实时接口</td><td>Codex 自己文件里最新的值</td></tr>
+<tr><th scope="row">Claude 额度</th><td>实时接口</td><td>Claude Code 的登录</td><td>Claude Code 的登录</td><td>不显示</td></tr>
+<tr><th scope="row">何时读取</th><td>每 10–15 秒轮询</td><td>按需</td><td>按需</td><td>Worker 启动时，之后页面请求时</td></tr>
+<tr><th scope="row">会话由哪个应用启动</th><td>不显示</td><td>不显示</td><td>不显示</td><td>显示</td></tr>
+</tbody>
+</table>
+<p class="note">不显示 Claude 额度，因为读取它要用 Claude Code 的登录去请求 Anthropic 的用量接口；OpenProgram 只通过官方 API 和 API key 访问 Anthropic。</p>
+
+<h2 id="files">读哪些文件</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Harness</th><th scope="col">读取</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><code translate="no">$CLAUDE_CONFIG_DIR</code> 或 <code translate="no">~/.claude</code>：<code translate="no">projects/&lt;folder&gt;/&lt;session&gt;.jsonl</code>，以及 <code translate="no">&lt;session&gt;/subagents/</code> 下除工作流 <code translate="no">journal.jsonl</code> 外的每个 <code translate="no">*.jsonl</code></td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">$CODEX_HOME</code> 或 <code translate="no">~/.codex</code>：<code translate="no">sessions/</code> 和 <code translate="no">archived_sessions/</code> 下的 <code translate="no">rollout-*.jsonl</code> 与 <code translate="no">rollout-*.jsonl.zst</code>；名称取自 <code translate="no">session_index.jsonl</code></td></tr>
+</tbody>
+</table>
+<p>首次扫描跳过最后修改超过 92 天的文件。经链接重复到达的同一目录只读一次。</p>
+
+<h2 id="reading">只读追加的内容</h2>
+<dl class="pairs">
+<dt>标记</dt><dd>每个文件记下大小、修改时间、最后一个完整行之后的偏移量，以及偏移量前 64 字节的哈希。</dd>
+<dt>续读</dt><dd>文件变大且那 64 字节未变，就从偏移量读；变小或改变则从头读。</dd>
+<dt>半行</dt><dd>没有换行符的最后一行等下次扫描。</dd>
+<dt>压缩包</dt><dd>zstd 压缩包整份读取，大小或时间变了才再读。</dd>
+<dt>标识</dt><dd>只解析含标识（<code translate="no">"usage"</code>、<code translate="no">token_count</code>、标题记录）的行，工具输出和图片按字节跳过。</dd>
+<dt>时机</dt><dd>Worker 启动时在后台扫描；页面请求且上次扫描超过 5 秒时再扫；同一时间只扫一次。打开的页面每 10 秒请求一次。</dd>
+</dl>
+<p class="note">在这台电脑上，首次扫描 8.6 GB 的 Claude Code 文件和 4.7 GB 的 Codex 记录用了 37 秒；之后一次 0.04 秒，30 天报表 0.2 秒。</p>
+
+<h2 id="counting">每次调用只算一次</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Harness</th><th scope="col">一次调用是</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>带 <code translate="no">message.usage</code> 的 <code translate="no">assistant</code> 行，键为 <code translate="no">message.id</code> + <code translate="no">requestId</code>。Claude Code 在每个内容块上重复用量，并把行复制进恢复和分叉的会话；副本对每种 Token 取最大值、时间取最早。模型 <code translate="no">&lt;synthetic&gt;</code> 不算调用。</td></tr>
+<tr><th scope="row">Codex</th><td>一条 <code translate="no">token_usage_record</code>，键为它的 <code translate="no">response_id</code>。没有这种记录的文件统计每个 <code translate="no">token_count</code> 的 <code translate="no">last_token_usage</code>，跳过累计值未变的，键为时间和大小，这样分叉复制的历史只算一次。</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Token</dt><dd>无缓存输入、缓存读、缓存写（Claude 分 5 分钟和 1 小时）、输出。Codex 输入为 <code translate="no">input − cached − cache_write</code>；推理含在输出里。</dd>
+<dt>模型</dt><dd>Claude <code translate="no">message.model</code>；Codex <code translate="no">turn_context.model</code>。</dd>
+<dt>速度</dt><dd>Claude <code translate="no">usage.speed</code>；Codex <code translate="no">service_tier</code> 为 <code translate="no">priority</code> 或 <code translate="no">fast</code>。</dd>
+<dt>应用</dt><dd>Claude <code translate="no">entrypoint</code>（<code translate="no">cli</code>、<code translate="no">claude-desktop</code>、<code translate="no">sdk-ts</code> 等）；Codex <code translate="no">session_meta.originator</code>。用来区分人自己跑的会话和别的应用通过 SDK 驱动的会话。</dd>
+</dl>
+
+<h2 id="sessions">会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">标题</th><td>Claude：最后一个 <code translate="no">custom-title</code>。Codex：<code translate="no">session_index.jsonl</code> 里最新的名称。否则取第一条提示，截到 160 字符，跳过 meta、sidechain、工具结果和 Codex 的开场说明（Paseo 的规则）。</td></tr>
+<tr><th scope="row">位置</th><td>工作文件夹和 git 分支</td></tr>
+<tr><th scope="row">时间</th><td>首次和最后一次调用</td></tr>
+<tr><th scope="row">继续</th><td>复制 <code translate="no">cd &lt;folder&gt; &amp;&amp; claude --resume &lt;id&gt;</code> 或 <code translate="no">codex resume &lt;id&gt;</code>（magpie）</td></tr>
+</tbody>
+</table>
+<p>文件删除后调用记录仍保留（Claude Code 会在 30 天后删除自己的记录），92 天后移除。</p>
+
+<h2 id="cost">价格</h2>
+<p>费用是这些调用按 API 标价计算的值，标为按 API 价估算，不是订阅账单。价格在页面请求时套用，在 SQL 里按模型、速度和档位分组，所以价格目录更新后历史会重新定价，无需重扫。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">价格</th></tr></thead>
+<tbody>
+<tr><th scope="row">基础</th><td>每百万 Token 的输入、输出、缓存读、缓存写价格</td></tr>
+<tr><th scope="row">1 小时缓存写</th><td>输入价的两倍，仅 Anthropic 模型（magpie 曾把这条规则误用到 OpenAI 模型上）</td></tr>
+<tr><th scope="row">长上下文</th><td>一次提示（输入 + 缓存读 + 缓存写）超过模型档位时，所有 Token 按该档计价</td></tr>
+<tr><th scope="row">Fast</th><td>模型的 fast 价格</td></tr>
+<tr><th scope="row">未知模型</th><td>Token 计入，费用不计；合计显示为 <code translate="no">$12.40+</code>。绝不按相似名称定价。</td></tr>
+</tbody>
+</table>
+
+<h2 id="page">页面</h2>
+<p>设置 → 第三方 Harness（<code translate="no">/settings/harnesses</code>），在 Token Usage 旁边但与它分开，这样 Harness 的费用不会进入 OpenProgram 自己的合计和预算。选它而不是在 Token Usage 上加来源切换，是因为它能把各 Harness 并排显示。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">每个 Harness 一张卡片</th><td>30 天的会话数、Token、输出和按 API 价估算的费用；Codex 每个套餐窗口一条进度条，带重置时间、credits 和写入时间</td></tr>
+<tr><th scope="row">每日 Token</th><td>堆叠柱状图，每个 Harness 一种颜色</td></tr>
+<tr><th scope="row">会话</th><td>按 Harness 和搜索筛选：标题；文件夹、分支、模型、应用、最近活动；Token 和调用数；估算费用；复制继续命令的按钮。先显示 20 条，再显示全部。</td></tr>
+<tr><th scope="row">按模型、启动来源</th><td>表格，每行标出 Harness</td></tr>
+<tr><th scope="row">读取开关</th><td><code translate="no">usage.third_party_harnesses</code>，默认开启；magpie 则逐个 Harness 询问</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<p>已读取 Claude Code 和 Codex。下一步是 Gemini CLI（<code translate="no">~/.gemini/tmp/*/chats/</code>）、OpenCode（只读它的 SQLite）和 Pi，读取器结构相同。把 Harness 会话导入对话、以及驱动这些 Harness（Claude Agent SDK、<code translate="no">codex app-server</code>，其余走 ACP）是另外的步骤。</p>

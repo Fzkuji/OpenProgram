@@ -179,7 +179,7 @@ export function MeetingWindow() {
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
         {ready && !ready.ffmpeg && <p className={styles.notice}>{ready.ffmpeg_missing}</p>}
         {ready && !ready.speech && <p className={styles.notice}>{text(
-          "No speech engine is set up, so recordings cannot be transcribed. Add an OpenAI or Groq key in Settings → Model services, or install whisper.cpp; Settings → Voice chooses the engine.",
+          "No speech engine is set up, so recordings cannot be transcribed. Add an OpenAI or Groq key in Settings → Model Services, or install whisper.cpp; Settings → Voice chooses the engine.",
           "还没有可用的语音识别引擎，录音无法转写。请在“设置 → 模型服务”添加 OpenAI 或 Groq 的 key，或安装 whisper.cpp；引擎在“设置 → 语音”中选择。",
         )}</p>}
 

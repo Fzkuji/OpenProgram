@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import {
+  Blocks,
   Bot,
   ChartNoAxesColumn,
   Brain,
@@ -26,7 +27,7 @@ import { ChromeIcon } from "../animated-icons";
 import { ManagePageHeader } from "../ui/manage-page";
 import { RailGroupLabel, RailItem, RailSplit, RailToggle, SecondaryRail } from "../ui/secondary-rail";
 
-export type SettingsTab = "providers" | "usage" | "search" | "machines" | "channels" | "browser" | "voice" | "memory" | "import" | "general" | "appearance" | "versions";
+export type SettingsTab = "providers" | "usage" | "harnesses" | "search" | "machines" | "channels" | "browser" | "voice" | "memory" | "import" | "general" | "appearance" | "versions";
 
 /** Keeps the pre-rail storage key, `settingsNavOpen`. */
 const SETTINGS_RAIL = "settings";
@@ -65,6 +66,7 @@ export function SettingsTabsLayout({
   const pathname = usePathname() || "";
   const active: SettingsTab = (() => {
     if (pathname.startsWith("/settings/usage")) return "usage";
+    if (pathname.startsWith("/settings/harnesses")) return "harnesses";
     if (pathname.startsWith("/settings/search")) return "search";
     if (pathname.startsWith("/settings/machines")) return "machines";
     if (pathname.startsWith("/settings/channels")) return "channels";
@@ -95,6 +97,7 @@ export function SettingsTabsLayout({
       tabs: [
         { id: "providers" as const, href: "/settings/providers", label: t("settings.tab.providers"), Icon: Bot },
         { id: "usage" as const, href: "/settings/usage", label: t("settings.tab.usage"), Icon: ChartNoAxesColumn },
+        { id: "harnesses" as const, href: "/settings/harnesses", label: t("settings.tab.harnesses"), Icon: Blocks },
         { id: "memory" as const, href: "/settings/memory", label: t("settings.tab.memory"), Icon: Brain },
         { id: "search" as const, href: "/settings/search", label: t("settings.tab.search"), Icon: Search },
         { id: "voice" as const, href: "/settings/voice", label: t("settings.tab.voice"), Icon: Mic },

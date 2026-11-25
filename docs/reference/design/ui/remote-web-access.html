@@ -215,6 +215,7 @@
 <tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>Listener proof, below; grants nothing</td></tr>
 <tr><th scope="row"><code translate="no">GET /healthz</code></th><td>Only <code translate="no">{"status":"ok"}</code>; details are behind authentication at <code translate="no">/api/diagnostics</code></td></tr>
 <tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook, guarded by the task's own key</td></tr>
+<tr><th scope="row"><code translate="no">/gateway/**</code></th><td>Model gateway for Claude Code and Codex: the gateway key or the owner token as bearer or <code translate="no">x-api-key</code>; the gateway key opens nothing else (<a href="../integrations/model-gateway.html">Model Gateway</a>)</td></tr>
 <tr><th scope="row"><code translate="no">GET /application-assets/…</code></th><td>Sandboxed module imports with <code translate="no">Origin: null</code>; reads one immutable UI tree; Host still checked</td></tr>
 <tr><th scope="row">Office host</th><td>Served by the <code translate="no">office_editor</code> application while enabled; WebSocket refused</td></tr>
 </tbody>

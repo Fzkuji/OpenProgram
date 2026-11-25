@@ -4,6 +4,8 @@ Endpoints:
   GET /api/usage/summary          overall totals + per-model breakdown
   GET /api/usage/trend?bucket=day  time-series (day or hour buckets)
   GET /api/usage/by-kind           per call_kind breakdown
+  GET /api/usage/harnesses?days=30   Claude Code and Codex sessions on this
+                                   computer (models/usage/harnesses)
   GET /api/usage/tuning?days=30    the compaction share and cache lifetime
                                    that would have cost the user's own
                                    calls the least (runtime/context/token_accounting/tuning.py)
@@ -62,6 +64,18 @@ def register(app):
             return JSONResponse(content={"error": "days must be in [1, 90]"}, status_code=400)
         from openprogram.runtime.context.token_accounting.tuning import tune
         return JSONResponse(content=tune(days=days, ledger=_ledger()).to_dict())
+
+    # Sync: a scan of what Claude Code or Codex appended runs first, in
+    # FastAPI's threadpool (docs/reference/design/integrations/third-party-harnesses.html).
+    @app.get("/api/usage/harnesses")
+    def api_usage_harnesses(
+        days: int = QParam(30),
+        since: float | None = QParam(None),
+        until: float | None = QParam(None),
+    ):
+        from openprogram.models.usage.harnesses import report
+        days = max(1, min(int(days or 30), 92))
+        return JSONResponse(content=report(since=since, until=until, days=days))
 
     @app.get("/api/usage/summary")
     async def api_usage_summary(

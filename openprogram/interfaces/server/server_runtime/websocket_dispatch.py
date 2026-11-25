@@ -34,6 +34,10 @@ CONCURRENT_ACTIONS = frozenset({
     "project_file_info",
     "project_file_tree",
     "project_file_search",
+    # Reading a harness can start its process; nothing waits behind it.
+    "list_harnesses",
+    # Updating a harness runs its installer for up to minutes.
+    "update_harness",
 })
 
 #: At most this many side reads in flight per connection. A client that
@@ -325,6 +329,7 @@ def _build_ws_action_registry() -> dict:
         context_commits as _ws_commits,
         turn_files as _ws_turn_files,
         files as _ws_files,
+        harnesses as _ws_harnesses,
         sub_agent as _ws_sub_agent,
         merge as _ws_merge,
         job as _ws_job,
@@ -349,6 +354,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_commits.ACTIONS)
     table.update(_ws_turn_files.ACTIONS)
     table.update(_ws_files.ACTIONS)
+    table.update(_ws_harnesses.ACTIONS)
     table.update(_ws_sub_agent.ACTIONS)
     table.update(_ws_merge.ACTIONS)
     table.update(_ws_job.ACTIONS)

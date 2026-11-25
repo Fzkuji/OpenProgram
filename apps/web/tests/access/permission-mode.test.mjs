@@ -12,6 +12,8 @@ registerHooks({
       "@/lib/session-store/session-scope": "export const useSessionScope = f => f({sid: globalThis.permissionHarness.sid});",
       "@/lib/net/ws/ws-request": "export const wsRequest = (...args) => globalThis.permissionHarness.request(...args);",
       "@/lib/i18n": "export const useTranslation = () => ({text: en => en});",
+      "../../state/use-session-agent-settings": "export const useSessionAgentSettings = () => globalThis.permissionHarness.agentSettings ?? {};",
+      "@/lib/models/harnesses": "export const harnessOf = p => p === 'codex-harness' ? 'codex' : null;",
     };
     if (specifier in sources) return { url: `data:text/javascript,${encodeURIComponent(sources[specifier])}`, shortCircuit: true };
     if (specifier === "@/lib/agents/branch-target") return {
@@ -143,5 +145,15 @@ test("a branch switch invalidates an in-flight permission write in the same sess
     await act(async () => old.resolve({mode: "bypass", version: 5}));
     assert.equal(hook().mode, "plan");
     assert.equal(h.settings.permission_version, 1);
+  });
+});
+
+test("a conversation Codex runs names Codex's modes, and Plan reads as Read only", async () => {
+  await mounted(async ({ h, hook, root, Probe }) => {
+    h.agentSettings = { chat: { provider: "codex-harness", model: "gpt-x", harness: "codex" } };
+    h.settings.effective_permission = "plan";
+    await act(async () => root.render(createElement(Probe)));
+    assert.deepEqual(hook().options.map((o) => o.label), ["Full access", "Auto", "Ask for approval", "Read only"]);
+    assert.equal(hook().mode, "ask");
   });
 });

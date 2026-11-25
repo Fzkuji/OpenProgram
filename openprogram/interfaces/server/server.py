@@ -724,6 +724,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
         _log(f"[startup] ready after {(time.monotonic() - began) * 1000:.0f} ms of startup steps")
         from openprogram.runtime.context.token_accounting.tokens import load_encoding
         threading.Thread(target=load_encoding, name="openprogram-tokenizer-load", daemon=True).start()
+        from openprogram.models.usage.harnesses import start_warm_scan
+        start_warm_scan()
+        from openprogram.runtime.harnesses.models import warm_all
+        warm_all()
         from openprogram.state.memory.checkpoints import run_checkpoints
         checkpoint_stop = asyncio.Event()
         checkpoint_task = asyncio.create_task(run_checkpoints(checkpoint_stop))
@@ -874,6 +878,12 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # /v1/models, /v1/chat/completions: an Agent as a model for other tools.
     from openprogram.interfaces.server.routes import openai_compatible as _routes_openai
     _routes_openai.register(app)
+    # /gateway/…: Claude Code, Codex and other harnesses on OpenProgram's models.
+    from openprogram.interfaces.server.routes import gateway as _routes_gateway
+    _routes_gateway.register(app)
+    # /api/harnesses/models: the model Codex and Claude Code use outside a chat.
+    from openprogram.interfaces.server.routes.settings import harness_models as _routes_harness_models
+    _routes_harness_models.register(app)
 
     # Retry / Edit / Checkout routes live in routes/chat_branches.py — see
     # docs/design/context/overview.md. Keeping them out of this module keeps
@@ -913,6 +923,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # /api/providers, /api/provider/{name}, /api/models — routes.runtime
     from openprogram.interfaces.server.routes.execution import runtime as _routes_runtime
     _routes_runtime.register(app)
+
+    # /api/harnesses — outside agents (Codex) a conversation can run in.
+    from openprogram.interfaces.server.routes.execution import harnesses as _routes_harnesses
+    _routes_harnesses.register(app)
 
     # Model catalog (LobeChat-style settings) — routes.providers
     from openprogram.interfaces.server.routes.identity import providers as _routes_providers

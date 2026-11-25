@@ -41,6 +41,9 @@ export function usageUrls(now = Date.now()) {
   };
 }
 
+/** Third-Party Harnesses: Claude Code and Codex on this computer, 30 days. */
+export const HARNESSES_URL = `/api/usage/harnesses?days=${USAGE_DAYS}`;
+
 /** Every page's reads, started as Settings opens. Import is left out: it
  *  scans the disk for other agents' conversations, so it reads on its own
  *  page only. */
@@ -51,6 +54,6 @@ export function prefetchSettingsPages(): void {
     SEARCH_PROVIDERS_URL, VOICE_STATUS_URL,
     CHANNEL_ACCOUNTS_URL, CHANNEL_BINDINGS_URL, CHANNEL_ACCESS_URL,
     SYSTEM_VERSION_URL,
-    ...Object.values(usageUrls()),
+    ...Object.values(usageUrls()), HARNESSES_URL,
   ]) prefetchSettings(url);
 }

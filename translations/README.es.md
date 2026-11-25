@@ -114,13 +114,14 @@ Consulta [cómo escribir agentes](https://fzkuji.github.io/OpenProgram/docs/capa
 
 ## Novedades
 
+- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — Acceso a este ordenador desde el teléfono o desde cualquier lugar con Tailscale integrado, chats sobre Codex, aplicaciones que se exportan como software propio y una herramienta de capturas.
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Varias claves e inicios de sesión por proveedor, con cambio automático al llegar a un límite; bloques de tareas en las respuestas e historial de ejecuciones para las tareas programadas.
 - **2026-11-15 · v1.3.0** — Página de proveedores con estado, cuota y gasto; los agentes que trabajan en una conversación, listados en Activity.
-- **2026-11-14 · v1.2.0** — Las ramas de una conversación se ejecutan en paralelo, Detener actúa al instante y llega la App para Windows.
 
 <details>
 <summary>Anteriores</summary>
 
+- **2026-11-14 · v1.2.0** — Las ramas de una conversación se ejecutan en paralelo, Detener actúa al instante y llega la App para Windows.
 - **2026-11-10 · v1.1.0** — Rebobinar desde cualquier mensaje enviado; la App llega a Linux.
 - **2026-11-06 · v1.0.0** — Primera versión de la línea 1.x: App de escritorio con vistas divididas, uso del ordenador en segundo plano, reuniones y un planificador siempre activo.
 - **2026-08-17 · v0.7.0** — Un navegador integrado junto a los archivos, el chat y la terminal, que los agentes pueden leer y manejar.

@@ -159,7 +159,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
 
 NO_MODEL_CONFIGURED = (
     "No model is configured. Pick a model from the model "
-    "selector (or enable one in Settings → Model services) and send "
+    "selector (or enable one in Settings → Model Services) and send "
     "the message again."
 )
 

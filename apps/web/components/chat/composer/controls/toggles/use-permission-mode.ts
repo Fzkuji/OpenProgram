@@ -16,6 +16,8 @@ import { wsRequest } from "@/lib/net/ws/ws-request";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
 import { useTranslation } from "@/lib/i18n";
+import { harnessOf } from "@/lib/models/harnesses";
+import { useSessionAgentSettings } from "../../state/use-session-agent-settings";
 
 export type PermissionMode =
   | "ask" | "acceptEdits" | "plan" | "auto" | "bypass";
@@ -63,6 +65,32 @@ const MODE_LABELS: {
   },
 ];
 
+// A conversation a harness (Codex) runs: the same stored modes, named for
+// what that harness does with each (runtime/harnesses/codex/engine.py
+// PERMISSION_MODES). Plan has no Codex counterpart and reads as Read only.
+const HARNESS_LABELS: typeof MODE_LABELS = [
+  {
+    value: "bypass", en: "Full access", zh: "完全访问", key: "1",
+    enDesc: "Runs anything without asking, outside the sandbox",
+    zhDesc: "不经询问运行任何操作，不受沙箱限制",
+  },
+  {
+    value: "auto", en: "Auto", zh: "自动", key: "2",
+    enDesc: "Codex reviews its own approval requests",
+    zhDesc: "由 Codex 审核自己的授权请求",
+  },
+  {
+    value: "acceptEdits", en: "Ask for approval", zh: "需要批准", key: "3",
+    enDesc: "Works in the project; asks before anything else",
+    zhDesc: "在项目内工作；其他操作先询问",
+  },
+  {
+    value: "ask", en: "Read only", zh: "只读", key: "4",
+    enDesc: "Reads files; asks before any change",
+    zhDesc: "只读文件；任何修改前先询问",
+  },
+];
+
 const DEFAULT_MODE: PermissionMode = "bypass";
 
 export interface PermissionModeHook {
@@ -88,13 +116,16 @@ export function usePermissionMode(): PermissionModeHook {
   const setComposerSettings = useBoundSetComposerSettings();
   const { text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const mode = (
+  const chat = useSessionAgentSettings().chat;
+  const inHarness = !!(chat?.harness ?? harnessOf(chat?.provider));
+  const stored = (
     settings.effective_permission
     || settings.permission_mode
     || DEFAULT_MODE
   ) as PermissionMode;
-  const options: PermissionModeOption[] = MODE_LABELS
-    .filter((m) => m.value !== "acceptEdits" || mode === "acceptEdits")
+  const mode: PermissionMode = inHarness && stored === "plan" ? "ask" : stored;
+  const options: PermissionModeOption[] = (inHarness ? HARNESS_LABELS : MODE_LABELS)
+    .filter((m) => inHarness || m.value !== "acceptEdits" || mode === "acceptEdits")
     .map((m) => ({
       value: m.value,
       label: text(m.en, m.zh),

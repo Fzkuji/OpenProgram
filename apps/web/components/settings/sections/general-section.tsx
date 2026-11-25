@@ -2,7 +2,7 @@
 
 /** General settings — language, suggestions, user, notifications and the
  *  web server. How the interface looks lives in Appearance
- *  (appearance-section.tsx); the version and updates in Versions and updates. */
+ *  (appearance-section.tsx); the version and updates in Versions and Updates. */
 import { useId, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";

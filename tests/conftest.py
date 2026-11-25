@@ -231,6 +231,10 @@ if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
     os.environ["HOME"] = _TEST_HOME
     os.environ["USERPROFILE"] = _TEST_HOME
     Path(_TEST_HOME).mkdir(parents=True, exist_ok=True)
+    # Claude Code's and Codex's homes follow HOME too, so a Worker started in
+    # a test reads no real sessions (models/usage/harnesses).
+    os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    os.environ.pop("CODEX_HOME", None)
 
     if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
         cache_root = None

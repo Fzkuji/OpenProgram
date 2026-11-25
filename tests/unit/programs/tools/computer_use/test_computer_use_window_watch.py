@@ -104,6 +104,7 @@ def test_a_watched_window_is_reported_until_it_is_released(monkeypatch):
     places = iter([{"frame": [1, 2, 3, 4], "occluders": []}] * 2 + [{"frame": [5, 6, 3, 4], "occluders": []}] * 100)
     monkeypatch.setattr(window_watch, "window_place", lambda window_id, rows=None: next(places))
     monkeypatch.setattr(window_watch, "_screen_rows", lambda: [])
+    monkeypatch.setattr(window_watch, "_button_held", lambda: False)
     monkeypatch.setattr(window_watch, "REPORT_SECONDS", 0.01)
     reports, moved = [], threading.Event()
 
@@ -122,6 +123,43 @@ def test_a_watched_window_is_reported_until_it_is_released(monkeypatch):
     info, last = reports[-1]
     assert last["active"] is False and info["owner"] == ("conv", "run")
     assert all(payload["app_name"] == "Calculator" and payload["buttons"] == [8, 6, 52, 14] for _, payload in reports)
+
+
+def test_a_window_dragged_by_the_user_is_followed_every_frame_while_the_button_is_held(monkeypatch):
+    """The window server moves a dragged window and its app hears of it late: no event arrives, yet the
+    overlay must follow the drag frame by frame, and stop reading once the button is up."""
+    _fake(monkeypatch)
+    reads, held, counted = [], threading.Event(), threading.Condition()
+
+    def place(window_id, rows=None):
+        with counted:
+            reads.append(len(reads))
+            counted.notify_all()
+        return {"frame": [len(reads), 0, 300, 200], "occluders": []}
+
+    def reached(count, seconds):
+        with counted:
+            return counted.wait_for(lambda: len(reads) >= count, seconds)
+
+    monkeypatch.setattr(window_watch, "window_place", place)
+    monkeypatch.setattr(window_watch, "_screen_rows", lambda: [])
+    monkeypatch.setattr(window_watch, "_button_held", held.is_set)
+    reports = []
+    watch = window_watch.WindowWatch(report=lambda info, payload: reports.append(payload),
+                                     make_source=lambda changed: _Source(changed))
+    watch.touch("s", 7, {"app_name": "Chrome"})
+    assert reached(1, 5)
+    assert not reached(2, 0.2), "with the button up and no event, nothing is read again"
+    held.set()
+    assert reached(11, 0.5), "a drag is read about every frame"
+    held.clear()
+    reached(10**6, 0.1)
+    after = len(reads)
+    assert not reached(after + 1, 0.2), "the button released, reading stops"
+    watch.release("s")
+    _settle()
+    frames = [p["frame"][0] for p in reports if p.get("active")]
+    assert frames == sorted(frames) and len(frames) == after, "each new place is reported"
 
 
 class _Source:

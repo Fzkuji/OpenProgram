@@ -31,6 +31,7 @@ See docs/reference/design/providers/usage-metering.html.
 
 ## Sub-packages
 
+- **`harnesses/`** — Third-party harnesses: Claude Code and Codex sessions on this computer, read only
 - **`quota_fetchers/`** — Read-only quota endpoints, behind one interface, and when they are read
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

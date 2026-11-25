@@ -8,7 +8,8 @@
  * with the first message; an existing conversation switches on the
  * server (`POST /api/sessions/{id}/agent`) and takes the Agent's model.
  * The Agent's own settings stay on the Agents page, reached from the
- * menu's last row.
+ * menu's last row. A conversation a harness runs shows that harness's own
+ * choices instead (harness-menu.tsx).
  */
 import { useEffect, useState } from "react";
 
@@ -34,6 +35,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 import { useBoundChat } from "../bound-chat";
+import { HarnessAgentBadge, useHarness } from "./harness-menu";
 import { MenuCheck } from "@/components/ui/menu/menu-check";
 import {
   CHECK_SLOT_PAD,
@@ -46,7 +48,14 @@ import {
   itemCls,
 } from "@/components/ui/menu/menu-styles";
 
+/** A conversation run by a harness (Codex) picks among that harness's own
+ *  agent choices; OpenProgram's engine picks a saved Agent. */
 export function AgentConfigBadge({ id }: { id: string }) {
+  const harness = useHarness();
+  return harness.harness ? <HarnessAgentBadge id={id} state={harness} /> : <OpenProgramAgentBadge id={id} />;
+}
+
+function OpenProgramAgentBadge({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const { text } = useTranslation();

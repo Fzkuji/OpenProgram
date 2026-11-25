@@ -1,7 +1,7 @@
 "use client";
 
 /** The running OpenProgram's version and its updates, shown at the top of
- *  Settings > Versions and updates. */
+ *  Settings > Versions and Updates. */
 import { useState } from "react";
 
 import { useDesktopBridge } from "@/lib/desktop/use-desktop-bridge";

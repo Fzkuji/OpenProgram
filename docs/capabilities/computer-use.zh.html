@@ -209,6 +209,7 @@ computer_use(type="browser", app="safari", title="tq7mb", action="click", args={
 <tr><th scope="row">缺东西时</th><td>调用返回 <code translate="no">DEPENDENCY_MISSING</code>（没有 Node.js、没装扩展、没装浏览器）或 <code translate="no">PERMISSION_MISSING</code>（Safari 的设置或 macOS 权限、Firefox 没带代理运行），并写明怎么补</td></tr>
 <tr><th scope="row">选标签页</th><td><code translate="no">title</code> 是标签页 id，或只有一个标签页匹配的标题；多个标签页共用的标题会被拒绝并列出候选</td></tr>
 <tr><th scope="row">标签页</th><td>不带 <code translate="no">title</code> 或 <code translate="no">tab</code> 的步骤作用于该 agent 在那里上次用的标签页，起初是浏览器当前的标签页。那个标签页没了以后，这样的步骤返回 <code translate="no">BAD_ARGUMENT</code> 并指出它，agent 改为写明标签页。选标签页不会把它切到前面。<code translate="no">close_tab</code> 只关闭调用写明的标签页，<code translate="no">create_tab</code> 在后台打开。</td></tr>
+<tr><th scope="row">工作时切换标签页</th><td>在 Chromium 浏览器里可以切到别的标签页，智能体的标签页照样执行步骤。Chrome 不绘制被挡在后面的标签页，所以在那里点击、悬停、滚动、拖动和勾选都以页面事件发送；截图仍是该标签页当前的样子。</td></tr>
 <tr><th scope="row">Safari 和 Firefox</th><td>按键和输入以页面事件送到后台的标签页；Firefox 对前台标签页用真实输入。Safari 不支持 <code translate="no">upload_file</code>，也读不了控制台和网络请求；截图要求该标签页正显示在它的窗口里。</td></tr>
 <tr><th scope="row">筛选</th><td>Chromium 系浏览器里筛选控制台消息或请求（<code translate="no">pattern</code>、<code translate="no">only_errors</code>、<code translate="no">limit</code>）返回 <code translate="no">NOT_SUPPORTED</code></td></tr>
 <tr><th scope="row">多个 agent</th><td>每个浏览器一次一个调用，不论来自哪个对话；另一个最多等 60 秒</td></tr>

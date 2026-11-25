@@ -71,6 +71,9 @@ RUN_CONFIG_FIELDS = (
     "sandbox_enabled",
     "agent_trial",
     "agent_profile_snapshot",
+    "harness",
+    "harness_agent",
+    "harness_return",
 )
 
 # A reply still being produced cannot be the tip of a new conversation:

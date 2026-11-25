@@ -61,7 +61,10 @@ test("local Ollama and the Gemini CLI use the logos already shipped", () => {
 
 test("the model chip draws the mark, not the old speech bubble", () => {
   const chip = source("components/chat/top-bar/index.tsx");
-  assert.match(chip, /<ModelMark provider=\{provider\} \/>/);
+  // The chip's mark: the model's provider, or for an OpenProgram model run
+  // in a harness, that model's own provider.
+  assert.match(chip, /<ModelMark provider=\{markProvider\} \/>/);
+  assert.match(chip, /const markProvider = routed\?\.provider \?\? provider;/);
   assert.doesNotMatch(chip, /chat-round-dots/);
 });
 

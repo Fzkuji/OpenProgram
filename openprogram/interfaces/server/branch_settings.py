@@ -113,8 +113,14 @@ def commit_model(session_id: str, body: dict, provider: str, model: str, conv: d
     accepted_id = before.get("active_branch_id") or branch_identity(session_id, before.get("head_id"))
     target = branch_target(body)
     named = target.pop("branch_id")
+    from openprogram.runtime.harnesses import HARNESS_IDS
+    values = {"provider_override": provider, "model_override": model}
+    # The engine follows the model: a harness's model runs in that harness,
+    # any other model in OpenProgram's own loop.
+    values.update({"harness": HARNESS_IDS[provider]} if provider in HARNESS_IDS
+                  else {"harness": None, "harness_agent": None, "harness_return": None})
     try:
-        db.update_branch_config(session_id, named, {"provider_override": provider, "model_override": model}, **target)
+        db.update_branch_config(session_id, named, values, **target)
     except Exception:
         if replace_runtime and runtime is not None and hasattr(runtime, "close"):
             runtime.close()
@@ -136,7 +142,10 @@ def commit_model(session_id: str, body: dict, provider: str, model: str, conv: d
     if disposable is not None and disposable is not (runtime if current else old) and hasattr(disposable, "close"):
         with contextlib.suppress(Exception):
             disposable.close()
-    record_last_used_model(provider, model)
+    if provider not in HARNESS_IDS:
+        # Background work (titles, memory) runs on the last used model; an
+        # outside agent's model is not one OpenProgram can call itself.
+        record_last_used_model(provider, model)
     if named and named != row.get("active_branch_id"):
         return {**row, **config_for_branch(row, named), "branch_id": named}
     return {**row, "branch_id": row.get("active_branch_id")}

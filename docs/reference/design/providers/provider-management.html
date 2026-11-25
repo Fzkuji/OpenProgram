@@ -2,7 +2,7 @@
 <meta name="description" content="How OpenProgram lists connected providers, adds one in three steps, checks a key in one line, shows provider state inside the model picker and offers another model when a quota is spent.">
 <h1>Provider management</h1>
 
-<p>Settings → Model services lists the providers that are connected, adds one in three steps (pick, key or sign-in, default model) and shows each provider's health, quota and spend. The chat shows provider state only inside the model picker and on the reply card of a spent quota. Quota and health come from <a href="provider-quota.html">Provider quota</a>.</p>
+<p>Settings → Model Services lists the providers that are connected, adds one in three steps (pick, key or sign-in, default model) and shows each provider's health, quota and spend. The chat shows provider state only inside the model picker and on the reply card of a spent quota. Quota and health come from <a href="provider-quota.html">Provider quota</a>.</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
@@ -186,7 +186,7 @@
 <tr><th scope="row">Gone or off pin</th><td>A pin to a key that is gone says to go back to Auto; a pinned key turned off ends the request as a setting to change, not a failed sign-in</td></tr>
 <tr><th scope="row">Bars</th><td>Every usage bar is the kit's Progress</td></tr>
 <tr><th scope="row">Switch line</th><td>When a reply moves to another credential, a muted line sits above it: "Switched to Work: Personal hit a rate limit". The line is stored with the reply and is still there after a reload; <code translate="no">--print</code> says it as a <code translate="no">credential_switch</code> event. While every credential waits, the retry line names the one it waits for and when it is back</td></tr>
-<tr><th scope="row">Menu end</th><td>The menu ends with Manage providers, which opens Settings → Model services. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state</td></tr>
+<tr><th scope="row">Menu end</th><td>The menu ends with Manage providers, which opens Settings → Model Services. With no provider connected at all it says so and offers Add provider, which opens the same page at its empty state</td></tr>
 <tr><th scope="row">Trigger</th><td>The trigger is plain while the selected model's provider can answer, whatever its usage. A quota that only warns shows in the ring and the bars, not on the trigger</td></tr>
 <tr><th scope="row">Red dot</th><td>A red dot on the provider logo appears only when the provider needs action (signed out, no credit, invalid key, not set up, not running) or its quota is 95 % used or spent: the Worker's <code translate="no">attention</code>. Its tooltip names the provider and the state or the window left</td></tr>
 </tbody>

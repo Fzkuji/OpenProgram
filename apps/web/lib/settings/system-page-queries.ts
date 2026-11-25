@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The schema-driven setting rows (Model services → Behavior, General → Web
+ * The schema-driven setting rows (Model Services → Behavior, General → Web
  * server) and this computer's system access (Machines). Settings opening
  * fetches both ahead (`prefetchSystemPage`): the access check asks macOS
  * about each capability and takes most of a second.

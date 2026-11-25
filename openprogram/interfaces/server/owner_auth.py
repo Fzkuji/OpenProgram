@@ -480,6 +480,24 @@ async def _http_response(send, status: int, error: str, *, openai: bool = False)
     await send({"type": "http.response.body", "body": body})
 
 
+async def _gateway_refusal(send, path: str) -> None:
+    """401 in the error shape of the gateway protocol the client speaks."""
+    message = "Missing or invalid OpenProgram gateway key."
+    if path.startswith("/gateway/anthropic/"):
+        payload = {"type": "error", "error": {"type": "authentication_error", "message": message}}
+    else:
+        payload = {"error": {"message": message, "type": "authentication_error",
+                             "param": None, "code": "invalid_api_key"}}
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    await send({"type": "http.response.start", "status": 401, "headers": [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode("ascii")),
+        (b"cache-control", b"no-store"),
+        (b"www-authenticate", b'Bearer realm="OpenProgram"'),
+    ]})
+    await send({"type": "http.response.body", "body": body})
+
+
 async def _websocket_response(send, status: int, error: str, scope) -> None:
     if "websocket.http.response" in (scope.get("extensions") or {}):
         body = _json_body(error)
@@ -694,6 +712,18 @@ class OwnerAuthMiddleware:
             await self.app(scope, receive, _response_sender(send, no_store=True, shell=False))
             return
 
+        if path.startswith("/gateway/"):
+            # The model gateway (models/gateway): harness configs carry the
+            # gateway key, which outlives this process's owner token. It is
+            # accepted here and nowhere else; the owner token works too.
+            if scope["type"] == "http" and self._gateway_authenticated(headers):
+                await self.app(scope, receive, _response_sender(send, no_store=True, shell=False))
+            elif scope["type"] == "websocket":
+                await _websocket_response(send, 401, "authentication_required", scope)
+            else:
+                await _gateway_refusal(send, path)
+            return
+
         public = scope["type"] == "http" and (
             path == "/healthz" or _public_shell(scope)
         )
@@ -773,6 +803,24 @@ class OwnerAuthMiddleware:
             await self._device_socket(scope, receive, sender, device_id)
             return
         await self.app(scope, receive, sender)
+
+    def _gateway_authenticated(self, headers: dict[str, list[str]]) -> bool:
+        """A gateway request with the gateway key or the owner token, as
+        ``Authorization: Bearer`` or ``x-api-key``."""
+        from openprogram.models.gateway.keys import verify_gateway_key
+
+        presented: list[str] = []
+        try:
+            provided, token = _bearer_token(headers)
+            if provided and token:
+                presented.append(token)
+            api_key = _one_header(headers, "x-api-key")
+            if api_key:
+                presented.append(api_key)
+        except OwnerAuthError:
+            return False
+        return any(verify_gateway_key(value) or self.auth_state.verify_token(value)
+                   for value in presented)
 
     async def _device_socket(self, scope, receive, send, device_id: str) -> None:
         """Run a paired device's WebSocket; revoking the device closes it."""
@@ -878,10 +926,11 @@ class OwnerAuthMiddleware:
                 failed = True
             if (_one_header(headers, "content-type") or "").lower() != "application/json":
                 failed = True
-            user_agent = _one_header(headers, "user-agent")
         except OwnerAuthError:
             failed = True
-            user_agent = None
+        # Only names the device. Not read with _one_header: every real browser's
+        # User-Agent has a comma ("KHTML, like Gecko"), which that refuses.
+        user_agent = (headers.get("user-agent") or [None])[0]
         body = await _read_small_body(receive, 512)
         payload = None if body is None else _strict_json(body)
         if not isinstance(payload, dict) or "code" not in payload \

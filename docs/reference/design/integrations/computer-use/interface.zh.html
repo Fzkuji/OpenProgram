@@ -33,6 +33,7 @@
 <tbody>
 <tr><th scope="row">位置上报</th><td>窗口被监视期间，另一个线程在它的位置变化时上报：<code translate="no">window_place</code> 读取屏幕窗口列表，得到窗口的位置和 <code translate="no">GLOW_MARGIN</code>（32pt）范围内挡在它前面的窗口，标题为 <code translate="no">OVERLAY_TITLE</code> 的窗口（App 自己的提示层）不计入。</td></tr>
 <tr><th scope="row">何时读取位置</th><td>屏幕上有窗口的每个应用都挂着辅助功能观察者（<code translate="no">ax_events.ScreenEvents</code>），有窗口新建、移动、改变大小、最小化、恢复或关闭，或焦点转移时，每一阵读一次。至少每 <code translate="no">RESYNC_SECONDS</code>（5 秒）一次；没有辅助功能权限时每 <code translate="no">REPORT_SECONDS</code>（0.12 秒）。</td></tr>
+<tr><th scope="row">拖动期间</th><td>用户拖动或缩放的窗口由窗口服务器移动，应用很晚才得知，常常要等松开鼠标。按住鼠标左键期间每 <code translate="no">DRAG_SECONDS</code>（一帧，每次读约 1.3 毫秒）读一次位置，覆盖层跟着拖动走；平时每 <code translate="no">PRESS_SECONDS</code>（50 毫秒）看一次按键状态。</td></tr>
 <tr><th scope="row">控制帧</th><td>上报经 <code translate="no">native_window.note_control</code> 发出，归属取触碰窗口时记下的对话，帧类型为 <code translate="no">native.control</code>（<code translate="no">session_id</code>、<code translate="no">window_id</code>、<code translate="no">active</code>、<code translate="no">app_name</code>、<code translate="no">frame</code>、<code translate="no">buttons</code>、<code translate="no">occluders</code>）；子进程以 <code translate="no">kind: "control"</code> 转发。</td></tr>
 <tr><th scope="row">结束</th><td>释放窗口时发出 <code translate="no">active: false</code>。</td></tr>
 <tr><th scope="row">Web 客户端</th><td>Web 客户端在<strong>显示操作</strong>打开时把上报交给 <code translate="no">openprogramDesktop.nativeControl</code>，控制结束的上报总会交过去。</td></tr>

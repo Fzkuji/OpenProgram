@@ -59,7 +59,7 @@ export function useWays(): [Ways | null, (change: Partial<Record<"lan" | "anywhe
   return [ways, change];
 }
 
-function host(address: string): string {
+export function host(address: string): string {
   try {
     return new URL(address).host;
   } catch {

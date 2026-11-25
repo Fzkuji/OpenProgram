@@ -39,6 +39,7 @@
 <tbody>
 <tr><th scope="row">Choosing a window</th><td>A window is chosen by <code translate="no">window</code> (title substring or index) or <code translate="no">window_id</code>; without either, the window the model read last stays selected while it is open, then the focused or main window.</td></tr>
 <tr><th scope="row">Following</th><td>Each state records the app's windows (window id, or title without one); when the focused or main window is one that was not there at the last read, the read follows it and says which window it opened over, so a dialog or document a step brought up is what the next steps act on.</td></tr>
+<tr><th scope="row">Moved or resized</th><td>Before each step the window's frame is read again (<code translate="no">_follow_window</code>): points follow a window the user moved. A window resized since its screenshot has laid itself out again, so a step by <code translate="no">x</code>,<code translate="no">y</code> answers <code translate="no">StaleElement</code> and the model reads it again; steps by element read the element's frame and are not affected.</td></tr>
 <tr><th scope="row">Dialogs</th><td>A new window with a dialog subrole (<code translate="no">AXDialog</code>, <code translate="no">AXSystemDialog</code>) or a new file dialog is followed even when the focus stays on the window under it, as it does when a background app opens its out-of-process file dialog.</td></tr>
 </tbody>
 </table>

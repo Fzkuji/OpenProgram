@@ -114,13 +114,14 @@ See [writing agents](https://fzkuji.github.io/OpenProgram/docs/capabilities/agen
 
 ## News
 
+- **2026-11-25 · [v1.5.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.5.0)** — Reach this computer from a phone or from anywhere with Tailscale built in, chats on Codex, applications that export as software of their own, and a screenshot tool.
 - **2026-11-16 · [v1.4.0](https://github.com/Fzkuji/OpenProgram/releases/tag/v1.4.0)** — Several keys and sign-ins per provider with automatic switching at a limit, task blocks in replies, and a run history for scheduled tasks.
 - **2026-11-15 · v1.3.0** — A Providers page with health, quota and spend; the agents working in a conversation listed in Activity.
-- **2026-11-14 · v1.2.0** — Branches of one conversation run side by side, Stop takes effect at once, and the Windows App arrives.
 
 <details>
 <summary>Earlier</summary>
 
+- **2026-11-14 · v1.2.0** — Branches of one conversation run side by side, Stop takes effect at once, and the Windows App arrives.
 - **2026-11-10 · v1.1.0** — Rewind from any sent message; the App comes to Linux.
 - **2026-11-06 · v1.0.0** — First release of the 1.x line: desktop App with split views, background computer use, meetings and an always-on scheduler.
 - **2026-08-17 · v0.7.0** — A built-in browser beside files, chat and the terminal, which agents can read and operate.

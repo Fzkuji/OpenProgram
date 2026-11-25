@@ -91,7 +91,7 @@ export function VoiceSettings() {
     }
     return row.available
       ? text("API key set.", "已设置 API key。")
-      : text("No API key — add one in Settings → Model services.", "没有 API key，请在 设置 → 模型服务 里添加。");
+      : text("No API key — add one in Settings → Model Services.", "没有 API key，请在 设置 → 模型服务 里添加。");
   };
 
   return (

@@ -150,7 +150,7 @@ class ProviderRegistry(Generic[P]):
         missing = {p.name: list(p.requires_env) for p in self.all()}
         raise LookupError(
             f"No {self._kind} provider is available. Add an API key for one "
-            f"of the registered providers (Settings -> Model services, or "
+            f"of the registered providers (Settings -> Model Services, or "
             f"`openprogram providers login <provider> --api-key`): {missing}"
         )
 
