@@ -70,13 +70,13 @@ jobs:
           ls -la _publish
 
       - name: Upload the site
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./_publish
 
       - name: Publish to GitHub Pages
         id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Submit sitemap to IndexNow
         continue-on-error: true
