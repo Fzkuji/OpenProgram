@@ -32,6 +32,10 @@ _log = logging.getLogger(__name__)
 
 # Server-side grace before exact-owner terminate. Tests may shorten this.
 CANCEL_GRACE_S = 4.0
+# How long the cancel-grace watcher waits between finalize retries while the
+# record is still cancelling (a descendant has not reached a terminal
+# status). Tests may shorten this.
+_GRACE_RETRY_POLL_S = 0.05
 
 _execution_update_hook: Callable[[dict[str, Any]], None] | None = None
 
@@ -428,6 +432,13 @@ def _grace_then_terminate(execution_id: str, generation: int) -> None:
                 )
             time.sleep(max(CANCEL_GRACE_S, 0.01))
             return False
+        # Still cancelling — a descendant has not reached a terminal status
+        # yet. Retry at the watcher's poll cadence. Falling off the end
+        # returned None, which every caller treats as "retry now": the
+        # watcher then busy-spun between session-store reads for as long
+        # as the descendant stayed non-terminal.
+        time.sleep(_GRACE_RETRY_POLL_S)
+        return False
 
     try:
         while True:

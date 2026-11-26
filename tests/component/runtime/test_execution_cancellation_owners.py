@@ -73,11 +73,13 @@ def clean_runtime_control():
     run_control_owners.set_execution_update_hook(None)
     run_control.clear_turn_context()
     execution_owners.CANCEL_GRACE_S = 0.05
+    execution_owners._GRACE_RETRY_POLL_S = 0.05
     registry = get_question_registry()
     registry._events.clear()
     yield
     _drain_runtime_control()
     execution_owners.CANCEL_GRACE_S = 4.0
+    execution_owners._GRACE_RETRY_POLL_S = 0.05
     run_control_cancellation.set_after_intent_hook(None)
     run_control_owners.set_execution_update_hook(None)
     run_control.clear_turn_context()
@@ -927,3 +929,71 @@ def test_register_on_cancelled_execution_does_not_retrip(store):
     )
     assert ev.is_set() is False
     assert token.is_cancelled() is False
+
+
+def test_grace_watcher_paces_retries_while_a_descendant_is_live(
+    store,
+    monkeypatch,
+):
+    """A watcher whose owner retired while a descendant is still cancelling
+    retries the finalize at a bounded rate instead of busy-spinning between
+    session-store reads."""
+    session_id = "paced-grace-retry"
+    store.create_session(session_id, "main")
+    writer = SessionNodeWriter(store, session_id)
+    writer.append(
+        Call(
+            id="root",
+            role=ROLE_CODE,
+            name="root",
+            metadata={"status": "running", "execution_kind": "agent_method"},
+        )
+    )
+    writer.append(
+        Call(
+            id="child",
+            role=ROLE_CODE,
+            name="child",
+            caller="root",
+            metadata={"status": "running", "execution_kind": "agent_method"},
+        )
+    )
+    child_live = True
+    execution_run_control.register_execution_owner(
+        "child", session_id, is_alive=lambda: child_live,
+    )
+    root_live = True
+    execution_run_control.register_execution_owner(
+        "root", session_id, is_alive=lambda: root_live, terminate=lambda: True,
+    )
+    execution_owners.CANCEL_GRACE_S = 0.02
+    execution_owners._GRACE_RETRY_POLL_S = 0.5
+
+    calls = {"finds": 0}
+    real_find = execution_owners._find_execution
+
+    def counting_find(store_arg, execution_id, **kwargs):
+        calls["finds"] += 1
+        return real_find(store_arg, execution_id, **kwargs)
+
+    monkeypatch.setattr(execution_owners, "_find_execution", counting_find)
+
+    record = execution_run_control.cancel_execution("root")
+    assert record["status"] == "cancelling"
+
+    # The root's owner goes away (its process died) while the child is still
+    # cancelling: the grace watcher keeps retrying the root's finalize.
+    root_live = False
+    execution_run_control.retire_execution_owner("root")
+    assert _node(store, session_id, "root").metadata["status"] == "cancelling"
+
+    before = calls["finds"]
+    time.sleep(0.65)
+    paced = calls["finds"] - before
+    # Two retries at 0.5 s apart read the store a handful of times; an
+    # unthrottled loop reads it hundreds of times in the same window.
+    assert paced <= 20, paced
+
+    child_live = False
+    execution_run_control.retire_execution_owner("child")
+    assert _wait_status(store, session_id, "root", "cancelled") == "cancelled"
