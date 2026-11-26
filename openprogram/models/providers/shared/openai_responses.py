@@ -898,7 +898,14 @@ async def process_responses_stream(
             raise RuntimeError(f"Error Code {code}: {msg_text}")
 
         elif event_type == "response.failed":
-            raise RuntimeError("Unknown error")
+            # The event carries response.error.{code,message} (e.g.
+            # rate_limit_exceeded); surface it like the "error" event
+            # instead of discarding it as "Unknown error".
+            response = event.get("response") if isinstance(event, dict) else getattr(event, "response", None)
+            error = response.get("error") if isinstance(response, dict) else getattr(response, "error", None)
+            code = error.get("code") if isinstance(error, dict) else getattr(error, "code", "")
+            msg_text = error.get("message") if isinstance(error, dict) else getattr(error, "message", "Unknown error")
+            raise RuntimeError(f"Error Code {code}: {msg_text}")
 
 
 def _finalize_content_blocks(blocks: list) -> list:

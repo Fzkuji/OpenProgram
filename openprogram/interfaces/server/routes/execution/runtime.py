@@ -201,7 +201,7 @@ def register(app):
         """
         from openprogram.interfaces.server import server as _s
         _s._log(f"[/api/model] body={body!r}")
-        if not body or "model" not in body:
+        if not body or not isinstance(body.get("model"), str):
             return JSONResponse(content={"error": "Missing model"}, status_code=400)
         model = body["model"].strip()
         explicit_provider = (body.get("provider") or "").strip() or None
@@ -431,13 +431,13 @@ def register(app):
     async def set_agent_settings(body: dict = None):
         """Update chat and/or exec agent provider/model."""
         from openprogram.interfaces.server import server as _s
-        if body and body.get("session_id") and "chat" in body:
+        if body and body.get("session_id") and isinstance(body.get("chat"), dict):
             chat = body["chat"]
             return await switch_model({**body, "provider": chat.get("provider"), "model": chat.get("model") or ""})
         _s._init_providers()
         changed = False
 
-        if body and "chat" in body:
+        if body and isinstance(body.get("chat"), dict):
             chat = body["chat"]
             new_provider = chat.get("provider", _s.runtime_management._chat_provider)
             new_model = chat.get("model", _s.runtime_management._chat_model)
@@ -457,7 +457,7 @@ def register(app):
                 await asyncio.to_thread(record_last_used_model, new_provider, new_model)
                 changed = True
 
-        if body and "exec" in body:
+        if body and isinstance(body.get("exec"), dict):
             exec_cfg = body["exec"]
             _s.runtime_management._exec_provider = exec_cfg.get(
                 "provider", _s.runtime_management._exec_provider

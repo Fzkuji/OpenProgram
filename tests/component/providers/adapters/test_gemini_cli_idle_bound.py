@@ -161,3 +161,42 @@ def test_the_adapter_sends_a_limited_request_once(monkeypatch):
         asyncio.run(_adapter_only())
     assert time.monotonic() - started < 1.0
     assert len(sent) == 1
+
+
+def test_a_truncated_tool_reply_keeps_the_length_stop_reason(monkeypatch):
+    """MAX_TOKENS after a functionCall must not be rewritten to toolUse:
+    the agent loop needs the truncation signal to continue the turn."""
+    line = (
+        'data: {"candidates": [{"content": {"parts": ['
+        '{"functionCall": {"name": "bash", "args": {"command": "ls"}}}'
+        ']}, "finishReason": "MAX_TOKENS"}]}'
+    )
+    _install(monkeypatch, [_Response(lines=[line])])
+
+    async def collect():
+        return [event async for event in gmod.stream_google_gemini_cli(
+            _model(), _context(), {"api_key": "k", "project_id": "p"})]
+
+    events = asyncio.run(collect())
+    done = events[-1]
+    assert done.type == "done"
+    assert any(getattr(block, "type", None) == "toolCall" for block in done.message.content)
+    assert done.message.stop_reason == "length"
+
+
+def test_a_normal_tool_reply_keeps_the_tool_use_stop_reason(monkeypatch):
+    line = (
+        'data: {"candidates": [{"content": {"parts": ['
+        '{"functionCall": {"name": "bash", "args": {"command": "ls"}}}'
+        ']}, "finishReason": "STOP"}]}'
+    )
+    _install(monkeypatch, [_Response(lines=[line])])
+
+    async def collect():
+        return [event async for event in gmod.stream_google_gemini_cli(
+            _model(), _context(), {"api_key": "k", "project_id": "p"})]
+
+    events = asyncio.run(collect())
+    done = events[-1]
+    assert done.type == "done"
+    assert done.message.stop_reason == "toolUse"

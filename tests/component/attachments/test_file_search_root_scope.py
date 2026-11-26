@@ -366,3 +366,16 @@ def test_file_paths_without_a_chat_checks_absolute_paths_only(client, project):
         str(project / "sub" / "hello.txt"): str((project / "sub" / "hello.txt").resolve()),
         "sub/hello.txt": None,
     }
+
+
+def test_read_rejects_paths_with_a_nul_byte(client):
+    """A NUL byte made resolve() raise ValueError — a 500, not a 4xx."""
+    r = client.get("/api/file-read", params={"path": "sub\x00hello.txt"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "path escapes root"
+
+
+def test_resolve_rejects_paths_with_a_nul_byte(client):
+    r = client.get("/api/file-resolve", params={"path": "sub\x00hello.txt"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "path escapes root"

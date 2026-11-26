@@ -628,6 +628,11 @@ async def stream_simple(
                             for idx_key, idx in tool_indices.items():
                                 raw = tool_arg_buffers.get(idx_key, "{}")
                                 parsed = parse_partial_json(raw) or {}
+                                if not isinstance(parsed, dict):
+                                    # parse_partial_json can yield non-dict
+                                    # for malformed input; ToolCall schema
+                                    # requires a dict, so fall back to empty.
+                                    parsed = {}
                                 tc = content_blocks[idx]
                                 content_blocks[idx] = ToolCall(
                                     type="toolCall",

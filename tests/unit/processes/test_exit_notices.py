@@ -50,6 +50,7 @@ def runtime(monkeypatch):
     import openprogram.runtime.execution as execution
 
     admitted = []
+    failed = []
 
     class Adapter:
         def __init__(self, **_):
@@ -62,7 +63,10 @@ def runtime(monkeypatch):
         async def activate(self, admission):
             return None
 
-    state = SimpleNamespace(executions=_Executions(), running=False, admitted=admitted)
+        def fail_admission(self, admission, reason_code=None):
+            failed.append(reason_code)
+
+    state = SimpleNamespace(executions=_Executions(), running=False, admitted=admitted, failed=failed)
     monkeypatch.setattr(driver, "CanonicalAgentAdapter", Adapter)
     monkeypatch.setattr(run_control, "is_turn_running", lambda session_id: state.running)
     monkeypatch.setattr(run_control, "is_worker_stopping", lambda: False)
@@ -120,6 +124,48 @@ def test_a_conversation_without_a_chat_is_not_notified(store, runtime):
     notices.sweep(store)
     assert runtime.admitted == []
     assert store.get(record["id"])["reported"] is True
+
+
+def test_an_exit_notice_survives_a_failed_slot_activation(store, runtime, monkeypatch):
+    """A notice whose turn could not be activated is delivered again, not
+    consumed: the conversation still learns the command ended."""
+    import threading
+    from openprogram.runtime.conversation.run_control import run_slot
+
+    ended = threading.Event()
+
+    class Port:
+        free = True
+        activate_ok = False
+
+        def reserve(self, session_id, owner, *, lock_wait=None, branch_id=None):
+            return self.free
+
+        def activate(self, session_id, owner, *, execution_id, status_version, runner):
+            return self.activate_ok
+
+        def finish(self, session_id, owner, *, execution_id):
+            ended.set()
+
+        def release(self, session_id, owner):
+            pass
+
+    port = Port()
+    monkeypatch.setattr(run_slot, "_port", port)
+    record = _exited(store)
+
+    notices.sweep(store)
+    # The admission was written, then the slot activation failed: the
+    # record stays unreported so the next sweep tries again.
+    assert len(runtime.admitted) == 1
+    assert runtime.failed == ["process_exit_activation_failed"]
+    assert store.get(record["id"])["reported"] is False
+
+    port.activate_ok = True
+    notices.sweep(store)
+    assert len(runtime.admitted) == 2
+    assert store.get(record["id"])["reported"] is True
+    assert ended.wait(5)
 
 
 def test_the_notice_turn_holds_the_run_slot_while_it_runs(store, runtime, monkeypatch):

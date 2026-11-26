@@ -145,3 +145,46 @@ def test_host_outcome_is_projected_to_live_event():
                              outcome="not_started", result=AgentToolResult(content=[], details={}))
     frame = agent_event_to_envelope(event, SimpleNamespace(session_id="s", user_msg_id="u"))
     assert frame["data"]["event"]["outcome"] == "not_started"
+
+
+def test_missing_auto_review_after_preflight_denies_instead_of_crashing(monkeypatch):
+    """prepare_review can decline to prepare (the mode or classifier moved);
+    the auto path must answer a stale refusal, not dereference None."""
+    from openprogram.runtime.permissions.refusal import Decision
+
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr(
+        "openprogram.runtime.permissions.approvals.approval.permission_decision",
+        lambda agent_tool, req, args: Decision("auto", "AUTO_OK", "mode"),
+    )
+    monkeypatch.setattr(
+        "openprogram.runtime.permissions.approvals.approval._escalation_needed",
+        lambda name, args: False,
+    )
+
+    prepared = []
+
+    async def prepare_review(agent_tool, req, call_id, args, *, operation_id=None):
+        prepared.append(call_id)
+        return None
+
+    monkeypatch.setattr(
+        "openprogram.runtime.permissions.auto_mode.auto_review.prepare_review",
+        prepare_review,
+    )
+
+    async def execute(*args):
+        raise AssertionError("the operation must not execute without a review")
+
+    request = TurnRequest(session_id="preflight", user_text="inspect changes", agent_id="main",
+                          source="web", permission_mode="auto",
+                          **owner_authority("owner/install/0123456789abcdef"))
+    tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell",
+                              parameters={}, execute=execute), request, lambda _: None,
+                              _live=False)
+
+    result = asyncio.run(tool.execute("call-1", {"command": "git status"}, None, None))
+
+    assert prepared == ["call-1"]
+    assert result.is_error is True
+    assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"

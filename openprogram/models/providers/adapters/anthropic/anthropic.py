@@ -1134,6 +1134,11 @@ async def stream_simple(
                     elif isinstance(blk, ToolCall):
                         raw = tool_arg_buffers.get(cb_idx, "{}")
                         parsed = parse_streaming_json(raw) or {}
+                        if not isinstance(parsed, dict):
+                            # parse_streaming_json can yield non-dict for
+                            # malformed input; ToolCall schema requires a
+                            # dict, so fall back to empty.
+                            parsed = {}
                         content_blocks[cb_idx] = ToolCall(
                             type="toolCall",
                             id=blk.id,

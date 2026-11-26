@@ -121,8 +121,8 @@ def register(app) -> None:
             rel = str(target)
         else:
             cwd = _resolve_root(root)
-            target = (cwd / path).resolve()
             try:
+                target = (cwd / path).resolve()
                 # Path.is_relative_to is 3.9+; we're on 3.12. Catch typing
                 # quirks where ``target`` is on a different drive on Win32.
                 if not target.is_relative_to(cwd):
@@ -281,8 +281,8 @@ def register(app) -> None:
         """
         def resolve() -> dict:
             cwd = _resolve_root(root, session_id, project_id)
-            target = (cwd / path).resolve()
             try:
+                target = (cwd / path).resolve()
                 if not target.is_relative_to(cwd):
                     raise HTTPException(status_code=400,
                                         detail="path escapes root")

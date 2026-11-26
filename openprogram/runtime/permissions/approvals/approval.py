@@ -419,7 +419,10 @@ def wrap_with_approval(
         if verdict.outcome == "auto":
             if prepared is None or not prepared.matches(call_id, args):
                 await _permission_preflight(call_id, args)
-            if not prepared.matches(call_id, args):
+            # prepare_review declines to prepare (mode changed, classifier
+            # decided against it) — no review exists to match, so refuse as
+            # stale instead of dereferencing None.
+            if prepared is None or not prepared.matches(call_id, args):
                 return _denied(refusal.stale("PERMISSION_REVIEW_STALE", "The operation changed during review; submit it again."))
             from openprogram.runtime.permissions.approvals.file_state import validate
             import os
