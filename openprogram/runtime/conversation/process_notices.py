@@ -164,14 +164,6 @@ def deliver(record: dict, processes: ProcessStore) -> bool:
     except BaseException:
         run_slot.release(session_id, message_id)
         raise
-    try:
-        processes.update(record["id"], reported=True)
-    except BaseException:
-        # Not marked reported, so the next sweep delivers it again: this
-        # admission must not run as well, nor keep the slot it reserved.
-        adapter.fail_admission(admission, reason_code="process_exit_activation_failed")
-        run_slot.release(session_id, message_id)
-        raise
 
     def activate():
         try:
@@ -186,7 +178,17 @@ def deliver(record: dict, processes: ProcessStore) -> bool:
                              status_version=getattr(admission, "status_version", 0), runner=thread):
         adapter.fail_admission(admission, reason_code="process_exit_activation_failed")
         run_slot.release(session_id, message_id)
+        # The record is still unreported, so the next sweep delivers the
+        # notice again instead of dropping the command's exit.
         return True
+    try:
+        processes.update(record["id"], reported=True)
+    except BaseException:
+        # Not marked reported, so the next sweep delivers it again: this
+        # admission must not run as well, nor keep the slot it reserved.
+        adapter.fail_admission(admission, reason_code="process_exit_activation_failed")
+        run_slot.release(session_id, message_id)
+        raise
     thread.start()
     return True
 
