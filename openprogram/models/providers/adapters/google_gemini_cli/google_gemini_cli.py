@@ -332,9 +332,18 @@ def stream_google_gemini_cli(
 
                                 finish_reason = candidate.get("finishReason")
                                 if finish_reason:
-                                    output["stop_reason"] = map_stop_reason_string(finish_reason)
-                                    if any(b.get("type") == "toolCall" for b in output["content"]):
-                                        output["stop_reason"] = "toolUse"
+                                    mapped = map_stop_reason_string(finish_reason)
+                                    # Only a normal stop turns a tool-bearing
+                                    # reply into toolUse. A truncation
+                                    # (MAX_TOKENS → "length") or a safety stop
+                                    # (→ "error") must keep its own signal,
+                                    # like the google adapter does.
+                                    output["stop_reason"] = (
+                                        "toolUse" if mapped == "stop" and any(
+                                            b.get("type") == "toolCall"
+                                            for b in output["content"]
+                                        ) else mapped
+                                    )
 
                             usage_meta = chunk.get("usageMetadata", {})
                             if usage_meta:
