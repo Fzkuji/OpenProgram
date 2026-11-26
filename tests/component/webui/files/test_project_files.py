@@ -1266,3 +1266,9 @@ def test_upload_never_overwrites(client, project_root):
 def test_upload_stays_inside_the_project(client, project_root, path):
     assert _upload(client, path).status_code in {400, 403, 409}
     assert not (project_root.parent / "outside" / "x.txt").exists()
+
+
+def test_raw_rejects_paths_with_a_nul_byte(client, project_root):
+    """A NUL byte made realpath raise ValueError — a 500, not the escape 403."""
+    r = client.get("/files/raw", params={"project_id": "p1", "path": "a\x00b.txt"})
+    assert r.status_code == 403

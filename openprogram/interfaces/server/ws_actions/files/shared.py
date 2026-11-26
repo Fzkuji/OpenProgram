@@ -121,7 +121,7 @@ _SEARCH_IGNORED_DIRS = frozenset({
 def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
     """Resolve a project-relative path without importing an action module."""
     path = path or ""
-    if os.path.isabs(path):
+    if os.path.isabs(path) or "\x00" in path:
         return None, "path escapes project root"
     from openprogram.state.store.project import project_store as _projects
     proj = _projects.get_project(project_id)
